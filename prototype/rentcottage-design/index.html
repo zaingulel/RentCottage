@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>RentCottage — Design Prototype</title>
+    <style>
+      :root {
+        --ink: #15211b;
+        --paper: #fbf8f1;
+        --leaf: #2e5c47;
+        --sand: #e8dcc5;
+        --clay: #bc6645;
+        --muted: #6c716a;
+        --line: rgba(21, 33, 27, 0.13);
+        --arabic: "Noto Naskh Arabic", "Geeza Pro", Tahoma, serif;
+        --display: "Bodoni 72", "Iowan Old Style", Georgia, serif;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--arabic); }
+      button { font: inherit; cursor: pointer; }
+      .prototype-note { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.03em; }
+      .shell { max-width: 1440px; min-height: 100vh; margin: 0 auto; overflow: hidden; }
+      .topline { display: flex; align-items: center; justify-content: space-between; padding: 22px clamp(20px, 5vw, 72px); }
+      .brand { display: inline-flex; align-items: center; gap: 10px; font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: -0.05em; direction: ltr; }
+      .brand-mark { width: 29px; height: 29px; display: inline-grid; place-items: center; background: var(--leaf); color: white; border-radius: 50% 50% 42% 42%; font-family: var(--arabic); font-size: 16px; }
+      .nav { display: flex; gap: 24px; color: var(--muted); font-size: 15px; }
+      .pill { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; border: 0; padding: 12px 19px; background: var(--leaf); color: #fff; font-weight: 700; }
+      .soft-pill { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; color: var(--muted); background: rgba(255,255,255,.68); font-size: 14px; }
+      .eyebrow { color: var(--clay); font-size: 14px; font-weight: 800; letter-spacing: .04em; }
+      .section-title { margin: 0; font-family: var(--display); font-size: clamp(30px, 4vw, 52px); line-height: 1.05; letter-spacing: -0.04em; }
+      .muted { color: var(--muted); }
+      .image { background-position: center; background-size: cover; }
+      .image-cottage { background-image: linear-gradient(125deg, rgba(10,27,19,.22), rgba(10,27,19,.02)), url("https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=1400&q=85"); }
+      .image-pool { background-image: linear-gradient(130deg, rgba(9,42,48,.15), rgba(9,42,48,.02)), url("https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=1000&q=85"); }
+      .image-room { background-image: linear-gradient(130deg, rgba(62,39,17,.12), rgba(62,39,17,.02)), url("https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85"); }
+      .prototype-switcher { position: fixed; z-index: 20; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 7px; border: 1px solid rgba(255,255,255,.28); border-radius: 999px; background: rgba(14, 20, 16, .92); box-shadow: 0 16px 40px rgba(0,0,0,.25); color: #fff; direction: ltr; }
+      .prototype-switcher button { width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(255,255,255,.12); color: #fff; font-size: 20px; }
+      .switch-label { min-width: 170px; text-align: center; font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .switch-label strong { display: block; margin-top: 3px; color: #d5e4bd; font-size: 11px; font-weight: 500; }
+
+      /* A — editorial, image-first retreat */
+      .retreat { --paper: #f7f0e5; --leaf: #274e3b; --clay: #bd5f41; background: var(--paper); }
+      .retreat-hero { display: grid; grid-template-columns: 1.02fr .98fr; min-height: 630px; padding: 0 clamp(20px, 5vw, 72px) 72px; gap: clamp(25px, 5vw, 84px); align-items: center; }
+      .retreat-copy { padding: 40px 0; }
+      .retreat-copy h1 { margin: 14px 0 22px; max-width: 560px; font-family: var(--display); font-size: clamp(46px, 6vw, 78px); line-height: .96; letter-spacing: -0.07em; }
+      .retreat-copy p { max-width: 440px; font-size: 19px; line-height: 1.8; color: var(--muted); }
+      .search-card { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; align-items: center; gap: 0; margin-top: 34px; padding: 7px; max-width: 650px; border: 1px solid var(--line); border-radius: 18px; background: #fffdf9; box-shadow: 0 20px 45px rgba(64,44,20,.08); }
+      .search-cell { padding: 9px 16px; border-left: 1px solid var(--line); }
+      .search-cell:last-of-type { border-left: 0; }
+      .search-cell small { display:block; color: var(--muted); font-size: 12px; }
+      .search-cell strong { font-size: 15px; }
+      .search-go { width: 48px; height: 48px; border: 0; border-radius: 13px; background: var(--leaf); color: #fff; font-size: 22px; }
+      .retreat-image-wrap { position: relative; height: 550px; }
+      .retreat-image { height: 100%; border-radius: 180px 180px 28px 28px; box-shadow: 0 30px 70px rgba(23,45,31,.18); }
+      .image-stamp { position: absolute; left: -31px; bottom: 45px; width: 150px; height: 150px; display: grid; place-content: center; border-radius: 50%; background: #f7f0e5; color: var(--leaf); text-align: center; font-family: var(--display); font-size: 17px; line-height: 1.15; transform: rotate(-11deg); box-shadow: 0 10px 28px rgba(0,0,0,.09); }
+      .retreat-strip { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 22px; padding: 0 clamp(20px, 5vw, 72px) 105px; }
+      .retreat-strip > div { padding-top: 18px; border-top: 1px solid var(--line); }
+      .retreat-strip strong { display:block; font-size: 18px; }
+      .retreat-strip span { color: var(--muted); font-size: 15px; }
+
+      /* B — direct comparison and availability */
+      .planner { --paper: #f3f6f4; --leaf: #173f35; --clay: #d56f45; background: #f3f6f4; }
+      .planner .topline { background: #fff; border-bottom: 1px solid var(--line); }
+      .planner-workspace { display: grid; grid-template-columns: 260px 1fr; min-height: calc(100vh - 78px); direction: ltr; }
+      .filter-panel { padding: 35px 26px; border-left: 1px solid var(--line); background: #e6eee9; direction: rtl; }
+      .filter-panel h2 { margin: 0 0 22px; font-family: var(--display); font-size: 30px; }
+      .filter-group { margin: 25px 0; padding-bottom: 20px; border-bottom: 1px solid rgba(23,63,53,.12); }
+      .filter-group label { display: block; margin-bottom: 12px; font-size: 14px; font-weight: 800; }
+      .check { display: flex; align-items: center; gap: 9px; margin: 10px 0; color: #506057; font-size: 14px; }
+      .check i { width: 17px; height: 17px; display: inline-grid; place-items: center; border: 1px solid #82958a; border-radius: 5px; background: #fff; color: var(--leaf); font-style: normal; font-size: 12px; }
+      .planner-main { padding: 34px clamp(20px, 5vw, 72px) 100px; direction: rtl; }
+      .planner-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+      .planner-heading h1 { margin: 6px 0 0; font-family: var(--display); font-size: clamp(34px, 4vw, 50px); letter-spacing: -0.05em; }
+      .search-line { display: grid; grid-template-columns: 1.4fr 1fr 1fr .8fr; gap: 9px; margin: 28px 0 26px; padding: 8px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+      .search-line > div { padding: 10px 13px; border-left: 1px solid var(--line); }
+      .search-line > div:last-child { border-left: 0; }
+      .search-line small { display: block; color: var(--muted); }
+      .search-line strong { font-size: 15px; }
+      .results { display: grid; gap: 15px; }
+      .result { display: grid; grid-template-columns: 215px 1fr auto; gap: 22px; align-items: center; min-height: 167px; padding: 13px; border: 1px solid var(--line); border-radius: 15px; background: #fff; direction: ltr; }
+      .result-image { height: 140px; border-radius: 9px; }
+      .result-copy { direction: rtl; }
+      .result-copy h3 { margin: 0 0 4px; font-size: 22px; }
+      .result-copy p { margin: 0 0 12px; color: var(--muted); }
+      .amenity-row { display: flex; flex-wrap: wrap; gap: 7px; }
+      .mini-tag { padding: 5px 9px; border-radius: 999px; background: #edf3ef; color: #4d6558; font-size: 13px; }
+      .price { min-width: 130px; padding-left: 12px; text-align: left; direction: rtl; }
+      .price strong { display:block; color: var(--leaf); font-size: 21px; }
+      .price span { color: var(--muted); font-size: 13px; }
+
+      /* C — a guided and reassuring request flow */
+      .trust { --paper: #fffaf5; --leaf: #124f58; --clay: #ce7253; background: #fffaf5; }
+      .trust .topline { padding-bottom: 14px; }
+      .trust-main { max-width: 1140px; margin: 0 auto; padding: 24px 28px 110px; }
+      .trust-intro { max-width: 680px; margin: 38px auto 32px; text-align: center; }
+      .trust-intro h1 { margin: 10px 0 18px; font-family: var(--display); font-size: clamp(39px, 5vw, 65px); letter-spacing: -0.06em; line-height: 1; }
+      .trust-intro p { color: var(--muted); font-size: 18px; line-height: 1.8; }
+      .stepper { display: grid; grid-template-columns: repeat(3, 1fr); max-width: 700px; margin: 0 auto 39px; gap: 10px; }
+      .step { padding: 11px 13px; border-radius: 12px; background: #e8f0ef; color: #4f6968; font-size: 14px; }
+      .step.active { background: var(--leaf); color: #fff; }
+      .step b { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 6px; border-radius: 50%; background: rgba(255,255,255,.18); font-size: 12px; }
+      .trust-card { display: grid; grid-template-columns: .92fr 1.08fr; overflow: hidden; border-radius: 22px; background: #fff; border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(34,62,55,.09); }
+      .trust-image { min-height: 460px; }
+      .trust-copy { padding: clamp(25px, 5vw, 52px); }
+      .trust-copy h2 { margin: 8px 0 10px; font-family: var(--display); font-size: clamp(34px, 4vw, 50px); letter-spacing: -.05em; }
+      .trust-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+      .rule-box { margin: 24px 0; padding: 16px; border-radius: 12px; background: #fbf5ee; border-right: 4px solid var(--clay); }
+      .rule-box strong { display:block; margin-bottom: 4px; }
+      .trust-price { display: flex; align-items: center; justify-content: space-between; padding-top: 18px; border-top: 1px solid var(--line); }
+      .trust-price b { color: var(--leaf); font-size: 25px; }
+      .reassurances { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }
+      .reassurance { padding: 15px; border-radius: 12px; background: #e9f3f0; color: #315c5b; font-size: 14px; line-height: 1.6; }
+      .reassurance strong { display:block; color: var(--leaf); }
+
+      @media (max-width: 820px) {
+        .nav { display: none; }
+        .retreat-hero, .trust-card { grid-template-columns: 1fr; }
+        .retreat-hero { padding-bottom: 44px; }
+        .retreat-image-wrap { height: 380px; order: -1; }
+        .search-card { grid-template-columns: 1fr 1fr; gap: 5px; }
+        .search-cell { border: 0; background: #f6f3ed; border-radius: 10px; }
+        .search-go { grid-column: span 2; width: 100%; }
+        .retreat-strip { grid-template-columns: 1fr; padding-bottom: 92px; }
+        .planner-workspace { grid-template-columns: 1fr; }
+        .filter-panel { display: none; }
+        .planner-main { padding-inline: 18px; }
+        .search-line { grid-template-columns: 1fr 1fr; }
+        .search-line > div { border: 0; background: #f4f6f3; border-radius: 8px; }
+        .result { grid-template-columns: 110px 1fr; gap: 12px; }
+        .result-image { height: 115px; }
+        .price { grid-column: span 2; padding: 0; text-align: right; }
+        .trust-image { min-height: 290px; }
+        .stepper, .reassurances { grid-template-columns: 1fr; }
+        .prototype-switcher { bottom: 12px; }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- PROTOTYPE ONLY: Three customer-discovery directions, switchable with ?variant=. -->
+    <main id="app"></main>
+    <div class="prototype-switcher" aria-label="Prototype variation switcher">
+      <button id="previous" aria-label="Previous variation">←</button>
+      <div class="switch-label"><span id="variant-key"></span><strong id="variant-name"></strong></div>
+      <button id="next" aria-label="Next variation">→</button>
+    </div>
+    <script>
+      const variants = [
+        { key: "retreat", name: "A — The Retreat" },
+        { key: "planner", name: "B — The Planner" },
+        { key: "trust", name: "C — Trusted Stays" }
+      ];
+      const current = new URLSearchParams(location.search).get("variant");
+      let index = Math.max(0, variants.findIndex((variant) => variant.key === current));
+
+      const headerMarkup = (buttonLabel = "ابدأ البحث") => `
+        <header class="topline">
+          <div class="brand"><span class="brand-mark">ر</span><span>RentCottage</span></div>
+          <nav class="nav"><span>اكتشف الأكواخ</span><span>كيف يعمل</span><span>للمالكين</span></nav>
+          <button class="pill">${buttonLabel}</button>
+        </header>`;
+
+      const retreat = () => `
+        <section class="shell retreat">
+          ${headerMarkup("اكتشف الآن")}
+          <div class="retreat-hero">
+            <div class="retreat-copy">
+              <div class="eyebrow">وقت هادئ، مكان يشبهك</div>
+              <h1>ليلتك القادمة تبدأ من مكانٍ أجمل.</h1>
+              <p>اكتشف أكواخاً مختارة بعناية، وشاهد ما تحتاج إليه قبل إرسال طلبك. البساطة أولاً، والراحة دائماً.</p>
+              <div class="search-card" aria-label="Search prototype">
+                <div class="search-cell"><small>المنطقة</small><strong>اختر منطقة قريبة منك</strong></div>
+                <div class="search-cell"><small>تاريخ الوصول</small><strong>أضف التاريخ</strong></div>
+                <div class="search-cell"><small>عدد الليالي</small><strong>ليلة واحدة</strong></div>
+                <button class="search-go" aria-label="Search">←</button>
+              </div>
+            </div>
+            <div class="retreat-image-wrap">
+              <div class="retreat-image image image-cottage"></div>
+              <div class="image-stamp">إقامة خاصة<br />ومساحة لك</div>
+            </div>
+          </div>
+          <div class="retreat-strip">
+            <div><strong>أماكن مختارة</strong><span>صور وتفاصيل وقواعد واضحة قبل الطلب.</span></div>
+            <div><strong>طلب بسيط</strong><span>يراجع المالك الطلب ثم يصلك التأكيد.</span></div>
+            <div><strong>تفاصيل عند التأكيد</strong><span>تحصل على العنوان الدقيق وبيانات التواصل.</span></div>
+          </div>
+        </section>`;
+
+      const planner = () => `
+        <section class="shell planner">
+          ${headerMarkup("دخول المالك")}
+          <div class="planner-workspace">
+            <aside class="filter-panel">
+              <h2>فلترة النتائج</h2>
+              <div class="filter-group"><label>عدد الضيوف</label><div class="soft-pill">٤ ضيوف أو أكثر</div></div>
+              <div class="filter-group"><label>المرافق</label><div class="check"><i>✓</i> مسبح</div><div class="check"><i></i> واي فاي</div><div class="check"><i>✓</i> موقف سيارات</div><div class="check"><i></i> تكييف</div></div>
+              <div class="filter-group"><label>نوع المكان</label><div class="check"><i>✓</i> كوخ كامل</div><div class="check"><i></i> شاليه</div></div>
+            </aside>
+            <div class="planner-main">
+              <div class="planner-heading"><div><div class="eyebrow">نتائج متاحة لإقامتك</div><h1>اختر مكانك بثقة</h1></div><span class="soft-pill">٣ أكواخ متاحة</span></div>
+              <div class="search-line"><div><small>المنطقة</small><strong>منطقة مقترحة</strong></div><div><small>الوصول</small><strong>١٥ آب</strong></div><div><small>الليالي</small><strong>ليلتان</strong></div><div><small>الضيوف</small><strong>٤ ضيوف</strong></div></div>
+              <div class="results">
+                <article class="result"><div class="result-image image image-pool"></div><div class="result-copy"><h3>كوخ السدرة</h3><p>منطقة هادئة · الموقع الدقيق بعد التأكيد</p><div class="amenity-row"><span class="mini-tag">٤ ضيوف</span><span class="mini-tag">مسبح</span><span class="mini-tag">موقف سيارات</span></div></div><div class="price"><strong>١٨٠٬٠٠٠ د.ع</strong><span>لكل ليلة</span></div></article>
+                <article class="result"><div class="result-image image image-room"></div><div class="result-copy"><h3>شاليه النخيل</h3><p>قريب من الخدمات · تفاصيل واضحة قبل الطلب</p><div class="amenity-row"><span class="mini-tag">٦ ضيوف</span><span class="mini-tag">واي فاي</span><span class="mini-tag">تكييف</span></div></div><div class="price"><strong>٢٢٠٬٠٠٠ د.ع</strong><span>لكل ليلة</span></div></article>
+              </div>
+            </div>
+          </div>
+        </section>`;
+
+      const trust = () => `
+        <section class="shell trust">
+          ${headerMarkup("تصفح الأكواخ")}
+          <div class="trust-main">
+            <div class="trust-intro"><div class="eyebrow">خطوات واضحة من البداية</div><h1>اطلب إقامتك، ونعرفك بما سيحدث بعدها.</h1><p>مكان معتمد، سعر ظاهر، وقواعد واضحة. يراجع المالك طلبك ثم تصلك تفاصيل الوصول عند التأكيد.</p></div>
+            <div class="stepper"><div class="step active"><b>١</b> اختر مكانك</div><div class="step"><b>٢</b> أرسل الطلب</div><div class="step"><b>٣</b> استلم التأكيد</div></div>
+            <article class="trust-card"><div class="trust-image image image-cottage"></div><div class="trust-copy"><div class="eyebrow">كوخ منشور بعد مراجعة</div><h2>كوخ السدرة</h2><div class="trust-meta"><span class="soft-pill">٤ ضيوف</span><span class="soft-pill">مسبح خاص</span><span class="soft-pill">موقف سيارات</span></div><p class="muted">مساحة هادئة لعائلة أو مجموعة صغيرة. تظهر التفاصيل الكاملة والقواعد قبل إرسال الطلب.</p><div class="rule-box"><strong>قواعد الإقامة واضحة قبل الطلب</strong><span class="muted">عدد الضيوف، القيود، والسعر يُحفظ في تأكيد الحجز.</span></div><div class="trust-price"><div><span class="muted">السعر المقترح</span><b>١٨٠٬٠٠٠ د.ع / ليلة</b></div><button class="pill">اعرض التفاصيل</button></div></div></article>
+            <div class="reassurances"><div class="reassurance"><strong>طلبك لا يختفي</strong>تصل النتيجة فور قبول المالك أو رفضه.</div><div class="reassurance"><strong>خصوصية الموقع</strong>الموقع الدقيق يظهر بعد التأكيد فقط.</div><div class="reassurance"><strong>سجل واضح</strong>يبقى التأكيد والقواعد في سجل حجوزاتك.</div></div>
+          </div>
+        </section>`;
+
+      const render = () => {
+        const key = variants[index].key;
+        document.getElementById("app").innerHTML = key === "retreat" ? retreat() : key === "planner" ? planner() : trust();
+        document.getElementById("variant-key").textContent = `?variant=${key}`;
+        document.getElementById("variant-name").textContent = variants[index].name;
+      };
+      const go = (delta) => { index = (index + delta + variants.length) % variants.length; location.search = `variant=${variants[index].key}`; };
+      document.getElementById("previous").addEventListener("click", () => go(-1));
+      document.getElementById("next").addEventListener("click", () => go(1));
+      window.addEventListener("keydown", (event) => { if (!["INPUT", "TEXTAREA"].includes(document.activeElement.tagName) && !document.activeElement.isContentEditable) { if (event.key === "ArrowLeft") go(-1); if (event.key === "ArrowRight") go(1); } });
+      render();
+    </script>
+  </body>
+</html>
