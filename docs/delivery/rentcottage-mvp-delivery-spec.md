@@ -1,219 +1,329 @@
 # RentCottage MVP Internal Delivery Specification
 
-**Audience:** RentCottage delivery team and coding agents
-**Purpose:** Preserve granular product behaviour for planning, ticket generation, implementation and verification.
-**Not a client deliverable:** Yasir's sign-off artifact is `docs/product/RentCottage-MVP-PRD.docx`.
+**Status:** Proposed delivery baseline pending client sign-off
+**Updated:** 2 August 2026
+**Client agreement:** `docs/product/rentcottage-mvp-prd.md`
+**Domain language:** `CONTEXT.md`
+**Technical decision:** `docs/adr/0001-cloudflare-workers-supabase-stack.md`
 
-## Source-of-truth hierarchy
+## Purpose and source precedence
 
-1. The signed client PRD defines the approved MVP scope and business rules.
-2. `CONTEXT.md` defines the domain vocabulary and precise meaning of RentCottage concepts.
-3. This delivery specification expands the approved product into granular behaviours for planning and verification.
-4. GitHub Issues are execution records. They do not override the signed PRD or current domain definitions.
+This document preserves the low-level behaviour needed for design, implementation, tests and ticket slicing. It is intentionally more granular than the client Product Agreement.
 
-If these sources conflict, stop and reconcile the lower-priority source. Do not silently implement an older ticket or an internal interpretation that contradicts the signed PRD.
+Use the sources in this order:
 
-## Ticket-generation contract
+1. The signed client Product Agreement defines the external promise.
+2. This delivery specification defines the detailed behaviour and failure paths.
+3. `CONTEXT.md` defines the project language and state meanings.
+4. The architecture decision defines the approved technical baseline.
 
-When running `$to-tickets`, use this document together with the signed client PRD and `CONTEXT.md`. The condensed stories in the client PRD are for readable sign-off; they are not intended to determine ticket size.
+If these sources conflict, stop and reconcile them before implementation. Do not make the client-facing stories larger merely because several detailed stories describe one client capability.
 
-The behaviours below are coverage requirements, not preselected ticket boundaries. Ticket generation must:
+## Approved product constraints
 
-- create small, independently demonstrable vertical slices through the relevant customer, owner or administrator journey;
-- include the minimum user-facing behaviour, domain rule, persistence, permissions and verification needed to prove that slice;
-- preserve lifecycle and dependency order explicitly rather than creating one large ticket per PRD section;
-- split distinct success, expiry, cancellation, disclosure and payment-recovery paths when they can be delivered and verified independently;
-- keep closely coupled state changes atomic, such as Payment Authorization plus Booking Request plus Pending Hold;
-- avoid horizontal tickets that implement an entire database layer, API layer or UI layer without a demonstrable product outcome;
-- record blocking edges between tickets and keep each ticket small enough for one focused implementation session where practical;
-- give every ticket acceptance criteria that can fail if the behaviour regresses;
-- treat launch research, legal review and payment-provider validation as explicit gates rather than hiding them inside implementation tickets.
+- Approved cottages may operate anywhere in Iraq. Public launch requires at least ten real approved cottages, preferably in two demand areas.
+- The MVP is a mobile-friendly web application in Arabic, Sorani Kurdish and English.
+- Arabic and Sorani use right-to-left presentation. English uses left-to-right presentation.
+- Customers browse anonymously and verify a phone number when submitting their first request.
+- Cottage owners apply directly. Approval is manual and must complete before publication or booking access.
+- A complete Owner Application has a three-day review target. Requests for missing information pause the target.
+- Each cottage uses two or three fixed daily Cottage Shifts. Customers may select several shifts or a separately priced Full-Day Bundle.
+- Bookings use request-to-book. The Response Deadline is four hours and the Booking Request Cut-Off is six hours before the first shift.
+- The customer authorises the full Customer Total before sending a request. Owner acceptance triggers automatic Payment Capture.
+- A failed capture starts a 20-minute Payment Required recovery period. Owner acceptance at any hour does not require the customer to be awake when capture succeeds normally.
+- The proposed Booking Service Fee is fixed at IQD 5,000 and is shown separately. It remains subject to customer validation before public launch.
+- Marketplace Commission is 10% of Booking Price and is shown to the Cottage Owner before acceptance.
+- One cancellation policy applies to every cottage. Customer cancellation at least 48 hours before the first shift receives an automatic Full Refund. Later cancellation and No-Show receive no refund. Owner and administrator cancellations receive an automatic Full Refund.
+- Reviews and In-Platform Messaging are included.
+- Contact details remain hidden before payment. Pre-payment messages block phone numbers, email addresses, links and social handles. Contact sharing is allowed after confirmation.
+- Static interface translations are human reviewed. Approved dynamic content uses Automatic Translation with the original preserved.
+- Owner identity, authority and licence documents are stored privately with restricted audited access. Legal approval of the document checklist and retention schedule is a launch gate.
+- Basic administrator operational and finance views and basic Owner Earnings Summary are included. Complex staff roles, accounting, forecasting and revenue management are excluded.
+- Customers and owners cannot edit or reschedule submitted requests or Confirmed Bookings.
 
-One granular behaviour may require more than one ticket, and one vertical ticket may satisfy several closely related behaviours. Coverage must be traceable either way.
+## Technical delivery baseline
 
-Each generated ticket should state its demonstrable outcome, referenced behaviour numbers, included user roles, lifecycle states, validation and disclosure rules, failure paths, acceptance criteria, verification method, exclusions and blocking issues.
-
-## Approved constraints carried into delivery
-
-- Approved inventory may be located anywhere in Iraq; public launch requires at least ten approved cottages.
-- Every Cottage uses one owner-defined Shift Schedule containing two or three fixed, non-overlapping Cottage Shifts.
-- Customers may select individual shifts, a separately priced Full-Day Bundle or a Booking Period across consecutive Service Days.
-- Arabic, Sorani Kurdish and English are required at launch; Arabic and Sorani are right-to-left and English is left-to-right.
-- RentCottage uses request-to-book. The owner accepts or declines the complete request rather than individual component shifts.
-- The full Booking Price is authorized online before the Booking Request and Pending Hold exist, then captured only after owner acceptance.
-- The Response Deadline is four hours, the Booking Request Cut-Off is six hours before the first shift, and Payment Required lasts 15 minutes.
-- One marketplace-wide policy gives a Full Refund at least 48 hours before the first shift; later Customer Cancellation and No-Show are non-refundable. Owner Cancellation and Administrator Cancellation always give a Full Refund.
-- The target Marketplace Commission is 12% of the Booking Price, deducted from Owner Payout and subject to Licensed Payment Provider pricing.
-- A suitable Licensed Payment Provider licensed by CBI is a launch gate; there is no cash, offline or unpaid fallback in the MVP.
-- Owner identity, authority-to-rent and local compliance evidence are reviewed outside the product; the MVP stores the approval outcome, not sensitive source documents.
+- TypeScript, React and Next.js deployed to Cloudflare Workers through OpenNext.
+- Supabase PostgreSQL, Auth and Storage.
+- Row-level security on every customer, owner and administrator data path.
+- Supavisor transaction pooling for serverless database connections.
+- PostgreSQL transactions and constraints for Pending Hold and booking overlap protection.
+- Private verification-document storage with time-limited access and an audit record.
+- Narrow replaceable interfaces for payment, translation and notification suppliers.
+- Vitest for unit and service tests, Playwright for browser journeys, and production-runtime tests in Cloudflare `workerd` preview.
+- GitHub Actions for continuous integration and CodeRabbit for pull-request review. Blacksmith is deferred until measured demand justifies it.
+- Qi Card is the first payment candidate to validate. It is not selected until sandbox and contract evidence proves the full lifecycle.
 
 ## Granular behaviour catalogue
 
-### Customer discovery and identity
+### Marketplace, language and identity foundation
 
-1. As a customer, I want to browse Published Cottages without creating an account, so that I can explore with minimal friction.
-2. As a customer, I want the marketplace to work comfortably in a mobile browser, so that I can use it while travelling or away from a computer.
-3. As an Arabic-speaking customer, I want a complete right-to-left experience, so that the marketplace feels natural and legible.
-4. As a Sorani-speaking customer, I want a complete right-to-left Kurdish experience, so that I can use the marketplace in my preferred language.
-5. As an English-speaking customer, I want a complete left-to-right experience, so that I can use the marketplace in English.
-6. As a customer, I want to switch language without losing my current page or booking selections, so that localisation does not interrupt my task.
-7. As a customer, I want to search approved inventory anywhere in Iraq, so that I am not artificially restricted to Baghdad.
-8. As a customer, I want locations organised by governorate and local area, so that I can find relevant inventory even when formal addresses are inconsistent.
-9. As a customer, I want to search by date, shifts, party size and key amenities, so that results match my intended visit.
-10. As a customer, I want results to contain only cottages whose complete Booking Period is available, so that I do not request unavailable inventory.
-11. As a customer, I want to see the Cottage Profile, photos, capacity, rooms, amenities and House Rules, so that I can judge suitability.
-12. As a customer, I want free-text Cottage content available in Arabic, Sorani and English, so that the listing remains meaningful in every launch language.
-13. As a customer, I want to see only an Approximate Location before confirmation, so that Cottage Owner privacy and property security are protected.
-14. As a customer, I want Public Availability without another customer's identity or an owner's private block reason, so that operational data remains private.
-15. As a customer, I want to verify my phone only when submitting my first request, so that browsing remains anonymous.
-16. As a returning customer, I want my verified phone number to identify my Customer Account, so that I can retrieve my bookings without managing a password.
+1. As a visitor, I want the public product to load without an account, so that browsing has no registration barrier.
+2. As a visitor, I want only Published Cottages returned publicly, so that draft, paused and rejected inventory stays private.
+3. As a user, I want Arabic selected from an explicit language control, so that I can use the product in Arabic.
+4. As a user, I want Sorani Kurdish selected from the same control, so that I can use the product in Sorani.
+5. As a user, I want English selected from the same control, so that I can use the product in English.
+6. As an Arabic user, I want interface layout and controls to render right to left, so that navigation feels native.
+7. As a Sorani user, I want interface layout and controls to render right to left, so that navigation feels native.
+8. As an English user, I want interface layout and controls to render left to right, so that navigation feels native.
+9. As a user, I want to change language without losing my page, filters or booking selection, so that translation does not interrupt my task.
+10. As a user, I want dates and times interpreted in Iraq time, so that deadlines and cross-midnight shifts are unambiguous.
+11. As a user, I want prices shown in Iraqi dinars with consistent formatting, so that totals are easy to compare.
+12. As a customer, I want phone verification only when I submit my first request, so that browsing remains anonymous.
+13. As a returning customer, I want my verified phone to recover my Customer Account and Booking History, so that I do not need a password.
+14. As a prospective Cottage Owner, I want phone verification before application submission, so that the applicant identity is reachable.
+15. As a Platform Administrator, I want a separate email and multi-factor account, so that privileged access is distinct from marketplace identities.
+16. As the platform, I want customer, owner and administrator sessions to resolve to one explicit role context, so that data cannot cross role boundaries.
+17. As the platform, I want unauthorised role access denied in both the application and database, so that a changed URL cannot bypass permissions.
+18. As an administrator, I want privileged sign-in and sensitive actions auditable, so that account misuse can be investigated.
 
-### Shift selection and pricing
+### Owner application and verification
 
-17. As a customer, I want to see each cottage's two or three fixed Cottage Shifts with clear start and end times, so that I understand what I am booking.
-18. As a customer, I want a cross-midnight evening shift labelled by its start date, so that dates remain unambiguous.
-19. As a customer, I want to select one or more available shifts on a Service Day, so that I can book the time I need.
-20. As a customer, I want to choose a Full-Day Bundle with continuous access between the first and last shift, so that I can reserve the entire operating day.
-21. As a customer, I want consecutive Full-Day Bundles to provide continuous access between days, so that a multi-day booking does not require overnight departure and re-entry.
-22. As a customer, I want one Booking Request to cover selections across consecutive Service Days, so that a multi-day visit remains one booking.
-23. As a customer, I want the Full-Day Bundle to become unavailable when any component shift is unavailable, so that overlapping bookings cannot occur.
-24. As a customer, I want to see the applicable standard, day-of-week or specific-date price before requesting, so that holiday and weekend pricing is transparent.
-25. As a customer, I want the specific-date price to override recurring and standard prices, so that the quoted amount is deterministic.
-26. As a customer, I want the Full-Day Bundle to have its own price, so that it need not equal the sum of individual shifts.
-27. As a customer, I want the Booking Price to equal the sum of my selected applicable prices, so that the calculation is understandable.
-28. As a customer, I want one final Booking Price without an added RentCottage fee at checkout, so that there are no surprise platform charges.
-29. As a customer, I want the quoted price and applicable commission rate preserved in the Booking Snapshot, so that later pricing changes cannot affect my request.
+19. As a prospective Cottage Owner, I want to create an Owner Account without an invitation, so that I can begin an application directly.
+20. As an applicant, I want to save a draft application, so that I can collect evidence over several visits.
+21. As an applicant, I want the required owner and cottage fields identified before submission, so that I know what is missing.
+22. As an individual applicant, I want to upload the required identity evidence, so that RentCottage can verify me.
+23. As a company applicant, I want to upload company and authorised-representative evidence, so that RentCottage can verify the legal person and operator.
+24. As an applicant, I want to upload title, lease, management or owner-authority evidence, so that RentCottage can verify authority to rent.
+25. As an applicant, I want to upload the applicable tourism, municipal, safety or exemption evidence, so that local compliance can be reviewed.
+26. As an applicant, I want to provide payout-account evidence that matches the approved owner, so that settlement is directed correctly.
+27. As an applicant, I want uploaded verification files to remain private, so that they never appear in ordinary cottage or booking views.
+28. As an applicant, I want to submit only a complete application, so that the three-day review target has a clear start.
+29. As an applicant, I want to see Draft, Submitted, Needs Information, Under Review, Approved, Rejected, Expired or Suspended status, so that the outcome is clear.
+30. As an administrator, I want a submitted application to enter a review queue with its complete timestamp, so that the service target is measurable.
+31. As an administrator, I want to request missing information with a reason, so that the applicant knows what to correct.
+32. As the platform, I want Needs Information to pause the three-day target and resubmission to resume it, so that the measure is fair.
+33. As an administrator, I want to approve or reject an application with a recorded reason, so that the decision is accountable.
+34. As an administrator, I want the approval record to preserve reviewer, jurisdiction, evidence types, licence or exemption basis and expiry dates, so that later checks are possible.
+35. As the platform, I want approval to unlock owner publication and booking operations without exposing verification files, so that permissions follow the decision.
+36. As an authorised verification administrator, I want time-limited access to a source document, so that a permanent public link cannot leak it.
+37. As an auditor, I want every verification-document view, download, replacement and deletion recorded, so that sensitive access is traceable.
+38. As the platform, I want expired owner or licence evidence to create a renewal task and allow suspension, so that approval does not silently remain valid forever.
 
-### Booking request and payment
+### Cottage profile, content and translation
 
-30. As a customer, I want to provide my name, total guest count and an optional Booking Note, so that the Cottage Owner has appropriate request context.
-31. As a customer, I want capacity checked before submission, so that I cannot request a cottage too small for my party.
-32. As a customer, I want to accept the recorded House Rules and marketplace terms before submitting, so that the agreement is explicit.
-33. As a customer booking inside the 48-hour cancellation boundary, I want a prominent non-refundable warning before Payment Authorization, so that the consequence is clear.
-34. As a customer, I want full-payment authorization to succeed before my request is submitted, so that an unpaid request never appears successful.
-35. As a customer, I want payment failure to leave availability unblocked and let me retry, so that no false Pending Hold is created.
-36. As a customer, I want my successful Booking Request to place one exclusive Pending Hold across every selected shift, so that another customer cannot claim part of it.
-37. As a customer, I want the owner to respond within four hours, so that my request does not remain pending indefinitely.
-38. As a customer, I want new requests to close six hours before the first shift, so that there is time for an owner decision, payment recovery and travel.
-39. As a customer, I want to withdraw a pending request and immediately release its Payment Authorization and Pending Hold, so that I can change plans before confirmation.
-40. As a customer, I want pending requests to remain immutable, so that the owner always decides against a stable Booking Snapshot.
-41. As a customer, I want to receive an immediate accepted, declined or expired notification, so that I do not need to poll the application.
-42. As a customer, I want a Decline Reason when an owner rejects my request, so that I understand the outcome.
-43. As a customer, I want a declined or expired request to release the Payment Authorization rather than charge and refund me, so that unnecessary transactions are avoided.
-44. As a customer, I want owner acceptance to capture the full authorized amount, so that payment and confirmation remain linked.
-45. As a customer, I want a failed Payment Capture to give me 15 minutes to provide a valid payment method, so that a recoverable payment problem does not immediately lose the booking.
-46. As a customer, I want a failed 15-minute payment recovery to expire without confirmation, so that I am never told an unpaid booking is confirmed.
-47. As a customer, I want confirmation only after owner acceptance and successful Payment Capture, so that the booking promise is reliable.
-48. As a customer, I want confirmation to release the exact Access Details, mutual contact information and a unique booking reference, so that I can prepare and coordinate.
-49. As a customer, I want payment-provider downtime to prevent request submission without enabling cash or unpaid fallback, so that the payment record remains complete.
-50. As a customer, I want to be prevented from holding overlapping active requests or bookings at different cottages, so that I cannot accidentally create multiple full charges for the same time.
+39. As an approved Cottage Owner, I want to create more than one Cottage Profile, so that one account can manage several properties.
+40. As an owner, I want a draft cottage to require capacity, rooms, amenities, photos, approximate location and House Rules, so that publication content is complete.
+41. As an owner, I want to provide an exact private location separately from the Approximate Location, so that access can be released only after payment.
+42. As an owner, I want to write a description and House Rules in any Launch Language, so that I can start in my strongest language.
+43. As the platform, I want the original content and detected or selected source language preserved, so that translation never replaces the source.
+44. As the platform, I want draft translations generated for the other Launch Languages, so that all customer versions can be prepared.
+45. As an administrator, I want to compare original and generated language versions, so that I can review meaning before approval.
+46. As an administrator, I want to correct any language version before approval, so that unsafe or misleading translation can be fixed.
+47. As an administrator, I want all required language versions approved together, so that publication is complete in every language.
+48. As a customer, I want generated dynamic text labelled and the original available, so that I can judge the translation.
+49. As the platform, I want owner verification documents excluded from Automatic Translation, so that sensitive files never leave the protected path.
+50. As an owner, I want a new cottage to remain private until owner and content approval are both complete, so that no partial listing is exposed.
+51. As an owner, I want a published cottage's approved content to remain live while an edit is reviewed, so that moderation does not remove the listing.
+52. As an administrator, I want to compare the live version with the proposed Content Change, so that the decision is informed.
+53. As the platform, I want an approved Content Change published atomically in all languages, so that customers do not see mixed versions.
+54. As an administrator, I want to reject a Content Change with a reason while preserving the live version, so that the owner can correct it safely.
+55. As an owner, I want content, approval and publication history preserved, so that a Booking Snapshot can reference the correct version.
 
-### Cancellations, reminders and history
+### Shifts, pricing and availability
 
-51. As a customer, I want a Full Refund when I cancel at least 48 hours before my first shift, so that the marketplace policy is predictable.
-52. As a customer, I want the policy to state that cancellation inside 48 hours is non-refundable, so that I understand the risk before confirmation.
-53. As a customer, I want a No-Show treated as non-refundable, so that the consequence is explicit.
-54. As a customer, I want an Owner Cancellation to produce a Full Refund regardless of timing, so that I do not bear the owner's failure to provide the cottage.
-55. As a customer, I want an Administrator Cancellation for safety, fraud, legal or serious operational reasons to produce a Full Refund, so that platform intervention does not cost me.
-56. As a customer, I want a Full Refund to return the entire Booking Price, so that provider fees are not deducted from my refund.
-57. As a customer, I want a reminder 24 hours before the first shift with my booking reference and Access Details, so that I have the information needed to arrive.
-58. As a customer, I want to see pending, confirmed, declined, expired, withdrawn, cancelled and completed records, so that my Booking History is dependable.
-59. As a customer, I want a Payment Dispute handled using preserved booking evidence, so that the provider receives an accurate record.
-60. As a customer, I understand that an accommodation-quality complaint does not guarantee an automatic refund, so that the support promise is not misleading.
+56. As an owner, I want one recurring Shift Schedule containing exactly two or three shifts, so that the calendar matches Iraqi cottage practice.
+57. As an owner, I want every Cottage Shift to have a name, start time and end time, so that it can be selected clearly.
+58. As the platform, I want shifts in one schedule to be non-overlapping, so that the owner cannot create contradictory inventory.
+59. As an owner, I want a shift to cross midnight, so that evening operation can end on the following date.
+60. As the platform, I want a cross-midnight shift to belong to its start-date Service Day, so that pricing and cancellation boundaries are deterministic.
+61. As an owner, I want to choose turnaround gaps without a platform minimum, so that I remain responsible for preparation time.
+62. As an owner, I want a Full-Day Bundle to contain all shifts on one Service Day, so that customers can reserve the operating day.
+63. As an owner, I want the Full-Day Bundle to have its own price, so that it need not equal the sum of component shifts.
+64. As the platform, I want a Full-Day Bundle and its component shifts to conflict in both directions, so that overlapping inventory cannot be sold.
+65. As an owner, I want every shift closed when a cottage is first published, so that inventory never opens accidentally.
+66. As an owner, I want to open one or more future shifts explicitly, so that only intended inventory is bookable.
+67. As an owner, I want to create a Private Block on future open shifts, so that personal use or off-platform bookings cannot conflict.
+68. As an owner, I want a Private Block to store no off-platform customer identity, so that unnecessary personal data is avoided.
+69. As an owner, I want to set a standard Shift Price for each shift and Full-Day Bundle, so that every open option has a default price.
+70. As an owner, I want a day-of-week price to replace the standard price, so that recurring weekend pricing is supported.
+71. As an owner, I want a specific-date price to replace the day-of-week and standard prices, so that holiday pricing is deterministic.
+72. As the platform, I want price precedence to be specific date, then day of week, then standard, so that one amount always wins.
+73. As an owner, I want price and future availability changes to take effect without content approval, so that routine operations are responsive.
+74. As an owner, I want Shift Schedule changes to apply only to future unheld inventory, so that active requests and bookings keep their original times.
+75. As an owner, I want to be prevented from closing, blocking or repricing a Pending Hold or Confirmed Booking, so that committed records stay stable.
+76. As a customer, I want public availability to show only available or unavailable, so that customer identities and private reasons remain hidden.
+77. As an owner, I want my calendar to distinguish open shifts, Private Blocks, Pending Holds and Confirmed Bookings, so that each unavailable state is understandable.
+78. As the platform, I want one transactional operation to create or reject a hold across the complete Booking Period, so that partial holds cannot occur.
+79. As the platform, I want database-level overlap protection under competing requests, so that simultaneous customers cannot double-book the cottage.
 
-### Cottage Owner operations
+### Discovery, selection and quote
 
-61. As a Cottage Owner, I want to join by invitation and phone verification, so that the marketplace remains controlled.
-62. As a Cottage Owner, I want to accept versioned owner terms before publishing, so that participation conditions are explicit.
-63. As a Cottage Owner, I want to manage several cottages from one Owner Account, so that multi-property operations are supported.
-64. As a Cottage Owner, I want to submit evidence of identity, authority to rent and applicable local compliance outside the product, so that sensitive documents are not stored in the MVP.
-65. As a Cottage Owner, I want my approval status and review date recorded, so that onboarding has a durable outcome.
-66. As a Cottage Owner, I want to create a complete Cottage Profile in any Launch Language, so that I can start with the language I use.
-67. As a Cottage Owner, I want RentCottage to require approved Arabic, Sorani and English content before publication, so that every customer receives a complete listing.
-68. As a Cottage Owner, I want previously approved content to remain live while translations and edits are reviewed, so that my cottage does not disappear during moderation.
-69. As a Cottage Owner, I want all language versions of a Content Change published together, so that customers never see mixed or unreviewed versions.
-70. As a Cottage Owner, I want to define one recurring schedule of two or three non-overlapping Cottage Shifts, so that the calendar reflects how my cottage operates.
-71. As a Cottage Owner, I want to choose turnaround gaps without a marketplace-wide minimum, so that I remain responsible for preparation time.
-72. As a Cottage Owner, I want Shift Schedule changes to apply prospectively without altering pending or confirmed records, so that booking evidence remains stable.
-73. As a Cottage Owner, I want every shift closed by default on initial publication, so that inventory never becomes bookable accidentally.
-74. As a Cottage Owner, I want to open individual shifts deliberately and create Private Blocks, so that online and off-platform commitments cannot conflict.
-75. As a Cottage Owner, I want to set standard, recurring day-of-week and specific-date prices for Cottage Shifts and Full-Day Bundles, so that pricing matches demand.
-76. As a Cottage Owner, I want price and availability updates to take effect without content-review delay, so that routine operations remain responsive.
-77. As a Cottage Owner, I want a new-request notification and four-hour Response Deadline, so that I can respond promptly.
-78. As a Cottage Owner, I want to see the customer's name, party size, Booking Period, Booking Note and preserved Booking Snapshot while deciding, so that I can evaluate the request.
-79. As a Cottage Owner, I want the customer's phone number hidden while the request is pending, so that contact begins only after confirmation.
-80. As a Cottage Owner, I want to accept or decline the complete immutable request, so that I never approve only part of a Booking Period.
-81. As a Cottage Owner, I want to provide a structured Decline Reason and optional note, so that the outcome is useful to the customer.
-82. As a Cottage Owner, I want Payment Capture to follow acceptance, so that confirmation is backed by full payment.
-83. As a Cottage Owner, I want to be told when Payment Capture fails or payment recovery expires, so that I do not mistake an unpaid request for a booking.
-84. As a Cottage Owner, I want my Owner Calendar to distinguish open shifts, Private Blocks, Pending Holds and Confirmed Bookings, so that availability is understandable.
-85. As a Cottage Owner, I want a reminder 24 hours before the first shift, so that I can prepare the cottage.
-86. As a Cottage Owner, I want my Owner Payout to become eligible after the Booking Period completes, so that settlement follows delivery.
-87. As a Cottage Owner, I want a non-refundable late cancellation or No-Show to produce my normal net payout after the scheduled end, so that reserved inventory is compensated.
-88. As a Cottage Owner, I want the applicable Marketplace Commission preserved per booking, so that later rate changes do not rewrite earnings.
-89. As a Cottage Owner, I want the customer-facing Booking Price to include RentCottage commission, so that no separate platform surcharge discourages checkout.
-90. As a Cottage Owner, I want to provide a reason when I cancel a Confirmed Booking, so that the customer and platform receive an accountable record.
-91. As a Cottage Owner, I understand that my cancellation gives the customer a Full Refund and no Owner Payout, so that the consequence is explicit.
-92. As a Cottage Owner, I want repeated or unjustified cancellations reviewed, so that unreliable inventory does not damage marketplace trust.
-93. As a Cottage Owner, I want to pause a cottage only after resolving Pending Holds, so that waiting customers receive an outcome.
-94. As a Cottage Owner, I want existing booking records preserved when a cottage is paused or deactivated, so that history remains reliable.
+80. As a customer, I want to search across all approved Iraqi inventory, so that I am not limited to Baghdad.
+81. As a customer, I want locations organised by governorate and local area, so that inconsistent street addresses do not block discovery.
+82. As a customer, I want to filter by Service Day and Cottage Shift, so that results match the intended visit.
+83. As a customer, I want to filter by party size, so that results meet capacity.
+84. As a customer, I want to filter by key amenities, so that I can narrow suitable cottages.
+85. As a customer, I want results to include only cottages whose complete selected period is available, so that a request will not fail after browsing.
+86. As a customer, I want a Cottage Profile to show photos, capacity, rooms, amenities, House Rules and Approximate Location, so that I can judge suitability.
+87. As a customer, I want to see every offered shift with its start and end time, so that the booking unit is clear.
+88. As a customer, I want to select one or more shifts on one Service Day, so that I can reserve the time I need.
+89. As a customer, I want to select shifts across consecutive Service Days in one request, so that a multi-day visit remains one booking.
+90. As a customer, I want to select consecutive Full-Day Bundles with continuous access between days, so that overnight departure is not implied.
+91. As a customer, I want unavailable component shifts to make the Full-Day Bundle unavailable, so that an overlapping option is never offered.
+92. As a customer, I want the applicable price shown for every selected shift or bundle, so that overrides are transparent.
+93. As a customer, I want Booking Price to equal the sum of selected applicable prices, so that the calculation can be explained.
+94. As a customer, I want the IQD 5,000 Booking Service Fee shown separately, so that it is not mistaken for cottage price or payment processing.
+95. As a customer, I want Customer Total to equal Booking Price plus Booking Service Fee, so that the authorised amount is exact.
+96. As the platform, I want Booking Price, service fee, Customer Total, commission, schedule, content, rules and terms preserved in the Booking Snapshot, so that later edits do not rewrite the agreement.
 
-### Platform administration and support
+### Request, authorisation, owner decision and capture
 
-95. As a Platform Administrator, I want separate email-and-multi-factor access, so that privileged accounts are distinct from customer and owner identities.
-96. As a Platform Administrator, I want to approve invited Cottage Owners and record the review result, so that marketplace participation remains controlled.
-97. As a Platform Administrator, I want to approve new Cottage Profiles and complete multilingual Content Changes, so that customer-visible information is reviewed.
-98. As a Platform Administrator, I want to compare currently published content with proposed changes, so that review decisions are informed.
-99. As a Platform Administrator, I want to see relevant booking lifecycle and payment states, so that I can support customers and owners.
-100. As a Platform Administrator, I want to record a Booking Incident without publishing it as a Customer Review, so that sensitive operational evidence remains restricted.
-101. As a Platform Administrator, I want to cancel a booking only for a required safety, fraud, legal or serious operational reason, so that intervention is accountable.
-102. As a Platform Administrator, I want approvals, changes, cancellations, pauses, deactivations and incidents attributed and timestamped, so that privileged actions are auditable.
-103. As a Platform Administrator, I want to pause or deactivate unsafe, fraudulent or non-compliant owners and cottages, so that they cannot receive new requests.
-104. As a Platform Administrator, I want booking and audit history preserved after deactivation, so that evidence is not erased.
-105. As a RentCottage support operator, I want one visible support contact and structured Booking Incident records, so that reports are traceable.
-106. As a RentCottage support operator, I want to distinguish support complaints from formal Payment Disputes, so that each follows the correct process.
-107. As a RentCottage support operator, I want preserved Booking Snapshots, terms, payment events and cancellation records available for provider disputes, so that chargeback evidence is complete.
-108. As a RentCottage stakeholder, I want public launch blocked until at least ten approved cottages are ready, so that discovery has useful inventory.
-109. As a RentCottage stakeholder, I want public launch blocked until a suitable Licensed Payment Provider is contracted and validated, so that the agreed funds flow is viable.
-110. As a RentCottage stakeholder, I want online-payment willingness tested through field research, so that the launch assumption can be revisited if evidence contradicts it.
+97. As a customer, I want to enter my name, party size and optional Booking Note, so that the owner has useful request context.
+98. As the platform, I want party size validated against preserved cottage capacity, so that an oversized request cannot be submitted.
+99. As a customer, I want to accept the preserved House Rules and booking terms, so that consent is explicit and versioned.
+100. As a customer inside the 48-hour boundary, I want a prominent no-refund warning before authorisation, so that immediate non-refundability is clear.
+101. As the platform, I want new requests rejected inside six hours of the first shift, so that the owner response and payment flow remain viable.
+102. As a customer, I want the full Customer Total authorised and reserved before the request is created, so that acceptance can collect payment without waking me.
+103. As a customer, I want a failed authorisation to create neither Booking Request nor Pending Hold, so that availability remains open.
+104. As the platform, I want authorisation, Booking Request and Pending Hold creation coordinated idempotently, so that retries cannot duplicate a request or hold.
+105. As a customer, I want one Pending Hold across every selected shift after successful submission, so that another customer cannot claim part of it.
+106. As the platform, I want an active request blocked when it overlaps another active request or booking from the same customer, so that the customer cannot risk two charges for the same time.
+107. As an owner, I want an immediate request notification with a four-hour deadline, so that action is prompt.
+108. As an owner, I want to see name, party size, Booking Note, Booking Period, preserved price and House Rules, so that I can decide from stable information.
+109. As an owner, I want the customer's phone, email and exact direct contact hidden while pending, so that the parties cannot bypass payment.
+110. As an owner, I want the 10% commission amount and expected payout shown before acceptance, so that the financial outcome is clear.
+111. As an owner, I want to accept or decline the complete immutable request, so that partial acceptance cannot alter the agreement.
+112. As an owner, I want a structured Decline Reason and optional note required on decline, so that the customer receives an explanation.
+113. As the platform, I want a decline to release the authorisation and Pending Hold, so that no charge or refund is created.
+114. As the platform, I want an unanswered request to expire at the Response Deadline, so that the hold and authorisation are released automatically.
+115. As a customer, I want to withdraw a pending request before owner decision, so that the hold and authorisation are released immediately.
+116. As the platform, I want owner acceptance to trigger automatic capture of the authorised Customer Total, so that the customer does not need to be awake.
+117. As the platform, I want a successful capture to create one Confirmed Booking and retain the hold as confirmed inventory, so that payment and availability cannot diverge.
+118. As a customer, I want confirmation only after capture succeeds, so that acceptance alone is never presented as a booking.
+119. As a customer, I want a failed capture to start a 20-minute Payment Required period with clear notification, so that a recoverable failure can be fixed.
+120. As a customer, I want a replacement payment attempt during Payment Required, so that the booking can confirm if collection succeeds.
+121. As the platform, I want the original shifts held during Payment Required, so that recovery cannot lose part of the booking.
+122. As the platform, I want Payment Required to expire after 20 minutes and release the hold, so that unpaid inventory returns to sale.
+123. As an owner, I want to see capture success, Payment Required and expiry distinctly, so that I never mistake an unpaid acceptance for a booking.
+124. As the platform, I want signed payment events verified and replayed idempotently, so that duplicates and forged callbacks cannot change booking state.
+125. As the platform, I want payment-provider downtime to stop new requests without enabling cash or unpaid fallback, so that the payment record remains complete.
+
+### Confirmation, contact and messaging
+
+126. As a customer, I want a unique booking reference after successful capture, so that support can identify the booking.
+127. As a customer, I want confirmation to include the preserved shifts, price breakdown and House Rules, so that the paid agreement is visible.
+128. As a customer, I want exact directions, map pin and owner contact details released after payment, so that I can prepare and coordinate.
+129. As an owner, I want the confirmed customer's contact details after payment, so that direct coordination is allowed only for a real booking.
+130. As a customer, I want status notifications for accepted and paid, declined, expired, withdrawn and payment failure outcomes, so that I do not need to poll.
+131. As a customer, I want one text conversation linked to a Cottage or Booking Request, so that practical questions stay contextual.
+132. As an owner, I want to reply only within conversations for cottages I manage, so that another owner's messages are inaccessible.
+133. As a participant, I want phone numbers blocked before payment, so that direct contact cannot bypass RentCottage.
+134. As a participant, I want email addresses, web links and social handles blocked before payment, so that alternative contact routes are also protected.
+135. As a participant, I want a clear explanation when a message is blocked, so that I can rewrite it without contact information.
+136. As a confirmed participant, I want contact information and links allowed after payment, so that coordination can move to the most practical channel.
+137. As a participant, I want messages automatically translated into my selected language with the original available, so that meaning can be checked.
+138. As support, I want authorised access to a booking conversation when handling a report, so that evidence can be reviewed.
+139. As the platform, I want a booking conversation to become read-only seven days after the Booking Period, so that the operational window has a clear end.
+
+### Reminders, cancellation, refund and completion
+
+140. As a customer, I want a reminder 24 hours before the first shift with reference and Access Details, so that I can arrive prepared.
+141. As an owner, I want a reminder 24 hours before the first shift, so that I can prepare the cottage.
+142. As a customer, I want pending, confirmed, declined, expired, withdrawn, cancelled and completed records in Booking History, so that every outcome is traceable.
+143. As an owner, I want upcoming, current and past bookings per cottage, so that operations are organised.
+144. As a customer, I want cancellation at least 48 hours before the first shift to trigger an automatic Full Refund, so that the shared policy needs no manual intervention.
+145. As a customer, I want Full Refund to include Booking Price and Booking Service Fee, so that the word full is accurate.
+146. As a customer, I want cancellation inside 48 hours to show no refund before confirmation, so that the late consequence is explicit.
+147. As the platform, I want a No-Show recorded as non-refundable, so that the payout outcome is deterministic.
+148. As an owner, I want cancellation of a Confirmed Booking to require a reason, so that the failure is accountable.
+149. As the platform, I want Owner Cancellation to trigger an automatic Full Refund and no Owner Payout, so that the customer does not bear owner failure.
+150. As an administrator, I want cancellation limited to recorded safety, fraud, legal or serious operational reasons, so that intervention is accountable.
+151. As the platform, I want Administrator Cancellation to trigger an automatic Full Refund and no Owner Payout, so that platform intervention does not cost the customer.
+152. As an administrator, I want to approve and record a manual refund exception, so that exceptional customer service remains possible without changing the standard policy.
+153. As the platform, I want a refund request and provider result tracked separately, so that pending, succeeded and failed refunds are not confused.
+154. As the platform, I want repeated refund events handled idempotently, so that a customer cannot be refunded twice.
+155. As the platform, I want a Confirmed Booking to complete automatically at the end of its Booking Period unless an incident blocks completion, so that payout and review eligibility have a clear trigger.
+
+### Reviews, owner earnings and settlement
+
+156. As a customer, I want one review opportunity only after a Completed Booking, so that reviews come from genuine stays.
+157. As a customer, I want to submit one-to-five stars and written text within 14 days, so that feedback is structured and timely.
+158. As the platform, I want a second customer review for the same booking rejected, so that one booking has one customer verdict.
+159. As an owner, I want to post one public reply to a review, so that I can respond once without creating a thread.
+160. As a reader, I want reviews and replies translated with the original available, so that multilingual feedback remains trustworthy.
+161. As an administrator, I want to hide a review or reply with a moderation reason, so that harmful content is removed from public view without erasing evidence.
+162. As an owner, I want Booking Price, 10% commission, refund outcome and expected payout shown per booking, so that earnings are explainable.
+163. As an owner, I want simple totals for expected and paid payouts, so that I can reconcile bookings without an analytics suite.
+164. As the platform, I want commission calculated from Booking Price rather than Customer Total, so that the Booking Service Fee is not included in the 10% basis.
+165. As the platform, I want commission rate, amount and owner net preserved in the Booking Snapshot, so that later commercial changes do not rewrite earnings.
+166. As an owner, I want payout eligibility only after the Booking Period completes, so that settlement follows delivery.
+167. As an owner, I want a non-refundable late cancellation or No-Show to produce the normal net payout after the scheduled end, so that held inventory is compensated.
+168. As the platform, I want a Full Refund, dispute or administrator hold to block or reverse payout eligibility, so that owner settlement follows the final outcome.
+169. As support, I want payment disputes to use the preserved Booking Snapshot, payment events, cancellation records, messages and incidents, so that provider evidence is complete.
+
+### Administration, moderation and basic reporting
+
+170. As an administrator, I want one dashboard of owner applications, content approvals, active requests, bookings, refunds and incidents, so that urgent work is visible.
+171. As an administrator, I want simple totals for booking count, gross Booking Price, service fees, commission, refunds and owner payout, so that marketplace money can be monitored.
+172. As an administrator, I want date and status filters on operational and financial lists, so that a relevant period can be investigated.
+173. As an administrator, I want booking-level price, payment, refund and payout detail, so that a total can be explained.
+174. As an administrator, I want a simple export of filtered booking and money records, so that accountants and advisers can work outside the product.
+175. As an administrator, I want to record a restricted Booking Incident, so that safety, fraud, property, payment and service evidence stays separate from public reviews.
+176. As an administrator, I want to distinguish a support complaint from a formal Payment Dispute, so that each follows the correct path.
+177. As an administrator, I want to pause or deactivate an unsafe, fraudulent or non-compliant owner or cottage, so that new requests stop.
+178. As the platform, I want pending requests resolved before an owner voluntarily pauses a cottage, so that waiting customers receive an outcome.
+179. As the platform, I want confirmed bookings, payment evidence, messages, reviews and audit history preserved after pause or deactivation, so that operational evidence is not erased.
+180. As an auditor, I want owner approvals, content decisions, cancellations, refunds, moderation, pauses and incidents attributed and timestamped, so that privileged actions are accountable.
+181. As a support operator, I want one visible customer support route, so that customers and owners know where to report a problem.
+182. As the platform, I want administrator views to exclude source verification files unless the account has verification access, so that basic support access is not over-privileged.
+
+### Launch gates and research validation
+
+183. As a stakeholder, I want public launch blocked until ten real cottages are approved, so that discovery has useful inventory.
+184. As a stakeholder, I want online-payment willingness and the IQD 5,000 service fee tested with prospective Iraqi customers, so that the launch assumption has evidence.
+185. As a stakeholder, I want a licensed provider to prove authorisation, reservation, later capture, release, refunds, disputes and lawful owner settlement, so that the payment promise is viable.
+186. As a stakeholder, I want the owner evidence checklist and retention schedule approved by qualified Iraqi and Kurdistan Region advice, so that sensitive storage has a lawful rule.
+187. As a stakeholder, I want Arabic and Sorani Automatic Translation quality tested with native-language reviewers, so that generated content is usable and safe.
+188. As a stakeholder, I want cancellation, refund, customer, owner and support terms approved before launch, so that the product behaviour and written agreement match.
 
 ## Delivery capability map
 
-This map is a sequencing aid, not a set of final tickets. `$to-tickets` should normally establish one thin end-to-end path, then expand it with adjacent behaviours and failure paths.
+This is a sequencing aid, not a set of final tickets. Use a thin end-to-end path first, then expand it with adjacent behaviour and failure paths.
 
-1. **Marketplace foundation:** responsive web surfaces, Arabic/Sorani RTL, English LTR, locale switching, Iraq local time and Iraqi-dinar presentation.
-2. **Controlled supply:** invited owner access, external verification record, Cottage Profile submission, multilingual content approval and publication.
-3. **Inventory and prices:** Shift Schedule, safe default closure, opening availability, Private Blocks, price precedence and Full-Day Bundle conflicts.
-4. **Customer discovery:** anonymous browsing, structured location, filters, complete-period availability, Cottage Profile and privacy-safe availability.
-5. **Quoted selection:** Cottage Shift and Full-Day Bundle selection across consecutive Service Days, deterministic Booking Price and Booking Snapshot inputs.
-6. **Request submission:** phone verification, party capacity, House Rules and terms acceptance, Payment Authorization, Booking Request and atomic Pending Hold.
-7. **Owner decision:** immediate notification, four-hour deadline, privacy-safe request detail, complete accept/decline decision and Decline Reason.
-8. **Payment completion:** Payment Capture after acceptance, Payment Required recovery, confirmation only after payment and authorization release on non-confirming outcomes.
-9. **Confirmed access:** Booking Confirmation, unique reference, Access Details, mutual contact release and reminders.
-10. **Lifecycle management:** withdrawal, expiry, customer cancellation, Owner Cancellation, Administrator Cancellation, No-Show, completion and Booking History.
-11. **Settlement and disputes:** commission snapshot, Owner Payout eligibility, Full Refund, provider fee handling, Payment Dispute evidence and support boundaries.
-12. **Marketplace control:** administrator audit, Booking Incidents, pause/deactivation, preserved history and launch gates.
+1. **Production foundation:** application shell, Cloudflare deployment, Supabase connection, environment boundaries and GitHub Actions.
+2. **Identity and security:** customer, owner and administrator authentication, role resolution, row-level security and audit base.
+3. **Owner application:** self-service application, private documents, review queue, three-day target and approval permissions.
+4. **Cottage publication:** profile, media, multilingual source and generated content, approval and version history.
+5. **Inventory and pricing:** Shift Schedule, safe closure, opening, Private Blocks, Full-Day Bundle conflicts and price precedence.
+6. **Customer discovery:** Iraq locations, filters, complete-period availability, profile, language direction and privacy-safe location.
+7. **Quote and request:** selection, Customer Total, Booking Snapshot, phone verification, terms, authorisation and atomic Pending Hold.
+8. **Owner decision and payment:** notification, deadline, commission view, accept or decline, capture and 20-minute recovery.
+9. **Confirmation and communication:** reference, Access Details, contact release, protected messaging, translation and reminders.
+10. **Lifecycle:** withdrawal, expiry, cancellation, refund, No-Show, completion and Booking History.
+11. **Trust and settlement:** reviews, moderation, commission, Owner Earnings Summary, payout and disputes.
+12. **Marketplace operations:** basic dashboard, finance totals, export, incidents, pause, deactivation and launch gates.
 
 ## Verification expectations
 
-Tickets derived from this specification should verify observable behaviour at the narrowest reliable seam. At minimum, the resulting ticket set must cover:
+Every ticket must verify observable behaviour at the narrowest reliable seam. The complete ticket set must include:
 
-- complete Booking Period availability and conflict behaviour, including Full-Day Bundles and cross-midnight Cottage Shifts;
-- atomic creation and release of Payment Authorization, Booking Request and Pending Hold;
-- competing-customer and same-customer overlap prevention using production-equivalent persistence semantics;
-- every request outcome: accepted and captured, declined, expired, withdrawn, Payment Required recovered and Payment Required expired;
-- disclosure boundaries before request, while pending and after confirmation;
-- 48-hour cancellation boundaries, Full Refund calculations, No-Show and owner/administrator consequences;
-- price precedence and preservation of price, commission, schedule, content, House Rules and accepted terms;
-- Arabic and Sorani RTL behaviour, English LTR behaviour and locale switching without losing state;
-- role-specific calendar/history visibility and preservation after pause or deactivation;
-- administrator attribution, timestamps and restricted Booking Incident evidence;
-- launch gates for inventory, payment-provider capability and field research.
+- unit and service tests for price, fee, commission, deadline and state-transition rules;
+- database tests that prove row-level security denies cross-customer, cross-owner and unprivileged administrator access;
+- database tests for complete-period overlap, Full-Day Bundle conflict and same-customer conflict under concurrent transactions;
+- private-storage tests for unauthorised document access, expiring access and audit creation;
+- payment contract tests for signed events, replay, out-of-order delivery, duplicate capture, release and duplicate refund;
+- translation contract tests that preserve originals and exclude verification documents;
+- browser journeys in Arabic, Sorani and English at a mobile viewport;
+- browser journeys for application, publication, discovery, request, owner decision, payment recovery, cancellation, messaging and review;
+- Cloudflare `workerd` preview tests for all server features that depend on runtime behaviour;
+- deployment checks for migrations, environment secrets, health, rollback and production smoke tests;
+- launch-gate evidence for inventory, provider capability, customer research, legal document handling and native-language translation review.
 
-Provider-specific adapters should be tested separately once selected. Do not invent a payment workaround when the Licensed Payment Provider cannot support the agreed lifecycle; reopen the product decision instead.
+Provider-specific adapters must be validated separately once selected. Do not invent an unsupported payment workaround. If the provider cannot meet the agreed lifecycle, reopen the product decision.
 
-## Current board warning
+## Ticket-slicing contract
 
-GitHub issue `#1` and the implementation tickets derived from it predate the approved Shift Schedule, multilingual launch and online-payment lifecycle. They remain historical planning records until deliberately replaced. Do not begin implementation from those tickets unchanged.
+- Start with a deployable thin path that proves Cloudflare, Supabase, authentication, one published cottage and one safe read.
+- Keep ordinary tickets vertical: include the smallest data, service and user-interface change needed to deliver one observable outcome.
+- Create separate foundation tickets only for shared production concerns that cannot be proven responsibly inside one product slice.
+- Put row-level security and overlap protection in the first slice that stores the protected data, not in a later hardening backlog.
+- Keep supplier names out of ordinary product stories. Isolate provider-specific discovery and adapters behind the shared payment or translation contract.
+- Slice happy path, important failure path and operational visibility separately when each can be tested and deployed independently.
+- Preserve the client outcome even when one concise client capability becomes several low-level delivery tickets.
 
-Running `$to-tickets` from this document is a separate action. It should happen only after the client PRD is signed off or after the delivery team explicitly accepts the risk of planning against a proposed PRD.
+## Current tracker warning
+
+GitHub issue `#1` and implementation issues `#2` to `#17` were written before the approved schedule, onboarding, payment, messaging, review and multilingual rules. They are historical planning records and must not be used for implementation unchanged.
+
+Run `$to-tickets` from this delivery specification together with the signed client Product Agreement and `CONTEXT.md`. Draft and review the complete ticket graph before publishing replacements.

@@ -1,295 +1,206 @@
-# RentCottage Marketplace MVP — Product Agreement
+# RentCottage MVP Product Agreement
 
 **Status:** Proposed for client sign-off
-**Prepared:** 12 July 2026
-**Decision owner:** Yasir
-**Product:** RentCottage
+**Updated:** 2 August 2026
+**Client approver:** Yasir Kurkdji
+**Delivery lead:** Zain El-Abidin Abo Gulel
 
-This document defines the MVP that RentCottage proposes to build. Approval confirms the product scope and business rules below. Payment-provider selection, legal and accounting advice, final visual design, delivery proposal and budget remain separate decisions.
+## 1. What we are agreeing to build
 
-## Product at a Glance
+RentCottage will be a mobile-friendly marketplace where customers can discover and request whole private cottages and chalets across Iraq.
 
-**The product:** A controlled marketplace for booking whole private cottages and chalets. Cottage Owners join by invitation and RentCottage approves every owner and cottage before publication.
+Cottage owners can apply directly. RentCottage checks and approves each owner and cottage before it becomes public.
 
-**The market:** Approved cottages may be located anywhere in Iraq. Public launch requires at least ten approved cottages, preferably concentrated in two or more genuine demand areas.
+The first release is a web application in Arabic, Sorani Kurdish and English. It supports the Iraqi norm of booking a day as two or three fixed shifts, several shifts together, or a full-day option.
 
-**The experience:** Three mobile-friendly web areas: a Customer Website, an Owner Area and an Admin Area. Native mobile applications are not part of the MVP.
+## 2. The service at a glance
 
-**The booking model:** Customers request one or more fixed cottage shifts, a full day, or consecutive days. The Cottage Owner accepts or declines the complete request.
+| Area | Agreed MVP |
+|---|---|
+| Coverage | Approved cottages anywhere in Iraq |
+| Languages | Arabic, Sorani Kurdish and English |
+| Customer access | Browse without an account; verify a phone number when requesting |
+| Owner access | Apply directly, upload evidence and wait for approval |
+| Booking | Request to book; the owner accepts or declines |
+| Payment | Customer authorises the full total before requesting; payment is collected automatically after owner acceptance |
+| Cottage schedule | Two or three fixed shifts per day, multiple shifts, or a separately priced full day |
+| Customer fee | Proposed fixed IQD 5,000 booking service fee, shown separately and validated before launch |
+| Owner commission | 10% of the cottage booking price |
+| Cancellation policy | One policy for all cottages |
+| Communication | In-platform text messaging, with contact protection before payment |
+| Trust | Owner checks, reviews from completed bookings, and platform moderation |
 
-**The payment model:** The customer authorises the full price online when requesting. RentCottage collects it only after owner acceptance. A suitable payment provider licensed by the Central Bank of Iraq is required before launch.
-
-**The languages:** Arabic, Sorani Kurdish and English throughout the product, communications and approved cottage content.
-
-## Core Journeys
+## 3. Main journeys
 
 ### Customer journey
 
-Search Iraq-wide inventory → choose shifts or full days → review the total price and rules → verify a phone number → authorise payment and send a request → receive the owner's decision → receive confirmation and access details after successful payment.
+Browse cottages → choose date and shift(s) → see the full price → verify phone → accept rules → authorise payment → send request → receive the owner's decision → payment is collected automatically if accepted → receive confirmation and contact details → attend → review the completed booking.
 
-### Cottage Owner journey
+If automatic payment collection fails after owner acceptance, the customer has 20 minutes to provide a valid payment method. The booking is confirmed only when payment succeeds.
 
-Join by invitation → complete manual verification → create cottages and multilingual content → define shifts, prices and availability → receive requests → accept or decline → prepare for confirmed bookings → receive payout after the booking period ends.
+### Cottage owner journey
 
-### RentCottage journey
+Create an account → apply and upload evidence → answer any questions → receive approval → create cottage page → add shifts, prices and availability → submit content for approval → receive requests → accept or decline → prepare for paid bookings → receive the net payout after the booking period.
 
-Approve owners and cottages → review multilingual content → oversee bookings and payments → record incidents → cancel, pause or deactivate activity when required → preserve an accountable history.
+A complete owner application has a three-day review target. The target pauses while RentCottage waits for missing information.
 
-## Agreed Product Capabilities
+### RentCottage team journey
 
-### 1. Find and compare cottages
+Review owners and documents → approve cottages and content → monitor requests, payments and refunds → moderate messages and reviews → handle incidents and exceptions → view basic marketplace and finance totals.
 
-**As a** customer
-**I want** to find suitable cottages available for my complete visit
-**So that** I do not waste time on unavailable options.
+## 4. Agreed customer and owner capabilities
 
-**RentCottage will provide**
+Each capability combines the user need with the acceptance checks for this agreement. The build may be delivered in smaller stages without changing the agreed outcome.
 
-- Browsing without an account on mobile and desktop.
-- Search across Iraq by governorate or local area, date, shift, party size and key amenities.
-- Approved cottage profiles with photos, capacity, rooms, amenities and House Rules.
-- Approximate location and simple availability without exposing exact addresses, customer identities or private block reasons.
+### A. Discover and understand a cottage
 
-**Accepted when**
+| User story | Agreed acceptance |
+|---|---|
+| **As a customer**<br>**I want** to browse approved cottages in my language<br>**So that** I can find a suitable place anywhere in Iraq | Customers can browse without an account. Search supports area, date, shifts, guest count and key amenities. Cottage pages show photos, capacity, amenities, house rules, approximate location, available shifts and prices. Arabic and Sorani display right to left; English displays left to right. Changing language does not lose the current page or selections. |
 
-- Search returns only published cottages available for the complete selected period.
-- Every result can accommodate the selected party and filters.
-- Customers can inspect enough information to judge suitability.
-- Exact cottage locations and private operational information remain hidden.
+### B. Apply as a cottage owner
 
-### 2. Select booking time and understand the price
+| User story | Agreed acceptance |
+|---|---|
+| **As a cottage owner**<br>**I want** to apply directly and create my cottage page<br>**So that** I can join without waiting for an invitation | An owner can create an account, enter details, upload identity, authority-to-rent and applicable licence evidence, and submit the application. RentCottage can request missing information, approve or reject it, and record who decided and why. Documents are private and limited to authorised staff. An owner cannot publish or receive requests before approval. |
 
-**As a** customer
-**I want** to select the time I need and see one clear total price
-**So that** I understand exactly what I am requesting.
+### C. Publish trusted cottage information
 
-**RentCottage will provide**
+| User story | Agreed acceptance |
+|---|---|
+| **As a cottage owner**<br>**I want** to publish accurate cottage information in all launch languages<br>**So that** customers can book with confidence | The cottage requires photos, capacity, rooms, amenities, approximate location and house rules. The owner may enter text in Arabic, Sorani or English. The system creates draft translations, preserves the original and lets RentCottage approve all language versions before publication. Later content changes are reviewed while the last approved version remains public. |
 
-- Two or three fixed, owner-defined shifts for each cottage.
-- Selection of individual shifts, a separately priced Full-Day Bundle or a Booking Period across consecutive days.
-- Continuous access across all shifts in a Full-Day Bundle and across consecutive Full-Day Bundles.
-- Standard, day-of-week and specific-date prices in Iraqi dinar.
-- One final Booking Price with no additional RentCottage fee at checkout.
+### D. Set shifts, prices and availability
 
-**Accepted when**
+| User story | Agreed acceptance |
+|---|---|
+| **As a cottage owner**<br>**I want** to control my shifts, prices and future availability<br>**So that** RentCottage reflects how my cottage operates | Each cottage has two or three fixed daily shifts. A shift may cross midnight and belongs to the date it starts. The owner can price each shift and a full-day option differently, with weekday and specific-date prices. New cottages start closed. The owner opens future shifts or blocks them for private use. Changes never rewrite submitted requests or confirmed bookings. |
 
-- Shift start and end times are clear, including shifts that end after midnight.
-- Conflicting shifts and Full-Day Bundles cannot both be booked.
-- The correct price override is applied and the total is understandable before requesting.
-- The quoted schedule, price, commission rate, content, House Rules and terms are preserved for that request.
+### E. Request a booking and secure payment
 
-### 3. Request a booking and authorise payment
+| User story | Agreed acceptance |
+|---|---|
+| **As a customer**<br>**I want** to request available shifts and know payment is secure<br>**So that** the cottage is confirmed only when the owner accepts and payment succeeds | The customer can select one or more shifts across consecutive days or choose a full-day option. The price shows the cottage booking price, fixed RentCottage service fee and customer total. The customer enters party size, accepts the rules and authorises the full total before sending the request. The request holds every selected shift and gives the owner four hours to accept or decline. Payment is collected automatically after acceptance. Declined, withdrawn or expired requests release the authorisation. No cash or unpaid fallback is included. |
 
-**As a** customer
-**I want** to send one secure request for my complete Booking Period
-**So that** the owner can decide without another customer taking the same time.
+### F. Confirm and coordinate a paid booking
 
-**RentCottage will provide**
+| User story | Agreed acceptance |
+|---|---|
+| **As a customer or cottage owner**<br>**I want** a clear paid confirmation and a safe way to coordinate<br>**So that** both sides know the booking is real and can prepare | Confirmation appears only after successful payment and includes a unique reference. The exact address, directions and mutual contact details are released after payment. Both sides receive status notifications and a reminder 24 hours before the first shift. Booking history shows pending, confirmed and past outcomes. |
 
-- Phone verification when the customer makes their first request.
-- Guest-count validation, an optional Booking Note and explicit acceptance of House Rules and terms.
-- Full-price online authorisation before the request is created.
-- One exclusive Pending Hold covering every selected shift.
-- Withdrawal of a pending request with immediate release of the hold and payment authorisation.
+### G. Message without bypassing RentCottage
 
-**Accepted when**
+| User story | Agreed acceptance |
+|---|---|
+| **As a customer or cottage owner**<br>**I want** to message inside RentCottage<br>**So that** I can ask practical questions safely | Text conversations are linked to the cottage or booking. Before payment, the system blocks phone numbers, email addresses, web links and social handles. After payment, contact details may be shared. Messages can be translated, while the original remains viewable. A booking conversation becomes read-only seven days after the booking ends. Audio and video calls are not included. |
 
-- A failed payment attempt creates neither a request nor a hold and can be retried.
-- A successful request blocks every selected shift as one unit.
-- Customers cannot hold overlapping active requests or bookings at different cottages.
-- A submitted request stays unchanged; changing it requires withdrawal and a new request.
+### H. Cancel and receive the correct outcome
 
-### 4. Decide, collect payment and confirm
+| User story | Agreed acceptance |
+|---|---|
+| **As a customer**<br>**I want** one clear cancellation policy<br>**So that** I understand the outcome before I pay | Cancelling at least 48 hours before the first booked shift automatically returns the full customer total, including the service fee. Cancelling inside 48 hours, or not attending, receives no refund. If the owner or RentCottage cancels, the customer automatically receives the full total. An administrator can approve a manual refund exception. The policy is shown before payment and uses Iraq time. |
 
-**As a** customer
-**I want** a clear and timely decision backed by successful payment
-**So that** I can rely on a confirmed booking.
+### I. Leave and manage genuine reviews
 
-**RentCottage will provide**
+| User story | Agreed acceptance |
+|---|---|
+| **As a customer**<br>**I want** to review a cottage I used<br>**So that** future customers have useful evidence | A customer can leave one rating from one to five stars and a written review within 14 days of a completed paid booking. The owner may post one public reply. Reviews and replies can be translated with the original available. RentCottage can hide content that breaches the rules while retaining the internal record. |
 
-- Immediate owner notification and a four-hour accept-or-decline deadline.
-- A six-hour request cut-off before the first selected shift.
-- One complete owner decision with a reason when declined.
-- Full-payment collection after owner acceptance.
-- A 15-minute recovery period when payment collection fails.
+### J. See earnings and operate the marketplace
 
-**Accepted when**
+| User story | Agreed acceptance |
+|---|---|
+| **As a cottage owner or RentCottage administrator**<br>**I want** basic financial and operational information<br>**So that** I can understand bookings and take action | Owners see the booking price, 10% commission, refund outcome and expected or paid payout per booking, plus simple totals. Administrators see applications, approval queues, bookings, payment and refund states, incidents, reviews, and simple totals for bookings, gross value, commission, service fees and owner payouts. Data can be exported for operational follow-up. |
 
-- Declined, expired or withdrawn requests release both inventory and payment authorisation.
-- A booking is confirmed only after owner acceptance and successful full payment.
-- Failed payment recovery expires without confirmation and releases the held time.
-- Customers and owners receive an immediate outcome notification.
+## 5. Booking and payment rules
 
-### 5. Access and manage a confirmed booking
+| Rule | Agreed behaviour |
+|---|---|
+| Booking method | Request to book, not instant booking |
+| Owner response | Four hours; unanswered requests expire |
+| Last request time | Six hours before the first selected shift |
+| Payment before request | Authorise and reserve the full Customer Total |
+| Payment after acceptance | Collect automatically; confirmation waits for success |
+| Failed collection | Keep the shifts held for a 20-minute recovery period, then expire if unpaid |
+| Double-booking protection | A pending or confirmed booking blocks every overlapping component shift |
+| Customer overlap | A customer cannot hold overlapping active requests at different cottages |
+| Customer fee | Proposed IQD 5,000 fixed service fee, shown separately and included in a full refund |
+| Owner commission | 10% of the Booking Price, shown to the owner before acceptance |
+| Payout | Eligible after the booking period, subject to the licensed provider's agreed settlement process |
+| Payment provider | Must be licensed by the Central Bank of Iraq and prove the complete flow before launch |
 
-**As a** customer
-**I want** the details and history needed to complete my visit
-**So that** I can arrive, coordinate and understand my booking status.
+RentCottage will not run its own customer wallet or directly improvise custody of customer funds. Qi Card is the first provider to investigate, but this agreement does not select a provider.
 
-**RentCottage will provide**
-
-- A unique confirmation reference after successful payment.
-- Exact directions and mutual customer-owner contact details only after confirmation.
-- Customer and owner reminders 24 hours before the first shift.
-- Customer and owner Booking History covering current and past states.
-- Automatic completion at the end of the Booking Period unless an incident prevents it.
+## 6. Privacy, safety and moderation
 
-**Accepted when**
-
-- Access Details and contact information are absent while a request is pending.
-- Confirmation contains the agreed times, price, rules and reference.
-- Reminders contain the information needed to arrive and prepare.
-- Booking History preserves declined, expired, withdrawn, confirmed, cancelled and completed outcomes.
-
-### 6. Apply cancellations, refunds and support rules
-
-**As a** customer
-**I want** one predictable cancellation and refund policy
-**So that** I understand the financial consequence of a cancellation.
-
-**RentCottage will provide**
-
-- A Full Refund when the customer cancels at least 48 hours before the first shift.
-- No refund for later customer cancellation or No-Show.
-- A Full Refund for every Owner Cancellation or Administrator Cancellation.
-- A visible support contact and restricted incident records.
-- Preserved evidence for formal payment disputes.
-
-**Accepted when**
-
-- A Full Refund returns the customer's entire Booking Price without deducting provider fees.
-- A booking made inside the 48-hour boundary shows the non-refundable warning before payment authorisation.
-- Owner Cancellation records a reason, gives no Owner Payout and can trigger reliability review.
-- Accommodation-quality complaints are assessed without promising an automatic refund or marketplace arbitration.
-
-### 7. Join, publish and operate as a Cottage Owner
-
-**As a** Cottage Owner
-**I want** to manage accurate cottages, prices and availability
-**So that** I can receive suitable requests without double-booking.
-
-**RentCottage will provide**
-
-- Invitation-only, phone-verified Owner Accounts that can manage several cottages.
-- Manual owner verification outside the product, with only the approval result and review date stored.
-- Cottage Profile and multilingual content submission, review and publication.
-- Owner-defined Shift Schedules, prices, opened shifts and Private Blocks.
-- An Owner Calendar showing open, blocked, pending, confirmed and payment-required time.
-- Owner Payout eligibility after the Booking Period ends.
-
-**Accepted when**
-
-- A newly published cottage starts with every shift closed until the owner opens it.
-- Schedule changes affect only future availability and never rewrite existing requests or bookings.
-- Previously approved content stays live until all updated language versions are approved together.
-- Price and availability changes take effect without content-review delay.
-- The preserved commission and cancellation outcome determine settlement.
-
-### 8. Control and support the marketplace
-
-**As a** Platform Administrator
-**I want** to oversee participation, content and serious booking problems
-**So that** RentCottage remains controlled and accountable.
-
-**RentCottage will provide**
-
-- Separate administrator access using email and multi-factor authentication.
-- Approval of Cottage Owners, new cottages and multilingual Content Changes.
-- Booking, payment and restricted incident oversight.
-- Accountable booking cancellation, pausing and deactivation for safety, fraud, legal or serious operational reasons.
-- Attribution and timestamps for privileged actions.
-
-**Accepted when**
-
-- Proposed content can be compared with the currently published version.
-- All three approved language versions are published together.
-- Paused or deactivated inventory stops receiving new requests while its history remains available.
-- Administrator cancellations create an audit record and incident, give a Full Refund and provide no Owner Payout.
-
-## Agreed Business Rules
-
-| Topic | Agreed rule |
-| --- | --- |
-| Marketplace | Controlled multi-owner marketplace; public owner self-registration is excluded. |
-| Coverage | Approved inventory anywhere in Iraq; at least ten approved cottages before public launch. |
-| Cottage | One whole private leisure property for one customer group; not a hotel, room, shared property or dedicated event venue. |
-| Languages | Arabic, Sorani Kurdish and English at launch; Arabic and Sorani are right-to-left. |
-| Translation | Initially manual and LLM-assisted, with human approval before customer-visible publication. |
-| Marketplace time | Iraq local time (UTC+3); a cross-midnight shift belongs to the date on which it starts. |
-| Shift schedule | Two or three fixed, non-overlapping shifts; owner-controlled turnaround gaps; schedule changes apply only to future availability. |
-| Pricing | Iraqi dinar; specific-date price overrides day-of-week price, which overrides the standard price. |
-| Customer total | One Booking Price; no checkout platform fee, automatic multi-day discount or refundable damage deposit. |
-| Commission | Target 12% of the Booking Price, deducted from Owner Payout and subject to provider pricing. |
-| Request | Full-price authorisation and an exclusive Pending Hold are created together; the owner decides the complete request. |
-| Timing | Four-hour owner deadline; six-hour request cut-off; 15-minute payment-recovery period. |
-| Confirmation | Owner acceptance plus successful full-payment collection; exact location and mutual contacts are then released. |
-| Cancellation | Full Refund at least 48 hours before the first shift; no refund inside 48 hours or for No-Show. |
-| Owner or admin cancellation | Always a Full Refund, no Owner Payout and an accountable record. |
-| Settlement | Licensed provider manages funds; RentCottage does not operate a wallet or directly hold customer money. |
-| Owner documents | Identity, authority-to-rent and local compliance checked outside the product; sensitive documents are not stored in the MVP. |
-
-## Whole-Product Acceptance
-
-The MVP is ready for client acceptance when:
-
-- Customers, Cottage Owners and Platform Administrators can complete their agreed journeys on mobile and desktop.
-- Arabic, Sorani Kurdish and English work throughout the product, communications and approved cottage content.
-- Shifts, Full-Day Bundles, multi-day periods, prices and availability follow the agreed rules without double-booking.
-- Personal contact details, exact locations and restricted operational information appear only to the correct people at the correct booking stage.
-- The selected licensed payment provider has demonstrated authorisation, collection, release, refund, dispute and owner-settlement flows.
-- At least ten approved cottages are ready before public launch.
-
-## Not Included in the MVP
-
-**Product and inventory**
-
-- Native iOS or Android applications.
-- Public Cottage Owner self-registration.
-- Inventory outside Iraq, hotels, individual rooms, shared accommodation, unequipped farms or dedicated event venues.
-- Customer-selected arbitrary times, hourly booking or date-specific shift schedules.
-
-**Payments and pricing**
-
-- Cash, offline transfer, partial or deposit-only payment, or unpaid requests.
-- Checkout platform fees, refundable damage deposits or automatic promotional, loyalty, multi-shift or multi-day discounts.
-- A RentCottage wallet, direct custody of customer funds or unlicensed payment processing.
-
-**Communication and reputation**
-
-- Customer reviews, in-platform messaging, audio calling or video calling.
-- Public verified badges or exact addresses before confirmation.
-
-**Operations**
-
-- Direct editing or rescheduling of submitted requests or Confirmed Bookings.
-- Automatic refunds or RentCottage arbitration for general accommodation-quality complaints.
-- Complex administrator roles, finance reporting suites, owner analytics or revenue-management tools.
-- Storage of owner national identity, ownership or licensing documents.
-- Automatic publication of machine-translated content or launch languages beyond Arabic, Sorani Kurdish and English.
-
-## Dependencies and Assumptions
-
-- **Payment adoption:** Online full payment is the agreed MVP direction. Field research must test customer willingness in Iraq; strong contrary evidence may reopen the decision before launch.
-- **Payment provider:** The selected CBI-licensed provider must support the complete agreed funds flow. If no suitable provider can, the payment model must be reconsidered.
-- **Commission:** The 12% commission is a commercial target to confirm against provider processing, refund, dispute and settlement costs.
-- **Legal and accounting:** Qualified Iraqi and Kurdistan Region advice must confirm marketplace, tourism, business, tax, privacy, property, receipt and settlement responsibilities.
-- **Translation:** Native-language review remains required even when an LLM assists the manual translation workflow.
-- **Visual design:** Final production direction remains a separate client choice and must preserve the product rules in this agreement.
-
-## Client Sign-off
-
-By approving this document, the client confirms that:
-
-- [ ] The Product at a Glance and eight Agreed Product Capabilities describe the intended MVP.
-- [ ] Inventory may be approved anywhere in Iraq, with at least ten approved cottages required before public launch.
-- [ ] Cottages use two or three owner-defined shifts, optional Full-Day Bundles and consecutive-day Booking Periods.
-- [ ] Arabic, Sorani Kurdish and English are required at launch.
-- [ ] RentCottage uses request-to-book and online full-price authorisation followed by collection after owner acceptance.
-- [ ] The target Marketplace Commission is 12%, subject to payment-provider pricing.
-- [ ] The marketplace-wide 48-hour cancellation and Full Refund rules are agreed.
-- [ ] The Not Included, Dependencies and Assumptions sections correctly describe the MVP boundary and remaining launch gates.
-
-**Approved by:** ____________________________________
-**Role:** ___________________________________________
-**Date:** ___________________________________________
-**Signature or written approval reference:** ___________________________________________
+- Browsing shows only an approximate location. Exact directions and direct contact information appear after payment.
+- Owner identity, ownership and licence documents are private, access-controlled and never used for automatic translation.
+- RentCottage records important administrator actions and access to verification documents.
+- Owners can block future availability but cannot edit or reschedule a submitted request or confirmed booking.
+- RentCottage can pause an unsafe or non-compliant cottage without deleting booking history.
+- Support complaints, payment disputes and public reviews remain separate records.
+- A legal adviser must approve the owner-document checklist and retention periods before public launch.
+
+## 7. Whole-product acceptance
+
+The MVP is ready for public launch only when:
+
+- customers can complete the agreed journey on a mobile-sized screen in Arabic, Sorani and English;
+- at least ten real cottages are approved and ready, preferably across at least two demand areas;
+- booking conflicts and payment outcomes have been proven under competing requests and repeated provider events;
+- a licensed payment provider has demonstrated authorisation, later collection, release, full refunds, disputes and lawful owner settlement;
+- owner documents are protected and the legal checklist and retention schedule are approved;
+- notifications, messaging controls, automatic translation and review moderation work as described;
+- the fixed customer fee and online-payment willingness have been tested with prospective Iraqi customers;
+- the cancellation, refund, support and owner terms are approved for launch.
+
+## 8. Not included in this MVP
+
+| Not included | What this means |
+|---|---|
+| Native iPhone or Android apps | The launch product is a mobile-friendly website. Native apps may follow later. |
+| Instant booking | Every booking remains a request that the owner accepts or declines. |
+| Cash, bank-transfer or pay-on-arrival booking | The first release is online-payment only. |
+| Customer wallet or RentCottage-held balance | Money is handled through a licensed provider, not stored as RentCottage customer credit. |
+| Rescheduling or direct booking edits | A customer cancels and submits a new request. Owners can only change future availability. |
+| Partial acceptance | An owner accepts or declines the customer's complete request. |
+| Partial late-cancellation refunds | The standard policy is full refund at least 48 hours before the first shift, otherwise no refund. Administrators may make a manual exception. |
+| Damage deposits | No separate refundable damage deposit is collected in the MVP. |
+| Automatic discounts, loyalty or promotional pricing | Owners set shift, full-day, weekday and specific-date prices. Other discount systems may follow later. |
+| Audio or video calling | MVP communication is text messaging plus direct contact after payment. |
+| Advanced staff permissions | MVP uses secure administrator access and audit records, not a complex staff-role system. |
+| Full accounting, finance or revenue-management suite | MVP provides basic totals, booking-level money views and export. It does not replace accounting software or optimise prices. |
+| Owner analytics and forecasting | Owners receive simple earnings and booking history, not demand forecasts or performance dashboards. |
+| Hotels, rooms or shared accommodation | RentCottage books a whole private cottage or chalet for one customer group. |
+
+## 9. Assumptions and decisions still required
+
+These are launch gates, not missing product decisions:
+
+- Confirm the legal operating entity and obtain Iraqi legal, tax, tourism, privacy and insurance advice.
+- Validate the proposed IQD 5,000 customer service fee with prospective customers.
+- Contract a licensed provider after sandbox and commercial validation. Qi Card is the first candidate; ZainCash and AsiaPay are alternatives.
+- Confirm the owner document checklist and retention schedule for federal Iraq and the Kurdistan Region.
+- Select and quality-test the automatic translation service for Arabic and Sorani.
+- Confirm phone verification, urgent notification and map suppliers.
+
+## 10. Sign-off
+
+By signing or providing written approval, the client confirms that this document clearly describes the RentCottage MVP to be built. The work may be completed in smaller stages, but every stage must preserve these outcomes and exclusions.
+
+**Approved by:** ______________________________________
+**Role:** _____________________________________________
+**Date:** _____________________________________________
+**Signature or written approval reference:** ________________________________
+
+### Sign-off checklist
+
+- [ ] The product, users and nationwide scope are correct.
+- [ ] The shift and request-to-book journeys are correct.
+- [ ] The customer service fee, owner commission and payment flow are correct.
+- [ ] The cancellation and refund rules are correct.
+- [ ] Owner applications, checks and document handling are correct.
+- [ ] Messaging, contact protection, reviews and translation are correct.
+- [ ] The basic administrator and owner tools are sufficient for the MVP.
+- [ ] The exclusions and remaining launch gates are understood.
+- [ ] This Product Agreement is approved for MVP delivery planning.

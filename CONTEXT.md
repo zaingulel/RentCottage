@@ -1,12 +1,12 @@
 # RentCottage Marketplace
 
-RentCottage is a controlled marketplace that connects customers with invited cottage owners. The initial marketplace supports multiple owners, but owner participation is manually approved rather than open to public self-registration.
+RentCottage is a controlled marketplace that connects customers with approved cottage owners. Cottage owners may apply directly, but neither the owner nor a cottage becomes public until RentCottage completes its checks and approves them.
 
 ## Language
 
 **Marketplace**:
-The RentCottage service through which customers discover and book cottages offered by multiple invited cottage owners anywhere in Iraq.
-_Avoid_: Single-owner booking site, open marketplace
+The RentCottage service through which customers discover and book cottages offered by multiple approved cottage owners anywhere in Iraq.
+_Avoid_: Single-owner booking site, unmoderated marketplace
 
 **Marketplace Coverage**:
 All of Iraq is eligible for approved cottage inventory from launch, without promising that every governorate or local area has available cottages.
@@ -21,7 +21,7 @@ A person or organisation authorised to offer one or more cottages through the ma
 _Avoid_: Host, provider, vendor
 
 **Platform Administrator**:
-A RentCottage team member who approves cottage owners and cottage content, views bookings, and can deactivate an owner or cottage. Administrators use separate email-and-multi-factor accounts; granular staff roles are deferred from the MVP.
+A RentCottage team member who reviews owner applications and verification documents, approves cottage content, views bookings and financial summaries, handles refunds and incidents, and can pause or deactivate an owner or cottage. Administrators use separate email-and-multi-factor accounts; granular staff permission design is deferred from the MVP.
 _Avoid_: Owner, customer, finance operator
 
 **Administrator Audit Record**:
@@ -44,9 +44,17 @@ _Avoid_: Room, hotel, event venue, shared accommodation
 A cottage that the RentCottage team has manually approved after confirming the cottage owner's phone number and identity, authority to rent, applicable jurisdictional requirements, and required cottage content. It is visible to customers in the marketplace.
 _Avoid_: Draft cottage, unreviewed listing, verified badge
 
+**Owner Application**:
+The self-service application through which a prospective cottage owner creates an account, enters owner and cottage information, uploads the required evidence and submits for RentCottage review. A complete application has a three-day review target; a request for missing information pauses that target.
+_Avoid_: Invitation-only onboarding, automatic approval, public unreviewed listing
+
+**Owner Verification Document**:
+A privately stored identity, authority-to-rent, ownership, licensing or compliance file submitted with an Owner Application. Access is restricted to authorised verification administrators and every view, download, replacement or deletion is audited. The retention schedule is a pre-launch legal decision.
+_Avoid_: Public document, ordinary support attachment, permanent unreviewed archive
+
 **Owner Verification Record**:
-The approval status and review date recorded after RentCottage manually checks a cottage owner's identity, authority to rent and applicable jurisdictional requirements outside the product. The MVP does not store identity, ownership or licensing documents.
-_Avoid_: Uploaded identity document, ownership-document archive, public verified badge
+The durable approval decision recorded after RentCottage checks a cottage owner's identity, authority to rent and applicable jurisdictional requirements. It records the reviewer, date, evidence types, jurisdiction, licence or exemption basis, expiry dates and reason without making source documents public.
+_Avoid_: Public verified badge, unattributed approval
 
 **Paused Cottage**:
 A published cottage that its owner has temporarily removed from customer search and new booking requests while preserving its profile and booking history. The owner must resolve pending requests before pausing; existing confirmed bookings remain visible.
@@ -61,11 +69,11 @@ The mobile-friendly web experience through which cottage owners manage cottages,
 _Avoid_: Owner app, provider portal
 
 **Owner Account**:
-The invitation-only, phone-verified identity through which an approved cottage owner accesses the owner backoffice.
-_Avoid_: Public owner registration, password-only owner account
+The phone-verified identity through which a prospective or approved cottage owner submits an application and accesses the owner backoffice. Application access does not grant publication or booking privileges.
+_Avoid_: Automatically approved owner, password-only owner account
 
 **Owner Terms Acceptance**:
-The cottage owner's required acceptance of the applicable marketplace terms during invitation onboarding, preserved with the accepted version and date before the owner can publish a cottage.
+The cottage owner's required acceptance of the applicable marketplace terms during application onboarding, preserved with the accepted version and date before the owner can publish a cottage.
 _Avoid_: Implied owner consent, current owner terms
 
 **Cottage Shift**:
@@ -121,7 +129,7 @@ The customer's required confirmation, before submitting a booking request, that 
 _Avoid_: Implied consent, current terms
 
 **Payment Authorization**:
-The payment provider's temporary approval for RentCottage to capture the full booking price if the cottage owner accepts the booking request. Successful authorization is required before the booking request and pending hold are created; declined or expired requests release it instead of creating a refund.
+The payment provider's temporary approval that reserves the full Customer Total for later capture if the cottage owner accepts the Booking Request. Successful authorization is required before the request and Pending Hold are created; declined, withdrawn or expired requests release it instead of creating a refund.
 _Avoid_: Captured payment, deposit, completed charge
 
 **Online-Only Payment**:
@@ -133,15 +141,15 @@ A Central Bank of Iraq-licensed provider capable of payment authorization, delay
 _Avoid_: Unlicensed processor, RentCottage-held wallet, unsupported payment workaround
 
 **Payment Capture**:
-The collection of the full authorized booking price after the cottage owner accepts a booking request. A booking is not confirmed until capture succeeds.
+The automatic collection of the full authorized Customer Total after the cottage owner accepts a Booking Request. A booking is not confirmed until capture succeeds.
 _Avoid_: Authorization, cash payment, deposit
 
 **Owner Payout**:
-The cottage owner's share of a captured booking payment after RentCottage commission. It becomes eligible for settlement by the licensed payment provider after the booking period completes, including when a late customer cancellation or no-show is non-refundable; RentCottage does not directly custody the funds.
+The cottage owner's share of the captured Booking Price after the 10% Marketplace Commission and any provider treatment agreed in the owner terms. It becomes eligible for settlement by the Licensed Payment Provider after the Booking Period completes, including when a late customer cancellation or No-Show is non-refundable; RentCottage does not directly custody the funds.
 _Avoid_: Payment capture, pre-completion settlement, RentCottage wallet
 
 **Payment Required**:
-The 15-minute state entered when a cottage owner accepts a booking request but the authorized full-payment capture fails. The customer may provide a valid payment method during this period; otherwise the request expires without becoming a confirmed booking.
+The 20-minute recovery state entered only when a cottage owner accepts a Booking Request but automatic Payment Capture fails. The customer is notified and may provide a valid payment method during this period; otherwise the request expires without becoming a Confirmed Booking. Owner acceptance alone does not start this period when capture succeeds normally.
 _Avoid_: Confirmed booking, indefinite payment retry
 
 **Payment Dispute**:
@@ -157,7 +165,7 @@ An optional short message from the customer attached to a booking request for pr
 _Avoid_: Booking terms, unstructured guest count
 
 **Pending Hold**:
-The temporary exclusive claim a booking request places on every cottage shift in its requested booking period while the owner decision or required payment is pending. It prevents competing requests and cannot be replaced by a private block; after owner acceptance it remains until payment succeeds or the 15-minute payment period expires.
+The temporary exclusive claim a Booking Request places on every cottage shift in its requested Booking Period while the owner decision or required payment is pending. It prevents competing requests and cannot be replaced by a Private Block; after owner acceptance it remains until payment succeeds or the 20-minute Payment Required period expires.
 _Avoid_: Confirmed booking, permanent block
 
 **Response Deadline**:
@@ -201,7 +209,7 @@ The customer's termination of a confirmed booking. Cancellation at least 48 hour
 _Avoid_: Request withdrawal, owner-specific policy, partial late refund
 
 **Full Refund**:
-Return of the customer's entire booking price. RentCottage absorbs any payment-provider processing or refund fee that is not returned; the cottage owner receives no payout for that booking.
+Return of the entire Customer Total, including the Booking Service Fee. RentCottage absorbs any payment-provider processing or refund fee that is not returned; the cottage owner receives no payout for that booking. Qualifying customer cancellations and every owner or administrator cancellation trigger the refund automatically; administrators may also approve a manual exception.
 _Avoid_: Refund minus processing fee, account credit
 
 **No-Show**:
@@ -225,12 +233,12 @@ The area-level location shown to customers while they browse a published cottage
 _Avoid_: Exact address, access details
 
 **Access Details**:
-The exact cottage directions, map pin and mutual customer-and-owner contact details released after the booking becomes confirmed. While a request is pending, the owner sees the customer's name and guest count but not their phone number.
+The exact cottage directions, map pin and mutual customer-and-owner contact details released after the booking becomes confirmed by successful payment. While a request is pending, the owner sees the customer's name and guest count but not their phone number or other direct contact details.
 _Avoid_: Public listing address, approximate location, pending-request contact details
 
 **Customer Review**:
-A future customer rating or written assessment of a cottage, permitted only after a completed booking. Customer reviews are deferred from the MVP.
-_Avoid_: Public comment, unverified review
+The one-to-five-star rating and written assessment a customer may submit once for a Completed Booking within 14 days. The cottage owner may post one public reply. A Platform Administrator may hide content that breaches the review rules without erasing the underlying record.
+_Avoid_: Public comment without a booking, duplicate review, private incident record
 
 **Launch Language**:
 Arabic, Sorani Kurdish and English are supported from launch across the marketplace's product surfaces and transactional communications. Arabic and Sorani use right-to-left presentation; English uses left-to-right presentation.
@@ -249,20 +257,32 @@ A cottage owner’s replacement price for a cottage shift or full-day bundle on 
 _Avoid_: Dynamic surge price, hourly adjustment
 
 **Booking Price**:
-The total customer-visible amount collected for a booking period, calculated by adding each selected shift's applicable price or each selected full-day bundle's own applicable price. It includes RentCottage's commission, has no automatic multi-shift or multi-day discount, and is not increased by a separate customer platform fee or refundable damage deposit at checkout.
-_Avoid_: Negotiated total, automatic length discount, checkout surcharge, damage deposit
+The price of the cottage Booking Period before the Booking Service Fee, calculated by adding each selected shift's applicable price or each selected Full-Day Bundle's applicable price. It has no automatic multi-shift or multi-day discount and no refundable damage deposit.
+_Avoid_: Customer Total, negotiated total, automatic length discount, damage deposit
+
+**Booking Service Fee**:
+The fixed RentCottage fee added to a paid booking and shown separately before Payment Authorization. The proposed launch amount is IQD 5,000, subject to customer validation before public launch. It is RentCottage revenue rather than a card or gateway surcharge and is included in a Full Refund.
+_Avoid_: Payment-processing surcharge, hidden fee, owner commission
+
+**Customer Total**:
+The full amount authorized and captured from the customer, equal to the Booking Price plus the Booking Service Fee. The breakdown and total are preserved in the Booking Snapshot.
+_Avoid_: Booking Price, owner payout, refundable damage deposit
 
 **Marketplace Commission**:
-RentCottage's share of a captured booking payment, deducted from the cottage owner's payout rather than added to the customer's booking price. The MVP target is 12%, including ordinary payment-processing costs, subject to confirmation against licensed-provider pricing; the applicable rate is preserved in the booking snapshot.
-_Avoid_: Customer platform fee, checkout surcharge
+RentCottage's share of the Booking Price, deducted from the cottage owner's payout. The MVP rate is 10%; the rate and amount are preserved in the Booking Snapshot. Payment-provider costs and the separate Booking Service Fee do not change the commission basis.
+_Avoid_: Customer service fee, payment-processing surcharge, percentage of Customer Total
 
 **Cottage Profile**:
 The customer-visible structured facts about a cottage: guest capacity, bedrooms, bathrooms, key amenities, photos and approximate location. A complete cottage profile is required for publication.
 _Avoid_: Free-text listing, owner note
 
 **Localized Cottage Content**:
-The approved Arabic, Sorani Kurdish and English versions of a cottage's customer-visible description and house rules. All three versions are required before the cottage content can be published, regardless of who drafted or translated them.
-_Avoid_: Single-language listing, unapproved machine translation
+The approved Arabic, Sorani Kurdish and English versions of a cottage's customer-visible description and House Rules. An owner may submit source content in any Launch Language. Automatic Translation produces the other versions, and an administrator approves the complete set before publication.
+_Avoid_: Single-language listing, unreviewed machine translation
+
+**Automatic Translation**:
+The system-generated Arabic, Sorani Kurdish or English version of approved dynamic text, including owner content, messages, reviews and replies. The original text and its language are preserved and customers may view the original. Static interface text remains human reviewed, and identity or verification documents are never sent for translation.
+_Avoid_: Replacing the original, translating verification documents, unlabelled generated text
 
 **Cottage Search**:
 The customer search experience for finding published cottages by approximate location, date, cottage shifts, guest capacity and optional key amenities. It returns only cottages with every shift in the requested booking period available.
@@ -277,7 +297,7 @@ An owner change to a published cottage's photos, description, amenities, house r
 _Avoid_: Immediate edit, operational change, mixed-language update
 
 **Operational Change**:
-An owner change to a cottage's price or availability. It takes effect immediately and does not require RentCottage team approval.
+An owner change to future cottage prices or availability. It takes effect immediately and does not require RentCottage team approval, but it cannot edit or reschedule a submitted Booking Request or Confirmed Booking.
 _Avoid_: Content change, publication review
 
 **Private Block**:
@@ -301,5 +321,13 @@ A future capability for changing the dates of a confirmed booking. Rescheduling 
 _Avoid_: Editing a confirmed booking, date change
 
 **In-Platform Messaging**:
-A future RentCottage communication capability between customers and cottage owners. It is deferred from the MVP; owners' contact details are released with access details after booking confirmation.
-_Avoid_: MVP chat, MVP calling
+The text conversation between a customer and Cottage Owner linked to a Cottage or Booking Request. Before Payment Capture, the system blocks phone numbers, email addresses, web links and social handles so the parties cannot move the transaction off-platform. After confirmation, direct contact information may be shared. The conversation becomes read-only seven days after the Booking Period ends, and its original and translated messages remain available to authorised participants and support.
+_Avoid_: Audio call, video call, pre-payment contact exchange, unrelated public chat
+
+**Basic Administrator Dashboard**:
+The Platform Administrator view of pending owner applications, cottages awaiting approval, active requests and bookings, payment and refund states, incidents, review moderation, and simple booking, gross-value, commission, service-fee and owner-payout totals. It supports export for operational follow-up but is not a finance reporting suite or revenue-management system.
+_Avoid_: Complex staff permission system, accounting ledger, revenue optimisation tool
+
+**Owner Earnings Summary**:
+The owner-visible list and simple totals for captured Booking Price, 10% Marketplace Commission, refund or cancellation outcome, and expected or paid Owner Payout per booking. It is not forecasting, dynamic pricing or a revenue-management tool.
+_Avoid_: RentCottage financial report, revenue forecast, editable settlement
