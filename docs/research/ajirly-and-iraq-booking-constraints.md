@@ -3,6 +3,8 @@
 Research date: 10 July 2026  
 Purpose: inform product discovery for an Iraq-focused cottage-rental marketplace. This is product research, not legal or tax advice.
 
+**Current-use note:** Questions labelled “open” record the position on the research date. Many have since been resolved in the client Product Agreement and [client decision record](../discovery/client-questions.md), which take precedence for current product scope.
+
 ## Executive summary
 
 Ajirly's first-party materials show a two-sided marketplace for daily rental of farms and chalets. The publicly described customer journey is: search by place/date, inspect photos/details/day prices and availability, consult prior-guest reviews, book online, follow the booking, communicate with the owner, then receive GPS access after booking. Its separate owner app describes property publishing, photos/descriptions/terms/prices, availability, special-day pricing, manual and online bookings, booking status changes, search and archiving. Sources: [Ajirly website](https://www.ajirly.com/), [Ajirly on Google Play](https://play.google.com/store/apps/details?id=com.ao307.ajirly.user.iq), [Ajirly on the Iraqi App Store](https://apps.apple.com/iq/app/ajirly-%D8%A7%D8%AC%D8%B1%D9%84%D9%8A/id6499079101), [AjirlyOwner on Google Play](https://play.google.com/store/apps/details?id=com.ao307.ajirly.provider), and [AjirlyOwner on the Iraqi App Store](https://apps.apple.com/iq/app/ajirlyowner/id6499032520).
@@ -232,4 +234,3 @@ These are the reusable lessons from Ajirly and the official constraints; they ar
 - The Tourism Authority licensing PDF appeared in the official search index but failed retrieval during research, so no conclusion is drawn about cottage classification.
 - Official sources establish that regulated payment providers, company/tax processes, consumer rights and electronic contracting matter. They do not by themselves determine the platform's exact legal role or the obligations of every property in every federal/Kurdistan/local jurisdiction.
 - Mapping coverage, connectivity, user payment preference and address quality require pilot field research; no unsupported market-wide claim is made here.
-

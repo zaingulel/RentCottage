@@ -21,7 +21,7 @@ A person or organisation authorised to offer one or more cottages through the ma
 _Avoid_: Host, provider, vendor
 
 **Platform Administrator**:
-A RentCottage team member who reviews owner applications and verification documents, approves cottage content, views bookings and financial summaries, handles refunds and incidents, and can pause or deactivate an owner or cottage. Administrators use separate email-and-multi-factor accounts; granular staff permission design is deferred from the MVP.
+A RentCottage team member who reviews owner applications and verification documents; searches customer and owner accounts and cottage profiles; approves, edits or hides cottage content; views bookings and financial summaries; handles refunds and incidents; and can suspend or reactivate a customer, owner or cottage. Administrators use separate email-and-multi-factor accounts; granular staff permission design is deferred from the MVP.
 _Avoid_: Owner, customer, finance operator
 
 **Administrator Audit Record**:
@@ -33,7 +33,7 @@ A person who discovers cottages and, after phone verification, submits and manag
 _Avoid_: Guest, buyer, client
 
 **Customer Account**:
-The customer identity created from a verified phone number when that customer submits a booking request. Browsing cottages does not require a customer account.
+The customer identity created from a verified phone number when that customer first sends an In-Platform Message or submits a Booking Request. Browsing cottages does not require a customer account.
 _Avoid_: Anonymous booking, email account
 
 **Cottage**:
@@ -45,7 +45,7 @@ A cottage that the RentCottage team has manually approved after confirming the c
 _Avoid_: Draft cottage, unreviewed listing, verified badge
 
 **Owner Application**:
-The self-service application through which a prospective cottage owner creates an account, enters owner and cottage information, uploads the required evidence and submits for RentCottage review. A complete application has a three-day review target; a request for missing information pauses that target.
+The self-service application through which a prospective cottage owner creates an account, prepares a private first Cottage Profile, uploads the required evidence and submits everything together for RentCottage review. The draft cottage remains private, and neither the owner nor cottage may receive bookings before the required approvals. A complete application has a three-day review target; a request for missing information pauses that target.
 _Avoid_: Invitation-only onboarding, automatic approval, public unreviewed listing
 
 **Owner Verification Document**:
@@ -209,8 +209,12 @@ The customer's termination of a confirmed booking. Cancellation at least 48 hour
 _Avoid_: Request withdrawal, owner-specific policy, partial late refund
 
 **Full Refund**:
-Return of the entire Customer Total, including the Booking Service Fee. RentCottage absorbs any payment-provider processing or refund fee that is not returned; the cottage owner receives no payout for that booking. Qualifying customer cancellations and every owner or administrator cancellation trigger the refund automatically; administrators may also approve a manual exception.
+Return of the entire Customer Total, including the Booking Service Fee. RentCottage absorbs any payment-provider processing or refund fee that is not returned; the cottage owner receives no payout for that booking. Qualifying customer cancellations and every owner or administrator cancellation trigger the refund automatically; an administrator may also approve a Manual Refund Exception.
 _Avoid_: Refund minus processing fee, account credit
+
+**Manual Refund Exception**:
+A recorded administrator decision to return all or part of the Customer Total outside the standard cancellation outcome for exceptional customer-service, safety or operational circumstances. The administrator records the amount and reason, and the payment provider returns the approved amount to the original payment method.
+_Avoid_: Automatic partial late refund, undocumented refund, account credit
 
 **No-Show**:
 A confirmed booking for which the customer does not arrive for the first selected cottage shift and has not cancelled before it begins. A no-show receives no refund.
@@ -237,8 +241,8 @@ The exact cottage directions, map pin and mutual customer-and-owner contact deta
 _Avoid_: Public listing address, approximate location, pending-request contact details
 
 **Customer Review**:
-The one-to-five-star rating and written assessment a customer may submit once for a Completed Booking within 14 days. The cottage owner may post one public reply. A Platform Administrator may hide content that breaches the review rules without erasing the underlying record.
-_Avoid_: Public comment without a booking, duplicate review, private incident record
+The one-to-five-star rating a customer may submit once for a Completed Booking within 14 days, with an optional written assessment. The cottage owner may post one public reply. Reviews and replies cannot contain contact details or external links. A Platform Administrator may hide content that breaches the review rules without erasing the underlying record.
+_Avoid_: Required written assessment, public comment without a booking, contact exchange, duplicate review, private incident record
 
 **Launch Language**:
 Arabic, Sorani Kurdish and English are supported from launch across the marketplace's product surfaces and transactional communications. Arabic and Sorani use right-to-left presentation; English uses left-to-right presentation.
@@ -273,7 +277,7 @@ RentCottage's share of the Booking Price, deducted from the cottage owner's payo
 _Avoid_: Customer service fee, payment-processing surcharge, percentage of Customer Total
 
 **Cottage Profile**:
-The customer-visible structured facts about a cottage: guest capacity, bedrooms, bathrooms, key amenities, photos and approximate location. A complete cottage profile is required for publication.
+The structured facts about a cottage: guest capacity, bedrooms, bathrooms, key amenities, photos and approximate location. A prospective owner prepares a private first profile during the Owner Application; approved owners may create more. A profile becomes customer-visible only after publication approval.
 _Avoid_: Free-text listing, owner note
 
 **Localized Cottage Content**:
@@ -281,8 +285,8 @@ The approved Arabic, Sorani Kurdish and English versions of a cottage's customer
 _Avoid_: Single-language listing, unreviewed machine translation
 
 **Automatic Translation**:
-The system-generated Arabic, Sorani Kurdish or English version of approved dynamic text, including owner content, messages, reviews and replies. The original text and its language are preserved and customers may view the original. Static interface text remains human reviewed, and identity or verification documents are never sent for translation.
-_Avoid_: Replacing the original, translating verification documents, unlabelled generated text
+The system-generated Arabic, Sorani Kurdish or English version of approved dynamic text, including owner content, messages, reviews and replies. Generated text is labelled, the original text and its language are preserved, and users may view the original. If translation fails, the original is shown rather than a blank result, and users may report a poor or inappropriate translation. Static interface text remains human reviewed, and identity or verification documents are never sent for translation.
+_Avoid_: Replacing the original, blank translation failure, unreportable poor translation, translating verification documents, unlabelled generated text
 
 **Cottage Search**:
 The customer search experience for finding published cottages by approximate location, date, cottage shifts, guest capacity and optional key amenities. It returns only cottages with every shift in the requested booking period available.
@@ -321,11 +325,11 @@ A future capability for changing the dates of a confirmed booking. Rescheduling 
 _Avoid_: Editing a confirmed booking, date change
 
 **In-Platform Messaging**:
-The text conversation between a customer and Cottage Owner linked to a Cottage or Booking Request. Before Payment Capture, the system blocks phone numbers, email addresses, web links and social handles so the parties cannot move the transaction off-platform. After confirmation, direct contact information may be shared. The conversation becomes read-only seven days after the Booking Period ends, and its original and translated messages remain available to authorised participants and support.
+The text conversation a phone-verified customer may start from a Cottage Profile before requesting and continue through the Booking Request and Confirmed Booking. Before Payment Capture, the system blocks phone numbers, email addresses, web links and social handles so the parties cannot move the transaction off-platform. Phone-number detection covers Western, Arabic and Persian digits plus common spaces, dashes, brackets and country-code formats; repeated bypass attempts are flagged for administrator review. After confirmation, direct contact information may be shared. The conversation becomes read-only seven days after the Booking Period ends, and its original and translated messages remain available to authorised participants and support.
 _Avoid_: Audio call, video call, pre-payment contact exchange, unrelated public chat
 
 **Basic Administrator Dashboard**:
-The Platform Administrator view of pending owner applications, cottages awaiting approval, active requests and bookings, payment and refund states, incidents, review moderation, and simple booking, gross-value, commission, service-fee and owner-payout totals. It supports export for operational follow-up but is not a finance reporting suite or revenue-management system.
+The Platform Administrator view of searchable customer and owner accounts, cottage profiles, pending owner applications, cottages awaiting approval, active requests and bookings, payment and refund states, incidents, review moderation, and simple booking, gross-value, commission, service-fee and owner-payout totals. It supports audited cottage editing and hiding, account and cottage suspension or reactivation, and export for operational follow-up, but is not a finance reporting suite or revenue-management system.
 _Avoid_: Complex staff permission system, accounting ledger, revenue optimisation tool
 
 **Owner Earnings Summary**:

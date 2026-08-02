@@ -24,8 +24,8 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 - Approved cottages may operate anywhere in Iraq. Public launch requires at least ten real approved cottages, preferably in two demand areas.
 - The MVP is a mobile-friendly web application in Arabic, Sorani Kurdish and English.
 - Arabic and Sorani use right-to-left presentation. English uses left-to-right presentation.
-- Customers browse anonymously and verify a phone number when submitting their first request.
-- Cottage owners apply directly. Approval is manual and must complete before publication or booking access.
+- Customers browse anonymously and verify a phone number before sending their first message or submitting their first request.
+- Cottage owners apply directly and prepare a private first Cottage Profile as part of the Owner Application. Approval is manual and must complete before publication or booking access.
 - A complete Owner Application has a three-day review target. Requests for missing information pause the target.
 - Each cottage uses two or three fixed daily Cottage Shifts. Customers may select several shifts or a separately priced Full-Day Bundle.
 - Bookings use request-to-book. The Response Deadline is four hours and the Booking Request Cut-Off is six hours before the first shift.
@@ -35,10 +35,10 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 - Marketplace Commission is 10% of Booking Price and is shown to the Cottage Owner before acceptance.
 - One cancellation policy applies to every cottage. Customer cancellation at least 48 hours before the first shift receives an automatic Full Refund. Later cancellation and No-Show receive no refund. Owner and administrator cancellations receive an automatic Full Refund.
 - Reviews and In-Platform Messaging are included.
-- Contact details remain hidden before payment. Pre-payment messages block phone numbers, email addresses, links and social handles. Contact sharing is allowed after confirmation.
-- Static interface translations are human reviewed. Approved dynamic content uses Automatic Translation with the original preserved.
+- Contact details remain hidden before payment. A phone-verified customer may start messaging from a Cottage Profile before requesting. Pre-payment messages block phone numbers, including common digit and separator variations, plus email addresses, links and social handles. Repeated bypass attempts are flagged; contact sharing is allowed after confirmation.
+- Static interface translations are human reviewed. Approved dynamic content uses Automatic Translation with the original preserved. Translation failure shows the original, and users can report poor or inappropriate translations.
 - Owner identity, authority and licence documents are stored privately with restricted audited access. Legal approval of the document checklist and retention schedule is a launch gate.
-- Basic administrator operational and finance views and basic Owner Earnings Summary are included. Complex staff roles, accounting, forecasting and revenue management are excluded.
+- Basic administrator account and cottage search, cottage editing or hiding, suspension or reactivation, operational and finance views, and basic Owner Earnings Summary are included. Complex staff roles, accounting, forecasting and revenue management are excluded.
 - Customers and owners cannot edit or reschedule submitted requests or Confirmed Bookings.
 
 ## Technical delivery baseline
@@ -69,7 +69,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 9. As a user, I want to change language without losing my page, filters or booking selection, so that translation does not interrupt my task.
 10. As a user, I want dates and times interpreted in Iraq time, so that deadlines and cross-midnight shifts are unambiguous.
 11. As a user, I want prices shown in Iraqi dinars with consistent formatting, so that totals are easy to compare.
-12. As a customer, I want phone verification only when I submit my first request, so that browsing remains anonymous.
+12. As a customer, I want phone verification only when I send my first message or submit my first request, so that browsing remains anonymous.
 13. As a returning customer, I want my verified phone to recover my Customer Account and Booking History, so that I do not need a password.
 14. As a prospective Cottage Owner, I want phone verification before application submission, so that the applicant identity is reachable.
 15. As a Platform Administrator, I want a separate email and multi-factor account, so that privileged access is distinct from marketplace identities.
@@ -81,7 +81,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 
 19. As a prospective Cottage Owner, I want to create an Owner Account without an invitation, so that I can begin an application directly.
 20. As an applicant, I want to save a draft application, so that I can collect evidence over several visits.
-21. As an applicant, I want the required owner and cottage fields identified before submission, so that I know what is missing.
+21. As an applicant, I want to create and save my private first Cottage Profile and see every required owner and cottage field before submission, so that I can apply with the complete page and evidence together.
 22. As an individual applicant, I want to upload the required identity evidence, so that RentCottage can verify me.
 23. As a company applicant, I want to upload company and authorised-representative evidence, so that RentCottage can verify the legal person and operator.
 24. As an applicant, I want to upload title, lease, management or owner-authority evidence, so that RentCottage can verify authority to rent.
@@ -102,7 +102,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 
 ### Cottage profile, content and translation
 
-39. As an approved Cottage Owner, I want to create more than one Cottage Profile, so that one account can manage several properties.
+39. As an approved Cottage Owner, I want to continue the first private Cottage Profile from my application and create more profiles, so that one account can manage several properties.
 40. As an owner, I want a draft cottage to require capacity, rooms, amenities, photos, approximate location and House Rules, so that publication content is complete.
 41. As an owner, I want to provide an exact private location separately from the Approximate Location, so that access can be released only after payment.
 42. As an owner, I want to write a description and House Rules in any Launch Language, so that I can start in my strongest language.
@@ -111,7 +111,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 45. As an administrator, I want to compare original and generated language versions, so that I can review meaning before approval.
 46. As an administrator, I want to correct any language version before approval, so that unsafe or misleading translation can be fixed.
 47. As an administrator, I want all required language versions approved together, so that publication is complete in every language.
-48. As a customer, I want generated dynamic text labelled and the original available, so that I can judge the translation.
+48. As a user, I want generated dynamic text labelled, the original always available, the original shown when translation fails, and a way to report poor or inappropriate translation, so that generated content never becomes an unexplained blank or unchallengeable result.
 49. As the platform, I want owner verification documents excluded from Automatic Translation, so that sensitive files never leave the protected path.
 50. As an owner, I want a new cottage to remain private until owner and content approval are both complete, so that no partial listing is exposed.
 51. As an owner, I want a published cottage's approved content to remain live while an edit is reviewed, so that moderation does not remove the listing.
@@ -206,14 +206,14 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 128. As a customer, I want exact directions, map pin and owner contact details released after payment, so that I can prepare and coordinate.
 129. As an owner, I want the confirmed customer's contact details after payment, so that direct coordination is allowed only for a real booking.
 130. As a customer, I want status notifications for accepted and paid, declined, expired, withdrawn and payment failure outcomes, so that I do not need to poll.
-131. As a customer, I want one text conversation linked to a Cottage or Booking Request, so that practical questions stay contextual.
+131. As a phone-verified customer, I want to start one text conversation from a Cottage Profile before requesting and continue it through the Booking Request and Confirmed Booking, so that practical questions stay in one context.
 132. As an owner, I want to reply only within conversations for cottages I manage, so that another owner's messages are inaccessible.
-133. As a participant, I want phone numbers blocked before payment, so that direct contact cannot bypass RentCottage.
+133. As a participant, I want phone numbers blocked before payment across Western, Arabic and Persian digits and common spaces, dashes, brackets and country-code formats, so that simple disguises cannot bypass RentCottage.
 134. As a participant, I want email addresses, web links and social handles blocked before payment, so that alternative contact routes are also protected.
 135. As a participant, I want a clear explanation when a message is blocked, so that I can rewrite it without contact information.
 136. As a confirmed participant, I want contact information and links allowed after payment, so that coordination can move to the most practical channel.
 137. As a participant, I want messages automatically translated into my selected language with the original available, so that meaning can be checked.
-138. As support, I want authorised access to a booking conversation when handling a report, so that evidence can be reviewed.
+138. As support, I want authorised access to a reported conversation and repeated contact-bypass attempts, so that message evidence and repeated evasion can be reviewed.
 139. As the platform, I want a booking conversation to become read-only seven days after the Booking Period, so that the operational window has a clear end.
 
 ### Reminders, cancellation, refund and completion
@@ -230,7 +230,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 149. As the platform, I want Owner Cancellation to trigger an automatic Full Refund and no Owner Payout, so that the customer does not bear owner failure.
 150. As an administrator, I want cancellation limited to recorded safety, fraud, legal or serious operational reasons, so that intervention is accountable.
 151. As the platform, I want Administrator Cancellation to trigger an automatic Full Refund and no Owner Payout, so that platform intervention does not cost the customer.
-152. As an administrator, I want to approve and record a manual refund exception, so that exceptional customer service remains possible without changing the standard policy.
+152. As an administrator, I want to approve and record a full or partial Manual Refund Exception with its amount and reason, so that exceptional customer service remains possible without changing the standard policy.
 153. As the platform, I want a refund request and provider result tracked separately, so that pending, succeeded and failed refunds are not confused.
 154. As the platform, I want repeated refund events handled idempotently, so that a customer cannot be refunded twice.
 155. As the platform, I want a Confirmed Booking to complete automatically at the end of its Booking Period unless an incident blocks completion, so that payout and review eligibility have a clear trigger.
@@ -238,11 +238,11 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 ### Reviews, owner earnings and settlement
 
 156. As a customer, I want one review opportunity only after a Completed Booking, so that reviews come from genuine stays.
-157. As a customer, I want to submit one-to-five stars and written text within 14 days, so that feedback is structured and timely.
+157. As a customer, I want to submit one-to-five stars with optional written text within 14 days, with contact details and external links rejected, so that feedback is structured, timely and cannot become a public contact exchange.
 158. As the platform, I want a second customer review for the same booking rejected, so that one booking has one customer verdict.
-159. As an owner, I want to post one public reply to a review, so that I can respond once without creating a thread.
+159. As an owner, I want to post one public reply without contact details or external links, so that I can respond once without creating a thread or contact exchange.
 160. As a reader, I want reviews and replies translated with the original available, so that multilingual feedback remains trustworthy.
-161. As an administrator, I want to hide a review or reply with a moderation reason, so that harmful content is removed from public view without erasing evidence.
+161. As an administrator, I want to hide a review or reply with a moderation reason, including prohibited contact information or external links, so that rule-breaking content is removed from public view without erasing evidence.
 162. As an owner, I want Booking Price, 10% commission, refund outcome and expected payout shown per booking, so that earnings are explainable.
 163. As an owner, I want simple totals for expected and paid payouts, so that I can reconcile bookings without an analytics suite.
 164. As the platform, I want commission calculated from Booking Price rather than Customer Total, so that the Booking Service Fee is not included in the 10% basis.
@@ -254,16 +254,16 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 
 ### Administration, moderation and basic reporting
 
-170. As an administrator, I want one dashboard of owner applications, content approvals, active requests, bookings, refunds and incidents, so that urgent work is visible.
+170. As an administrator, I want one dashboard with searchable customer accounts, owner accounts and cottage profiles alongside applications, content approvals, active requests, bookings, refunds and incidents, so that records and urgent work are easy to find.
 171. As an administrator, I want simple totals for booking count, gross Booking Price, service fees, commission, refunds and owner payout, so that marketplace money can be monitored.
 172. As an administrator, I want date and status filters on operational and financial lists, so that a relevant period can be investigated.
 173. As an administrator, I want booking-level price, payment, refund and payout detail, so that a total can be explained.
 174. As an administrator, I want a simple export of filtered booking and money records, so that accountants and advisers can work outside the product.
 175. As an administrator, I want to record a restricted Booking Incident, so that safety, fraud, property, payment and service evidence stays separate from public reviews.
 176. As an administrator, I want to distinguish a support complaint from a formal Payment Dispute, so that each follows the correct path.
-177. As an administrator, I want to pause or deactivate an unsafe, fraudulent or non-compliant owner or cottage, so that new requests stop.
-178. As the platform, I want pending requests resolved before an owner voluntarily pauses a cottage, so that waiting customers receive an outcome.
-179. As the platform, I want confirmed bookings, payment evidence, messages, reviews and audit history preserved after pause or deactivation, so that operational evidence is not erased.
+177. As an administrator, I want to edit or hide cottage content with a recorded reason, so that inaccurate or non-compliant public information can be corrected without erasing history.
+178. As an administrator, I want to suspend or reactivate a customer, owner or cottage, so that unsafe, fraudulent or non-compliant access and inventory can be controlled.
+179. As the platform, I want suspension or deactivation to resolve pending requests while preserving confirmed bookings, payment evidence, messages, reviews and audit history, so that waiting customers receive an outcome and operational evidence is not erased.
 180. As an auditor, I want owner approvals, content decisions, cancellations, refunds, moderation, pauses and incidents attributed and timestamped, so that privileged actions are accountable.
 181. As a support operator, I want one visible customer support route, so that customers and owners know where to report a problem.
 182. As the platform, I want administrator views to exclude source verification files unless the account has verification access, so that basic support access is not over-privileged.
@@ -303,7 +303,10 @@ Every ticket must verify observable behaviour at the narrowest reliable seam. Th
 - database tests for complete-period overlap, Full-Day Bundle conflict and same-customer conflict under concurrent transactions;
 - private-storage tests for unauthorised document access, expiring access and audit creation;
 - payment contract tests for signed events, replay, out-of-order delivery, duplicate capture, release and duplicate refund;
-- translation contract tests that preserve originals and exclude verification documents;
+- translation contract tests that preserve originals, show the original on failure, support translation reports and exclude verification documents;
+- message-filter tests covering Western, Arabic and Persian digits, common separators, country codes and repeated bypass attempts;
+- review tests proving written text is optional and contact details or external links are rejected from reviews and replies;
+- administrator tests for account and cottage search, audited cottage editing or hiding, and suspension or reactivation;
 - browser journeys in Arabic, Sorani and English at a mobile viewport;
 - browser journeys for application, publication, discovery, request, owner decision, payment recovery, cancellation, messaging and review;
 - Cloudflare `workerd` preview tests for all server features that depend on runtime behaviour;

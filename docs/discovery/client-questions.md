@@ -1,61 +1,43 @@
-# Questions for the RentCottage client
+# RentCottage client decision record
 
-These questions need the client's product or commercial input before the MVP can be fully specified. Each question includes the current recommendation as a starting point, not a decision already made.
+**Status:** Product questions resolved for the proposed MVP agreement on 2 August 2026.
 
-## 1. Pilot location and inventory
+**Authority:** The current client Product Agreement remains the sign-off source if this historical discovery record ever differs from it.
 
-Which governorate or city should the marketplace launch in, and how many cottage owners can participate in the pilot?
+## 1. Launch coverage and inventory
 
-**Why it matters:** A focused launch needs enough nearby inventory to make customer search useful. Location also affects owner onboarding, support and local compliance checks.
+Approved cottages may operate anywhere in Iraq. Public launch requires at least ten real approved cottages, preferably concentrated in at least two demand areas. This does not promise inventory in every governorate.
 
-**Current recommendation:** Launch in one governorate or tightly connected metro area with roughly 5–10 invited cottages, chosen according to the client's existing owner relationships.
+## 2. Cottage shifts and booking periods
 
-## 2. Standard or owner-specific stay times
+Each owner defines a recurring schedule of exactly two or three non-overlapping shifts per day. A shift may cross midnight and belongs to the date on which it starts. Customers may select multiple shifts across consecutive days or a separately priced full-day option on each day. Consecutive full-day selections provide continuous access between days.
 
-Should every cottage use the same overnight slot of 2:00 PM to 11:00 AM the following day, or may each owner define different check-in and check-out times?
+## 3. Payments and funds flow
 
-**Why it matters:** Standard times make cottages easier to compare and simplify availability. Owner-specific times offer flexibility but introduce more operational and booking complexity.
+The customer authorises the full Customer Total online before sending a booking request. The licensed payment provider reserves the amount; RentCottage does not operate a customer wallet or directly hold customer funds. Owner acceptance triggers automatic collection, and the booking confirms only after collection succeeds. A failed collection creates a 20-minute recovery period.
 
-**Current recommendation:** Use one marketplace-wide overnight slot for the MVP. Owners can block dates and set prices, but cannot redefine the booking period.
+The proposed customer booking service fee is a fixed IQD 5,000, subject to customer validation before launch. RentCottage also deducts a 10% commission from the cottage Booking Price, excluding the customer fee.
 
-## 3. MVP payments and funds flow
+## 4. Cancellation and refunds
 
-How should a customer pay for a confirmed booking: cash on arrival, a deposit before arrival, or the full amount online? If money is paid online, who receives it and who processes refunds?
+One cancellation policy applies to every cottage. Customer cancellation at least 48 hours before the first booked shift automatically returns the full Customer Total, including the service fee. Later cancellation and no-show receive no refund under the standard policy. Owner or RentCottage cancellation automatically returns the full total. An administrator may approve and record a full or partial exception.
 
-**Why it matters:** This changes the booking state machine, no-show risk, cancellation/refund policy, owner payout, tax/accounting responsibilities and regulatory exposure.
+## 5. Support, messaging and reviews
 
-**Research required:** Confirm official Stripe availability for Iraq, then shortlist Central Bank of Iraq-licensed payment providers and check their API, onboarding, settlement, refund, KYC and supported-currency terms directly.
-
-**Current recommendation:** For a pilot, consider cash payment to the cottage owner on arrival and keep RentCottage out of holding or splitting funds. This needs a clear cancellation/no-show policy and does not preclude adding a licensed-provider deposit later.
-
-## 4. Cancellation policy
-
-Should cancellation rules be the same for every cottage, or may each cottage owner define their own rules? What cancellation deadlines and consequences should apply to customers and owners?
-
-**Why it matters:** Customers need clear terms before booking. The answer also determines availability release, refunds or deposits, no-show handling, owner cancellation treatment and support/dispute work.
-
-**Current recommendation:** Use one marketplace-wide cancellation policy for the MVP. Decide the exact deadlines and payment consequences after the payment model is confirmed.
-
-## 5. Support and disputes
-
-What responsibility should RentCottage take when a customer or cottage owner reports a problem with a booking, the property or payment?
-
-**Why it matters:** The answer determines customer promises, support staffing, incident records, deactivation rules, payment disputes and the marketplace's legal/commercial position.
-
-**Current recommendation:** Provide a visible support contact and record incidents, but do not promise to arbitrate accommodation-quality or payment disputes in the MVP. RentCottage may deactivate a cottage or owner for safety or policy concerns.
+RentCottage provides a visible support route, restricted incident records and moderation. A phone-verified customer may message an owner from a cottage page before requesting. Pre-payment contact details are blocked; post-payment contact sharing is allowed. Customers may leave one rating from one to five stars after a completed paid booking, with optional written text, and the owner may post one reply. Public reviews and replies cannot contain contact details or external links.
 
 ## 6. Booking-request cut-off
 
-How close to the 2:00 PM check-in time may a customer submit a booking request?
+New requests close six hours before the first selected shift. An owner then has four hours to accept or decline before the request expires.
 
-**Why it matters:** Owners have a four-hour response deadline. Requests that arrive too late can expire after the customer would reasonably need travel and access details.
+## 7. Owner application and documents
 
-**Current recommendation:** Stop accepting new requests six hours before check-in, leaving the owner response window plus two hours for confirmation and travel planning.
+A prospective owner applies directly without an invitation, prepares a private first cottage page and uploads identity, authority-to-rent, licensing or exemption and payout evidence. A complete application has a three-day review target, paused while missing information is requested. Documents remain private with restricted, audited access. The exact document checklist and retention schedule require appropriate Iraqi and Kurdistan Region legal approval before public launch.
 
-## 7. Owner verification and documents
+## Remaining launch dependencies
 
-What evidence must a cottage owner provide to prove identity and authority to rent a cottage, and should RentCottage store any identity or ownership documents?
-
-**Why it matters:** This affects trust, privacy, document security, retention duties, owner onboarding time and the meaning of any approval status.
-
-**Current recommendation:** Verify evidence manually outside the MVP and store only an approval status and review date in RentCottage. Do not upload or retain national IDs or ownership documents in the product until legal requirements are confirmed.
+- Validate online-payment willingness and the proposed IQD 5,000 customer fee with prospective Iraqi customers.
+- Select a Central Bank of Iraq-licensed payment provider only after it proves authorisation, later collection, release, refunds, disputes and lawful owner settlement.
+- Confirm the owner-document checklist and retention schedule for federal Iraq and the Kurdistan Region.
+- Select and quality-test automatic translation, phone verification, notification and map suppliers.
+- Approve the cancellation, refund, customer, owner and support terms before launch.

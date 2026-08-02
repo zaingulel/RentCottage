@@ -1,6 +1,6 @@
 # RentCottage design exploration brief
 
-This is a visual prototype, not production UI or a final product specification. It explores three ways to present the same Arabic-first, web-first cottage marketplace to a client before implementation begins.
+This is a visual prototype, not production UI or a final product specification. It explores three ways to present the same trilingual, web-first cottage marketplace to a client before implementation begins. The current client Product Agreement remains authoritative for product behaviour.
 
 ## The question
 
@@ -9,11 +9,11 @@ Which visual and information-design direction best communicates a trustworthy, s
 ## Shared product assumptions
 
 - The MVP is a controlled marketplace of manually approved cottage owners.
-- Customers browse without an account and verify a phone number only when submitting a request.
-- A stay can cover one or more consecutive nights. A cottage owner accepts or declines within four hours.
-- Search considers location, dates, number of nights, guest capacity and key amenities.
-- A customer sees only approximate location before confirmation. Exact directions and mutual contact details appear after an owner accepts.
-- Arabic and RTL are launch requirements. The customer surface is mobile-friendly web, not a native app.
+- Customers browse without an account and verify a phone number before first messaging or requesting.
+- A booking can contain one or more owner-defined shifts, separately priced full-day options and consecutive service days. A cottage owner accepts or declines within four hours.
+- Search considers location, dates, shifts, guest capacity and key amenities.
+- A customer sees only approximate location before confirmation. Exact directions and mutual contact details appear after owner acceptance and successful payment.
+- Arabic, Sorani Kurdish and English are launch requirements. Arabic and Sorani use right-to-left presentation; English uses left to right. The customer surface is mobile-friendly web, not a native app.
 
 ## Variants
 
@@ -35,7 +35,7 @@ Ask the client to pick a primary direction, then name specific elements to keep 
 
 ## Still open
 
-The prototype deliberately avoids making claims about payments, refunds, cancellation terms, owner-document storage, launch geography, exact check-in/out times, booking cut-off, and support/dispute responsibility. Those remain in [the client-question log](./client-questions.md).
+The prototype deliberately avoids presenting detailed payment, refund, document and moderation rules visually. Those decisions are recorded in the [client decision record](./client-questions.md) and the client Product Agreement. Payment-provider selection, legal document retention and supplier validation remain launch dependencies.
 
 ## Prototype verdict
 
