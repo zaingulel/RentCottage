@@ -1,7 +1,7 @@
 # RentCottage MVP Product Agreement
 
-**Status:** Proposed for client sign-off
-**Updated:** 2 August 2026
+**Status:** Approved for MVP delivery planning
+**Updated:** 4 August 2026
 **Client approver:** Yasir Kurkdji
 **Delivery lead:** Zain El-Abidin Abo Gulel
 
@@ -60,7 +60,7 @@ Each capability combines the user need with the acceptance checks for this agree
 
 | User story | Agreed acceptance |
 |---|---|
-| **As a cottage owner**<br>**I want** to publish accurate cottage information in all launch languages<br>**So that** customers can book with confidence | The first private cottage page starts during the owner application; approved owners may create more. Each cottage requires photos, capacity, rooms, amenities, approximate location and house rules. The owner may enter text in Arabic, Sorani or English. The system creates draft translations, preserves the original and lets RentCottage approve all language versions before publication. Later content changes are reviewed while the last approved version remains public. |
+| **As a cottage owner**<br>**I want** to publish accurate cottage information in all launch languages<br>**So that** customers can book with confidence | The first private cottage page starts during the owner application; approved owners may create more. Each cottage requires photos, capacity, rooms, amenities, approximate location and house rules. The owner may enter text in Arabic, Sorani or English. The system uses a cost-efficient AI service to create draft translations, preserves the original and lets RentCottage approve all language versions before publication. Later content changes are reviewed while the last approved version remains public. |
 
 ### D. Set shifts, prices and availability
 
@@ -127,7 +127,7 @@ RentCottage will not run its own customer wallet or directly improvise custody o
 
 - Browsing shows only an approximate location. Exact directions and direct contact information appear after payment.
 - Owner identity, ownership and licence documents are private, access-controlled and never used for automatic translation.
-- Automatically translated content is labelled, the original remains available and is shown if translation fails, and users can report a poor or inappropriate translation.
+- AI-translated dynamic content is labelled, the original remains available and is shown if translation fails, and users can report poor or inappropriate translations for further review. Static interface text is translated and reviewed by people before launch.
 - RentCottage records important administrator actions and access to verification documents.
 - Owners can block future availability but cannot edit or reschedule a submitted request or confirmed booking.
 - RentCottage can pause an unsafe or non-compliant cottage without deleting booking history.
@@ -174,26 +174,26 @@ These are launch gates, not missing product decisions:
 - Validate the proposed IQD 5,000 customer service fee with prospective customers.
 - Contract a licensed provider after sandbox and commercial validation. Qi Card is the first candidate; ZainCash and AsiaPay are alternatives.
 - Confirm the owner document checklist and retention schedule for federal Iraq and the Kurdistan Region.
-- Select and quality-test the automatic translation service for Arabic and Sorani.
+- Quality-test the selected AI translation approach with Arabic and Sorani reviewers, and approve its privacy and user-content handling terms, before launch.
 - Confirm phone verification, urgent notification and map suppliers.
 
 ## 10. Sign-off
 
 By signing or providing written approval, the client confirms that this document clearly describes the RentCottage MVP to be built. The work may be completed in smaller stages, but every stage must preserve these outcomes and exclusions.
 
-**Approved by:** ______________________________________
-**Role:** _____________________________________________
-**Date:** _____________________________________________
-**Signature or written approval reference:** ________________________________
+**Approved by:** Yasir Kurkdji
+**Role:** Client and decision owner
+**Date:** 4 August 2026
+**Signature or written approval reference:** Written approval confirmed by Zain El-Abidin Abo Gulel after Yasir's review
 
 ### Sign-off checklist
 
-- [ ] The product, users and nationwide scope are correct.
-- [ ] The shift and request-to-book journeys are correct.
-- [ ] The customer service fee, owner commission and payment flow are correct.
-- [ ] The cancellation and refund rules are correct.
-- [ ] Owner applications, checks and document handling are correct.
-- [ ] Messaging, contact protection, reviews and translation are correct.
-- [ ] The basic administrator and owner tools are sufficient for the MVP.
-- [ ] The exclusions and remaining launch gates are understood.
-- [ ] This Product Agreement is approved for MVP delivery planning.
+- [x] The product, users and nationwide scope are correct.
+- [x] The shift and request-to-book journeys are correct.
+- [x] The customer service fee, owner commission and payment flow are correct.
+- [x] The cancellation and refund rules are correct.
+- [x] Owner applications, checks and document handling are correct.
+- [x] Messaging, contact protection, reviews and translation are correct.
+- [x] The basic administrator and owner tools are sufficient for the MVP.
+- [x] The exclusions and remaining launch gates are understood.
+- [x] This Product Agreement is approved for MVP delivery planning.

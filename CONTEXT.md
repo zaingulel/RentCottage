@@ -285,8 +285,8 @@ The approved Arabic, Sorani Kurdish and English versions of a cottage's customer
 _Avoid_: Single-language listing, unreviewed machine translation
 
 **Automatic Translation**:
-The system-generated Arabic, Sorani Kurdish or English version of approved dynamic text, including owner content, messages, reviews and replies. Generated text is labelled, the original text and its language are preserved, and users may view the original. If translation fails, the original is shown rather than a blank result, and users may report a poor or inappropriate translation. Static interface text remains human reviewed, and identity or verification documents are never sent for translation.
-_Avoid_: Replacing the original, blank translation failure, unreportable poor translation, translating verification documents, unlabelled generated text
+The AI-generated Arabic, Sorani Kurdish or English version of dynamic text, including owner content, messages, reviews and replies. A cost-efficient model produces the ordinary translation; reported, administrator-flagged or safety-sensitive results can be reprocessed by a stronger model or sent for human review. Generated text is labelled, the original text and its language are preserved, and users may view the original. If translation fails, the original is shown rather than a blank result, and users may report a poor or inappropriate translation. Static interface text remains human reviewed, and identity or verification documents are never sent for translation.
+_Avoid_: Replacing the original, blank translation failure, unreportable poor translation, translating verification documents, unlabelled generated text, treating AI output as automatically trustworthy
 
 **Cottage Search**:
 The customer search experience for finding published cottages by approximate location, date, cottage shifts, guest capacity and optional key amenities. It returns only cottages with every shift in the requested booking period available.

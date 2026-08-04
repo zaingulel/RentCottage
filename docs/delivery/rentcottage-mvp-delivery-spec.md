@@ -1,7 +1,7 @@
 # RentCottage MVP Internal Delivery Specification
 
-**Status:** Proposed delivery baseline pending client sign-off
-**Updated:** 2 August 2026
+**Status:** Approved delivery baseline following client sign-off
+**Updated:** 4 August 2026
 **Client agreement:** `docs/product/rentcottage-mvp-prd.md`
 **Domain language:** `CONTEXT.md`
 **Technical decision:** `docs/adr/0001-cloudflare-workers-supabase-stack.md`
@@ -36,7 +36,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 - One cancellation policy applies to every cottage. Customer cancellation at least 48 hours before the first shift receives an automatic Full Refund. Later cancellation and No-Show receive no refund. Owner and administrator cancellations receive an automatic Full Refund.
 - Reviews and In-Platform Messaging are included.
 - Contact details remain hidden before payment. A phone-verified customer may start messaging from a Cottage Profile before requesting. Pre-payment messages block phone numbers, including common digit and separator variations, plus email addresses, links and social handles. Repeated bypass attempts are flagged; contact sharing is allowed after confirmation.
-- Static interface translations are human reviewed. Approved dynamic content uses Automatic Translation with the original preserved. Translation failure shows the original, and users can report poor or inappropriate translations.
+- Static interface translations are manually prepared with AI assistance where useful, then human reviewed. Dynamic content uses Automatic Translation with `gpt-5.6-luna` as the cost-efficient default. Reported, administrator-flagged or safety-sensitive translations escalate to `gpt-5.6-terra` or human review. The original is preserved and shown on failure, and users can report poor or inappropriate translations.
 - Owner identity, authority and licence documents are stored privately with restricted audited access. Legal approval of the document checklist and retention schedule is a launch gate.
 - Basic administrator account and cottage search, cottage editing or hiding, suspension or reactivation, operational and finance views, and basic Owner Earnings Summary are included. Complex staff roles, accounting, forecasting and revenue management are excluded.
 - Customers and owners cannot edit or reschedule submitted requests or Confirmed Bookings.
@@ -49,7 +49,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 - Supavisor transaction pooling for serverless database connections.
 - PostgreSQL transactions and constraints for Pending Hold and booking overlap protection.
 - Private verification-document storage with time-limited access and an audit record.
-- Narrow replaceable interfaces for payment, translation and notification suppliers.
+- Narrow replaceable interfaces for payment, AI translation and notification suppliers. OpenAI model names and prompts remain configuration rather than domain logic.
 - Vitest for unit and service tests, Playwright for browser journeys, and production-runtime tests in Cloudflare `workerd` preview.
 - GitHub Actions for continuous integration and CodeRabbit for pull-request review. Blacksmith is deferred until measured demand justifies it.
 - Qi Card is the first payment candidate to validate. It is not selected until sandbox and contract evidence proves the full lifecycle.
@@ -107,12 +107,14 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 41. As an owner, I want to provide an exact private location separately from the Approximate Location, so that access can be released only after payment.
 42. As an owner, I want to write a description and House Rules in any Launch Language, so that I can start in my strongest language.
 43. As the platform, I want the original content and detected or selected source language preserved, so that translation never replaces the source.
-44. As the platform, I want draft translations generated for the other Launch Languages, so that all customer versions can be prepared.
+44. As the platform, I want draft translations generated for the other Launch Languages by the configured cost-efficient AI model, so that all customer versions can be prepared without making the domain depend on one provider.
 45. As an administrator, I want to compare original and generated language versions, so that I can review meaning before approval.
 46. As an administrator, I want to correct any language version before approval, so that unsafe or misleading translation can be fixed.
 47. As an administrator, I want all required language versions approved together, so that publication is complete in every language.
-48. As a user, I want generated dynamic text labelled, the original always available, the original shown when translation fails, and a way to report poor or inappropriate translation, so that generated content never becomes an unexplained blank or unchallengeable result.
+48. As a user, I want AI-generated dynamic text labelled, the original always available, the original shown when translation fails, and a way to report poor or inappropriate translation, so that generated content never becomes an unexplained blank or unchallengeable result.
 49. As the platform, I want owner verification documents excluded from Automatic Translation, so that sensitive files never leave the protected path.
+49a. As the platform, I want translations cached by source content, source language, target language and model-and-prompt version, so that identical text is not translated repeatedly and a changed translation configuration creates a fresh result.
+49b. As an administrator, I want a reported, administrator-flagged or safety-sensitive translation reprocessed by the stronger configured model or routed for human review, so that inexpensive automatic translation has an accountable escalation path.
 50. As an owner, I want a new cottage to remain private until owner and content approval are both complete, so that no partial listing is exposed.
 51. As an owner, I want a published cottage's approved content to remain live while an edit is reviewed, so that moderation does not remove the listing.
 52. As an administrator, I want to compare the live version with the proposed Content Change, so that the decision is informed.
@@ -212,7 +214,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 134. As a participant, I want email addresses, web links and social handles blocked before payment, so that alternative contact routes are also protected.
 135. As a participant, I want a clear explanation when a message is blocked, so that I can rewrite it without contact information.
 136. As a confirmed participant, I want contact information and links allowed after payment, so that coordination can move to the most practical channel.
-137. As a participant, I want messages automatically translated into my selected language with the original available, so that meaning can be checked.
+137. As a participant, I want messages automatically translated into my selected language with the original available, failure falling back to the original and reported results entering the escalation path, so that meaning can be checked.
 138. As support, I want authorised access to a reported conversation and repeated contact-bypass attempts, so that message evidence and repeated evasion can be reviewed.
 139. As the platform, I want a booking conversation to become read-only seven days after the Booking Period, so that the operational window has a clear end.
 
@@ -241,7 +243,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 157. As a customer, I want to submit one-to-five stars with optional written text within 14 days, with contact details and external links rejected, so that feedback is structured, timely and cannot become a public contact exchange.
 158. As the platform, I want a second customer review for the same booking rejected, so that one booking has one customer verdict.
 159. As an owner, I want to post one public reply without contact details or external links, so that I can respond once without creating a thread or contact exchange.
-160. As a reader, I want reviews and replies translated with the original available, so that multilingual feedback remains trustworthy.
+160. As a reader, I want reviews and replies translated with the original available, failure falling back to the original and reported results entering the escalation path, so that multilingual feedback remains trustworthy.
 161. As an administrator, I want to hide a review or reply with a moderation reason, including prohibited contact information or external links, so that rule-breaking content is removed from public view without erasing evidence.
 162. As an owner, I want Booking Price, 10% commission, refund outcome and expected payout shown per booking, so that earnings are explainable.
 163. As an owner, I want simple totals for expected and paid payouts, so that I can reconcile bookings without an analytics suite.
@@ -274,7 +276,7 @@ If these sources conflict, stop and reconcile them before implementation. Do not
 184. As a stakeholder, I want online-payment willingness and the IQD 5,000 service fee tested with prospective Iraqi customers, so that the launch assumption has evidence.
 185. As a stakeholder, I want a licensed provider to prove authorisation, reservation, later capture, release, refunds, disputes and lawful owner settlement, so that the payment promise is viable.
 186. As a stakeholder, I want the owner evidence checklist and retention schedule approved by qualified Iraqi and Kurdistan Region advice, so that sensitive storage has a lawful rule.
-187. As a stakeholder, I want Arabic and Sorani Automatic Translation quality tested with native-language reviewers, so that generated content is usable and safe.
+187. As a stakeholder, I want Arabic and Sorani Automatic Translation quality tested with native-language reviewers across cottage content, rules, messages and reviews, so that the default and escalation paths are demonstrably usable and safe.
 188. As a stakeholder, I want cancellation, refund, customer, owner and support terms approved before launch, so that the product behaviour and written agreement match.
 
 ## Delivery capability map
@@ -303,7 +305,8 @@ Every ticket must verify observable behaviour at the narrowest reliable seam. Th
 - database tests for complete-period overlap, Full-Day Bundle conflict and same-customer conflict under concurrent transactions;
 - private-storage tests for unauthorised document access, expiring access and audit creation;
 - payment contract tests for signed events, replay, out-of-order delivery, duplicate capture, release and duplicate refund;
-- translation contract tests that preserve originals, show the original on failure, support translation reports and exclude verification documents;
+- translation contract tests that preserve originals, show the original on failure, support translation reports, route escalations, invalidate cached results when the model or prompt version changes, and exclude verification documents;
+- a representative Arabic and Sorani evaluation set covering descriptions, house rules, informal messages, reviews, place names, prices, dates and shifts, reviewed by native speakers before launch;
 - message-filter tests covering Western, Arabic and Persian digits, common separators, country codes and repeated bypass attempts;
 - review tests proving written text is optional and contact details or external links are rejected from reviews and replies;
 - administrator tests for account and cottage search, audited cottage editing or hiding, and suspension or reactivation;
@@ -321,7 +324,10 @@ Provider-specific adapters must be validated separately once selected. Do not in
 - Keep ordinary tickets vertical: include the smallest data, service and user-interface change needed to deliver one observable outcome.
 - Create separate foundation tickets only for shared production concerns that cannot be proven responsibly inside one product slice.
 - Put row-level security and overlap protection in the first slice that stores the protected data, not in a later hardening backlog.
-- Keep supplier names out of ordinary product stories. Isolate provider-specific discovery and adapters behind the shared payment or translation contract.
+- Keep supplier and model names out of ordinary product stories. Isolate provider-specific discovery, model selection, prompts and adapters behind the shared payment or translation contract.
+- Configure `gpt-5.6-luna` with the lowest supported reasoning effort as the default translation model. Use `gpt-5.6-terra` or human review for reported, administrator-flagged or safety-sensitive results. Treat these as replaceable delivery configuration, not client-facing product vocabulary.
+- Cache completed translations using a key that includes source content or hash, source language, target language, model identifier and prompt version. Retain the original and the generated result used for each published or booking-linked record.
+- Send only the text and minimum language context needed for translation. Do not send account, booking, payment or verification metadata unless a reviewed requirement makes it necessary. Approve the AI provider's user-content processing, retention and deletion terms before production use.
 - Slice happy path, important failure path and operational visibility separately when each can be tested and deployed independently.
 - Preserve the client outcome even when one concise client capability becomes several low-level delivery tickets.
 

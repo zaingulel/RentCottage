@@ -1,6 +1,6 @@
 # RentCottage client decision record
 
-**Status:** Product questions resolved for the proposed MVP agreement on 2 August 2026.
+**Status:** Product questions resolved and incorporated into the approved MVP agreement on 4 August 2026.
 
 **Authority:** The current client Product Agreement remains the sign-off source if this historical discovery record ever differs from it.
 
@@ -39,5 +39,5 @@ A prospective owner applies directly without an invitation, prepares a private f
 - Validate online-payment willingness and the proposed IQD 5,000 customer fee with prospective Iraqi customers.
 - Select a Central Bank of Iraq-licensed payment provider only after it proves authorisation, later collection, release, refunds, disputes and lawful owner settlement.
 - Confirm the owner-document checklist and retention schedule for federal Iraq and the Kurdistan Region.
-- Select and quality-test automatic translation, phone verification, notification and map suppliers.
+- Quality-test the agreed AI translation approach with Arabic and Sorani reviewers, approve its privacy and user-content handling terms, and select phone verification, notification and map suppliers.
 - Approve the cancellation, refund, customer, owner and support terms before launch.
