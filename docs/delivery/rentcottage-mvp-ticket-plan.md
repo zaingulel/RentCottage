@@ -1,6 +1,6 @@
 # RentCottage MVP Approved Ticket Plan
 
-**Status:** Approved by the delivery owner on 2 August 2026 and cleared for publication after client sign-off on 4 August 2026.
+**Status:** Published and verified on 4 August 2026 following delivery-owner approval and client sign-off.
 
 This plan is generated from the client Product Agreement, the internal delivery specification and `CONTEXT.md`. Ordinary product tickets are vertical slices. Foundation tickets exist only where a shared production concern must be proven independently.
 
@@ -40,13 +40,14 @@ This plan is generated from the client Product Agreement, the internal delivery 
 | D32 | Prove the complete mobile journey in all three languages | D18, D20, D22, D25, D31 | Playwright journeys cover owner application, publication, discovery, request, decision, capture recovery, cancellation, messaging, reviews and administration at mobile viewports in Arabic, Sorani and English, including right-to-left and accessibility checks. |
 | D33 | Satisfy and record every public-launch gate | D26, D27, D28, D29, D30, D31, D32 | Launch evidence confirms ten approved real cottages, customer payment and fee research, licensed-provider capability, legal owner-document checklist and retention, approved terms, translation review, security checks and operational readiness. |
 
-## Proposed tracker migration
+## Tracker publication
 
-- Leave issue #1 open as the historical parent specification because the ticketing workflow does not modify parent issues.
-- Leave issue #18 unchanged because the organisation move is a separate operational task.
-- After the replacement graph is published and verified, close issues #2 to #17 with a concise superseded note linking to the new ticket set.
-- Apply the repository's configured triage labels to each new issue and preserve every blocker edge as explicit text.
+- Drafts D01 to D33 were published in order as GitHub issues #19 to #51. The GitHub issue number is the draft number plus 18.
+- Every replacement issue is open, labelled `ready-for-agent`, contains detailed acceptance criteria and records its blockers both as explicit issue references and native GitHub dependencies.
+- Issues #2 to #17 were closed with a superseded note linking to the approved replacement graph.
+- Issue #1 remains the historical parent specification and issue #18 remains the separate organisation-move task.
+- At publication, issue #19 is the only unblocked delivery frontier. Later frontier work is determined from the live dependency graph.
 
-## Publication gate
+## Publication record
 
-The delivery owner approved the granularity, blocker edges and tracker migration on 2 August 2026. Yasir signed off the Product Agreement on 4 August 2026. Publish this graph, verify every issue and dependency, close issues #2 to #17 as superseded, and leave issues #1 and #18 unchanged.
+The delivery owner approved the granularity, blocker edges and tracker migration on 2 August 2026. Yasir signed off the Product Agreement on 4 August 2026. The graph was then published and verified, and the historical implementation issues were retired as planned.
