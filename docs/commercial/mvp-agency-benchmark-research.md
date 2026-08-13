@@ -21,6 +21,8 @@ The payment provider is also a hard launch dependency. No estimate below assumes
 
 These are transparent input rates, not claims that every supplier will charge them.
 
+The IT Jobs Watch figures below were accessed on 26 July 2026 and transcribed into this table as a dated repository snapshot. The linked pages are live and will show a moving six-month window when revisited.
+
 | Evidence | What it says | Use in model |
 | --- | --- | --- |
 | [IT Jobs Watch, UK Software Architect contracts](https://www.itjobswatch.co.uk/contracts/uk/software%20architect.do) | For the six months to 26 July 2026, 25 advertised daily rates gave a £550 median, £504 25th percentile and £625 75th percentile. | Cross-check for architect input. |

@@ -10,9 +10,9 @@ The reliable gate is a CodeRabbit `APPROVED` pull request review, not the green 
 
 CodeRabbit does not document a setting that directly starts GitHub Actions when a review becomes clean. GitHub Actions must consume CodeRabbit's structured review event.
 
-## What RentCottage does today
+## Pre-change state observed on PR #53
 
-The open [PR #53](https://github.com/zaingulel/RentCottage/pull/53) introduces a `CI` workflow triggered by both `pull_request` and `workflow_dispatch`. Therefore its `quality` job starts at the same time as CodeRabbit on every pull request update.
+Before the gate changes described in this research, [PR #53](https://github.com/zaingulel/RentCottage/pull/53) had a `CI` workflow triggered by both `pull_request` and `workflow_dispatch`. Its `quality` job therefore started at the same time as CodeRabbit on every pull request update. PR #53 subsequently replaced that design with the current `pull_request_review: submitted` trigger and exact-head CodeRabbit approval predicate documented below.
 
 Direct GitHub API inspection showed that CodeRabbit currently publishes a legacy commit status context, not a Checks API check run:
 
