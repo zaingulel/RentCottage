@@ -41,7 +41,7 @@ function fakeState({
   nativeEvidenceAsMap = false,
   lineEnding = "\n",
   nullBodyIssue = null,
-  projectReadme = "#19 through #51; #1, #18, #52, #55; native dependencies; active ownership; verifier",
+  projectReadme = "#19 through #51; #1, #18, #52, #55, #59; native dependencies; active ownership; verifier",
 } = {}) {
   const closed = new Set(closedIssues);
   const replacementByNumber = new Map(
@@ -170,13 +170,21 @@ function fakeState({
 }
 
 describe("RentCottage Project contract", () => {
-  it("onboards the tracker automation issue with its approved policy", () => {
+  it("onboards supplementary Foundation and quality issues with their approved policies", () => {
     expect(expectedMembership).toContain(55);
     expect(specialIssues.get(55)).toEqual({
       title: "Automate tracker reconciliation and Project 4 transitions",
       area: "Foundation & quality",
       labels: ["ready-for-agent"],
       blockers: [52],
+    });
+    expect(expectedMembership).toContain(59);
+    expect(specialIssues.get(59)).toEqual({
+      title: "Keep RentCottage resume intake bounded and selection-only",
+      area: "Foundation & quality",
+      labels: ["ready-for-agent"],
+      blockers: [],
+      ownerGated: true,
     });
   });
 
@@ -200,6 +208,18 @@ describe("RentCottage Project contract", () => {
     );
     expect(result.failures).toContainEqual(
       expect.objectContaining({ code: "project.status.invalid" }),
+    );
+  });
+
+  it("rejects issue 59 in In progress while owner-gated", () => {
+    const result = verifyRentCottageProject(
+      fakeState({ statusByNumber: { 59: "In progress" } }),
+    );
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({
+        code: "project.status.owner_gated",
+        message: expect.stringContaining("#59"),
+      }),
     );
   });
 
@@ -267,7 +287,19 @@ describe("RentCottage Project contract", () => {
     const result = verifyRentCottageProject(
       fakeState({
         projectReadme:
-          "#19 through #51; #18, #52, #55; native dependencies; active ownership; verifier",
+          "#19 through #51; #18, #52, #55, #59; native dependencies; active ownership; verifier",
+      }),
+    );
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({ code: "project.readme" }),
+    );
+  });
+
+  it("requires the Project README to mention the bounded resume issue", () => {
+    const result = verifyRentCottageProject(
+      fakeState({
+        projectReadme:
+          "#19 through #51; #1, #18, #52, #55; native dependencies; active ownership; verifier",
       }),
     );
     expect(result.failures).toContainEqual(

@@ -647,6 +647,16 @@ export const specialIssues = new Map([
       blockers: [52],
     },
   ],
+  [
+    59,
+    {
+      title: "Keep RentCottage resume intake bounded and selection-only",
+      area: "Foundation & quality",
+      labels: ["ready-for-agent"],
+      blockers: [],
+      ownerGated: true,
+    },
+  ],
 ]);
 
 export const expectedMembership = new Set([
@@ -654,6 +664,7 @@ export const expectedMembership = new Set([
   18,
   52,
   55,
+  59,
   ...replacementIssues.map(({ number }) => number),
 ]);
 
@@ -1009,6 +1020,7 @@ export function verifyRentCottageProject({
     ["#18", /#18\b/],
     ["#52", /#52\b/],
     ["#55", /#55\b/],
+    ["#59", /#59\b/],
     ["native dependencies", /native dependencies/],
     ["active ownership", /active ownership/],
     ["verifier", /verifier/],
