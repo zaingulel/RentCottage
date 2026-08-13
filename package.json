@@ -17,7 +17,8 @@
     "test:browser": "PLAYWRIGHT_SERVER=next playwright test tests/marketplace-shell.spec.ts --project=mobile --project=desktop",
     "smoke:preview": "PLAYWRIGHT_SERVER=worker playwright test tests/worker-smoke.spec.ts --project=worker",
     "scan:client-secrets": "node --experimental-strip-types src/ci/client-secret-scan.ts .next/static .open-next/assets",
-    "cf-typegen": "wrangler types cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types cloudflare-env.d.ts",
+    "verify:board": "node scripts/verify-rentcottage-project.mjs"
   },
   "dependencies": {
     "next": "16.3.0",
