@@ -8,6 +8,9 @@ import { parse } from "yaml";
 
 describe("GitHub Actions delivery checks", () => {
   it("checks source quality, the Worker build, local smoke, and preview smoke", () => {
+    const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
+    expect(packageJson.devDependencies.esbuild).toBe("0.27.7");
+
     const workflow = parse(
       readFileSync(resolve(".github/workflows/ci.yml"), "utf8"),
     );
