@@ -24,6 +24,13 @@ describe("GitHub Actions delivery checks", () => {
     expect(qualityCommands).toContain("npm run build:worker");
     expect(qualityCommands).toContain("npm run smoke:preview");
 
+    expect(qualityCommands.indexOf("npm run build:worker")).toBeLessThan(
+      qualityCommands.indexOf("npm run cf-typegen"),
+    );
+    expect(qualityCommands).toContain(
+      "git diff --exit-code --ignore-space-at-eol -- cloudflare-env.d.ts",
+    );
+
     const preview = workflow.jobs.preview;
     expect(preview.needs).toBe("quality");
     expect(preview.if).toBe("github.event_name == 'workflow_dispatch'");

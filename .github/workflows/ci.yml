@@ -28,11 +28,11 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build:worker
       - run: npm run cf-typegen
-      - run: git diff --exit-code -- cloudflare-env.d.ts
+      - run: git diff --exit-code --ignore-space-at-eol -- cloudflare-env.d.ts
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
-      - run: npm run build:worker
       - run: npm run smoke:preview
 
   preview:
