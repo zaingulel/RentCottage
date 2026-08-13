@@ -18,6 +18,10 @@ describe("MarketplaceShell", () => {
       screen.getByRole("img", { name: "A rural house at sunset in Iraq" }),
     ).toHaveAttribute("src", "/uploads/hero-retreat.png");
     expect(screen.getByLabelText("Approximate area")).toBeVisible();
+    expect(screen.getByLabelText("Preferred booking period")).toHaveValue(
+      "full-day",
+    );
+    expect(screen.queryByText("Nights")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Find your retreat" }),
     ).toBeVisible();

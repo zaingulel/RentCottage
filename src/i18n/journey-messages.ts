@@ -4,18 +4,18 @@ export const journeyMessages: Record<
   Locale,
   {
     backResults: string;
-    approvedOwner: string;
+    backCottage: string;
     approximateArea: string;
     capacity: string;
     bedrooms: string;
     bathrooms: string;
-    nightlyPrice: string;
+    samplePrice: string;
     description: string;
     houseRules: string;
     requestBooking: string;
     requestOnly: string;
     requestTitle: string;
-    staySummary: string;
+    cottageSummary: string;
     fullName: string;
     ownerNote: string;
     ownerNotePlaceholder: string;
@@ -26,18 +26,18 @@ export const journeyMessages: Record<
 > = {
   ar: {
     backResults: "العودة إلى النتائج",
-    approvedOwner: "مالك معتمد يدويًا",
+    backCottage: "العودة إلى البيت",
     approximateArea: "الموقع التقريبي",
     capacity: "السعة",
     bedrooms: "غرف النوم",
     bathrooms: "الحمّامات",
-    nightlyPrice: "سعر الليلة",
+    samplePrice: "سعر نموذجي",
     description: "عن البيت",
     houseRules: "قواعد البيت",
     requestBooking: "اطلب الحجز",
     requestOnly: "طلب فقط، لا يُخصم أي مبلغ الآن",
     requestTitle: "مراجعة طلب الحجز",
-    staySummary: "ملخص إقامتك",
+    cottageSummary: "ملخص البيت",
     fullName: "الاسم الكامل",
     ownerNote: "ملاحظة للمالك",
     ownerNotePlaceholder: "مثال: معنا كبار في السن",
@@ -48,18 +48,18 @@ export const journeyMessages: Record<
   },
   ckb: {
     backResults: "گەڕانەوە بۆ ئەنجامەکان",
-    approvedOwner: "خاوەنی بە دەستی پەسەندکراو",
+    backCottage: "گەڕانەوە بۆ ماڵەکە",
     approximateArea: "ناوچەی نزیکەوە",
     capacity: "گنجایش",
     bedrooms: "ژووری نوستن",
     bathrooms: "حەمام",
-    nightlyPrice: "نرخی شەو",
+    samplePrice: "نرخی نموونەیی",
     description: "دەربارەی ماڵ",
     houseRules: "یاساکانی ماڵ",
     requestBooking: "داوای حجز بکە",
     requestOnly: "تەنها داواکارییە، ئێستا هیچ پارەیەک نابڕدرێت",
     requestTitle: "پێداچوونەوەی داواکاری حجز",
-    staySummary: "پوختەی مانەوەکەت",
+    cottageSummary: "پوختەی ماڵەکە",
     fullName: "ناوی تەواو",
     ownerNote: "تێبینی بۆ خاوەنەکە",
     ownerNotePlaceholder: "بۆ نموونە: میوانی بەتەمەنمان لەگەڵە",
@@ -70,18 +70,18 @@ export const journeyMessages: Record<
   },
   en: {
     backResults: "Back to results",
-    approvedOwner: "Manually approved owner",
+    backCottage: "Back to cottage",
     approximateArea: "Approximate area",
     capacity: "Capacity",
     bedrooms: "Bedrooms",
     bathrooms: "Bathrooms",
-    nightlyPrice: "Nightly price",
+    samplePrice: "Sample price",
     description: "About this home",
     houseRules: "House rules",
     requestBooking: "Request booking",
     requestOnly: "A request only, nothing is charged now",
     requestTitle: "Review booking request",
-    staySummary: "Your stay",
+    cottageSummary: "Cottage summary",
     fullName: "Full name",
     ownerNote: "Note to the owner",
     ownerNotePlaceholder: "For example: we have elderly guests",

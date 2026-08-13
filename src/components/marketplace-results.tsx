@@ -3,6 +3,12 @@
 import Image from "next/image";
 
 import { cottages } from "@/data/cottages";
+import type {
+  AmenityKey,
+  AreaKey,
+  BookingPeriodOption,
+} from "@/domain/discovery";
+import { formatIqd } from "@/i18n/format";
 import { messages } from "@/i18n/messages";
 import type { Locale } from "@/i18n/routing";
 import { useRoutedLocale } from "@/i18n/use-routed-locale";
@@ -15,11 +21,11 @@ export function MarketplaceResults({
 }: {
   initialLocale: Locale;
   search: {
-    area: string;
+    area: AreaKey | "all";
     arrival: string;
-    nights: string;
+    period: BookingPeriodOption;
     guests: string;
-    amenities: string[];
+    amenities: AmenityKey[];
   };
 }) {
   const { locale, changeLocale } = useRoutedLocale(initialLocale);
@@ -49,8 +55,8 @@ export function MarketplaceResults({
         <div className="search-summary" aria-label={copy.searchSummary}>
           {[
             search.arrival,
-            `${search.nights} nights`,
-            `${search.guests} guests`,
+            copy.bookingPeriods[search.period],
+            `${search.guests} ${copy.guestsUnit}`,
           ]
             .filter(Boolean)
             .map((value) => (
@@ -70,14 +76,13 @@ export function MarketplaceResults({
               />
             </div>
             <div className="result-content">
-              <span className="verified-chip">✓ {copy.verifiedOwner}</span>
               <h2>{result.name[locale]}</h2>
               <p>
                 {copy.approximateArea}: {result.area[locale]}
               </p>
               <div>
-                <strong>IQD {result.price.toLocaleString("en-US")}</strong>
-                <span>{copy.perNight}</span>
+                <strong>{formatIqd(result.price, locale)}</strong>
+                <span>{copy.samplePrice}</span>
               </div>
               <a href={`/${locale}/cottages/${result.slug}`}>
                 {copy.viewCottage}

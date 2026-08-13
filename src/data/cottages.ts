@@ -1,4 +1,5 @@
 import type { Locale } from "@/i18n/routing";
+import type { AmenityKey, AreaKey } from "@/domain/discovery";
 
 type LocalizedText = Record<Locale, string>;
 
@@ -8,8 +9,8 @@ export interface Cottage {
   gallery: string[];
   name: LocalizedText;
   area: LocalizedText;
-  areaKey: string;
-  amenities: string[];
+  areaKey: AreaKey;
+  amenities: AmenityKey[];
   description: LocalizedText;
   rules: Record<Locale, string[]>;
   price: number;

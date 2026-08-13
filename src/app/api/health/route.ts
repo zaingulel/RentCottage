@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { getServerEnvironment } from "@/config/server-runtime";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const environment = getServerEnvironment();
-  createSupabaseServerClient();
   const shouldProbe =
     new URL(request.url).searchParams.get("check") === "supabase";
 

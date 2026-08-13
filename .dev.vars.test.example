@@ -1,1 +1,1 @@
-SUPABASE_SECRET_KEY=local-test-only
+SUPABASE_SECRET_KEY=local-test-secret

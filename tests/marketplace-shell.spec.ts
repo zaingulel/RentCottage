@@ -52,13 +52,15 @@ test("keeps the Retreat shell within the viewport", async ({ page }) => {
 });
 
 test("keeps a request draft when its language changes", async ({ page }) => {
-  await page.goto("/ar/request/garden-house?nights=2");
+  await page.goto("/ar/request/garden-house?period=full-day");
 
   const note = page.getByLabel("ملاحظة للمالك");
   await note.fill("نحتاج وصولاً سهلاً لكبار السن");
   await page.getByRole("button", { name: "کوردی" }).click();
 
-  await expect(page).toHaveURL(/\/ckb\/request\/garden-house\?nights=2$/);
+  await expect(page).toHaveURL(
+    /\/ckb\/request\/garden-house\?period=full-day$/,
+  );
   await expect(page.getByLabel("تێبینی بۆ خاوەنەکە")).toHaveValue(
     "نحتاج وصولاً سهلاً لكبار السن",
   );
@@ -79,4 +81,28 @@ test("applies search filters without claiming live availability", async ({
     0,
   );
   await expect(page.getByText(/Live availability confirmation/)).toBeVisible();
+});
+
+test("uses shift-based booking language without approval claims", async ({
+  page,
+}) => {
+  await page.goto("/en/results?period=full-day&guests=4");
+
+  await expect(
+    page.getByText("Full-day bundle", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("4 guests", { exact: true })).toBeVisible();
+  await expect(page.getByText("Manually approved owner")).toHaveCount(0);
+  await expect(page.getByText("per night")).toHaveCount(0);
+});
+
+test("treats an unknown area query as all areas", async ({ page }) => {
+  await page.goto("/en/results?area=typo&period=full-day&guests=4");
+
+  await expect(
+    page.getByRole("heading", { name: "Garden House" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Sunset House" }),
+  ).toBeVisible();
 });

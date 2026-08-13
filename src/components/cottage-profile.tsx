@@ -3,6 +3,7 @@
 import Image from "next/image";
 
 import type { Cottage } from "@/data/cottages";
+import { formatIqd } from "@/i18n/format";
 import { journeyMessages } from "@/i18n/journey-messages";
 import { messages } from "@/i18n/messages";
 import type { Locale } from "@/i18n/routing";
@@ -50,7 +51,6 @@ export function CottageProfile({
             ))}
           </div>
           <div className="profile-heading">
-            <span className="verified-chip">✓ {copy.approvedOwner}</span>
             <h1>{cottage.name[locale]}</h1>
             <p>
               {copy.approximateArea}: {cottage.area[locale]}
@@ -70,8 +70,8 @@ export function CottageProfile({
               <dd>{cottage.bathrooms}</dd>
             </div>
             <div>
-              <dt>{copy.nightlyPrice}</dt>
-              <dd>IQD {cottage.price.toLocaleString("en-US")}</dd>
+              <dt>{copy.samplePrice}</dt>
+              <dd>{formatIqd(cottage.price, locale)}</dd>
             </div>
           </dl>
           <section className="profile-section">
@@ -89,8 +89,8 @@ export function CottageProfile({
         </div>
         <aside className="booking-summary">
           <p>{messages[locale].tagline}</p>
-          <strong>IQD {cottage.price.toLocaleString("en-US")}</strong>
-          <span>{copy.nightlyPrice}</span>
+          <strong>{formatIqd(cottage.price, locale)}</strong>
+          <span>{copy.samplePrice}</span>
           <a href={`/${locale}/request/${cottage.slug}`}>
             {copy.requestBooking}
           </a>

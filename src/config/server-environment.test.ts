@@ -35,4 +35,28 @@ describe("server environment", () => {
       }),
     ).toThrow(/NEXT_PUBLIC_SUPABASE_SECRET_KEY/);
   });
+
+  it("rejects a loopback lookalike hostname", () => {
+    expect(() =>
+      readServerEnvironment({
+        APP_ENVIRONMENT: "test",
+        SUPABASE_PROJECT_REF: "local-test",
+        SUPABASE_URL: "http://127.0.0.1.attacker.example:54321",
+        SUPABASE_PUBLISHABLE_KEY: "publishable",
+        SUPABASE_SECRET_KEY: "secret",
+      }),
+    ).toThrow(/SUPABASE_URL/);
+  });
+
+  it("rejects a remote URL that only contains the project reference", () => {
+    expect(() =>
+      readServerEnvironment({
+        APP_ENVIRONMENT: "production",
+        SUPABASE_PROJECT_REF: "prod-ref",
+        SUPABASE_URL: "https://attacker.example/prod-ref.supabase.co",
+        SUPABASE_PUBLISHABLE_KEY: "publishable",
+        SUPABASE_SECRET_KEY: "secret",
+      }),
+    ).toThrow(/SUPABASE_URL/);
+  });
 });

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 
 import type { Cottage } from "@/data/cottages";
+import { formatIqd } from "@/i18n/format";
 import { journeyMessages } from "@/i18n/journey-messages";
 import type { Locale } from "@/i18n/routing";
 import { useRoutedLocale } from "@/i18n/use-routed-locale";
@@ -26,7 +27,7 @@ export function BookingRequest({
   return (
     <main className="request-page">
       <header className="results-header">
-        <a href={`/${locale}/cottages/${cottage.slug}`}>{copy.backResults}</a>
+        <a href={`/${locale}/cottages/${cottage.slug}`}>{copy.backCottage}</a>
         <LocaleButtons
           className="results-languages"
           locale={locale}
@@ -70,7 +71,7 @@ export function BookingRequest({
             </button>
           </form>
         </section>
-        <aside className="request-stay">
+        <aside className="request-cottage">
           <div>
             <Image
               src={`/uploads/${cottage.image}`}
@@ -79,10 +80,10 @@ export function BookingRequest({
               sizes="360px"
             />
           </div>
-          <h2>{copy.staySummary}</h2>
+          <h2>{copy.cottageSummary}</h2>
           <strong>{cottage.name[locale]}</strong>
           <span>{cottage.area[locale]}</span>
-          <p>IQD {cottage.price.toLocaleString("en-US")}</p>
+          <p>{formatIqd(cottage.price, locale)}</p>
           <small>{copy.requestOnly}</small>
         </aside>
       </div>

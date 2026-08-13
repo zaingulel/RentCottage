@@ -1,72 +1,69 @@
 name: CI
 
 on:
-  pull_request:
-  workflow_dispatch:
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   quality:
+    name: >-
+      ${{
+        github.event.review.user.login == 'coderabbitai[bot]' &&
+        github.event.review.user.id == 136622811 &&
+        github.event.review.state == 'approved' &&
+        github.event.review.commit_id == github.event.pull_request.head.sha &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        'quality' || 'review-router'
+      }}
+    if: >-
+      github.event.review.user.login == 'coderabbitai[bot]' &&
+      github.event.review.user.id == 136622811 &&
+      github.event.review.state == 'approved' &&
+      github.event.review.commit_id == github.event.pull_request.head.sha &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    # Branch protection must require quality on the current PR head for enforcement.
+    concurrency:
+      group: quality-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     env:
       APP_ENVIRONMENT: test
       NEXTJS_ENV: test
       SUPABASE_PROJECT_REF: local-test
       SUPABASE_URL: http://127.0.0.1:54331
-      SUPABASE_PUBLISHABLE_KEY: local-test-only
-      SUPABASE_SECRET_KEY: local-test-only
+      SUPABASE_PUBLISHABLE_KEY: local-test-publishable
+      SUPABASE_SECRET_KEY: local-test-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Require current PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          live_head="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PULL_REQUEST_NUMBER" --jq .head.sha)"
+          test "$live_head" = "$EXPECTED_HEAD_SHA"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run audit:production
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:worker
+      - run: npm run scan:client-secrets
       - run: npm run cf-typegen
       - run: git diff --exit-code --ignore-space-at-eol -- cloudflare-env.d.ts
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - run: npm run smoke:preview
-
-  preview:
-    if: github.event_name == 'workflow_dispatch'
-    needs: quality
-    runs-on: ubuntu-latest
-    environment: preview
-    permissions:
-      contents: read
-      deployments: write
-    env:
-      APP_ENVIRONMENT: preview
-      NEXTJS_ENV: preview
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run build:worker
-      - id: deploy
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: versions upload --env preview
-      - name: Smoke Cloudflare preview
-        env:
-          PREVIEW_URL: ${{ steps.deploy.outputs.deployment-url }}
-        run: |
-          curl --fail --silent --show-error "$PREVIEW_URL/ar" > /dev/null
-          curl --fail --silent --show-error "$PREVIEW_URL/api/health?check=supabase" | grep '"connected":true'

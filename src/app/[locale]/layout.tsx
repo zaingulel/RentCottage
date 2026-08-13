@@ -1,7 +1,15 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { directionFor, isLocale, locales } from "@/i18n/routing";
+
+import "../globals.css";
+
+export const metadata: Metadata = {
+  title: "RentCottage",
+  description: "A trilingual marketplace for rural cottages across Iraq.",
+};
 
 export function generateStaticParams() {
   return locales.map((locale) => ({ locale }));

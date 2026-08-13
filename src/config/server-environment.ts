@@ -46,7 +46,19 @@ export function readServerEnvironment(
 
   const projectRef = required(source, "SUPABASE_PROJECT_REF");
   const url = required(source, "SUPABASE_URL");
-  if (!url.startsWith("http://127.0.0.1") && !url.includes(projectRef)) {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    throw new Error("SUPABASE_URL must be a valid URL");
+  }
+
+  const isLoopback =
+    parsedUrl.hostname === "127.0.0.1" &&
+    (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:");
+  const isProjectOrigin =
+    parsedUrl.origin === `https://${projectRef}.supabase.co`;
+  if (!isLoopback && !isProjectOrigin) {
     throw new Error("SUPABASE_URL does not match SUPABASE_PROJECT_REF");
   }
 

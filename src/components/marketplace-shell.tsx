@@ -3,6 +3,13 @@
 import Image from "next/image";
 import { useState } from "react";
 
+import { cottages } from "@/data/cottages";
+import {
+  amenityKeys,
+  bookingPeriodOptions,
+  type AmenityKey,
+  type BookingPeriodOption,
+} from "@/domain/discovery";
 import { messages } from "@/i18n/messages";
 import type { Locale } from "@/i18n/routing";
 import { useRoutedLocale } from "@/i18n/use-routed-locale";
@@ -12,8 +19,6 @@ import { LocaleButtons } from "./locale-buttons";
 interface MarketplaceShellProps {
   initialLocale: Locale;
 }
-
-const amenities = ["pool", "garden", "ac", "net", "outside", "family"];
 
 function iraqToday() {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -27,32 +32,17 @@ function iraqToday() {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
-const previewCottages = [
-  {
-    image: "cottage-garden.png",
-    name: { ar: "بيت الحديقة", ckb: "ماڵی باخچە", en: "Garden House" },
-  },
-  {
-    image: "cottage-hills.png",
-    name: { ar: "بيت المرتفعات", ckb: "ماڵی بەرزایی", en: "Highlands House" },
-  },
-  {
-    image: "cottage-river.png",
-    name: { ar: "بيت النهر", ckb: "ماڵی ڕووبار", en: "River House" },
-  },
-];
-
 export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
   const { locale, changeLocale } = useRoutedLocale(initialLocale);
   const [area, setArea] = useState("all");
   const [minimumArrival] = useState(iraqToday);
   const [arrival, setArrival] = useState(iraqToday);
-  const [nights, setNights] = useState(2);
+  const [period, setPeriod] = useState<BookingPeriodOption>("full-day");
   const [guests, setGuests] = useState(4);
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [selectedAmenities, setSelectedAmenities] = useState<AmenityKey[]>([]);
   const copy = messages[locale];
 
-  function toggleAmenity(amenity: string) {
+  function toggleAmenity(amenity: AmenityKey) {
     setSelectedAmenities((current) =>
       current.includes(amenity)
         ? current.filter((item) => item !== amenity)
@@ -118,12 +108,22 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
                 onChange={(event) => setArrival(event.target.value)}
               />
             </label>
-            <Counter
-              label={copy.nightsLabel}
-              value={nights}
-              minimum={1}
-              onChange={setNights}
-            />
+            <label>
+              <span>{copy.bookingPeriodLabel}</span>
+              <select
+                name="period"
+                value={period}
+                onChange={(event) =>
+                  setPeriod(event.target.value as BookingPeriodOption)
+                }
+              >
+                {bookingPeriodOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {copy.bookingPeriods[option]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <Counter
               label={copy.guestsLabel}
               value={guests}
@@ -135,7 +135,7 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
           <fieldset className="amenity-filter">
             <legend>{copy.amenitiesLabel}</legend>
             <div>
-              {amenities.map((amenity) => {
+              {amenityKeys.map((amenity) => {
                 const selected = selectedAmenities.includes(amenity);
                 return (
                   <button
@@ -151,7 +151,6 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
             </div>
           </fieldset>
 
-          <input type="hidden" name="nights" value={nights} />
           <input type="hidden" name="guests" value={guests} />
           {selectedAmenities.map((amenity) => (
             <input key={amenity} type="hidden" name="amenity" value={amenity} />
@@ -172,7 +171,7 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
             <div className="lattice-mark" aria-hidden="true" />
           </div>
           <div className="preview-grid">
-            {previewCottages.map((cottage) => (
+            {cottages.map((cottage) => (
               <article key={cottage.image}>
                 <Image
                   src={`/uploads/${cottage.image}`}
@@ -186,11 +185,11 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
           </div>
         </section>
 
-        <section className="trusted-stay">
+        <section className="trusted-booking">
           <div className="trusted-photo">
             <Image
               src="/uploads/hero-marsh.png"
-              alt="A peaceful rural stay among palm trees"
+              alt="A peaceful rural cottage among palm trees"
               fill
               sizes="(min-width: 900px) 45vw, 100vw"
             />

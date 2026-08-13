@@ -1,4 +1,9 @@
 import type { Locale } from "./routing";
+import type {
+  AmenityKey,
+  AreaKey,
+  BookingPeriodOption,
+} from "@/domain/discovery";
 
 export interface MarketplaceMessages {
   languageName: string;
@@ -8,12 +13,14 @@ export interface MarketplaceMessages {
   heroSubtitle: string;
   areaLabel: string;
   allAreas: string;
-  areas: { value: string; label: string }[];
+  areas: { value: AreaKey; label: string }[];
   arrivalLabel: string;
-  nightsLabel: string;
+  bookingPeriodLabel: string;
+  bookingPeriods: Record<BookingPeriodOption, string>;
   guestsLabel: string;
+  guestsUnit: string;
   amenitiesLabel: string;
-  amenityNames: Record<string, string>;
+  amenityNames: Record<AmenityKey, string>;
   searchCta: string;
   retreatBlurb: string;
   trustedTitle: string;
@@ -25,9 +32,8 @@ export interface MarketplaceMessages {
   backToSearch: string;
   resultsTitle: string;
   resultsSubtitle: string;
-  verifiedOwner: string;
   approximateArea: string;
-  perNight: string;
+  samplePrice: string;
   viewCottage: string;
   searchSummary: string;
   noResults: string;
@@ -49,8 +55,14 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       { value: "highlands", label: "المرتفعات" },
     ],
     arrivalLabel: "تاريخ الوصول",
-    nightsLabel: "عدد الليالي",
+    bookingPeriodLabel: "فترة الحجز المفضلة",
+    bookingPeriods: {
+      "morning-shift": "الفترة الصباحية",
+      "evening-shift": "الفترة المسائية",
+      "full-day": "اليوم الكامل",
+    },
     guestsLabel: "عدد الضيوف",
+    guestsUnit: "ضيوف",
     amenitiesLabel: "مرافق اختيارية",
     amenityNames: {
       pool: "مسبح خاص",
@@ -63,7 +75,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     searchCta: "ابحث عن ملاذك",
     retreatBlurb:
       "بيوت قليلة، مختارة يدًا بيد مع أصحابها، من بساتين النخيل إلى المرتفعات.",
-    trustedTitle: "إقامة موثوقة، خطوة بخطوة",
+    trustedTitle: "حجز موثوق، خطوة بخطوة",
     trustedSubtitle: "نراجع كل مالكٍ بأنفسنا، ونحمي معلوماتك حتى لحظة التأكيد.",
     steps: [
       "كل مالكٍ يُراجَع ويُعتمد يدويًا قبل نشر بيته",
@@ -71,16 +83,15 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       "العنوان الدقيق ومعلومات التواصل تُكشف بعد التأكيد فقط",
     ],
     cottagePreviewTitle: "بيوت مختارة",
-    selectedCottages: "من البيوت المنشورة",
+    selectedCottages: "بيوت نموذجية",
     fictionalNote:
       "نموذج أولي للعرض، جميع الأسماء والمواقع والأسعار محتوى خيالي",
     backToSearch: "العودة إلى البحث",
-    resultsTitle: "بيوت منشورة تناسب بحثك",
+    resultsTitle: "بيوت نموذجية تناسب بحثك",
     resultsSubtitle:
       "هذه واجهة تأسيسية، وتأكيد التوفر الفعلي سيُضاف في تذكرة الحجز.",
-    verifiedOwner: "مالك معتمد يدويًا",
     approximateArea: "موقع تقريبي",
-    perNight: "لليلة",
+    samplePrice: "سعر نموذجي",
     viewCottage: "اعرض البيت",
     searchSummary: "اختيارات البحث المحفوظة",
     noResults: "لا توجد بيوت نموذجية تطابق هذه المرشحات. ارجع وعدّل البحث.",
@@ -100,8 +111,14 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       { value: "highlands", label: "بەرزاییەکان" },
     ],
     arrivalLabel: "ڕۆژی گەیشتن",
-    nightsLabel: "ژمارەی شەو",
+    bookingPeriodLabel: "ماوەی حجزکردنی پەسەندکراو",
+    bookingPeriods: {
+      "morning-shift": "شیفتی بەیانی",
+      "evening-shift": "شیفتی ئێوارە",
+      "full-day": "هەموو ڕۆژ",
+    },
     guestsLabel: "ژمارەی میوان",
+    guestsUnit: "میوان",
     amenitiesLabel: "خزمەتگوزارییە هەڵبژاردەییەکان",
     amenityNames: {
       pool: "مەڵەوانگەی تایبەت",
@@ -114,7 +131,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     searchCta: "پەناگەکەت بدۆزەوە",
     retreatBlurb:
       "کۆمەڵێک ماڵی کەم، دەستبەدەست لەگەڵ خاوەنەکانیان هەڵبژێردراون، لە باخەکانی خورما تا بەرزاییەکان.",
-    trustedTitle: "مانەوەیەکی متمانەپێکراو، هەنگاو بە هەنگاو",
+    trustedTitle: "حجزێکی متمانەپێکراو، هەنگاو بە هەنگاو",
     trustedSubtitle:
       "خۆمان هەر خاوەنێک دەناسینەوە و زانیارییەکانت تا کاتی پشتڕاستکردنەوە دەپارێزین.",
     steps: [
@@ -123,15 +140,14 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       "ناونیشانی ورد و زانیاری پەیوەندی تەنها دوای پشتڕاستکردنەوە ئاشکرا دەکرێت",
     ],
     cottagePreviewTitle: "ماڵی هەڵبژێردراو",
-    selectedCottages: "لە ماڵە بڵاوکراوەکان",
+    selectedCottages: "ماڵی نموونەیی",
     fictionalNote: "نموونەیەکی پێشاندانییە، هەموو ناو و شوێن و نرخەکان خەیاڵین",
     backToSearch: "گەڕانەوە بۆ گەڕان",
-    resultsTitle: "ماڵی بڵاوکراوە کە لە گەڕانەکەت دەگونجێت",
+    resultsTitle: "ماڵی نموونەیی کە لە گەڕانەکەت دەگونجێت",
     resultsSubtitle:
       "ئەمە ڕووکاری بنەڕەتییە، پشتڕاستکردنەوەی بەردەستبوون لە تیکەتی حجز زیاد دەکرێت.",
-    verifiedOwner: "خاوەنی بە دەستی پەسەندکراو",
     approximateArea: "ناوچەی نزیکەوە",
-    perNight: "بۆ هەر شەوێک",
+    samplePrice: "نرخی نموونەیی",
     viewCottage: "ماڵەکە ببینە",
     searchSummary: "هەڵبژاردنە پارێزراوەکانی گەڕان",
     noResults:
@@ -152,8 +168,14 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       { value: "highlands", label: "The Highlands" },
     ],
     arrivalLabel: "Arrival date",
-    nightsLabel: "Nights",
+    bookingPeriodLabel: "Preferred booking period",
+    bookingPeriods: {
+      "morning-shift": "Morning shift",
+      "evening-shift": "Evening shift",
+      "full-day": "Full-day bundle",
+    },
     guestsLabel: "Guests",
+    guestsUnit: "guests",
     amenitiesLabel: "Optional amenities",
     amenityNames: {
       pool: "Private pool",
@@ -166,7 +188,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     searchCta: "Find your retreat",
     retreatBlurb:
       "A small collection, chosen hand in hand with their owners, from palm orchards to the highlands.",
-    trustedTitle: "A trusted stay, step by step",
+    trustedTitle: "A trusted booking, step by step",
     trustedSubtitle:
       "We review every owner ourselves, and guard your details until the moment of confirmation.",
     steps: [
@@ -175,16 +197,15 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       "The exact address and contact details are revealed only after confirmation",
     ],
     cottagePreviewTitle: "Selected homes",
-    selectedCottages: "From our published cottages",
+    selectedCottages: "Sample cottages",
     fictionalNote:
       "Exploratory preview, all names, places and prices are fictional content",
     backToSearch: "Back to search",
-    resultsTitle: "Published homes matching your search",
+    resultsTitle: "Sample cottages matching your search",
     resultsSubtitle:
       "This is the foundation interface. Live availability confirmation arrives in the booking ticket.",
-    verifiedOwner: "Manually approved owner",
     approximateArea: "Approximate area",
-    perNight: "per night",
+    samplePrice: "sample price",
     viewCottage: "View cottage",
     searchSummary: "Saved search choices",
     noResults:
