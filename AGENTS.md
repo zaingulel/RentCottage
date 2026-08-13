@@ -28,6 +28,15 @@ Single-context layout. See `docs/agents/domain.md`.
 
 Start a substantive work session with `$resume`; end or park it with `$handoff`. Treat Git and direct verification as the record of what is shipped, and the configured issue tracker as the live plan. Do not rely on chat history or a status document when they conflict with Git.
 
+### Resume intake
+
+Use the shared selection-only `$resume` intake with these RentCottage sources:
+
+- Durable state: Git status and history, `npm run verify:board`, open pull requests, worktrees, and active Codex task ownership.
+- Candidate detail: GitHub issue bodies and attributed comments.
+
+For high-blast-radius work, treat the initial choice as authorisation for read-only planning. Approval of the completed concrete plan is the formal work-pick before editing.
+
 For a substantial change, state the route before editing:
 
 - **Inline** for a trivial, well-bounded change.
