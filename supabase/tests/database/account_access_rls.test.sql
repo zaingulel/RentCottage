@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(10);
+select plan(12);
 
 select has_table(
   'public',
@@ -61,6 +61,20 @@ select throws_ok(
   '42501',
   null,
   'an authenticated user cannot grant Platform Administrator access'
+);
+
+select throws_ok(
+  $$update public.account_contexts set role = 'platform_administrator' where user_id = '00000000-0000-0000-0000-000000000001'$$,
+  '42501',
+  null,
+  'an authenticated user cannot promote their existing account context'
+);
+
+select throws_ok(
+  $$select public.claim_marketplace_role('cottage_owner')$$,
+  'RC001',
+  null,
+  'a conflicting marketplace role has a stable domain error code'
 );
 
 select set_config(

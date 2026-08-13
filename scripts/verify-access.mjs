@@ -80,6 +80,8 @@ export function main(
       return { ...result, status: 1 };
     }
     if (result.status !== 0) {
+      if (result.stdout) stderr(String(result.stdout).trimEnd());
+      if (result.stderr) stderr(String(result.stderr).trimEnd());
       stderr(
         `Failed: ${command} ${commandArgs.join(" ")} (status ${result.status ?? 1}).`,
       );

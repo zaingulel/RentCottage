@@ -75,4 +75,54 @@ describe("account action HTTP boundary", () => {
     });
     expect(createAccess).not.toHaveBeenCalled();
   });
+
+  it("signs out and returns unavailable when a successful MFA audit cannot persist", async () => {
+    const signOut = vi.fn().mockResolvedValue({ error: null });
+    createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { email: "admin@example.com" } },
+          error: null,
+        }),
+        signOut,
+      },
+    });
+    createAccess.mockReturnValue({
+      verifyPlatformAdministratorMfa: vi.fn().mockResolvedValue({
+        status: "authenticated",
+        context: { userId: "admin-user", role: "platform_administrator" },
+      }),
+    });
+    recordAudit.mockRejectedValue(new Error("audit unavailable"));
+
+    await expect(
+      verifyPlatformAdministratorMfa({
+        factorId: "factor-1",
+        challengeId: "challenge-1",
+        code: "123456",
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(signOut).toHaveBeenCalledOnce();
+  });
+
+  it("signs out and returns unavailable when a successful primary audit cannot persist", async () => {
+    const signOut = vi.fn().mockResolvedValue({ error: null });
+    createClient.mockResolvedValue({ auth: { signOut } });
+    createAccess.mockReturnValue({
+      signInPlatformAdministrator: vi.fn().mockResolvedValue({
+        status: "challenge_required",
+        factorId: "factor-1",
+        challengeId: "challenge-1",
+      }),
+    });
+    recordAudit.mockRejectedValue(new Error("audit unavailable"));
+
+    await expect(
+      signInPlatformAdministrator({
+        email: "admin@example.com",
+        password: "correct-password",
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(signOut).toHaveBeenCalledOnce();
+  });
 });

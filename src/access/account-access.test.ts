@@ -128,6 +128,27 @@ describe("account access", () => {
     expect(signedOut).toBe(true);
   });
 
+  it("signs out when phone verification returns another identity's context", async () => {
+    let signedOut = false;
+    const provider = identityProvider("different-user");
+    provider.signOut = async () => {
+      signedOut = true;
+    };
+    const access = createAccountAccess({
+      identityProvider: provider,
+      accountContexts: accountContexts(),
+    });
+
+    await expect(
+      access.verifyPhoneAccess({
+        phone: "+9647500000000",
+        code: "123456",
+        role: "customer",
+      }),
+    ).resolves.toEqual({ status: "not_authorized" });
+    expect(signedOut).toBe(true);
+  });
+
   it("requires assurance level 2 before returning Platform Administrator access", async () => {
     const access = createAccountAccess({
       identityProvider: identityProvider("admin-user"),
@@ -187,4 +208,69 @@ describe("account access", () => {
     ).resolves.toEqual({ status: "not_authorized" });
     expect(signedOut).toBe(true);
   });
+
+  it("signs out when administrator primary authentication resolves another identity", async () => {
+    let signedOut = false;
+    const provider = identityProvider("different-admin");
+    provider.signOut = async () => {
+      signedOut = true;
+    };
+    const access = createAccountAccess({
+      identityProvider: provider,
+      accountContexts: accountContexts({
+        userId: "admin-user",
+        role: "platform_administrator",
+      }),
+    });
+
+    await expect(
+      access.signInPlatformAdministrator({
+        email: "admin@example.com",
+        password: "a-secure-password",
+      }),
+    ).resolves.toEqual({ status: "not_authorized" });
+    expect(signedOut).toBe(true);
+  });
+
+  it.each(["begin", "verify"] as const)(
+    "signs out when administrator MFA %s throws",
+    async (stage) => {
+      let signedOut = false;
+      const provider = identityProvider("admin-user");
+      provider.signOut = async () => {
+        signedOut = true;
+      };
+      if (stage === "begin") {
+        provider.beginPlatformAdministratorMfa = async () => {
+          throw new Error("MFA unavailable");
+        };
+      } else {
+        provider.verifyPlatformAdministratorMfa = async () => {
+          throw new Error("MFA unavailable");
+        };
+      }
+      const access = createAccountAccess({
+        identityProvider: provider,
+        accountContexts: accountContexts({
+          userId: "admin-user",
+          role: "platform_administrator",
+        }),
+      });
+
+      const operation =
+        stage === "begin"
+          ? access.signInPlatformAdministrator({
+              email: "admin@example.com",
+              password: "a-secure-password",
+            })
+          : access.verifyPlatformAdministratorMfa({
+              factorId: "factor-1",
+              challengeId: "challenge-1",
+              code: "654321",
+            });
+
+      await expect(operation).rejects.toThrow("MFA unavailable");
+      expect(signedOut).toBe(true);
+    },
+  );
 });

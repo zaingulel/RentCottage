@@ -13,6 +13,27 @@ function recordInput(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+type RequestSupabaseClient = Awaited<
+  ReturnType<typeof createRequestSupabaseClient>
+>;
+
+async function persistPrivilegedAudit(
+  input: Parameters<typeof recordPrivilegedSignInAttempt>[0],
+  client?: RequestSupabaseClient,
+) {
+  try {
+    await recordPrivilegedSignInAttempt(input);
+    return true;
+  } catch {
+    if (client) {
+      try {
+        await client.auth.signOut();
+      } catch {}
+    }
+    return false;
+  }
+}
+
 export async function requestPhoneAccess(phone: unknown) {
   if (typeof phone !== "string") {
     return { status: "invalid_phone" as const };
@@ -64,48 +85,65 @@ export async function signInPlatformAdministrator(value: unknown) {
     typeof input?.password !== "string" ||
     !input.password
   ) {
-    await recordPrivilegedSignInAttempt({
+    const audited = await persistPrivilegedAudit({
       email,
       stage: "primary",
       outcome: "failed",
     });
+    if (!audited) return { status: "unavailable" as const };
     return { status: "invalid_sign_in" as const };
   }
   let result;
+  let client: RequestSupabaseClient | undefined;
   try {
-    const access = createSupabaseAccountAccess(
-      await createRequestSupabaseClient(),
-    );
+    client = await createRequestSupabaseClient();
+    const access = createSupabaseAccountAccess(client);
     result = await access.signInPlatformAdministrator({
       email,
       password: input.password,
     });
   } catch {
-    await recordPrivilegedSignInAttempt({
-      email,
-      stage: "primary",
-      outcome: "failed",
-    });
+    const audited = await persistPrivilegedAudit(
+      {
+        email,
+        stage: "primary",
+        outcome: "failed",
+      },
+      client,
+    );
+    if (!audited) return { status: "unavailable" as const };
     return { status: "invalid_sign_in" as const };
   }
 
-  await recordPrivilegedSignInAttempt({
-    email,
-    stage: "primary",
-    outcome:
-      result.status === "challenge_required" ||
-      result.status === "enrollment_required"
-        ? "succeeded"
-        : "failed",
-  });
+  const audited = await persistPrivilegedAudit(
+    {
+      email,
+      stage: "primary",
+      outcome:
+        result.status === "challenge_required" ||
+        result.status === "enrollment_required"
+          ? "succeeded"
+          : "failed",
+    },
+    client,
+  );
+  if (!audited) return { status: "unavailable" as const };
   return result;
 }
 
 export async function verifyPlatformAdministratorMfa(value: unknown) {
   const input = recordInput(value);
-  const client = await createRequestSupabaseClient();
-  const { data: userData, error: userError } = await client.auth.getUser();
-  const email = userData.user?.email ?? "";
+  let client: RequestSupabaseClient | undefined;
+  let email = "";
+  let userError: unknown;
+  try {
+    client = await createRequestSupabaseClient();
+    const userResult = await client.auth.getUser();
+    email = userResult.data.user?.email ?? "";
+    userError = userResult.error;
+  } catch {
+    userError = true;
+  }
   if (
     userError ||
     !email ||
@@ -116,15 +154,16 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
     typeof input.code !== "string" ||
     !otp.test(input.code)
   ) {
-    await recordPrivilegedSignInAttempt({
-      email,
-      stage: "mfa",
-      outcome: "failed",
-    });
+    const audited = await persistPrivilegedAudit(
+      { email, stage: "mfa", outcome: "failed" },
+      client,
+    );
+    if (!audited) return { status: "unavailable" as const };
     return { status: "invalid_code" as const };
   }
   let result;
   try {
+    if (!client) return { status: "invalid_code" as const };
     const access = createSupabaseAccountAccess(client);
     result = await access.verifyPlatformAdministratorMfa({
       factorId: input.factorId,
@@ -132,18 +171,22 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
       code: input.code,
     });
   } catch {
-    await recordPrivilegedSignInAttempt({
-      email,
-      stage: "mfa",
-      outcome: "failed",
-    });
+    const audited = await persistPrivilegedAudit(
+      { email, stage: "mfa", outcome: "failed" },
+      client,
+    );
+    if (!audited) return { status: "unavailable" as const };
     return { status: "invalid_code" as const };
   }
 
-  await recordPrivilegedSignInAttempt({
-    email,
-    stage: "mfa",
-    outcome: result.status === "authenticated" ? "succeeded" : "failed",
-  });
+  const audited = await persistPrivilegedAudit(
+    {
+      email,
+      stage: "mfa",
+      outcome: result.status === "authenticated" ? "succeeded" : "failed",
+    },
+    client,
+  );
+  if (!audited) return { status: "unavailable" as const };
   return result;
 }

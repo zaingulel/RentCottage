@@ -42,7 +42,9 @@ export function AdministratorAccessForm({ locale }: { locale: Locale }) {
           result.status === "enrollment_required" ? result.secret : undefined,
       });
     } else {
-      setMessage(copy.invalidSignIn);
+      setMessage(
+        result.status === "unavailable" ? copy.unavailable : copy.invalidSignIn,
+      );
     }
   }
 
@@ -54,7 +56,9 @@ export function AdministratorAccessForm({ locale }: { locale: Locale }) {
       setComplete(true);
       setMessage(copy.administratorReady);
     } else {
-      setMessage(copy.invalidCode);
+      setMessage(
+        result.status === "unavailable" ? copy.unavailable : copy.invalidCode,
+      );
     }
   }
 

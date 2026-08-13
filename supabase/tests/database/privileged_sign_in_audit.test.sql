@@ -45,7 +45,7 @@ select public.provision_platform_administrator(
 );
 
 select lives_ok(
-  $$select public.record_privileged_sign_in_attempt('audit-admin@example.com', 'primary', 'failed')$$,
+  $$select public.record_privileged_sign_in_attempt('audit-admin@example.com', repeat('a', 64), 'primary', 'failed')$$,
   'a failed administrator password attempt is recorded'
 );
 
@@ -55,10 +55,10 @@ select results_eq(
   'a known failed attempt is attributed without exposing the email'
 );
 
-select isnt(
+select is(
   (select email_digest from public.privileged_sign_in_attempts limit 1),
-  'audit-admin@example.com',
-  'the stored identifier is not the raw email'
+  repeat('a', 64),
+  'the audit stores only the supplied keyed digest'
 );
 
 set local role authenticated;
@@ -69,7 +69,7 @@ select set_config(
 );
 
 select throws_ok(
-  $$select public.record_privileged_sign_in_attempt('audit-admin@example.com', 'primary', 'succeeded')$$,
+  $$select public.record_privileged_sign_in_attempt('audit-admin@example.com', repeat('b', 64), 'primary', 'succeeded')$$,
   '42501',
   null,
   'a browser session cannot write its own privileged audit record'

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createHmac } from "node:crypto";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
 
@@ -7,6 +8,12 @@ const auditClient = createClient(
   process.env.SUPABASE_SECRET_KEY ?? "",
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
+
+function expectedEmailDigest(email: string) {
+  return createHmac("sha256", process.env.SUPABASE_SECRET_KEY ?? "")
+    .update(email.trim().toLowerCase())
+    .digest("hex");
+}
 
 async function administratorId(email: string) {
   const { data, error } = await auditClient.auth.admin.listUsers();
@@ -24,7 +31,7 @@ async function currentAudit(
 ) {
   const { data, error } = await auditClient
     .from("privileged_sign_in_attempts")
-    .select("id, actor_user_id, attempted_at")
+    .select("id, actor_user_id, email_digest, attempted_at")
     .eq("actor_user_id", actorUserId)
     .eq("stage", stage)
     .eq("outcome", outcome)
@@ -101,6 +108,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     "failed",
   );
   expect(failedAudit.actor_user_id).toBe(actorUserId);
+  expect(failedAudit.email_digest).toBe(expectedEmailDigest(email));
   const code = new OTPAuth.TOTP({
     secret: OTPAuth.Secret.fromBase32(secret),
   }).generate();
@@ -115,6 +123,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     "succeeded",
   );
   expect(audit.actor_user_id).toBe(actorUserId);
+  expect(audit.email_digest).toBe(expectedEmailDigest(email));
   expect(new Date(audit.attempted_at).getTime()).toBeGreaterThanOrEqual(
     new Date(attemptedAfter).getTime(),
   );
@@ -138,6 +147,7 @@ test("an empty administrator password is recorded as a failed attempt", async ({
     "failed",
   );
   expect(audit.actor_user_id).toBe(actorUserId);
+  expect(audit.email_digest).toBe(expectedEmailDigest(email));
 });
 
 test("failed administrator sign-in gives no privileged access", async ({
@@ -160,6 +170,7 @@ test("failed administrator sign-in gives no privileged access", async ({
     "failed",
   );
   expect(audit.actor_user_id).toBe(actorUserId);
+  expect(audit.email_digest).toBe(expectedEmailDigest(email));
   expect(new Date(audit.attempted_at).getTime()).toBeGreaterThanOrEqual(
     new Date(attemptedAfter).getTime(),
   );

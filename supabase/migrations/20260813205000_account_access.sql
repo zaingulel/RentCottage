@@ -127,7 +127,7 @@ begin
 
   if context.role <> requested_role then
     raise exception 'This identity already has a different marketplace role'
-      using errcode = '42501';
+      using errcode = 'RC001';
   end if;
 
   return context;
@@ -207,6 +207,7 @@ grant select on table public.privileged_sign_in_attempts to service_role;
 
 create function public.record_privileged_sign_in_attempt(
   attempted_email text,
+  attempted_email_digest text,
   attempt_stage text,
   attempt_outcome text
 )
@@ -219,6 +220,11 @@ declare
   normalized_email text := lower(trim(coalesce(attempted_email, '')));
   administrator_user_id uuid;
 begin
+  if attempted_email_digest !~ '^[0-9a-f]{64}$' then
+    raise exception 'Privileged sign-in email digest is invalid'
+      using errcode = '22023';
+  end if;
+
   if attempt_stage not in ('primary', 'mfa') then
     raise exception 'Unknown privileged sign-in stage'
       using errcode = '22023';
@@ -245,16 +251,16 @@ begin
   )
   values (
     administrator_user_id,
-    encode(extensions.digest(convert_to(normalized_email, 'UTF8'), 'sha256'), 'hex'),
+    attempted_email_digest,
     attempt_stage,
     attempt_outcome
   );
 end;
 $$;
 
-revoke all on function public.record_privileged_sign_in_attempt(text, text, text)
+revoke all on function public.record_privileged_sign_in_attempt(text, text, text, text)
   from public;
-revoke all on function public.record_privileged_sign_in_attempt(text, text, text)
+revoke all on function public.record_privileged_sign_in_attempt(text, text, text, text)
   from anon, authenticated;
-grant execute on function public.record_privileged_sign_in_attempt(text, text, text)
+grant execute on function public.record_privileged_sign_in_attempt(text, text, text, text)
   to service_role;

@@ -67,11 +67,15 @@ export function createAccountAccess({
       code: string;
       role: MarketplaceRole;
     }) {
-      await identityProvider.verifyPhoneCode(phone, code);
+      const identity = await identityProvider.verifyPhoneCode(phone, code);
       const result = await accountContexts.claimMarketplaceRole(role);
       if (result.status === "role_conflict") {
         await identityProvider.signOut();
         return result;
+      }
+      if (result.context.userId !== identity.userId) {
+        await identityProvider.signOut();
+        return { status: "not_authorized" as const };
       }
 
       return { status: "authenticated" as const, context: result.context };
@@ -83,14 +87,25 @@ export function createAccountAccess({
       email: string;
       password: string;
     }) {
-      await identityProvider.signInPlatformAdministrator(email, password);
+      const identity = await identityProvider.signInPlatformAdministrator(
+        email,
+        password,
+      );
       const context = await accountContexts.resolve();
-      if (context?.role !== "platform_administrator") {
+      if (
+        context?.role !== "platform_administrator" ||
+        context.userId !== identity.userId
+      ) {
         await identityProvider.signOut();
         return { status: "not_authorized" as const };
       }
 
-      return identityProvider.beginPlatformAdministratorMfa();
+      try {
+        return await identityProvider.beginPlatformAdministratorMfa();
+      } catch (error) {
+        await identityProvider.signOut();
+        throw error;
+      }
     },
     async verifyPlatformAdministratorMfa({
       factorId,
@@ -101,11 +116,17 @@ export function createAccountAccess({
       challengeId: string;
       code: string;
     }) {
-      const identity = await identityProvider.verifyPlatformAdministratorMfa(
-        factorId,
-        challengeId,
-        code,
-      );
+      let identity;
+      try {
+        identity = await identityProvider.verifyPlatformAdministratorMfa(
+          factorId,
+          challengeId,
+          code,
+        );
+      } catch (error) {
+        await identityProvider.signOut();
+        throw error;
+      }
       const context = await accountContexts.resolve();
       if (
         identity.assurance !== "aal2" ||

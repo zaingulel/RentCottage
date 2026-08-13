@@ -8,8 +8,7 @@ import {
   type MarketplaceRole,
 } from "./account-access";
 
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function parseAccountContext(value: unknown): AccountContext {
   if (!value || typeof value !== "object") {
@@ -24,7 +23,7 @@ export function parseAccountContext(value: unknown): AccountContext {
       row.owner_approval_state !== "prospective" &&
       row.owner_approval_state !== "approved"
     ) {
-      throw new Error("Cottage Owner access has no approval state");
+      throw new Error("Account context has an invalid owner approval state");
     }
     return {
       userId: row.user_id,
@@ -42,7 +41,7 @@ export function parseAccountContext(value: unknown): AccountContext {
   return { userId: row.user_id, role: row.role };
 }
 
-class SupabaseIdentityProvider implements IdentityProvider {
+export class SupabaseIdentityProvider implements IdentityProvider {
   constructor(private readonly client: SupabaseClient) {}
 
   async requestPhoneCode(phone: string) {
@@ -91,6 +90,18 @@ class SupabaseIdentityProvider implements IdentityProvider {
         factorId: factor.id,
         challengeId: data.id,
       };
+    }
+
+    for (const candidate of factors.all) {
+      if (
+        candidate.factor_type === "totp" &&
+        candidate.status === "unverified"
+      ) {
+        const { error } = await this.client.auth.mfa.unenroll({
+          factorId: candidate.id,
+        });
+        if (error) throw error;
+      }
     }
 
     const { data: enrollment, error: enrollmentError } =
@@ -143,17 +154,14 @@ class SupabaseIdentityProvider implements IdentityProvider {
   }
 }
 
-class SupabaseAccountContextStore implements AccountContextStore {
+export class SupabaseAccountContextStore implements AccountContextStore {
   constructor(private readonly client: SupabaseClient) {}
 
   async claimMarketplaceRole(role: MarketplaceRole) {
     const { data, error } = await this.client.rpc("claim_marketplace_role", {
       requested_role: role,
     });
-    if (
-      error?.code === "42501" &&
-      /different marketplace role/.test(error.message)
-    ) {
+    if (error?.code === "RC001") {
       return { status: "role_conflict" as const };
     }
     if (error) throw error;

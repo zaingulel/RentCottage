@@ -117,6 +117,26 @@ describe("access verification command", () => {
     expect(removeTemp).toHaveBeenCalled();
   });
 
+  it("prints captured command output when startup fails", () => {
+    const run = vi.fn().mockReturnValue({
+      status: 7,
+      stdout: "startup details\n",
+      stderr: "docker details\n",
+    });
+    const stderr = vi.fn();
+
+    expect(
+      main([], {
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp: vi.fn(),
+        run,
+        stderr,
+      }),
+    ).toBe(7);
+    expect(stderr).toHaveBeenCalledWith("startup details");
+    expect(stderr).toHaveBeenCalledWith("docker details");
+  });
+
   it("rejects malformed Supabase credentials before spawning a browser", () => {
     const run = vi.fn((command, args) => ({
       status: 0,
@@ -126,6 +146,48 @@ describe("access verification command", () => {
               API_URL: {},
               PUBLISHABLE_KEY: [],
               SECRET_KEY: true,
+            })
+          : "",
+    }));
+    const stderr = vi.fn();
+
+    expect(main([], { run, stderr })).toBe(1);
+    expect(stderr).toHaveBeenCalledWith(
+      "Supabase did not return valid local test credentials.",
+    );
+    expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
+      false,
+    );
+  });
+
+  it("rejects unreadable Supabase credential output", () => {
+    const run = vi.fn((command, args) => ({
+      status: 0,
+      stdout:
+        command === "npx" && args.join(" ") === "supabase status -o json"
+          ? "not-json"
+          : "",
+    }));
+    const stderr = vi.fn();
+
+    expect(main([], { run, stderr })).toBe(1);
+    expect(stderr).toHaveBeenCalledWith(
+      "Supabase returned unreadable local test credentials.",
+    );
+    expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
+      false,
+    );
+  });
+
+  it("rejects a non-loopback Supabase API URL", () => {
+    const run = vi.fn((command, args) => ({
+      status: 0,
+      stdout:
+        command === "npx" && args.join(" ") === "supabase status -o json"
+          ? JSON.stringify({
+              API_URL: "https://supabase.example.com",
+              PUBLISHABLE_KEY: "local-publishable",
+              SECRET_KEY: "local-secret",
             })
           : "",
     }));
