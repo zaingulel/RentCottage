@@ -638,12 +638,22 @@ export const specialIssues = new Map([
       blockers: [19],
     },
   ],
+  [
+    55,
+    {
+      title: "Automate tracker reconciliation and Project 4 transitions",
+      area: "Foundation & quality",
+      labels: ["ready-for-agent"],
+      blockers: [52],
+    },
+  ],
 ]);
 
 export const expectedMembership = new Set([
   1,
   18,
   52,
+  55,
   ...replacementIssues.map(({ number }) => number),
 ]);
 
@@ -998,6 +1008,7 @@ export function verifyRentCottageProject({
     ["#1", /#1\b/],
     ["#18", /#18\b/],
     ["#52", /#52\b/],
+    ["#55", /#55\b/],
     ["native dependencies", /native dependencies/],
     ["active ownership", /active ownership/],
     ["verifier", /verifier/],
