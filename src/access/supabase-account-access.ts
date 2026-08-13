@@ -56,9 +56,12 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       token: code,
       type: "sms",
     });
+    if (error?.code === "otp_expired") {
+      return { status: "invalid_code" as const };
+    }
     if (error) throw error;
     if (!data.user) throw new Error("Phone verification returned no identity");
-    return { userId: data.user.id };
+    return { status: "verified" as const, userId: data.user.id };
   }
 
   async signInPlatformAdministrator(email: string, password: string) {

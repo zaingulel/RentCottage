@@ -44,7 +44,9 @@ export function PhoneAccessForm({
       setMessage(
         result.status === "role_conflict"
           ? copy.roleConflict
-          : copy.invalidCode,
+          : result.status === "unavailable"
+            ? copy.unavailable
+            : copy.invalidCode,
       );
     }
   }

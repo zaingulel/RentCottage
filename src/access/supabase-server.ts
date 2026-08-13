@@ -18,3 +18,16 @@ export async function createRequestSupabaseClient() {
     },
   });
 }
+
+export async function clearRequestSupabaseSession() {
+  const cookieStore = await cookies();
+  const { supabase } = getServerEnvironment();
+  const storageNamespace = new URL(supabase.url).hostname.split(".")[0];
+  const authCookiePrefix = `sb-${storageNamespace}-auth-token`;
+
+  for (const cookie of cookieStore.getAll()) {
+    if (cookie.name.startsWith(authCookiePrefix)) {
+      cookieStore.set(cookie.name, "", { path: "/", maxAge: 0 });
+    }
+  }
+}

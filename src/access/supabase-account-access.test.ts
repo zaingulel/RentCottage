@@ -119,6 +119,26 @@ describe("Supabase administrator MFA adapter", () => {
   });
 });
 
+describe("Supabase phone verification adapter", () => {
+  it("maps an expired one-time code to the public invalid-code result", async () => {
+    const client = {
+      auth: {
+        verifyOtp: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: { code: "otp_expired" },
+        }),
+      },
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseIdentityProvider(client).verifyPhoneCode(
+        "+9647500000000",
+        "123456",
+      ),
+    ).resolves.toEqual({ status: "invalid_code" });
+  });
+});
+
 describe("Supabase marketplace role adapter", () => {
   it("maps the role conflict SQL state without parsing provider prose", async () => {
     const client = {

@@ -10,7 +10,7 @@ import {
 function identityProvider(userId = "customer-user"): IdentityProvider {
   return {
     requestPhoneCode: async () => ({ status: "code_sent" }),
-    verifyPhoneCode: async () => ({ userId }),
+    verifyPhoneCode: async () => ({ status: "verified", userId }),
     signInPlatformAdministrator: async () => ({ userId }),
     beginPlatformAdministratorMfa: async () => ({
       status: "challenge_required",
@@ -149,6 +149,32 @@ describe("account access", () => {
     expect(signedOut).toBe(true);
   });
 
+  it("signs out when role assignment fails after phone verification", async () => {
+    let signedOut = false;
+    const provider = identityProvider();
+    provider.signOut = async () => {
+      signedOut = true;
+    };
+    const access = createAccountAccess({
+      identityProvider: provider,
+      accountContexts: {
+        claimMarketplaceRole: async () => {
+          throw new Error("role store unavailable");
+        },
+        resolve: async () => undefined,
+      },
+    });
+
+    await expect(
+      access.verifyPhoneAccess({
+        phone: "+9647500000000",
+        code: "123456",
+        role: "customer",
+      }),
+    ).rejects.toThrow("role store unavailable");
+    expect(signedOut).toBe(true);
+  });
+
   it("requires assurance level 2 before returning Platform Administrator access", async () => {
     const access = createAccountAccess({
       identityProvider: identityProvider("admin-user"),
@@ -270,6 +296,41 @@ describe("account access", () => {
             });
 
       await expect(operation).rejects.toThrow("MFA unavailable");
+      expect(signedOut).toBe(true);
+    },
+  );
+
+  it.each(["primary", "mfa"] as const)(
+    "signs out when the administrator context lookup fails after %s authentication",
+    async (stage) => {
+      let signedOut = false;
+      const provider = identityProvider("admin-user");
+      provider.signOut = async () => {
+        signedOut = true;
+      };
+      const access = createAccountAccess({
+        identityProvider: provider,
+        accountContexts: {
+          claimMarketplaceRole: async () => ({ status: "role_conflict" }),
+          resolve: async () => {
+            throw new Error("context store unavailable");
+          },
+        },
+      });
+
+      const operation =
+        stage === "primary"
+          ? access.signInPlatformAdministrator({
+              email: "admin@example.com",
+              password: "a-secure-password",
+            })
+          : access.verifyPlatformAdministratorMfa({
+              factorId: "factor-1",
+              challengeId: "challenge-1",
+              code: "654321",
+            });
+
+      await expect(operation).rejects.toThrow("context store unavailable");
       expect(signedOut).toBe(true);
     },
   );

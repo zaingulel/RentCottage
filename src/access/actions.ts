@@ -2,7 +2,10 @@
 
 import { recordPrivilegedSignInAttempt } from "./privileged-sign-in-audit";
 import { createSupabaseAccountAccess } from "./supabase-account-access";
-import { createRequestSupabaseClient } from "./supabase-server";
+import {
+  clearRequestSupabaseSession,
+  createRequestSupabaseClient,
+} from "./supabase-server";
 
 const iraqiPhone = /^\+964\d{10}$/;
 const otp = /^\d{6}$/;
@@ -27,8 +30,11 @@ async function persistPrivilegedAudit(
   } catch {
     if (client) {
       try {
-        await client.auth.signOut();
-      } catch {}
+        const { error } = await client.auth.signOut();
+        if (error) await clearRequestSupabaseSession();
+      } catch {
+        await clearRequestSupabaseSession();
+      }
     }
     return false;
   }
@@ -71,7 +77,7 @@ export async function verifyPhoneAccess(value: unknown) {
       role: input.role,
     });
   } catch {
-    return { status: "invalid_code" as const };
+    return { status: "unavailable" as const };
   }
 }
 

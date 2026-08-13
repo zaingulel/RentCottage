@@ -11,7 +11,12 @@ export type AccountContext =
 
 export interface IdentityProvider {
   requestPhoneCode(phone: string): Promise<{ status: "code_sent" }>;
-  verifyPhoneCode(phone: string, code: string): Promise<{ userId: string }>;
+  verifyPhoneCode(
+    phone: string,
+    code: string,
+  ): Promise<
+    { status: "verified"; userId: string } | { status: "invalid_code" }
+  >;
   signInPlatformAdministrator(
     email: string,
     password: string,
@@ -68,7 +73,14 @@ export function createAccountAccess({
       role: MarketplaceRole;
     }) {
       const identity = await identityProvider.verifyPhoneCode(phone, code);
-      const result = await accountContexts.claimMarketplaceRole(role);
+      if (identity.status === "invalid_code") return identity;
+      let result;
+      try {
+        result = await accountContexts.claimMarketplaceRole(role);
+      } catch (error) {
+        await identityProvider.signOut();
+        throw error;
+      }
       if (result.status === "role_conflict") {
         await identityProvider.signOut();
         return result;
@@ -91,7 +103,13 @@ export function createAccountAccess({
         email,
         password,
       );
-      const context = await accountContexts.resolve();
+      let context;
+      try {
+        context = await accountContexts.resolve();
+      } catch (error) {
+        await identityProvider.signOut();
+        throw error;
+      }
       if (
         context?.role !== "platform_administrator" ||
         context.userId !== identity.userId
@@ -127,7 +145,13 @@ export function createAccountAccess({
         await identityProvider.signOut();
         throw error;
       }
-      const context = await accountContexts.resolve();
+      let context;
+      try {
+        context = await accountContexts.resolve();
+      } catch (error) {
+        await identityProvider.signOut();
+        throw error;
+      }
       if (
         identity.assurance !== "aal2" ||
         context?.role !== "platform_administrator" ||

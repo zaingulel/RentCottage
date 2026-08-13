@@ -1,16 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { recordAudit, createClient, createAccess } = vi.hoisted(() => ({
-  recordAudit: vi.fn(),
-  createClient: vi.fn(),
-  createAccess: vi.fn(),
-}));
+const { recordAudit, createClient, clearSession, createAccess } = vi.hoisted(
+  () => ({
+    recordAudit: vi.fn(),
+    createClient: vi.fn(),
+    clearSession: vi.fn(),
+    createAccess: vi.fn(),
+  }),
+);
 
 vi.mock("./privileged-sign-in-audit", () => ({
   recordPrivilegedSignInAttempt: recordAudit,
 }));
 vi.mock("./supabase-server", () => ({
   createRequestSupabaseClient: createClient,
+  clearRequestSupabaseSession: clearSession,
 }));
 vi.mock("./supabase-account-access", () => ({
   createSupabaseAccountAccess: createAccess,
@@ -27,6 +31,7 @@ describe("account action HTTP boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     recordAudit.mockResolvedValue(undefined);
+    clearSession.mockResolvedValue(undefined);
   });
 
   it("rejects malformed public phone inputs before reaching Supabase", async () => {
@@ -41,6 +46,23 @@ describe("account action HTTP boundary", () => {
       }),
     ).resolves.toEqual({ status: "invalid_code" });
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("reports role assignment infrastructure failure as unavailable", async () => {
+    createClient.mockResolvedValue({});
+    createAccess.mockReturnValue({
+      verifyPhoneAccess: vi
+        .fn()
+        .mockRejectedValue(new Error("role store unavailable")),
+    });
+
+    await expect(
+      verifyPhoneAccess({
+        phone: "+9647500000000",
+        code: "123456",
+        role: "customer",
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
   });
 
   it("audits a malformed administrator sign-in without throwing", async () => {
@@ -103,6 +125,38 @@ describe("account action HTTP boundary", () => {
       }),
     ).resolves.toEqual({ status: "unavailable" });
     expect(signOut).toHaveBeenCalledOnce();
+  });
+
+  it("clears the browser session when provider sign-out cannot revoke an unaudited login", async () => {
+    const signOut = vi.fn().mockResolvedValue({
+      error: new Error("provider unavailable"),
+    });
+    createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { email: "admin@example.com" } },
+          error: null,
+        }),
+        signOut,
+      },
+    });
+    createAccess.mockReturnValue({
+      verifyPlatformAdministratorMfa: vi.fn().mockResolvedValue({
+        status: "authenticated",
+        context: { userId: "admin-user", role: "platform_administrator" },
+      }),
+    });
+    recordAudit.mockRejectedValue(new Error("audit unavailable"));
+
+    await expect(
+      verifyPlatformAdministratorMfa({
+        factorId: "factor-1",
+        challengeId: "challenge-1",
+        code: "123456",
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(signOut).toHaveBeenCalledOnce();
+    expect(clearSession).toHaveBeenCalledOnce();
   });
 
   it("signs out and returns unavailable when a successful primary audit cannot persist", async () => {
