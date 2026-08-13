@@ -211,12 +211,15 @@ describe("RentCottage Project contract", () => {
     );
   });
 
-  it("keeps the bounded resume issue owner-gated in Backlog", () => {
+  it("rejects issue 59 in In progress while owner-gated", () => {
     const result = verifyRentCottageProject(
       fakeState({ statusByNumber: { 59: "In progress" } }),
     );
     expect(result.failures).toContainEqual(
-      expect.objectContaining({ code: "project.status.owner_gated" }),
+      expect.objectContaining({
+        code: "project.status.owner_gated",
+        message: expect.stringContaining("#59"),
+      }),
     );
   });
 
