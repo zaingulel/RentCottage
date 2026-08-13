@@ -41,7 +41,7 @@ function fakeState({
   nativeEvidenceAsMap = false,
   lineEnding = "\n",
   nullBodyIssue = null,
-  projectReadme = "#19 through #51; #1, #18, #52; native dependencies; active ownership; verifier",
+  projectReadme = "#19 through #51; #1, #18, #52, #55; native dependencies; active ownership; verifier",
 } = {}) {
   const closed = new Set(closedIssues);
   const replacementByNumber = new Map(
@@ -58,11 +58,15 @@ function fakeState({
     ]),
   ]);
 
+  const issueNumbers = new Set([
+    ...Array.from({ length: 18 }, (_, index) => index + 1),
+    ...replacementIssues.map(({ number }) => number),
+    ...specialIssues.keys(),
+  ]);
   const issues = [];
-  for (let number = 1; number <= 52; number += 1) {
+  for (const number of [...issueNumbers].sort((a, b) => a - b)) {
     const replacement = replacementByNumber.get(number);
     const policy = issuePolicies.get(number);
-    if (number > 18 && number < 52 && !replacement) continue;
     const historical = number >= 2 && number <= 17;
     issues.push({
       number,
@@ -75,8 +79,8 @@ function fakeState({
             criteria: acceptanceCriteriaByIssue.get(number),
             blockers: replacement.blockers,
           })
-        : number === 52
-          ? issueBody({ blockers: [19] })
+        : policy?.blockers.length
+          ? issueBody({ blockers: policy.blockers })
           : "",
       labels: (policy?.labels ?? (historical ? ["ready-for-agent"] : [])).map(
         (name) => ({ name }),
@@ -166,6 +170,16 @@ function fakeState({
 }
 
 describe("RentCottage Project contract", () => {
+  it("onboards the tracker automation issue with its approved policy", () => {
+    expect(expectedMembership).toContain(55);
+    expect(specialIssues.get(55)).toEqual({
+      title: "Automate tracker reconciliation and Project 4 transitions",
+      area: "Foundation & quality",
+      labels: ["ready-for-agent"],
+      blockers: [52],
+    });
+  });
+
   it("accepts the repaired issue graph and exact Project membership", () => {
     const result = verifyRentCottageProject(fakeState());
     expect(result.failures).toEqual([]);
@@ -253,7 +267,7 @@ describe("RentCottage Project contract", () => {
     const result = verifyRentCottageProject(
       fakeState({
         projectReadme:
-          "#19 through #51; #18, #52; native dependencies; active ownership; verifier",
+          "#19 through #51; #18, #52, #55; native dependencies; active ownership; verifier",
       }),
     );
     expect(result.failures).toContainEqual(
