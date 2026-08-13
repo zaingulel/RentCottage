@@ -220,6 +220,7 @@ describe("GitHub Actions delivery checks", () => {
     const preview = previewWorkflow.jobs.preview;
     expect(preview.if).toBe("github.actor == github.repository_owner");
     expect(JSON.stringify(preview)).not.toContain("coderabbit");
+    expect(JSON.stringify(preview.env)).not.toContain("SUPABASE_");
     expect(JSON.stringify(preview.steps)).toContain(
       "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
     );
@@ -228,6 +229,36 @@ describe("GitHub Actions delivery checks", () => {
     );
     expect(JSON.stringify(preview.steps)).toContain(
       "cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0",
+    );
+    const previewSetupNode = preview.steps.find(
+      (step: { uses?: string }) =>
+        step.uses ===
+        "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+    );
+    expect(previewSetupNode.with["package-manager-cache"]).toBe(false);
+    expect(previewSetupNode.with.cache).toBeUndefined();
+    const deploy = preview.steps.find(
+      (step: { id?: string }) => step.id === "deploy",
+    );
+    expect(
+      preview.steps.filter((step: { env?: Record<string, string> }) =>
+        JSON.stringify(step.env ?? {}).includes("SUPABASE_SECRET_KEY"),
+      ),
+    ).toEqual([deploy]);
+    expect(deploy.env.SUPABASE_SECRET_KEY).toBe(
+      "${{ secrets.SUPABASE_SECRET_KEY }}",
+    );
+    expect(deploy.with.secrets).toBe("SUPABASE_SECRET_KEY");
+    expect(deploy.with.environment).toBe("preview");
+    expect(deploy.with.command).toContain("versions upload --env preview");
+    expect(deploy.with.command).toContain(
+      "SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}",
+    );
+    expect(deploy.with.command).toContain(
+      "SUPABASE_URL:${{ vars.SUPABASE_URL }}",
+    );
+    expect(deploy.with.command).toContain(
+      "SUPABASE_PUBLISHABLE_KEY:${{ vars.SUPABASE_PUBLISHABLE_KEY }}",
     );
     expect(JSON.stringify(preview.steps)).toContain(
       "versions upload --env preview",

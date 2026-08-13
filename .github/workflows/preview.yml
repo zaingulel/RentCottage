@@ -17,10 +17,6 @@ jobs:
     env:
       APP_ENVIRONMENT: preview
       NEXTJS_ENV: preview
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -28,15 +24,23 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
-          cache: npm
+          package-manager-cache: false
       - run: npm ci
       - run: npm run build:worker
       - id: deploy
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: versions upload --env preview
+          environment: preview
+          secrets: SUPABASE_SECRET_KEY
+          command: >-
+            versions upload --env preview
+            --var SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}
+            --var SUPABASE_URL:${{ vars.SUPABASE_URL }}
+            --var SUPABASE_PUBLISHABLE_KEY:${{ vars.SUPABASE_PUBLISHABLE_KEY }}
       - name: Smoke Cloudflare preview
         env:
           PREVIEW_URL: ${{ steps.deploy.outputs.deployment-url }}
