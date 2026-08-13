@@ -20,6 +20,10 @@ Single-context layout. See `docs/agents/domain.md`.
 - `docs/delivery/rentcottage-mvp-delivery-spec.md` preserves the granular behaviour catalogue and ticket-slicing contract for the delivery team.
 - Run `to-tickets` from the internal delivery specification together with the signed client PRD and `CONTEXT.md`; do not infer ticket size from the condensed client stories or generate the board from the client PRD alone.
 
+### Engineering standards
+
+`docs/engineering/coding-standards.md` governs code quality and security. `docs/engineering/testing-strategy.md` governs evidence selection and the stable verification commands. More specific product, domain, architecture, and issue decisions win when they directly conflict.
+
 ## Working method
 
 Start a substantive work session with `$resume`; end or park it with `$handoff`. Treat Git and direct verification as the record of what is shipped, and the configured issue tracker as the live plan. Do not rely on chat history or a status document when they conflict with Git.
