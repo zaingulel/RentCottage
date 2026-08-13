@@ -1,0 +1,11 @@
+.next
+.open-next
+node_modules
+test-results
+playwright-report
+cloudflare-env.d.ts
+prototype
+docs
+AGENTS.md
+CONTEXT.md
+*.docx

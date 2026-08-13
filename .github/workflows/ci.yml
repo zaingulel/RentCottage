@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  quality:
+    name: ${{ github.event.review.user.login == 'coderabbitai[bot]' && github.event.review.user.id == 136622811 && github.event.review.state == 'approved' && github.event.review.commit_id == github.event.pull_request.head.sha && github.event.pull_request.head.repo.full_name == github.repository && 'quality' || 'review-router' }}
+    if: >-
+      github.event.review.user.login == 'coderabbitai[bot]' &&
+      github.event.review.user.id == 136622811 &&
+      github.event.review.state == 'approved' &&
+      github.event.review.commit_id == github.event.pull_request.head.sha &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    # Branch protection must require quality on the current PR head for enforcement.
+    concurrency:
+      group: quality-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    env:
+      APP_ENVIRONMENT: test
+      NEXTJS_ENV: test
+      SUPABASE_PROJECT_REF: local-test
+      SUPABASE_URL: http://127.0.0.1:54331
+      SUPABASE_PUBLISHABLE_KEY: local-test-publishable
+      SUPABASE_SECRET_KEY: local-test-secret
+    steps:
+      - name: Require current PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          live_head="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PULL_REQUEST_NUMBER" --jq .head.sha)"
+          test "$live_head" = "$EXPECTED_HEAD_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run audit:production
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:worker
+      - run: npm run scan:client-secrets
+      - run: npm run cf-typegen
+      - run: git diff --exit-code --ignore-space-at-eol -- cloudflare-env.d.ts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - run: npm run smoke:preview
