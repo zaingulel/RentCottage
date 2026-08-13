@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(8);
+select plan(9);
 
 select has_table(
   'public',
@@ -44,9 +44,29 @@ select public.provision_platform_administrator(
   '00000000-0000-0000-0000-000000000005'
 );
 
+insert into public.privileged_sign_in_attempts (
+  actor_user_id,
+  email_digest,
+  stage,
+  outcome,
+  attempted_at
+)
+values (
+  '00000000-0000-0000-0000-000000000005',
+  repeat('f', 64),
+  'primary',
+  'failed',
+  now() - interval '181 days'
+);
+
 select lives_ok(
   $$select public.record_privileged_sign_in_attempt('audit-admin@example.com', repeat('a', 64), 'primary', 'failed')$$,
   'a failed administrator password attempt is recorded'
+);
+
+select is_empty(
+  $$select id from public.privileged_sign_in_attempts where attempted_at < now() - interval '180 days'$$,
+  'audit writes enforce the 180-day retention period'
 );
 
 select results_eq(

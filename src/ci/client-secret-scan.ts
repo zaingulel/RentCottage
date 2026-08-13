@@ -9,7 +9,7 @@ function filesWithin(path: string): string[] {
 }
 
 export function assertNoClientSecret(secret: string, roots: string[]) {
-  if (!secret) throw new Error("SUPABASE_SECRET_KEY is required");
+  if (!secret) throw new Error("Server credential is required");
 
   for (const root of roots) {
     if (!existsSync(root))
@@ -27,8 +27,7 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  assertNoClientSecret(
-    process.env.SUPABASE_SECRET_KEY ?? "",
-    process.argv.slice(2),
-  );
+  const roots = process.argv.slice(2);
+  assertNoClientSecret(process.env.SUPABASE_SECRET_KEY ?? "", roots);
+  assertNoClientSecret(process.env.PRIVILEGED_AUDIT_HMAC_KEY ?? "", roots);
 }

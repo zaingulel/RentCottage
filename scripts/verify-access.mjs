@@ -130,6 +130,7 @@ export function main(
       SUPABASE_URL: supabaseUrl,
       SUPABASE_PUBLISHABLE_KEY: publishableKey,
       SUPABASE_SECRET_KEY: secretKey,
+      PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     };
     const prepared = execute("node", ["scripts/prepare-access-test.mjs"], {
       env: accessEnvironment,

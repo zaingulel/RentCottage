@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
 import { readPublicSupabaseEnvironment } from "@/config/server-environment";
+import { supabaseAuthCookieName } from "@/access/supabase-auth-cookie";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -12,8 +13,11 @@ export async function middleware(request: NextRequest) {
     SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY,
     NEXT_PUBLIC_SUPABASE_SECRET_KEY:
       process.env.NEXT_PUBLIC_SUPABASE_SECRET_KEY,
+    NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY:
+      process.env.NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY,
   });
   const client = createServerClient(supabase.url, supabase.publishableKey, {
+    cookieOptions: { name: supabaseAuthCookieName },
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (values) => {

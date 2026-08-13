@@ -10,7 +10,7 @@ const auditClient = createClient(
 );
 
 function expectedEmailDigest(email: string) {
-  return createHmac("sha256", process.env.SUPABASE_SECRET_KEY ?? "")
+  return createHmac("sha256", process.env.PRIVILEGED_AUDIT_HMAC_KEY ?? "")
     .update(email.trim().toLowerCase())
     .digest("hex");
 }

@@ -199,6 +199,12 @@ create table public.privileged_sign_in_attempts (
 create index privileged_sign_in_attempts_actor_user_id_idx
   on public.privileged_sign_in_attempts (actor_user_id, attempted_at desc);
 
+create index privileged_sign_in_attempts_attempted_at_idx
+  on public.privileged_sign_in_attempts (attempted_at);
+
+comment on table public.privileged_sign_in_attempts is
+  'Privileged access security audit retained for 180 days';
+
 alter table public.privileged_sign_in_attempts enable row level security;
 
 revoke all on table public.privileged_sign_in_attempts from public;
@@ -234,6 +240,9 @@ begin
     raise exception 'Unknown privileged sign-in outcome'
       using errcode = '22023';
   end if;
+
+  delete from public.privileged_sign_in_attempts
+  where attempted_at < now() - interval '180 days';
 
   select account_contexts.user_id
   into administrator_user_id

@@ -78,6 +78,7 @@ describe("access verification command", () => {
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
+      PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
       SUPABASE_TELEMETRY_DISABLED: "1",
       DO_NOT_TRACK: "1",
     });
@@ -91,6 +92,7 @@ describe("access verification command", () => {
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
+      PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
@@ -158,6 +160,12 @@ describe("access verification command", () => {
     expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
       false,
     );
+    expect(
+      run.mock.calls.some(
+        ([command, args]) =>
+          command === "node" && args[0] === "scripts/prepare-access-test.mjs",
+      ),
+    ).toBe(false);
   });
 
   it("rejects unreadable Supabase credential output", () => {
@@ -200,6 +208,12 @@ describe("access verification command", () => {
     expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
       false,
     );
+    expect(
+      run.mock.calls.some(
+        ([command, args]) =>
+          command === "node" && args[0] === "scripts/prepare-access-test.mjs",
+      ),
+    ).toBe(false);
   });
 
   it("fails when the local services cannot be stopped cleanly", () => {

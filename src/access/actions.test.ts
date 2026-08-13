@@ -148,6 +148,26 @@ describe("account action HTTP boundary", () => {
     expect(createAccess).not.toHaveBeenCalled();
   });
 
+  it("clears an unresolved administrator session after identity lookup fails", async () => {
+    const signOut = vi.fn().mockResolvedValue({
+      error: new Error("provider unavailable"),
+    });
+    createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: new Error("identity lookup unavailable"),
+        }),
+        signOut,
+      },
+    });
+
+    await expect(verifyPlatformAdministratorMfa(undefined)).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(clearSession).toHaveBeenCalledOnce();
+  });
+
   it("signs out and returns unavailable when a successful MFA audit cannot persist", async () => {
     const signOut = vi.fn().mockResolvedValue({ error: null });
     createClient.mockResolvedValue({
@@ -175,6 +195,7 @@ describe("account action HTTP boundary", () => {
       }),
     ).resolves.toEqual({ status: "unavailable" });
     expect(signOut).toHaveBeenCalledOnce();
+    expect(clearSession).not.toHaveBeenCalled();
   });
 
   it("clears the browser session when provider sign-out cannot revoke an unaudited login", async () => {

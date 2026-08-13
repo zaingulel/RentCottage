@@ -118,15 +118,75 @@ describe("Supabase administrator MFA adapter", () => {
     );
   });
 
-  it.each([
-    ["mfa_verification_failed"],
-    ["mfa_verification_rejected"],
-    ["mfa_challenge_expired"],
-  ])("maps %s to an invalid authenticator code", async (code) => {
+  it("challenges a verified TOTP factor without replacing it", async () => {
+    const unenroll = vi.fn();
+    const enroll = vi.fn();
+    const challenge = vi.fn().mockResolvedValue({
+      data: { id: "verified-challenge" },
+      error: null,
+    });
     const client = {
       auth: {
         mfa: {
-          verify: vi.fn().mockResolvedValue({ error: { code } }),
+          listFactors: vi.fn().mockResolvedValue({
+            data: {
+              all: [],
+              totp: [
+                {
+                  id: "verified-factor",
+                  factor_type: "totp",
+                  status: "verified",
+                },
+              ],
+            },
+            error: null,
+          }),
+          unenroll,
+          enroll,
+          challenge,
+        },
+      },
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseIdentityProvider(client).beginPlatformAdministratorMfa(),
+    ).resolves.toEqual({
+      status: "challenge_required",
+      factorId: "verified-factor",
+      challengeId: "verified-challenge",
+    });
+    expect(unenroll).not.toHaveBeenCalled();
+    expect(enroll).not.toHaveBeenCalled();
+  });
+
+  it.each([["mfa_verification_failed"], ["mfa_verification_rejected"]])(
+    "maps %s to an invalid authenticator code",
+    async (code) => {
+      const client = {
+        auth: {
+          mfa: {
+            verify: vi.fn().mockResolvedValue({ error: { code } }),
+          },
+        },
+      } as unknown as SupabaseClient;
+
+      await expect(
+        new SupabaseIdentityProvider(client).verifyPlatformAdministratorMfa(
+          "factor-1",
+          "challenge-1",
+          "123456",
+        ),
+      ).resolves.toEqual({ status: "invalid_code" });
+    },
+  );
+
+  it("maps an expired MFA challenge to a restart result", async () => {
+    const client = {
+      auth: {
+        mfa: {
+          verify: vi.fn().mockResolvedValue({
+            error: { code: "mfa_challenge_expired" },
+          }),
         },
       },
     } as unknown as SupabaseClient;
@@ -137,7 +197,7 @@ describe("Supabase administrator MFA adapter", () => {
         "challenge-1",
         "123456",
       ),
-    ).resolves.toEqual({ status: "invalid_code" });
+    ).resolves.toEqual({ status: "challenge_expired" });
   });
 });
 

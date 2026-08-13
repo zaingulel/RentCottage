@@ -48,6 +48,7 @@ export interface IdentityProvider {
         assurance: "aal1" | "aal2";
       }
     | { status: "invalid_code" }
+    | { status: "challenge_expired" }
   >;
   signOut(): Promise<void>;
 }
@@ -155,7 +156,12 @@ export function createAccountAccess({
         await identityProvider.signOut();
         throw error;
       }
-      if (identity.status === "invalid_code") return identity;
+      if (
+        identity.status === "invalid_code" ||
+        identity.status === "challenge_expired"
+      ) {
+        return identity;
+      }
       let context;
       try {
         context = await accountContexts.resolve();

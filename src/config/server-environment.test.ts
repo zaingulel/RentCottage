@@ -32,9 +32,11 @@ describe("server environment", () => {
         SUPABASE_URL: "http://127.0.0.1:54321",
         SUPABASE_PUBLISHABLE_KEY: "local-publishable",
         SUPABASE_SECRET_KEY: "local-secret",
+        PRIVILEGED_AUDIT_HMAC_KEY: "local-audit-hmac-key-with-32-characters",
       }),
     ).toEqual({
       name: "test",
+      privilegedAuditHmacKey: "local-audit-hmac-key-with-32-characters",
       supabase: {
         projectRef: "local-test",
         url: "http://127.0.0.1:54321",
@@ -52,6 +54,7 @@ describe("server environment", () => {
         SUPABASE_URL: "https://prod-ref.supabase.co",
         SUPABASE_PUBLISHABLE_KEY: "publishable",
         SUPABASE_SECRET_KEY: "secret",
+        PRIVILEGED_AUDIT_HMAC_KEY: "audit-hmac-key-with-at-least-32-characters",
         NEXT_PUBLIC_SUPABASE_SECRET_KEY: "leaked-secret",
       }),
     ).toThrow(/NEXT_PUBLIC_SUPABASE_SECRET_KEY/);
@@ -65,6 +68,7 @@ describe("server environment", () => {
         SUPABASE_URL: "http://127.0.0.1.attacker.example:54321",
         SUPABASE_PUBLISHABLE_KEY: "publishable",
         SUPABASE_SECRET_KEY: "secret",
+        PRIVILEGED_AUDIT_HMAC_KEY: "audit-hmac-key-with-at-least-32-characters",
       }),
     ).toThrow(/SUPABASE_URL/);
   });
@@ -77,7 +81,35 @@ describe("server environment", () => {
         SUPABASE_URL: "https://attacker.example/prod-ref.supabase.co",
         SUPABASE_PUBLISHABLE_KEY: "publishable",
         SUPABASE_SECRET_KEY: "secret",
+        PRIVILEGED_AUDIT_HMAC_KEY: "audit-hmac-key-with-at-least-32-characters",
       }),
     ).toThrow(/SUPABASE_URL/);
+  });
+
+  it("requires a dedicated strong privileged-audit HMAC key", () => {
+    expect(() =>
+      readServerEnvironment({
+        APP_ENVIRONMENT: "test",
+        SUPABASE_PROJECT_REF: "local-test",
+        SUPABASE_URL: "http://127.0.0.1:54321",
+        SUPABASE_PUBLISHABLE_KEY: "publishable",
+        SUPABASE_SECRET_KEY: "secret",
+        PRIVILEGED_AUDIT_HMAC_KEY: "too-short",
+      }),
+    ).toThrow(/PRIVILEGED_AUDIT_HMAC_KEY/);
+  });
+
+  it("rejects a browser-prefixed privileged-audit HMAC key", () => {
+    expect(() =>
+      readServerEnvironment({
+        APP_ENVIRONMENT: "test",
+        SUPABASE_PROJECT_REF: "local-test",
+        SUPABASE_URL: "http://127.0.0.1:54321",
+        SUPABASE_PUBLISHABLE_KEY: "publishable",
+        SUPABASE_SECRET_KEY: "secret",
+        PRIVILEGED_AUDIT_HMAC_KEY: "audit-hmac-key-with-at-least-32-characters",
+        NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY: "exposed-audit-key",
+      }),
+    ).toThrow(/NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY/);
   });
 });

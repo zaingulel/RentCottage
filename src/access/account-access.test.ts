@@ -310,6 +310,10 @@ describe("account access", () => {
 
   it("returns explicit credential failures without treating them as infrastructure errors", async () => {
     const provider = identityProvider("admin-user");
+    let signedOut = false;
+    provider.signOut = async () => {
+      signedOut = true;
+    };
     provider.signInPlatformAdministrator = async () => ({
       status: "invalid_sign_in",
     });
@@ -334,6 +338,7 @@ describe("account access", () => {
         code: "000000",
       }),
     ).resolves.toEqual({ status: "invalid_code" });
+    expect(signedOut).toBe(false);
   });
 
   it.each(["primary", "mfa"] as const)(

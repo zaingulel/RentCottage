@@ -138,10 +138,12 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       challengeId,
       code,
     });
+    if (error?.code === "mfa_challenge_expired") {
+      return { status: "challenge_expired" as const };
+    }
     if (
       error?.code === "mfa_verification_failed" ||
-      error?.code === "mfa_verification_rejected" ||
-      error?.code === "mfa_challenge_expired"
+      error?.code === "mfa_verification_rejected"
     ) {
       return { status: "invalid_code" as const };
     }

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(14);
 
 select has_table(
   'public',
@@ -107,6 +107,13 @@ select is_empty(
   'a prospective Cottage Owner cannot read approved-owner cottage scope'
 );
 
+select throws_ok(
+  $$update public.account_contexts set owner_approval_state = 'approved' where user_id = '00000000-0000-0000-0000-000000000005'$$,
+  '42501',
+  null,
+  'a prospective Cottage Owner cannot approve their own account'
+);
+
 select set_config(
   'request.jwt.claims',
   '{"sub":"00000000-0000-0000-0000-000000000004","role":"authenticated","aal":"aal1"}',
@@ -129,6 +136,13 @@ select results_eq(
   $$select count(*)::bigint from public.account_contexts$$,
   array[5::bigint],
   'a Platform Administrator at assurance level 2 can read protected account contexts'
+);
+
+select throws_ok(
+  $$update public.account_contexts set role = 'platform_administrator' where user_id = '00000000-0000-0000-0000-000000000001'$$,
+  '42501',
+  null,
+  'an MFA-authenticated Platform Administrator cannot mutate another account context'
 );
 
 select * from finish();

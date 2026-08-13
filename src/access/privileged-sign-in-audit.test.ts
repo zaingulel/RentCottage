@@ -8,6 +8,7 @@ vi.mock("@supabase/supabase-js", () => ({
 
 vi.mock("@/config/server-runtime", () => ({
   getServerEnvironment: () => ({
+    privilegedAuditHmacKey: "audit-secret-with-at-least-32-characters",
     supabase: {
       url: "https://project.supabase.co",
       secretKey: "audit-secret",
@@ -30,9 +31,22 @@ describe("privileged sign-in audit", () => {
     expect(rpc).toHaveBeenCalledWith("record_privileged_sign_in_attempt", {
       attempted_email: " Admin@Example.com ",
       attempted_email_digest:
-        "98b8eddeb63917aae64bd4a9acc65efe52193b9447c2ac819796714866f0fcea",
+        "1b9403ce8694a6622db9124737fd2e5e72d030dc37ce188337a0e6fe9848df53",
       attempt_stage: "primary",
       attempt_outcome: "failed",
     });
+  });
+
+  it("fails loudly when the audit RPC rejects the write", async () => {
+    const error = new Error("audit unavailable");
+    rpc.mockResolvedValue({ error });
+
+    await expect(
+      recordPrivilegedSignInAttempt({
+        email: "admin@example.com",
+        stage: "mfa",
+        outcome: "succeeded",
+      }),
+    ).rejects.toBe(error);
   });
 });

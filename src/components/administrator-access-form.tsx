@@ -56,6 +56,10 @@ export function AdministratorAccessForm({ locale }: { locale: Locale }) {
       setComplete(true);
       setMessage(copy.administratorReady);
     } else {
+      if (result.status !== "invalid_code") {
+        setMfa(undefined);
+        setCode("");
+      }
       setMessage(
         result.status === "unavailable" ? copy.unavailable : copy.invalidCode,
       );

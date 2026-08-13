@@ -2,12 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 import { getServerEnvironment } from "@/config/server-runtime";
+import { supabaseAuthCookieName } from "./supabase-auth-cookie";
 
 export async function createRequestSupabaseClient() {
   const cookieStore = await cookies();
   const { supabase } = getServerEnvironment();
 
   return createServerClient(supabase.url, supabase.publishableKey, {
+    cookieOptions: { name: supabaseAuthCookieName },
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (values) => {
@@ -21,12 +23,9 @@ export async function createRequestSupabaseClient() {
 
 export async function clearRequestSupabaseSession() {
   const cookieStore = await cookies();
-  const { supabase } = getServerEnvironment();
-  const storageNamespace = new URL(supabase.url).hostname.split(".")[0];
-  const authCookiePrefix = `sb-${storageNamespace}-auth-token`;
 
   for (const cookie of cookieStore.getAll()) {
-    if (cookie.name.startsWith(authCookiePrefix)) {
+    if (cookie.name.startsWith(supabaseAuthCookieName)) {
       cookieStore.set(cookie.name, "", { path: "/", maxAge: 0 });
     }
   }

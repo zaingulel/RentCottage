@@ -22,23 +22,22 @@ type RequestSupabaseClient = Awaited<
 
 async function persistPrivilegedAudit(
   input: Parameters<typeof recordPrivilegedSignInAttempt>[0],
-  client?: RequestSupabaseClient,
 ) {
   try {
     await recordPrivilegedSignInAttempt(input);
     return true;
   } catch {
-    await discardRequestSession(client);
     return false;
   }
 }
 
 async function discardRequestSession(client?: RequestSupabaseClient) {
-  if (!client) return;
-  try {
-    const { error } = await client.auth.signOut();
-    if (!error) return;
-  } catch {}
+  if (client) {
+    try {
+      const { error } = await client.auth.signOut();
+      if (!error) return;
+    } catch {}
+  }
   await clearRequestSupabaseSession();
 }
 
@@ -112,32 +111,28 @@ export async function signInPlatformAdministrator(value: unknown) {
       password: input.password,
     });
   } catch {
+    await persistPrivilegedAudit({
+      email,
+      stage: "primary",
+      outcome: "failed",
+    });
     await discardRequestSession(client);
-    const audited = await persistPrivilegedAudit(
-      {
-        email,
-        stage: "primary",
-        outcome: "failed",
-      },
-      client,
-    );
-    if (!audited) return { status: "unavailable" as const };
     return { status: "unavailable" as const };
   }
 
-  const audited = await persistPrivilegedAudit(
-    {
-      email,
-      stage: "primary",
-      outcome:
-        result.status === "challenge_required" ||
-        result.status === "enrollment_required"
-          ? "succeeded"
-          : "failed",
-    },
-    client,
-  );
-  if (!audited) return { status: "unavailable" as const };
+  const audited = await persistPrivilegedAudit({
+    email,
+    stage: "primary",
+    outcome:
+      result.status === "challenge_required" ||
+      result.status === "enrollment_required"
+        ? "succeeded"
+        : "failed",
+  });
+  if (!audited) {
+    await discardRequestSession(client);
+    return { status: "unavailable" as const };
+  }
   return result;
 }
 
@@ -156,6 +151,7 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
   }
   if (
     userError ||
+    !client ||
     !email ||
     typeof input?.factorId !== "string" ||
     !input.factorId ||
@@ -164,18 +160,23 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
     typeof input.code !== "string" ||
     !otp.test(input.code)
   ) {
-    const audited = await persistPrivilegedAudit(
-      { email, stage: "mfa", outcome: "failed" },
-      client,
-    );
-    if (!audited) return { status: "unavailable" as const };
-    return userError
-      ? { status: "unavailable" as const }
-      : { status: "invalid_code" as const };
+    const audited = await persistPrivilegedAudit({
+      email,
+      stage: "mfa",
+      outcome: "failed",
+    });
+    if (!audited) {
+      await discardRequestSession(client);
+      return { status: "unavailable" as const };
+    }
+    if (userError || !client || !email) {
+      await discardRequestSession(client);
+      return { status: "unavailable" as const };
+    }
+    return { status: "invalid_code" as const };
   }
   let result;
   try {
-    if (!client) return { status: "invalid_code" as const };
     const access = createSupabaseAccountAccess(client);
     result = await access.verifyPlatformAdministratorMfa({
       factorId: input.factorId,
@@ -183,23 +184,23 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
       code: input.code,
     });
   } catch {
+    await persistPrivilegedAudit({
+      email,
+      stage: "mfa",
+      outcome: "failed",
+    });
     await discardRequestSession(client);
-    const audited = await persistPrivilegedAudit(
-      { email, stage: "mfa", outcome: "failed" },
-      client,
-    );
-    if (!audited) return { status: "unavailable" as const };
     return { status: "unavailable" as const };
   }
 
-  const audited = await persistPrivilegedAudit(
-    {
-      email,
-      stage: "mfa",
-      outcome: result.status === "authenticated" ? "succeeded" : "failed",
-    },
-    client,
-  );
-  if (!audited) return { status: "unavailable" as const };
+  const audited = await persistPrivilegedAudit({
+    email,
+    stage: "mfa",
+    outcome: result.status === "authenticated" ? "succeeded" : "failed",
+  });
+  if (!audited) {
+    await discardRequestSession(client);
+    return { status: "unavailable" as const };
+  }
   return result;
 }

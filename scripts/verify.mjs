@@ -34,6 +34,7 @@ const testEnvironment = {
   SUPABASE_URL: "http://127.0.0.1:54331",
   SUPABASE_PUBLISHABLE_KEY: "local-test-publishable",
   SUPABASE_SECRET_KEY: "local-test-secret",
+  PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
 };
 
 function runStep(command, args, environment) {

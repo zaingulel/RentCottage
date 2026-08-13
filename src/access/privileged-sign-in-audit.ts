@@ -29,11 +29,14 @@ export async function recordPrivilegedSignInAttempt(input: {
   stage: PrivilegedSignInStage;
   outcome: PrivilegedSignInOutcome;
 }) {
-  const { supabase } = getServerEnvironment();
+  const { supabase, privilegedAuditHmacKey } = getServerEnvironment();
   const client = createClient(supabase.url, supabase.secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const emailDigest = await keyedEmailDigest(input.email, supabase.secretKey);
+  const emailDigest = await keyedEmailDigest(
+    input.email,
+    privilegedAuditHmacKey,
+  );
   const { error } = await client.rpc("record_privileged_sign_in_attempt", {
     attempted_email: input.email,
     attempted_email_digest: emailDigest,
