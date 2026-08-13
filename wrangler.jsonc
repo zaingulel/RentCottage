@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rentcottage-development",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+  "vars": {
+    "APP_ENVIRONMENT": "development",
+    "SUPABASE_PROJECT_REF": "local-development",
+    "SUPABASE_URL": "http://127.0.0.1:54321",
+    "SUPABASE_PUBLISHABLE_KEY": "local-development-only",
+  },
+  "env": {
+    "test": {
+      "name": "rentcottage-test",
+      "vars": {
+        "APP_ENVIRONMENT": "test",
+        "SUPABASE_PROJECT_REF": "local-test",
+        "SUPABASE_URL": "http://127.0.0.1:54331",
+        "SUPABASE_PUBLISHABLE_KEY": "local-test-only",
+      },
+    },
+    "preview": {
+      "name": "rentcottage-preview",
+      "keep_vars": true,
+      "vars": {
+        "APP_ENVIRONMENT": "preview",
+      },
+    },
+    "production": {
+      "name": "rentcottage-production",
+      "keep_vars": true,
+      "vars": {
+        "APP_ENVIRONMENT": "production",
+      },
+    },
+  },
+}
