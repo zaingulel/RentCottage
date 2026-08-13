@@ -211,6 +211,15 @@ describe("RentCottage Project contract", () => {
     );
   });
 
+  it("keeps the bounded resume issue owner-gated in Backlog", () => {
+    const result = verifyRentCottageProject(
+      fakeState({ statusByNumber: { 59: "In progress" } }),
+    );
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({ code: "project.status.owner_gated" }),
+    );
+  });
+
   it("reports one Status defect for a closed issue presented as active", () => {
     const result = verifyRentCottageProject(
       fakeState({
