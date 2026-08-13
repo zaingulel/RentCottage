@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   acceptanceCriteriaByIssue,
   expectedMembership,
+  normalizeIssueBody,
   replacementIssues,
+  sameMembers,
   specialIssues,
   verifyRentCottageProject,
 } from "./lib/rentcottage-project-contract.mjs";
 import {
+  assertSupportedGhVersion,
   paginatedRestArgs,
   parsePaginatedPages,
 } from "./lib/github-pagination.mjs";
@@ -35,6 +38,10 @@ function fakeState({
   projectMembership = [...expectedMembership],
   statusByNumber = {},
   closedIssues = [],
+  nativeEvidenceAsMap = false,
+  lineEnding = "\n",
+  nullBodyIssue = null,
+  projectReadme = "#19 through #51; #1, #18, #52; native dependencies; active ownership; verifier",
 } = {}) {
   const closed = new Set(closedIssues);
   const replacementByNumber = new Map(
@@ -76,6 +83,11 @@ function fakeState({
       ),
       assignees: [],
     });
+  }
+
+  for (const issue of issues) {
+    if (issue.number === nullBodyIssue) issue.body = null;
+    else issue.body = issue.body.replaceAll("\n", lineEnding);
   }
 
   const byNumber = new Map(issues.map((issue) => [issue.number, issue]));
@@ -128,8 +140,7 @@ function fakeState({
     number: 4,
     title: "RentCottage",
     closed: false,
-    readme:
-      "#19 through #51; #1, #18, #52; native dependencies; active ownership; verifier",
+    readme: projectReadme,
     fields: {
       totalCount: 2,
       nodes: [
@@ -140,7 +151,18 @@ function fakeState({
     items: { totalCount: items.length, nodes: items },
   };
 
-  return { project, issues, nativeBlockersByIssue };
+  return {
+    project,
+    issues,
+    nativeBlockersByIssue: nativeEvidenceAsMap
+      ? new Map(
+          Object.entries(nativeBlockersByIssue).map(([number, evidence]) => [
+            Number(number),
+            evidence,
+          ]),
+        )
+      : nativeBlockersByIssue,
+  };
 }
 
 describe("RentCottage Project contract", () => {
@@ -167,9 +189,33 @@ describe("RentCottage Project contract", () => {
     );
   });
 
+  it("reports one Status defect for a closed issue presented as active", () => {
+    const result = verifyRentCottageProject(
+      fakeState({
+        closedIssues: [19],
+        statusByNumber: { 19: "In progress" },
+      }),
+    );
+    expect(
+      result.failures.filter(({ code }) => code.startsWith("project.status")),
+    ).toEqual([expect.objectContaining({ code: "project.status.closed" })]);
+  });
+
   it("rejects an open issue presented as Done", () => {
     const result = verifyRentCottageProject(
       fakeState({ statusByNumber: { 19: "Done" } }),
+    );
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({ code: "project.status.done" }),
+    );
+  });
+
+  it("keeps Status checks active when dependency evidence is missing", () => {
+    const state = fakeState({ statusByNumber: { 19: "Done" } });
+    delete state.nativeBlockersByIssue[19];
+    const result = verifyRentCottageProject(state);
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({ code: "issues.native_evidence_missing" }),
     );
     expect(result.failures).toContainEqual(
       expect.objectContaining({ code: "project.status.done" }),
@@ -199,6 +245,34 @@ describe("RentCottage Project contract", () => {
     );
   });
 
+  it("compares exact values as multisets", () => {
+    expect(sameMembers(["a", "a", "b"], ["a", "b", "b"])).toBe(false);
+  });
+
+  it("requires a standalone README reference to issue 1", () => {
+    const result = verifyRentCottageProject(
+      fakeState({
+        projectReadme:
+          "#19 through #51; #18, #52; native dependencies; active ownership; verifier",
+      }),
+    );
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({ code: "project.readme" }),
+    );
+  });
+
+  it("accepts production body shapes and Map dependency evidence", () => {
+    const state = fakeState({
+      lineEnding: "\r\n",
+      nullBodyIssue: 1,
+      nativeEvidenceAsMap: true,
+    });
+    expect(normalizeIssueBody(null)).toBe("");
+    expect(normalizeIssueBody("first\r\nsecond")).toBe("first\nsecond");
+    const result = verifyRentCottageProject(state);
+    expect(result.failures).toEqual([]);
+  });
+
   it("derives the next frontier after completed work instead of hard-coding issue 19", () => {
     const state = fakeState({
       closedIssues: [19],
@@ -213,6 +287,20 @@ describe("RentCottage Project contract", () => {
 });
 
 describe("GitHub pagination boundary", () => {
+  it("requires a GitHub CLI version that supports slurped pagination", () => {
+    expect(() => assertSupportedGhVersion("gh version 2.48.0")).not.toThrow();
+    expect(() => assertSupportedGhVersion("gh version 2.47.0")).toThrow(
+      "require 2.48.0 or newer",
+    );
+    expect(() => assertSupportedGhVersion("gh version 2.47.99")).toThrow(
+      "require 2.48.0 or newer",
+    );
+    expect(() => assertSupportedGhVersion("gh version 3.0.0")).not.toThrow();
+    expect(() => assertSupportedGhVersion("unknown")).toThrow(
+      "Unable to determine the GitHub CLI version",
+    );
+  });
+
   it("requests every REST page and combines injected pages", () => {
     const endpoint =
       "repos/zaingulel/RentCottage/issues?state=all&per_page=100";

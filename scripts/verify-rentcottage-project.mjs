@@ -4,12 +4,14 @@ import { execFileSync } from "node:child_process";
 import {
   projectNumber,
   projectOwner,
+  normalizeIssueBody,
   replacementIssues,
   repository,
   specialIssues,
   verifyRentCottageProject,
 } from "./lib/rentcottage-project-contract.mjs";
 import {
+  assertSupportedGhVersion,
   paginatedRestArgs,
   parsePaginatedPages,
 } from "./lib/github-pagination.mjs";
@@ -27,6 +29,8 @@ function gh(args) {
     );
   }
 }
+
+assertSupportedGhVersion(gh(["--version"]));
 
 const query = `
 query($login: String!, $number: Int!) {
@@ -92,7 +96,11 @@ const issues = parsePaginatedPages(
   "Issue",
 )
   .filter((issue) => !issue.pull_request)
-  .map((issue) => ({ ...issue, state: issue.state.toUpperCase() }));
+  .map((issue) => ({
+    ...issue,
+    state: issue.state.toUpperCase(),
+    body: normalizeIssueBody(issue.body),
+  }));
 
 const nativeBlockersByIssue = new Map();
 const dependencyNumbers = new Set([

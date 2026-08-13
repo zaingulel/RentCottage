@@ -51,6 +51,8 @@ Do not describe work as "published and verified" if any step is missing, unavail
 
 Run `npm run verify:board` before selecting work and after ticket publication, dependency changes, Project reconciliation, or field changes. The verifier checks exact membership, D01 through D33 mapping, titles, Areas, labels, acceptance criteria, issue state and Status consistency, blocker text, native dependencies, duplicates, drafts, foreign items, missing data, and pagination.
 
+The verifier requires GitHub CLI 2.48.0 or newer and checks this before querying GitHub.
+
 The script is intentionally read-only. An unavailable API, unknown field, missing item, unexpected item, duplicate, or truncated response exits non-zero. Update its manifest only when the approved delivery graph or Area classification changes. Remove it only when Project 4 is formally retired as an authoritative selection surface or an equivalent deterministic guard replaces it.
 
 ## When a skill says "fetch the relevant ticket"

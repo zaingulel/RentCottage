@@ -663,11 +663,16 @@ const knownAreas = new Set([
   "Administration & governance",
 ]);
 
-function sameMembers(actual, expected) {
-  return (
-    actual.length === expected.length &&
-    expected.every((value) => actual.includes(value))
-  );
+export function sameMembers(actual, expected) {
+  if (actual.length !== expected.length) return false;
+  const counts = new Map();
+  for (const value of actual) counts.set(value, (counts.get(value) ?? 0) + 1);
+  for (const value of expected) {
+    const remaining = counts.get(value);
+    if (!remaining) return false;
+    counts.set(value, remaining - 1);
+  }
+  return true;
 }
 
 function fieldValue(item, fieldName) {
@@ -677,9 +682,15 @@ function fieldValue(item, fieldName) {
   );
 }
 
-function textualBlockers(body) {
+export function normalizeIssueBody(body) {
+  return (body ?? "").replaceAll("\r\n", "\n");
+}
+
+function textualBlockers(body = "") {
   const section =
-    body.split("## Blocked by\n\n")[1]?.split("\n\n<!--")[0] ?? "";
+    normalizeIssueBody(body)
+      .split("## Blocked by\n\n")[1]
+      ?.split("\n\n<!--")[0] ?? "";
   return [...section.matchAll(/#(\d+)/g)].map((match) => Number(match[1]));
 }
 
@@ -694,9 +705,9 @@ function nativeFor(nativeBlockersByIssue, number) {
     : nativeBlockersByIssue[number];
 }
 
-function acceptanceCriteria(body) {
+function acceptanceCriteria(body = "") {
   const section =
-    body
+    normalizeIssueBody(body)
       .split("## Acceptance criteria\n\n")[1]
       ?.split("\n\n## Blocked by")[0] ?? "";
   return [...section.matchAll(/^- \[[ xX]\] (.+)$/gm)].map((match) => match[1]);
@@ -778,9 +789,11 @@ export function verifyRentCottageProject({
 
   const byNumber = new Map(issues.map((issue) => [issue.number, issue]));
   const allMarkers = issues.flatMap((issue) =>
-    [...issue.body.matchAll(/<!-- rentcottage-ticket-id:(D\d\d) -->/g)].map(
-      (match) => ({ number: issue.number, ticketId: match[1] }),
-    ),
+    [
+      ...normalizeIssueBody(issue.body).matchAll(
+        /<!-- rentcottage-ticket-id:(D\d\d) -->/g,
+      ),
+    ].map((match) => ({ number: issue.number, ticketId: match[1] })),
   );
   if (
     allMarkers.length !== 33 ||
@@ -824,7 +837,10 @@ export function verifyRentCottageProject({
         `#${expected.number} labels do not match the contract`,
       );
     const marker = `<!-- rentcottage-ticket-id:${expected.ticketId} -->`;
-    if ((issue.body.match(new RegExp(marker, "g")) ?? []).length !== 1)
+    if (
+      (normalizeIssueBody(issue.body).match(new RegExp(marker, "g")) ?? [])
+        .length !== 1
+    )
       fail(
         "issues.marker",
         `#${expected.number} does not contain exactly one ${expected.ticketId} marker`,
@@ -942,21 +958,18 @@ export function verifyRentCottageProject({
         `#${number} Area ${area} does not match ${contract.area}`,
       );
     const nativeEvidence = nativeFor(nativeBlockersByIssue, number);
-    if (nativeEvidence === null) continue;
-    const openBlockers = nativeEvidence.filter(
-      ({ state }) => state.toLowerCase() === "open",
-    );
-    if (
-      activeStatuses.has(status) &&
-      (issue.state !== "OPEN" || openBlockers.length > 0)
-    ) {
-      fail(
-        "project.status.invalid",
-        `#${number} cannot be ${status} while state=${issue.state} and open blockers=${openBlockers.map(({ number: blocker }) => blocker)}`,
-      );
-    }
-    if (issue.state === "CLOSED" && activeStatuses.has(status))
+    if (issue.state !== "OPEN" && activeStatuses.has(status))
       fail("project.status.closed", `Closed #${number} cannot be ${status}`);
+    if (nativeEvidence !== null && activeStatuses.has(status)) {
+      const openBlockers = nativeEvidence.filter(
+        ({ state }) => state.toLowerCase() === "open",
+      );
+      if (openBlockers.length > 0)
+        fail(
+          "project.status.invalid",
+          `#${number} cannot be ${status} while open blockers=${openBlockers.map(({ number: blocker }) => blocker)}`,
+        );
+    }
     if (status === "Done" && issue.state !== "CLOSED")
       fail("project.status.done", `Open #${number} cannot be Done`);
     if (contract.ownerGated && status !== "Backlog" && issue.state === "OPEN") {
@@ -979,18 +992,18 @@ export function verifyRentCottageProject({
     .filter((item) => fieldValue(item, "Status") === "Ready")
     .map((item) => item.content.number);
 
-  for (const requiredText of [
-    "#19",
-    "#51",
-    "#1",
-    "#18",
-    "#52",
-    "native dependencies",
-    "active ownership",
-    "verifier",
+  for (const [label, pattern] of [
+    ["#19", /#19\b/],
+    ["#51", /#51\b/],
+    ["#1", /#1\b/],
+    ["#18", /#18\b/],
+    ["#52", /#52\b/],
+    ["native dependencies", /native dependencies/],
+    ["active ownership", /active ownership/],
+    ["verifier", /verifier/],
   ]) {
-    if (!project.readme?.includes(requiredText))
-      fail("project.readme", `Project README does not mention ${requiredText}`);
+    if (!pattern.test(project.readme ?? ""))
+      fail("project.readme", `Project README does not mention ${label}`);
   }
 
   return {
