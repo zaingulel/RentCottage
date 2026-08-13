@@ -41,9 +41,7 @@ jobs:
             --var SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}
             --var SUPABASE_URL:${{ vars.SUPABASE_URL }}
             --var SUPABASE_PUBLISHABLE_KEY:${{ vars.SUPABASE_PUBLISHABLE_KEY }}
-      - name: Smoke Cloudflare preview
+      - name: Verify Cloudflare preview
         env:
           PREVIEW_URL: ${{ steps.deploy.outputs.deployment-url }}
-        run: |
-          curl --fail --silent --show-error "$PREVIEW_URL/ar" > /dev/null
-          curl --fail --silent --show-error "$PREVIEW_URL/api/health?check=supabase" | grep '"connected":true'
+        run: npm run verify:preview -- "$PREVIEW_URL"

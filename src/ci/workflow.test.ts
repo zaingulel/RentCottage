@@ -67,6 +67,10 @@ describe("GitHub Actions delivery checks", () => {
       ".next/static .open-next/assets",
     );
     expect(packageJson.scripts.typecheck).toBe("next typegen && tsc --noEmit");
+    expect(packageJson.scripts.verify).toBe("node scripts/verify.mjs");
+    expect(packageJson.scripts["verify:preview"]).toBe(
+      "node scripts/verify-preview.mjs",
+    );
 
     const ciSource = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
     const workflow = parse(ciSource);
@@ -141,9 +145,7 @@ describe("GitHub Actions delivery checks", () => {
       "pull-requests": "read",
     });
     expect(JSON.stringify(quality)).not.toContain("secrets.");
-    expect(quality.env.SUPABASE_SECRET_KEY).not.toBe(
-      quality.env.SUPABASE_PUBLISHABLE_KEY,
-    );
+    expect(quality.env).toBeUndefined();
 
     const checkout = quality.steps.find(
       (step: { uses?: string }) => step.uses === "actions/checkout@v7",
@@ -187,25 +189,7 @@ describe("GitHub Actions delivery checks", () => {
     expect(qualityCommands.indexOf("gh api")).toBeLessThan(
       qualityCommands.indexOf("npm ci"),
     );
-    expect(qualityCommands).toContain("npm run format:check");
-    expect(qualityCommands).toContain("npm run audit:production");
-    expect(qualityCommands).toContain("npm run lint");
-    expect(qualityCommands).toContain("npm run typecheck");
-    expect(qualityCommands).toContain("npm test");
-    expect(qualityCommands).toContain("npm run test:browser");
-    expect(qualityCommands).toContain("npm run build:worker");
-    expect(qualityCommands).toContain("npm run scan:client-secrets");
-    expect(qualityCommands).toContain("npm run smoke:preview");
-
-    expect(qualityCommands.indexOf("npm run build:worker")).toBeLessThan(
-      qualityCommands.indexOf("npm run cf-typegen"),
-    );
-    expect(qualityCommands.indexOf("npm run build:worker")).toBeLessThan(
-      qualityCommands.indexOf("npm run scan:client-secrets"),
-    );
-    expect(qualityCommands).toContain(
-      "git diff --exit-code --ignore-space-at-eol -- cloudflare-env.d.ts",
-    );
+    expect(qualityCommands).toContain("npm run verify");
 
     expect(workflow.jobs.preview).toBeUndefined();
 
@@ -263,7 +247,14 @@ describe("GitHub Actions delivery checks", () => {
     expect(JSON.stringify(preview.steps)).toContain(
       "versions upload --env preview",
     );
-    expect(JSON.stringify(preview.steps)).toContain("/api/health");
-    expect(JSON.stringify(preview.steps)).toContain("/ar");
+    const previewVerification = preview.steps.find(
+      (step: { name?: string }) => step.name === "Verify Cloudflare preview",
+    );
+    expect(previewVerification.env.PREVIEW_URL).toBe(
+      "${{ steps.deploy.outputs.deployment-url }}",
+    );
+    expect(previewVerification.run).toBe(
+      'npm run verify:preview -- "$PREVIEW_URL"',
+    );
   });
 });
