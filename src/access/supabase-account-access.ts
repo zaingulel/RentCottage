@@ -69,10 +69,13 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       email,
       password,
     });
+    if (error?.code === "invalid_credentials") {
+      return { status: "invalid_sign_in" as const };
+    }
     if (error) throw error;
     if (!data.user)
       throw new Error("Administrator sign-in returned no identity");
-    return { userId: data.user.id };
+    return { status: "authenticated" as const, userId: data.user.id };
   }
 
   async beginPlatformAdministratorMfa() {
@@ -135,6 +138,13 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       challengeId,
       code,
     });
+    if (
+      error?.code === "mfa_verification_failed" ||
+      error?.code === "mfa_verification_rejected" ||
+      error?.code === "mfa_challenge_expired"
+    ) {
+      return { status: "invalid_code" as const };
+    }
     if (error) throw error;
     const { data, error: assuranceError } =
       await this.client.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -146,6 +156,7 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     const assurance: "aal1" | "aal2" =
       data.currentLevel === "aal2" ? "aal2" : "aal1";
     return {
+      status: "verified" as const,
       userId: claims.claims.sub,
       assurance,
     };

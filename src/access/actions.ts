@@ -28,16 +28,18 @@ async function persistPrivilegedAudit(
     await recordPrivilegedSignInAttempt(input);
     return true;
   } catch {
-    if (client) {
-      try {
-        const { error } = await client.auth.signOut();
-        if (error) await clearRequestSupabaseSession();
-      } catch {
-        await clearRequestSupabaseSession();
-      }
-    }
+    await discardRequestSession(client);
     return false;
   }
+}
+
+async function discardRequestSession(client?: RequestSupabaseClient) {
+  if (!client) return;
+  try {
+    const { error } = await client.auth.signOut();
+    if (!error) return;
+  } catch {}
+  await clearRequestSupabaseSession();
 }
 
 export async function requestPhoneAccess(phone: unknown) {
@@ -67,16 +69,17 @@ export async function verifyPhoneAccess(value: unknown) {
   ) {
     return { status: "invalid_code" as const };
   }
+  let client: RequestSupabaseClient | undefined;
   try {
-    const access = createSupabaseAccountAccess(
-      await createRequestSupabaseClient(),
-    );
+    client = await createRequestSupabaseClient();
+    const access = createSupabaseAccountAccess(client);
     return await access.verifyPhoneAccess({
       phone: input.phone,
       code: input.code,
       role: input.role,
     });
   } catch {
+    await discardRequestSession(client);
     return { status: "unavailable" as const };
   }
 }
@@ -109,6 +112,7 @@ export async function signInPlatformAdministrator(value: unknown) {
       password: input.password,
     });
   } catch {
+    await discardRequestSession(client);
     const audited = await persistPrivilegedAudit(
       {
         email,
@@ -118,7 +122,7 @@ export async function signInPlatformAdministrator(value: unknown) {
       client,
     );
     if (!audited) return { status: "unavailable" as const };
-    return { status: "invalid_sign_in" as const };
+    return { status: "unavailable" as const };
   }
 
   const audited = await persistPrivilegedAudit(
@@ -165,7 +169,9 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
       client,
     );
     if (!audited) return { status: "unavailable" as const };
-    return { status: "invalid_code" as const };
+    return userError
+      ? { status: "unavailable" as const }
+      : { status: "invalid_code" as const };
   }
   let result;
   try {
@@ -177,12 +183,13 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
       code: input.code,
     });
   } catch {
+    await discardRequestSession(client);
     const audited = await persistPrivilegedAudit(
       { email, stage: "mfa", outcome: "failed" },
       client,
     );
     if (!audited) return { status: "unavailable" as const };
-    return { status: "invalid_code" as const };
+    return { status: "unavailable" as const };
   }
 
   const audited = await persistPrivilegedAudit(

@@ -11,13 +11,20 @@ function identityProvider(userId = "customer-user"): IdentityProvider {
   return {
     requestPhoneCode: async () => ({ status: "code_sent" }),
     verifyPhoneCode: async () => ({ status: "verified", userId }),
-    signInPlatformAdministrator: async () => ({ userId }),
+    signInPlatformAdministrator: async () => ({
+      status: "authenticated",
+      userId,
+    }),
     beginPlatformAdministratorMfa: async () => ({
       status: "challenge_required",
       factorId: "factor-1",
       challengeId: "challenge-1",
     }),
-    verifyPlatformAdministratorMfa: async () => ({ userId, assurance: "aal2" }),
+    verifyPlatformAdministratorMfa: async () => ({
+      status: "verified",
+      userId,
+      assurance: "aal2",
+    }),
     signOut: async () => undefined,
   };
 }
@@ -211,6 +218,7 @@ describe("account access", () => {
     let signedOut = false;
     const provider = identityProvider("admin-user");
     provider.verifyPlatformAdministratorMfa = async () => ({
+      status: "verified",
       userId: "admin-user",
       assurance: "aal1",
     });
@@ -299,6 +307,34 @@ describe("account access", () => {
       expect(signedOut).toBe(true);
     },
   );
+
+  it("returns explicit credential failures without treating them as infrastructure errors", async () => {
+    const provider = identityProvider("admin-user");
+    provider.signInPlatformAdministrator = async () => ({
+      status: "invalid_sign_in",
+    });
+    provider.verifyPlatformAdministratorMfa = async () => ({
+      status: "invalid_code",
+    });
+    const access = createAccountAccess({
+      identityProvider: provider,
+      accountContexts: accountContexts(),
+    });
+
+    await expect(
+      access.signInPlatformAdministrator({
+        email: "admin@example.com",
+        password: "wrong-password",
+      }),
+    ).resolves.toEqual({ status: "invalid_sign_in" });
+    await expect(
+      access.verifyPlatformAdministratorMfa({
+        factorId: "factor-1",
+        challengeId: "challenge-1",
+        code: "000000",
+      }),
+    ).resolves.toEqual({ status: "invalid_code" });
+  });
 
   it.each(["primary", "mfa"] as const)(
     "signs out when the administrator context lookup fails after %s authentication",

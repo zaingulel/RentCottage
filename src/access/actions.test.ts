@@ -49,7 +49,10 @@ describe("account action HTTP boundary", () => {
   });
 
   it("reports role assignment infrastructure failure as unavailable", async () => {
-    createClient.mockResolvedValue({});
+    const signOut = vi.fn().mockResolvedValue({
+      error: new Error("provider unavailable"),
+    });
+    createClient.mockResolvedValue({ auth: { signOut } });
     createAccess.mockReturnValue({
       verifyPhoneAccess: vi
         .fn()
@@ -63,7 +66,54 @@ describe("account action HTTP boundary", () => {
         role: "customer",
       }),
     ).resolves.toEqual({ status: "unavailable" });
+    expect(clearSession).toHaveBeenCalledOnce();
   });
+
+  it.each(["primary", "mfa"] as const)(
+    "reports administrator %s infrastructure failure as unavailable and clears a failed sign-out",
+    async (stage) => {
+      const signOut = vi.fn().mockResolvedValue({
+        error: new Error("provider unavailable"),
+      });
+      createClient.mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { email: "admin@example.com" } },
+            error: null,
+          }),
+          signOut,
+        },
+      });
+      createAccess.mockReturnValue({
+        signInPlatformAdministrator: vi
+          .fn()
+          .mockRejectedValue(new Error("identity store unavailable")),
+        verifyPlatformAdministratorMfa: vi
+          .fn()
+          .mockRejectedValue(new Error("identity store unavailable")),
+      });
+
+      const operation =
+        stage === "primary"
+          ? signInPlatformAdministrator({
+              email: "admin@example.com",
+              password: "correct-password",
+            })
+          : verifyPlatformAdministratorMfa({
+              factorId: "factor-1",
+              challengeId: "challenge-1",
+              code: "123456",
+            });
+
+      await expect(operation).resolves.toEqual({ status: "unavailable" });
+      expect(recordAudit).toHaveBeenCalledWith({
+        email: "admin@example.com",
+        stage,
+        outcome: "failed",
+      });
+      expect(clearSession).toHaveBeenCalledOnce();
+    },
+  );
 
   it("audits a malformed administrator sign-in without throwing", async () => {
     await expect(signInPlatformAdministrator(null)).resolves.toEqual({

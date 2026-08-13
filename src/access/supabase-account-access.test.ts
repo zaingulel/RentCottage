@@ -117,6 +117,48 @@ describe("Supabase administrator MFA adapter", () => {
       enroll.mock.invocationCallOrder[0],
     );
   });
+
+  it.each([
+    ["mfa_verification_failed"],
+    ["mfa_verification_rejected"],
+    ["mfa_challenge_expired"],
+  ])("maps %s to an invalid authenticator code", async (code) => {
+    const client = {
+      auth: {
+        mfa: {
+          verify: vi.fn().mockResolvedValue({ error: { code } }),
+        },
+      },
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseIdentityProvider(client).verifyPlatformAdministratorMfa(
+        "factor-1",
+        "challenge-1",
+        "123456",
+      ),
+    ).resolves.toEqual({ status: "invalid_code" });
+  });
+});
+
+describe("Supabase administrator primary adapter", () => {
+  it("maps rejected credentials without hiding provider outages", async () => {
+    const client = {
+      auth: {
+        signInWithPassword: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: { code: "invalid_credentials" },
+        }),
+      },
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseIdentityProvider(client).signInPlatformAdministrator(
+        "admin@example.com",
+        "wrong-password",
+      ),
+    ).resolves.toEqual({ status: "invalid_sign_in" });
+  });
 });
 
 describe("Supabase phone verification adapter", () => {

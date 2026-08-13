@@ -20,7 +20,9 @@ export interface IdentityProvider {
   signInPlatformAdministrator(
     email: string,
     password: string,
-  ): Promise<{ userId: string }>;
+  ): Promise<
+    { status: "authenticated"; userId: string } | { status: "invalid_sign_in" }
+  >;
   beginPlatformAdministratorMfa(): Promise<
     | {
         status: "challenge_required";
@@ -39,7 +41,14 @@ export interface IdentityProvider {
     factorId: string,
     challengeId: string,
     code: string,
-  ): Promise<{ userId: string; assurance: "aal1" | "aal2" }>;
+  ): Promise<
+    | {
+        status: "verified";
+        userId: string;
+        assurance: "aal1" | "aal2";
+      }
+    | { status: "invalid_code" }
+  >;
   signOut(): Promise<void>;
 }
 
@@ -103,6 +112,7 @@ export function createAccountAccess({
         email,
         password,
       );
+      if (identity.status === "invalid_sign_in") return identity;
       let context;
       try {
         context = await accountContexts.resolve();
@@ -145,6 +155,7 @@ export function createAccountAccess({
         await identityProvider.signOut();
         throw error;
       }
+      if (identity.status === "invalid_code") return identity;
       let context;
       try {
         context = await accountContexts.resolve();
