@@ -2,6 +2,8 @@
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+GitHub Issues, native dependencies, and [Project 4](https://github.com/users/zaingulel/projects/4) are one tracker. None is a complete planning surface by itself.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
@@ -27,7 +29,31 @@ GitHub shares one number space across issues and PRs, so a bare `#42` may be eit
 
 ## When a skill says "publish to the issue tracker"
 
-Create a GitHub issue.
+Publication is complete only when all applicable tracker surfaces agree:
+
+1. Create each GitHub issue with its approved title, detailed acceptance criteria, D marker, and configured labels.
+2. Add the approved textual blocker references and matching native GitHub dependency edges.
+3. Add the issue to Project 4 and set its approved `Area` and dependency-safe `Status`.
+4. Re-read issues, native dependencies, Project membership, and Project fields from GitHub after the writes. Never verify from the request payload or cached local mapping.
+5. Run `npm run verify:board` and require exit status zero.
+
+Do not describe work as "published and verified" if any step is missing, unavailable, truncated, unclassified, or failing. A partial write is an incomplete publication, not success.
+
+## Project status contract
+
+- `Ready`, `In progress`, and `In review` require an open issue with no open native blocker.
+- A blocked or closed issue cannot use `Ready`, `In progress`, or `In review`.
+- `Backlog` may contain blocked work or deliberately owner-gated unblocked work.
+- Active Codex task ownership must be checked by the coordinator before selecting or changing an item to `Ready`. It is not inferred by the board verifier.
+- `Area` is manifest-driven. Missing or unknown Area and Status values stop selection.
+
+## Board verification
+
+Run `npm run verify:board` before selecting work and after ticket publication, dependency changes, Project reconciliation, or field changes. The verifier checks exact membership, D01 through D33 mapping, titles, Areas, labels, acceptance criteria, issue state and Status consistency, blocker text, native dependencies, duplicates, drafts, foreign items, missing data, and pagination.
+
+The verifier requires GitHub CLI 2.48.0 or newer and checks this before querying GitHub.
+
+The script is intentionally read-only. An unavailable API, unknown field, missing item, unexpected item, duplicate, or truncated response exits non-zero. Update its manifest only when the approved delivery graph or Area classification changes. Remove it only when Project 4 is formally retired as an authoritative selection surface or an equivalent deterministic guard replaces it.
 
 ## When a skill says "fetch the relevant ticket"
 
