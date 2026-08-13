@@ -10,15 +10,7 @@ permissions:
 
 jobs:
   quality:
-    name: >-
-      ${{
-        github.event.review.user.login == 'coderabbitai[bot]' &&
-        github.event.review.user.id == 136622811 &&
-        github.event.review.state == 'approved' &&
-        github.event.review.commit_id == github.event.pull_request.head.sha &&
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        'quality' || 'review-router'
-      }}
+    name: ${{ github.event.review.user.login == 'coderabbitai[bot]' && github.event.review.user.id == 136622811 && github.event.review.state == 'approved' && github.event.review.commit_id == github.event.pull_request.head.sha && github.event.pull_request.head.repo.full_name == github.repository && 'quality' || 'review-router' }}
     if: >-
       github.event.review.user.login == 'coderabbitai[bot]' &&
       github.event.review.user.id == 136622811 &&
@@ -46,11 +38,11 @@ jobs:
         run: |
           live_head="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PULL_REQUEST_NUMBER" --jq .head.sha)"
           test "$live_head" = "$EXPECTED_HEAD_SHA"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: npm

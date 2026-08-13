@@ -68,15 +68,16 @@ describe("GitHub Actions delivery checks", () => {
     );
     expect(packageJson.scripts.typecheck).toBe("next typegen && tsc --noEmit");
 
-    const workflow = parse(
-      readFileSync(resolve(".github/workflows/ci.yml"), "utf8"),
-    );
+    const ciSource = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
+    const workflow = parse(ciSource);
     expect(workflow.on.pull_request_review.types).toEqual(["submitted"]);
     expect(workflow.on.pull_request).toBeUndefined();
     expect(workflow.on.workflow_dispatch).toBeUndefined();
     expect(workflow.concurrency).toBeUndefined();
 
     const quality = workflow.jobs.quality;
+    const expectedNameLine = `    name: ${quality.name}`;
+    expect(ciSource.split("\n")).toContain(expectedNameLine);
     expect(quality.concurrency.group).toBe(
       "quality-${{ github.event.pull_request.number }}",
     );
@@ -147,11 +148,21 @@ describe("GitHub Actions delivery checks", () => {
     const checkout = quality.steps.find(
       (step: { uses?: string }) => step.uses === "actions/checkout@v7",
     );
-    expect(checkout.with.ref).toBe("${{ github.event.pull_request.head.sha }}");
-    expect(checkout.with["persist-credentials"]).toBe(false);
+    expect(checkout).toBeUndefined();
+    const pinnedCheckout = quality.steps.find(
+      (step: { uses?: string }) =>
+        step.uses ===
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+    );
+    expect(pinnedCheckout.with.ref).toBe(
+      "${{ github.event.pull_request.head.sha }}",
+    );
+    expect(pinnedCheckout.with["persist-credentials"]).toBe(false);
     expect(
       quality.steps.some(
-        (step: { uses?: string }) => step.uses === "actions/setup-node@v6",
+        (step: { uses?: string }) =>
+          step.uses ===
+          "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
       ),
     ).toBe(true);
 
@@ -209,8 +220,15 @@ describe("GitHub Actions delivery checks", () => {
     const preview = previewWorkflow.jobs.preview;
     expect(preview.if).toBe("github.actor == github.repository_owner");
     expect(JSON.stringify(preview)).not.toContain("coderabbit");
-    expect(JSON.stringify(preview.steps)).toContain("actions/checkout@v7");
-    expect(JSON.stringify(preview.steps)).toContain("actions/setup-node@v6");
+    expect(JSON.stringify(preview.steps)).toContain(
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+    );
+    expect(JSON.stringify(preview.steps)).toContain(
+      "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+    );
+    expect(JSON.stringify(preview.steps)).toContain(
+      "cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0",
+    );
     expect(JSON.stringify(preview.steps)).toContain(
       "versions upload --env preview",
     );
