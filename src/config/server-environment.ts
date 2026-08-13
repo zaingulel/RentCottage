@@ -19,6 +19,10 @@ export interface ServerEnvironment {
   };
 }
 
+export type PublicSupabaseEnvironment = Omit<ServerEnvironment, "supabase"> & {
+  supabase: Omit<ServerEnvironment["supabase"], "secretKey">;
+};
+
 const environmentNames = new Set<AppEnvironment>([
   "development",
   "test",
@@ -32,9 +36,9 @@ function required(source: EnvironmentSource, key: keyof EnvironmentSource) {
   return value;
 }
 
-export function readServerEnvironment(
+export function readPublicSupabaseEnvironment(
   source: EnvironmentSource,
-): ServerEnvironment {
+): PublicSupabaseEnvironment {
   if (source.NEXT_PUBLIC_SUPABASE_SECRET_KEY) {
     throw new Error("NEXT_PUBLIC_SUPABASE_SECRET_KEY must never be exposed");
   }
@@ -68,6 +72,18 @@ export function readServerEnvironment(
       projectRef,
       url,
       publishableKey: required(source, "SUPABASE_PUBLISHABLE_KEY"),
+    },
+  };
+}
+
+export function readServerEnvironment(
+  source: EnvironmentSource,
+): ServerEnvironment {
+  const environment = readPublicSupabaseEnvironment(source);
+  return {
+    ...environment,
+    supabase: {
+      ...environment.supabase,
       secretKey: required(source, "SUPABASE_SECRET_KEY"),
     },
   };

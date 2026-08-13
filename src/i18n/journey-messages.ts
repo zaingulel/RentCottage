@@ -44,7 +44,7 @@ export const journeyMessages: Record<
     terms: "قرأت وأوافق على شروط استخدام RentCottage",
     submit: "أرسل طلب الحجز",
     unavailable:
-      "عرض للواجهة فقط. إرسال الطلب والتحقق من الهاتف سيُفعّلان في تذكرة لاحقة.",
+      "التحقق من الهاتف متاح. إرسال طلب الحجز سيُفعّل في تذكرة لاحقة.",
   },
   ckb: {
     backResults: "گەڕانەوە بۆ ئەنجامەکان",
@@ -66,7 +66,7 @@ export const journeyMessages: Record<
     terms: "مەرجەکانی بەکارهێنانی RentCottage ـم خوێندووەتەوە و ڕازیم",
     submit: "داواکاری حجز بنێرە",
     unavailable:
-      "تەنها پێشاندانی ڕووکارە. ناردنی داواکاری و پشتڕاستکردنەوەی تەلەفۆن لە تیکەتی داهاتوو چالاک دەکرێت.",
+      "پشتڕاستکردنەوەی تەلەفۆن بەردەستە. ناردنی داواکاری حجز لە تیکەتی داهاتوو چالاک دەکرێت.",
   },
   en: {
     backResults: "Back to results",
@@ -88,6 +88,6 @@ export const journeyMessages: Record<
     terms: "I have read and agree to the RentCottage Terms of Use",
     submit: "Send booking request",
     unavailable:
-      "Interface preview only. Request submission and phone verification will be enabled by a later ticket.",
+      "Phone verification is available. Booking request submission will be enabled by a later ticket.",
   },
 };

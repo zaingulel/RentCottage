@@ -15,7 +15,7 @@ export default defineConfig({
   webServer: workerPreview
     ? {
         command:
-          "APP_ENVIRONMENT=test NEXTJS_ENV=test SUPABASE_PROJECT_REF=local-test SUPABASE_URL=http://127.0.0.1:54331 SUPABASE_PUBLISHABLE_KEY=local-test-publishable SUPABASE_SECRET_KEY=local-test-secret npm run build:worker && WRANGLER_LOG_PATH=/tmp/rentcottage-wrangler-logs WRANGLER_REGISTRY_PATH=/tmp/rentcottage-wrangler-registry npm run preview -- --env test --port 8788 --var SUPABASE_SECRET_KEY:local-test-secret",
+          "npm run build:worker && WRANGLER_LOG_PATH=/tmp/rentcottage-wrangler-logs WRANGLER_REGISTRY_PATH=/tmp/rentcottage-wrangler-registry npm run preview -- --env test --port 8788 --var APP_ENVIRONMENT:test --var SUPABASE_PROJECT_REF:$SUPABASE_PROJECT_REF --var SUPABASE_URL:$SUPABASE_URL --var SUPABASE_PUBLISHABLE_KEY:$SUPABASE_PUBLISHABLE_KEY --var SUPABASE_SECRET_KEY:$SUPABASE_SECRET_KEY",
         url: "http://127.0.0.1:8788/api/health",
         reuseExistingServer: !process.env.CI,
         timeout: 180_000,

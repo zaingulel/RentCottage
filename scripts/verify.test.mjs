@@ -7,6 +7,7 @@ const requiredSteps = [
   ["npm", ["run", "lint"]],
   ["npm", ["run", "typecheck"]],
   ["npm", ["test"]],
+  ["npm", ["run", "verify:access"]],
   ["npm", ["run", "build:worker"]],
   ["npm", ["run", "scan:client-secrets"]],
   ["npm", ["run", "cf-typegen"]],

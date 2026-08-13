@@ -1,8 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { readServerEnvironment } from "./server-environment";
+import {
+  readPublicSupabaseEnvironment,
+  readServerEnvironment,
+} from "./server-environment";
 
 describe("server environment", () => {
+  it("provides the publishable connection without requiring the server secret", () => {
+    expect(
+      readPublicSupabaseEnvironment({
+        APP_ENVIRONMENT: "test",
+        SUPABASE_PROJECT_REF: "local-test",
+        SUPABASE_URL: "http://127.0.0.1:54321",
+        SUPABASE_PUBLISHABLE_KEY: "local-publishable",
+      }),
+    ).toEqual({
+      name: "test",
+      supabase: {
+        projectRef: "local-test",
+        url: "http://127.0.0.1:54321",
+        publishableKey: "local-publishable",
+      },
+    });
+  });
+
   it("returns a named Supabase environment from server-only variables", () => {
     expect(
       readServerEnvironment({

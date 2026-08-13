@@ -10,6 +10,7 @@ import type { Locale } from "@/i18n/routing";
 import { useRoutedLocale } from "@/i18n/use-routed-locale";
 
 import { LocaleButtons } from "./locale-buttons";
+import { PhoneAccessForm } from "./phone-access-form";
 
 export function BookingRequest({
   initialLocale,
@@ -65,6 +66,7 @@ export function BookingRequest({
               />
               <span>{copy.terms}</span>
             </label>
+            <PhoneAccessForm locale={locale} role="customer" />
             <p className="request-notice">{copy.unavailable}</p>
             <button type="button" disabled>
               {copy.submit}
