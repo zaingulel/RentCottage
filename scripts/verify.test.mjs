@@ -7,6 +7,7 @@ const requiredSteps = [
   ["npm", ["run", "lint"]],
   ["npm", ["run", "typecheck"]],
   ["npm", ["test"]],
+  ["npm", ["run", "verify:access"]],
   ["npm", ["run", "build:worker"]],
   ["npm", ["run", "scan:client-secrets"]],
   ["npm", ["run", "cf-typegen"]],
@@ -48,6 +49,7 @@ describe("repository verification command", () => {
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-test-publishable",
       SUPABASE_SECRET_KEY: "local-test-secret",
+      PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     };
 
     expect(main([], { environment: { EXISTING: "kept" }, run })).toBe(0);

@@ -31,11 +31,14 @@ jobs:
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PRIVILEGED_AUDIT_HMAC_KEY: ${{ secrets.PRIVILEGED_AUDIT_HMAC_KEY }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           environment: preview
-          secrets: SUPABASE_SECRET_KEY
+          secrets: |
+            SUPABASE_SECRET_KEY
+            PRIVILEGED_AUDIT_HMAC_KEY
           command: >-
             versions upload --env preview
             --var SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}

@@ -6,7 +6,9 @@ interface EnvironmentSource {
   SUPABASE_URL?: string;
   SUPABASE_PUBLISHABLE_KEY?: string;
   SUPABASE_SECRET_KEY?: string;
+  PRIVILEGED_AUDIT_HMAC_KEY?: string;
   NEXT_PUBLIC_SUPABASE_SECRET_KEY?: string;
+  NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY?: string;
 }
 
 export interface ServerEnvironment {
@@ -17,7 +19,15 @@ export interface ServerEnvironment {
     publishableKey: string;
     secretKey: string;
   };
+  privilegedAuditHmacKey: string;
 }
+
+export type PublicSupabaseEnvironment = Omit<
+  ServerEnvironment,
+  "supabase" | "privilegedAuditHmacKey"
+> & {
+  supabase: Omit<ServerEnvironment["supabase"], "secretKey">;
+};
 
 const environmentNames = new Set<AppEnvironment>([
   "development",
@@ -32,11 +42,16 @@ function required(source: EnvironmentSource, key: keyof EnvironmentSource) {
   return value;
 }
 
-export function readServerEnvironment(
+export function readPublicSupabaseEnvironment(
   source: EnvironmentSource,
-): ServerEnvironment {
+): PublicSupabaseEnvironment {
   if (source.NEXT_PUBLIC_SUPABASE_SECRET_KEY) {
     throw new Error("NEXT_PUBLIC_SUPABASE_SECRET_KEY must never be exposed");
+  }
+  if (source.NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY) {
+    throw new Error(
+      "NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY must never be exposed",
+    );
   }
 
   const name = required(source, "APP_ENVIRONMENT");
@@ -68,6 +83,23 @@ export function readServerEnvironment(
       projectRef,
       url,
       publishableKey: required(source, "SUPABASE_PUBLISHABLE_KEY"),
+    },
+  };
+}
+
+export function readServerEnvironment(
+  source: EnvironmentSource,
+): ServerEnvironment {
+  const environment = readPublicSupabaseEnvironment(source);
+  const privilegedAuditHmacKey = required(source, "PRIVILEGED_AUDIT_HMAC_KEY");
+  if (privilegedAuditHmacKey.length < 32) {
+    throw new Error("PRIVILEGED_AUDIT_HMAC_KEY must be at least 32 characters");
+  }
+  return {
+    ...environment,
+    privilegedAuditHmacKey,
+    supabase: {
+      ...environment.supabase,
       secretKey: required(source, "SUPABASE_SECRET_KEY"),
     },
   };

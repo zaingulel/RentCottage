@@ -232,7 +232,12 @@ describe("GitHub Actions delivery checks", () => {
     expect(deploy.env.SUPABASE_SECRET_KEY).toBe(
       "${{ secrets.SUPABASE_SECRET_KEY }}",
     );
-    expect(deploy.with.secrets).toBe("SUPABASE_SECRET_KEY");
+    expect(deploy.env.PRIVILEGED_AUDIT_HMAC_KEY).toBe(
+      "${{ secrets.PRIVILEGED_AUDIT_HMAC_KEY }}",
+    );
+    expect(deploy.with.secrets).toBe(
+      "SUPABASE_SECRET_KEY\nPRIVILEGED_AUDIT_HMAC_KEY\n",
+    );
     expect(deploy.with.environment).toBe("preview");
     expect(deploy.with.command).toContain("versions upload --env preview");
     expect(deploy.with.command).toContain(

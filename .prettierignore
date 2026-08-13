@@ -3,6 +3,7 @@
 node_modules
 test-results
 playwright-report
+supabase/.temp
 cloudflare-env.d.ts
 prototype
 docs
