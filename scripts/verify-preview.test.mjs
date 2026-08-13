@@ -77,6 +77,37 @@ describe("preview verification command", () => {
     ).rejects.toThrow("did not prove Supabase connectivity");
   });
 
+  it("aborts a hosted request that does not respond", async () => {
+    vi.useFakeTimers();
+    let requestSignal;
+    const fetchImpl = vi.fn((_url, options) => {
+      requestSignal = options.signal;
+      if (!requestSignal) throw new Error("missing abort signal");
+      return new Promise((_resolve, reject) => {
+        requestSignal.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    });
+
+    try {
+      const verification = verifyPreview(
+        new URL("https://preview.example.com"),
+        fetchImpl,
+      );
+      const rejection = expect(verification).rejects.toThrow(
+        "timed out after 10000ms",
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await rejection;
+      expect(requestSignal.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reports the exact verified URL and commit", async () => {
     const stdout = vi.fn();
     const fetchImpl = healthyPreviewFetch();

@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const USAGE = "Usage: npm run verify:preview -- <https-preview-url>";
+const REQUEST_TIMEOUT_MS = 10_000;
 
 export function parsePreviewUrl(value) {
   const url = new URL(value);
@@ -20,12 +21,35 @@ export function parsePreviewUrl(value) {
   return url;
 }
 
-async function requireSuccessfulResponse(fetchImpl, url, description) {
-  const response = await fetchImpl(url, { redirect: "error" });
-  if (!response.ok) {
-    throw new Error(`${description} returned HTTP ${response.status}`);
+async function requireSuccessfulResponse(
+  fetchImpl,
+  url,
+  description,
+  parseJson = false,
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetchImpl(url, {
+      redirect: "error",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`${description} returned HTTP ${response.status}`);
+    }
+    return parseJson ? await response.json() : response;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `${description} timed out after ${REQUEST_TIMEOUT_MS}ms`,
+        { cause: error },
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return response;
 }
 
 export async function verifyPreview(origin, fetchImpl = fetch) {
@@ -33,12 +57,12 @@ export async function verifyPreview(origin, fetchImpl = fetch) {
   const healthUrl = new URL("/api/health?check=supabase", origin).href;
 
   await requireSuccessfulResponse(fetchImpl, shellUrl, "Arabic shell");
-  const healthResponse = await requireSuccessfulResponse(
+  const health = await requireSuccessfulResponse(
     fetchImpl,
     healthUrl,
     "Supabase health check",
+    true,
   );
-  const health = await healthResponse.json();
   if (health?.ok !== true || health?.supabase?.connected !== true) {
     throw new Error("Hosted health check did not prove Supabase connectivity");
   }
