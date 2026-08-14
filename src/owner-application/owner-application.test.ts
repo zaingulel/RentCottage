@@ -1,0 +1,406 @@
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  createOwnerApplication,
+  type OwnerApplicationRepository,
+  type OwnerApplicationSnapshot,
+  type VerificationDocumentStorage,
+} from "./owner-application";
+
+const emptySnapshot: OwnerApplicationSnapshot = {
+  applicationId: "20000000-0000-0000-0000-000000000001",
+  ownerUserId: "10000000-0000-0000-0000-000000000001",
+  status: "draft",
+  applicantKind: "individual",
+  legalName: "",
+  companyName: "",
+  licensingBasis: "licence",
+  exemptionBasis: "",
+  cottage: {
+    name: "",
+    governorate: "",
+    approximateLocation: "",
+    exactAddress: "",
+    capacity: null,
+    bedrooms: null,
+    bathrooms: null,
+    amenities: [],
+    description: "",
+    houseRules: "",
+  },
+  documents: [],
+  submittedAt: null,
+};
+
+const validPdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
+
+function setup(snapshot: OwnerApplicationSnapshot | null = emptySnapshot) {
+  const repository: OwnerApplicationRepository = {
+    load: vi.fn().mockResolvedValue(snapshot),
+    saveDraft: vi.fn().mockResolvedValue(undefined),
+    missingItems: vi.fn().mockResolvedValue([]),
+    submit: vi.fn().mockResolvedValue(undefined),
+    prepareDocumentUpload: vi
+      .fn()
+      .mockResolvedValue("50000000-0000-4000-8000-000000000001"),
+    registerDocument: vi.fn().mockResolvedValue({
+      documentId: "40000000-0000-4000-8000-000000000001",
+      previousObjectPath: null,
+      previousCleanupId: null,
+    }),
+    authorizeDocumentAccess: vi
+      .fn()
+      .mockResolvedValue("owner/application/identity/document.pdf"),
+    completeDocumentCleanup: vi.fn().mockResolvedValue(undefined),
+  };
+  const storage: VerificationDocumentStorage = {
+    upload: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+    createSignedUrl: vi
+      .fn()
+      .mockResolvedValue("https://storage.test/signed-document"),
+  };
+
+  return {
+    repository,
+    storage,
+    application: createOwnerApplication({
+      repository,
+      storage,
+      createId: () => "30000000-0000-0000-0000-000000000001",
+    }),
+  };
+}
+
+describe("Owner Application", () => {
+  it("saves a partial Draft Owner Application for later visits", async () => {
+    const { application, repository } = setup();
+
+    await expect(
+      application.saveDraft({
+        applicantKind: "individual",
+        legalName: "  Zana Kareem  ",
+        companyName: "",
+        licensingBasis: "licence",
+        exemptionBasis: "",
+        cottageName: "  Garden House ",
+        governorate: "Erbil",
+        approximateLocation: "",
+        exactAddress: "",
+        capacity: "",
+        bedrooms: "",
+        bathrooms: "",
+        amenities: [" garden ", "parking"],
+        description: "",
+        houseRules: "",
+      }),
+    ).resolves.toEqual({ status: "saved" });
+
+    expect(repository.saveDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        legalName: "Zana Kareem",
+        cottageName: "Garden House",
+        capacity: null,
+        amenities: ["garden", "parking"],
+      }),
+    );
+  });
+
+  it("rejects invalid field values before persistence", async () => {
+    const { application, repository } = setup();
+
+    await expect(
+      application.saveDraft({
+        applicantKind: "company",
+        legalName: "Representative",
+        companyName: "",
+        licensingBasis: "licence",
+        exemptionBasis: "",
+        cottageName: "Cottage",
+        governorate: "Erbil",
+        approximateLocation: "Area",
+        exactAddress: "Address",
+        capacity: "0",
+        bedrooms: "two",
+        bathrooms: "1",
+        amenities: [],
+        description: "Description",
+        houseRules: "Rules",
+      }),
+    ).resolves.toEqual({
+      status: "invalid",
+      fields: ["capacity", "bedrooms"],
+    });
+    expect(repository.saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("rejects unbounded text before persistence", async () => {
+    const { application, repository } = setup();
+
+    await expect(
+      application.saveDraft({
+        applicantKind: "individual",
+        legalName: "x".repeat(121),
+        companyName: "",
+        licensingBasis: "exemption",
+        exemptionBasis: "Recorded local basis",
+        cottageName: "Cottage",
+        governorate: "Erbil",
+        approximateLocation: "Area",
+        exactAddress: "Address",
+        capacity: "2",
+        bedrooms: "1",
+        bathrooms: "1",
+        amenities: ["unknown"],
+        description: "Description",
+        houseRules: "Rules",
+      }),
+    ).resolves.toEqual({ status: "invalid", fields: ["legalName"] });
+    expect(repository.saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("rejects amenities outside the supported checklist", async () => {
+    const { application, repository } = setup();
+
+    await expect(
+      application.saveDraft({
+        applicantKind: "individual",
+        legalName: "Zana Kareem",
+        companyName: "",
+        licensingBasis: "licence",
+        exemptionBasis: "",
+        cottageName: "Cottage",
+        governorate: "Erbil",
+        approximateLocation: "Area",
+        exactAddress: "Address",
+        capacity: "2",
+        bedrooms: "1",
+        bathrooms: "1",
+        amenities: ["unknown"],
+        description: "Description",
+        houseRules: "Rules",
+      }),
+    ).resolves.toEqual({ status: "invalid", fields: ["amenities"] });
+    expect(repository.saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("returns every missing submission item without changing status", async () => {
+    const { application, repository } = setup();
+    vi.mocked(repository.missingItems).mockResolvedValue([
+      "legal_name",
+      "document:identity",
+      "document:payout_account",
+    ]);
+
+    await expect(application.submit()).resolves.toEqual({
+      status: "incomplete",
+      missingItems: [
+        "legal_name",
+        "document:identity",
+        "document:payout_account",
+      ],
+    });
+    expect(repository.submit).not.toHaveBeenCalled();
+  });
+
+  it("submits a complete application and returns its durable state", async () => {
+    const submitted = {
+      ...emptySnapshot,
+      status: "submitted" as const,
+      submittedAt: "2026-08-14T10:00:00.000Z",
+    };
+    const { application, repository } = setup(emptySnapshot);
+    vi.mocked(repository.load).mockResolvedValueOnce(submitted);
+
+    await expect(application.submit()).resolves.toEqual({
+      status: "submitted",
+      application: submitted,
+    });
+    expect(repository.submit).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { name: "script.svg", type: "image/svg+xml", size: 200 },
+    { name: "empty.pdf", type: "application/pdf", size: 0 },
+    { name: "large.pdf", type: "application/pdf", size: 5_242_881 },
+  ])("rejects unsafe verification upload $name", async (file) => {
+    const { application, storage } = setup();
+
+    await expect(
+      application.uploadDocument("identity", {
+        ...file,
+        bytes: new Uint8Array(Math.max(1, Math.min(file.size, 8))),
+      }),
+    ).resolves.toEqual({ status: "invalid_document" });
+    expect(storage.upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects a document whose bytes do not match its declared media type", async () => {
+    const { application, repository, storage } = setup();
+
+    await expect(
+      application.uploadDocument("identity", {
+        name: "script.pdf",
+        type: "application/pdf",
+        size: 6,
+        bytes: new Uint8Array([0x3c, 0x73, 0x63, 0x72, 0x69, 0x70]),
+      }),
+    ).resolves.toEqual({ status: "invalid_document" });
+    expect(repository.prepareDocumentUpload).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
+  });
+
+  it("uploads a private document and removes the replaced object", async () => {
+    const { application, repository, storage } = setup();
+    vi.mocked(repository.registerDocument).mockResolvedValue({
+      documentId: "40000000-0000-4000-8000-000000000001",
+      previousObjectPath: "owner/application/identity/old.pdf",
+      previousCleanupId: "50000000-0000-4000-8000-000000000002",
+    });
+
+    await expect(
+      application.uploadDocument("identity", {
+        name: " passport.PDF ",
+        type: "application/pdf",
+        size: validPdf.byteLength,
+        bytes: validPdf,
+      }),
+    ).resolves.toEqual({ status: "uploaded" });
+
+    expect(storage.upload).toHaveBeenCalledWith(
+      "10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/identity/30000000-0000-0000-0000-000000000001.pdf",
+      expect.objectContaining({ type: "application/pdf" }),
+    );
+    expect(repository.prepareDocumentUpload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "identity",
+        originalFilename: "passport.PDF",
+        sizeBytes: validPdf.byteLength,
+      }),
+    );
+    expect(repository.registerDocument).toHaveBeenCalledWith(
+      "50000000-0000-4000-8000-000000000001",
+    );
+    expect(
+      vi.mocked(repository.prepareDocumentUpload).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(storage.upload).mock.invocationCallOrder[0]);
+    expect(storage.remove).toHaveBeenCalledWith([
+      "owner/application/identity/old.pdf",
+    ]);
+    expect(repository.completeDocumentCleanup).toHaveBeenCalledWith(
+      "50000000-0000-4000-8000-000000000002",
+    );
+  });
+
+  it("cleans up a new object when metadata registration fails", async () => {
+    const { application, repository, storage } = setup();
+    vi.mocked(repository.registerDocument).mockRejectedValue(
+      new Error("database unavailable"),
+    );
+
+    await expect(
+      application.uploadDocument("identity", {
+        name: "passport.pdf",
+        type: "application/pdf",
+        size: validPdf.byteLength,
+        bytes: validPdf,
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(storage.remove).toHaveBeenCalledWith([
+      "10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/identity/30000000-0000-0000-0000-000000000001.pdf",
+    ]);
+  });
+
+  it("reports when an unregistered object cannot be cleaned up", async () => {
+    const { application, repository, storage } = setup();
+    vi.mocked(repository.registerDocument).mockRejectedValue(
+      new Error("database unavailable"),
+    );
+    vi.mocked(storage.remove).mockRejectedValue(
+      new Error("storage unavailable"),
+    );
+
+    await expect(
+      application.uploadDocument("identity", {
+        name: "passport.pdf",
+        type: "application/pdf",
+        size: validPdf.byteLength,
+        bytes: validPdf,
+      }),
+    ).resolves.toEqual({ status: "failed_cleanup_required" });
+  });
+
+  it("reports a truthful replacement result when old-file cleanup fails", async () => {
+    const { application, repository, storage } = setup();
+    vi.mocked(repository.registerDocument).mockResolvedValue({
+      documentId: "40000000-0000-4000-8000-000000000001",
+      previousObjectPath: "owner/application/identity/old.pdf",
+      previousCleanupId: "50000000-0000-4000-8000-000000000002",
+    });
+    vi.mocked(storage.remove).mockRejectedValue(
+      new Error("storage unavailable"),
+    );
+
+    await expect(
+      application.uploadDocument("identity", {
+        name: "passport.pdf",
+        type: "application/pdf",
+        size: validPdf.byteLength,
+        bytes: validPdf,
+      }),
+    ).resolves.toEqual({ status: "uploaded_cleanup_required" });
+    expect(repository.completeDocumentCleanup).not.toHaveBeenCalled();
+  });
+
+  it("reports when a completed deletion cannot be audited", async () => {
+    const { application, repository } = setup();
+    vi.mocked(repository.registerDocument).mockResolvedValue({
+      documentId: "40000000-0000-4000-8000-000000000001",
+      previousObjectPath: "owner/application/identity/old.pdf",
+      previousCleanupId: "50000000-0000-4000-8000-000000000002",
+    });
+    vi.mocked(repository.completeDocumentCleanup).mockRejectedValue(
+      new Error("audit unavailable"),
+    );
+
+    await expect(
+      application.uploadDocument("identity", {
+        name: "passport.pdf",
+        type: "application/pdf",
+        size: validPdf.byteLength,
+        bytes: validPdf,
+      }),
+    ).resolves.toEqual({ status: "uploaded_deletion_audit_required" });
+  });
+
+  it("returns no private URL when the access audit cannot be recorded", async () => {
+    const { application, repository, storage } = setup();
+    vi.mocked(repository.authorizeDocumentAccess).mockRejectedValue(
+      new Error("audit unavailable"),
+    );
+
+    await expect(
+      application.createDocumentAccess("40000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(storage.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns an audited URL that expires after 60 seconds", async () => {
+    const { application, repository, storage } = setup();
+
+    await expect(
+      application.createDocumentAccess("40000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({
+      status: "ready",
+      url: "https://storage.test/signed-document",
+      expiresInSeconds: 60,
+    });
+    expect(repository.authorizeDocumentAccess).toHaveBeenCalledWith(
+      "40000000-0000-4000-8000-000000000001",
+    );
+    expect(storage.createSignedUrl).toHaveBeenCalledWith(
+      "owner/application/identity/document.pdf",
+      60,
+    );
+  });
+});

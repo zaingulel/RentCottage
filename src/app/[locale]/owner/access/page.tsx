@@ -19,6 +19,12 @@ export default async function OwnerAccessPage({
       <h1>{copy.ownerTitle}</h1>
       <p>{copy.ownerIntro}</p>
       <PhoneAccessForm locale={locale} role="cottage_owner" />
+      <a
+        className="owner-application-link"
+        href={`/${locale}/owner/application`}
+      >
+        {copy.ownerApplicationCta}
+      </a>
     </main>
   );
 }

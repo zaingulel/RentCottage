@@ -16,6 +16,7 @@ export const accessMessages: Record<
     roleConflict: string;
     ownerTitle: string;
     ownerIntro: string;
+    ownerApplicationCta: string;
     administratorTitle: string;
     email: string;
     password: string;
@@ -42,6 +43,7 @@ export const accessMessages: Record<
     roleConflict: "هذا الرقم مرتبط بدور مختلف. استخدم هوية منفصلة.",
     ownerTitle: "دخول مالك البيت",
     ownerIntro: "تحقق من رقمك لبدء طلب المالك الخاص بك.",
+    ownerApplicationCta: "تابع إلى طلب المالك",
     administratorTitle: "دخول مسؤول المنصة",
     email: "البريد الإلكتروني",
     password: "كلمة المرور",
@@ -67,6 +69,7 @@ export const accessMessages: Record<
     roleConflict: "ئەم ژمارەیە بە ڕۆڵێکی ترەوە بەستراوە.",
     ownerTitle: "چوونەژوورەوەی خاوەنی ماڵ",
     ownerIntro: "ژمارەکەت پشتڕاست بکەرەوە بۆ دەستپێکردنی داواکاری.",
+    ownerApplicationCta: "بەردەوام بە بۆ داواکاری خاوەن",
     administratorTitle: "چوونەژوورەوەی بەڕێوەبەری پلاتفۆرم",
     email: "ئیمەیڵ",
     password: "وشەی نهێنی",
@@ -94,6 +97,7 @@ export const accessMessages: Record<
       "This number belongs to another role. Use a separate identity.",
     ownerTitle: "Cottage Owner access",
     ownerIntro: "Verify your phone to begin your private owner application.",
+    ownerApplicationCta: "Continue to Owner Application",
     administratorTitle: "Platform Administrator access",
     email: "Email",
     password: "Password",
