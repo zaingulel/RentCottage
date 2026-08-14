@@ -66,6 +66,38 @@ describe("Owner Application server actions", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/en/owner/application");
   });
 
+  it("returns submitted values when a draft is invalid", async () => {
+    application.saveDraft.mockResolvedValue({
+      status: "invalid",
+      fields: ["capacity"],
+    });
+    const form = completeForm();
+    form.set("capacity", "101");
+
+    await expect(
+      saveOwnerApplicationAction({ status: "idle" }, form),
+    ).resolves.toEqual({
+      status: "invalid",
+      fields: ["capacity"],
+      values: expect.objectContaining({
+        legalName: "Zana Kareem",
+        capacity: "101",
+        amenities: ["garden", "parking"],
+      }),
+    });
+  });
+
+  it("refreshes a saved draft when evidence cleanup remains pending", async () => {
+    application.saveDraft.mockResolvedValue({
+      status: "saved_cleanup_required",
+    });
+
+    await expect(
+      saveOwnerApplicationAction({ status: "idle" }, completeForm()),
+    ).resolves.toEqual({ status: "saved_cleanup_required" });
+    expect(revalidatePath).toHaveBeenCalledWith("/en/owner/application");
+  });
+
   it("passes document bytes through the private upload seam", async () => {
     application.uploadDocument.mockResolvedValue({ status: "uploaded" });
     const form = new FormData();
@@ -91,6 +123,33 @@ describe("Owner Application server actions", () => {
       }),
     );
     expect(revalidatePath).toHaveBeenCalledWith("/en/owner/application");
+  });
+
+  it("reports a missing locale without blaming the document", async () => {
+    const form = new FormData();
+    form.set(
+      "document",
+      new File([new Uint8Array([1])], "passport.pdf", {
+        type: "application/pdf",
+      }),
+    );
+
+    await expect(
+      uploadOwnerDocumentAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(application.uploadDocument).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing document as invalid without calling the domain", async () => {
+    const form = new FormData();
+    form.set("locale", "en");
+
+    await expect(
+      uploadOwnerDocumentAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "invalid_document" });
+    expect(application.uploadDocument).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it.each([

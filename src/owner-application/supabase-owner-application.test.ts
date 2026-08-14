@@ -69,7 +69,7 @@ describe("Supabase Owner Application adapter", () => {
     const client = { from } as unknown as SupabaseClient;
 
     await expect(
-      new SupabaseOwnerApplicationRepository(client).load(),
+      new SupabaseOwnerApplicationRepository(client, client).load(),
     ).resolves.toMatchObject({
       status: "draft",
       legalName: "Zana Kareem",
@@ -79,27 +79,41 @@ describe("Supabase Owner Application adapter", () => {
   });
 
   it("sends a normalized draft through the atomic save function", async () => {
-    const rpc = vi.fn().mockReturnValue(result({ id: "application" }));
+    const rpc = vi.fn().mockReturnValue(
+      result([
+        {
+          cleanup_id: "50000000-0000-4000-8000-000000000003",
+          object_path: "owner/application/identity/obsolete.pdf",
+        },
+      ]),
+    );
     const client = { rpc } as unknown as SupabaseClient;
-    const repository = new SupabaseOwnerApplicationRepository(client);
+    const repository = new SupabaseOwnerApplicationRepository(client, client);
 
-    await repository.saveDraft({
-      applicantKind: "individual",
-      legalName: "Zana Kareem",
-      companyName: "",
-      licensingBasis: "licence",
-      exemptionBasis: "",
-      cottageName: "Garden House",
-      governorate: "Erbil",
-      approximateLocation: "Shaqlawa countryside",
-      exactAddress: "Eastern orchard road",
-      capacity: 8,
-      bedrooms: 3,
-      bathrooms: 2,
-      amenities: ["garden"],
-      description: "A quiet family cottage.",
-      houseRules: "Families only.",
-    });
+    await expect(
+      repository.saveDraft({
+        applicantKind: "individual",
+        legalName: "Zana Kareem",
+        companyName: "",
+        licensingBasis: "licence",
+        exemptionBasis: "",
+        cottageName: "Garden House",
+        governorate: "Erbil",
+        approximateLocation: "Shaqlawa countryside",
+        exactAddress: "Eastern orchard road",
+        capacity: 8,
+        bedrooms: 3,
+        bathrooms: 2,
+        amenities: ["garden"],
+        description: "A quiet family cottage.",
+        houseRules: "Families only.",
+      }),
+    ).resolves.toEqual([
+      {
+        cleanupId: "50000000-0000-4000-8000-000000000003",
+        objectPath: "owner/application/identity/obsolete.pdf",
+      },
+    ]);
 
     expect(rpc).toHaveBeenCalledWith(
       "save_owner_application",
@@ -137,6 +151,38 @@ describe("Supabase Owner Application adapter", () => {
       {
         target_cleanup_id: "50000000-0000-4000-8000-000000000001",
       },
+    );
+    expect(authenticatedRpc).not.toHaveBeenCalled();
+  });
+
+  it("reconciles an already-committed registration through the server-only client", async () => {
+    const authenticatedRpc = vi.fn();
+    const privilegedRpc = vi.fn().mockReturnValue(
+      result({
+        status: "registered",
+        document_id: "40000000-0000-4000-8000-000000000001",
+        previous_object_path: "owner/application/identity/old.pdf",
+        previous_cleanup_id: "50000000-0000-4000-8000-000000000002",
+      }),
+    );
+    const repository = new SupabaseOwnerApplicationRepository(
+      { rpc: authenticatedRpc } as unknown as SupabaseClient,
+      { rpc: privilegedRpc } as unknown as SupabaseClient,
+    );
+
+    await expect(
+      repository.reconcileDocumentRegistration(
+        "50000000-0000-4000-8000-000000000001",
+      ),
+    ).resolves.toEqual({
+      status: "registered",
+      documentId: "40000000-0000-4000-8000-000000000001",
+      previousObjectPath: "owner/application/identity/old.pdf",
+      previousCleanupId: "50000000-0000-4000-8000-000000000002",
+    });
+    expect(privilegedRpc).toHaveBeenCalledWith(
+      "reconcile_owner_verification_document_registration",
+      { target_cleanup_id: "50000000-0000-4000-8000-000000000001" },
     );
     expect(authenticatedRpc).not.toHaveBeenCalled();
   });
@@ -186,7 +232,7 @@ describe("Supabase Owner Application adapter", () => {
     } as unknown as SupabaseClient;
 
     await expect(
-      new SupabaseOwnerApplicationRepository(client).load(),
+      new SupabaseOwnerApplicationRepository(client, client).load(),
     ).rejects.toThrow(/Owner Application/);
   });
 });

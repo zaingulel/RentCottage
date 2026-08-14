@@ -5,7 +5,9 @@ import type {
   OwnerApplicationRepository,
   OwnerApplicationSnapshot,
   OwnerVerificationDocument,
+  PendingVerificationDocumentCleanup,
   VerificationDocumentKind,
+  VerificationDocumentRegistrationReconciliation,
   VerificationDocumentStorage,
   VerificationUpload,
 } from "./owner-application";
@@ -137,13 +139,53 @@ function parseSnapshot(
 }
 
 function assertProviderSuccess(error: unknown): void {
-  if (error) throw new Error("Owner Application provider is unavailable");
+  if (error) {
+    throw new Error("Owner Application provider is unavailable", {
+      cause: error,
+    });
+  }
+}
+
+function parsePendingCleanup(
+  value: unknown,
+): PendingVerificationDocumentCleanup {
+  const candidate = record(value);
+  const cleanupId = requiredString(candidate.cleanup_id, "cleanup identifier");
+  if (!uuidPattern.test(cleanupId)) {
+    throw new Error("Owner Application cleanup identifier is invalid");
+  }
+  return {
+    cleanupId,
+    objectPath: requiredString(candidate.object_path, "cleanup object path"),
+  };
+}
+
+function parseRegisteredDocument(value: unknown) {
+  const result = record(value);
+  const documentId = requiredString(result.document_id, "document identifier");
+  const previousObjectPath = result.previous_object_path;
+  const previousCleanupId = result.previous_cleanup_id;
+  if (
+    (previousObjectPath !== null && typeof previousObjectPath !== "string") ||
+    (previousCleanupId !== null &&
+      (typeof previousCleanupId !== "string" ||
+        !uuidPattern.test(previousCleanupId))) ||
+    (previousObjectPath === null) !== (previousCleanupId === null) ||
+    !uuidPattern.test(documentId)
+  ) {
+    throw new Error("Owner Application replacement data is invalid");
+  }
+  return {
+    documentId,
+    previousObjectPath,
+    previousCleanupId,
+  };
 }
 
 export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepository {
   constructor(
     private readonly client: SupabaseClient,
-    private readonly privilegedClient: SupabaseClient = client,
+    private readonly privilegedClient: SupabaseClient,
   ) {}
 
   async load(): Promise<OwnerApplicationSnapshot | null> {
@@ -190,8 +232,10 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
     );
   }
 
-  async saveDraft(draft: OwnerApplicationDraft): Promise<void> {
-    const { error } = await this.client.rpc("save_owner_application", {
+  async saveDraft(
+    draft: OwnerApplicationDraft,
+  ): Promise<PendingVerificationDocumentCleanup[]> {
+    const { data, error } = await this.client.rpc("save_owner_application", {
       requested_applicant_kind: draft.applicantKind,
       requested_legal_name: draft.legalName,
       requested_company_name: draft.companyName || null,
@@ -209,6 +253,10 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
       requested_house_rules: draft.houseRules,
     });
     assertProviderSuccess(error);
+    if (!Array.isArray(data)) {
+      throw new Error("Owner Application cleanup data is invalid");
+    }
+    return data.map(parsePendingCleanup);
   }
 
   async missingItems(): Promise<string[]> {
@@ -261,23 +309,25 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
       { target_cleanup_id: cleanupId },
     );
     assertProviderSuccess(error);
+    return parseRegisteredDocument(data);
+  }
+
+  async reconcileDocumentRegistration(
+    cleanupId: string,
+  ): Promise<VerificationDocumentRegistrationReconciliation> {
+    const { data, error } = await this.privilegedClient.rpc(
+      "reconcile_owner_verification_document_registration",
+      { target_cleanup_id: cleanupId },
+    );
+    assertProviderSuccess(error);
     const result = record(data);
-    const previous = result.previous_object_path;
-    const previousCleanupId = result.previous_cleanup_id;
-    if (
-      (previous !== null && typeof previous !== "string") ||
-      (previousCleanupId !== null &&
-        (typeof previousCleanupId !== "string" ||
-          !uuidPattern.test(previousCleanupId))) ||
-      (previous === null) !== (previousCleanupId === null)
-    ) {
-      throw new Error("Owner Application replacement data is invalid");
+    if (result.status === "unregistered") {
+      return { status: "unregistered" };
     }
-    return {
-      documentId: requiredString(result.document_id, "document identifier"),
-      previousObjectPath: previous,
-      previousCleanupId,
-    };
+    if (result.status !== "registered") {
+      throw new Error("Owner Application registration state is invalid");
+    }
+    return { status: "registered", ...parseRegisteredDocument(result) };
   }
 
   async authorizeDocumentAccess(documentId: string): Promise<string> {

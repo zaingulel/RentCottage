@@ -1,18 +1,22 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
   saveOwnerApplicationAction,
   submitOwnerApplicationAction,
   uploadOwnerDocumentAction,
+  type OwnerApplicationFormValues,
   type UploadOwnerDocumentState,
 } from "@/owner-application/actions";
 import {
   type OwnerApplicationSnapshot,
+  type OwnerApplicantKind,
+  type OwnerLicensingBasis,
   type OwnerVerificationDocument,
   type VerificationDocumentKind,
+  isVerificationDocumentKindRequired,
   verificationDocumentKinds,
 } from "@/owner-application/owner-application";
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
@@ -34,21 +38,31 @@ function ActionMessage({
   const message =
     status === "saved"
       ? copy.saved
-      : status === "uploaded"
-        ? copy.uploaded
-        : status === "uploaded_cleanup_required"
-          ? copy.uploadedCleanupRequired
-          : status === "uploaded_deletion_audit_required"
-            ? copy.uploadedDeletionAuditRequired
-            : status === "failed_cleanup_required"
-              ? copy.failedCleanupRequired
-              : status === "submitted"
-                ? copy.submitted
-                : status === "invalid_document"
-                  ? copy.invalidDocument
-                  : status === "invalid"
-                    ? copy.invalid
-                    : copy.unavailable;
+      : status === "saved_cleanup_required"
+        ? copy.savedCleanupRequired
+        : status === "saved_deletion_audit_required"
+          ? copy.savedDeletionAuditRequired
+          : status === "uploaded"
+            ? copy.uploaded
+            : status === "uploaded_cleanup_required"
+              ? copy.uploadedCleanupRequired
+              : status === "uploaded_deletion_audit_required"
+                ? copy.uploadedDeletionAuditRequired
+                : status === "failed_cleanup_required"
+                  ? copy.failedCleanupRequired
+                  : status === "registration_reconciliation_required"
+                    ? copy.registrationReconciliationRequired
+                    : status === "submitted"
+                      ? copy.submitted
+                      : status === "invalid_document"
+                        ? copy.invalidDocument
+                        : status === "application_required"
+                          ? copy.saveBeforeDocuments
+                          : status === "denied"
+                            ? copy.denied
+                            : status === "invalid"
+                              ? copy.invalid
+                              : copy.unavailable;
   const successful =
     status === "saved" || status === "uploaded" || status === "submitted";
   return (
@@ -65,15 +79,37 @@ function copyFor(locale: Locale) {
   return ownerApplicationMessages[locale];
 }
 
+function valuesFor(
+  application: OwnerApplicationSnapshot | null,
+): OwnerApplicationFormValues {
+  return {
+    applicantKind: application?.applicantKind ?? "individual",
+    legalName: application?.legalName ?? "",
+    companyName: application?.companyName ?? "",
+    licensingBasis: application?.licensingBasis ?? "licence",
+    exemptionBasis: application?.exemptionBasis ?? "",
+    cottageName: application?.cottage.name ?? "",
+    governorate: application?.cottage.governorate ?? "",
+    approximateLocation: application?.cottage.approximateLocation ?? "",
+    exactAddress: application?.cottage.exactAddress ?? "",
+    capacity: application?.cottage.capacity?.toString() ?? "",
+    bedrooms: application?.cottage.bedrooms?.toString() ?? "",
+    bathrooms: application?.cottage.bathrooms?.toString() ?? "",
+    amenities: application?.cottage.amenities ?? [],
+    description: application?.cottage.description ?? "",
+    houseRules: application?.cottage.houseRules ?? "",
+  };
+}
+
 function VerificationDocumentRow({
   locale,
   kind,
-  document,
+  savedDocument,
   disabled,
 }: {
   locale: Locale;
   kind: VerificationDocumentKind;
-  document?: OwnerVerificationDocument;
+  savedDocument?: OwnerVerificationDocument;
   disabled: boolean;
 }) {
   const copy = copyFor(locale);
@@ -88,7 +124,9 @@ function VerificationDocumentRow({
       <div>
         <h3 id={headingId}>{copy.documentKinds[kind].title}</h3>
         <p>{copy.documentKinds[kind].help}</p>
-        {document ? <strong>{document.originalFilename}</strong> : null}
+        {savedDocument ? (
+          <strong>{savedDocument.originalFilename}</strong>
+        ) : null}
       </div>
       {!disabled ? (
         <form action={uploadAction} className="document-upload-form">
@@ -103,7 +141,9 @@ function VerificationDocumentRow({
               accept="application/pdf,image/jpeg,image/png"
             />
           </label>
-          <SubmitButton>{document ? copy.replace : copy.upload}</SubmitButton>
+          <SubmitButton>
+            {savedDocument ? copy.replace : copy.upload}
+          </SubmitButton>
           <ActionMessage status={uploadState.status} copy={copy} />
         </form>
       ) : null}
@@ -130,20 +170,17 @@ export function OwnerApplicationForm({
   const invalidFields = new Set(
     saveState.status === "invalid" ? saveState.fields : [],
   );
-  const visibleDocumentKinds = verificationDocumentKinds.filter((kind) => {
-    const applicantKind = application?.applicantKind ?? "individual";
-    if (kind === "identity") return applicantKind === "individual";
-    if (
-      kind === "company_registration" ||
-      kind === "authorised_representative"
-    ) {
-      return applicantKind === "company";
-    }
-    if (kind === "licensing_or_exemption") {
-      return (application?.licensingBasis ?? "licence") === "licence";
-    }
-    return true;
-  });
+  const values =
+    saveState.status === "invalid" ? saveState.values : valuesFor(application);
+  const [applicantKind, setApplicantKind] = useState<OwnerApplicantKind>(
+    values.applicantKind === "company" ? "company" : "individual",
+  );
+  const [licensingBasis, setLicensingBasis] = useState<OwnerLicensingBasis>(
+    values.licensingBasis === "exemption" ? "exemption" : "licence",
+  );
+  const visibleDocumentKinds = verificationDocumentKinds.filter((kind) =>
+    isVerificationDocumentKindRequired(kind, applicantKind, licensingBasis),
+  );
 
   return (
     <div className="owner-application-layout">
@@ -173,7 +210,10 @@ export function OwnerApplicationForm({
                   <select
                     name="applicantKind"
                     aria-invalid={invalidFields.has("applicantKind")}
-                    defaultValue={application?.applicantKind ?? "individual"}
+                    value={applicantKind}
+                    onChange={(event) =>
+                      setApplicantKind(event.target.value as OwnerApplicantKind)
+                    }
                   >
                     <option value="individual">{copy.individual}</option>
                     <option value="company">{copy.company}</option>
@@ -185,7 +225,7 @@ export function OwnerApplicationForm({
                     name="legalName"
                     maxLength={120}
                     aria-invalid={invalidFields.has("legalName")}
-                    defaultValue={application?.legalName}
+                    defaultValue={values.legalName}
                   />
                 </label>
                 <label>
@@ -194,7 +234,7 @@ export function OwnerApplicationForm({
                     name="companyName"
                     maxLength={120}
                     aria-invalid={invalidFields.has("companyName")}
-                    defaultValue={application?.companyName}
+                    defaultValue={values.companyName}
                   />
                 </label>
                 <label>
@@ -202,7 +242,12 @@ export function OwnerApplicationForm({
                   <select
                     name="licensingBasis"
                     aria-invalid={invalidFields.has("licensingBasis")}
-                    defaultValue={application?.licensingBasis ?? "licence"}
+                    value={licensingBasis}
+                    onChange={(event) =>
+                      setLicensingBasis(
+                        event.target.value as OwnerLicensingBasis,
+                      )
+                    }
                   >
                     <option value="licence">{copy.licence}</option>
                     <option value="exemption">{copy.exemption}</option>
@@ -215,7 +260,7 @@ export function OwnerApplicationForm({
                     rows={3}
                     maxLength={1000}
                     aria-invalid={invalidFields.has("exemptionBasis")}
-                    defaultValue={application?.exemptionBasis}
+                    defaultValue={values.exemptionBasis}
                   />
                   <small>{copy.exemptionBasisHelp}</small>
                 </label>
@@ -234,7 +279,7 @@ export function OwnerApplicationForm({
                     name="cottageName"
                     maxLength={120}
                     aria-invalid={invalidFields.has("cottageName")}
-                    defaultValue={application?.cottage.name}
+                    defaultValue={values.cottageName}
                   />
                 </label>
                 <label>
@@ -243,7 +288,7 @@ export function OwnerApplicationForm({
                     name="governorate"
                     maxLength={120}
                     aria-invalid={invalidFields.has("governorate")}
-                    defaultValue={application?.cottage.governorate}
+                    defaultValue={values.governorate}
                   />
                 </label>
                 <label>
@@ -252,7 +297,7 @@ export function OwnerApplicationForm({
                     name="approximateLocation"
                     maxLength={240}
                     aria-invalid={invalidFields.has("approximateLocation")}
-                    defaultValue={application?.cottage.approximateLocation}
+                    defaultValue={values.approximateLocation}
                   />
                 </label>
                 <label>
@@ -261,7 +306,7 @@ export function OwnerApplicationForm({
                     name="exactAddress"
                     maxLength={240}
                     aria-invalid={invalidFields.has("exactAddress")}
-                    defaultValue={application?.cottage.exactAddress}
+                    defaultValue={values.exactAddress}
                   />
                   <small>{copy.exactAddressHelp}</small>
                 </label>
@@ -275,7 +320,7 @@ export function OwnerApplicationForm({
                     max="100"
                     name="capacity"
                     aria-invalid={invalidFields.has("capacity")}
-                    defaultValue={application?.cottage.capacity ?? ""}
+                    defaultValue={values.capacity}
                   />
                 </label>
                 <label>
@@ -286,7 +331,7 @@ export function OwnerApplicationForm({
                     max="50"
                     name="bedrooms"
                     aria-invalid={invalidFields.has("bedrooms")}
-                    defaultValue={application?.cottage.bedrooms ?? ""}
+                    defaultValue={values.bedrooms}
                   />
                 </label>
                 <label>
@@ -297,7 +342,7 @@ export function OwnerApplicationForm({
                     max="50"
                     name="bathrooms"
                     aria-invalid={invalidFields.has("bathrooms")}
-                    defaultValue={application?.cottage.bathrooms ?? ""}
+                    defaultValue={values.bathrooms}
                   />
                 </label>
               </div>
@@ -310,7 +355,7 @@ export function OwnerApplicationForm({
                         type="checkbox"
                         name="amenities"
                         value={amenity.value}
-                        defaultChecked={application?.cottage.amenities.includes(
+                        defaultChecked={values.amenities.includes(
                           amenity.value,
                         )}
                       />
@@ -327,7 +372,7 @@ export function OwnerApplicationForm({
                     rows={5}
                     maxLength={2000}
                     aria-invalid={invalidFields.has("description")}
-                    defaultValue={application?.cottage.description}
+                    defaultValue={values.description}
                   />
                 </label>
                 <label>
@@ -337,7 +382,7 @@ export function OwnerApplicationForm({
                     rows={4}
                     maxLength={1500}
                     aria-invalid={invalidFields.has("houseRules")}
-                    defaultValue={application?.cottage.houseRules}
+                    defaultValue={values.houseRules}
                   />
                 </label>
               </div>
@@ -369,7 +414,7 @@ export function OwnerApplicationForm({
                 key={kind}
                 locale={locale}
                 kind={kind}
-                document={application?.documents.find(
+                savedDocument={application?.documents.find(
                   (item) => item.kind === kind,
                 )}
                 disabled={!application || submitted}

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(42);
+select plan(44);
 
 select has_table(
   'public',
@@ -213,6 +213,14 @@ select lives_ok(
   'a valid uploaded object can be registered as verification evidence'
 );
 
+select results_eq(
+  $$select public.reconcile_owner_verification_document_registration(
+    current_setting('test.identity_cleanup_id')::uuid
+  ) ->> 'status'$$,
+  array['registered'::text],
+  'a committed registration can be reconciled by its durable cleanup identifier'
+);
+
 reset role;
 set local role authenticated;
 select set_config(
@@ -234,6 +242,11 @@ select is_empty(
       and ('authenticated' = any(roles) or 'public' = any(roles))
       and cmd in ('ALL', 'SELECT', 'INSERT', 'UPDATE', 'DELETE')$$,
   'no authenticated Storage policy permits raw object access or mutation'
+);
+
+select is_empty(
+  $$select id from public.owner_verification_document_audit$$,
+  'an applicant cannot read raw verification audit records or administrator identifiers'
 );
 
 reset role;

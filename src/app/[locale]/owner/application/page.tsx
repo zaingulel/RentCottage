@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createRequestSupabaseClient } from "@/access/supabase-server";
@@ -22,24 +23,25 @@ export default async function OwnerApplicationPage({
     return (
       <main className="owner-application-page access-required-page">
         <header className="owner-application-header">
-          <a href={`/${locale}`}>RentCottage</a>
+          <Link href={`/${locale}`}>RentCottage</Link>
           <span>{copy.eyebrow}</span>
         </header>
         <section className="access-required-card">
           <h1>{copy.title}</h1>
           <p>{copy.accessRequired}</p>
-          <a href={`/${locale}/owner/access`}>{copy.verifyPhone}</a>
+          <Link href={`/${locale}/owner/access`}>{copy.verifyPhone}</Link>
         </section>
       </main>
     );
   }
 
-  const application = await (await createRequestOwnerApplication()).load();
+  const applicationService = await createRequestOwnerApplication();
+  const application = await applicationService.load();
 
   return (
     <main className="owner-application-page">
       <header className="owner-application-header">
-        <a href={`/${locale}`}>RentCottage</a>
+        <Link href={`/${locale}`}>RentCottage</Link>
         <span>{copy.eyebrow}</span>
       </header>
       <OwnerApplicationForm locale={locale} application={application} />

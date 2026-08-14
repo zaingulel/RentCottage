@@ -7,8 +7,37 @@ import { isLocale } from "@/i18n/routing";
 import { createRequestOwnerApplication } from "./request-owner-application";
 
 export type SaveOwnerApplicationState =
-  | { status: "idle" | "saved" | "unavailable" }
-  | { status: "invalid"; fields: string[] };
+  | {
+      status:
+        | "idle"
+        | "saved"
+        | "saved_cleanup_required"
+        | "saved_deletion_audit_required"
+        | "unavailable";
+    }
+  | {
+      status: "invalid";
+      fields: string[];
+      values: OwnerApplicationFormValues;
+    };
+
+export interface OwnerApplicationFormValues {
+  applicantKind: string;
+  legalName: string;
+  companyName: string;
+  licensingBasis: string;
+  exemptionBasis: string;
+  cottageName: string;
+  governorate: string;
+  approximateLocation: string;
+  exactAddress: string;
+  capacity: string;
+  bedrooms: string;
+  bathrooms: string;
+  amenities: string[];
+  description: string;
+  houseRules: string;
+}
 
 export type UploadOwnerDocumentState = {
   status:
@@ -17,6 +46,7 @@ export type UploadOwnerDocumentState = {
     | "uploaded_cleanup_required"
     | "uploaded_deletion_audit_required"
     | "failed_cleanup_required"
+    | "registration_reconciliation_required"
     | "invalid_document"
     | "application_required"
     | "unavailable";
@@ -39,6 +69,33 @@ function localeFrom(formData: FormData) {
   return typeof value === "string" && isLocale(value) ? value : undefined;
 }
 
+function textFrom(formData: FormData, name: string): string {
+  const value = formData.get(name);
+  return typeof value === "string" ? value : "";
+}
+
+function valuesFrom(formData: FormData): OwnerApplicationFormValues {
+  return {
+    applicantKind: textFrom(formData, "applicantKind"),
+    legalName: textFrom(formData, "legalName"),
+    companyName: textFrom(formData, "companyName"),
+    licensingBasis: textFrom(formData, "licensingBasis"),
+    exemptionBasis: textFrom(formData, "exemptionBasis"),
+    cottageName: textFrom(formData, "cottageName"),
+    governorate: textFrom(formData, "governorate"),
+    approximateLocation: textFrom(formData, "approximateLocation"),
+    exactAddress: textFrom(formData, "exactAddress"),
+    capacity: textFrom(formData, "capacity"),
+    bedrooms: textFrom(formData, "bedrooms"),
+    bathrooms: textFrom(formData, "bathrooms"),
+    amenities: formData
+      .getAll("amenities")
+      .filter((value): value is string => typeof value === "string"),
+    description: textFrom(formData, "description"),
+    houseRules: textFrom(formData, "houseRules"),
+  };
+}
+
 export async function saveOwnerApplicationAction(
   _previous: SaveOwnerApplicationState,
   formData: FormData,
@@ -46,24 +103,16 @@ export async function saveOwnerApplicationAction(
   const locale = localeFrom(formData);
   if (!locale) return { status: "unavailable" };
   const application = await createRequestOwnerApplication();
-  const result = await application.saveDraft({
-    applicantKind: formData.get("applicantKind"),
-    legalName: formData.get("legalName"),
-    companyName: formData.get("companyName"),
-    licensingBasis: formData.get("licensingBasis"),
-    exemptionBasis: formData.get("exemptionBasis"),
-    cottageName: formData.get("cottageName"),
-    governorate: formData.get("governorate"),
-    approximateLocation: formData.get("approximateLocation"),
-    exactAddress: formData.get("exactAddress"),
-    capacity: formData.get("capacity"),
-    bedrooms: formData.get("bedrooms"),
-    bathrooms: formData.get("bathrooms"),
-    amenities: formData.getAll("amenities"),
-    description: formData.get("description"),
-    houseRules: formData.get("houseRules"),
-  });
-  if (result.status === "saved") {
+  const values = valuesFrom(formData);
+  const result = await application.saveDraft(values);
+  if (result.status === "invalid") {
+    return { ...result, values };
+  }
+  if (
+    result.status === "saved" ||
+    result.status === "saved_cleanup_required" ||
+    result.status === "saved_deletion_audit_required"
+  ) {
     revalidatePath(`/${locale}/owner/application`);
   }
   return result;
@@ -76,7 +125,8 @@ export async function uploadOwnerDocumentAction(
   const locale = localeFrom(formData);
   const kind = formData.get("kind");
   const document = formData.get("document");
-  if (!locale || !(document instanceof File)) {
+  if (!locale) return { status: "unavailable" };
+  if (!(document instanceof File)) {
     return { status: "invalid_document" };
   }
   const application = await createRequestOwnerApplication();

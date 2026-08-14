@@ -138,6 +138,11 @@ test("a Cottage Owner saves, resumes and submits a complete private application"
     .fill("Families only. No amplified music after 10pm.");
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByText("Draft saved.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Legal name")).toHaveValue("Zana Kareem");
+  await expect(page.getByLabel("Cottage name")).toHaveValue("Garden House");
+  await expect(page.getByLabel("Garden")).toBeChecked();
+  await expect(page.getByLabel("Parking")).toBeChecked();
 
   const evidence = [
     ["Identity evidence", "identity.pdf"],

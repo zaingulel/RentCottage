@@ -234,19 +234,21 @@ textarea {
   border-radius: 0.7rem;
   background: #fffef9;
   padding: 0.7rem 0.8rem;
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
 .application-fields textarea {
   resize: vertical;
 }
 
-.application-fields input:focus,
-.application-fields select:focus,
-.application-fields textarea:focus,
-.document-upload-form input[type="file"]:focus {
+.application-fields input:focus-visible,
+.application-fields select:focus-visible,
+.application-fields textarea:focus-visible,
+.document-upload-form input[type="file"]:focus-visible {
   border-color: var(--gold);
   box-shadow: 0 0 0 3px rgb(198 138 69 / 14%);
+  outline-color: var(--gold);
 }
 
 .application-fields [aria-invalid="true"] {

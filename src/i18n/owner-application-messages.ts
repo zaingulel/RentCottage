@@ -71,8 +71,11 @@ export const ownerApplicationMessages: Record<
     houseRules: string;
     saveDraft: string;
     saved: string;
+    savedCleanupRequired: string;
+    savedDeletionAuditRequired: string;
     invalid: string;
     unavailable: string;
+    denied: string;
     submit: string;
     incompleteTitle: string;
     submitted: string;
@@ -82,6 +85,7 @@ export const ownerApplicationMessages: Record<
     uploadedCleanupRequired: string;
     uploadedDeletionAuditRequired: string;
     failedCleanupRequired: string;
+    registrationReconciliationRequired: string;
     invalidDocument: string;
     documentRules: string;
     saveBeforeDocuments: string;
@@ -143,9 +147,14 @@ export const ownerApplicationMessages: Record<
     houseRules: "House Rules",
     saveDraft: "Save draft",
     saved: "Draft saved.",
+    savedCleanupRequired:
+      "Draft saved, but evidence you no longer need is awaiting secure cleanup.",
+    savedDeletionAuditRequired:
+      "Draft saved and obsolete evidence was removed, but its deletion audit needs attention.",
     invalid: "Check the marked fields and try again.",
     unavailable:
       "This action is temporarily unavailable. Nothing was submitted.",
+    denied: "You do not have permission to access this private document.",
     submit: "Submit application",
     incompleteTitle: "Complete these items before submitting:",
     submitted: "Application submitted.",
@@ -158,6 +167,8 @@ export const ownerApplicationMessages: Record<
       "The new document was saved and the previous file was removed, but its audit record needs attention.",
     failedCleanupRequired:
       "The upload was not saved to your application, and its private file needs secure cleanup.",
+    registrationReconciliationRequired:
+      "The upload result could not be confirmed. The private file was kept for secure reconciliation.",
     invalidDocument: "Choose a PDF, JPEG, or PNG no larger than 5 MB.",
     documentRules: "PDF, JPEG, or PNG · maximum 5 MB",
     saveBeforeDocuments: "Save the draft before uploading documents.",
@@ -236,8 +247,13 @@ export const ownerApplicationMessages: Record<
     houseRules: "قواعد البيت",
     saveDraft: "احفظ المسودة",
     saved: "حُفظت المسودة.",
-    invalid: "راجع الأرقام أو نوع مقدم الطلب.",
+    savedCleanupRequired:
+      "حُفظت المسودة، لكن الأدلة التي لم تعد مطلوبة تنتظر التنظيف الآمن.",
+    savedDeletionAuditRequired:
+      "حُفظت المسودة وحُذفت الأدلة غير المطلوبة، لكن سجل الحذف يحتاج إلى مراجعة.",
+    invalid: "راجع الحقول المعلَّمة وحاول مرة أخرى.",
     unavailable: "هذا الإجراء غير متاح مؤقتاً. لم يُرسل شيء.",
+    denied: "ليس لديك إذن للوصول إلى هذه الوثيقة الخاصة.",
     submit: "أرسل الطلب",
     incompleteTitle: "أكمل هذه العناصر قبل الإرسال:",
     submitted: "أُرسل الطلب.",
@@ -250,6 +266,8 @@ export const ownerApplicationMessages: Record<
       "حُفظت الوثيقة الجديدة وحُذف الملف السابق، لكن سجل الحذف يحتاج إلى مراجعة.",
     failedCleanupRequired:
       "لم يُحفظ الرفع في طلبك، ويحتاج ملفه الخاص إلى تنظيف آمن.",
+    registrationReconciliationRequired:
+      "تعذر تأكيد نتيجة الرفع. تم الاحتفاظ بالملف الخاص للمطابقة الآمنة.",
     invalidDocument: "اختر PDF أو JPEG أو PNG بحجم لا يتجاوز 5 ميغابايت.",
     documentRules: "PDF أو JPEG أو PNG · بحد أقصى 5 ميغابايت",
     saveBeforeDocuments: "احفظ المسودة قبل رفع الوثائق.",
@@ -354,8 +372,13 @@ export const ownerApplicationMessages: Record<
     houseRules: "یاساکانی ماڵ",
     saveDraft: "ڕەشنووس پاشەکەوت بکە",
     saved: "ڕەشنووس پاشەکەوت کرا.",
-    invalid: "ژمارەکان یان جۆری داواکار بپشکنە.",
+    savedCleanupRequired:
+      "ڕەشنووسەکە پاشەکەوت کرا، بەڵام بەڵگە ناپێویستەکان چاوەڕێی پاککردنەوەی پارێزراون.",
+    savedDeletionAuditRequired:
+      "ڕەشنووسەکە پاشەکەوت کرا و بەڵگە ناپێویستەکان سڕانەوە، بەڵام تۆماری سڕینەوەکە پێویستی بە پێداچوونەوە هەیە.",
+    invalid: "خانەکانی نیشانکراو بپشکنە و دووبارە هەوڵ بدە.",
     unavailable: "ئەم کردارە کاتێکی کورت بەردەست نییە. هیچ شتێک نەنێردرا.",
+    denied: "مۆڵەتت نییە بۆ دەستگەیشتن بەم بەڵگە تایبەتە.",
     submit: "داواکاری بنێرە",
     incompleteTitle: "پێش ناردن ئەم خاڵانە تەواو بکە:",
     submitted: "داواکاری نێردرا.",
@@ -368,6 +391,8 @@ export const ownerApplicationMessages: Record<
       "بەڵگە نوێیەکە پاشەکەوت کرا و فایلە کۆنەکە سڕایەوە، بەڵام تۆماری سڕینەوەکە پێویستی بە پێداچوونەوە هەیە.",
     failedCleanupRequired:
       "بارکردنەکە لە داواکارییەکەت پاشەکەوت نەکرا و فایلە تایبەتەکەی پێویستی بە پاککردنەوەی پارێزراو هەیە.",
+    registrationReconciliationRequired:
+      "ئەنجامی بارکردنەکە پشتڕاست نەکرایەوە. فایلە تایبەتەکە بۆ یەکخستنەوەی پارێزراو پارێزرا.",
     invalidDocument: "PDF یان JPEG یان PNG تا 5 مێگابایت هەڵبژێرە.",
     documentRules: "PDF یان JPEG یان PNG · تا 5 مێگابایت",
     saveBeforeDocuments: "پێش بارکردنی بەڵگەکان ڕەشنووسەکە پاشەکەوت بکە.",

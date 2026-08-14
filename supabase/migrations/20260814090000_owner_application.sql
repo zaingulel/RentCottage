@@ -24,9 +24,35 @@ create type public.owner_verification_cleanup_status as enum (
   'completed'
 );
 
+create function public.owner_verification_kind_is_required(
+  applicant_kind public.owner_applicant_kind,
+  licensing_basis public.owner_licensing_basis,
+  document_kind public.owner_verification_document_kind
+)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select case document_kind
+    when 'identity' then applicant_kind = 'individual'
+    when 'company_registration' then applicant_kind = 'company'
+    when 'authorised_representative' then applicant_kind = 'company'
+    when 'licensing_or_exemption' then licensing_basis = 'licence'
+    else true
+  end;
+$$;
+
+revoke all on function public.owner_verification_kind_is_required(
+  public.owner_applicant_kind,
+  public.owner_licensing_basis,
+  public.owner_verification_document_kind
+) from public;
+
 create table public.owner_applications (
   id uuid primary key default gen_random_uuid(),
-  owner_user_id uuid not null unique references public.account_contexts (user_id),
+  owner_user_id uuid not null unique
+    references public.account_contexts (user_id) on delete restrict,
   applicant_kind public.owner_applicant_kind not null,
   legal_name text,
   company_name text,
@@ -83,7 +109,7 @@ create table public.owner_application_cottage_profiles (
 
 create table public.owner_verification_documents (
   id uuid primary key default gen_random_uuid(),
-  application_id uuid not null references public.owner_applications (id) on delete cascade,
+  application_id uuid not null references public.owner_applications (id) on delete restrict,
   kind public.owner_verification_document_kind not null,
   object_path text not null unique,
   original_filename text not null,
@@ -101,9 +127,15 @@ create index owner_verification_documents_application_id_idx
 
 create table public.owner_verification_document_cleanup (
   id uuid primary key default gen_random_uuid(),
-  application_id uuid not null references public.owner_applications (id) on delete cascade,
-  document_id uuid references public.owner_verification_documents (id),
-  actor_user_id uuid not null references auth.users (id),
+  application_id uuid references public.owner_applications (id)
+    on delete set null deferrable initially deferred,
+  document_id uuid references public.owner_verification_documents (id)
+    on delete set null deferrable initially deferred,
+  replacement_cleanup_id uuid references public.owner_verification_document_cleanup (id)
+    on delete set null deferrable initially deferred,
+  actor_user_id uuid references auth.users (id)
+    on delete set null deferrable initially deferred,
+  actor_subject_id uuid not null,
   reason public.owner_verification_cleanup_reason not null,
   status public.owner_verification_cleanup_status not null default 'pending',
   kind public.owner_verification_document_kind not null,
@@ -126,8 +158,11 @@ create index owner_verification_document_cleanup_pending_idx
 
 create table public.owner_verification_document_audit (
   id uuid primary key default gen_random_uuid(),
-  document_id uuid not null references public.owner_verification_documents (id),
-  actor_user_id uuid not null references auth.users (id),
+  document_id uuid references public.owner_verification_documents (id)
+    on delete set null deferrable initially deferred,
+  actor_user_id uuid references auth.users (id)
+    on delete set null deferrable initially deferred,
+  actor_subject_id uuid not null,
   action public.owner_verification_document_action not null,
   object_path text not null,
   access_expires_at timestamptz,
@@ -217,21 +252,11 @@ using (
   or (select public.is_platform_administrator('aal2'))
 );
 
-create policy "Applicant or MFA administrator reads verification audit"
+create policy "MFA administrator reads verification audit"
 on public.owner_verification_document_audit
 for select
 to authenticated
-using (
-  exists (
-    select 1
-    from public.owner_verification_documents
-    join public.owner_applications
-      on owner_applications.id = owner_verification_documents.application_id
-    where owner_verification_documents.id = document_id
-      and owner_applications.owner_user_id = (select auth.uid())
-  )
-  or (select public.is_platform_administrator('aal2'))
-);
+using ((select public.is_platform_administrator('aal2')));
 
 grant select on public.owner_applications to authenticated;
 grant select on public.owner_application_cottage_profiles to authenticated;
@@ -255,13 +280,14 @@ create function public.save_owner_application(
   requested_description text,
   requested_house_rules text
 )
-returns public.owner_applications
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   application public.owner_applications;
+  cleanup_work jsonb := '[]'::jsonb;
 begin
   if not (select public.is_current_prospective_owner()) then
     raise exception 'Prospective Cottage Owner access is required'
@@ -373,7 +399,61 @@ begin
       house_rules = excluded.house_rules,
       updated_at = now();
 
-  return application;
+  with queued_cleanup as (
+    insert into public.owner_verification_document_cleanup (
+      application_id,
+      document_id,
+      actor_user_id,
+      actor_subject_id,
+      reason,
+      kind,
+      object_path,
+      original_filename,
+      media_type,
+      size_bytes
+    )
+    select
+      application.id,
+      documents.id,
+      (select auth.uid()),
+      (select auth.uid()),
+      'replaced',
+      documents.kind,
+      documents.object_path,
+      documents.original_filename,
+      documents.media_type,
+      documents.size_bytes
+    from public.owner_verification_documents as documents
+    where documents.application_id = application.id
+      and not public.owner_verification_kind_is_required(
+        requested_applicant_kind,
+        requested_licensing_basis,
+        documents.kind
+      )
+    returning id, object_path
+  )
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'cleanup_id', queued_cleanup.id,
+        'object_path', queued_cleanup.object_path
+      )
+      order by queued_cleanup.object_path
+    ),
+    '[]'::jsonb
+  )
+  into cleanup_work
+  from queued_cleanup;
+
+  delete from public.owner_verification_documents as documents
+  where documents.application_id = application.id
+    and not public.owner_verification_kind_is_required(
+      requested_applicant_kind,
+      requested_licensing_basis,
+      documents.kind
+    );
+
+  return cleanup_work;
 end;
 $$;
 
@@ -454,27 +534,16 @@ begin
   if profile.description is null then missing := array_append(missing, 'description'); end if;
   if profile.house_rules is null then missing := array_append(missing, 'house_rules'); end if;
 
-  foreach required_kind in array (
-    case
-      when application.applicant_kind = 'company' then
-        array[
-          'company_registration',
-          'authorised_representative',
-          'authority_to_rent',
-          'payout_account'
-        ]::public.owner_verification_document_kind[]
-      else
-        array[
-          'identity',
-          'authority_to_rent',
-          'payout_account'
-        ]::public.owner_verification_document_kind[]
-    end
-    || case when application.licensing_basis = 'licence'
-      then array['licensing_or_exemption']::public.owner_verification_document_kind[]
-      else '{}'::public.owner_verification_document_kind[]
-    end
-  )
+  for required_kind in
+    select required.kind
+    from unnest(
+      enum_range(null::public.owner_verification_document_kind)
+    ) as required(kind)
+    where public.owner_verification_kind_is_required(
+      application.applicant_kind,
+      application.licensing_basis,
+      required.kind
+    )
   loop
     if not exists (
       select 1
@@ -568,6 +637,15 @@ begin
       using errcode = 'RC202';
   end if;
 
+  if not public.owner_verification_kind_is_required(
+    application.applicant_kind,
+    application.licensing_basis,
+    requested_kind
+  ) then
+    raise exception 'The verification document is not required for this application'
+      using errcode = 'RC205';
+  end if;
+
   if requested_media_type not in ('application/pdf', 'image/jpeg', 'image/png')
     or requested_size_bytes not between 1 and 5242880
     or char_length(btrim(coalesce(requested_original_filename, ''))) not between 1 and 180 then
@@ -594,6 +672,7 @@ begin
   insert into public.owner_verification_document_cleanup (
     application_id,
     actor_user_id,
+    actor_subject_id,
     reason,
     kind,
     object_path,
@@ -603,6 +682,7 @@ begin
   )
   values (
     application.id,
+    requested_owner_user_id,
     requested_owner_user_id,
     'unregistered_upload',
     requested_kind,
@@ -673,6 +753,15 @@ begin
       using errcode = 'RC202';
   end if;
 
+  if not public.owner_verification_kind_is_required(
+    application.applicant_kind,
+    application.licensing_basis,
+    cleanup.kind
+  ) then
+    raise exception 'The verification document is not required for this application'
+      using errcode = 'RC205';
+  end if;
+
   select metadata into stored_metadata
   from storage.objects
   where bucket_id = public.owner_verification_bucket_name()
@@ -720,20 +809,24 @@ begin
   insert into public.owner_verification_document_audit (
     document_id,
     actor_user_id,
+    actor_subject_id,
     action,
     object_path
   )
-  values (document.id, cleanup.actor_user_id, action, document.object_path);
-
-  update public.owner_verification_document_cleanup
-  set status = 'completed', completed_at = now(), document_id = document.id
-  where id = cleanup.id;
+  values (
+    document.id,
+    cleanup.actor_user_id,
+    cleanup.actor_subject_id,
+    action,
+    document.object_path
+  );
 
   if existing_document.id is not null then
     insert into public.owner_verification_document_cleanup (
       application_id,
       document_id,
       actor_user_id,
+      actor_subject_id,
       reason,
       kind,
       object_path,
@@ -745,6 +838,7 @@ begin
       cleanup.application_id,
       document.id,
       cleanup.actor_user_id,
+      cleanup.actor_subject_id,
       'replaced',
       existing_document.kind,
       existing_document.object_path,
@@ -754,6 +848,13 @@ begin
     )
     returning id into previous_cleanup_id;
   end if;
+
+  update public.owner_verification_document_cleanup
+  set status = 'completed',
+      completed_at = now(),
+      document_id = document.id,
+      replacement_cleanup_id = previous_cleanup_id
+  where id = cleanup.id;
 
   return jsonb_build_object(
     'document_id', document.id,
@@ -765,6 +866,63 @@ $$;
 
 revoke all on function public.register_owner_verification_document(uuid) from public;
 grant execute on function public.register_owner_verification_document(uuid)
+  to service_role;
+
+create function public.reconcile_owner_verification_document_registration(
+  target_cleanup_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  cleanup public.owner_verification_document_cleanup;
+  document public.owner_verification_documents;
+  replacement public.owner_verification_document_cleanup;
+begin
+  select * into cleanup
+  from public.owner_verification_document_cleanup
+  where id = target_cleanup_id
+    and reason = 'unregistered_upload'
+  for update;
+
+  if not found then
+    raise exception 'The verification upload operation is invalid'
+      using errcode = 'RC205';
+  end if;
+
+  if cleanup.status = 'pending' then
+    return jsonb_build_object('status', 'unregistered');
+  end if;
+
+  select * into document
+  from public.owner_verification_documents
+  where id = cleanup.document_id
+    and object_path = cleanup.object_path;
+
+  if not found then
+    return jsonb_build_object('status', 'unregistered');
+  end if;
+
+  if cleanup.replacement_cleanup_id is not null then
+    select * into replacement
+    from public.owner_verification_document_cleanup
+    where id = cleanup.replacement_cleanup_id;
+  end if;
+
+  return jsonb_build_object(
+    'status', 'registered',
+    'document_id', document.id,
+    'previous_object_path', replacement.object_path,
+    'previous_cleanup_id', replacement.id
+  );
+end;
+$$;
+
+revoke all on function public.reconcile_owner_verification_document_registration(uuid)
+  from public;
+grant execute on function public.reconcile_owner_verification_document_registration(uuid)
   to service_role;
 
 create function public.record_owner_verification_document_access(target_document_id uuid)
@@ -791,12 +949,14 @@ begin
   insert into public.owner_verification_document_audit (
     document_id,
     actor_user_id,
+    actor_subject_id,
     action,
     object_path,
     access_expires_at
   )
   values (
     document.id,
+    (select auth.uid()),
     (select auth.uid()),
     'access_granted',
     document.object_path,
@@ -847,12 +1007,14 @@ begin
     insert into public.owner_verification_document_audit (
       document_id,
       actor_user_id,
+      actor_subject_id,
       action,
       object_path
     )
     values (
       cleanup.document_id,
       cleanup.actor_user_id,
+      cleanup.actor_subject_id,
       'deleted',
       cleanup.object_path
     );

@@ -9,12 +9,21 @@ import {
   SupabaseVerificationDocumentStorage,
 } from "./supabase-owner-application";
 
+let privilegedClient: ReturnType<typeof createClient> | null = null;
+
+function getPrivilegedClient() {
+  if (!privilegedClient) {
+    const { supabase } = getServerEnvironment();
+    privilegedClient = createClient(supabase.url, supabase.secretKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+  }
+  return privilegedClient;
+}
+
 export async function createRequestOwnerApplication() {
   const client = await createRequestSupabaseClient();
-  const { supabase } = getServerEnvironment();
-  const privilegedClient = createClient(supabase.url, supabase.secretKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const privilegedClient = getPrivilegedClient();
   return createOwnerApplication({
     repository: new SupabaseOwnerApplicationRepository(
       client,
