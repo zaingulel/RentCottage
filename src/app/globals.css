@@ -251,7 +251,8 @@ textarea {
   outline-color: var(--gold);
 }
 
-.application-fields [aria-invalid="true"] {
+.application-fields [aria-invalid="true"],
+.amenities-fieldset[aria-invalid="true"] .amenity-options label {
   border-color: #a33425;
   box-shadow: 0 0 0 2px rgb(163 52 37 / 12%);
 }
