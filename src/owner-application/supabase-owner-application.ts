@@ -11,6 +11,7 @@ import type {
   OwnerVerificationDocument,
   PendingVerificationDocumentCleanup,
   PreparedVerificationDocumentAccess,
+  VerificationDocumentAccessPreparation,
   VerificationDocumentRegistrationReconciliation,
   VerificationDocumentStorage,
   VerificationUpload,
@@ -300,6 +301,13 @@ function assertProviderSuccess(error: unknown): void {
   }
 }
 
+function providerErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const candidate = error as { code?: unknown; cause?: unknown };
+  if (typeof candidate.code === "string") return candidate.code;
+  return providerErrorCode(candidate.cause);
+}
+
 function parsePendingCleanup(
   value: unknown,
 ): PendingVerificationDocumentCleanup {
@@ -506,13 +514,14 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
 
   async prepareDocumentAccess(
     documentId: string,
-  ): Promise<PreparedVerificationDocumentAccess> {
+  ): Promise<VerificationDocumentAccessPreparation> {
     const { data, error } = await this.client.rpc(
       "prepare_owner_verification_document_access",
       { target_document_id: documentId },
     );
+    if (providerErrorCode(error) === "RC204") return { status: "denied" };
     assertProviderSuccess(error);
-    return parsePreparedAccess(data);
+    return { status: "ready", ...parsePreparedAccess(data) };
   }
 
   async completeDocumentAccess(

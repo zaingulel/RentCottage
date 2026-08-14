@@ -410,6 +410,7 @@ describe("Supabase Owner Application adapter", () => {
     await expect(
       repository.prepareDocumentAccess("40000000-0000-4000-8000-000000000001"),
     ).resolves.toEqual({
+      status: "ready",
       grantId: "60000000-0000-4000-8000-000000000001",
       objectPath: "owner/application/identity/document.pdf",
     });
@@ -431,6 +432,69 @@ describe("Supabase Owner Application adapter", () => {
       },
     );
     expect(authenticatedRpc).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      code: "RC204",
+      message: "Verification document access is denied",
+    },
+    {
+      cause: {
+        code: "RC204",
+        message: "Verification document access is denied",
+      },
+    },
+  ])(
+    "maps an RC204 access error to the domain denial outcome",
+    async (error) => {
+      const authenticatedRpc = vi.fn().mockReturnValue(result(null, error));
+      const repository = new SupabaseOwnerApplicationRepository(
+        { rpc: authenticatedRpc } as unknown as SupabaseClient,
+        { rpc: vi.fn() } as unknown as SupabaseClient,
+      );
+
+      await expect(
+        repository.prepareDocumentAccess(
+          "40000000-0000-4000-8000-000000000001",
+        ),
+      ).resolves.toEqual({ status: "denied" });
+    },
+  );
+
+  it.each([null, ["legal_name", 42]])(
+    "rejects malformed missing-item data %#",
+    async (data) => {
+      const client = {
+        rpc: vi.fn().mockReturnValue(result(data)),
+      } as unknown as SupabaseClient;
+
+      await expect(
+        new SupabaseOwnerApplicationRepository(client, client).missingItems(),
+      ).rejects.toThrow("Owner Application missing-item data is invalid");
+    },
+  );
+
+  it("submits as the applicant and completes cleanup as the service", async () => {
+    const authenticatedRpc = vi.fn().mockReturnValue(result(null));
+    const privilegedRpc = vi.fn().mockReturnValue(result(null));
+    const repository = new SupabaseOwnerApplicationRepository(
+      { rpc: authenticatedRpc } as unknown as SupabaseClient,
+      { rpc: privilegedRpc } as unknown as SupabaseClient,
+    );
+
+    await repository.submit();
+    await repository.completeDocumentCleanup(
+      "50000000-0000-4000-8000-000000000001",
+    );
+
+    expect(authenticatedRpc).toHaveBeenCalledWith("submit_owner_application");
+    expect(privilegedRpc).toHaveBeenCalledWith(
+      "complete_owner_verification_document_cleanup",
+      { target_cleanup_id: "50000000-0000-4000-8000-000000000001" },
+    );
+    expect(authenticatedRpc).toHaveBeenCalledOnce();
+    expect(privilegedRpc).toHaveBeenCalledOnce();
   });
 
   it("fails loudly on malformed provider data", async () => {

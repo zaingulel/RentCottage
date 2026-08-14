@@ -86,6 +86,10 @@ export interface PreparedVerificationDocumentAccess {
   objectPath: string;
 }
 
+export type VerificationDocumentAccessPreparation =
+  | { status: "denied" }
+  | ({ status: "ready" } & PreparedVerificationDocumentAccess);
+
 export interface OwnerApplicationRepository {
   load(): Promise<OwnerApplicationSnapshot | null>;
   saveDraft(
@@ -108,7 +112,7 @@ export interface OwnerApplicationRepository {
   ): Promise<VerificationDocumentRegistrationReconciliation>;
   prepareDocumentAccess(
     documentId: string,
-  ): Promise<PreparedVerificationDocumentAccess>;
+  ): Promise<VerificationDocumentAccessPreparation>;
   completeDocumentAccess(
     grantId: string,
     expiresInSeconds: number,
@@ -588,7 +592,7 @@ export function createOwnerApplication({
       if (typeof documentId !== "string" || !uuidPattern.test(documentId)) {
         return { status: "denied" } as const;
       }
-      let access: PreparedVerificationDocumentAccess;
+      let access: VerificationDocumentAccessPreparation;
       try {
         access = await repository.prepareDocumentAccess(documentId);
       } catch (error) {
@@ -602,6 +606,7 @@ export function createOwnerApplication({
         );
         return { status: "unavailable" } as const;
       }
+      if (access.status === "denied") return access;
       const expiresInSeconds = 60;
       let url: string;
       try {

@@ -338,6 +338,7 @@ as $$
 declare
   application public.owner_applications;
   cleanup_work jsonb := '[]'::jsonb;
+  obsolete_document_ids uuid[] := '{}';
 begin
   if not (select public.is_current_prospective_owner()) then
     raise exception 'Prospective Cottage Owner access is required'
@@ -449,6 +450,16 @@ begin
       house_rules = excluded.house_rules,
       updated_at = now();
 
+  select coalesce(array_agg(documents.id), '{}')
+  into obsolete_document_ids
+  from public.owner_verification_documents as documents
+  where documents.application_id = application.id
+    and not public.owner_verification_kind_is_required(
+      requested_applicant_kind,
+      requested_licensing_basis,
+      documents.kind
+    );
+
   with queued_cleanup as (
     insert into public.owner_verification_document_cleanup (
       application_id,
@@ -474,12 +485,7 @@ begin
       documents.media_type,
       documents.size_bytes
     from public.owner_verification_documents as documents
-    where documents.application_id = application.id
-      and not public.owner_verification_kind_is_required(
-        requested_applicant_kind,
-        requested_licensing_basis,
-        documents.kind
-      )
+    where documents.id = any(obsolete_document_ids)
     returning id, object_path
   )
   select coalesce(
@@ -496,12 +502,7 @@ begin
   from queued_cleanup;
 
   delete from public.owner_verification_documents as documents
-  where documents.application_id = application.id
-    and not public.owner_verification_kind_is_required(
-      requested_applicant_kind,
-      requested_licensing_basis,
-      documents.kind
-    );
+  where documents.id = any(obsolete_document_ids);
 
   return cleanup_work;
 end;

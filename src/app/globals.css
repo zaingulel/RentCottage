@@ -417,6 +417,10 @@ textarea {
   color: #ffd3c8;
 }
 
+.application-submit-card .application-success {
+  color: #cdebd7;
+}
+
 .access-required-page {
   display: grid;
   align-content: start;

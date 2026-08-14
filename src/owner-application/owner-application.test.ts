@@ -8,8 +8,8 @@ import {
 } from "./owner-application";
 
 const emptySnapshot: OwnerApplicationSnapshot = {
-  applicationId: "20000000-0000-0000-0000-000000000001",
-  ownerUserId: "10000000-0000-0000-0000-000000000001",
+  applicationId: "20000000-0000-4000-8000-000000000001",
+  ownerUserId: "10000000-0000-4000-8000-000000000001",
   status: "draft",
   applicantKind: "individual",
   legalName: "",
@@ -51,6 +51,7 @@ function setup(snapshot: OwnerApplicationSnapshot | null = emptySnapshot) {
       .fn()
       .mockResolvedValue({ status: "unregistered" }),
     prepareDocumentAccess: vi.fn().mockResolvedValue({
+      status: "ready",
       grantId: "60000000-0000-4000-8000-000000000001",
       objectPath: "owner/application/identity/document.pdf",
     }),
@@ -73,7 +74,7 @@ function setup(snapshot: OwnerApplicationSnapshot | null = emptySnapshot) {
     application: createOwnerApplication({
       repository,
       storage,
-      createId: () => "30000000-0000-0000-0000-000000000001",
+      createId: () => "30000000-0000-4000-8000-000000000001",
       diagnostics,
     }),
   };
@@ -435,7 +436,7 @@ describe("Owner Application", () => {
     ).resolves.toEqual({ status: "uploaded" });
 
     expect(storage.upload).toHaveBeenCalledWith(
-      "10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/identity/30000000-0000-0000-0000-000000000001.pdf",
+      "10000000-0000-4000-8000-000000000001/20000000-0000-4000-8000-000000000001/identity/30000000-0000-4000-8000-000000000001.pdf",
       expect.objectContaining({ type: "application/pdf" }),
     );
     expect(repository.prepareDocumentUpload).toHaveBeenCalledWith(
@@ -474,7 +475,7 @@ describe("Owner Application", () => {
       }),
     ).resolves.toEqual({ status: "unavailable" });
     expect(storage.remove).toHaveBeenCalledWith([
-      "10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/identity/30000000-0000-0000-0000-000000000001.pdf",
+      "10000000-0000-4000-8000-000000000001/20000000-0000-4000-8000-000000000001/identity/30000000-0000-4000-8000-000000000001.pdf",
     ]);
   });
 
@@ -597,12 +598,24 @@ describe("Owner Application", () => {
   it("returns no private URL when access preparation fails", async () => {
     const { application, repository, storage } = setup();
     vi.mocked(repository.prepareDocumentAccess).mockRejectedValue(
-      new Error("audit unavailable"),
+      new Error("audit unavailable", { cause: { code: "RC500" } }),
     );
 
     await expect(
       application.createDocumentAccess("40000000-0000-4000-8000-000000000001"),
     ).resolves.toEqual({ status: "unavailable" });
+    expect(storage.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("reports a provider access denial without creating a private URL", async () => {
+    const { application, repository, storage } = setup();
+    vi.mocked(repository.prepareDocumentAccess).mockResolvedValue({
+      status: "denied",
+    });
+
+    await expect(
+      application.createDocumentAccess("40000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({ status: "denied" });
     expect(storage.createSignedUrl).not.toHaveBeenCalled();
   });
 
