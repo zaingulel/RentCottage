@@ -283,7 +283,9 @@ export const acceptanceCriteriaByIssue = new Map([
       "Rejection records and communicates a reason and does not permit publication or Booking Requests.",
       "Owner approval does not publish the first cottage automatically; the separate Cottage Profile approval remains required.",
       "The applicant can distinguish Draft, Submitted, Needs Information, Under Review, Approved, Rejected, Expired and Suspended application states.",
-      "Expired owner or licence evidence creates renewal work and permits suspension of affected privileges until the evidence is resolved.",
+      "When required owner or licence evidence reaches its recorded expiry, an Approved Owner Application becomes Expired and RentCottage creates renewal work; Suspended remains a separate administrator-imposed state.",
+      "Expired or Suspended status prevents publishing new or changed Cottage Profiles and accepting new Booking Requests, while preserving access needed to service existing Confirmed Bookings and view earned Owner Payouts.",
+      "Submitting replacement evidence moves an Expired application to Under Review; authorised approval returns it to Approved and restores the affected privileges, with every transition attributed and timestamped.",
     ],
   ],
   [
@@ -500,7 +502,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "Payout cannot become eligible before the Booking Period and required completion outcome.",
       "The owner sees simple expected and paid totals that reconcile to the visible booking-level records.",
       "The view does not introduce demand forecasting, revenue management or advanced owner analytics.",
-      "A non-refundable late customer cancellation or No-Show produces the normal net payout only after the scheduled Booking Period ends; a Full Refund, Payment Dispute or administrator hold blocks or reverses payout eligibility as applicable.",
+      "The provider-neutral payment contract established by #30 is the authoritative payout state matrix and must explicitly define eligibility and transitions for partial Manual Refund Exceptions, administrator holds, every Payment Dispute state, Full Refunds and recovery of already-settled payouts; this view implements that matrix without inventing separate rules.",
     ],
   ],
   [
