@@ -2,7 +2,7 @@
 # https://supabase.com/docs/guides/local-development/cli/config
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
 # working directory name when running `supabase init`.
-project_id = "rentcottage-issue-20"
+project_id = "rentcottage"
 
 [api]
 enabled = true
@@ -269,6 +269,12 @@ max_frequency = "5s"
 9647500000000 = "123456"
 9647500000001 = "123456"
 9647500000002 = "123456"
+9647500000003 = "123456"
+9647500000004 = "123456"
+9647500000005 = "123456"
+9647500000006 = "123456"
+9647500000007 = "123456"
+9647500000008 = "123456"
 
 # Configure logged in session timeouts.
 # [auth.sessions]

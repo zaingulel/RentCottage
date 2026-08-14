@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 
 import {
@@ -17,7 +18,13 @@ type MfaState = {
   secret?: string;
 };
 
-export function AdministratorAccessForm({ locale }: { locale: Locale }) {
+export function AdministratorAccessForm({
+  locale,
+  reviewHref,
+}: {
+  locale: Locale;
+  reviewHref?: string;
+}) {
   const copy = accessMessages[locale];
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -125,6 +132,11 @@ export function AdministratorAccessForm({ locale }: { locale: Locale }) {
           {message}
         </p>
       )}
+      {complete && reviewHref ? (
+        <Link className="owner-application-link" href={reviewHref}>
+          {copy.reviewApplications}
+        </Link>
+      ) : null}
     </section>
   );
 }

@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 
 const USAGE = "Usage: npm run verify:access";
 const EXCLUDED_SERVICES =
-  "realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
+  "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
 
 function runStep(command, args, options) {
   return spawnSync(command, args, options);

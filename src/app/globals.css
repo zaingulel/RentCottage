@@ -30,9 +30,528 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   color: inherit;
   font: inherit;
+}
+
+.owner-application-link {
+  display: inline-flex;
+  margin-block-start: 0.5rem;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.owner-application-page {
+  min-height: 100dvh;
+  padding-block-end: 5rem;
+  background:
+    radial-gradient(circle at 8% 8%, rgb(198 138 69 / 12%), transparent 28rem),
+    var(--background);
+}
+
+.owner-application-header {
+  width: min(78rem, calc(100% - 2.25rem));
+  min-height: 5rem;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-block-end: 1px solid var(--line);
+}
+
+.owner-application-header a {
+  color: var(--green);
+  font-family: var(--display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.owner-application-header span {
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.owner-application-layout {
+  width: min(78rem, calc(100% - 2.25rem));
+  margin: 2.5rem auto 0;
+  display: grid;
+  grid-template-columns: minmax(17rem, 21rem) minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.application-progress-card {
+  position: sticky;
+  inset-block-start: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background: var(--green);
+  color: #f9f3e7;
+  box-shadow: 0 1.25rem 3rem rgb(34 64 47 / 12%);
+}
+
+.application-progress-card h1 {
+  margin: 1.15rem 0 0.65rem;
+  font-family: var(--display);
+  font-size: 2.15rem;
+  line-height: 1.12;
+}
+
+.application-progress-card > p {
+  color: rgb(249 243 231 / 76%);
+  line-height: 1.55;
+}
+
+.application-progress-card .application-privacy-note {
+  margin-block-start: 1.2rem;
+  padding-block-start: 1.2rem;
+  border-block-start: 1px solid rgb(255 255 255 / 16%);
+  color: #f7d8af;
+  font-size: 0.82rem;
+}
+
+.application-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.application-status-draft {
+  background: rgb(255 255 255 / 10%);
+}
+
+.application-status-submitted {
+  background: #f0c383;
+  color: #283a2d;
+}
+
+.application-workspace {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.owner-application-form,
+.application-section,
+.application-submit-card {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.owner-application-form > fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.25rem;
+  border: 0;
+}
+
+.application-section,
+.application-submit-card,
+.access-required-card {
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background: var(--card);
+  box-shadow: 0 0.7rem 2rem rgb(52 45 31 / 5%);
+}
+
+.application-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.application-section-heading > span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--gold);
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.application-section-heading h2 {
+  margin: 0;
+  color: var(--green);
+  font-family: var(--display);
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.application-section-heading p {
+  max-width: 48rem;
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.application-fields {
+  display: grid;
+  gap: 1rem;
+}
+
+.application-fields.two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.application-fields.number-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.application-fields label,
+.document-upload-form label {
+  min-width: 0;
+  display: grid;
+  gap: 0.4rem;
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.application-fields input,
+.application-fields select,
+.application-fields textarea,
+.document-upload-form input[type="file"] {
+  width: 100%;
+  min-height: 2.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: #fffef9;
+  padding: 0.7rem 0.8rem;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.application-fields textarea {
+  resize: vertical;
+}
+
+.application-fields input:focus-visible,
+.application-fields select:focus-visible,
+.application-fields textarea:focus-visible,
+.document-upload-form input[type="file"]:focus-visible {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgb(198 138 69 / 14%);
+  outline-color: var(--gold);
+}
+
+.application-fields [aria-invalid="true"],
+.amenities-fieldset[aria-invalid="true"] .amenity-options label {
+  border-color: #a33425;
+  box-shadow: 0 0 0 2px rgb(163 52 37 / 12%);
+}
+
+.application-fields small,
+.document-upload-form span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.amenities-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.amenities-fieldset legend {
+  margin-block-end: 0.6rem;
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.amenity-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.amenity-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fffef9;
+  padding: 0.5rem 0.72rem;
+  font-size: 0.78rem;
+}
+
+.application-primary-action {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.application-primary-action button,
+.application-submit-card button,
+.document-upload-form button,
+.access-required-card a {
+  min-height: 2.8rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--green);
+  color: white;
+  padding-inline: 1.15rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.application-primary-action button:disabled,
+.application-submit-card button:disabled,
+.document-upload-form button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.verification-section {
+  background: #f0e6d4;
+}
+
+.application-notice {
+  margin: 0;
+  border-inline-start: 3px solid var(--gold);
+  padding-inline-start: 0.85rem;
+  color: var(--muted);
+}
+
+.verification-document-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.verification-document-card {
+  min-width: 0;
+  padding: 1rem;
+  display: grid;
+  align-content: start;
+  gap: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--card);
+}
+
+.verification-document-card h3 {
+  margin: 0;
+  color: var(--green);
+  font-size: 1rem;
+}
+
+.verification-document-card p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.verification-document-card strong {
+  display: block;
+  overflow: hidden;
+  margin-block-start: 0.65rem;
+  color: var(--gold);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-upload-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.application-submit-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  background: var(--green);
+  color: white;
+}
+
+.application-missing strong {
+  color: #f7d8af;
+}
+
+.application-missing ul {
+  margin-block-end: 0;
+  columns: 2;
+}
+
+.application-success,
+.application-error {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.application-success {
+  color: #2f734b;
+  font-weight: 700;
+}
+
+.application-error {
+  color: #9b2727;
+}
+
+.field-error {
+  color: #9b2727;
+  font-weight: 700;
+}
+
+.application-submit-card .application-error {
+  color: #ffd3c8;
+}
+
+.application-submit-card .application-success {
+  color: #cdebd7;
+}
+
+.access-required-page {
+  display: grid;
+  align-content: start;
+}
+
+.administrator-review-page {
+  width: min(68rem, calc(100% - 2.25rem));
+  margin-inline: auto;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.administrator-review-list {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.administrator-review-card {
+  padding: 1.35rem;
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  background: var(--card);
+}
+
+.administrator-review-card > header,
+.administrator-review-document {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.administrator-review-card h2,
+.administrator-review-card h3,
+.administrator-review-card p {
+  margin-block: 0.25rem;
+}
+
+.administrator-review-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.administrator-review-document {
+  padding-block: 0.75rem;
+  border-block-start: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.administrator-review-document div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.administrator-review-document p {
+  flex-basis: 100%;
+}
+
+.administrator-review-next {
+  justify-self: end;
+  border-radius: 999px;
+  background: var(--green);
+  padding: 0.75rem 1rem;
+  color: white;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.access-required-card {
+  width: min(38rem, calc(100% - 2.25rem));
+  margin: 5rem auto;
+  text-align: center;
+}
+
+.access-required-card h1 {
+  margin: 0;
+  color: var(--green);
+  font-family: var(--display);
+  font-size: clamp(2.2rem, 6vw, 3.5rem);
+}
+
+.access-required-card p {
+  margin: 0.7rem 0 1.4rem;
+  color: var(--muted);
+}
+
+.access-required-card a {
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 850px) {
+  .owner-application-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .application-progress-card {
+    position: static;
+  }
+}
+
+@media (max-width: 620px) {
+  .owner-application-layout,
+  .owner-application-header {
+    width: min(100% - 1.25rem, 78rem);
+  }
+
+  .owner-application-layout {
+    margin-block-start: 1rem;
+    gap: 1rem;
+  }
+
+  .application-fields.two-columns,
+  .application-fields.number-fields,
+  .verification-document-list,
+  .application-submit-card {
+    grid-template-columns: 1fr;
+  }
+
+  .application-primary-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .application-missing ul {
+    columns: 1;
+  }
 }
 
 button,

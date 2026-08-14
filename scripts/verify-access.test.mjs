@@ -43,7 +43,7 @@ describe("access verification command", () => {
           "supabase",
           "start",
           "-x",
-          "realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
+          "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
         ],
       ],
       ["npx", ["supabase", "db", "reset", "--local"]],

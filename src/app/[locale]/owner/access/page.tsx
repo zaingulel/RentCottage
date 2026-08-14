@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PhoneAccessForm } from "@/components/phone-access-form";
@@ -15,10 +16,16 @@ export default async function OwnerAccessPage({
 
   return (
     <main className="standalone-access">
-      <a href={`/${locale}`}>RentCottage</a>
+      <Link href={`/${locale}`}>RentCottage</Link>
       <h1>{copy.ownerTitle}</h1>
       <p>{copy.ownerIntro}</p>
       <PhoneAccessForm locale={locale} role="cottage_owner" />
+      <Link
+        className="owner-application-link"
+        href={`/${locale}/owner/application`}
+      >
+        {copy.ownerApplicationCta}
+      </Link>
     </main>
   );
 }

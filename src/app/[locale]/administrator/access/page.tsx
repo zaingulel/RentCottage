@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AdministratorAccessForm } from "@/components/administrator-access-form";
@@ -15,9 +16,12 @@ export default async function AdministratorAccessPage({
 
   return (
     <main className="standalone-access">
-      <a href={`/${locale}`}>RentCottage</a>
+      <Link href={`/${locale}`}>RentCottage</Link>
       <h1>{copy.administratorTitle}</h1>
-      <AdministratorAccessForm locale={locale} />
+      <AdministratorAccessForm
+        locale={locale}
+        reviewHref={`/${locale}/administrator/owner-applications`}
+      />
     </main>
   );
 }
