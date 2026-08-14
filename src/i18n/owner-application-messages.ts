@@ -31,6 +31,27 @@ const documentKinds: Record<
   },
 };
 
+function withDocumentMissingItems(
+  localizedDocumentKinds: Record<
+    VerificationDocumentKind,
+    { title: string; help: string }
+  >,
+  missing: Record<string, string>,
+) {
+  return {
+    documentKinds: localizedDocumentKinds,
+    missing: {
+      ...missing,
+      ...Object.fromEntries(
+        Object.entries(localizedDocumentKinds).map(([kind, copy]) => [
+          `document:${kind}`,
+          copy.title,
+        ]),
+      ),
+    },
+  };
+}
+
 export const ownerApplicationMessages: Record<
   Locale,
   {
@@ -76,7 +97,6 @@ export const ownerApplicationMessages: Record<
     invalid: string;
     invalidField: string;
     unavailable: string;
-    denied: string;
     submit: string;
     incompleteTitle: string;
     submitted: string;
@@ -156,7 +176,6 @@ export const ownerApplicationMessages: Record<
     invalidField: "Check this field.",
     unavailable:
       "This action is temporarily unavailable. Nothing was submitted.",
-    denied: "You do not have permission to access this private document.",
     submit: "Submit application",
     incompleteTitle: "Complete these items before submitting:",
     submitted: "Application submitted.",
@@ -174,8 +193,7 @@ export const ownerApplicationMessages: Record<
     invalidDocument: "Choose a PDF, JPEG, or PNG no larger than 5 MB.",
     documentRules: "PDF, JPEG, or PNG · maximum 5 MB",
     saveBeforeDocuments: "Save the draft before uploading documents.",
-    documentKinds,
-    missing: {
+    ...withDocumentMissingItems(documentKinds, {
       application: "Save the application draft",
       legal_name: "Legal name",
       company_name: "Company name",
@@ -190,14 +208,7 @@ export const ownerApplicationMessages: Record<
       bathrooms: "Bathrooms",
       description: "Cottage description",
       house_rules: "House Rules",
-      "document:identity": "Identity evidence",
-      "document:company_registration": "Company evidence",
-      "document:authorised_representative":
-        "Authorised-representative evidence",
-      "document:authority_to_rent": "Authority-to-rent evidence",
-      "document:licensing_or_exemption": "Licence or exemption evidence",
-      "document:payout_account": "Payout-account evidence",
-    },
+    }),
   },
   ar: {
     eyebrow: "انضمام المالك",
@@ -256,7 +267,6 @@ export const ownerApplicationMessages: Record<
     invalid: "راجع الحقول المعلَّمة وحاول مرة أخرى.",
     invalidField: "راجع هذا الحقل.",
     unavailable: "هذا الإجراء غير متاح مؤقتاً. لم يُرسل شيء.",
-    denied: "ليس لديك إذن للوصول إلى هذه الوثيقة الخاصة.",
     submit: "أرسل الطلب",
     incompleteTitle: "أكمل هذه العناصر قبل الإرسال:",
     submitted: "أُرسل الطلب.",
@@ -274,54 +284,50 @@ export const ownerApplicationMessages: Record<
     invalidDocument: "اختر PDF أو JPEG أو PNG بحجم لا يتجاوز 5 ميغابايت.",
     documentRules: "PDF أو JPEG أو PNG · بحد أقصى 5 ميغابايت",
     saveBeforeDocuments: "احفظ المسودة قبل رفع الوثائق.",
-    documentKinds: {
-      identity: {
-        title: "إثبات الهوية",
-        help: "جواز سفر أو هوية وطنية أو إثبات الممثل المفوض.",
+    ...withDocumentMissingItems(
+      {
+        identity: {
+          title: "إثبات الهوية",
+          help: "جواز سفر أو هوية وطنية أو إثبات الممثل المفوض.",
+        },
+        company_registration: {
+          title: "إثبات الشركة",
+          help: "إثبات تسجيل أو تأسيس الشركة مقدمة الطلب.",
+        },
+        authorised_representative: {
+          title: "إثبات الممثل المفوض",
+          help: "هوية الشخص الذي يمثل الشركة وتفويضه الخطي.",
+        },
+        authority_to_rent: {
+          title: "إثبات صلاحية التأجير",
+          help: "سند أو عقد إيجار أو إدارة أو تفويض خطي من المالك.",
+        },
+        licensing_or_exemption: {
+          title: "إثبات الترخيص أو الإعفاء",
+          help: "دليل سياحي أو بلدي أو سلامة أو إعفاء مسجل.",
+        },
+        payout_account: {
+          title: "إثبات حساب التحويل",
+          help: "دليل أن حساب التسوية يعود لمقدم الطلب.",
+        },
       },
-      company_registration: {
-        title: "إثبات الشركة",
-        help: "إثبات تسجيل أو تأسيس الشركة مقدمة الطلب.",
+      {
+        application: "احفظ مسودة الطلب",
+        legal_name: "الاسم القانوني",
+        company_name: "اسم الشركة",
+        licensing_basis: "أساس الامتثال المحلي",
+        exemption_basis: "أساس الإعفاء المسجل",
+        cottage_name: "اسم البيت",
+        governorate: "المحافظة",
+        approximate_location: "المنطقة التقريبية العامة",
+        exact_address: "العنوان الدقيق الخاص",
+        capacity: "سعة الضيوف",
+        bedrooms: "غرف النوم",
+        bathrooms: "الحمّامات",
+        description: "وصف البيت",
+        house_rules: "قواعد البيت",
       },
-      authorised_representative: {
-        title: "إثبات الممثل المفوض",
-        help: "هوية الشخص الذي يمثل الشركة وتفويضه الخطي.",
-      },
-      authority_to_rent: {
-        title: "إثبات صلاحية التأجير",
-        help: "سند أو عقد إيجار أو إدارة أو تفويض خطي من المالك.",
-      },
-      licensing_or_exemption: {
-        title: "إثبات الترخيص أو الإعفاء",
-        help: "دليل سياحي أو بلدي أو سلامة أو إعفاء مسجل.",
-      },
-      payout_account: {
-        title: "إثبات حساب التحويل",
-        help: "دليل أن حساب التسوية يعود لمقدم الطلب.",
-      },
-    },
-    missing: {
-      application: "احفظ مسودة الطلب",
-      legal_name: "الاسم القانوني",
-      company_name: "اسم الشركة",
-      licensing_basis: "أساس الامتثال المحلي",
-      exemption_basis: "أساس الإعفاء المسجل",
-      cottage_name: "اسم البيت",
-      governorate: "المحافظة",
-      approximate_location: "المنطقة التقريبية العامة",
-      exact_address: "العنوان الدقيق الخاص",
-      capacity: "سعة الضيوف",
-      bedrooms: "غرف النوم",
-      bathrooms: "الحمّامات",
-      description: "وصف البيت",
-      house_rules: "قواعد البيت",
-      "document:identity": "إثبات الهوية",
-      "document:company_registration": "إثبات الشركة",
-      "document:authorised_representative": "إثبات الممثل المفوض",
-      "document:authority_to_rent": "إثبات صلاحية التأجير",
-      "document:licensing_or_exemption": "إثبات الترخيص أو الإعفاء",
-      "document:payout_account": "إثبات حساب التحويل",
-    },
+    ),
   },
   ckb: {
     eyebrow: "پەیوەستبوونی خاوەن",
@@ -382,7 +388,6 @@ export const ownerApplicationMessages: Record<
     invalid: "خانەکانی نیشانکراو بپشکنە و دووبارە هەوڵ بدە.",
     invalidField: "ئەم خانەیە بپشکنە.",
     unavailable: "ئەم کردارە کاتێکی کورت بەردەست نییە. هیچ شتێک نەنێردرا.",
-    denied: "مۆڵەتت نییە بۆ دەستگەیشتن بەم بەڵگە تایبەتە.",
     submit: "داواکاری بنێرە",
     incompleteTitle: "پێش ناردن ئەم خاڵانە تەواو بکە:",
     submitted: "داواکاری نێردرا.",
@@ -400,53 +405,49 @@ export const ownerApplicationMessages: Record<
     invalidDocument: "PDF یان JPEG یان PNG تا 5 مێگابایت هەڵبژێرە.",
     documentRules: "PDF یان JPEG یان PNG · تا 5 مێگابایت",
     saveBeforeDocuments: "پێش بارکردنی بەڵگەکان ڕەشنووسەکە پاشەکەوت بکە.",
-    documentKinds: {
-      identity: {
-        title: "بەڵگەی ناسنامە",
-        help: "پاسپۆرت، کارتی نیشتیمانی یان بەڵگەی نوێنەری ڕێپێدراو.",
+    ...withDocumentMissingItems(
+      {
+        identity: {
+          title: "بەڵگەی ناسنامە",
+          help: "پاسپۆرت، کارتی نیشتیمانی یان بەڵگەی نوێنەری ڕێپێدراو.",
+        },
+        company_registration: {
+          title: "بەڵگەی کۆمپانیا",
+          help: "بەڵگەی تۆمارکردن یان دامەزراندنی کۆمپانیای داواکار.",
+        },
+        authorised_representative: {
+          title: "بەڵگەی نوێنەری ڕێپێدراو",
+          help: "ناسنامە و ڕێپێدانی نووسراوی کەسی نوێنەرایەتی کۆمپانیا.",
+        },
+        authority_to_rent: {
+          title: "بەڵگەی مافی بەکرێدان",
+          help: "قەواڵە، گرێبەستی کرێ، بەڕێوەبردن یان ڕێپێدانی نووسراوی خاوەن.",
+        },
+        licensing_or_exemption: {
+          title: "بەڵگەی مۆڵەت یان بەخشین",
+          help: "بەڵگەی گەشتیاری، شارەوانی، سەلامەتی یان بەخشینی تۆمارکراو.",
+        },
+        payout_account: {
+          title: "بەڵگەی هەژماری پارەدان",
+          help: "بەڵگەی ئەوەی هەژماری تسویە هی داواکارە.",
+        },
       },
-      company_registration: {
-        title: "بەڵگەی کۆمپانیا",
-        help: "بەڵگەی تۆمارکردن یان دامەزراندنی کۆمپانیای داواکار.",
+      {
+        application: "ڕەشنووسی داواکارییەکە پاشەکەوت بکە",
+        legal_name: "ناوی یاسایی",
+        company_name: "ناوی کۆمپانیا",
+        licensing_basis: "بنەمای پابەندبوونی ناوخۆیی",
+        exemption_basis: "بنەمای بەخشینی تۆمارکراو",
+        cottage_name: "ناوی ماڵ",
+        governorate: "پارێزگا",
+        approximate_location: "ناوچەی گشتیی نزیکەوە",
+        exact_address: "ناونیشانی وردی تایبەت",
+        capacity: "گنجایشی میوان",
+        bedrooms: "ژووری نوستن",
+        bathrooms: "حەمام",
+        description: "وەسفی ماڵ",
+        house_rules: "یاساکانی ماڵ",
       },
-      authorised_representative: {
-        title: "بەڵگەی نوێنەری ڕێپێدراو",
-        help: "ناسنامە و ڕێپێدانی نووسراوی کەسی نوێنەرایەتی کۆمپانیا.",
-      },
-      authority_to_rent: {
-        title: "بەڵگەی مافی بەکرێدان",
-        help: "قەواڵە، گرێبەستی کرێ، بەڕێوەبردن یان ڕێپێدانی نووسراوی خاوەن.",
-      },
-      licensing_or_exemption: {
-        title: "بەڵگەی مۆڵەت یان بەخشین",
-        help: "بەڵگەی گەشتیاری، شارەوانی، سەلامەتی یان بەخشینی تۆمارکراو.",
-      },
-      payout_account: {
-        title: "بەڵگەی هەژماری پارەدان",
-        help: "بەڵگەی ئەوەی هەژماری تسویە هی داواکارە.",
-      },
-    },
-    missing: {
-      application: "ڕەشنووسی داواکارییەکە پاشەکەوت بکە",
-      legal_name: "ناوی یاسایی",
-      company_name: "ناوی کۆمپانیا",
-      licensing_basis: "بنەمای پابەندبوونی ناوخۆیی",
-      exemption_basis: "بنەمای بەخشینی تۆمارکراو",
-      cottage_name: "ناوی ماڵ",
-      governorate: "پارێزگا",
-      approximate_location: "ناوچەی گشتیی نزیکەوە",
-      exact_address: "ناونیشانی وردی تایبەت",
-      capacity: "گنجایشی میوان",
-      bedrooms: "ژووری نوستن",
-      bathrooms: "حەمام",
-      description: "وەسفی ماڵ",
-      house_rules: "یاساکانی ماڵ",
-      "document:identity": "بەڵگەی ناسنامە",
-      "document:company_registration": "بەڵگەی کۆمپانیا",
-      "document:authorised_representative": "بەڵگەی نوێنەری ڕێپێدراو",
-      "document:authority_to_rent": "بەڵگەی مافی بەکرێدان",
-      "document:licensing_or_exemption": "بەڵگەی مۆڵەت یان بەخشین",
-      "document:payout_account": "بەڵگەی هەژماری پارەدان",
-    },
+    ),
   },
 };

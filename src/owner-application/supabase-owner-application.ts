@@ -357,11 +357,17 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
   ) {}
 
   async load(): Promise<OwnerApplicationSnapshot | null> {
+    const userResult = await this.client.auth.getUser();
+    assertProviderSuccess(userResult.error);
+    const ownerUserId = userResult.data.user?.id;
+    if (!ownerUserId) return null;
+
     const applicationResult = await this.client
       .from("owner_applications")
       .select(
         "id, owner_user_id, status, applicant_kind, legal_name, company_name, licensing_basis, exemption_basis, submitted_at",
       )
+      .eq("owner_user_id", ownerUserId)
       .limit(1)
       .maybeSingle();
     assertProviderSuccess(applicationResult.error);

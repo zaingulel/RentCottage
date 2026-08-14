@@ -462,6 +462,17 @@ select results_eq(
   'a company requires company and representative evidence but no licence file for an exemption'
 );
 
+reset role;
+
+select set_config(
+  'test.review_document_id',
+  (select id::text from public.owner_verification_documents order by id limit 1),
+  true
+);
+
+reset role;
+set local role authenticated;
+
 select set_config(
   'request.jwt.claims',
   '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated","aal":"aal1"}',
@@ -491,7 +502,7 @@ select is_empty(
 
 select throws_ok(
   $$select public.prepare_owner_verification_document_access(
-    (select id from public.owner_verification_documents limit 1)
+    current_setting('test.review_document_id')::uuid
   )$$,
   'RC204',
   null,

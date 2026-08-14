@@ -438,7 +438,7 @@ textarea {
   padding: 1.35rem;
   border: 1px solid var(--line);
   border-radius: 1.15rem;
-  background: var(--surface);
+  background: var(--card);
 }
 
 .administrator-review-card > header,

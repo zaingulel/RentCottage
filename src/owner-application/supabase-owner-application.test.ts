@@ -176,35 +176,30 @@ describe("Supabase Owner Application adapter", () => {
   });
 
   it("maps the private application, Cottage Profile and document metadata", async () => {
-    const maybeSingle = vi
-      .fn()
-      .mockReturnValueOnce(
-        result({
-          id: "20000000-0000-4000-8000-000000000001",
-          owner_user_id: "10000000-0000-4000-8000-000000000001",
-          status: "draft",
-          applicant_kind: "individual",
-          legal_name: "Zana Kareem",
-          company_name: null,
-          licensing_basis: "licence",
-          exemption_basis: null,
-          submitted_at: null,
-        }),
-      )
-      .mockReturnValueOnce(
-        result({
-          name: "Garden House",
-          governorate: "Erbil",
-          approximate_location: "Shaqlawa countryside",
-          exact_address: "Near the eastern orchard road",
-          capacity: 8,
-          bedrooms: 3,
-          bathrooms: 2,
-          amenities: ["garden", "parking"],
-          description: "A quiet family cottage.",
-          house_rules: "Families only.",
-        }),
-      );
+    const ownerUserId = "10000000-0000-4000-8000-000000000001";
+    const application = result({
+      id: "20000000-0000-4000-8000-000000000001",
+      owner_user_id: ownerUserId,
+      status: "draft",
+      applicant_kind: "individual",
+      legal_name: "Zana Kareem",
+      company_name: null,
+      licensing_basis: "licence",
+      exemption_basis: null,
+      submitted_at: null,
+    });
+    const profile = result({
+      name: "Garden House",
+      governorate: "Erbil",
+      approximate_location: "Shaqlawa countryside",
+      exact_address: "Near the eastern orchard road",
+      capacity: 8,
+      bedrooms: 3,
+      bathrooms: 2,
+      amenities: ["garden", "parking"],
+      description: "A quiet family cottage.",
+      house_rules: "Families only.",
+    });
     const documents = result([
       {
         id: "40000000-0000-4000-8000-000000000001",
@@ -215,7 +210,17 @@ describe("Supabase Owner Application adapter", () => {
         updated_at: "2026-08-14T10:00:00.000Z",
       },
     ]);
+    const applicationOwnerEq = vi.fn().mockReturnValue({
+      limit: vi.fn().mockReturnValue({
+        maybeSingle: vi.fn().mockReturnValue(application),
+      }),
+    });
     const from = vi.fn((table: string) => {
+      if (table === "owner_applications") {
+        return {
+          select: vi.fn().mockReturnValue({ eq: applicationOwnerEq }),
+        };
+      }
       if (table === "owner_verification_documents") {
         return {
           select: vi.fn().mockReturnValue({
@@ -225,12 +230,17 @@ describe("Supabase Owner Application adapter", () => {
       }
       return {
         select: vi.fn().mockReturnValue({
-          limit: vi.fn().mockReturnValue({ maybeSingle }),
-          eq: vi.fn().mockReturnValue({ maybeSingle }),
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockReturnValue(profile),
+          }),
         }),
       };
     });
-    const client = { from } as unknown as SupabaseClient;
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: { id: ownerUserId } },
+      error: null,
+    });
+    const client = { auth: { getUser }, from } as unknown as SupabaseClient;
 
     await expect(
       new SupabaseOwnerApplicationRepository(client, client).load(),
@@ -240,6 +250,11 @@ describe("Supabase Owner Application adapter", () => {
       cottage: { name: "Garden House", capacity: 8 },
       documents: [{ kind: "identity", originalFilename: "passport.pdf" }],
     });
+    expect(getUser).toHaveBeenCalledOnce();
+    expect(applicationOwnerEq).toHaveBeenCalledWith(
+      "owner_user_id",
+      ownerUserId,
+    );
   });
 
   it("sends a normalized draft through the atomic save function", async () => {
@@ -427,9 +442,17 @@ describe("Supabase Owner Application adapter", () => {
       }),
     );
     const client = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: "10000000-0000-4000-8000-000000000001" } },
+          error: null,
+        }),
+      },
       from: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
-          limit: vi.fn().mockReturnValue({ maybeSingle }),
+          eq: vi.fn().mockReturnValue({
+            limit: vi.fn().mockReturnValue({ maybeSingle }),
+          }),
         }),
       }),
     } as unknown as SupabaseClient;

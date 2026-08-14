@@ -8,6 +8,8 @@ import {
   submitOwnerApplicationAction,
   uploadOwnerDocumentAction,
   type OwnerApplicationFormValues,
+  type SaveOwnerApplicationState,
+  type SubmitOwnerApplicationState,
   type UploadOwnerDocumentState,
 } from "@/owner-application/actions";
 import {
@@ -31,38 +33,30 @@ function ActionMessage({
   status,
   copy,
 }: {
-  status: string;
+  status:
+    | SaveOwnerApplicationState["status"]
+    | UploadOwnerDocumentState["status"]
+    | SubmitOwnerApplicationState["status"];
   copy: ReturnType<typeof copyFor>;
 }) {
-  if (status === "idle") return null;
-  const message =
-    status === "saved"
-      ? copy.saved
-      : status === "saved_cleanup_required"
-        ? copy.savedCleanupRequired
-        : status === "saved_deletion_audit_required"
-          ? copy.savedDeletionAuditRequired
-          : status === "uploaded"
-            ? copy.uploaded
-            : status === "uploaded_cleanup_required"
-              ? copy.uploadedCleanupRequired
-              : status === "uploaded_deletion_audit_required"
-                ? copy.uploadedDeletionAuditRequired
-                : status === "failed_cleanup_required"
-                  ? copy.failedCleanupRequired
-                  : status === "registration_reconciliation_required"
-                    ? copy.registrationReconciliationRequired
-                    : status === "submitted"
-                      ? copy.submitted
-                      : status === "invalid_document"
-                        ? copy.invalidDocument
-                        : status === "application_required"
-                          ? copy.saveBeforeDocuments
-                          : status === "denied"
-                            ? copy.denied
-                            : status === "invalid"
-                              ? copy.invalid
-                              : copy.unavailable;
+  if (status === "idle" || status === "incomplete") return null;
+  const messages: Record<typeof status, string> = {
+    saved: copy.saved,
+    saved_cleanup_required: copy.savedCleanupRequired,
+    saved_deletion_audit_required: copy.savedDeletionAuditRequired,
+    uploaded: copy.uploaded,
+    uploaded_cleanup_required: copy.uploadedCleanupRequired,
+    uploaded_deletion_audit_required: copy.uploadedDeletionAuditRequired,
+    failed_cleanup_required: copy.failedCleanupRequired,
+    registration_reconciliation_required:
+      copy.registrationReconciliationRequired,
+    submitted: copy.submitted,
+    invalid_document: copy.invalidDocument,
+    application_required: copy.saveBeforeDocuments,
+    invalid: copy.invalid,
+    unavailable: copy.unavailable,
+  };
+  const message = messages[status];
   const successful =
     status === "saved" || status === "uploaded" || status === "submitted";
   return (

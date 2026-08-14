@@ -17,6 +17,7 @@ import type { OwnerApplicationSnapshot } from "@/owner-application/owner-applica
 import {
   saveOwnerApplicationAction,
   submitOwnerApplicationAction,
+  uploadOwnerDocumentAction,
 } from "@/owner-application/actions";
 import { OwnerApplicationForm } from "./owner-application-form";
 
@@ -186,6 +187,30 @@ describe("Owner Application form", () => {
     expect(screen.getByText("passport.pdf")).toBeVisible();
     expect(screen.queryByRole("link", { name: /secure link/i })).toBeNull();
     expect(screen.getByLabelText("Legal name")).toHaveValue("Zana Kareem");
+  });
+
+  it("explains that a draft is required when an upload loses its application", async () => {
+    vi.mocked(uploadOwnerDocumentAction).mockResolvedValue({
+      status: "application_required",
+    });
+    render(<OwnerApplicationForm locale="en" application={draft} />);
+
+    const identityEvidence = screen.getByRole("article", {
+      name: "Identity evidence",
+    });
+    fireEvent.submit(
+      within(identityEvidence)
+        .getByRole("button", { name: "Replace document" })
+        .closest("form")!,
+    );
+
+    await waitFor(() =>
+      expect(
+        within(identityEvidence).getByText(
+          "Save the draft before uploading documents.",
+        ),
+      ).toBeVisible(),
+    );
   });
 
   it("locks the application after submission", () => {
