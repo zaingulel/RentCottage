@@ -986,6 +986,11 @@ declare
   document public.owner_verification_documents;
   access_grant public.owner_verification_document_access_grants;
 begin
+  if not (select public.is_platform_administrator('aal2')) then
+    raise exception 'Verification document access is denied'
+      using errcode = 'RC204';
+  end if;
+
   update public.owner_verification_document_access_grants
   set status = 'expired', completed_at = now()
   where status = 'pending'
@@ -996,8 +1001,7 @@ begin
   join public.owner_applications
     on owner_applications.id = owner_verification_documents.application_id
   where owner_verification_documents.id = target_document_id
-    and owner_applications.status = 'submitted'
-    and (select public.is_platform_administrator('aal2'));
+    and owner_applications.status = 'submitted';
 
   if not found then
     raise exception 'Verification document access is denied'

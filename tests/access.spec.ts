@@ -63,12 +63,13 @@ async function currentDocumentAccessAudit(
 }
 
 function journeyPhone(projectName: string, digits: [string, string, string]) {
-  const suffix =
-    projectName === "mobile"
-      ? digits[0]
-      : projectName === "desktop"
-        ? digits[1]
-        : digits[2];
+  const suffixes: Record<string, string> = {
+    mobile: digits[0],
+    desktop: digits[1],
+    worker: digits[2],
+  };
+  const suffix = suffixes[projectName];
+  if (!suffix) throw new Error(`Unmapped Playwright project: ${projectName}`);
   return `+964750000000${suffix}`;
 }
 

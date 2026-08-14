@@ -189,6 +189,62 @@ describe("Owner Application form", () => {
     expect(screen.getByLabelText("Legal name")).toHaveValue("Zana Kareem");
   });
 
+  it("announces a successful draft save", async () => {
+    vi.mocked(saveOwnerApplicationAction).mockResolvedValue({
+      status: "saved",
+    });
+    render(<OwnerApplicationForm locale="en" application={draft} />);
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Save draft" }).closest("form")!,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Draft saved."),
+    );
+  });
+
+  it("announces a successful private document upload", async () => {
+    vi.mocked(uploadOwnerDocumentAction).mockResolvedValue({
+      status: "uploaded",
+    });
+    render(<OwnerApplicationForm locale="en" application={draft} />);
+
+    const identityEvidence = screen.getByRole("article", {
+      name: "Identity evidence",
+    });
+    fireEvent.submit(
+      within(identityEvidence)
+        .getByRole("button", { name: "Replace document" })
+        .closest("form")!,
+    );
+
+    await waitFor(() =>
+      expect(within(identityEvidence).getByRole("status")).toHaveTextContent(
+        "Private document saved.",
+      ),
+    );
+  });
+
+  it("announces a successful application submission", async () => {
+    vi.mocked(submitOwnerApplicationAction).mockResolvedValue({
+      status: "submitted",
+    });
+    render(<OwnerApplicationForm locale="en" application={draft} />);
+
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Submit application" })
+        .closest("form")!,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Application submitted.",
+      ),
+    );
+  });
+
   it("explains that a draft is required when an upload loses its application", async () => {
     vi.mocked(uploadOwnerDocumentAction).mockResolvedValue({
       status: "application_required",

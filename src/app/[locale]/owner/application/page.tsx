@@ -29,7 +29,7 @@ export default async function OwnerApplicationPage({
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const copy = ownerApplicationMessages[locale];
-  let page;
+  let page: Awaited<ReturnType<typeof loadOwnerApplicationPage>> | undefined;
   try {
     page = await loadOwnerApplicationPage();
   } catch (error) {

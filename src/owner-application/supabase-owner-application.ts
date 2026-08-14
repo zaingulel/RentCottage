@@ -302,10 +302,14 @@ function assertProviderSuccess(error: unknown): void {
 }
 
 function providerErrorCode(error: unknown): string | undefined {
-  if (!error || typeof error !== "object") return undefined;
-  const candidate = error as { code?: unknown; cause?: unknown };
-  if (typeof candidate.code === "string") return candidate.code;
-  return providerErrorCode(candidate.cause);
+  let candidate = error;
+  for (let depth = 0; depth <= 8; depth += 1) {
+    if (!candidate || typeof candidate !== "object") return undefined;
+    const providerError = candidate as { code?: unknown; cause?: unknown };
+    if (typeof providerError.code === "string") return providerError.code;
+    candidate = providerError.cause;
+  }
+  return undefined;
 }
 
 function parsePendingCleanup(

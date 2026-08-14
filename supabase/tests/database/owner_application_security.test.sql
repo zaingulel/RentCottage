@@ -485,6 +485,39 @@ select set_config(
   true
 );
 
+insert into public.owner_verification_document_access_grants (
+  document_id,
+  document_subject_id,
+  actor_user_id,
+  actor_subject_id,
+  object_path,
+  complete_before
+)
+select
+  id,
+  id,
+  '00000000-0000-0000-0000-000000000104',
+  '00000000-0000-0000-0000-000000000104',
+  object_path,
+  now() - interval '1 second'
+from public.owner_verification_documents
+where id = current_setting('test.review_document_id')::uuid;
+
+create function public.reject_unauthorized_access_grant_sweep()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  raise exception 'Unauthorized expiry sweep reached'
+    using errcode = 'RC299';
+end;
+$$;
+
+create trigger reject_unauthorized_access_grant_sweep
+before update on public.owner_verification_document_access_grants
+for each row execute function public.reject_unauthorized_access_grant_sweep();
+
 reset role;
 set local role authenticated;
 
@@ -523,6 +556,12 @@ select throws_ok(
   null,
   'a Platform Administrator without MFA cannot create document access'
 );
+
+reset role;
+drop trigger reject_unauthorized_access_grant_sweep
+  on public.owner_verification_document_access_grants;
+drop function public.reject_unauthorized_access_grant_sweep();
+set local role authenticated;
 
 select set_config(
   'request.jwt.claims',

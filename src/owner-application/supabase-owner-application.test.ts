@@ -462,7 +462,24 @@ describe("Supabase Owner Application adapter", () => {
     },
   );
 
-  it.each([null, ["legal_name", 42]])(
+  it("bounds provider error-cause inspection", async () => {
+    const cyclicError: { cause?: unknown } = {};
+    cyclicError.cause = cyclicError;
+    const authenticatedRpc = vi.fn().mockReturnValue(result(null, cyclicError));
+    const repository = new SupabaseOwnerApplicationRepository(
+      { rpc: authenticatedRpc } as unknown as SupabaseClient,
+      { rpc: vi.fn() } as unknown as SupabaseClient,
+    );
+
+    await expect(
+      repository.prepareDocumentAccess("40000000-0000-4000-8000-000000000001"),
+    ).rejects.toMatchObject({
+      message: "Owner Application provider is unavailable",
+      cause: cyclicError,
+    });
+  });
+
+  it.each([[null], [["legal_name", 42]]])(
     "rejects malformed missing-item data %#",
     async (data) => {
       const client = {

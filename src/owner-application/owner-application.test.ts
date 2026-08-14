@@ -332,6 +332,34 @@ describe("Owner Application", () => {
   });
 
   it.each([
+    { state: "missing", snapshot: null },
+    {
+      state: "submitted",
+      snapshot: {
+        ...emptySnapshot,
+        status: "submitted" as const,
+        submittedAt: "2026-08-14T10:00:00.000Z",
+      },
+    },
+  ])(
+    "requires a draft application when its state is $state",
+    async ({ snapshot }) => {
+      const { application, repository, storage } = setup(snapshot);
+
+      await expect(
+        application.uploadDocument("identity", {
+          name: "passport.pdf",
+          type: "application/pdf",
+          size: validPdf.byteLength,
+          bytes: validPdf,
+        }),
+      ).resolves.toEqual({ status: "application_required" });
+      expect(repository.prepareDocumentUpload).not.toHaveBeenCalled();
+      expect(storage.upload).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
     {
       name: "script.svg",
       type: "image/svg+xml",
