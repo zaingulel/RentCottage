@@ -44,7 +44,9 @@ export default async function OwnerApplicationReviewPage({
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const copy = ownerApplicationReviewMessages[locale];
-  let page;
+  let page:
+    | Awaited<ReturnType<typeof loadOwnerApplicationReviewPage>>
+    | undefined;
 
   try {
     const query = searchParams ? await searchParams : {};

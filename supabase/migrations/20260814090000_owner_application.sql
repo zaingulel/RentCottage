@@ -161,6 +161,12 @@ create table public.owner_verification_document_cleanup (
 create index owner_verification_document_cleanup_pending_idx
   on public.owner_verification_document_cleanup (status, requested_at);
 
+create index owner_verification_document_cleanup_document_id_idx
+  on public.owner_verification_document_cleanup (document_id);
+
+create index owner_verification_document_cleanup_application_id_idx
+  on public.owner_verification_document_cleanup (application_id);
+
 create table public.owner_verification_document_access_grants (
   id uuid primary key default gen_random_uuid(),
   document_id uuid references public.owner_verification_documents (id)
@@ -182,6 +188,9 @@ create table public.owner_verification_document_access_grants (
 
 create index owner_verification_document_access_grants_pending_idx
   on public.owner_verification_document_access_grants (status, complete_before);
+
+create index owner_verification_document_access_grants_document_id_idx
+  on public.owner_verification_document_access_grants (document_id);
 
 create table public.owner_verification_document_audit (
   id uuid primary key default gen_random_uuid(),
@@ -986,6 +995,7 @@ begin
   join public.owner_applications
     on owner_applications.id = owner_verification_documents.application_id
   where owner_verification_documents.id = target_document_id
+    and owner_applications.status = 'submitted'
     and (select public.is_platform_administrator('aal2'));
 
   if not found then

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(57);
+select plan(60);
 
 select has_table(
   'public',
@@ -163,6 +163,21 @@ select throws_ok(
 
 reset role;
 set local role service_role;
+
+select throws_ok(
+  $$select public.prepare_owner_verification_document_upload(
+    '00000000-0000-0000-0000-000000000101',
+    current_setting('test.owner_application_id')::uuid,
+    'identity',
+    'unexpected/path/identity.pdf',
+    'identity.pdf',
+    'application/pdf',
+    128
+  )$$,
+  'RC205',
+  null,
+  'a verification object path outside the owner and application prefix is rejected'
+);
 
 select lives_ok(
   $$select set_config(
@@ -527,6 +542,24 @@ select is_empty(
 );
 
 reset role;
+update public.owner_applications
+set status = 'draft', submitted_at = null
+where owner_user_id = '00000000-0000-0000-0000-000000000101';
+set local role authenticated;
+
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    current_setting('test.review_document_id')::uuid
+  )$$,
+  'RC204',
+  null,
+  'an MFA administrator cannot access evidence before application submission'
+);
+
+reset role;
+update public.owner_applications
+set status = 'submitted', submitted_at = now()
+where owner_user_id = '00000000-0000-0000-0000-000000000101';
 create temporary table prepared_owner_document_access (grant_data jsonb);
 grant select, insert on prepared_owner_document_access to authenticated, service_role;
 set local role authenticated;
@@ -567,6 +600,16 @@ where id = (
   from prepared_owner_document_access
 );
 set local role service_role;
+
+select throws_ok(
+  $$select public.complete_owner_verification_document_access(
+    (select (grant_data ->> 'grant_id')::uuid from prepared_owner_document_access),
+    61
+  )$$,
+  'RC208',
+  null,
+  'document access cannot exceed the 60-second limit'
+);
 
 select lives_ok(
   $$select public.complete_owner_verification_document_access(

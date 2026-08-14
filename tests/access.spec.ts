@@ -269,7 +269,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     page.getByRole("heading", { name: "Submitted Owner Applications" }),
   ).toBeVisible();
   await expect(page.getByText("identity.pdf").first()).toBeVisible();
-  const accessedAfter = new Date().toISOString();
+  const accessedAfter = new Date(Date.now() - 5_000).toISOString();
   const identityDocument = page
     .locator("li")
     .filter({ hasText: "identity.pdf" })

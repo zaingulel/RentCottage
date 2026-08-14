@@ -464,6 +464,19 @@ describe("Supabase Owner Application adapter", () => {
 });
 
 describe("Supabase private verification storage adapter", () => {
+  it("removes replaced objects from the private bucket", async () => {
+    const remove = vi.fn().mockReturnValue(result([{ name: "old.pdf" }]));
+    const from = vi.fn().mockReturnValue({ remove });
+    const storage = new SupabaseVerificationDocumentStorage({
+      storage: { from },
+    } as unknown as SupabaseClient);
+
+    await storage.remove(["owner/application/identity/old.pdf"]);
+
+    expect(from).toHaveBeenCalledWith("owner-verification");
+    expect(remove).toHaveBeenCalledWith(["owner/application/identity/old.pdf"]);
+  });
+
   it("uploads to the private bucket without overwriting an object", async () => {
     const upload = vi.fn().mockReturnValue(result({ path: "path" }));
     const from = vi.fn().mockReturnValue({ upload });
