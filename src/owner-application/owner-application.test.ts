@@ -33,7 +33,6 @@ const emptySnapshot: OwnerApplicationSnapshot = {
 };
 
 const validPdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
-
 function setup(snapshot: OwnerApplicationSnapshot | null = emptySnapshot) {
   const repository: OwnerApplicationRepository = {
     load: vi.fn().mockResolvedValue(snapshot),
@@ -51,9 +50,11 @@ function setup(snapshot: OwnerApplicationSnapshot | null = emptySnapshot) {
     reconcileDocumentRegistration: vi
       .fn()
       .mockResolvedValue({ status: "unregistered" }),
-    authorizeDocumentAccess: vi
-      .fn()
-      .mockResolvedValue("owner/application/identity/document.pdf"),
+    prepareDocumentAccess: vi.fn().mockResolvedValue({
+      grantId: "60000000-0000-4000-8000-000000000001",
+      objectPath: "owner/application/identity/document.pdf",
+    }),
+    completeDocumentAccess: vi.fn().mockResolvedValue("completed"),
     completeDocumentCleanup: vi.fn().mockResolvedValue(undefined),
   };
   const storage: VerificationDocumentStorage = {
@@ -330,16 +331,30 @@ describe("Owner Application", () => {
   });
 
   it.each([
-    { name: "script.svg", type: "image/svg+xml", size: 200 },
-    { name: "empty.pdf", type: "application/pdf", size: 0 },
-    { name: "large.pdf", type: "application/pdf", size: 5_242_881 },
+    {
+      name: "script.svg",
+      type: "image/svg+xml",
+      size: 200,
+      bytes: new Uint8Array(8),
+    },
+    {
+      name: "empty.pdf",
+      type: "application/pdf",
+      size: 0,
+      bytes: new Uint8Array(1),
+    },
+    {
+      name: "large.pdf",
+      type: "application/pdf",
+      size: 5_242_881,
+      bytes: new Uint8Array(5_242_881),
+    },
   ])("rejects unsafe verification upload $name", async (file) => {
     const { application, storage } = setup();
 
     await expect(
       application.uploadDocument("identity", {
         ...file,
-        bytes: new Uint8Array(Math.max(1, Math.min(file.size, 8))),
       }),
     ).resolves.toEqual({ status: "invalid_document" });
     expect(storage.upload).not.toHaveBeenCalled();
@@ -579,9 +594,9 @@ describe("Owner Application", () => {
     ).resolves.toEqual({ status: "uploaded_deletion_audit_required" });
   });
 
-  it("returns no private URL when the access audit cannot be recorded", async () => {
+  it("returns no private URL when access preparation fails", async () => {
     const { application, repository, storage } = setup();
-    vi.mocked(repository.authorizeDocumentAccess).mockRejectedValue(
+    vi.mocked(repository.prepareDocumentAccess).mockRejectedValue(
       new Error("audit unavailable"),
     );
 
@@ -589,6 +604,42 @@ describe("Owner Application", () => {
       application.createDocumentAccess("40000000-0000-4000-8000-000000000001"),
     ).resolves.toEqual({ status: "unavailable" });
     expect(storage.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("withholds a created private URL when its access audit cannot be recorded", async () => {
+    const { application, repository, storage } = setup();
+    vi.mocked(repository.completeDocumentAccess).mockRejectedValue(
+      new Error("audit unavailable"),
+    );
+
+    await expect(
+      application.createDocumentAccess("40000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(storage.createSignedUrl).toHaveBeenCalledWith(
+      "owner/application/identity/document.pdf",
+      60,
+    );
+    expect(repository.completeDocumentAccess).toHaveBeenCalledWith(
+      "60000000-0000-4000-8000-000000000001",
+      60,
+    );
+  });
+
+  it("withholds a signed URL when its prepared grant expired", async () => {
+    const { application, repository, storage } = setup();
+    vi.mocked(repository.completeDocumentAccess).mockResolvedValue("expired");
+
+    await expect(
+      application.createDocumentAccess("40000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(storage.createSignedUrl).toHaveBeenCalledWith(
+      "owner/application/identity/document.pdf",
+      60,
+    );
+    expect(repository.completeDocumentAccess).toHaveBeenCalledWith(
+      "60000000-0000-4000-8000-000000000001",
+      60,
+    );
   });
 
   it("returns an audited URL that expires after 60 seconds", async () => {
@@ -601,12 +652,21 @@ describe("Owner Application", () => {
       url: "https://storage.test/signed-document",
       expiresInSeconds: 60,
     });
-    expect(repository.authorizeDocumentAccess).toHaveBeenCalledWith(
+    expect(repository.prepareDocumentAccess).toHaveBeenCalledWith(
       "40000000-0000-4000-8000-000000000001",
     );
     expect(storage.createSignedUrl).toHaveBeenCalledWith(
       "owner/application/identity/document.pdf",
       60,
+    );
+    expect(repository.completeDocumentAccess).toHaveBeenCalledWith(
+      "60000000-0000-4000-8000-000000000001",
+      60,
+    );
+    expect(
+      vi.mocked(storage.createSignedUrl).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(repository.completeDocumentAccess).mock.invocationCallOrder[0],
     );
   });
 });

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(44);
+select plan(57);
 
 select has_table(
   'public',
@@ -24,8 +24,23 @@ select has_table(
 
 select has_table(
   'public',
+  'owner_verification_document_access_grants',
+  'document access is prepared as a durable exact-object grant'
+);
+
+select has_table(
+  'public',
   'owner_verification_document_audit',
   'verification-document access has a durable audit record'
+);
+
+select ok(
+  has_table_privilege(
+    'service_role',
+    'public.owner_verification_document_audit',
+    'SELECT'
+  ),
+  'the service audit reader has explicit access to verification history'
 );
 
 select has_table(
@@ -388,7 +403,7 @@ select results_eq(
 );
 
 select throws_ok(
-  $$select public.record_owner_verification_document_access(
+  $$select public.prepare_owner_verification_document_access(
     (select id from public.owner_verification_documents where kind = 'identity')
   )$$,
   'RC204',
@@ -418,7 +433,7 @@ select is_empty(
 );
 
 select throws_ok(
-  $$select public.record_owner_verification_document_access(
+  $$select public.prepare_owner_verification_document_access(
     (select id from public.owner_verification_documents where kind = 'identity')
   )$$,
   'RC204',
@@ -475,7 +490,7 @@ select is_empty(
 );
 
 select throws_ok(
-  $$select public.record_owner_verification_document_access(
+  $$select public.prepare_owner_verification_document_access(
     (select id from public.owner_verification_documents limit 1)
   )$$,
   'RC204',
@@ -500,11 +515,73 @@ select is_empty(
   'an MFA administrator cannot bypass the audited signed-link path'
 );
 
+reset role;
+create temporary table prepared_owner_document_access (grant_data jsonb);
+grant select, insert on prepared_owner_document_access to authenticated, service_role;
+set local role authenticated;
+
 select lives_ok(
-  $$select public.record_owner_verification_document_access(
+  $$insert into prepared_owner_document_access
+  select public.prepare_owner_verification_document_access(
     (select id from public.owner_verification_documents where kind = 'identity')
   )$$,
-  'an MFA administrator can request time-limited document access'
+  'an MFA administrator can prepare a time-limited document grant'
+);
+
+select results_eq(
+  $$select count(*)::bigint from public.owner_verification_document_audit
+    where action = 'access_granted'$$,
+  array[0::bigint],
+  'authorization alone does not falsely record document access as granted'
+);
+
+select throws_ok(
+  $$select public.complete_owner_verification_document_access(
+    (select (grant_data ->> 'grant_id')::uuid from prepared_owner_document_access),
+    60
+  )$$,
+  '42501',
+  null,
+  'an MFA administrator cannot directly complete a document grant'
+);
+
+reset role;
+update public.owner_verification_documents
+set object_path = object_path || '.replacement'
+where kind = 'identity';
+update public.owner_verification_document_access_grants
+set prepared_at = now() - interval '30 seconds'
+where id = (
+  select (grant_data ->> 'grant_id')::uuid
+  from prepared_owner_document_access
+);
+set local role service_role;
+
+select lives_ok(
+  $$select public.complete_owner_verification_document_access(
+    (select (grant_data ->> 'grant_id')::uuid from prepared_owner_document_access),
+    60
+  )$$,
+  'the trusted service can complete a delayed prepared grant after link creation'
+);
+
+reset role;
+
+select results_eq(
+  $$select access_grant_id::text || ':' || object_path
+    from public.owner_verification_document_audit
+    where action = 'access_granted'$$,
+  $$select (grant_data ->> 'grant_id') || ':' || (grant_data ->> 'object_path')
+    from prepared_owner_document_access$$,
+  'the audit is bound to the prepared grant and exact signed object path'
+);
+
+select isnt(
+  (select object_path from public.owner_verification_document_audit
+    where action = 'access_granted'),
+  (select object_path from public.owner_verification_documents
+    where kind = 'identity'),
+  'a concurrent metadata replacement cannot change the audited object path'
 );
 
 select results_eq(
@@ -522,6 +599,77 @@ select ok(
     where action = 'access_granted'
   ),
   'document access expires after 60 seconds'
+);
+
+select lives_ok(
+  $$delete from public.owner_verification_documents where kind = 'identity'$$,
+  'retention cleanup can remove evidence metadata after a completed grant'
+);
+
+select ok(
+  (
+    select document_id is null
+      and document_subject_id is not null
+      and status = 'completed'
+    from public.owner_verification_document_access_grants
+    where id = (
+      select (grant_data ->> 'grant_id')::uuid
+      from prepared_owner_document_access
+    )
+  ),
+  'a completed grant retains immutable document attribution after cleanup'
+);
+
+create temporary table failed_owner_document_access (grant_data jsonb);
+grant select, insert on failed_owner_document_access to authenticated, service_role;
+set local role authenticated;
+
+select lives_ok(
+  $$insert into failed_owner_document_access
+  select public.prepare_owner_verification_document_access(
+    (select id from public.owner_verification_documents
+      where kind = 'authority_to_rent')
+  )$$,
+  'a later failed link attempt leaves a durable pending grant'
+);
+
+reset role;
+update public.owner_verification_document_access_grants
+set complete_before = now() - interval '1 second'
+where id = (
+  select (grant_data ->> 'grant_id')::uuid
+  from failed_owner_document_access
+);
+
+set local role service_role;
+select results_eq(
+  $$select public.complete_owner_verification_document_access(
+    (select (grant_data ->> 'grant_id')::uuid from failed_owner_document_access),
+    60
+  )$$,
+  array['expired'::text],
+  'a failed link completion makes its pending grant terminal'
+);
+reset role;
+
+select lives_ok(
+  $$delete from public.owner_verification_documents
+    where kind = 'authority_to_rent'$$,
+  'retention cleanup can remove evidence metadata after an expired pending grant'
+);
+
+select ok(
+  (
+    select document_id is null
+      and document_subject_id is not null
+      and status = 'expired'
+    from public.owner_verification_document_access_grants
+    where id = (
+      select (grant_data ->> 'grant_id')::uuid
+      from failed_owner_document_access
+    )
+  ),
+  'an expired grant retains immutable document attribution after cleanup'
 );
 
 select * from finish();

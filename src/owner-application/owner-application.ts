@@ -6,6 +6,7 @@ export const verificationDocumentKinds = [
   "licensing_or_exemption",
   "payout_account",
 ] as const;
+export const verificationDocumentMaximumBytes = 5_242_880;
 
 export type VerificationDocumentKind =
   (typeof verificationDocumentKinds)[number];
@@ -80,6 +81,11 @@ export interface PendingVerificationDocumentCleanup {
   objectPath: string;
 }
 
+export interface PreparedVerificationDocumentAccess {
+  grantId: string;
+  objectPath: string;
+}
+
 export interface OwnerApplicationRepository {
   load(): Promise<OwnerApplicationSnapshot | null>;
   saveDraft(
@@ -100,7 +106,13 @@ export interface OwnerApplicationRepository {
   reconcileDocumentRegistration(
     cleanupId: string,
   ): Promise<VerificationDocumentRegistrationReconciliation>;
-  authorizeDocumentAccess(documentId: string): Promise<string>;
+  prepareDocumentAccess(
+    documentId: string,
+  ): Promise<PreparedVerificationDocumentAccess>;
+  completeDocumentAccess(
+    grantId: string,
+    expiresInSeconds: number,
+  ): Promise<"completed" | "expired">;
   completeDocumentCleanup(cleanupId: string): Promise<void>;
 }
 
@@ -402,7 +414,7 @@ export function createOwnerApplication({
         !extension ||
         !Number.isInteger(file.size) ||
         file.size < 1 ||
-        file.size > 5_242_880 ||
+        file.size > verificationDocumentMaximumBytes ||
         file.bytes.byteLength !== file.size ||
         !bytesMatchMediaType(file.bytes, file.type) ||
         file.name.trim().length < 1 ||
@@ -576,13 +588,13 @@ export function createOwnerApplication({
       if (typeof documentId !== "string" || !uuidPattern.test(documentId)) {
         return { status: "denied" } as const;
       }
-      let objectPath: string;
+      let access: PreparedVerificationDocumentAccess;
       try {
-        objectPath = await repository.authorizeDocumentAccess(documentId);
+        access = await repository.prepareDocumentAccess(documentId);
       } catch (error) {
         reportFailure(
           diagnostics,
-          "document_access_authorization_failed",
+          "document_access_preparation_failed",
           error,
           {
             documentId,
@@ -590,9 +602,13 @@ export function createOwnerApplication({
         );
         return { status: "unavailable" } as const;
       }
+      const expiresInSeconds = 60;
+      let url: string;
       try {
-        const url = await storage.createSignedUrl(objectPath, 60);
-        return { status: "ready", url, expiresInSeconds: 60 } as const;
+        url = await storage.createSignedUrl(
+          access.objectPath,
+          expiresInSeconds,
+        );
       } catch (error) {
         reportFailure(
           diagnostics,
@@ -600,10 +616,27 @@ export function createOwnerApplication({
           error,
           {
             documentId,
+            grantId: access.grantId,
           },
         );
         return { status: "unavailable" } as const;
       }
+      try {
+        const completion = await repository.completeDocumentAccess(
+          access.grantId,
+          expiresInSeconds,
+        );
+        if (completion === "expired") {
+          return { status: "unavailable" } as const;
+        }
+      } catch (error) {
+        reportFailure(diagnostics, "document_access_completion_failed", error, {
+          documentId,
+          grantId: access.grantId,
+        });
+        return { status: "unavailable" } as const;
+      }
+      return { status: "ready", url, expiresInSeconds } as const;
     },
   };
 }

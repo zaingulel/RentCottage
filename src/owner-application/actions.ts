@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { isLocale } from "@/i18n/routing";
+import { verificationDocumentMaximumBytes } from "./owner-application";
 
 import { createRequestOwnerApplication } from "./request-owner-application";
 
@@ -127,6 +128,9 @@ export async function uploadOwnerDocumentAction(
   const document = formData.get("document");
   if (!locale) return { status: "unavailable" };
   if (!(document instanceof File)) {
+    return { status: "invalid_document" };
+  }
+  if (document.size < 1 || document.size > verificationDocumentMaximumBytes) {
     return { status: "invalid_document" };
   }
   const application = await createRequestOwnerApplication();

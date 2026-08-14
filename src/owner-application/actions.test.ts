@@ -85,6 +85,7 @@ describe("Owner Application server actions", () => {
         amenities: ["garden", "parking"],
       }),
     });
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("refreshes a saved draft when evidence cleanup remains pending", async () => {
@@ -150,6 +151,23 @@ describe("Owner Application server actions", () => {
     ).resolves.toEqual({ status: "invalid_document" });
     expect(application.uploadDocument).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized document before reading or calling the domain", async () => {
+    const document = new File([new Uint8Array(5_242_881)], "large.pdf", {
+      type: "application/pdf",
+    });
+    const arrayBuffer = vi.spyOn(document, "arrayBuffer");
+    const form = new FormData();
+    form.set("locale", "en");
+    form.set("kind", "identity");
+    form.set("document", document);
+
+    await expect(
+      uploadOwnerDocumentAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "invalid_document" });
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(application.uploadDocument).not.toHaveBeenCalled();
   });
 
   it.each([

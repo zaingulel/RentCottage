@@ -65,6 +65,34 @@ describe("access forms", () => {
     expect(screen.getByText(/code could not be confirmed/)).toBeVisible();
   });
 
+  it("links an MFA-authenticated administrator to submitted applications", async () => {
+    signInAdministrator.mockResolvedValue({
+      status: "challenge_required",
+      factorId: "factor-1",
+      challengeId: "challenge-1",
+    });
+    verifyAdministrator.mockResolvedValue({ status: "authenticated" });
+    const user = userEvent.setup();
+    render(
+      <AdministratorAccessForm
+        locale="en"
+        reviewHref="/en/administrator/owner-applications"
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.type(screen.getByLabelText("Authenticator app code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(
+      screen.getByRole("link", {
+        name: "Review submitted Owner Applications",
+      }),
+    ).toHaveAttribute("href", "/en/administrator/owner-applications");
+  });
+
   it("reports an identity mismatch as unavailable after phone verification", async () => {
     requestPhone.mockResolvedValue({ status: "code_sent" });
     verifyPhone.mockResolvedValue({ status: "not_authorized" });

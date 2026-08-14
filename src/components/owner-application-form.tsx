@@ -101,6 +101,26 @@ function valuesFor(
   };
 }
 
+function invalidFieldId(field: keyof OwnerApplicationFormValues) {
+  return `owner-application-${field}-error`;
+}
+
+function InvalidFieldMessage({
+  field,
+  invalid,
+  message,
+}: {
+  field: keyof OwnerApplicationFormValues;
+  invalid: boolean;
+  message: string;
+}) {
+  return invalid ? (
+    <small id={invalidFieldId(field)} className="field-error">
+      {message}
+    </small>
+  ) : null;
+}
+
 function VerificationDocumentRow({
   locale,
   kind,
@@ -181,6 +201,12 @@ export function OwnerApplicationForm({
   const visibleDocumentKinds = verificationDocumentKinds.filter((kind) =>
     isVerificationDocumentKindRequired(kind, applicantKind, licensingBasis),
   );
+  const invalidAttributes = (field: keyof OwnerApplicationFormValues) => ({
+    "aria-invalid": invalidFields.has(field),
+    "aria-describedby": invalidFields.has(field)
+      ? invalidFieldId(field)
+      : undefined,
+  });
 
   return (
     <div className="owner-application-layout">
@@ -209,7 +235,8 @@ export function OwnerApplicationForm({
                   {copy.applicantKind}
                   <select
                     name="applicantKind"
-                    aria-invalid={invalidFields.has("applicantKind")}
+                    aria-label={copy.applicantKind}
+                    {...invalidAttributes("applicantKind")}
                     value={applicantKind}
                     onChange={(event) =>
                       setApplicantKind(event.target.value as OwnerApplicantKind)
@@ -218,30 +245,48 @@ export function OwnerApplicationForm({
                     <option value="individual">{copy.individual}</option>
                     <option value="company">{copy.company}</option>
                   </select>
+                  <InvalidFieldMessage
+                    field="applicantKind"
+                    invalid={invalidFields.has("applicantKind")}
+                    message={copy.invalidField}
+                  />
                 </label>
                 <label>
                   {copy.legalName}
                   <input
                     name="legalName"
+                    aria-label={copy.legalName}
                     maxLength={120}
-                    aria-invalid={invalidFields.has("legalName")}
+                    {...invalidAttributes("legalName")}
                     defaultValue={values.legalName}
+                  />
+                  <InvalidFieldMessage
+                    field="legalName"
+                    invalid={invalidFields.has("legalName")}
+                    message={copy.invalidField}
                   />
                 </label>
                 <label>
                   {copy.companyName}
                   <input
                     name="companyName"
+                    aria-label={copy.companyName}
                     maxLength={120}
-                    aria-invalid={invalidFields.has("companyName")}
+                    {...invalidAttributes("companyName")}
                     defaultValue={values.companyName}
+                  />
+                  <InvalidFieldMessage
+                    field="companyName"
+                    invalid={invalidFields.has("companyName")}
+                    message={copy.invalidField}
                   />
                 </label>
                 <label>
                   {copy.licensingBasis}
                   <select
                     name="licensingBasis"
-                    aria-invalid={invalidFields.has("licensingBasis")}
+                    aria-label={copy.licensingBasis}
+                    {...invalidAttributes("licensingBasis")}
                     value={licensingBasis}
                     onChange={(event) =>
                       setLicensingBasis(
@@ -252,15 +297,26 @@ export function OwnerApplicationForm({
                     <option value="licence">{copy.licence}</option>
                     <option value="exemption">{copy.exemption}</option>
                   </select>
+                  <InvalidFieldMessage
+                    field="licensingBasis"
+                    invalid={invalidFields.has("licensingBasis")}
+                    message={copy.invalidField}
+                  />
                 </label>
                 <label>
                   {copy.exemptionBasis}
                   <textarea
                     name="exemptionBasis"
+                    aria-label={copy.exemptionBasis}
                     rows={3}
                     maxLength={1000}
-                    aria-invalid={invalidFields.has("exemptionBasis")}
+                    {...invalidAttributes("exemptionBasis")}
                     defaultValue={values.exemptionBasis}
+                  />
+                  <InvalidFieldMessage
+                    field="exemptionBasis"
+                    invalid={invalidFields.has("exemptionBasis")}
+                    message={copy.invalidField}
                   />
                   <small>{copy.exemptionBasisHelp}</small>
                 </label>
@@ -277,36 +333,60 @@ export function OwnerApplicationForm({
                   {copy.cottageName}
                   <input
                     name="cottageName"
+                    aria-label={copy.cottageName}
                     maxLength={120}
-                    aria-invalid={invalidFields.has("cottageName")}
+                    {...invalidAttributes("cottageName")}
                     defaultValue={values.cottageName}
+                  />
+                  <InvalidFieldMessage
+                    field="cottageName"
+                    invalid={invalidFields.has("cottageName")}
+                    message={copy.invalidField}
                   />
                 </label>
                 <label>
                   {copy.governorate}
                   <input
                     name="governorate"
+                    aria-label={copy.governorate}
                     maxLength={120}
-                    aria-invalid={invalidFields.has("governorate")}
+                    {...invalidAttributes("governorate")}
                     defaultValue={values.governorate}
+                  />
+                  <InvalidFieldMessage
+                    field="governorate"
+                    invalid={invalidFields.has("governorate")}
+                    message={copy.invalidField}
                   />
                 </label>
                 <label>
                   {copy.approximateLocation}
                   <input
                     name="approximateLocation"
+                    aria-label={copy.approximateLocation}
                     maxLength={240}
-                    aria-invalid={invalidFields.has("approximateLocation")}
+                    {...invalidAttributes("approximateLocation")}
                     defaultValue={values.approximateLocation}
+                  />
+                  <InvalidFieldMessage
+                    field="approximateLocation"
+                    invalid={invalidFields.has("approximateLocation")}
+                    message={copy.invalidField}
                   />
                 </label>
                 <label>
                   {copy.exactAddress}
                   <input
                     name="exactAddress"
+                    aria-label={copy.exactAddress}
                     maxLength={240}
-                    aria-invalid={invalidFields.has("exactAddress")}
+                    {...invalidAttributes("exactAddress")}
                     defaultValue={values.exactAddress}
+                  />
+                  <InvalidFieldMessage
+                    field="exactAddress"
+                    invalid={invalidFields.has("exactAddress")}
+                    message={copy.invalidField}
                   />
                   <small>{copy.exactAddressHelp}</small>
                 </label>
@@ -316,37 +396,58 @@ export function OwnerApplicationForm({
                   {copy.capacity}
                   <input
                     type="number"
+                    aria-label={copy.capacity}
                     min="1"
                     max="100"
                     name="capacity"
-                    aria-invalid={invalidFields.has("capacity")}
+                    {...invalidAttributes("capacity")}
                     defaultValue={values.capacity}
+                  />
+                  <InvalidFieldMessage
+                    field="capacity"
+                    invalid={invalidFields.has("capacity")}
+                    message={copy.invalidField}
                   />
                 </label>
                 <label>
                   {copy.bedrooms}
                   <input
                     type="number"
+                    aria-label={copy.bedrooms}
                     min="1"
                     max="50"
                     name="bedrooms"
-                    aria-invalid={invalidFields.has("bedrooms")}
+                    {...invalidAttributes("bedrooms")}
                     defaultValue={values.bedrooms}
+                  />
+                  <InvalidFieldMessage
+                    field="bedrooms"
+                    invalid={invalidFields.has("bedrooms")}
+                    message={copy.invalidField}
                   />
                 </label>
                 <label>
                   {copy.bathrooms}
                   <input
                     type="number"
+                    aria-label={copy.bathrooms}
                     min="1"
                     max="50"
                     name="bathrooms"
-                    aria-invalid={invalidFields.has("bathrooms")}
+                    {...invalidAttributes("bathrooms")}
                     defaultValue={values.bathrooms}
+                  />
+                  <InvalidFieldMessage
+                    field="bathrooms"
+                    invalid={invalidFields.has("bathrooms")}
+                    message={copy.invalidField}
                   />
                 </label>
               </div>
-              <fieldset className="amenities-fieldset">
+              <fieldset
+                className="amenities-fieldset"
+                {...invalidAttributes("amenities")}
+              >
                 <legend>{copy.amenities}</legend>
                 <div className="amenity-options">
                   {copy.amenityOptions.map((amenity) => (
@@ -363,26 +464,43 @@ export function OwnerApplicationForm({
                     </label>
                   ))}
                 </div>
+                <InvalidFieldMessage
+                  field="amenities"
+                  invalid={invalidFields.has("amenities")}
+                  message={copy.invalidField}
+                />
               </fieldset>
               <div className="application-fields">
                 <label>
                   {copy.description}
                   <textarea
                     name="description"
+                    aria-label={copy.description}
                     rows={5}
                     maxLength={2000}
-                    aria-invalid={invalidFields.has("description")}
+                    {...invalidAttributes("description")}
                     defaultValue={values.description}
+                  />
+                  <InvalidFieldMessage
+                    field="description"
+                    invalid={invalidFields.has("description")}
+                    message={copy.invalidField}
                   />
                 </label>
                 <label>
                   {copy.houseRules}
                   <textarea
                     name="houseRules"
+                    aria-label={copy.houseRules}
                     rows={4}
                     maxLength={1500}
-                    aria-invalid={invalidFields.has("houseRules")}
+                    {...invalidAttributes("houseRules")}
                     defaultValue={values.houseRules}
+                  />
+                  <InvalidFieldMessage
+                    field="houseRules"
+                    invalid={invalidFields.has("houseRules")}
+                    message={copy.invalidField}
                   />
                 </label>
               </div>

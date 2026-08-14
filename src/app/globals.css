@@ -44,7 +44,7 @@ textarea {
 }
 
 .owner-application-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   padding-block-end: 5rem;
   background:
     radial-gradient(circle at 8% 8%, rgb(198 138 69 / 12%), transparent 28rem),
@@ -408,6 +408,11 @@ textarea {
   color: #9b2727;
 }
 
+.field-error {
+  color: #9b2727;
+  font-weight: 700;
+}
+
 .application-submit-card .application-error {
   color: #ffd3c8;
 }
@@ -415,6 +420,72 @@ textarea {
 .access-required-page {
   display: grid;
   align-content: start;
+}
+
+.administrator-review-page {
+  width: min(68rem, calc(100% - 2.25rem));
+  margin-inline: auto;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.administrator-review-list {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.administrator-review-card {
+  padding: 1.35rem;
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  background: var(--surface);
+}
+
+.administrator-review-card > header,
+.administrator-review-document {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.administrator-review-card h2,
+.administrator-review-card h3,
+.administrator-review-card p {
+  margin-block: 0.25rem;
+}
+
+.administrator-review-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.administrator-review-document {
+  padding-block: 0.75rem;
+  border-block-start: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.administrator-review-document div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.administrator-review-document p {
+  flex-basis: 100%;
+}
+
+.administrator-review-next {
+  justify-self: end;
+  border-radius: 999px;
+  background: var(--green);
+  padding: 0.75rem 1rem;
+  color: white;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .access-required-card {

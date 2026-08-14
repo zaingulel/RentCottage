@@ -26,6 +26,7 @@ export const accessMessages: Record<
     mfaQrAlt: string;
     mfaChallenge: string;
     administratorReady: string;
+    reviewApplications: string;
     invalidSignIn: string;
   }
 > = {
@@ -53,6 +54,7 @@ export const accessMessages: Record<
     mfaQrAlt: "رمز إعداد تطبيق المصادقة",
     mfaChallenge: "أدخل الرمز من تطبيق المصادقة.",
     administratorReady: "تم التحقق متعدد العوامل. صلاحية المسؤول جاهزة.",
+    reviewApplications: "راجع طلبات المالك المرسلة",
     invalidSignIn: "بيانات الدخول غير صحيحة أو الحساب ليس لمسؤول.",
   },
   ckb: {
@@ -79,6 +81,7 @@ export const accessMessages: Record<
     mfaQrAlt: "کۆدی ڕێکخستنی ئەپی پشتڕاستکەرەوە",
     mfaChallenge: "کۆدی ئەپی پشتڕاستکەرەوە بنووسە.",
     administratorReady: "پشتڕاستکردنەوەی دوو هەنگاو تەواو بوو.",
+    reviewApplications: "داواکارییە نێردراوەکانی خاوەن بپشکنە",
     invalidSignIn:
       "زانیاری چوونەژوورەوە نادروستە یان هەژمارەکە بەڕێوەبەر نییە.",
   },
@@ -108,6 +111,7 @@ export const accessMessages: Record<
     mfaChallenge: "Enter the code from your authenticator app.",
     administratorReady:
       "Multi-factor verification complete. Administrator access is ready.",
+    reviewApplications: "Review submitted Owner Applications",
     invalidSignIn:
       "The sign-in is invalid or this is not an administrator account.",
   },

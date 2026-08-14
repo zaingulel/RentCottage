@@ -43,6 +43,25 @@ async function currentAudit(
   return data;
 }
 
+async function currentDocumentAccessAudit(
+  actorUserId: string,
+  occurredAfter: string,
+) {
+  const { data, error } = await auditClient
+    .from("owner_verification_document_audit")
+    .select(
+      "id, document_id, actor_user_id, actor_subject_id, action, object_path, occurred_at",
+    )
+    .eq("actor_subject_id", actorUserId)
+    .eq("action", "access_granted")
+    .gte("occurred_at", occurredAfter)
+    .order("occurred_at", { ascending: false })
+    .limit(1)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 function journeyPhone(projectName: string, digits: [string, string, string]) {
   const suffix =
     projectName === "mobile"
@@ -241,6 +260,49 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   expect(audit.email_digest).toBe(expectedEmailDigest(email));
   expect(new Date(audit.attempted_at).getTime()).toBeGreaterThanOrEqual(
     new Date(attemptedAfter).getTime(),
+  );
+
+  await page
+    .getByRole("link", { name: "Review submitted Owner Applications" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Submitted Owner Applications" }),
+  ).toBeVisible();
+  await expect(page.getByText("identity.pdf").first()).toBeVisible();
+  const accessedAfter = new Date().toISOString();
+  const identityDocument = page
+    .locator("li")
+    .filter({ hasText: "identity.pdf" })
+    .first();
+  await identityDocument
+    .getByRole("button", { name: "Create secure link" })
+    .click();
+  const secureLink = identityDocument.getByRole("link", {
+    name: "Open secure document",
+  });
+  await expect(secureLink).toBeVisible();
+  const signedUrl = await secureLink.getAttribute("href");
+  if (!signedUrl) throw new Error("Secure document link has no URL");
+  const documentResponse = await page.request.get(signedUrl);
+  expect(documentResponse.status()).toBe(200);
+  expect(documentResponse.headers()["content-type"]).toContain(
+    "application/pdf",
+  );
+  expect((await documentResponse.body()).subarray(0, 4).toString()).toBe(
+    "%PDF",
+  );
+  const documentAudit = await currentDocumentAccessAudit(
+    actorUserId,
+    accessedAfter,
+  );
+  expect(documentAudit.actor_user_id).toBe(actorUserId);
+  expect(documentAudit.actor_subject_id).toBe(actorUserId);
+  expect(documentAudit.action).toBe("access_granted");
+  expect(documentAudit.document_id).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  );
+  expect(decodeURIComponent(new URL(signedUrl).pathname)).toContain(
+    `/owner-verification/${documentAudit.object_path}`,
   );
 });
 

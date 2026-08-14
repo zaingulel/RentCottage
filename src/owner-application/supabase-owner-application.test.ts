@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   SupabaseOwnerApplicationRepository,
   SupabaseVerificationDocumentStorage,
+  loadSubmittedOwnerApplicationsForReview,
 } from "./supabase-owner-application";
 
 function result<T>(data: T, error: unknown = null) {
@@ -11,6 +12,129 @@ function result<T>(data: T, error: unknown = null) {
 }
 
 describe("Supabase Owner Application adapter", () => {
+  it("loads submitted applications and groups their private document metadata", async () => {
+    const applications = result([
+      {
+        id: "20000000-0000-4000-8000-000000000001",
+        legal_name: "Zana Kareem",
+        submitted_at: "2026-08-14T10:00:00.000Z",
+      },
+    ]);
+    const documents = result([
+      {
+        id: "40000000-0000-4000-8000-000000000001",
+        application_id: "20000000-0000-4000-8000-000000000001",
+        kind: "identity",
+        original_filename: "passport.pdf",
+      },
+    ]);
+    const from = vi.fn((table: string) => {
+      if (table === "owner_applications") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({
+                order: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockReturnValue(applications),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      return {
+        select: vi.fn().mockReturnValue({
+          in: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue(documents),
+            }),
+          }),
+        }),
+      };
+    });
+
+    await expect(
+      loadSubmittedOwnerApplicationsForReview({
+        from,
+      } as unknown as SupabaseClient),
+    ).resolves.toEqual({
+      applications: [
+        {
+          applicationId: "20000000-0000-4000-8000-000000000001",
+          legalName: "Zana Kareem",
+          submittedAt: "2026-08-14T10:00:00.000Z",
+          documents: [
+            {
+              id: "40000000-0000-4000-8000-000000000001",
+              kind: "identity",
+              originalFilename: "passport.pdf",
+            },
+          ],
+        },
+      ],
+      nextCursor: null,
+    });
+  });
+
+  it("loads a bounded page and continues with a stable keyset cursor", async () => {
+    const applicationRows = Array.from({ length: 51 }, (_, index) => ({
+      id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      legal_name: `Owner ${index + 1}`,
+      submitted_at: "2026-08-14T10:00:00.000Z",
+    }));
+    const documentBatches: string[][] = [];
+    const limit = vi
+      .fn()
+      .mockReturnValueOnce(result(applicationRows))
+      .mockReturnValueOnce(result(applicationRows.slice(50)));
+    const or = vi.fn().mockReturnValue({ limit });
+    const from = vi.fn((table: string) => {
+      if (table === "owner_applications") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({
+                order: vi.fn().mockReturnValue({
+                  limit,
+                  or,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      return {
+        select: vi.fn().mockReturnValue({
+          in: vi.fn((_column: string, ids: string[]) => {
+            documentBatches.push(ids);
+            return {
+              order: vi.fn().mockReturnValue({
+                order: vi.fn().mockReturnValue(result([])),
+              }),
+            };
+          }),
+        }),
+      };
+    });
+
+    const client = { from } as unknown as SupabaseClient;
+    const firstPage = await loadSubmittedOwnerApplicationsForReview(client);
+    expect(firstPage.applications).toHaveLength(50);
+    expect(firstPage.nextCursor).toEqual({
+      submittedAt: "2026-08-14T10:00:00.000Z",
+      applicationId: "20000000-0000-4000-8000-000000000050",
+    });
+
+    const secondPage = await loadSubmittedOwnerApplicationsForReview(
+      client,
+      firstPage.nextCursor ?? undefined,
+    );
+    expect(secondPage.applications).toHaveLength(1);
+    expect(secondPage.nextCursor).toBeNull();
+    expect(or).toHaveBeenCalledWith(expect.stringContaining("id.gt.20000000"));
+    expect(documentBatches.map((batch) => batch.length)).toEqual([50, 1]);
+  });
+
   it("maps the private application, Cottage Profile and document metadata", async () => {
     const maybeSingle = vi
       .fn()
@@ -215,6 +339,45 @@ describe("Supabase Owner Application adapter", () => {
     expect(authenticatedRpc).not.toHaveBeenCalled();
   });
 
+  it("prepares access as the administrator and completes it as the service", async () => {
+    const authenticatedRpc = vi.fn().mockReturnValueOnce(
+      result({
+        grant_id: "60000000-0000-4000-8000-000000000001",
+        object_path: "owner/application/identity/document.pdf",
+      }),
+    );
+    const privilegedRpc = vi.fn().mockReturnValueOnce(result("completed"));
+    const repository = new SupabaseOwnerApplicationRepository(
+      { rpc: authenticatedRpc } as unknown as SupabaseClient,
+      { rpc: privilegedRpc } as unknown as SupabaseClient,
+    );
+
+    await expect(
+      repository.prepareDocumentAccess("40000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({
+      grantId: "60000000-0000-4000-8000-000000000001",
+      objectPath: "owner/application/identity/document.pdf",
+    });
+    expect(authenticatedRpc).toHaveBeenCalledWith(
+      "prepare_owner_verification_document_access",
+      { target_document_id: "40000000-0000-4000-8000-000000000001" },
+    );
+    await expect(
+      repository.completeDocumentAccess(
+        "60000000-0000-4000-8000-000000000001",
+        60,
+      ),
+    ).resolves.toBe("completed");
+    expect(privilegedRpc).toHaveBeenCalledWith(
+      "complete_owner_verification_document_access",
+      {
+        target_access_grant_id: "60000000-0000-4000-8000-000000000001",
+        requested_expires_in_seconds: 60,
+      },
+    );
+    expect(authenticatedRpc).toHaveBeenCalledTimes(1);
+  });
+
   it("fails loudly on malformed provider data", async () => {
     const maybeSingle = vi.fn().mockReturnValue(
       result({
@@ -257,6 +420,27 @@ describe("Supabase private verification storage adapter", () => {
       "owner/application/identity/document.pdf",
       expect.any(Uint8Array),
       { contentType: "application/pdf", upsert: false },
+    );
+  });
+
+  it("creates a short-lived URL for the requested private object", async () => {
+    const createSignedUrl = vi
+      .fn()
+      .mockReturnValue(
+        result({ signedUrl: "https://storage.test/signed-document" }),
+      );
+    const from = vi.fn().mockReturnValue({ createSignedUrl });
+    const storage = new SupabaseVerificationDocumentStorage({
+      storage: { from },
+    } as unknown as SupabaseClient);
+
+    await expect(
+      storage.createSignedUrl("owner/application/identity/document.pdf", 60),
+    ).resolves.toBe("https://storage.test/signed-document");
+    expect(from).toHaveBeenCalledWith("owner-verification");
+    expect(createSignedUrl).toHaveBeenCalledWith(
+      "owner/application/identity/document.pdf",
+      60,
     );
   });
 });

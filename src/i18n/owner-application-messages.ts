@@ -74,6 +74,7 @@ export const ownerApplicationMessages: Record<
     savedCleanupRequired: string;
     savedDeletionAuditRequired: string;
     invalid: string;
+    invalidField: string;
     unavailable: string;
     denied: string;
     submit: string;
@@ -102,7 +103,7 @@ export const ownerApplicationMessages: Record<
     intro:
       "Save your progress over several visits. Your first cottage and evidence stay private until RentCottage completes its review.",
     privacyNote:
-      "Verification files are never published or translated. Secure links expire after 60 seconds and every access is recorded.",
+      "Verification files are never published or translated. Secure links expire within 60 seconds and every access is recorded.",
     accessRequired:
       "Verify your Cottage Owner phone before opening this private application.",
     verifyPhone: "Verify Cottage Owner access",
@@ -152,6 +153,7 @@ export const ownerApplicationMessages: Record<
     savedDeletionAuditRequired:
       "Draft saved and obsolete evidence was removed, but its deletion audit needs attention.",
     invalid: "Check the marked fields and try again.",
+    invalidField: "Check this field.",
     unavailable:
       "This action is temporarily unavailable. Nothing was submitted.",
     denied: "You do not have permission to access this private document.",
@@ -203,7 +205,7 @@ export const ownerApplicationMessages: Record<
     intro:
       "احفظ تقدمك عبر عدة زيارات. يبقى البيت الأول والوثائق خاصين حتى تُكمل RentCottage المراجعة.",
     privacyNote:
-      "لا تُنشر وثائق التحقق ولا تُرسل للترجمة. تنتهي صلاحية الرابط الآمن بعد 60 ثانية ويُسجّل كل وصول.",
+      "لا تُنشر وثائق التحقق ولا تُرسل للترجمة. تنتهي صلاحية الرابط الآمن خلال 60 ثانية ويُسجّل كل وصول.",
     accessRequired: "تحقق من هاتف مالك البيت قبل فتح هذا الطلب الخاص.",
     verifyPhone: "تحقق من دخول مالك البيت",
     draftStatus: "طلب مسودة",
@@ -252,6 +254,7 @@ export const ownerApplicationMessages: Record<
     savedDeletionAuditRequired:
       "حُفظت المسودة وحُذفت الأدلة غير المطلوبة، لكن سجل الحذف يحتاج إلى مراجعة.",
     invalid: "راجع الحقول المعلَّمة وحاول مرة أخرى.",
+    invalidField: "راجع هذا الحقل.",
     unavailable: "هذا الإجراء غير متاح مؤقتاً. لم يُرسل شيء.",
     denied: "ليس لديك إذن للوصول إلى هذه الوثيقة الخاصة.",
     submit: "أرسل الطلب",
@@ -326,7 +329,7 @@ export const ownerApplicationMessages: Record<
     intro:
       "لە چەند سەردانێکدا پێشکەوتنەکەت پاشەکەوت بکە. یەکەم ماڵ و بەڵگەکان تا تەواوبوونی پێداچوونەوە تایبەت دەمێننەوە.",
     privacyNote:
-      "بەڵگەکانی پشتڕاستکردنەوە بڵاوناکرێنەوە و وەرناگێڕدرێن. بەستەری پارێزراو دوای 60 چرکە بەسەر دەچێت و هەر دەستگەیشتنێک تۆمار دەکرێت.",
+      "بەڵگەکانی پشتڕاستکردنەوە بڵاوناکرێنەوە و وەرناگێڕدرێن. بەستەری پارێزراو لە ماوەی 60 چرکەدا بەسەر دەچێت و هەر دەستگەیشتنێک تۆمار دەکرێت.",
     accessRequired:
       "پێش کردنەوەی ئەم داواکارییە تایبەتە ژمارەی خاوەنی ماڵ پشتڕاست بکەرەوە.",
     verifyPhone: "دەستگەیشتنی خاوەنی ماڵ پشتڕاست بکەرەوە",
@@ -377,6 +380,7 @@ export const ownerApplicationMessages: Record<
     savedDeletionAuditRequired:
       "ڕەشنووسەکە پاشەکەوت کرا و بەڵگە ناپێویستەکان سڕانەوە، بەڵام تۆماری سڕینەوەکە پێویستی بە پێداچوونەوە هەیە.",
     invalid: "خانەکانی نیشانکراو بپشکنە و دووبارە هەوڵ بدە.",
+    invalidField: "ئەم خانەیە بپشکنە.",
     unavailable: "ئەم کردارە کاتێکی کورت بەردەست نییە. هیچ شتێک نەنێردرا.",
     denied: "مۆڵەتت نییە بۆ دەستگەیشتن بەم بەڵگە تایبەتە.",
     submit: "داواکاری بنێرە",

@@ -23,6 +23,11 @@ create type public.owner_verification_cleanup_status as enum (
   'pending',
   'completed'
 );
+create type public.owner_verification_access_grant_status as enum (
+  'pending',
+  'completed',
+  'expired'
+);
 
 create function public.owner_verification_kind_is_required(
   applicant_kind public.owner_applicant_kind,
@@ -156,10 +161,35 @@ create table public.owner_verification_document_cleanup (
 create index owner_verification_document_cleanup_pending_idx
   on public.owner_verification_document_cleanup (status, requested_at);
 
+create table public.owner_verification_document_access_grants (
+  id uuid primary key default gen_random_uuid(),
+  document_id uuid references public.owner_verification_documents (id)
+    on delete set null deferrable initially deferred,
+  document_subject_id uuid not null,
+  actor_user_id uuid references auth.users (id)
+    on delete set null deferrable initially deferred,
+  actor_subject_id uuid not null,
+  object_path text not null,
+  status public.owner_verification_access_grant_status not null default 'pending',
+  prepared_at timestamptz not null default now(),
+  complete_before timestamptz not null default now() + interval '2 minutes',
+  completed_at timestamptz,
+  constraint owner_verification_access_grant_completion_matches_status check (
+    (status = 'pending' and completed_at is null)
+    or (status in ('completed', 'expired') and completed_at is not null)
+  )
+);
+
+create index owner_verification_document_access_grants_pending_idx
+  on public.owner_verification_document_access_grants (status, complete_before);
+
 create table public.owner_verification_document_audit (
   id uuid primary key default gen_random_uuid(),
   document_id uuid references public.owner_verification_documents (id)
     on delete set null deferrable initially deferred,
+  access_grant_id uuid unique
+    references public.owner_verification_document_access_grants (id)
+    on delete restrict,
   actor_user_id uuid references auth.users (id)
     on delete set null deferrable initially deferred,
   actor_subject_id uuid not null,
@@ -168,8 +198,16 @@ create table public.owner_verification_document_audit (
   access_expires_at timestamptz,
   occurred_at timestamptz not null default now(),
   constraint owner_document_access_expiry_matches_action check (
-    (action = 'access_granted' and access_expires_at is not null)
-    or (action <> 'access_granted' and access_expires_at is null)
+    (
+      action = 'access_granted'
+      and access_grant_id is not null
+      and access_expires_at is not null
+    )
+    or (
+      action <> 'access_granted'
+      and access_grant_id is null
+      and access_expires_at is null
+    )
   )
 );
 
@@ -180,9 +218,11 @@ alter table public.owner_applications enable row level security;
 alter table public.owner_application_cottage_profiles enable row level security;
 alter table public.owner_verification_documents enable row level security;
 alter table public.owner_verification_document_cleanup enable row level security;
+alter table public.owner_verification_document_access_grants enable row level security;
 alter table public.owner_verification_document_audit enable row level security;
 
 grant select on public.owner_verification_document_cleanup to service_role;
+grant select on public.owner_verification_document_access_grants to service_role;
 
 create function public.owner_verification_bucket_name()
 returns text
@@ -262,6 +302,7 @@ grant select on public.owner_applications to authenticated;
 grant select on public.owner_application_cottage_profiles to authenticated;
 grant select on public.owner_verification_documents to authenticated;
 grant select on public.owner_verification_document_audit to authenticated;
+grant select on public.owner_verification_document_audit to service_role;
 
 create function public.save_owner_application(
   requested_applicant_kind public.owner_applicant_kind,
@@ -925,15 +966,21 @@ revoke all on function public.reconcile_owner_verification_document_registration
 grant execute on function public.reconcile_owner_verification_document_registration(uuid)
   to service_role;
 
-create function public.record_owner_verification_document_access(target_document_id uuid)
-returns text
+create function public.prepare_owner_verification_document_access(target_document_id uuid)
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   document public.owner_verification_documents;
+  access_grant public.owner_verification_document_access_grants;
 begin
+  update public.owner_verification_document_access_grants
+  set status = 'expired', completed_at = now()
+  where status = 'pending'
+    and complete_before <= now();
+
   select owner_verification_documents.* into document
   from public.owner_verification_documents
   join public.owner_applications
@@ -946,8 +993,71 @@ begin
       using errcode = 'RC204';
   end if;
 
+  insert into public.owner_verification_document_access_grants (
+    document_id,
+    document_subject_id,
+    actor_user_id,
+    actor_subject_id,
+    object_path
+  )
+  values (
+    document.id,
+    document.id,
+    (select auth.uid()),
+    (select auth.uid()),
+    document.object_path
+  )
+  returning * into access_grant;
+
+  return jsonb_build_object(
+    'grant_id', access_grant.id,
+    'object_path', access_grant.object_path
+  );
+end;
+$$;
+
+revoke all on function public.prepare_owner_verification_document_access(uuid) from public;
+grant execute on function public.prepare_owner_verification_document_access(uuid) to authenticated;
+
+create function public.complete_owner_verification_document_access(
+  target_access_grant_id uuid,
+  requested_expires_in_seconds integer
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  access_grant public.owner_verification_document_access_grants;
+begin
+  if requested_expires_in_seconds not between 1 and 60 then
+    raise exception 'Verification document access expiry is invalid'
+      using errcode = 'RC208';
+  end if;
+
+  select * into access_grant
+  from public.owner_verification_document_access_grants
+  where id = target_access_grant_id
+  for update;
+
+  if not found then
+    raise exception 'Verification document access grant is invalid'
+      using errcode = 'RC206';
+  end if;
+
+  if access_grant.status = 'completed' then return 'completed'; end if;
+
+  if access_grant.status = 'expired' or access_grant.complete_before <= now() then
+    update public.owner_verification_document_access_grants
+    set status = 'expired', completed_at = coalesce(completed_at, now())
+    where id = access_grant.id;
+    return 'expired';
+  end if;
+
   insert into public.owner_verification_document_audit (
     document_id,
+    access_grant_id,
     actor_user_id,
     actor_subject_id,
     action,
@@ -955,20 +1065,27 @@ begin
     access_expires_at
   )
   values (
-    document.id,
-    (select auth.uid()),
-    (select auth.uid()),
+    access_grant.document_id,
+    access_grant.id,
+    access_grant.actor_user_id,
+    access_grant.actor_subject_id,
     'access_granted',
-    document.object_path,
-    now() + interval '60 seconds'
+    access_grant.object_path,
+    now() + make_interval(secs => requested_expires_in_seconds)
   );
 
-  return document.object_path;
+  update public.owner_verification_document_access_grants
+  set status = 'completed', completed_at = now()
+  where id = access_grant.id;
+
+  return 'completed';
 end;
 $$;
 
-revoke all on function public.record_owner_verification_document_access(uuid) from public;
-grant execute on function public.record_owner_verification_document_access(uuid) to authenticated;
+revoke all on function public.complete_owner_verification_document_access(uuid, integer)
+  from public;
+grant execute on function public.complete_owner_verification_document_access(uuid, integer)
+  to service_role;
 
 create function public.complete_owner_verification_document_cleanup(
   target_cleanup_id uuid
@@ -1044,4 +1161,9 @@ values (
   false,
   5242880,
   array['application/pdf', 'image/jpeg', 'image/png']
-);
+)
+on conflict (id) do update
+set name = excluded.name,
+    public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;

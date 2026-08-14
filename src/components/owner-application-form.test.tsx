@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/owner-application/actions", () => ({
@@ -8,7 +14,10 @@ vi.mock("@/owner-application/actions", () => ({
 }));
 
 import type { OwnerApplicationSnapshot } from "@/owner-application/owner-application";
-import { saveOwnerApplicationAction } from "@/owner-application/actions";
+import {
+  saveOwnerApplicationAction,
+  submitOwnerApplicationAction,
+} from "@/owner-application/actions";
 import { OwnerApplicationForm } from "./owner-application-form";
 
 const draft: OwnerApplicationSnapshot = {
@@ -160,6 +169,13 @@ describe("Owner Application form", () => {
       "Updated Legal Name",
     );
     expect(screen.getByLabelText("Guest capacity")).toHaveValue(101);
+    expect(screen.getByLabelText(/Guest capacity/)).toHaveAttribute(
+      "aria-describedby",
+      "owner-application-capacity-error",
+    );
+    expect(
+      document.getElementById("owner-application-capacity-error"),
+    ).toHaveTextContent("Check this field.");
     expect(screen.getByLabelText("Garden")).toBeChecked();
     expect(screen.getByLabelText("Parking")).toBeChecked();
   });
@@ -189,5 +205,28 @@ describe("Owner Application form", () => {
     expect(
       screen.queryByRole("button", { name: "Submit application" }),
     ).toBeNull();
+  });
+
+  it("names every missing item when submission is incomplete", async () => {
+    vi.mocked(submitOwnerApplicationAction).mockResolvedValue({
+      status: "incomplete",
+      missingItems: ["legal_name", "document:payout_account"],
+    });
+    render(<OwnerApplicationForm locale="en" application={draft} />);
+
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Submit application" })
+        .closest("form")!,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Complete these items before submitting:"),
+      ).toBeVisible(),
+    );
+    const guidance = screen.getByRole("alert");
+    expect(within(guidance).getByText("Legal name")).toBeVisible();
+    expect(within(guidance).getByText("Payout-account evidence")).toBeVisible();
   });
 });

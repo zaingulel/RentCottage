@@ -1,12 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  verificationDocumentKinds,
+  type VerificationDocumentKind,
+} from "./owner-application";
 import type {
   OwnerApplicationDraft,
   OwnerApplicationRepository,
   OwnerApplicationSnapshot,
   OwnerVerificationDocument,
   PendingVerificationDocumentCleanup,
-  VerificationDocumentKind,
+  PreparedVerificationDocumentAccess,
   VerificationDocumentRegistrationReconciliation,
   VerificationDocumentStorage,
   VerificationUpload,
@@ -54,14 +58,7 @@ function parseDocument(value: unknown): OwnerVerificationDocument {
   const sizeBytes = candidate.size_bytes;
   if (
     !uuidPattern.test(id) ||
-    ![
-      "identity",
-      "company_registration",
-      "authorised_representative",
-      "authority_to_rent",
-      "licensing_or_exemption",
-      "payout_account",
-    ].includes(kind as string) ||
+    !verificationDocumentKinds.includes(kind as VerificationDocumentKind) ||
     !Number.isInteger(sizeBytes)
   ) {
     throw new Error("Owner Application document data is invalid");
@@ -76,6 +73,133 @@ function parseDocument(value: unknown): OwnerVerificationDocument {
     mediaType,
     sizeBytes: sizeBytes as number,
     updatedAt: requiredString(candidate.updated_at, "document timestamp"),
+  };
+}
+
+export interface SubmittedOwnerApplicationReview {
+  applicationId: string;
+  legalName: string;
+  submittedAt: string;
+  documents: Array<{
+    id: string;
+    kind: VerificationDocumentKind;
+    originalFilename: string;
+  }>;
+}
+
+export interface SubmittedOwnerApplicationReviewCursor {
+  submittedAt: string;
+  applicationId: string;
+}
+
+export interface SubmittedOwnerApplicationReviewPage {
+  applications: SubmittedOwnerApplicationReview[];
+  nextCursor: SubmittedOwnerApplicationReviewCursor | null;
+}
+
+const reviewQueuePageSize = 50;
+
+export async function loadSubmittedOwnerApplicationsForReview(
+  client: SupabaseClient,
+  cursor?: SubmittedOwnerApplicationReviewCursor,
+): Promise<SubmittedOwnerApplicationReviewPage> {
+  let query = client
+    .from("owner_applications")
+    .select("id, legal_name, submitted_at")
+    .eq("status", "submitted")
+    .order("submitted_at")
+    .order("id");
+  if (cursor) {
+    query = query.or(
+      `submitted_at.gt.${cursor.submittedAt},and(submitted_at.eq.${cursor.submittedAt},id.gt.${cursor.applicationId})`,
+    );
+  }
+  const applicationsResult = await query.limit(reviewQueuePageSize + 1);
+  assertProviderSuccess(applicationsResult.error);
+  if (!Array.isArray(applicationsResult.data)) {
+    throw new Error("Owner Application review queue is invalid");
+  }
+  const hasNextPage = applicationsResult.data.length > reviewQueuePageSize;
+  const applicationValues = applicationsResult.data.slice(
+    0,
+    reviewQueuePageSize,
+  );
+
+  const applications = applicationValues.map((value) => {
+    const application = record(value);
+    const applicationId = requiredString(application.id, "identifier");
+    if (!uuidPattern.test(applicationId)) {
+      throw new Error("Owner Application review identifier is invalid");
+    }
+    return {
+      applicationId,
+      legalName: requiredString(application.legal_name, "legal name"),
+      submittedAt: requiredString(
+        application.submitted_at,
+        "submission timestamp",
+      ),
+      documents: [] as SubmittedOwnerApplicationReview["documents"],
+    };
+  });
+  if (applications.length === 0) {
+    return { applications: [], nextCursor: null };
+  }
+
+  const documentValues: unknown[] = [];
+  const documentsResult = await client
+    .from("owner_verification_documents")
+    .select("id, application_id, kind, original_filename")
+    .in(
+      "application_id",
+      applications.map(({ applicationId }) => applicationId),
+    )
+    .order("application_id")
+    .order("kind");
+  assertProviderSuccess(documentsResult.error);
+  if (!Array.isArray(documentsResult.data)) {
+    throw new Error("Owner Application review documents are invalid");
+  }
+  documentValues.push(...documentsResult.data);
+
+  const applicationsById = new Map(
+    applications.map((application) => [application.applicationId, application]),
+  );
+  for (const value of documentValues) {
+    const document = record(value);
+    const id = requiredString(document.id, "document identifier");
+    const applicationId = requiredString(
+      document.application_id,
+      "document application identifier",
+    );
+    const kind = document.kind;
+    const application = applicationsById.get(applicationId);
+    if (
+      !application ||
+      !uuidPattern.test(id) ||
+      !verificationDocumentKinds.includes(kind as VerificationDocumentKind)
+    ) {
+      throw new Error("Owner Application review document is invalid");
+    }
+    application.documents.push({
+      id,
+      kind: kind as VerificationDocumentKind,
+      originalFilename: requiredString(
+        document.original_filename,
+        "document filename",
+      ),
+    });
+  }
+
+  const lastApplication = applications.at(-1);
+  return {
+    applications,
+    nextCursor:
+      hasNextPage && lastApplication
+        ? {
+            submittedAt: lastApplication.submittedAt,
+            applicationId: lastApplication.applicationId,
+          }
+        : null,
   };
 }
 
@@ -157,6 +281,20 @@ function parsePendingCleanup(
   return {
     cleanupId,
     objectPath: requiredString(candidate.object_path, "cleanup object path"),
+  };
+}
+
+function parsePreparedAccess(
+  value: unknown,
+): PreparedVerificationDocumentAccess {
+  const candidate = record(value);
+  const grantId = requiredString(candidate.grant_id, "access grant identifier");
+  if (!uuidPattern.test(grantId)) {
+    throw new Error("Owner Application access grant identifier is invalid");
+  }
+  return {
+    grantId,
+    objectPath: requiredString(candidate.object_path, "document path"),
   };
 }
 
@@ -330,13 +468,33 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
     return { status: "registered", ...parseRegisteredDocument(result) };
   }
 
-  async authorizeDocumentAccess(documentId: string): Promise<string> {
+  async prepareDocumentAccess(
+    documentId: string,
+  ): Promise<PreparedVerificationDocumentAccess> {
     const { data, error } = await this.client.rpc(
-      "record_owner_verification_document_access",
+      "prepare_owner_verification_document_access",
       { target_document_id: documentId },
     );
     assertProviderSuccess(error);
-    return requiredString(data, "document path");
+    return parsePreparedAccess(data);
+  }
+
+  async completeDocumentAccess(
+    grantId: string,
+    expiresInSeconds: number,
+  ): Promise<"completed" | "expired"> {
+    const { data, error } = await this.privilegedClient.rpc(
+      "complete_owner_verification_document_access",
+      {
+        target_access_grant_id: grantId,
+        requested_expires_in_seconds: expiresInSeconds,
+      },
+    );
+    assertProviderSuccess(error);
+    if (data !== "completed" && data !== "expired") {
+      throw new Error("Owner Application access completion is invalid");
+    }
+    return data;
   }
 
   async completeDocumentCleanup(cleanupId: string): Promise<void> {
