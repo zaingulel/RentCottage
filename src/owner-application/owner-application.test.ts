@@ -359,6 +359,21 @@ describe("Owner Application", () => {
     },
   );
 
+  it("requires the applicant to save changed requirements before upload", async () => {
+    const { application, repository, storage } = setup();
+
+    await expect(
+      application.uploadDocument("company_registration", {
+        name: "company.pdf",
+        type: "application/pdf",
+        size: validPdf.byteLength,
+        bytes: validPdf,
+      }),
+    ).resolves.toEqual({ status: "application_required" });
+    expect(repository.prepareDocumentUpload).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       name: "script.svg",

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(60);
+select plan(63);
 
 select has_table(
   'public',
@@ -585,6 +585,21 @@ update public.owner_applications
 set status = 'draft', submitted_at = null
 where owner_user_id = '00000000-0000-0000-0000-000000000101';
 set local role authenticated;
+
+select is_empty(
+  $$select id from public.owner_applications$$,
+  'an MFA administrator cannot read draft Owner Applications'
+);
+
+select is_empty(
+  $$select application_id from public.owner_application_cottage_profiles$$,
+  'an MFA administrator cannot read draft private Cottage Profiles'
+);
+
+select is_empty(
+  $$select id from public.owner_verification_documents$$,
+  'an MFA administrator cannot read draft verification metadata'
+);
 
 select throws_ok(
   $$select public.prepare_owner_verification_document_access(

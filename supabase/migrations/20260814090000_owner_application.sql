@@ -270,7 +270,10 @@ for select
 to authenticated
 using (
   owner_user_id = (select auth.uid())
-  or (select public.is_platform_administrator('aal2'))
+  or (
+    status = 'submitted'
+    and (select public.is_platform_administrator('aal2'))
+  )
 );
 
 create policy "Applicant or MFA administrator reads private Cottage Profiles"
@@ -284,7 +287,14 @@ using (
     where id = application_id
       and owner_user_id = (select auth.uid())
   )
-  or (select public.is_platform_administrator('aal2'))
+  or (
+    (select public.is_platform_administrator('aal2'))
+    and exists (
+      select 1
+      from public.owner_applications
+      where id = application_id
+    )
+  )
 );
 
 create policy "Applicant or MFA administrator reads verification metadata"
@@ -298,7 +308,14 @@ using (
     where id = application_id
       and owner_user_id = (select auth.uid())
   )
-  or (select public.is_platform_administrator('aal2'))
+  or (
+    (select public.is_platform_administrator('aal2'))
+    and exists (
+      select 1
+      from public.owner_applications
+      where id = application_id
+    )
+  )
 );
 
 create policy "MFA administrator reads verification audit"

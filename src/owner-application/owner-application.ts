@@ -446,7 +446,7 @@ export function createOwnerApplication({
           application.licensingBasis,
         )
       ) {
-        return { status: "invalid_document" } as const;
+        return { status: "application_required" } as const;
       }
       let objectPath: string;
       try {
