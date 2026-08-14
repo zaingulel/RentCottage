@@ -46,7 +46,7 @@ const draft: OwnerApplicationSnapshot = {
 };
 
 describe("Owner Application form", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it("shows every application section and allows a partial draft", () => {
     render(<OwnerApplicationForm locale="en" application={null} />);

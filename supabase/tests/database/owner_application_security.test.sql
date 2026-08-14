@@ -214,11 +214,17 @@ select lives_ok(
 );
 
 select results_eq(
-  $$select public.reconcile_owner_verification_document_registration(
-    current_setting('test.identity_cleanup_id')::uuid
-  ) ->> 'status'$$,
-  array['registered'::text],
-  'a committed registration can be reconciled by its durable cleanup identifier'
+  $$select
+      result ->> 'status',
+      result -> 'previous_object_path',
+      result -> 'previous_cleanup_id'
+    from (
+      select public.reconcile_owner_verification_document_registration(
+        current_setting('test.identity_cleanup_id')::uuid
+      ) as result
+    ) as registration$$,
+  $$values ('registered'::text, 'null'::jsonb, 'null'::jsonb)$$,
+  'a committed registration without a replacement returns explicit null cleanup fields'
 );
 
 reset role;

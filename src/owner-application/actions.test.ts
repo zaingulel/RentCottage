@@ -155,6 +155,7 @@ describe("Owner Application server actions", () => {
   it.each([
     "uploaded_cleanup_required",
     "uploaded_deletion_audit_required",
+    "registration_reconciliation_required",
   ] as const)("refreshes durable metadata for %s", async (status) => {
     application.uploadDocument.mockResolvedValue({ status });
     const form = new FormData();

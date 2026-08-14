@@ -139,7 +139,8 @@ export async function uploadOwnerDocumentAction(
   if (
     result.status === "uploaded" ||
     result.status === "uploaded_cleanup_required" ||
-    result.status === "uploaded_deletion_audit_required"
+    result.status === "uploaded_deletion_audit_required" ||
+    result.status === "registration_reconciliation_required"
   ) {
     revalidatePath(`/${locale}/owner/application`);
   }
