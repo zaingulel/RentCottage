@@ -1,13 +1,32 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createClient, loadApplications, resolveContext, unstableRethrow } =
-  vi.hoisted(() => ({
-    createClient: vi.fn(),
-    loadApplications: vi.fn(),
-    resolveContext: vi.fn(),
-    unstableRethrow: vi.fn(),
-  }));
+const {
+  createClient,
+  loadApplications,
+  parseCursor,
+  resolveContext,
+  unstableRethrow,
+} = vi.hoisted(() => ({
+  createClient: vi.fn(),
+  loadApplications: vi.fn(),
+  parseCursor: vi.fn((submittedAt: unknown, applicationId: unknown) => {
+    if (submittedAt === undefined && applicationId === undefined)
+      return undefined;
+    if (
+      typeof submittedAt !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(
+        submittedAt,
+      ) ||
+      typeof applicationId !== "string"
+    ) {
+      throw new Error("Owner Application review cursor is invalid");
+    }
+    return { submittedAt, applicationId };
+  }),
+  resolveContext: vi.fn(),
+  unstableRethrow: vi.fn(),
+}));
 
 vi.mock("server-only", () => ({}));
 
@@ -25,6 +44,7 @@ vi.mock("@/access/supabase-account-access", () => ({
 
 vi.mock("@/owner-application/supabase-owner-application", () => ({
   loadSubmittedOwnerApplicationsForReview: loadApplications,
+  parseSubmittedOwnerApplicationReviewCursor: parseCursor,
 }));
 
 vi.mock("next/navigation", () => ({

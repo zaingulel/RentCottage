@@ -5,6 +5,7 @@ import {
   SupabaseOwnerApplicationRepository,
   SupabaseVerificationDocumentStorage,
   loadSubmittedOwnerApplicationsForReview,
+  parseSubmittedOwnerApplicationReviewCursor,
 } from "./supabase-owner-application";
 
 function result<T>(data: T, error: unknown = null) {
@@ -12,6 +13,45 @@ function result<T>(data: T, error: unknown = null) {
 }
 
 describe("Supabase Owner Application adapter", () => {
+  it("rejects an unsafe review cursor at the exported loader boundary", async () => {
+    const from = vi.fn();
+
+    await expect(
+      loadSubmittedOwnerApplicationsForReview(
+        { from } as unknown as SupabaseClient,
+        {
+          submittedAt: "Fri, 14 Aug 2026 10:00:00 GMT(foo)",
+          applicationId: "20000000-0000-4000-8000-000000000001",
+        },
+      ),
+    ).rejects.toThrow("Owner Application review cursor is invalid");
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("rejects a supplied empty cursor instead of resetting to page one", async () => {
+    const from = vi.fn();
+
+    await expect(
+      loadSubmittedOwnerApplicationsForReview(
+        { from } as unknown as SupabaseClient,
+        {} as never,
+      ),
+    ).rejects.toThrow("Owner Application review cursor is invalid");
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("preserves a validated microsecond cursor losslessly", () => {
+    expect(
+      parseSubmittedOwnerApplicationReviewCursor(
+        "2026-08-14T10:00:00.123456Z",
+        "20000000-0000-4000-8000-000000000001",
+      ),
+    ).toEqual({
+      submittedAt: "2026-08-14T10:00:00.123456Z",
+      applicationId: "20000000-0000-4000-8000-000000000001",
+    });
+  });
+
   it("loads submitted applications and groups their private document metadata", async () => {
     const applications = result([
       {

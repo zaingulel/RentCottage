@@ -98,20 +98,50 @@ export interface SubmittedOwnerApplicationReviewPage {
 }
 
 const reviewQueuePageSize = 50;
+const reviewCursorTimestampPattern =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+export function parseSubmittedOwnerApplicationReviewCursor(
+  submittedAt: unknown,
+  applicationId: unknown,
+): SubmittedOwnerApplicationReviewCursor | undefined {
+  if (submittedAt === undefined && applicationId === undefined)
+    return undefined;
+  if (
+    typeof submittedAt !== "string" ||
+    !reviewCursorTimestampPattern.test(submittedAt) ||
+    Number.isNaN(Date.parse(submittedAt)) ||
+    typeof applicationId !== "string" ||
+    !uuidPattern.test(applicationId)
+  ) {
+    throw new Error("Owner Application review cursor is invalid");
+  }
+  return { submittedAt, applicationId };
+}
 
 export async function loadSubmittedOwnerApplicationsForReview(
   client: SupabaseClient,
   cursor?: SubmittedOwnerApplicationReviewCursor,
 ): Promise<SubmittedOwnerApplicationReviewPage> {
+  const validatedCursor =
+    cursor === undefined
+      ? undefined
+      : parseSubmittedOwnerApplicationReviewCursor(
+          cursor.submittedAt,
+          cursor.applicationId,
+        );
+  if (cursor !== undefined && !validatedCursor) {
+    throw new Error("Owner Application review cursor is invalid");
+  }
   let query = client
     .from("owner_applications")
     .select("id, legal_name, submitted_at")
     .eq("status", "submitted")
     .order("submitted_at")
     .order("id");
-  if (cursor) {
+  if (validatedCursor) {
     query = query.or(
-      `submitted_at.gt.${cursor.submittedAt},and(submitted_at.eq.${cursor.submittedAt},id.gt.${cursor.applicationId})`,
+      `submitted_at.gt.${validatedCursor.submittedAt},and(submitted_at.eq.${validatedCursor.submittedAt},id.gt.${validatedCursor.applicationId})`,
     );
   }
   const applicationsResult = await query.limit(reviewQueuePageSize + 1);

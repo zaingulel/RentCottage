@@ -6,34 +6,11 @@ import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { OwnerApplicationReviewQueue } from "@/components/owner-application-review-queue";
 import { ownerApplicationReviewMessages } from "@/i18n/owner-application-review-messages";
 import { isLocale } from "@/i18n/routing";
-import { loadSubmittedOwnerApplicationsForReview } from "@/owner-application/supabase-owner-application";
+import {
+  loadSubmittedOwnerApplicationsForReview,
+  parseSubmittedOwnerApplicationReviewCursor,
+} from "@/owner-application/supabase-owner-application";
 import type { SubmittedOwnerApplicationReviewCursor } from "@/owner-application/supabase-owner-application";
-
-function parseCursor(
-  searchParams: Record<string, string | string[] | undefined>,
-) {
-  const submittedAt = searchParams.afterSubmittedAt;
-  const applicationId = searchParams.afterApplicationId;
-  if (submittedAt === undefined && applicationId === undefined)
-    return undefined;
-  if (
-    typeof submittedAt !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(
-      submittedAt,
-    ) ||
-    Number.isNaN(Date.parse(submittedAt)) ||
-    typeof applicationId !== "string" ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      applicationId,
-    )
-  ) {
-    throw new Error("Owner Application review cursor is invalid");
-  }
-  return {
-    submittedAt,
-    applicationId,
-  } satisfies SubmittedOwnerApplicationReviewCursor;
-}
 
 async function loadOwnerApplicationReviewPage(
   cursor?: SubmittedOwnerApplicationReviewCursor,
@@ -71,7 +48,12 @@ export default async function OwnerApplicationReviewPage({
 
   try {
     const query = searchParams ? await searchParams : {};
-    page = await loadOwnerApplicationReviewPage(parseCursor(query));
+    page = await loadOwnerApplicationReviewPage(
+      parseSubmittedOwnerApplicationReviewCursor(
+        query.afterSubmittedAt,
+        query.afterApplicationId,
+      ),
+    );
   } catch (error) {
     unstable_rethrow(error);
     console.error("Owner Application review queue failed", {
