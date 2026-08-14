@@ -14,15 +14,9 @@ Uses the five standard labels: `needs-triage`, `needs-info`, `ready-for-agent`, 
 
 Single-context layout. See `docs/agents/domain.md`.
 
-### Product and delivery specs
-
-- `docs/product/rentcottage-mvp-prd.md` and its Word export are concise client sign-off artifacts.
-- `docs/delivery/rentcottage-mvp-delivery-spec.md` preserves the granular behaviour catalogue and ticket-slicing contract for the delivery team.
-- Run `to-tickets` from the internal delivery specification together with the signed client PRD and `CONTEXT.md`; do not infer ticket size from the condensed client stories or generate the board from the client PRD alone.
-
 ### Engineering standards
 
-`docs/engineering/coding-standards.md` governs code quality and security. `docs/engineering/testing-strategy.md` governs evidence selection and the stable verification commands. More specific product, domain, architecture, and issue decisions win when they directly conflict.
+`docs/engineering/coding-standards.md` governs code quality and security. `docs/engineering/testing-strategy.md` governs evidence selection and the stable verification commands. If these standards conflict with product, domain, architecture or issue decisions, stop, explain the conflict, recommend a resolution and leave the decision with the owner.
 
 ## Working method
 
@@ -64,7 +58,7 @@ The current agent configuration selects models for these capabilities. Do not du
 - Start each active delivery ticket from fresh `main` on its own branch and worktree. Leave other checkouts and uncommitted work untouched.
 - Assign one writer to each active delivery ticket. Do not split one ticket across concurrent writer branches. The coordinator may integrate only after the worker has stopped writing.
 - Parallel implementation across different tickets is allowed only when domain behaviour, files, database migrations and tests are demonstrably separate. If separation is uncertain, work sequentially.
-- The GitHub issue owns ticket-specific scope, acceptance criteria, dependencies and references to settled decisions. Product and domain authority remains in the signed product agreement, delivery specification, `CONTEXT.md` and applicable architecture decisions. Do not add a second progress record.
+- The GitHub issue owns ticket-specific scope, acceptance criteria, dependencies and references to settled decisions. `CONTEXT.md` supplies domain language and applicable architecture decisions supply technical context. If these sources conflict or appear incorrect, stop, explain the conflict, recommend a resolution and leave the decision with the owner. Do not add a second progress record.
 
 ### Owner decisions and evidence
 
