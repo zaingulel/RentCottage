@@ -587,17 +587,24 @@ where owner_user_id = '00000000-0000-0000-0000-000000000101';
 set local role authenticated;
 
 select is_empty(
-  $$select id from public.owner_applications$$,
+  $$select id
+    from public.owner_applications
+    where id = current_setting('test.owner_application_id')::uuid
+      and status = 'draft'$$,
   'an MFA administrator cannot read draft Owner Applications'
 );
 
 select is_empty(
-  $$select application_id from public.owner_application_cottage_profiles$$,
+  $$select application_id
+    from public.owner_application_cottage_profiles
+    where application_id = current_setting('test.owner_application_id')::uuid$$,
   'an MFA administrator cannot read draft private Cottage Profiles'
 );
 
 select is_empty(
-  $$select id from public.owner_verification_documents$$,
+  $$select id
+    from public.owner_verification_documents
+    where application_id = current_setting('test.owner_application_id')::uuid$$,
   'an MFA administrator cannot read draft verification metadata'
 );
 
