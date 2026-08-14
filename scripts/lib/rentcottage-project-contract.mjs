@@ -256,6 +256,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "Supabase Row Level Security covers every exposed customer, owner and administrator data path introduced by this slice.",
       "Denial tests prove cross-account, cross-cottage and cross-role reads and writes fail.",
       "Successful and failed privileged sign-in attempts are attributed and timestamped in the audit record.",
+      "A returning customer who verifies the same phone number regains the same Customer Account and authorised Booking History without creating a duplicate account.",
     ],
   ],
   [
@@ -267,6 +268,9 @@ export const acceptanceCriteriaByIssue = new Map([
       "The applicant can see their own draft and submitted application but cannot publish a cottage or receive Booking Requests.",
       "Verification documents remain in private storage, are excluded from Automatic Translation and cannot be fetched by unauthorised accounts.",
       "Authorised document access is time-limited, attributed and recorded in the audit history.",
+      "An organisation applicant supplies the company and authorised-representative evidence required for RentCottage to verify the legal person and operator.",
+      "Payout-account evidence identifies the proposed owner and cannot be approved when it does not match the approved individual or organisation.",
+      "Every verification-document view, download, replacement and deletion is attributed and timestamped.",
     ],
   ],
   [
@@ -278,6 +282,8 @@ export const acceptanceCriteriaByIssue = new Map([
       "Approval records the reviewer, decision time, reason, jurisdiction, evidence types, licence or exemption basis and relevant expiry dates.",
       "Rejection records and communicates a reason and does not permit publication or Booking Requests.",
       "Owner approval does not publish the first cottage automatically; the separate Cottage Profile approval remains required.",
+      "The applicant can distinguish Draft, Submitted, Needs Information, Under Review, Approved, Rejected, Expired and Suspended application states.",
+      "Expired owner or licence evidence creates renewal work and permits suspension of affected privileges until the evidence is resolved.",
     ],
   ],
   [
@@ -322,6 +328,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "A Private Block removes the relevant shifts from availability without revealing its reason publicly.",
       "A Full-Day Bundle cannot be open when a component shift is unavailable, and component shifts cannot be sold separately once the bundle is committed.",
       "Price and availability changes affect only future uncommitted inventory and are visible in the next customer quote.",
+      "A Private Block stores no off-platform customer's name, contact details or other identity.",
     ],
   ],
   [
@@ -354,6 +361,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "The owner's 10% Marketplace Commission is calculated from Booking Price only and does not include the customer fee.",
       "The Booking Snapshot preserves the selected schedule, cottage content version, House Rules, each applied price, Booking Price, fee, total, commission and terms version.",
       "Later cottage, schedule, price or terms changes do not alter the preserved quote once it becomes part of a submitted Booking Request.",
+      "The quote shows the applicable price for every selected Cottage Shift or Full-Day Bundle, and all monetary amounts use consistent Iraqi-dinar formatting.",
     ],
   ],
   [
@@ -399,6 +407,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "The customer can withdraw a pending request before the owner decides.",
       "Decline, withdrawal and timeout each release the Payment Authorisation and complete Pending Hold exactly once.",
       "Both parties receive an unambiguous accepted, declined, withdrawn or expired status notification.",
+      "The owner sees the optional Booking Note; declining requires a structured Decline Reason and permits an optional note that is shown to the customer.",
     ],
   ],
   [
@@ -411,6 +420,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "Successful recovery confirms the same booking; expiry releases the hold and ends the unpaid request without a booking or charge.",
       "Signed duplicate, replayed and out-of-order provider events cannot create duplicate captures, Confirmed Bookings or contradictory states.",
       "Each capture and recovery transition is visible to authorised support with a clear operational status.",
+      "The Cottage Owner sees successful capture, Payment Required and unpaid expiry as distinct states and never sees an unpaid acceptance presented as confirmed.",
     ],
   ],
   [
@@ -456,6 +466,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "An administrator can approve a recorded full or partial Refund Exception with amount, reason and attribution.",
       "Refund request state and provider result state remain distinct, visible and idempotent under duplicate events.",
       "Cancellation releases applicable future inventory without erasing the Confirmed Booking, payment or audit history.",
+      "Cottage Owner cancellation requires a recorded reason; administrator cancellation is limited to a recorded safety, fraud, legal or serious operational reason.",
     ],
   ],
   [
@@ -489,6 +500,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "Payout cannot become eligible before the Booking Period and required completion outcome.",
       "The owner sees simple expected and paid totals that reconcile to the visible booking-level records.",
       "The view does not introduce demand forecasting, revenue management or advanced owner analytics.",
+      "A non-refundable late customer cancellation or No-Show produces the normal net payout only after the scheduled Booking Period ends; a Full Refund, Payment Dispute or administrator hold blocks or reverses payout eligibility as applicable.",
     ],
   ],
   [
@@ -500,6 +512,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "An authorised administrator can edit or hide unsafe cottage content only with a recorded reason and attribution.",
       "Verification documents remain available only through the restricted, time-limited and audited document path.",
       "Privileged actions are attributed and timestamped, and the MVP does not expose a configurable complex staff-role system.",
+      "Customers and Cottage Owners have one visible support route, and support complaints remain distinct from formal Payment Disputes and public reviews.",
     ],
   ],
   [
@@ -533,6 +546,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "Sandbox and production-like evidence proves the complete happy path and important failure and recovery paths.",
       "Operational views expose actionable provider failure states and reconciliation identifiers.",
       "There is no cash, pay-on-arrival or unpaid-confirmation fallback when the provider is unavailable.",
+      "Payment Dispute evidence can be assembled from the preserved Booking Snapshot, payment events, cancellation records, authorised messages and recorded incidents without weakening their access controls.",
     ],
   ],
   [
