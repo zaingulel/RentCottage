@@ -268,7 +268,6 @@ export const acceptanceCriteriaByIssue = new Map([
       "Supabase Row Level Security covers every exposed customer, owner and administrator data path introduced by this slice.",
       "Denial tests prove cross-account, cross-cottage and cross-role reads and writes fail.",
       "Successful and failed privileged sign-in attempts are attributed and timestamped in the audit record.",
-      "A returning customer who verifies the same phone number regains the same Customer Account and authorised Booking History without creating a duplicate account.",
     ],
   ],
   [
@@ -463,6 +462,7 @@ export const acceptanceCriteriaByIssue = new Map([
     37,
     [
       "Customer Booking History distinguishes pending, confirmed, declined, expired, withdrawn, cancelled and completed outcomes.",
+      "A returning customer who verifies the same phone number regains the same Customer Account and authorised Booking History without creating a duplicate account.",
       "Owner Booking History shows the equivalent authorised records for that owner's cottages and never another owner's bookings.",
       "Each entry opens the preserved details appropriate to its state without leaking exact location or contact information before payment.",
       "A reminder is sent 24 hours before the first booked Cottage Shift for an active Confirmed Booking only.",
@@ -1055,8 +1055,11 @@ export function verifyRentCottageProject({
         `#${number} requires exactly one canonical triage label`,
       );
     }
-    if (issue.state !== "OPEN" && activeStatuses.has(status))
-      fail("project.status.closed", `Closed #${number} cannot be ${status}`);
+    if (issue.state !== "OPEN" && status !== "Done")
+      fail(
+        "project.status.closed",
+        `Closed #${number} must be Done, not ${status}`,
+      );
     if (nativeEvidence !== null && activeStatuses.has(status)) {
       const openBlockers = nativeEvidence.filter(
         ({ state }) => state.toLowerCase() === "open",

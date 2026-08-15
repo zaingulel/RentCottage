@@ -611,6 +611,21 @@ describe("RentCottage Project contract", () => {
     ).toEqual([expect.objectContaining({ code: "project.status.closed" })]);
   });
 
+  it("rejects a closed issue left in Backlog", () => {
+    const result = verifyRentCottageProject(
+      fakeState({
+        closedIssues: [19],
+        statusByNumber: { 19: "Backlog" },
+      }),
+    );
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({
+        code: "project.status.closed",
+        message: "Closed #19 must be Done, not Backlog",
+      }),
+    );
+  });
+
   it("rejects an open issue presented as Done", () => {
     const result = verifyRentCottageProject(
       fakeState({ statusByNumber: { 19: "Done" } }),
@@ -653,6 +668,55 @@ describe("RentCottage Project contract", () => {
     expect(result.failures).toContainEqual(
       expect.objectContaining({ code: "issues.criteria" }),
     );
+  });
+
+  it("keeps returning-customer Booking History in issue 37 rather than completed issue 20", () => {
+    const state = fakeState();
+    const approvedBodies = new Map([
+      [
+        20,
+        issueBody({
+          ticketId: "D02",
+          blockers: [19],
+          criteria: [
+            "A customer can verify a phone number and receives only customer permissions.",
+            "A prospective or approved Cottage Owner can verify a phone number and receives only the owner permissions appropriate to their current approval state.",
+            "Platform Administrator access requires multi-factor authentication and is never granted by a public self-service role change.",
+            "Supabase Row Level Security covers every exposed customer, owner and administrator data path introduced by this slice.",
+            "Denial tests prove cross-account, cross-cottage and cross-role reads and writes fail.",
+            "Successful and failed privileged sign-in attempts are attributed and timestamped in the audit record.",
+          ],
+        }),
+      ],
+      [
+        37,
+        issueBody({
+          ticketId: "D19",
+          blockers: [35],
+          criteria: [
+            "Customer Booking History distinguishes pending, confirmed, declined, expired, withdrawn, cancelled and completed outcomes.",
+            "A returning customer who verifies the same phone number regains the same Customer Account and authorised Booking History without creating a duplicate account.",
+            "Owner Booking History shows the equivalent authorised records for that owner's cottages and never another owner's bookings.",
+            "Each entry opens the preserved details appropriate to its state without leaking exact location or contact information before payment.",
+            "A reminder is sent 24 hours before the first booked Cottage Shift for an active Confirmed Booking only.",
+            "Reminder timing uses Iraq time and repeated scheduler delivery cannot send duplicate reminders.",
+            "Notification delivery and failure state are visible for operational follow-up.",
+          ],
+        }),
+      ],
+    ]);
+    for (const [number, body] of approvedBodies) {
+      state.issues.find((issue) => issue.number === number).body = body;
+      state.project.items.nodes.find(
+        (item) => item.content.number === number,
+      ).content.body = body;
+    }
+
+    const result = verifyRentCottageProject(state);
+
+    expect(
+      result.failures.filter(({ code }) => code === "issues.criteria"),
+    ).toEqual([]);
   });
 
   it("compares exact values as multisets", () => {
