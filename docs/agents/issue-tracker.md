@@ -75,7 +75,7 @@ Dry-run is the default. A write requires `--apply --plan-id <fingerprint>` using
 
 Exit statuses are `0` for a successful apply, `5` for a verified no-op, `2` for invalid arguments, `3` when a dry-run has proposed changes, `4` for incomplete or contradictory evidence, and `1` for an execution or final-verification failure. Output is bounded JSON and never contains credentials.
 
-Run reconciliation through the lifecycle commands above using the operator's authenticated GitHub CLI session. `/resume` runs the independent verifier before work selection, and publication, dependency, Project-field, review, and closeout changes finish with authoritative board verification. No GitHub Actions workflow or persistent Project credential is required.
+Run reconciliation through the lifecycle commands above using the operator's authenticated GitHub CLI session. `/resume` runs the independent verifier before work selection. After tracker publication or reconciliation, including claim, dependency, Project-field, review, and closeout changes, run `npm run verify:board`; unavailable or failing evidence stops work selection. No GitHub Actions workflow or persistent Project credential is required.
 
 Maintenance is limited to this command, its focused tests, and provider-schema changes. Remove the reconciler when Project 4 is formally retired or an equivalent independently verified native transition mechanism replaces it; keep the read-only verifier until an equivalent guard replaces that oracle.
 
