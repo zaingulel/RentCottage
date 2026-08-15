@@ -42,7 +42,7 @@ Do not describe work as "published and verified" if any step is missing, unavail
 ## Project status contract
 
 - `Ready`, `In progress`, and `In review` require an open issue with no open native blocker.
-- A blocked or closed issue cannot use `Ready`, `In progress`, or `In review`.
+- A closed issue must use `Done`; blocked open work cannot use `Ready`, `In progress`, or `In review`.
 - `Backlog` may contain blocked work or deliberately owner-gated unblocked work.
 - Give ordinary owner-gated work the orthogonal `owner-gated` label. It stays out of the dependency frontier and cannot use an active Status without an approved claim.
 - Active Codex task ownership must be checked by the coordinator before selecting or changing an item to `Ready`. It is not inferred by the board verifier.
