@@ -1,4 +1,7 @@
-import { canonicalBlockedBySectionCount } from "./rentcottage-issue-body.mjs";
+import {
+  canonicalBlockedByNumbers,
+  canonicalBlockedBySectionCount,
+} from "./rentcottage-issue-body.mjs";
 
 const TRIAGE_LABELS = new Set([
   "needs-triage",
@@ -22,12 +25,7 @@ export function ordinaryIssueShape(body, labels) {
 }
 
 export function ordinaryIssueBlockerNumbers(body) {
-  const section =
-    String(body ?? "")
-      .replaceAll("\r\n", "\n")
-      .split("## Blocked by\n\n")[1]
-      ?.split(/\n\n(?:## |<!--)/)[0] ?? "";
-  return [...section.matchAll(/#(\d+)/g)].map((match) => Number(match[1]));
+  return canonicalBlockedByNumbers(body);
 }
 
 function sameNumbers(actual, expected) {

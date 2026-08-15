@@ -8,6 +8,8 @@ import {
   specialIssues,
   verifyRentCottageProject,
 } from "./lib/rentcottage-project-contract.mjs";
+import { obsoleteProjectIssueNumbers } from "./lib/rentcottage-tracker-constants.mjs";
+import { createRentCottageTrackerPolicy } from "./lib/rentcottage-tracker-policy.mjs";
 import {
   assertSupportedGhVersion,
   paginatedRestArgs,
@@ -193,9 +195,14 @@ function addCurrentProjectIssue(
   });
   if (includeNativeEvidence)
     state.nativeBlockersByIssue[number] = nativeBlockers;
-  const item = structuredClone(
-    state.project.items.nodes.find(({ content }) => content.number === 55),
+  const template = state.project.items.nodes.find(
+    ({ content }) => content.number === 55,
   );
+  if (!template)
+    throw new Error(
+      "addCurrentProjectIssue requires the #55 Project item template",
+    );
+  const item = structuredClone(template);
   item.id = `item-${number}`;
   item.content.number = number;
   item.content.title = "Add a new delivery ticket";
@@ -209,6 +216,31 @@ function addCurrentProjectIssue(
 }
 
 describe("RentCottage Project contract", () => {
+  it("names the retired pre-map issue range without requiring membership", () => {
+    expect(obsoleteProjectIssueNumbers).toEqual(
+      Array.from({ length: 16 }, (_, index) => index + 2),
+    );
+    expect(
+      obsoleteProjectIssueNumbers.every(
+        (number) => !requiredMembership.has(number),
+      ),
+    ).toBe(true);
+    expect(
+      createRentCottageTrackerPolicy().excludedProjectIssueNumbers,
+    ).toEqual(new Set(obsoleteProjectIssueNumbers));
+  });
+
+  it("fails clearly when the current-issue helper cannot find its #55 template", () => {
+    const state = fakeState();
+    state.project.items.nodes = state.project.items.nodes.filter(
+      ({ content }) => content.number !== 55,
+    );
+
+    expect(() => addCurrentProjectIssue(state)).toThrow(
+      "addCurrentProjectIssue requires the #55 Project item template",
+    );
+  });
+
   it("onboards supplementary Foundation and quality issues with their approved policies", () => {
     expect(requiredMembership).toContain(55);
     expect(specialIssues.get(55)).toEqual({

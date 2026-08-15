@@ -27,7 +27,12 @@ jobs:
           test -n "$GH_TOKEN"
           set +e
           npm run reconcile:board
-          status=$?
+          reconcile_status=$?
+          npm run verify:board
+          verify_status=$?
           set -e
-          if [ "$status" -eq 5 ]; then exit 0; fi
-          exit "$status"
+          if [ "$reconcile_status" -ne 0 ] && [ "$reconcile_status" -ne 5 ]; then
+            exit "$reconcile_status"
+          fi
+          if [ "$verify_status" -ne 0 ]; then exit "$verify_status"; fi
+          exit 0

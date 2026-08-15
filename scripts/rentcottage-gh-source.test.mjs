@@ -4,6 +4,12 @@ import {
   runGh,
 } from "./lib/rentcottage-gh-source.mjs";
 
+function expectVariableFlag(args, variable, flag) {
+  const index = args.findIndex((arg) => arg.startsWith(`${variable}=`));
+  expect(index).toBeGreaterThan(0);
+  expect(args[index - 1]).toBe(flag);
+}
+
 describe("RentCottage gh source", () => {
   it("bounds every real gh subprocess and reports timeout explicitly", () => {
     const execute = vi.fn((_file, _args, options) => {
@@ -124,6 +130,30 @@ describe("RentCottage gh source", () => {
       expect(message.length).toBeLessThan(1_500);
     },
   );
+
+  it("bounds and redacts provider-derived malformed GraphQL context", async () => {
+    const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+    const itemId = `item-55\u0000 Bearer ${secret} ${"context".repeat(5_000)}`;
+    const run = vi.fn(() => JSON.stringify({ errors: {} }));
+    const source = createRentCottageGhSource({
+      repository: "zaingulel/RentCottage",
+      projectOwner: "zaingulel",
+      projectNumber: 4,
+      run,
+    });
+
+    let message;
+    try {
+      await source.listLinkedPullRequests(itemId);
+    } catch (error) {
+      message = error.message;
+    }
+
+    expect(message).toContain("Bearer [REDACTED]");
+    expect(message).not.toContain(secret);
+    expect(message).not.toContain("\u0000");
+    expect(message.length).toBeLessThan(500);
+  });
 
   it.each([
     {
@@ -282,7 +312,11 @@ describe("RentCottage gh source", () => {
       },
     ]);
     expect(run).toHaveBeenCalledTimes(2);
-    expect(run.mock.calls[1][0]).toContain("cursor=cursor-1");
+    const secondArgs = run.mock.calls[1][0];
+    expectVariableFlag(secondArgs, "owner", "-f");
+    expectVariableFlag(secondArgs, "name", "-f");
+    expectVariableFlag(secondArgs, "pullRequestNumber", "-F");
+    expectVariableFlag(secondArgs, "cursor", "-f");
   });
 
   it("paginates Project linked pull requests until totalCount is proven", async () => {
@@ -342,7 +376,9 @@ describe("RentCottage gh source", () => {
 
     expect(pullRequests.map(({ number }) => number)).toEqual([70, 71]);
     expect(run).toHaveBeenCalledTimes(2);
-    expect(run.mock.calls[1][0]).toContain("cursor=cursor-1");
+    const secondArgs = run.mock.calls[1][0];
+    expectVariableFlag(secondArgs, "itemId", "-F");
+    expectVariableFlag(secondArgs, "cursor", "-f");
   });
 
   it("rejects duplicate linked pull-request identities across pages", async () => {
@@ -552,6 +588,11 @@ describe("RentCottage gh source", () => {
         "optionId=in-progress-fresh",
       ]),
     );
+    const mutationArgs = run.mock.calls[3][0];
+    expectVariableFlag(mutationArgs, "projectId", "-F");
+    expectVariableFlag(mutationArgs, "itemId", "-F");
+    expectVariableFlag(mutationArgs, "fieldId", "-F");
+    expectVariableFlag(mutationArgs, "optionId", "-f");
   });
 
   it("rejects malformed fresh Project coordinates before a field mutation", async () => {

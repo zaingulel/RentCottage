@@ -180,11 +180,23 @@ export async function main(
   return 0;
 }
 
-function verifyBoard() {
+export function verifyBoard({
+  execute = execFileSync,
+  timeoutMs = 60_000,
+} = {}) {
   try {
-    execFileSync("npm", ["run", "verify:board"], { stdio: "inherit" });
+    execute("npm", ["run", "verify:board"], {
+      stdio: "inherit",
+      timeout: timeoutMs,
+    });
     return { ok: true };
   } catch (error) {
+    if (error.code === "ETIMEDOUT" || error.killed === true) {
+      return {
+        ok: false,
+        message: `npm run verify:board timed out after ${timeoutMs}ms`,
+      };
+    }
     return {
       ok: false,
       message: `npm run verify:board exited ${error.status ?? "without a status"}`,

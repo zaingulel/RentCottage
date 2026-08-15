@@ -239,7 +239,7 @@ export function createRentCottageGhSource({
             "-F",
             `itemId=${itemId}`,
           ];
-          if (cursor) args.push("-F", `cursor=${cursor}`);
+          if (cursor) args.push("-f", `cursor=${cursor}`);
           const response = requireGraphqlSuccess(
             run(args),
             `Project item ${itemId} linked pull requests`,
@@ -279,14 +279,14 @@ export function createRentCottageGhSource({
             "graphql",
             "-f",
             `query=${query}`,
-            "-F",
+            "-f",
             `owner=${owner}`,
-            "-F",
+            "-f",
             `name=${name}`,
             "-F",
             `pullRequestNumber=${pullRequestNumber}`,
           ];
-          if (cursor) args.push("-F", `cursor=${cursor}`);
+          if (cursor) args.push("-f", `cursor=${cursor}`);
           const response = requireGraphqlSuccess(
             run(args),
             `Pull request #${pullRequestNumber}`,
@@ -393,7 +393,7 @@ export function createRentCottageGhSource({
             `itemId=${item.id}`,
             "-F",
             `fieldId=${field.id}`,
-            "-F",
+            "-f",
             `optionId=${option.id}`,
           ]),
           "Update Project field",

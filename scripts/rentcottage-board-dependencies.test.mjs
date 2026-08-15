@@ -20,6 +20,26 @@ describe("RentCottage board dependency evidence", () => {
               repository: { nameWithOwner: "other/repository" },
             },
           },
+          {
+            type: "PULL_REQUEST",
+            content: {
+              number: 64,
+              repository: { nameWithOwner: "zaingulel/RentCottage" },
+            },
+          },
+          {
+            type: "ISSUE",
+            content: {
+              repository: { nameWithOwner: "zaingulel/RentCottage" },
+            },
+          },
+          {
+            type: "ISSUE",
+            content: {
+              number: 64.5,
+              repository: { nameWithOwner: "zaingulel/RentCottage" },
+            },
+          },
         ],
       },
     };

@@ -3,8 +3,14 @@ import {
   planRentCottageReconciliation,
   runRentCottageReconciliation,
 } from "./lib/rentcottage-reconciliation.mjs";
-import { main } from "./reconcile-rentcottage-project.mjs";
+import {
+  main,
+  parseReconciliationArgs,
+  verifyBoard,
+} from "./reconcile-rentcottage-project.mjs";
 import { createRentCottageTrackerPolicy } from "./lib/rentcottage-tracker-policy.mjs";
+import { canonicalBlockedByNumbers } from "./lib/rentcottage-issue-body.mjs";
+import { obsoleteProjectIssueNumbers } from "./lib/rentcottage-tracker-constants.mjs";
 
 function policy() {
   return {
@@ -102,6 +108,14 @@ function addOrdinaryProjectIssue(
 }
 
 describe("RentCottage reconciliation planner", () => {
+  it("parses canonical blocker numbers from the shared issue-body helper", () => {
+    expect(
+      canonicalBlockedByNumbers(
+        "Intro\r\n\r\n## Blocked by\r\n\r\n- #52\r\n- #19\r\n\r\n## Notes\r\n\r\n- #999\r\n",
+      ),
+    ).toEqual([52, 19]);
+  });
+
   it("builds the reconciliation policy from the existing tracker contract", () => {
     const approved = createRentCottageTrackerPolicy();
 
@@ -119,7 +133,7 @@ describe("RentCottage reconciliation planner", () => {
       ownerGated: false,
     });
     expect(approved.excludedProjectIssueNumbers).toEqual(
-      new Set(Array.from({ length: 16 }, (_, index) => index + 2)),
+      new Set(obsoleteProjectIssueNumbers),
     );
   });
 
@@ -1179,7 +1193,7 @@ describe("RentCottage reconciliation planner", () => {
     });
   });
 
-  it("blocks an added Project issue from becoming active while blocked", () => {
+  it("normalizes lowercase blocker state before checking active Project status", () => {
     const observed = observedState();
     observed.project.items = [
       {
@@ -1193,7 +1207,7 @@ describe("RentCottage reconciliation planner", () => {
       number: 999,
       status: "Ready",
       body: "## Blocked by\n\n- #52\n",
-      blockers: [{ id: 520, number: 52, state: "OPEN" }],
+      blockers: [{ id: 520, number: 52, state: "open" }],
     });
 
     const result = planRentCottageReconciliation({
@@ -2148,6 +2162,36 @@ describe("RentCottage reconciliation command", () => {
     expect(verify).toHaveBeenCalledTimes(1);
   });
 
+  it("changes the plan fingerprint with Set membership but not insertion order", () => {
+    const observed = observedState();
+    const leftPolicy = policy();
+    leftPolicy.fingerprintEvidence = new Set(["alpha", "beta"]);
+    const reorderedPolicy = policy();
+    reorderedPolicy.fingerprintEvidence = new Set(["beta", "alpha"]);
+    const changedPolicy = policy();
+    changedPolicy.fingerprintEvidence = new Set(["alpha", "gamma"]);
+    const intent = { type: "audit" };
+
+    const left = planRentCottageReconciliation({
+      intent,
+      observed,
+      policy: leftPolicy,
+    });
+    const reordered = planRentCottageReconciliation({
+      intent,
+      observed,
+      policy: reorderedPolicy,
+    });
+    const changed = planRentCottageReconciliation({
+      intent,
+      observed,
+      policy: changedPolicy,
+    });
+
+    expect(reordered.planId).toBe(left.planId);
+    expect(changed.planId).not.toBe(left.planId);
+  });
+
   it("stops when the authoritative re-read changes the approved remaining operation list", async () => {
     const approved = policy();
     approved.issues.get(55).blockers = [52];
@@ -2319,7 +2363,7 @@ describe("RentCottage reconciliation command", () => {
     expect(github.observe).toHaveBeenCalledTimes(2);
   });
 
-  it("fails without retry when an uncertain write remains required after re-read", async () => {
+  it("reports plan drift when an uncertain write leaves the attempted operation required", async () => {
     const initial = observedState();
     initial.project.items = [
       {
@@ -2362,6 +2406,206 @@ describe("RentCottage reconciliation command", () => {
     });
     expect(github.execute).toHaveBeenCalledTimes(1);
     expect(github.observe).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports apply.write_unconfirmed when the exact remaining plan is blocked after a write", async () => {
+    const initial = observedState({
+      pullRequests: [
+        {
+          number: 70,
+          repository: "zaingulel/RentCottage",
+          state: "MERGED",
+          draft: false,
+          mergedAt: "2026-08-14T20:00:00Z",
+          closingIssues: [55],
+        },
+      ],
+    });
+    initial.issues[0].state = "CLOSED";
+    initial.project.items = [
+      {
+        id: "item-55",
+        issueNumber: 55,
+        area: "Foundation & quality",
+        status: "In review",
+      },
+    ];
+    const unavailable = observedState({
+      complete: false,
+      evidenceErrors: ["Authoritative GitHub evidence became unavailable"],
+    });
+    const intent = {
+      type: "closeout",
+      issueNumber: 55,
+      pullRequestNumber: 70,
+    };
+    const dryRun = planRentCottageReconciliation({
+      intent,
+      observed: initial,
+      policy: policy(),
+    });
+    const github = {
+      observe: vi
+        .fn()
+        .mockResolvedValueOnce(initial)
+        .mockResolvedValueOnce(unavailable),
+      execute: vi.fn().mockRejectedValue(new Error("request timed out")),
+    };
+
+    const result = await runRentCottageReconciliation(
+      { intent, apply: true, planId: dryRun.planId },
+      { github, policy: policy(), verify: vi.fn() },
+    );
+
+    expect(result).toMatchObject({
+      outcome: "failed",
+      operations: [],
+      discrepancies: expect.arrayContaining([
+        {
+          code: "apply.write_unconfirmed",
+          message:
+            "Write could not be confirmed after re-read: request timed out",
+        },
+      ]),
+    });
+    expect(github.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports apply.verification_failed after the exact applied plan converges", async () => {
+    const initial = observedState({
+      pullRequests: [
+        {
+          number: 70,
+          repository: "zaingulel/RentCottage",
+          state: "MERGED",
+          draft: false,
+          mergedAt: "2026-08-14T20:00:00Z",
+          closingIssues: [55],
+        },
+      ],
+    });
+    initial.issues[0].state = "CLOSED";
+    initial.project.items = [
+      {
+        id: "item-55",
+        issueNumber: 55,
+        area: "Foundation & quality",
+        status: "In review",
+      },
+    ];
+    const done = structuredClone(initial);
+    done.project.items[0].status = "Done";
+    const intent = {
+      type: "closeout",
+      issueNumber: 55,
+      pullRequestNumber: 70,
+    };
+    const dryRun = planRentCottageReconciliation({
+      intent,
+      observed: initial,
+      policy: policy(),
+    });
+    const verify = vi.fn().mockResolvedValue({
+      ok: false,
+      message: "Independent board verification failed",
+    });
+
+    const result = await runRentCottageReconciliation(
+      { intent, apply: true, planId: dryRun.planId },
+      {
+        github: {
+          observe: vi
+            .fn()
+            .mockResolvedValueOnce(initial)
+            .mockResolvedValueOnce(done),
+          execute: vi.fn().mockResolvedValue(undefined),
+        },
+        policy: policy(),
+        verify,
+      },
+    );
+
+    expect(result).toMatchObject({
+      outcome: "failed",
+      discrepancies: [
+        {
+          code: "apply.verification_failed",
+          message: "Independent board verification failed",
+        },
+      ],
+    });
+    expect(verify).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports apply.operation_limit before a fifty-first write", async () => {
+    const blockerNumbers = Array.from(
+      { length: 51 },
+      (_, index) => index + 100,
+    );
+    const approved = policy();
+    approved.issues.get(55).blockers = blockerNumbers;
+    const initial = observedState();
+    initial.project.items = [
+      {
+        id: "item-55",
+        issueNumber: 55,
+        area: "Foundation & quality",
+        status: "Backlog",
+      },
+    ];
+    initial.issues[0].body = `## Blocked by\n\n${blockerNumbers
+      .map((number) => `- #${number}`)
+      .join("\n")}\n`;
+    initial.issues.push(
+      ...blockerNumbers.map((number) => ({
+        id: number * 10,
+        nodeId: `issue-node-${number}`,
+        number,
+        title: `Blocker ${number}`,
+        state: "CLOSED",
+        body: "## Blocked by\n\n- None.\n",
+        labels: [],
+        assignees: [],
+        blockers: [],
+      })),
+    );
+    const states = Array.from({ length: 51 }, (_, count) => {
+      const state = structuredClone(initial);
+      state.issues[0].blockers = blockerNumbers
+        .slice(0, count)
+        .map((number) => ({ id: number * 10, number, state: "CLOSED" }));
+      return state;
+    });
+    const intent = { type: "publish", issueNumber: 55 };
+    const dryRun = planRentCottageReconciliation({
+      intent,
+      observed: states[0],
+      policy: approved,
+    });
+    expect(dryRun.operations).toHaveLength(51);
+    let read = 0;
+    const github = {
+      observe: vi.fn(async () => states[Math.min(read++, 50)]),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    const verify = vi.fn();
+
+    const result = await runRentCottageReconciliation(
+      { intent, apply: true, planId: dryRun.planId },
+      { github, policy: approved, verify },
+    );
+
+    expect(result).toMatchObject({
+      outcome: "failed",
+      discrepancies: [
+        {
+          code: "apply.operation_limit",
+          message: "Reconciliation exceeded the 50-operation safety limit",
+        },
+      ],
+    });
+    expect(github.execute).toHaveBeenCalledTimes(50);
+    expect(verify).not.toHaveBeenCalled();
   });
 
   it("returns a verified no-op when the same reconciliation is repeated", async () => {
@@ -2428,6 +2672,74 @@ describe("RentCottage reconciliation command", () => {
 });
 
 describe("RentCottage reconciliation CLI", () => {
+  it.each(["-leading", "z".repeat(40), "invalid_login"])(
+    "rejects invalid GitHub assignee login %s",
+    (assignee) => {
+      expect(() =>
+        parseReconciliationArgs([
+          "--intent",
+          "claim",
+          "--issue",
+          "55",
+          "--assignee",
+          assignee,
+        ]),
+      ).toThrow("--assignee requires a GitHub login");
+    },
+  );
+
+  it.each(["z", "zain-gulel", "legacy-", "z".repeat(39)])(
+    "accepts valid GitHub assignee login %s",
+    (assignee) => {
+      expect(
+        parseReconciliationArgs([
+          "--intent",
+          "claim",
+          "--issue",
+          "55",
+          "--assignee",
+          assignee,
+        ]).intent.assignee,
+      ).toBe(assignee);
+    },
+  );
+
+  it("bounds final verification through the supported npm executable", () => {
+    const execute = vi.fn();
+
+    expect(verifyBoard({ execute })).toEqual({ ok: true });
+    expect(execute).toHaveBeenCalledWith("npm", ["run", "verify:board"], {
+      stdio: "inherit",
+      timeout: 60_000,
+    });
+  });
+
+  it("reports a bounded final verification timeout explicitly", () => {
+    const execute = vi.fn(() => {
+      throw Object.assign(new Error("timed out"), { code: "ETIMEDOUT" });
+    });
+
+    expect(verifyBoard({ execute })).toEqual({
+      ok: false,
+      message: "npm run verify:board timed out after 60000ms",
+    });
+  });
+
+  it("reports final verification exit status without provider output", () => {
+    const execute = vi.fn(() => {
+      throw Object.assign(new Error("failed"), {
+        status: 7,
+        stdout: "private body",
+        stderr: "private provider details",
+      });
+    });
+
+    expect(verifyBoard({ execute })).toEqual({
+      ok: false,
+      message: "npm run verify:board exited 7",
+    });
+  });
+
   it("bounds and redacts unexpected provider errors at the public boundary", async () => {
     const privateBody = "private-graphql-body";
     const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";

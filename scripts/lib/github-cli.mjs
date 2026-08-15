@@ -39,15 +39,20 @@ export function graphqlResponseError(context, errors) {
 }
 
 export function graphqlResponseErrors(response, context) {
+  const safeContext = boundedDiagnostic(context, 240);
   if (
     response === null ||
     typeof response !== "object" ||
     Array.isArray(response)
   )
-    throw new Error(`${context} returned malformed GraphQL response evidence`);
+    throw new Error(
+      `${safeContext} returned malformed GraphQL response evidence`,
+    );
   if (!Object.hasOwn(response, "errors")) return [];
   if (!Array.isArray(response.errors))
-    throw new Error(`${context} returned malformed GraphQL errors evidence`);
+    throw new Error(
+      `${safeContext} returned malformed GraphQL errors evidence`,
+    );
   return response.errors;
 }
 

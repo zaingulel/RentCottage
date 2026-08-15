@@ -6,6 +6,7 @@ import {
   repository,
   specialIssues,
 } from "./rentcottage-project-contract.mjs";
+import { obsoleteProjectIssueNumbers } from "./rentcottage-tracker-constants.mjs";
 
 export function createRentCottageTrackerPolicy() {
   const issues = new Map(
@@ -39,8 +40,6 @@ export function createRentCottageTrackerPolicy() {
     projectOwner,
     projectNumber,
     issues,
-    excludedProjectIssueNumbers: new Set(
-      Array.from({ length: 16 }, (_, index) => index + 2),
-    ),
+    excludedProjectIssueNumbers: new Set(obsoleteProjectIssueNumbers),
   };
 }

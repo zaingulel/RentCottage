@@ -1,5 +1,8 @@
 import { sameValues } from "./value-comparison.mjs";
-import { canonicalBlockedBySectionCount } from "./rentcottage-issue-body.mjs";
+import {
+  canonicalBlockedByNumbers,
+  canonicalBlockedBySectionCount,
+} from "./rentcottage-issue-body.mjs";
 
 function normalizeBody(body) {
   return String(body ?? "").replaceAll("\r\n", "\n");
@@ -14,11 +17,7 @@ export function protectedAcceptanceCriteria(body) {
 }
 
 export function protectedBlockerNumbers(body) {
-  const section =
-    normalizeBody(body)
-      .split("## Blocked by\n\n")[1]
-      ?.split(/\n\n(?:## |<!--)/)[0] ?? "";
-  return [...section.matchAll(/#(\d+)/g)].map((match) => Number(match[1]));
+  return canonicalBlockedByNumbers(body);
 }
 
 export function protectedIssuePolicyDifferences(

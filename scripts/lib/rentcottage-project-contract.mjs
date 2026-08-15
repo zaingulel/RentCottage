@@ -8,6 +8,7 @@ import {
   protectedIssuePublicationIsComplete,
 } from "./rentcottage-protected-issue.mjs";
 import { canonicalBlockedBySectionCount } from "./rentcottage-issue-body.mjs";
+import { obsoleteProjectIssueNumbers } from "./rentcottage-tracker-constants.mjs";
 
 export const repository = "zaingulel/RentCottage";
 export const projectOwner = "zaingulel";
@@ -972,7 +973,7 @@ export function verifyRentCottageProject({
     }
   }
 
-  for (let number = 2; number <= 17; number += 1) {
+  for (const number of obsoleteProjectIssueNumbers) {
     if (byNumber.get(number)?.state !== "CLOSED")
       fail(
         "issues.historical.state",

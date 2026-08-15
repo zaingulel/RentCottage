@@ -7,7 +7,10 @@ import {
   protectedAcceptanceCriteria,
   protectedIssuePublicationIsComplete,
 } from "./rentcottage-protected-issue.mjs";
-import { canonicalBlockedBySectionCount } from "./rentcottage-issue-body.mjs";
+import {
+  canonicalBlockedByNumbers as blockerNumbers,
+  canonicalBlockedBySectionCount,
+} from "./rentcottage-issue-body.mjs";
 import { sameValues } from "./value-comparison.mjs";
 
 function stableValue(value) {
@@ -15,6 +18,15 @@ function stableValue(value) {
     return [...value.entries()]
       .sort(([left], [right]) => String(left).localeCompare(String(right)))
       .map(([key, entry]) => [key, stableValue(entry)]);
+  }
+  if (value instanceof Set) {
+    return {
+      __set__: [...value]
+        .map(stableValue)
+        .sort((left, right) =>
+          JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        ),
+    };
   }
   if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === "object") {
@@ -70,15 +82,6 @@ function publicationOperations(issue, issuePolicy, item) {
     });
   }
   return operations;
-}
-
-function blockerNumbers(body) {
-  const section =
-    body
-      .replaceAll("\r\n", "\n")
-      .split("## Blocked by\n\n")[1]
-      ?.split(/\n\n(?:## |<!--)/)[0] ?? "";
-  return [...section.matchAll(/#(\d+)/g)].map((match) => Number(match[1]));
 }
 
 function issuePolicyDiscrepancies(issue, issuePolicy) {
@@ -472,7 +475,7 @@ export function planRentCottageReconciliation({ intent, observed, policy }) {
         });
       }
       const openProjectBlockers = projectIssue?.blockers.filter(
-        ({ state }) => state === "OPEN",
+        ({ state }) => state.toUpperCase() === "OPEN",
       );
       if (
         openProjectBlockers?.length > 0 &&
