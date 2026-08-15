@@ -24,9 +24,15 @@ import {
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import type { Locale } from "@/i18n/routing";
 
+import { FormControl } from "./interaction-controls";
+
 function SubmitButton({ children }: { children: string }) {
   const { pending } = useFormStatus();
-  return <button disabled={pending}>{children}</button>;
+  return (
+    <button type="submit" disabled={pending}>
+      {children}
+    </button>
+  );
 }
 
 function ActionMessage({
@@ -148,7 +154,8 @@ function VerificationDocumentRow({
           <input type="hidden" name="kind" value={kind} />
           <label>
             <span>{copy.documentRules}</span>
-            <input
+            <FormControl
+              kind="input"
               required
               type="file"
               name="document"

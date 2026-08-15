@@ -11,6 +11,7 @@ import { useRoutedLocale } from "@/i18n/use-routed-locale";
 
 import { LocaleButtons } from "./locale-buttons";
 import { PhoneAccessForm } from "./phone-access-form";
+import { ActionButton, ActionLink, FormControl } from "./interaction-controls";
 
 export function BookingRequest({
   initialLocale,
@@ -28,7 +29,9 @@ export function BookingRequest({
   return (
     <main className="request-page">
       <header className="results-header">
-        <a href={`/${locale}/cottages/${cottage.slug}`}>{copy.backCottage}</a>
+        <ActionLink kind="text" href={`/${locale}/cottages/${cottage.slug}`}>
+          {copy.backCottage}
+        </ActionLink>
         <LocaleButtons
           className="results-languages"
           locale={locale}
@@ -42,7 +45,9 @@ export function BookingRequest({
           <form className="request-form">
             <label>
               <span>{copy.fullName}</span>
-              <input
+              <FormControl
+                kind="input"
+                type="text"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 required
@@ -50,7 +55,8 @@ export function BookingRequest({
             </label>
             <label>
               <span>{copy.ownerNote}</span>
-              <textarea
+              <FormControl
+                kind="textarea"
                 value={note}
                 placeholder={copy.ownerNotePlaceholder}
                 onChange={(event) => setNote(event.target.value)}
@@ -68,9 +74,9 @@ export function BookingRequest({
             </label>
             <PhoneAccessForm locale={locale} role="customer" />
             <p className="request-notice">{copy.unavailable}</p>
-            <button type="button" disabled>
+            <ActionButton kind="primary" width="full" type="button" disabled>
               {copy.submit}
-            </button>
+            </ActionButton>
           </form>
         </section>
         <aside className="request-cottage">

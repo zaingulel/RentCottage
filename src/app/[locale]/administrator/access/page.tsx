@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AdministratorAccessForm } from "@/components/administrator-access-form";
+import { ActionLink } from "@/components/interaction-controls";
 import { accessMessages } from "@/i18n/access-messages";
 import { isLocale } from "@/i18n/routing";
 
@@ -16,7 +16,9 @@ export default async function AdministratorAccessPage({
 
   return (
     <main className="standalone-access">
-      <Link href={`/${locale}`}>RentCottage</Link>
+      <ActionLink kind="text" href={`/${locale}`}>
+        RentCottage
+      </ActionLink>
       <h1>{copy.administratorTitle}</h1>
       <AdministratorAccessForm
         locale={locale}

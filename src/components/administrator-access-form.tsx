@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useState } from "react";
 
 import {
@@ -10,6 +9,14 @@ import {
 } from "@/access/actions";
 import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
+
+import {
+  ActionButton,
+  ActionFeedback,
+  ActionLink,
+  FormControl,
+} from "./interaction-controls";
+import { useExclusiveAction } from "./use-exclusive-action";
 
 type MfaState = {
   factorId: string;
@@ -32,10 +39,14 @@ export function AdministratorAccessForm({
   const [mfa, setMfa] = useState<MfaState>();
   const [complete, setComplete] = useState(false);
   const [message, setMessage] = useState("");
+  const { pending, run } = useExclusiveAction();
 
   async function signIn() {
     setMessage("");
-    const result = await signInPlatformAdministrator({ email, password });
+    const result = await run(() =>
+      signInPlatformAdministrator({ email, password }),
+    );
+    if (!result) return;
     if (
       result.status === "challenge_required" ||
       result.status === "enrollment_required"
@@ -58,7 +69,10 @@ export function AdministratorAccessForm({
   async function verifyMfa() {
     if (!mfa) return;
     setMessage("");
-    const result = await verifyPlatformAdministratorMfa({ ...mfa, code });
+    const result = await run(() =>
+      verifyPlatformAdministratorMfa({ ...mfa, code }),
+    );
+    if (!result) return;
     if (result.status === "authenticated") {
       setComplete(true);
       setMessage(copy.administratorReady);
@@ -79,7 +93,8 @@ export function AdministratorAccessForm({
         <>
           <label>
             <span>{copy.email}</span>
-            <input
+            <FormControl
+              kind="input"
               type="email"
               autoComplete="username"
               value={email}
@@ -88,16 +103,23 @@ export function AdministratorAccessForm({
           </label>
           <label>
             <span>{copy.password}</span>
-            <input
+            <FormControl
+              kind="input"
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
           </label>
-          <button type="button" onClick={signIn}>
+          <ActionButton
+            kind="primary"
+            width="full"
+            type="button"
+            pending={pending}
+            onClick={signIn}
+          >
             {copy.signIn}
-          </button>
+          </ActionButton>
         </>
       )}
       {mfa && !complete && (
@@ -115,27 +137,34 @@ export function AdministratorAccessForm({
           {mfa.secret && <code data-testid="mfa-secret">{mfa.secret}</code>}
           <label>
             <span>{copy.mfaCode}</span>
-            <input
+            <FormControl
+              kind="input"
               inputMode="numeric"
               autoComplete="one-time-code"
               value={code}
               onChange={(event) => setCode(event.target.value)}
             />
           </label>
-          <button type="button" onClick={verifyMfa}>
+          <ActionButton
+            kind="primary"
+            width="full"
+            type="button"
+            pending={pending}
+            onClick={verifyMfa}
+          >
             {copy.verify}
-          </button>
+          </ActionButton>
         </>
       )}
       {message && (
-        <p className={complete ? "access-success" : "access-error"}>
+        <ActionFeedback kind={complete ? "success" : "error"}>
           {message}
-        </p>
+        </ActionFeedback>
       )}
       {complete && reviewHref ? (
-        <Link className="owner-application-link" href={reviewHref}>
+        <ActionLink kind="text" href={reviewHref}>
           {copy.reviewApplications}
-        </Link>
+        </ActionLink>
       ) : null}
     </section>
   );

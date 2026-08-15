@@ -189,6 +189,23 @@ describe("Owner Application form", () => {
     expect(screen.getByLabelText("Legal name")).toHaveValue("Zana Kareem");
   });
 
+  it("keeps private document uploads as native file controls", () => {
+    render(<OwnerApplicationForm locale="en" application={draft} />);
+
+    const fileControls = screen.getAllByLabelText(
+      "PDF, JPEG, or PNG · maximum 5 MB",
+    );
+    expect(fileControls.length).toBeGreaterThan(0);
+    for (const control of fileControls) {
+      expect(control).toHaveAttribute("type", "file");
+      expect(control).toHaveAttribute("name", "document");
+      expect(control).toHaveAttribute(
+        "accept",
+        "application/pdf,image/jpeg,image/png",
+      );
+    }
+  });
+
   it("announces a successful draft save", async () => {
     vi.mocked(saveOwnerApplicationAction).mockResolvedValue({
       status: "saved",
