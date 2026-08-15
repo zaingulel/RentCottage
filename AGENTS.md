@@ -48,7 +48,7 @@ Keep orchestration in the active work session. The repository records the desire
 - **Coordinator:** owns scope, integration, verification and owner communication. It selects the smallest useful team for the ticket.
 - **Planner:** works read-only and turns approved acceptance criteria into an evidence-based implementation plan.
 - **Plan reviewer:** works read-only and independently challenges a fixed plan through feasibility, scope, coherence and security/privacy lenses.
-- **Plan consolidator:** works read-only and adjudicates multiple plan-review results into the smallest evidence-backed correction brief. It does not redesign the solution or replace the planner.
+- **Plan consolidator:** works read-only and, when multiple specialist reviews are used, adjudicates their findings and produces the final revised plan. It does not expand approved scope or make unresolved owner decisions.
 - **Explorer:** works read-only on bounded discovery when current code, provider documentation or prior art must be checked.
 - **Worker:** is the only writer for its active delivery ticket and returns the changed paths and verification results.
 - **Reviewer:** works read-only and independently checks both repository standards and the ticket acceptance criteria. Findings are accepted or rejected on evidence, not on the identity of the reviewer.
@@ -57,13 +57,13 @@ The current agent configuration selects models for these capabilities. Do not du
 
 ### Plan review
 
-Before the worker edits a substantial **Plan → build → review** ticket, give the fixed plan to at least one independent plan reviewer. The worker must wait until review is complete, the original planner has made any necessary revisions and the coordinator has validated the finding dispositions and revised plan. The default is one reviewer covering feasibility, scope, coherence and security/privacy. The coordinator may distribute those lenses across separate reviewers whenever independent depth is useful, provided the assigned reviewers collectively cover all four; this is a judgement call, not a risk-threshold rule.
+Before the worker edits a substantial **Plan → build → review** ticket, give the fixed plan to at least one independent plan reviewer. The worker must wait until review is complete, the route's final plan has incorporated the accepted findings and the coordinator has validated the finding dispositions and revised plan. The default is one reviewer covering feasibility, scope, coherence and security/privacy. The coordinator may distribute those lenses across separate reviewers whenever independent depth is useful, provided the assigned reviewers collectively cover all four; this is a judgement call, not a risk-threshold rule.
 
 Reviewers report concrete, evidence-backed findings against the approved issue and repository authorities. They remain read-only, do not rewrite the plan, and do not add product scope.
 
-- After one plan review, the original planner revises the plan.
-- After multiple specialist reviews, use an independent plan consolidator. The consolidator removes duplicates, rejects false or stale findings and produces a correction brief.
-- In every path, the original planner owns the final revised plan and the coordinator checks the finding dispositions and revised plan before build.
+- After one plan review, the original planner produces the final revised plan.
+- After multiple specialist reviews, an independent plan consolidator removes duplicates, rejects false or stale findings, adjudicates conflicts and produces the final revised plan. The original planner may be consulted when plan rationale or context is missing, but the plan does not automatically return to it.
+- In every path, the coordinator checks the finding dispositions and final revised plan before build.
 - A consolidator must not introduce a new source of truth, make an owner decision or silently change approved scope. If the reviews expose a choice that existing authorities do not settle, stop and ask the owner.
 
 Plan review does not replace test-driven implementation, independent review of the finished change, executable verification or existing owner approval gates.
