@@ -36,3 +36,24 @@ export function parsePaginatedPages(serializedPages, context) {
     throw new Error(`${context} pagination returned an unknown shape`);
   return pages.flat();
 }
+
+export function hasUniqueRepositoryIssueIdentities(values, repository) {
+  const identities = values.flatMap((value) => [
+    `id:${value.id}`,
+    `repository-number:${repository}#${value.number}`,
+  ]);
+  return new Set(identities).size === identities.length;
+}
+
+export function parseUniqueRepositoryIssuePages(
+  serializedPages,
+  context,
+  repository,
+) {
+  const values = parsePaginatedPages(serializedPages, context);
+  if (!hasUniqueRepositoryIssueIdentities(values, repository))
+    throw new Error(
+      `${context} pagination returned a duplicate stable identity`,
+    );
+  return values;
+}

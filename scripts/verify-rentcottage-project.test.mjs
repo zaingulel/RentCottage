@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   acceptanceCriteriaByIssue,
-  expectedMembership,
+  requiredMembership,
   normalizeIssueBody,
   replacementIssues,
   sameMembers,
@@ -12,7 +12,9 @@ import {
   assertSupportedGhVersion,
   paginatedRestArgs,
   parsePaginatedPages,
+  parseUniqueRepositoryIssuePages,
 } from "./lib/github-pagination.mjs";
+import { runRentCottageProjectVerifier } from "./lib/rentcottage-verifier.mjs";
 
 const statusOptions = ["Backlog", "Ready", "In progress", "In review", "Done"];
 const areaOptions = [
@@ -35,7 +37,7 @@ function issueBody({ ticketId, criteria = [], blockers = [] } = {}) {
 }
 
 function fakeState({
-  projectMembership = [...expectedMembership],
+  projectMembership = [...requiredMembership],
   statusByNumber = {},
   closedIssues = [],
   nativeEvidenceAsMap = false,
@@ -79,7 +81,7 @@ function fakeState({
             criteria: acceptanceCriteriaByIssue.get(number),
             blockers: replacement.blockers,
           })
-        : policy?.blockers.length
+        : policy
           ? issueBody({ blockers: policy.blockers })
           : "",
       labels: (policy?.labels ?? (historical ? ["ready-for-agent"] : [])).map(
@@ -169,16 +171,53 @@ function fakeState({
   };
 }
 
+function addCurrentProjectIssue(
+  state,
+  {
+    number = 63,
+    body = "## Blocked by\n\n- None.\n",
+    area = "Foundation & quality",
+    status = "Backlog",
+    nativeBlockers = [],
+    includeNativeEvidence = true,
+    labels = ["ready-for-agent"],
+  } = {},
+) {
+  state.issues.push({
+    number,
+    title: "Add a new delivery ticket",
+    state: "OPEN",
+    body,
+    labels: labels.map((name) => ({ name })),
+    assignees: [],
+  });
+  if (includeNativeEvidence)
+    state.nativeBlockersByIssue[number] = nativeBlockers;
+  const item = structuredClone(
+    state.project.items.nodes.find(({ content }) => content.number === 55),
+  );
+  item.id = `item-${number}`;
+  item.content.number = number;
+  item.content.title = "Add a new delivery ticket";
+  item.content.body = body;
+  item.content.labels.nodes = labels.map((name) => ({ name }));
+  item.fieldValues.nodes.find(({ field }) => field.name === "Area").name = area;
+  item.fieldValues.nodes.find(({ field }) => field.name === "Status").name =
+    status;
+  state.project.items.nodes.push(item);
+  state.project.items.totalCount += 1;
+}
+
 describe("RentCottage Project contract", () => {
   it("onboards supplementary Foundation and quality issues with their approved policies", () => {
-    expect(expectedMembership).toContain(55);
+    expect(requiredMembership).toContain(55);
     expect(specialIssues.get(55)).toEqual({
       title: "Automate tracker reconciliation and Project 4 transitions",
       area: "Foundation & quality",
       labels: ["ready-for-agent"],
       blockers: [52],
     });
-    expect(expectedMembership).toContain(59);
+    expect(requiredMembership).toContain(59);
     expect(specialIssues.get(59)).toEqual({
       title: "Keep RentCottage resume intake bounded and selection-only",
       area: "Foundation & quality",
@@ -188,9 +227,233 @@ describe("RentCottage Project contract", () => {
     });
   });
 
-  it("accepts the repaired issue graph and exact Project membership", () => {
+  it("accepts the repaired issue graph and required Project membership", () => {
     const result = verifyRentCottageProject(fakeState());
     expect(result.failures).toEqual([]);
+  });
+
+  it("keeps a protected issue missing from Project 4 out of the dependency frontier", () => {
+    const state = fakeState({
+      projectMembership: [...requiredMembership].filter(
+        (number) => number !== 52,
+      ),
+    });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.summary.dependencyFrontier).not.toContain(52);
+  });
+
+  it.each([
+    { name: "wrong Area", area: "Owner backoffice" },
+    { name: "missing Status", status: null },
+    { name: "unknown Status", status: "Unknown status" },
+    { name: "wrong labels", labels: ["needs-info"] },
+    {
+      name: "native blocker drift",
+      nativeBlockers: [{ number: 55, state: "closed" }],
+    },
+  ])(
+    "excludes a protected issue with $name from the dependency frontier",
+    (scenario) => {
+      const state = fakeState({ closedIssues: [19] });
+      const issue = state.issues.find(({ number }) => number === 52);
+      const item = state.project.items.nodes.find(
+        ({ content }) => content.number === 52,
+      );
+      if (Object.hasOwn(scenario, "area"))
+        item.fieldValues.nodes.find(({ field }) => field.name === "Area").name =
+          scenario.area;
+      if (Object.hasOwn(scenario, "status"))
+        item.fieldValues.nodes.find(
+          ({ field }) => field.name === "Status",
+        ).name = scenario.status;
+      if (scenario.labels) {
+        issue.labels = scenario.labels.map((name) => ({ name }));
+        item.content.labels.nodes = issue.labels;
+      }
+      if (scenario.nativeBlockers)
+        state.nativeBlockersByIssue[52] = scenario.nativeBlockers;
+
+      const result = verifyRentCottageProject(state);
+
+      expect(result.summary.dependencyFrontier).not.toContain(52);
+    },
+  );
+
+  it.each(["wrong title", "changed acceptance criterion"])(
+    "excludes a protected issue with %s policy drift from the dependency frontier",
+    (scenario) => {
+      const state = fakeState({ closedIssues: [19] });
+      const issue = state.issues.find(({ number }) => number === 20);
+      if (scenario === "wrong title") {
+        issue.title = "Changed protected title";
+      } else {
+        issue.body = issue.body.replace(
+          /^- \[ \] .+$/m,
+          "- [ ] Changed protected criterion",
+        );
+      }
+
+      const result = verifyRentCottageProject(state);
+
+      expect(result.summary.dependencyFrontier).not.toContain(20);
+    },
+  );
+
+  it.each(["missing", "duplicate"])(
+    "excludes a protected issue with %s canonical Blocked by section from the dependency frontier",
+    (scenario) => {
+      const state = fakeState();
+      const issue = state.issues.find(({ number }) => number === 19);
+      if (scenario === "missing") {
+        issue.body = issue.body.replace(/\n\n## Blocked by[\s\S]*$/, "\n");
+      } else {
+        issue.body += "\n## Blocked by\n\n- None.\n";
+      }
+
+      const result = verifyRentCottageProject(state);
+
+      expect(result.summary.dependencyFrontier).not.toContain(19);
+    },
+  );
+
+  it("accepts a well-formed new repository issue added to Project 4", () => {
+    const state = fakeState();
+    addCurrentProjectIssue(state);
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toEqual([]);
+    expect(result.summary.dependencyFrontier).toContain(63);
+  });
+
+  it("rejects malformed ordinary issue shape and excludes it from the dependency frontier", () => {
+    const state = fakeState();
+    addCurrentProjectIssue(state, { labels: [] });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({
+        code: "issues.triage_label",
+        message: "#63 requires exactly one canonical triage label",
+      }),
+    );
+    expect(result.summary.dependencyFrontier).not.toContain(63);
+  });
+
+  it.each(["needs-triage", "needs-info", "ready-for-human", "wontfix"])(
+    "excludes an ordinary %s issue from the dependency frontier",
+    (label) => {
+      const state = fakeState();
+      addCurrentProjectIssue(state, { labels: [label] });
+
+      const result = verifyRentCottageProject(state);
+
+      expect(result.summary.dependencyFrontier).not.toContain(63);
+    },
+  );
+
+  it.each([
+    { name: "missing Area", area: null },
+    { name: "unknown Area", area: "Unknown area" },
+    { name: "missing Status", status: null },
+    { name: "unknown Status", status: "Unknown status" },
+    { name: "missing native blocker evidence", includeNativeEvidence: false },
+    {
+      name: "textual and native blocker drift",
+      body: "## Blocked by\n\n- #52\n",
+      nativeBlockers: [],
+    },
+  ])(
+    "excludes an ordinary issue with $name from the dependency frontier",
+    (scenario) => {
+      const state = fakeState();
+      addCurrentProjectIssue(state, scenario);
+
+      const result = verifyRentCottageProject(state);
+
+      expect(result.summary.dependencyFrontier).not.toContain(63);
+    },
+  );
+
+  it.each([
+    {
+      name: "multiple triage labels",
+      labels: ["ready-for-agent", "needs-info"],
+      body: "## Blocked by\n\n- None.\n",
+      code: "issues.triage_label",
+    },
+    {
+      name: "duplicate Blocked by sections",
+      labels: ["ready-for-agent"],
+      body: "## Blocked by\n\n- None.\n\n## Notes\n\nText.\n\n## Blocked by\n\n- None.\n",
+      code: "issues.blocker_text",
+    },
+  ])("rejects ordinary issue with $name", (scenario) => {
+    const state = fakeState();
+    addCurrentProjectIssue(state, scenario);
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({ code: scenario.code }),
+    );
+    expect(result.summary.dependencyFrontier).not.toContain(63);
+  });
+
+  it("rejects a new Project issue without an Area", () => {
+    const state = fakeState();
+    addCurrentProjectIssue(state, { area: null });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({ code: "project.area.unknown" }),
+    );
+  });
+
+  it("rejects a new Project issue when native blocker evidence is missing", () => {
+    const state = fakeState();
+    addCurrentProjectIssue(state, { includeNativeEvidence: false });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({
+        code: "issues.native_evidence_missing",
+        message: expect.stringContaining("#63"),
+      }),
+    );
+  });
+
+  it("rejects textual and native dependency drift on a new Project issue", () => {
+    const state = fakeState();
+    addCurrentProjectIssue(state, { body: "## Blocked by\n\n- #52\n" });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({
+        code: "issues.blocker_text",
+        message: expect.stringContaining("#63"),
+      }),
+    );
+  });
+
+  it("requires a new Project issue to declare its blocker section", () => {
+    const state = fakeState();
+    addCurrentProjectIssue(state, { body: "## Acceptance criteria\n" });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({
+        code: "issues.blocker_text",
+        message: expect.stringContaining("#63"),
+      }),
+    );
   });
 
   it("rejects the escaped defect when every issue and dependency is correct but replacement Project membership is missing", () => {
@@ -221,6 +484,24 @@ describe("RentCottage Project contract", () => {
         message: expect.stringContaining("#59"),
       }),
     );
+  });
+
+  it("keeps an ordinary owner-gated issue out of active status and the dependency frontier", () => {
+    const state = fakeState();
+    addCurrentProjectIssue(state, {
+      status: "Ready",
+      labels: ["ready-for-agent", "owner-gated"],
+    });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toContainEqual(
+      expect.objectContaining({
+        code: "project.status.owner_gated",
+        message: expect.stringContaining("#63"),
+      }),
+    );
+    expect(result.summary.dependencyFrontier).not.toContain(63);
   });
 
   it("reports one Status defect for a closed issue presented as active", () => {
@@ -310,7 +591,7 @@ describe("RentCottage Project contract", () => {
   it("accepts production body shapes and Map dependency evidence", () => {
     const state = fakeState({
       lineEnding: "\r\n",
-      nullBodyIssue: 1,
+      nullBodyIssue: 2,
       nativeEvidenceAsMap: true,
     });
     expect(normalizeIssueBody(null)).toBe("");
@@ -328,11 +609,184 @@ describe("RentCottage Project contract", () => {
     completedIssue.body = completedIssue.body.replaceAll("- [ ] ", "- [x] ");
     const result = verifyRentCottageProject(state);
     expect(result.failures).toEqual([]);
-    expect(result.summary.dependencyFrontier).toEqual([20, 30]);
+    expect(result.summary.dependencyFrontier).toEqual([20, 30, 52]);
   });
 });
 
 describe("GitHub pagination boundary", () => {
+  it.each(["issue", "dependency"])(
+    "fails closed on duplicate %s pages before contract normalization",
+    (duplicateType) => {
+      const state = fakeState();
+      const rawIssues = state.issues.map((issue, index) => ({
+        ...issue,
+        id: index + 1,
+        node_id: `issue-node-${issue.number}`,
+        state: issue.state.toLowerCase(),
+      }));
+      const firstIssue = rawIssues[0];
+      const duplicateIssues = [
+        [firstIssue],
+        [{ ...firstIssue, id: firstIssue.id + 1, title: "Contradiction" }],
+      ];
+      const duplicateDependencies = [
+        [{ id: 520, number: 52, state: "open" }],
+        [{ id: 521, number: 52, state: "closed" }],
+      ];
+      const run = vi.fn((args) => {
+        if (args[0] === "--version") return "gh version 2.48.0";
+        if (args.includes("graphql"))
+          return JSON.stringify({
+            data: { user: { projectV2: state.project } },
+          });
+        const endpoint = args.at(-1);
+        if (endpoint.includes("?state=all"))
+          return JSON.stringify(
+            duplicateType === "issue" ? duplicateIssues : [rawIssues],
+          );
+        if (endpoint.includes("blocked_by"))
+          return JSON.stringify(duplicateDependencies);
+        throw new Error(`Unexpected verifier request ${endpoint}`);
+      });
+      const verify = vi.fn();
+      const stderr = vi.fn();
+
+      const result = runRentCottageProjectVerifier({
+        run,
+        verify,
+        stdout: vi.fn(),
+        stderr,
+      });
+
+      expect(result.status).toBe(1);
+      expect(verify).not.toHaveBeenCalled();
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining("duplicate stable identity"),
+      );
+    },
+  );
+
+  it("bounds and redacts standalone verifier provider failures", () => {
+    const privateStdout = "private-issue-body";
+    const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+    const execute = vi.fn((_file, _args, options) => {
+      expect(options.timeout).toBe(60_000);
+      throw Object.assign(new Error("provider failed"), {
+        status: 1,
+        stdout: `${privateStdout} ${secret} ${"body".repeat(5_000)}`,
+        stderr: `request failed\u0000 Bearer ${secret} ${"detail".repeat(5_000)}`,
+      });
+    });
+    const stderr = vi.fn();
+    const verify = vi.fn();
+
+    const result = runRentCottageProjectVerifier({
+      execute,
+      verify,
+      stdout: vi.fn(),
+      stderr,
+    });
+    const diagnostic = stderr.mock.calls.flat().join(" ");
+
+    expect(result.status).toBe(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(verify).not.toHaveBeenCalled();
+    expect(diagnostic).toContain("stderr=request failed Bearer [REDACTED]");
+    expect(diagnostic).not.toContain(privateStdout);
+    expect(diagnostic).not.toContain(secret);
+    expect(diagnostic.length).toBeLessThan(1_500);
+  });
+
+  it("bounds and redacts standalone verifier GraphQL semantic failures", () => {
+    const privateBody = "private-graphql-body";
+    const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+    const codeSecret = "github_pat_abcdefghijklmnopqrstuvwxyz1234567890";
+    const run = vi.fn((args) => {
+      if (args[0] === "--version") return "gh version 2.48.0";
+      return JSON.stringify({
+        errors: [
+          {
+            message: `${privateBody} Bearer ${secret} ${"detail".repeat(5_000)}`,
+            extensions: { code: "FORBIDDEN" },
+          },
+          { message: "secondary failure", extensions: { code: codeSecret } },
+        ],
+      });
+    });
+    const stderr = vi.fn();
+    const verify = vi.fn();
+
+    const result = runRentCottageProjectVerifier({
+      run,
+      verify,
+      stdout: vi.fn(),
+      stderr,
+    });
+    const diagnostic = stderr.mock.calls.flat().join(" ");
+
+    expect(result.status).toBe(1);
+    expect(verify).not.toHaveBeenCalled();
+    expect(diagnostic).toContain("Project query failed");
+    expect(diagnostic).toContain("FORBIDDEN");
+    expect(diagnostic).not.toContain(privateBody);
+    expect(diagnostic).not.toContain(secret);
+    expect(diagnostic).not.toContain(codeSecret);
+    expect(diagnostic.length).toBeLessThan(1_500);
+  });
+
+  it.each([
+    ["object", { message: "reviewer-reproduced-object" }],
+    ["string", "malformed-errors-string"],
+    ["null", null],
+  ])(
+    "rejects a present non-array GraphQL errors %s at the verifier boundary",
+    (_shape, errors) => {
+      const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+      const run = vi.fn((args) => {
+        if (args[0] === "--version") return "gh version 2.48.0";
+        return JSON.stringify({
+          errors:
+            typeof errors === "string"
+              ? `${errors} ${secret} ${"detail".repeat(5_000)}`
+              : errors && typeof errors === "object"
+                ? {
+                    ...errors,
+                    private: `${secret} ${"detail".repeat(5_000)}`,
+                  }
+                : errors,
+        });
+      });
+      const stderr = vi.fn();
+      const verify = vi.fn();
+
+      const result = runRentCottageProjectVerifier({
+        run,
+        verify,
+        stdout: vi.fn(),
+        stderr,
+      });
+      const diagnostic = stderr.mock.calls.flat().join(" ");
+
+      expect(result.status).toBe(1);
+      expect(verify).not.toHaveBeenCalled();
+      expect(diagnostic).toContain(
+        "Project query returned malformed GraphQL errors evidence",
+      );
+      expect(diagnostic).not.toContain(secret);
+      expect(diagnostic.length).toBeLessThan(1_500);
+    },
+  );
+
+  it("rejects duplicate REST identities before independent verifier Map construction", () => {
+    expect(() =>
+      parseUniqueRepositoryIssuePages(
+        '[[{"id":550,"number":55}],[{"id":551,"number":55}]]',
+        "Issue",
+        "zaingulel/RentCottage",
+      ),
+    ).toThrow("Issue pagination returned a duplicate stable identity");
+  });
+
   it("requires a GitHub CLI version that supports slurped pagination", () => {
     expect(() => assertSupportedGhVersion("gh version 2.48.0")).not.toThrow();
     expect(() => assertSupportedGhVersion("gh version 2.47.0")).toThrow(
