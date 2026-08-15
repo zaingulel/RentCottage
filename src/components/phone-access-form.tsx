@@ -7,6 +7,13 @@ import type { MarketplaceRole } from "@/access/account-access";
 import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 
+import {
+  ActionButton,
+  ActionFeedback,
+  FormControl,
+} from "./interaction-controls";
+import { useExclusiveAction } from "./use-exclusive-action";
+
 export function PhoneAccessForm({
   locale,
   role,
@@ -19,10 +26,12 @@ export function PhoneAccessForm({
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<"phone" | "code" | "verified">("phone");
   const [message, setMessage] = useState("");
+  const { pending, run } = useExclusiveAction();
 
   async function sendCode() {
     setMessage("");
-    const result = await requestPhoneAccess(phone);
+    const result = await run(() => requestPhoneAccess(phone));
+    if (!result) return;
     if (result.status === "code_sent") setStage("code");
     else
       setMessage(
@@ -34,7 +43,8 @@ export function PhoneAccessForm({
 
   async function verifyCode() {
     setMessage("");
-    const result = await verifyPhoneAccess({ phone, code, role });
+    const result = await run(() => verifyPhoneAccess({ phone, code, role }));
+    if (!result) return;
     if (result.status === "authenticated") {
       setStage("verified");
       setMessage(
@@ -59,7 +69,8 @@ export function PhoneAccessForm({
         <>
           <label>
             <span>{copy.phone}</span>
-            <input
+            <FormControl
+              kind="input"
               type="tel"
               value={phone}
               placeholder="+9647501234567"
@@ -67,31 +78,44 @@ export function PhoneAccessForm({
             />
           </label>
           <small>{copy.phoneHint}</small>
-          <button type="button" onClick={sendCode}>
+          <ActionButton
+            kind="primary"
+            width="full"
+            type="button"
+            pending={pending}
+            onClick={sendCode}
+          >
             {copy.sendCode}
-          </button>
+          </ActionButton>
         </>
       )}
       {stage === "code" && (
         <>
           <label>
             <span>{copy.code}</span>
-            <input
+            <FormControl
+              kind="input"
               inputMode="numeric"
               autoComplete="one-time-code"
               value={code}
               onChange={(event) => setCode(event.target.value)}
             />
           </label>
-          <button type="button" onClick={verifyCode}>
+          <ActionButton
+            kind="primary"
+            width="full"
+            type="button"
+            pending={pending}
+            onClick={verifyCode}
+          >
             {copy.verify}
-          </button>
+          </ActionButton>
         </>
       )}
       {message && (
-        <p className={stage === "verified" ? "access-success" : "access-error"}>
+        <ActionFeedback kind={stage === "verified" ? "success" : "error"}>
           {message}
-        </p>
+        </ActionFeedback>
       )}
     </section>
   );

@@ -1,6 +1,8 @@
 import { messages } from "@/i18n/messages";
 import { locales, type Locale } from "@/i18n/routing";
 
+import { ActionButton } from "./interaction-controls";
+
 export function LocaleButtons({
   locale,
   onChange,
@@ -13,14 +15,16 @@ export function LocaleButtons({
   return (
     <nav className={className} aria-label="Language">
       {locales.map((option) => (
-        <button
+        <ActionButton
           key={option}
+          kind="toggle"
+          size="compact"
           type="button"
-          aria-pressed={locale === option}
+          pressed={locale === option}
           onClick={() => onChange(option)}
         >
           {messages[option].languageName}
-        </button>
+        </ActionButton>
       ))}
     </nav>
   );

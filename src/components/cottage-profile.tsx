@@ -10,6 +10,7 @@ import type { Locale } from "@/i18n/routing";
 import { useRoutedLocale } from "@/i18n/use-routed-locale";
 
 import { LocaleButtons } from "./locale-buttons";
+import { ActionLink } from "./interaction-controls";
 
 export function CottageProfile({
   initialLocale,
@@ -24,7 +25,9 @@ export function CottageProfile({
   return (
     <main className="profile-page">
       <header className="results-header">
-        <a href={`/${locale}/results`}>{copy.backResults}</a>
+        <ActionLink kind="text" href={`/${locale}/results`}>
+          {copy.backResults}
+        </ActionLink>
         <LocaleButtons
           className="results-languages"
           locale={locale}
@@ -91,9 +94,13 @@ export function CottageProfile({
           <p>{messages[locale].tagline}</p>
           <strong>{formatIqd(cottage.price, locale)}</strong>
           <span>{copy.samplePrice}</span>
-          <a href={`/${locale}/request/${cottage.slug}`}>
+          <ActionLink
+            kind="primary"
+            width="full"
+            href={`/${locale}/request/${cottage.slug}`}
+          >
             {copy.requestBooking}
-          </a>
+          </ActionLink>
           <small>{copy.requestOnly}</small>
         </aside>
       </div>

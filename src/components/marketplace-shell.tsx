@@ -15,6 +15,7 @@ import type { Locale } from "@/i18n/routing";
 import { useRoutedLocale } from "@/i18n/use-routed-locale";
 
 import { LocaleButtons } from "./locale-buttons";
+import { ActionButton, FormControl } from "./interaction-controls";
 
 interface MarketplaceShellProps {
   initialLocale: Locale;
@@ -85,7 +86,8 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
           <div className="search-fields">
             <label>
               <span>{copy.areaLabel}</span>
-              <select
+              <FormControl
+                kind="select"
                 name="area"
                 value={area}
                 onChange={(event) => setArea(event.target.value)}
@@ -96,11 +98,12 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </FormControl>
             </label>
             <label>
               <span>{copy.arrivalLabel}</span>
-              <input
+              <FormControl
+                kind="input"
                 name="arrival"
                 type="date"
                 min={minimumArrival || undefined}
@@ -110,7 +113,8 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
             </label>
             <label>
               <span>{copy.bookingPeriodLabel}</span>
-              <select
+              <FormControl
+                kind="select"
                 name="period"
                 value={period}
                 onChange={(event) =>
@@ -122,7 +126,7 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
                     {copy.bookingPeriods[option]}
                   </option>
                 ))}
-              </select>
+              </FormControl>
             </label>
             <Counter
               label={copy.guestsLabel}
@@ -138,14 +142,16 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
               {amenityKeys.map((amenity) => {
                 const selected = selectedAmenities.includes(amenity);
                 return (
-                  <button
+                  <ActionButton
                     key={amenity}
+                    kind="toggle"
+                    size="regular"
                     type="button"
-                    aria-pressed={selected}
+                    pressed={selected}
                     onClick={() => toggleAmenity(amenity)}
                   >
                     {copy.amenityNames[amenity]}
-                  </button>
+                  </ActionButton>
                 );
               })}
             </div>
@@ -155,9 +161,9 @@ export function MarketplaceShell({ initialLocale }: MarketplaceShellProps) {
           {selectedAmenities.map((amenity) => (
             <input key={amenity} type="hidden" name="amenity" value={amenity} />
           ))}
-          <button className="search-cta" type="submit">
+          <ActionButton kind="primary" width="content" type="submit">
             {copy.searchCta}
-          </button>
+          </ActionButton>
         </form>
 
         <p className="retreat-blurb">{copy.retreatBlurb}</p>
@@ -227,21 +233,25 @@ function Counter({ label, value, minimum, onChange }: CounterProps) {
     <div className="counter-field">
       <span>{label}</span>
       <div>
-        <button
+        <ActionButton
+          kind="secondary"
+          size="compact"
           type="button"
           aria-label={`Decrease ${label}`}
           onClick={() => onChange(Math.max(minimum, value - 1))}
         >
           −
-        </button>
+        </ActionButton>
         <strong>{value}</strong>
-        <button
+        <ActionButton
+          kind="secondary"
+          size="compact"
           type="button"
           aria-label={`Increase ${label}`}
           onClick={() => onChange(value + 1)}
         >
           +
-        </button>
+        </ActionButton>
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import type { Locale } from "@/i18n/routing";
 import { useRoutedLocale } from "@/i18n/use-routed-locale";
 
 import { LocaleButtons } from "./locale-buttons";
+import { ActionLink } from "./interaction-controls";
 
 export function MarketplaceResults({
   initialLocale,
@@ -41,7 +42,9 @@ export function MarketplaceResults({
   return (
     <main className="results-page">
       <header className="results-header">
-        <a href={`/${locale}`}>{copy.backToSearch}</a>
+        <ActionLink kind="text" href={`/${locale}`}>
+          {copy.backToSearch}
+        </ActionLink>
         <LocaleButtons
           className="results-languages"
           locale={locale}
@@ -84,9 +87,13 @@ export function MarketplaceResults({
                 <strong>{formatIqd(result.price, locale)}</strong>
                 <span>{copy.samplePrice}</span>
               </div>
-              <a href={`/${locale}/cottages/${result.slug}`}>
+              <ActionLink
+                kind="primary"
+                width="content"
+                href={`/${locale}/cottages/${result.slug}`}
+              >
                 {copy.viewCottage}
-              </a>
+              </ActionLink>
             </div>
           </article>
         ))}
