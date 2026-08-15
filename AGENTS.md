@@ -57,12 +57,12 @@ The current agent configuration selects models for these capabilities. Do not du
 
 ### Plan review
 
-Before the worker edits a substantial **Plan → build → review** ticket, give the fixed plan to at least one independent plan reviewer. The default is one reviewer covering feasibility, scope, coherence and security/privacy. The coordinator may distribute those lenses across separate reviewers whenever independent depth is useful, provided the assigned reviewers collectively cover all four; this is a judgement call, not a risk-threshold rule.
+Before the worker edits a substantial **Plan → build → review** ticket, give the fixed plan to at least one independent plan reviewer. The worker must wait until review is complete, the original planner has made any necessary revisions and the coordinator has validated the finding dispositions and revised plan. The default is one reviewer covering feasibility, scope, coherence and security/privacy. The coordinator may distribute those lenses across separate reviewers whenever independent depth is useful, provided the assigned reviewers collectively cover all four; this is a judgement call, not a risk-threshold rule.
 
 Reviewers report concrete, evidence-backed findings against the approved issue and repository authorities. They remain read-only, do not rewrite the plan, and do not add product scope.
 
 - After one plan review, the original planner revises the plan.
-- After multiple specialist reviews, use an independent plan consolidator by default. The consolidator removes duplicates, rejects false or stale findings and produces a correction brief.
+- After multiple specialist reviews, use an independent plan consolidator. The consolidator removes duplicates, rejects false or stale findings and produces a correction brief.
 - In every path, the original planner owns the final revised plan and the coordinator checks the finding dispositions and revised plan before build.
 - A consolidator must not introduce a new source of truth, make an owner decision or silently change approved scope. If the reviews expose a choice that existing authorities do not settle, stop and ask the owner.
 
@@ -70,7 +70,7 @@ Plan review does not replace test-driven implementation, independent review of t
 
 Adoption evidence: issue #55 had entered implementation before ordinary review exposed plan-level policy gaps, and a subsequent independent plan audit found additional authority, write-safety, workflow-trust and provider-completeness defects that required another replan. Implementation tests and final review remain necessary, but they cannot prevent rework caused by an unsound starting plan.
 
-Maintenance cost is one independent reviewer call for each substantial plan, plus additional model usage and latency when the coordinator chooses specialist lenses and consolidation. Remove or simplify this gate if representative deliveries show that it no longer finds material plan defects beyond the planner and coordinator, or if a lower-cost control proves the same outcome.
+Maintenance cost is one independent reviewer call for each substantial plan, plus additional model usage and latency when the coordinator chooses specialist lenses and consolidation. For the next five substantial planned tickets, the coordinator records in each delivery packet whether plan review caused a revision or owner decision and the added review/consolidation latency and token usage. After five tickets, the owner decides whether to retain, simplify or remove the gate. A removable result is zero material findings requiring plan revision or owner decision, or evidence that a lower-cost control found every material issue with less latency and model usage.
 
 ### Isolation and parallel work
 
