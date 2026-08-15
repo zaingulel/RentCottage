@@ -10,6 +10,7 @@ import {
 import {
   canonicalBlockedByNumbers as blockerNumbers,
   canonicalBlockedBySectionCount,
+  replaceCanonicalBlockedBySection,
 } from "./rentcottage-issue-body.mjs";
 import { sameValues } from "./value-comparison.mjs";
 
@@ -122,15 +123,7 @@ function blockerSection(blockers) {
 }
 
 function bodyWithBlockers(body, blockers) {
-  const normalized = body.replaceAll("\r\n", "\n");
-  const section = blockerSection(blockers);
-  const replaced = normalized.replace(
-    /## Blocked by\n\n[\s\S]*?(?=\n\n(?:## |<!--)|$)/,
-    section.trimEnd(),
-  );
-  return normalized.endsWith("\n") && !replaced.endsWith("\n")
-    ? `${replaced}\n`
-    : replaced;
+  return replaceCanonicalBlockedBySection(body, blockerSection(blockers));
 }
 
 function issueMetadataOperations(issue, issuePolicy, observed) {

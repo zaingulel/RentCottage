@@ -9,7 +9,10 @@ import {
   verifyBoard,
 } from "./reconcile-rentcottage-project.mjs";
 import { createRentCottageTrackerPolicy } from "./lib/rentcottage-tracker-policy.mjs";
-import { canonicalBlockedByNumbers } from "./lib/rentcottage-issue-body.mjs";
+import {
+  canonicalBlockedByNumbers,
+  canonicalBlockedBySectionCount,
+} from "./lib/rentcottage-issue-body.mjs";
 import { obsoleteProjectIssueNumbers } from "./lib/rentcottage-tracker-constants.mjs";
 
 function policy() {
@@ -108,13 +111,88 @@ function addOrdinaryProjectIssue(
 }
 
 describe("RentCottage reconciliation planner", () => {
-  it("parses canonical blocker numbers from the shared issue-body helper", () => {
+  it("ignores an embedded marker before the real canonical blocker section", () => {
     expect(
       canonicalBlockedByNumbers(
-        "Intro\r\n\r\n## Blocked by\r\n\r\n- #52\r\n- #19\r\n\r\n## Notes\r\n\r\n- #999\r\n",
+        "Inline example: ## Blocked by\r\n\r\n- #999\r\n\r\n## Blocked by\r\n\r\n- #52\r\n- #19\r\n\r\n## Notes\r\n\r\n- #888\r\n",
       ),
     ).toEqual([52, 19]);
   });
+
+  it("counts adjacent canonical blocker headings separately", () => {
+    expect(
+      canonicalBlockedBySectionCount(
+        "## Blocked by\r\n\r\n## Blocked by\r\n\r\n- #52\r\n",
+      ),
+    ).toBe(2);
+  });
+
+  it.each(["ordinary", "protected"])(
+    "uses the real canonical blocker section for %s reconciliation",
+    (issueType) => {
+      const observed = observedState();
+      observed.project.items = [
+        {
+          id: "item-55",
+          issueNumber: 55,
+          area: "Foundation & quality",
+          status: "Backlog",
+        },
+      ];
+      const body =
+        "Inline example: ## Blocked by\n\n- #999\n\n## Blocked by\n\n- None.\n";
+      let target = 55;
+      if (issueType === "ordinary") {
+        target = 999;
+        addOrdinaryProjectIssue(observed, { number: target, body });
+      } else {
+        observed.issues[0].body = body;
+      }
+
+      const result = planRentCottageReconciliation({
+        intent: { type: "audit" },
+        observed,
+        policy: policy(),
+      });
+
+      expect(result.discrepancies).toEqual([]);
+      expect(result.dependencyFrontier).toContain(target);
+    },
+  );
+
+  it.each(["ordinary", "protected"])(
+    "fails closed on adjacent canonical blocker headings for %s reconciliation",
+    (issueType) => {
+      const observed = observedState();
+      observed.project.items = [
+        {
+          id: "item-55",
+          issueNumber: 55,
+          area: "Foundation & quality",
+          status: "Backlog",
+        },
+      ];
+      const body = "## Blocked by\n\n## Blocked by\n\n- None.\n";
+      let target = 55;
+      if (issueType === "ordinary") {
+        target = 63;
+        addOrdinaryProjectIssue(observed, { number: target, body });
+      } else {
+        observed.issues[0].body = body;
+      }
+
+      const result = planRentCottageReconciliation({
+        intent: { type: "audit" },
+        observed,
+        policy: policy(),
+      });
+
+      expect(result.discrepancies).toContainEqual(
+        expect.objectContaining({ code: "issue.blocker_section" }),
+      );
+      expect(result.dependencyFrontier).not.toContain(target);
+    },
+  );
 
   it("builds the reconciliation policy from the existing tracker contract", () => {
     const approved = createRentCottageTrackerPolicy();
@@ -1724,6 +1802,37 @@ describe("RentCottage reconciliation planner", () => {
         reason: "#52 is an approved blocker for #55",
       },
     ]);
+  });
+
+  it("updates only the real canonical blocker section during protected publication", () => {
+    const approved = policy();
+    approved.issues.get(55).blockers = [52];
+    const observed = observedState();
+    observed.issues[0].body =
+      "Inline example: ## Blocked by\n\n- #999\n\n## Blocked by\n\n- None.\n";
+    observed.issues.push({
+      id: 520,
+      nodeId: "issue-node-52",
+      number: 52,
+      title: "Standards",
+      state: "CLOSED",
+      body: "",
+      labels: [],
+      assignees: [],
+      blockers: [],
+    });
+
+    const result = planRentCottageReconciliation({
+      intent: { type: "publish", issueNumber: 55 },
+      observed,
+      policy: approved,
+    });
+
+    expect(
+      result.operations.find(({ type }) => type === "set-blocker-text"),
+    ).toMatchObject({
+      body: "Inline example: ## Blocked by\n\n- #999\n\n## Blocked by\n\n- #52\n",
+    });
   });
 
   it("fails publication before writes when an approved blocker issue is unavailable", () => {

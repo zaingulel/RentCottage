@@ -360,6 +360,69 @@ describe("RentCottage Project contract", () => {
     expect(result.summary.dependencyFrontier).toContain(63);
   });
 
+  it.each(["ordinary", "protected"])(
+    "uses the real canonical blocker section for %s verification",
+    (issueType) => {
+      const state = fakeState();
+      const body =
+        "Inline example: ## Blocked by\n\n- #999\n\n## Blocked by\n\n- None.\n";
+      let target = 19;
+      if (issueType === "ordinary") {
+        target = 63;
+        addCurrentProjectIssue(state, { body });
+      } else {
+        const issue = state.issues.find(({ number }) => number === target);
+        issue.body = issue.body.replace(
+          "## Blocked by\n\n- None.",
+          body.trimEnd(),
+        );
+        const item = state.project.items.nodes.find(
+          ({ content }) => content.number === target,
+        );
+        item.content.body = issue.body;
+      }
+
+      const result = verifyRentCottageProject(state);
+
+      expect(result.failures).toEqual([]);
+      expect(result.summary.dependencyFrontier).toContain(target);
+    },
+  );
+
+  it.each(["ordinary", "protected"])(
+    "fails closed on adjacent canonical blocker headings for %s verification",
+    (issueType) => {
+      const state = fakeState();
+      const body =
+        "## Blocked by\n\n## Blocked by\n\n- None. This ticket can start immediately.\n";
+      let target = 19;
+      let code = "issues.blocker_section";
+      if (issueType === "ordinary") {
+        target = 63;
+        code = "issues.blocker_text";
+        addCurrentProjectIssue(state, { number: target, body });
+      } else {
+        const issue = state.issues.find(({ number }) => number === target);
+        issue.body = issue.body.replace(
+          "## Blocked by\n\n- None. This ticket can start immediately.",
+          body.trimEnd(),
+        );
+        const item = state.project.items.nodes.find(
+          ({ content }) => content.number === target,
+        );
+        item.content.body = issue.body;
+      }
+
+      const result = verifyRentCottageProject(state);
+
+      expect(result.failures).toContainEqual({
+        code,
+        message: `#${target} requires exactly one canonical Blocked by section`,
+      });
+      expect(result.summary.dependencyFrontier).not.toContain(target);
+    },
+  );
+
   it("rejects malformed ordinary issue shape and excludes it from the dependency frontier", () => {
     const state = fakeState();
     addCurrentProjectIssue(state, { labels: [] });
