@@ -44,16 +44,40 @@ Do not describe work as "published and verified" if any step is missing, unavail
 - `Ready`, `In progress`, and `In review` require an open issue with no open native blocker.
 - A blocked or closed issue cannot use `Ready`, `In progress`, or `In review`.
 - `Backlog` may contain blocked work or deliberately owner-gated unblocked work.
+- Give ordinary owner-gated work the orthogonal `owner-gated` label. It stays out of the dependency frontier and cannot use an active Status without an approved claim.
 - Active Codex task ownership must be checked by the coordinator before selecting or changing an item to `Ready`. It is not inferred by the board verifier.
-- `Area` is manifest-driven. Missing or unknown Area and Status values stop selection.
+- Protected foundation and D01 through D33 Areas are contract-driven. An ordinary issue uses an explicitly approved existing Project Area; adding it does not require a manifest edit. Missing or unknown Area and Status values stop selection.
 
 ## Board verification
 
-Run `npm run verify:board` before selecting work and after ticket publication, dependency changes, Project reconciliation, or field changes. The verifier checks exact membership, D01 through D33 mapping, titles, Areas, labels, acceptance criteria, issue state and Status consistency, blocker text, native dependencies, duplicates, drafts, foreign items, missing data, and pagination.
+Run `npm run verify:board` before selecting work and after ticket publication, dependency changes, Project reconciliation, or field changes. Project 4 is authoritative for current membership: adding a repository issue does not require updating a checked-in list. The verifier checks that required foundation items remain present and validates every current item for Area, Status, issue state, native blockers, duplicates, drafts, foreign content, missing data, and pagination. It also preserves the detailed D01 through D33 title, label, acceptance-criteria, blocker, and Area contract.
+
+Historical issues #2 through #17 are the retired pre-map issue range: they must remain closed and excluded from Project 4, but are not required current membership.
 
 The verifier requires GitHub CLI 2.48.0 or newer and checks this before querying GitHub.
 
-The script is intentionally read-only. An unavailable API, unknown field, missing item, unexpected item, duplicate, or truncated response exits non-zero. Update its manifest only when the approved delivery graph or Area classification changes. Remove it only when Project 4 is formally retired as an authoritative selection surface or an equivalent deterministic guard replaces it.
+The script is intentionally read-only. An unavailable API, unknown field, missing required item, malformed item, duplicate, foreign item, or truncated response exits non-zero. Update the detailed contract only when a protected foundation ticket or the D01 through D33 delivery graph changes; ordinary new Project issues need no repository edit. Remove the verifier only when Project 4 is formally retired as an authoritative selection surface or an equivalent deterministic guard replaces it.
+
+## Tracker reconciliation
+
+`npm run reconcile:board` is the read-only drift audit. It reads the protected repository contract and fresh GitHub Issues, native dependencies, pull-request links, and Project 4 state. Ordinary repository issues discovered on Project 4 need no checked-in membership entry: the audit validates their fields, blocker section, native dependency agreement, lifecycle state, and eligibility alongside protected issues. It reports the eligible unassigned dependency frontier but never chooses priority or safe parallelism.
+
+Explicit lifecycle dry-runs are:
+
+- `npm run reconcile:board -- --intent publish --issue <number> --area "<existing Project Area>"`
+- `npm run reconcile:board -- --intent claim --issue <number> --assignee <login>`
+- `npm run reconcile:board -- --intent review --issue <number> --pull-request <number>`
+- `npm run reconcile:board -- --intent closeout --issue <number> --pull-request <number>`
+
+`claim`, `review`, and `closeout` work for any well-formed repository issue already on Project 4. Ordinary `publish` requires `--area`, exactly one standard triage label, and exactly one canonical `## Blocked by` section. It preserves the live title and labels, treats that blocker text as the desired native dependency set, adds missing Project membership, and starts the item in `Backlog`. Only a fully evidenced ordinary issue whose sole triage label is `ready-for-agent` can enter the dependency frontier. A protected issue likewise requires its Project membership and complete contract title, acceptance criteria, Area, Status, labels, exactly one canonical `## Blocked by` section, blocker text, and native dependency evidence. Protected issues may omit `--area`; if supplied, it must match their contract Area.
+
+Dry-run is the default. A write requires `--apply --plan-id <fingerprint>` using the exact SHA-256 fingerprint from the current dry-run. Apply mode re-reads before the first write, resolves fresh Project item, field, and option identifiers, applies one ordered mutation at a time, and authoritatively re-reads after every write or timeout. Each re-read must produce exactly the previously approved remaining operations in the same order; otherwise apply stops and requires a new dry-run. Reconciliation and the standalone verifier share the same 60-second GitHub subprocess timeout and bounded, normalized, redacted failure diagnostics without stdout. GraphQL semantic failures retain only their operation context, error count, and safe provider codes rather than raw response messages. The `errors` entry is absent when no errors occurred and must be an array whenever present; malformed shapes fail closed. Apply finishes by running `npm run verify:board`, so final verification uses that same provider boundary. The global audit never accepts `--apply`.
+
+Exit statuses are `0` for a successful apply, `5` for a verified no-op, `2` for invalid arguments, `3` when a dry-run has proposed changes, `4` for incomplete or contradictory evidence, and `1` for an execution or final-verification failure. The scheduled check always runs the independent verifier after reconciliation, accepts `5` only when verification also passes, and preserves every other reconciliation failure status. Output is bounded JSON and never contains credentials.
+
+`.github/workflows/tracker-drift.yml` runs the read-only audit daily from the repository's default branch. It has no manual trigger, so a secret-bearing run cannot select untrusted branch code. GitHub's repository `GITHUB_TOKEN` cannot read a user-owned Project, so the workflow requires `RENTCOTTAGE_PROJECT_READ_TOKEN` with only the Project and repository read access needed by the audit. Scheduled automation never receives a write-capable Project credential.
+
+Maintenance is limited to this command, its focused tests, the scheduled workflow, the read credential, and provider-schema changes. Remove the reconciler when Project 4 is formally retired or an equivalent independently verified native transition mechanism replaces it; keep the read-only verifier until an equivalent guard replaces that oracle.
 
 ## When a skill says "fetch the relevant ticket"
 

@@ -1,3 +1,15 @@
+import {
+  ordinaryIssueFrontierEligible,
+  ordinaryIssueShape,
+} from "./rentcottage-ordinary-issue.mjs";
+import {
+  protectedAcceptanceCriteria,
+  protectedBlockerNumbers,
+  protectedIssuePublicationIsComplete,
+} from "./rentcottage-protected-issue.mjs";
+import { canonicalBlockedBySectionCount } from "./rentcottage-issue-body.mjs";
+import { obsoleteProjectIssueNumbers } from "./rentcottage-tracker-constants.mjs";
+
 export const repository = "zaingulel/RentCottage";
 export const projectOwner = "zaingulel";
 export const projectNumber = 4;
@@ -675,7 +687,7 @@ export const specialIssues = new Map([
   ],
 ]);
 
-export const expectedMembership = new Set([
+export const requiredMembership = new Set([
   1,
   18,
   52,
@@ -723,14 +735,6 @@ export function normalizeIssueBody(body) {
   return (body ?? "").replaceAll("\r\n", "\n");
 }
 
-function textualBlockers(body = "") {
-  const section =
-    normalizeIssueBody(body)
-      .split("## Blocked by\n\n")[1]
-      ?.split("\n\n<!--")[0] ?? "";
-  return [...section.matchAll(/#(\d+)/g)].map((match) => Number(match[1]));
-}
-
 function nativeFor(nativeBlockersByIssue, number) {
   const present =
     nativeBlockersByIssue instanceof Map
@@ -740,14 +744,6 @@ function nativeFor(nativeBlockersByIssue, number) {
   return nativeBlockersByIssue instanceof Map
     ? nativeBlockersByIssue.get(number)
     : nativeBlockersByIssue[number];
-}
-
-function acceptanceCriteria(body = "") {
-  const section =
-    normalizeIssueBody(body)
-      .split("## Acceptance criteria\n\n")[1]
-      ?.split("\n\n## Blocked by")[0] ?? "";
-  return [...section.matchAll(/^- \[[ xX]\] (.+)$/gm)].map((match) => match[1]);
 }
 
 export function verifyRentCottageProject({
@@ -817,10 +813,16 @@ export function verifyRentCottageProject({
   const itemNumbers = issueItems.map((item) => item.content.number);
   if (new Set(itemNumbers).size !== itemNumbers.length)
     fail("project.items.duplicate", "Project contains duplicate issue numbers");
-  if (!sameMembers(itemNumbers, [...expectedMembership])) {
+  const missingRequiredItems = [...requiredMembership].filter(
+    (number) => !itemNumbers.includes(number),
+  );
+  if (missingRequiredItems.length > 0) {
     fail(
       "project.membership",
-      `Project membership ${itemNumbers.sort((a, b) => a - b)} does not match ${[...expectedMembership].sort((a, b) => a - b)}`,
+      `Project is missing required item(s) ${missingRequiredItems
+        .sort((a, b) => a - b)
+        .map((number) => `#${number}`)
+        .join(", ")}`,
     );
   }
 
@@ -845,7 +847,11 @@ export function verifyRentCottageProject({
   const issueContract = new Map(
     replacementIssues.map((issue) => [
       issue.number,
-      { ...issue, labels: ["ready-for-agent"] },
+      {
+        ...issue,
+        labels: ["ready-for-agent"],
+        acceptanceCriteria: acceptanceCriteriaByIssue.get(issue.number),
+      },
     ]),
   );
   for (const [number, policy] of specialIssues)
@@ -888,12 +894,21 @@ export function verifyRentCottageProject({
         "issues.criteria_manifest",
         `#${expected.number} has no acceptance-criteria manifest`,
       );
-    else if (!sameMembers(acceptanceCriteria(issue.body), expectedCriteria))
+    else if (
+      !sameMembers(protectedAcceptanceCriteria(issue.body), expectedCriteria)
+    )
       fail(
         "issues.criteria",
         `#${expected.number} acceptance criteria do not match the manifest`,
       );
-    if (!sameMembers(textualBlockers(issue.body), expected.blockers))
+    if (canonicalBlockedBySectionCount(issue.body) !== 1)
+      fail(
+        "issues.blocker_section",
+        `#${expected.number} requires exactly one canonical Blocked by section`,
+      );
+    else if (
+      !sameMembers(protectedBlockerNumbers(issue.body), expected.blockers)
+    )
       fail(
         "issues.blocker_text",
         `#${expected.number} blocker text does not match the manifest`,
@@ -931,7 +946,12 @@ export function verifyRentCottageProject({
         "issues.special.labels",
         `Special issue #${number} labels do not match the contract`,
       );
-    if (policy.blockers) {
+    if (canonicalBlockedBySectionCount(issue.body) !== 1) {
+      fail(
+        "issues.blocker_section",
+        `Special issue #${number} requires exactly one canonical Blocked by section`,
+      );
+    } else if (policy.blockers) {
       const nativeEvidence = nativeFor(nativeBlockersByIssue, number);
       if (nativeEvidence === null) {
         fail(
@@ -943,7 +963,7 @@ export function verifyRentCottageProject({
       const native = nativeEvidence.map(({ number: blocker }) => blocker);
       if (
         !sameMembers(native, policy.blockers) ||
-        !sameMembers(textualBlockers(issue.body), policy.blockers)
+        !sameMembers(protectedBlockerNumbers(issue.body), policy.blockers)
       ) {
         fail(
           "issues.special.blockers",
@@ -953,7 +973,7 @@ export function verifyRentCottageProject({
     }
   }
 
-  for (let number = 2; number <= 17; number += 1) {
+  for (const number of obsoleteProjectIssueNumbers) {
     if (byNumber.get(number)?.state !== "CLOSED")
       fail(
         "issues.historical.state",
@@ -969,9 +989,11 @@ export function verifyRentCottageProject({
   for (const item of issueItems) {
     const number = item.content.number;
     const contract = issueContract.get(number);
-    if (!contract) continue;
     const issue = byNumber.get(number);
-    if (!issue) continue;
+    if (!issue) {
+      fail("project.issue.missing", `Project item #${number} is unavailable`);
+      continue;
+    }
     if (item.fieldValues.totalCount > item.fieldValues.nodes.length)
       fail(
         "project.item_fields.pagination",
@@ -989,12 +1011,50 @@ export function verifyRentCottageProject({
         "project.area.unknown",
         `#${number} has unknown or missing Area ${area}`,
       );
-    if (area !== contract.area)
+    if (contract && area !== contract.area)
       fail(
         "project.area.mismatch",
         `#${number} Area ${area} does not match ${contract.area}`,
       );
     const nativeEvidence = nativeFor(nativeBlockersByIssue, number);
+    const ordinaryShape = !contract
+      ? ordinaryIssueShape(
+          normalizeIssueBody(issue.body),
+          issue.labels.map(({ name }) => name),
+        )
+      : null;
+    const ownerGated =
+      contract?.ownerGated ||
+      (!contract && issue.labels.some(({ name }) => name === "owner-gated"));
+    if (nativeEvidence === null)
+      fail(
+        "issues.native_evidence_missing",
+        `#${number} native dependency evidence is missing`,
+      );
+    if (!contract && ordinaryShape.blockerSectionCount !== 1) {
+      fail(
+        "issues.blocker_text",
+        `#${number} requires exactly one canonical Blocked by section`,
+      );
+    } else if (
+      !contract &&
+      nativeEvidence !== null &&
+      !sameMembers(
+        protectedBlockerNumbers(issue.body),
+        nativeEvidence.map(({ number: blocker }) => blocker),
+      )
+    ) {
+      fail(
+        "issues.blocker_text",
+        `#${number} textual blockers do not match native dependencies`,
+      );
+    }
+    if (!contract && ordinaryShape.triageLabelCount !== 1) {
+      fail(
+        "issues.triage_label",
+        `#${number} requires exactly one canonical triage label`,
+      );
+    }
     if (issue.state !== "OPEN" && activeStatuses.has(status))
       fail("project.status.closed", `Closed #${number} cannot be ${status}`);
     if (nativeEvidence !== null && activeStatuses.has(status)) {
@@ -1009,22 +1069,64 @@ export function verifyRentCottageProject({
     }
     if (status === "Done" && issue.state !== "CLOSED")
       fail("project.status.done", `Open #${number} cannot be Done`);
-    if (contract.ownerGated && status !== "Backlog" && issue.state === "OPEN") {
+    if (
+      ownerGated &&
+      activeStatuses.has(status) &&
+      issue.state === "OPEN" &&
+      issue.assignees.length === 0
+    ) {
       fail(
         "project.status.owner_gated",
-        `Owner-gated #${number} must remain Backlog while open`,
+        `Owner-gated #${number} cannot be ${status} without an approved claim`,
       );
     }
   }
 
-  const dependencyFrontier = replacementIssues
-    .filter(({ number }) => byNumber.get(number)?.state === "OPEN")
-    .filter(({ number }) =>
-      (nativeFor(nativeBlockersByIssue, number) ?? []).every(
-        ({ state }) => state.toLowerCase() !== "open",
-      ),
-    )
-    .map(({ number }) => number);
+  const dependencyFrontier = issueItems
+    .filter((item) => {
+      const number = item.content.number;
+      const issue = byNumber.get(number);
+      const contract = issueContract.get(number);
+      const nativeEvidence = nativeFor(nativeBlockersByIssue, number);
+      const ownerGated =
+        contract?.ownerGated ||
+        (!contract && issue?.labels.some(({ name }) => name === "owner-gated"));
+      const ordinaryEligible =
+        issue && !contract
+          ? ordinaryIssueFrontierEligible({
+              body: normalizeIssueBody(issue.body),
+              labels: issue.labels.map(({ name }) => name),
+              area: fieldValue(item, "Area"),
+              status: fieldValue(item, "Status"),
+              knownAreas,
+              knownStatuses,
+              nativeBlockers: nativeEvidence,
+            })
+          : false;
+      const protectedEligible =
+        issue && contract
+          ? protectedIssuePublicationIsComplete({
+              title: issue.title,
+              body: issue.body,
+              labels: issue.labels.map(({ name }) => name),
+              nativeBlockers: nativeEvidence,
+              area: fieldValue(item, "Area"),
+              status: fieldValue(item, "Status"),
+              knownStatuses,
+              policy: contract,
+            })
+          : false;
+      return (
+        issue?.state === "OPEN" &&
+        (protectedEligible || ordinaryEligible) &&
+        !ownerGated &&
+        issue.assignees.length === 0 &&
+        nativeEvidence !== null &&
+        nativeEvidence.every(({ state }) => state.toLowerCase() !== "open")
+      );
+    })
+    .map((item) => item.content.number)
+    .sort((left, right) => left - right);
   const readyItems = issueItems
     .filter((item) => fieldValue(item, "Status") === "Ready")
     .map((item) => item.content.number);
