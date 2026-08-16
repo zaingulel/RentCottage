@@ -304,4 +304,14 @@ describe("GitHub Actions delivery checks", () => {
       'npm run verify:preview -- "$PREVIEW_URL"',
     );
   });
+
+  it("keeps every Cloudflare deployment target on the owner-approved Muntajaa name", () => {
+    const wrangler = readFileSync(resolve("wrangler.jsonc"), "utf8");
+
+    expect(wrangler).toContain('"name": "muntajaa-development"');
+    expect(wrangler).toContain('"name": "muntajaa-test"');
+    expect(wrangler).toContain('"name": "muntajaa-preview"');
+    expect(wrangler).toContain('"name": "muntajaa-production"');
+    expect(wrangler).not.toMatch(/"name": "rentcottage-/);
+  });
 });
