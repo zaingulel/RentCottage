@@ -1,7 +1,190 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHmac } from "node:crypto";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
+
+type BrowserLocale = "en" | "ar" | "ckb";
+
+type BrowserApplicationFixture = {
+  privacyNote: string;
+  documentsSection: string;
+  documentRules: string;
+  documentTitles: readonly [string, string, string, string];
+  legalName: string;
+  cottageName: string;
+  governorate: string;
+  approximateLocation: string;
+  exactAddress: string;
+  capacity: string;
+  bedrooms: string;
+  bathrooms: string;
+  description: string;
+  houseRules: string;
+  garden: string;
+  parking: string;
+  saveDraft: string;
+  saved: string;
+  submit: string;
+  incompleteTitle: string;
+  submittedStatus: string;
+  upload: string;
+  replace: string;
+  uploaded: string;
+  invalidDocument: string;
+  syntheticLayoutAlert: string;
+};
+
+const browserFixtures: Record<
+  BrowserLocale,
+  {
+    access: {
+      phone: string;
+      sendCode: string;
+      code: string;
+      verify: string;
+      verifiedOwner: string;
+      ownerApplicationCta: string;
+    };
+    application: BrowserApplicationFixture;
+  }
+> = {
+  en: {
+    access: {
+      phone: "Iraqi phone number",
+      sendCode: "Send verification code",
+      code: "Verification code",
+      verify: "Verify",
+      verifiedOwner:
+        "Verified. Your Cottage Owner access is awaiting approval.",
+      ownerApplicationCta: "Continue to Owner Application",
+    },
+    application: {
+      privacyNote:
+        "Verification files are never published or translated. Secure links expire within 60 seconds and every access is recorded.",
+      documentsSection: "Private verification documents",
+      documentRules: "PDF, JPEG, or PNG · maximum 5 MB",
+      documentTitles: [
+        "Identity evidence",
+        "Authority-to-rent evidence",
+        "Licence or exemption evidence",
+        "Payout-account evidence",
+      ],
+      legalName: "Legal name",
+      cottageName: "Cottage name",
+      governorate: "Governorate",
+      approximateLocation: "Approximate public area",
+      exactAddress: "Exact private address",
+      capacity: "Guest capacity",
+      bedrooms: "Bedrooms",
+      bathrooms: "Bathrooms",
+      description: "Cottage description",
+      houseRules: "House Rules",
+      garden: "Garden",
+      parking: "Parking",
+      saveDraft: "Save draft",
+      saved: "Draft saved.",
+      submit: "Submit application",
+      incompleteTitle: "Complete these items before submitting:",
+      submittedStatus: "Submitted for review",
+      upload: "Upload document",
+      replace: "Replace document",
+      uploaded: "Private document saved.",
+      invalidDocument: "Choose a PDF, JPEG, or PNG no larger than 5 MB.",
+      syntheticLayoutAlert:
+        "Synthetic geometry fixture: this intentionally long private-document validation detail must wrap across several lines so the shared feedback row is measured under unequal content heights.",
+    },
+  },
+  ar: {
+    access: {
+      phone: "رقم الهاتف العراقي",
+      sendCode: "أرسل رمز التحقق",
+      code: "رمز التحقق",
+      verify: "تحقق",
+      verifiedOwner: "تم التحقق. حساب المالك ما زال بانتظار الموافقة.",
+      ownerApplicationCta: "تابع إلى طلب المالك",
+    },
+    application: {
+      privacyNote:
+        "لا تُنشر وثائق التحقق ولا تُرسل للترجمة. تنتهي صلاحية الرابط الآمن خلال 60 ثانية ويُسجّل كل وصول.",
+      documentsSection: "وثائق التحقق الخاصة",
+      documentRules: "PDF أو JPEG أو PNG · بحد أقصى 5 ميغابايت",
+      documentTitles: [
+        "إثبات الهوية",
+        "إثبات صلاحية التأجير",
+        "إثبات الترخيص أو الإعفاء",
+        "إثبات حساب التحويل",
+      ],
+      legalName: "الاسم القانوني",
+      cottageName: "اسم البيت",
+      governorate: "المحافظة",
+      approximateLocation: "المنطقة التقريبية العامة",
+      exactAddress: "العنوان الدقيق الخاص",
+      capacity: "سعة الضيوف",
+      bedrooms: "غرف النوم",
+      bathrooms: "الحمّامات",
+      description: "وصف البيت",
+      houseRules: "قواعد البيت",
+      garden: "حديقة",
+      parking: "موقف سيارات",
+      saveDraft: "احفظ المسودة",
+      saved: "حُفظت المسودة.",
+      submit: "أرسل الطلب",
+      incompleteTitle: "أكمل هذه العناصر قبل الإرسال:",
+      submittedStatus: "أُرسل للمراجعة",
+      upload: "ارفع الوثيقة",
+      replace: "استبدل الوثيقة",
+      uploaded: "حُفظت الوثيقة الخاصة.",
+      invalidDocument: "اختر PDF أو JPEG أو PNG بحجم لا يتجاوز 5 ميغابايت.",
+      syntheticLayoutAlert:
+        "تركيبة هندسية اصطناعية: هذه التفاصيل الطويلة لاختبار تخطيط التحقق من الوثيقة الخاصة يجب أن تلتف عبر عدة أسطر لقياس صف الملاحظات المشتركة بارتفاعات محتوى مختلفة.",
+    },
+  },
+  ckb: {
+    access: {
+      phone: "ژمارە تەلەفۆنی عێراقی",
+      sendCode: "کۆدی پشتڕاستکردنەوە بنێرە",
+      code: "کۆدی پشتڕاستکردنەوە",
+      verify: "پشتڕاست بکەرەوە",
+      verifiedOwner: "پشتڕاست کرایەوە. هەژماری خاوەن چاوەڕێی پەسەندە.",
+      ownerApplicationCta: "بەردەوام بە بۆ داواکاری خاوەن",
+    },
+    application: {
+      privacyNote:
+        "بەڵگەکانی پشتڕاستکردنەوە بڵاوناکرێنەوە و وەرناگێڕدرێن. بەستەری پارێزراو لە ماوەی 60 چرکەدا بەسەر دەچێت و هەر دەستگەیشتنێک تۆمار دەکرێت.",
+      documentsSection: "بەڵگە تایبەتەکانی پشتڕاستکردنەوە",
+      documentRules: "PDF یان JPEG یان PNG · تا 5 مێگابایت",
+      documentTitles: [
+        "بەڵگەی ناسنامە",
+        "بەڵگەی مافی بەکرێدان",
+        "بەڵگەی مۆڵەت یان بەخشین",
+        "بەڵگەی هەژماری پارەدان",
+      ],
+      legalName: "ناوی یاسایی",
+      cottageName: "ناوی ماڵ",
+      governorate: "پارێزگا",
+      approximateLocation: "ناوچەی گشتیی نزیکەوە",
+      exactAddress: "ناونیشانی وردی تایبەت",
+      capacity: "گنجایشی میوان",
+      bedrooms: "ژووری نوستن",
+      bathrooms: "حەمام",
+      description: "وەسفی ماڵ",
+      houseRules: "یاساکانی ماڵ",
+      garden: "باخچە",
+      parking: "وەستانگە",
+      saveDraft: "ڕەشنووس پاشەکەوت بکە",
+      saved: "ڕەشنووس پاشەکەوت کرا.",
+      submit: "داواکاری بنێرە",
+      incompleteTitle: "پێش ناردن ئەم خاڵانە تەواو بکە:",
+      submittedStatus: "بۆ پێداچوونەوە نێردرا",
+      upload: "بەڵگە باربکە",
+      replace: "بەڵگە بگۆڕە",
+      uploaded: "بەڵگەی تایبەت پاشەکەوت کرا.",
+      invalidDocument: "PDF یان JPEG یان PNG تا 5 مێگابایت هەڵبژێرە.",
+      syntheticLayoutAlert:
+        "تاقیکردنەوەی ئەندازیاری دەستکرد: ئەم وردەکارییە درێژەیەی پشتڕاستکردنەوەی بەڵگەی تایبەت دەبێت لە چەند دێڕێکدا بپێچرێتەوە بۆ پێوانەکردنی ڕیزی هاوبەشی تێبینییەکان بە بەرزی ناهاوشێوەی ناوەڕۆک.",
+    },
+  },
+};
 
 const auditClient = createClient(
   process.env.SUPABASE_URL ?? "",
@@ -73,6 +256,78 @@ function journeyPhone(projectName: string, digits: [string, string, string]) {
   return `+964750000000${suffix}`;
 }
 
+async function openOwnerApplication(
+  page: Page,
+  locale: BrowserLocale,
+  phone: string,
+) {
+  const copy = browserFixtures[locale].access;
+  await page.goto(`/${locale}/owner/access`);
+  await page.getByLabel(copy.phone).fill(phone);
+  await page.getByRole("button", { name: copy.sendCode }).click();
+  await page.getByLabel(copy.code).fill("123456");
+  await page.getByRole("button", { name: copy.verify }).click();
+  await expect(page.getByText(copy.verifiedOwner)).toBeVisible();
+  await page.getByRole("link", { name: copy.ownerApplicationCta }).click();
+}
+
+async function saveOwnerApplicationDraft(
+  page: Page,
+  copy: BrowserApplicationFixture,
+  values: {
+    legalName: string;
+    cottageName: string;
+    governorate: string;
+    approximateLocation: string;
+    exactAddress: string;
+    capacity: string;
+    bedrooms: string;
+    bathrooms: string;
+    description: string;
+    houseRules: string;
+  },
+) {
+  for (const [label, value] of [
+    [copy.legalName, values.legalName],
+    [copy.cottageName, values.cottageName],
+    [copy.governorate, values.governorate],
+    [copy.approximateLocation, values.approximateLocation],
+    [copy.exactAddress, values.exactAddress],
+    [copy.capacity, values.capacity],
+    [copy.bedrooms, values.bedrooms],
+    [copy.bathrooms, values.bathrooms],
+    [copy.description, values.description],
+    [copy.houseRules, values.houseRules],
+  ]) {
+    await page.getByLabel(label).fill(value);
+  }
+  for (const label of [copy.garden, copy.parking]) {
+    await page.getByLabel(label).check();
+  }
+  await page.getByRole("button", { name: copy.saveDraft }).click();
+  await expect(page.getByRole("status")).toContainText(copy.saved);
+  await page.reload();
+}
+
+async function tabTo(page: Page, target: Locator) {
+  for (let index = 0; index < 40; index += 1) {
+    await page.keyboard.press("Tab");
+    if (
+      await target.evaluate((element) => document.activeElement === element)
+    ) {
+      await expect(target).toBeFocused();
+      expect(
+        await target.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return style.outlineStyle !== "none" || style.boxShadow !== "none";
+        }),
+      ).toBe(true);
+      return;
+    }
+  }
+  throw new Error("Keyboard focus did not reach the expected control");
+}
+
 test.describe.configure({ mode: "serial" });
 
 test("a Customer verifies an Iraqi phone without losing the booking draft", async ({
@@ -119,46 +374,28 @@ test("a Cottage Owner saves, resumes and submits a complete private application"
   page,
 }, testInfo) => {
   test.setTimeout(60_000);
-  await page.goto("/en/owner/access");
-  await page
-    .getByLabel("Iraqi phone number")
-    .fill(journeyPhone(testInfo.project.name, ["3", "4", "5"]));
-  await page.getByRole("button", { name: "Send verification code" }).click();
-  await page.getByLabel("Verification code").fill("123456");
-  await page.getByRole("button", { name: "Verify" }).click();
-  await expect(
-    page.getByText("Verified. Your Cottage Owner access is awaiting approval."),
-  ).toBeVisible();
+  await openOwnerApplication(
+    page,
+    "en",
+    journeyPhone(testInfo.project.name, ["3", "4", "5"]),
+  );
   expect(
     (await page.context().cookies()).some((cookie) =>
       cookie.name.startsWith("rentcottage-auth"),
     ),
   ).toBe(true);
-  await page
-    .getByRole("link", { name: "Continue to Owner Application" })
-    .click();
-
-  await page.getByLabel("Legal name").fill("Zana Kareem");
-  await page.getByLabel("Cottage name").fill("Garden House");
-  await page.getByLabel("Governorate").fill("Erbil");
-  await page.getByLabel("Approximate public area").fill("Shaqlawa countryside");
-  await page
-    .getByLabel("Exact private address")
-    .fill("Near the eastern orchard road");
-  await page.getByLabel("Guest capacity").fill("8");
-  await page.getByLabel("Bedrooms").fill("3");
-  await page.getByLabel("Bathrooms").fill("2");
-  await page.getByLabel("Garden").check();
-  await page.getByLabel("Parking").check();
-  await page
-    .getByLabel("Cottage description")
-    .fill("A quiet family cottage surrounded by fruit trees.");
-  await page
-    .getByLabel("House Rules")
-    .fill("Families only. No amplified music after 10pm.");
-  await page.getByRole("button", { name: "Save draft" }).click();
-  await expect(page.getByText("Draft saved.")).toBeVisible();
-  await page.reload();
+  await saveOwnerApplicationDraft(page, browserFixtures.en.application, {
+    legalName: "Zana Kareem",
+    cottageName: "Garden House",
+    governorate: "Erbil",
+    approximateLocation: "Shaqlawa countryside",
+    exactAddress: "Near the eastern orchard road",
+    capacity: "8",
+    bedrooms: "3",
+    bathrooms: "2",
+    description: "A quiet family cottage surrounded by fruit trees.",
+    houseRules: "Families only. No amplified music after 10pm.",
+  });
   await expect(page.getByLabel("Legal name")).toHaveValue("Zana Kareem");
   await expect(page.getByLabel("Cottage name")).toHaveValue("Garden House");
   await expect(page.getByLabel("Garden")).toBeChecked();
@@ -202,22 +439,205 @@ test("a Cottage Owner saves, resumes and submits a complete private application"
   await expect(page.getByRole("link", { name: /secure link/i })).toHaveCount(0);
 });
 
-test("Arabic Owner Application stays right to left and private", async ({
+test("Owner Application keeps evidence controls aligned and accessible in every locale", async ({
   page,
 }, testInfo) => {
-  await page.goto("/ar/owner/access");
-  await page
-    .getByLabel("رقم الهاتف العراقي")
-    .fill(journeyPhone(testInfo.project.name, ["6", "7", "8"]));
-  await page.getByRole("button", { name: "أرسل رمز التحقق" }).click();
-  await page.getByLabel("رمز التحقق").fill("123456");
-  await page.getByRole("button", { name: "تحقق" }).click();
-  await expect(page.getByText(/بانتظار الموافقة/)).toBeVisible();
-  await page.getByRole("link", { name: "تابع إلى طلب المالك" }).click();
+  test.setTimeout(180_000);
+  await openOwnerApplication(
+    page,
+    "en",
+    journeyPhone(testInfo.project.name, ["6", "7", "8"]),
+  );
 
-  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("heading", { name: "بياناتك" })).toBeVisible();
-  await expect(page.getByText(/لا تُنشر وثائق التحقق/)).toBeVisible();
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    if (locale !== "en") await page.goto(`/${locale}/owner/application`);
+    const copy = browserFixtures[locale].application;
+    const direction = locale === "en" ? "ltr" : "rtl";
+    await expect(page.locator("html")).toHaveAttribute("dir", direction);
+    await expect(page.getByText(copy.privacyNote)).toBeVisible();
+
+    await saveOwnerApplicationDraft(page, copy, {
+      legalName: "Synthetic Owner",
+      cottageName: "Synthetic Cottage",
+      governorate: "Erbil",
+      approximateLocation: "Synthetic area",
+      exactAddress: "Synthetic private address",
+      capacity: "8",
+      bedrooms: "3",
+      bathrooms: "2",
+      description: "Synthetic cottage description for visual verification.",
+      houseRules: "Synthetic test rules.",
+    });
+
+    const save = page.getByRole("button", { name: copy.saveDraft });
+    const submit = page.getByRole("button", { name: copy.submit });
+    await expect(submit).toHaveAttribute("type", "submit");
+    expect(
+      await submit.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      ),
+    ).not.toBe(
+      await save.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      ),
+    );
+    await tabTo(page, save);
+    if (locale === "en") {
+      await submit.click();
+      await expect(
+        page.getByRole("alert").filter({ hasText: copy.incompleteTitle }),
+      ).toContainText(copy.incompleteTitle);
+      await page.reload();
+    }
+
+    const cards = copy.documentTitles.map((title) =>
+      page.getByRole("article", { name: title }),
+    );
+    const invalidDocuments: { index: number; title: string }[] = [];
+    for (let index = 0; index < cards.length; index += 1) {
+      const card = cards[index];
+      const validDocument = index % 2 === 0;
+      const title = copy.documentTitles[index];
+      const fileControl = card.getByLabel(`${title}: ${copy.documentRules}`);
+      const filename = validDocument
+        ? `short-${locale}-${index}.pdf`
+        : `synthetic-long-invalid-evidence-filename-that-must-not-register-${locale}-${index}.txt`;
+      await tabTo(page, fileControl);
+      await fileControl.setInputFiles({
+        name: filename,
+        mimeType: validDocument ? "application/pdf" : "text/plain",
+        buffer: Buffer.from("%PDF-1.7\nvisual fixture\n%%EOF"),
+      });
+      expect(
+        await fileControl.evaluate(
+          (input) => (input as HTMLInputElement).files?.[0]?.name,
+        ),
+      ).toBe(filename);
+      const documentAction = card.getByRole("button", {
+        name: locale === "en" ? copy.upload : copy.replace,
+      });
+      await tabTo(page, documentAction);
+      await documentAction.click();
+      if (validDocument) {
+        await expect(card.getByRole("status")).toContainText(copy.uploaded);
+        await expect(card.getByText(filename)).toBeVisible();
+      } else {
+        await expect(card.getByRole("alert")).toContainText(
+          copy.invalidDocument,
+        );
+        invalidDocuments.push({ index, title });
+      }
+    }
+
+    for (let index = 1; index < cards.length; index += 2) {
+      const invalid = cards[index].getByRole("alert");
+      await invalid.evaluate((element, syntheticLayoutAlert) => {
+        element.textContent = `${element.textContent} ${syntheticLayoutAlert}`;
+      }, copy.syntheticLayoutAlert);
+      await expect(invalid).toContainText(copy.syntheticLayoutAlert);
+    }
+
+    for (let index = 0; index < cards.length; index += 2) {
+      const success = cards[index].getByRole("status");
+      const invalid = cards[index + 1].getByRole("alert");
+      const [successHeight, invalidHeight] = await Promise.all(
+        [success, invalid].map((status) =>
+          status.evaluate((element) => element.getBoundingClientRect().height),
+        ),
+      );
+      expect(invalidHeight).toBeGreaterThan(successHeight);
+    }
+
+    await page
+      .getByRole("heading", { name: copy.documentsSection })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `${locale}-owner-application-evidence-submit.png`,
+      ),
+      fullPage: true,
+    });
+
+    if (testInfo.project.name !== "mobile") {
+      for (let index = 0; index < cards.length; index += 2) {
+        const [left, right] = await Promise.all(
+          [cards[index], cards[index + 1]].map((card) =>
+            card.evaluate((element) => {
+              const top = element.getBoundingClientRect().top;
+              const file = element.querySelector('input[type="file"]');
+              const action = element.querySelector("button");
+              const status = element.querySelector(
+                '[role="status"], [role="alert"]',
+              );
+              if (!file || !action || !status)
+                throw new Error("Missing card region");
+              return {
+                file: file.getBoundingClientRect().top - top,
+                action: action.getBoundingClientRect().top - top,
+                status: status.getBoundingClientRect().top - top,
+              };
+            }),
+          ),
+        );
+        expect(Math.abs(left.file - right.file)).toBeLessThanOrEqual(1);
+        expect(Math.abs(left.action - right.action)).toBeLessThanOrEqual(1);
+        expect(Math.abs(left.status - right.status)).toBeLessThanOrEqual(1);
+      }
+    } else {
+      const viewport = page.viewportSize();
+      if (!viewport) throw new Error("Mobile viewport is unavailable");
+      expect(
+        await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+      for (const card of cards) {
+        await card.locator('input[type="file"]').scrollIntoViewIfNeeded();
+        const box = await card.locator('input[type="file"]').boundingBox();
+        expect(box?.x).toBeGreaterThanOrEqual(0);
+        expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(
+          viewport.width,
+        );
+      }
+    }
+
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("dir", direction);
+    await expect(page.getByText(copy.privacyNote)).toBeVisible();
+
+    for (const { index, title } of invalidDocuments) {
+      const card = page.getByRole("article", { name: title });
+      const fileControl = card.getByLabel(`${title}: ${copy.documentRules}`);
+      const filename = `retried-long-evidence-filename-that-wraps-${locale}-${index}.pdf`;
+      await tabTo(page, fileControl);
+      await fileControl.setInputFiles({
+        name: filename,
+        mimeType: "application/pdf",
+        buffer: Buffer.from("%PDF-1.7\nvisual retry fixture\n%%EOF"),
+      });
+      const documentAction = card.getByRole("button", {
+        name: locale === "en" ? copy.upload : copy.replace,
+      });
+      await tabTo(page, documentAction);
+      await documentAction.click();
+      await expect(card.getByRole("status")).toContainText(copy.uploaded);
+      await expect(card.getByText(filename)).toBeVisible();
+    }
+
+    await tabTo(page, submit);
+    if (locale === "ckb") {
+      await submit.click();
+      await expect(page.getByText(copy.submittedStatus)).toBeVisible();
+      await expect(page.getByRole("button", { name: copy.submit })).toHaveCount(
+        0,
+      );
+      await expect(
+        page.getByRole("button", { name: copy.replace }),
+      ).toHaveCount(0);
+    }
+  }
 });
 
 test("a Platform Administrator reaches access only after authenticator MFA", async ({

@@ -192,9 +192,12 @@ describe("Owner Application form", () => {
   it("keeps private document uploads as native file controls", () => {
     render(<OwnerApplicationForm locale="en" application={draft} />);
 
-    const fileControls = screen.getAllByLabelText(
-      "PDF, JPEG, or PNG · maximum 5 MB",
-    );
+    const fileControls = [
+      "Identity evidence: PDF, JPEG, or PNG · maximum 5 MB",
+      "Authority-to-rent evidence: PDF, JPEG, or PNG · maximum 5 MB",
+      "Licence or exemption evidence: PDF, JPEG, or PNG · maximum 5 MB",
+      "Payout-account evidence: PDF, JPEG, or PNG · maximum 5 MB",
+    ].map((name) => screen.getByLabelText(name));
     expect(fileControls.length).toBeGreaterThan(0);
     for (const control of fileControls) {
       expect(control).toHaveAttribute("type", "file");
@@ -204,6 +207,55 @@ describe("Owner Application form", () => {
         "application/pdf,image/jpeg,image/png",
       );
     }
+  });
+
+  it("keeps mutable Owner Application controls native, pending, and announced", async () => {
+    let resolveSave: (state: { status: "saved" }) => void;
+    vi.mocked(saveOwnerApplicationAction).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    render(<OwnerApplicationForm locale="en" application={draft} />);
+
+    expect(screen.getByLabelText("Legal name")).toHaveProperty(
+      "tagName",
+      "INPUT",
+    );
+    expect(screen.getByLabelText("Applicant type")).toHaveProperty(
+      "tagName",
+      "SELECT",
+    );
+    expect(screen.getByLabelText("Cottage description")).toHaveProperty(
+      "tagName",
+      "TEXTAREA",
+    );
+    expect(screen.getByRole("button", { name: "Save draft" })).toHaveAttribute(
+      "type",
+      "submit",
+    );
+    expect(
+      screen.getByRole("button", { name: "Replace document" }),
+    ).toHaveAttribute("type", "submit");
+    expect(
+      screen.getByRole("button", { name: "Submit application" }),
+    ).toHaveAttribute("type", "submit");
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Save draft" }).closest("form")!,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save draft" }),
+      ).toHaveAttribute("aria-busy", "true"),
+    );
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
+    resolveSave!({ status: "saved" });
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Draft saved."),
+    );
   });
 
   it("announces a successful draft save", async () => {
@@ -255,6 +307,36 @@ describe("Owner Application form", () => {
         .closest("form")!,
     );
 
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Application submitted.",
+      ),
+    );
+  });
+
+  it("keeps the final submission pending and suppresses repeat activation", async () => {
+    let resolveSubmit: (state: { status: "submitted" }) => void;
+    vi.mocked(submitOwnerApplicationAction).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSubmit = resolve;
+        }),
+    );
+    render(<OwnerApplicationForm locale="en" application={draft} />);
+
+    const submit = screen.getByRole("button", {
+      name: "Submit application",
+    });
+    const form = submit.closest("form")!;
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(submit).toHaveAttribute("aria-busy", "true"));
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAccessibleName("Submit application");
+    fireEvent.click(submit);
+    expect(submitOwnerApplicationAction).toHaveBeenCalledTimes(1);
+
+    resolveSubmit!({ status: "submitted" });
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
         "Application submitted.",
