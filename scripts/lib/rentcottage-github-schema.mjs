@@ -34,6 +34,16 @@ export function hasUniqueProjectFieldCoordinates(fields) {
   );
 }
 
+export function isLinkedPullRequestRecord(pullRequest) {
+  return (
+    isRecord(pullRequest) &&
+    Number.isInteger(pullRequest.number) &&
+    typeof pullRequest.url === "string" &&
+    isRecord(pullRequest.repository) &&
+    typeof pullRequest.repository.nameWithOwner === "string"
+  );
+}
+
 export function isProjectItemRecord(item) {
   return (
     isRecord(item) &&
@@ -52,13 +62,6 @@ export function isProjectItemRecord(item) {
       typeof item.status === "string") &&
     (item["linked pull requests"] === undefined ||
       (Array.isArray(item["linked pull requests"]) &&
-        item["linked pull requests"].every(
-          (pullRequest) =>
-            isRecord(pullRequest) &&
-            Number.isInteger(pullRequest.number) &&
-            typeof pullRequest.url === "string" &&
-            isRecord(pullRequest.repository) &&
-            typeof pullRequest.repository.nameWithOwner === "string",
-        )))
+        item["linked pull requests"].every(isLinkedPullRequestRecord)))
   );
 }

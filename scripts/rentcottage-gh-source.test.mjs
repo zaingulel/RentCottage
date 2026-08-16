@@ -369,7 +369,7 @@ describe("RentCottage gh source", () => {
       "Notes field identity changed",
     ],
   ])(
-    "rejects an unconsumed Text value with a $name",
+    "rejects an unconsumed Text value with a %s",
     async (_name, mutate, message) => {
       const response = projectResponse();
       mutate(response.data.user.projectV2.items.nodes[0].fieldValues.nodes[3]);

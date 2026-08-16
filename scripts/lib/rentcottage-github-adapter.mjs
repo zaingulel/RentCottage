@@ -2,6 +2,7 @@ import { sameValues } from "./value-comparison.mjs";
 import { hasUniqueRepositoryIssueIdentities } from "./github-pagination.mjs";
 import {
   hasUniqueProjectFieldCoordinates,
+  isLinkedPullRequestRecord,
   isProjectFieldRecord,
   isProjectItemRecord,
   isRecord,
@@ -127,16 +128,6 @@ function pullRequestLink(url) {
   return match ? { repository: match[1], number: Number(match[2]) } : null;
 }
 
-function isLinkedPullRequestResponse(pullRequest) {
-  return (
-    isRecord(pullRequest) &&
-    Number.isInteger(pullRequest.number) &&
-    typeof pullRequest.url === "string" &&
-    isRecord(pullRequest.repository) &&
-    typeof pullRequest.repository.nameWithOwner === "string"
-  );
-}
-
 export function createRentCottageGitHubAdapter({ source, policy }) {
   return {
     async observe(intent) {
@@ -234,12 +225,12 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
         pullRequestNumbers.add(intent.pullRequestNumber);
       const linkedPullRequestsByItem = rawItems.items
         .filter((item) => item.content.type === "Issue")
-        .map((item) => [item, item["linked pull requests"] ?? []]);
+        .map((item) => [item, item["linked pull requests"]]);
       if (
         linkedPullRequestsByItem.some(
           ([, pullRequests]) =>
             !Array.isArray(pullRequests) ||
-            !pullRequests.every(isLinkedPullRequestResponse),
+            !pullRequests.every(isLinkedPullRequestRecord),
         )
       ) {
         return incompleteObservation(policy, [
@@ -306,8 +297,6 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
           "Project identity does not match RentCottage Project 4",
         );
       }
-      if (project.items.totalCount !== rawItems.totalCount)
-        evidenceErrors.push("Project item counts disagree between reads");
       if (rawItems.totalCount !== rawItems.items.length)
         evidenceErrors.push("Project items pagination was truncated");
       if (
@@ -322,8 +311,6 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
           "Project contains a draft, pull request, foreign item, or unavailable item",
         );
       }
-      if (project.fields.totalCount !== rawFields.totalCount)
-        evidenceErrors.push("Project field counts disagree between reads");
       if (rawFields.totalCount !== rawFields.fields.length)
         evidenceErrors.push("Project fields pagination was truncated");
       if (!hasUniqueProjectFieldCoordinates(rawFields.fields))

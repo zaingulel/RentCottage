@@ -355,6 +355,26 @@ describe("RentCottage GitHub adapter", () => {
     expect(source.readPullRequest).not.toHaveBeenCalled();
   });
 
+  it("rejects missing linked-pull-request evidence for an Issue item", async () => {
+    const source = completeSource();
+    const { items } = await source.readProjectEvidence();
+    delete items.items[0]["linked pull requests"];
+    const github = createRentCottageGitHubAdapter({
+      source,
+      policy: policy(),
+    });
+
+    const observed = await github.observe({ type: "audit" });
+
+    expect(observed).toMatchObject({
+      complete: false,
+      evidenceErrors: [
+        "Linked pull requests response does not match the expected GitHub schema",
+      ],
+    });
+    expect(source.readPullRequest).not.toHaveBeenCalled();
+  });
+
   it("rejects a closing issue reference from another repository", async () => {
     const source = completeSource();
     const { items } = await source.readProjectEvidence();
