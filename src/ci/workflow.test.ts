@@ -281,7 +281,8 @@ describe("GitHub Actions delivery checks", () => {
       "SUPABASE_SECRET_KEY\nPRIVILEGED_AUDIT_HMAC_KEY\n",
     );
     expect(deploy.with.environment).toBe("preview");
-    expect(deploy.with.command).toContain("versions upload --env preview");
+    expect(deploy.with.command).toContain("deploy --env preview");
+    expect(deploy.with.command).not.toContain("versions upload");
     expect(deploy.with.command).toContain(
       "SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}",
     );
@@ -291,9 +292,7 @@ describe("GitHub Actions delivery checks", () => {
     expect(deploy.with.command).toContain(
       "SUPABASE_PUBLISHABLE_KEY:${{ vars.SUPABASE_PUBLISHABLE_KEY }}",
     );
-    expect(JSON.stringify(preview.steps)).toContain(
-      "versions upload --env preview",
-    );
+    expect(JSON.stringify(preview.steps)).toContain("deploy --env preview");
     const previewVerification = preview.steps.find(
       (step: { name?: string }) => step.name === "Verify Cloudflare preview",
     );
@@ -313,5 +312,6 @@ describe("GitHub Actions delivery checks", () => {
     expect(wrangler).toContain('"name": "muntajaa-preview"');
     expect(wrangler).toContain('"name": "muntajaa-production"');
     expect(wrangler).not.toMatch(/"name": "rentcottage-/);
+    expect(wrangler).not.toMatch(/"preview":\s*\{[^}]*"keep_vars"/s);
   });
 });

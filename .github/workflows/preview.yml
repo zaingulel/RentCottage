@@ -40,7 +40,7 @@ jobs:
             SUPABASE_SECRET_KEY
             PRIVILEGED_AUDIT_HMAC_KEY
           command: >-
-            versions upload --env preview
+            deploy --env preview
             --var SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}
             --var SUPABASE_URL:${{ vars.SUPABASE_URL }}
             --var SUPABASE_PUBLISHABLE_KEY:${{ vars.SUPABASE_PUBLISHABLE_KEY }}

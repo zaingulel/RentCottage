@@ -26,7 +26,6 @@
     },
     "preview": {
       "name": "muntajaa-preview",
-      "keep_vars": true,
       "vars": {
         "APP_ENVIRONMENT": "preview",
       },
