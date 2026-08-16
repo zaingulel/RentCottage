@@ -24,14 +24,38 @@ import {
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import type { Locale } from "@/i18n/routing";
 
-import { FormControl } from "./interaction-controls";
+import {
+  ActionButton,
+  ActionFeedback,
+  FormControl,
+} from "./interaction-controls";
 
-function SubmitButton({ children }: { children: string }) {
+function SubmitButton({
+  children,
+  kind,
+}: {
+  children: string;
+  kind: "primary" | "secondary";
+}) {
   const { pending } = useFormStatus();
-  return (
-    <button type="submit" disabled={pending}>
+  return kind === "primary" ? (
+    <ActionButton
+      kind="primary"
+      width="content"
+      type="submit"
+      pending={pending}
+    >
       {children}
-    </button>
+    </ActionButton>
+  ) : (
+    <ActionButton
+      kind="secondary"
+      size="regular"
+      type="submit"
+      pending={pending}
+    >
+      {children}
+    </ActionButton>
   );
 }
 
@@ -66,12 +90,9 @@ function ActionMessage({
   const successful =
     status === "saved" || status === "uploaded" || status === "submitted";
   return (
-    <p
-      role={successful ? "status" : "alert"}
-      className={successful ? "application-success" : "application-error"}
-    >
+    <ActionFeedback kind={successful ? "success" : "error"}>
       {message}
-    </p>
+    </ActionFeedback>
   );
 }
 
@@ -159,10 +180,11 @@ function VerificationDocumentRow({
               required
               type="file"
               name="document"
+              aria-label={`${copy.documentKinds[kind].title}: ${copy.documentRules}`}
               accept="application/pdf,image/jpeg,image/png"
             />
           </label>
-          <SubmitButton>
+          <SubmitButton kind="secondary">
             {savedDocument ? copy.replace : copy.upload}
           </SubmitButton>
           <ActionMessage status={uploadState.status} copy={copy} />
@@ -234,7 +256,8 @@ export function OwnerApplicationForm({
               <div className="application-fields two-columns">
                 <label>
                   {copy.applicantKind}
-                  <select
+                  <FormControl
+                    kind="select"
                     name="applicantKind"
                     aria-label={copy.applicantKind}
                     {...invalidAttributes("applicantKind")}
@@ -245,7 +268,7 @@ export function OwnerApplicationForm({
                   >
                     <option value="individual">{copy.individual}</option>
                     <option value="company">{copy.company}</option>
-                  </select>
+                  </FormControl>
                   <InvalidFieldMessage
                     field="applicantKind"
                     invalid={invalidFields.has("applicantKind")}
@@ -254,7 +277,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.legalName}
-                  <input
+                  <FormControl
+                    kind="input"
                     name="legalName"
                     aria-label={copy.legalName}
                     maxLength={120}
@@ -269,7 +293,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.companyName}
-                  <input
+                  <FormControl
+                    kind="input"
                     name="companyName"
                     aria-label={copy.companyName}
                     maxLength={120}
@@ -284,7 +309,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.licensingBasis}
-                  <select
+                  <FormControl
+                    kind="select"
                     name="licensingBasis"
                     aria-label={copy.licensingBasis}
                     {...invalidAttributes("licensingBasis")}
@@ -297,7 +323,7 @@ export function OwnerApplicationForm({
                   >
                     <option value="licence">{copy.licence}</option>
                     <option value="exemption">{copy.exemption}</option>
-                  </select>
+                  </FormControl>
                   <InvalidFieldMessage
                     field="licensingBasis"
                     invalid={invalidFields.has("licensingBasis")}
@@ -306,7 +332,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.exemptionBasis}
-                  <textarea
+                  <FormControl
+                    kind="textarea"
                     name="exemptionBasis"
                     aria-label={copy.exemptionBasis}
                     rows={3}
@@ -332,7 +359,8 @@ export function OwnerApplicationForm({
               <div className="application-fields two-columns">
                 <label>
                   {copy.cottageName}
-                  <input
+                  <FormControl
+                    kind="input"
                     name="cottageName"
                     aria-label={copy.cottageName}
                     maxLength={120}
@@ -347,7 +375,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.governorate}
-                  <input
+                  <FormControl
+                    kind="input"
                     name="governorate"
                     aria-label={copy.governorate}
                     maxLength={120}
@@ -362,7 +391,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.approximateLocation}
-                  <input
+                  <FormControl
+                    kind="input"
                     name="approximateLocation"
                     aria-label={copy.approximateLocation}
                     maxLength={240}
@@ -377,7 +407,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.exactAddress}
-                  <input
+                  <FormControl
+                    kind="input"
                     name="exactAddress"
                     aria-label={copy.exactAddress}
                     maxLength={240}
@@ -395,7 +426,8 @@ export function OwnerApplicationForm({
               <div className="application-fields number-fields">
                 <label>
                   {copy.capacity}
-                  <input
+                  <FormControl
+                    kind="input"
                     type="number"
                     aria-label={copy.capacity}
                     min="1"
@@ -412,7 +444,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.bedrooms}
-                  <input
+                  <FormControl
+                    kind="input"
                     type="number"
                     aria-label={copy.bedrooms}
                     min="1"
@@ -429,7 +462,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.bathrooms}
-                  <input
+                  <FormControl
+                    kind="input"
                     type="number"
                     aria-label={copy.bathrooms}
                     min="1"
@@ -474,7 +508,8 @@ export function OwnerApplicationForm({
               <div className="application-fields">
                 <label>
                   {copy.description}
-                  <textarea
+                  <FormControl
+                    kind="textarea"
                     name="description"
                     aria-label={copy.description}
                     rows={5}
@@ -490,7 +525,8 @@ export function OwnerApplicationForm({
                 </label>
                 <label>
                   {copy.houseRules}
-                  <textarea
+                  <FormControl
+                    kind="textarea"
                     name="houseRules"
                     aria-label={copy.houseRules}
                     rows={4}
@@ -510,7 +546,7 @@ export function OwnerApplicationForm({
 
           {!submitted ? (
             <div className="application-primary-action">
-              <SubmitButton>{copy.saveDraft}</SubmitButton>
+              <SubmitButton kind="secondary">{copy.saveDraft}</SubmitButton>
               <ActionMessage status={saveState.status} copy={copy} />
             </div>
           ) : null}
@@ -546,7 +582,7 @@ export function OwnerApplicationForm({
           <section className="application-submit-card">
             <form action={submitAction}>
               <input type="hidden" name="locale" value={locale} />
-              <SubmitButton>{copy.submit}</SubmitButton>
+              <SubmitButton kind="primary">{copy.submit}</SubmitButton>
             </form>
             {submitState.status === "incomplete" ? (
               <div className="application-missing" role="alert">
