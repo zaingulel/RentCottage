@@ -268,6 +268,77 @@ describe("Supabase Owner Application adapter", () => {
     );
   });
 
+  it.each([0, -1])("rejects owner snapshot version %s", async (version) => {
+    const ownerUserId = "10000000-0000-4000-8000-000000000001";
+    const application = result({
+      id: "20000000-0000-4000-8000-000000000001",
+      owner_user_id: ownerUserId,
+      status: "draft",
+      applicant_kind: "individual",
+      legal_name: "Zana Kareem",
+      company_name: null,
+      licensing_basis: "licence",
+      exemption_basis: null,
+      submitted_at: null,
+      version,
+      review_due_at: null,
+    });
+    const profile = result({
+      name: "Garden House",
+      governorate: "Erbil",
+      approximate_location: "Shaqlawa countryside",
+      exact_address: "Near the eastern orchard road",
+      capacity: 8,
+      bedrooms: 3,
+      bathrooms: 2,
+      amenities: ["garden"],
+      description: "A quiet family cottage.",
+      house_rules: "Families only.",
+    });
+    const from = vi.fn((table: string) => {
+      if (table === "owner_applications") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              limit: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockReturnValue(application),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "owner_verification_documents") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue(result([])),
+            }),
+          }),
+        };
+      }
+      return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockReturnValue(profile),
+          }),
+        }),
+      };
+    });
+    const client = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: ownerUserId } },
+          error: null,
+        }),
+      },
+      from,
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseOwnerApplicationRepository(client, client).load(),
+    ).rejects.toThrow("Owner Application version is invalid");
+  });
+
   it("sends a normalized draft through the atomic save function", async () => {
     const rpc = vi.fn().mockReturnValue(
       result([

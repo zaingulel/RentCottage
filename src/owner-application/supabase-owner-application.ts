@@ -313,10 +313,12 @@ function parseSnapshot(
         ? null
         : requiredString(application.submitted_at, "submission timestamp"),
     version:
-      optionalInteger(application.version) ??
-      (() => {
-        throw new Error("Owner Application version is invalid");
-      })(),
+      Number.isInteger(application.version) &&
+      (application.version as number) >= 1
+        ? (application.version as number)
+        : (() => {
+            throw new Error("Owner Application version is invalid");
+          })(),
     reviewDueAt:
       application.review_due_at === null
         ? null
