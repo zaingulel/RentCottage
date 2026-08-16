@@ -486,6 +486,7 @@ export function createRentCottageGhSource({
       const normalizedItems = [];
       for (const item of items.nodes) {
         const context = `Project item ${item?.id ?? "unknown"}`;
+        // Self-anchoring validates the initial item shape and repository before nested pagination.
         requireItemAnchor(item, item, repository, context);
 
         const labels = createConnectionState(

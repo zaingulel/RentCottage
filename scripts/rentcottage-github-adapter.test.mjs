@@ -252,13 +252,14 @@ describe("RentCottage GitHub adapter", () => {
       source,
       policy: policy(),
     });
+    source.readProjectEvidence.mockClear();
 
     const observed = await github.observe({ type: "audit" });
 
     expect(observed.pullRequests).toEqual([
       expect.objectContaining({ number: 70, linkedIssues: [55] }),
     ]);
-    expect(source.readProjectEvidence).toHaveBeenCalledTimes(2);
+    expect(source.readProjectEvidence).toHaveBeenCalledTimes(1);
   });
 
   it("observes multiple items once and reads each distinct linked or explicit pull request once", async () => {
