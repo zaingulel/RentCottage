@@ -8,7 +8,7 @@ describe("hosted health route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses the server-only Supabase key for the privileged REST health probe", async () => {
+  it("uses the server-only Supabase key only as the REST API key", async () => {
     vi.stubEnv("APP_ENVIRONMENT", "preview");
     vi.stubEnv("SUPABASE_PROJECT_REF", "preview-project");
     vi.stubEnv("SUPABASE_URL", "https://preview-project.supabase.co");
@@ -23,18 +23,21 @@ describe("hosted health route", () => {
       new Request("https://preview.example.com/api/health?check=supabase"),
     );
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://preview-project.supabase.co/rest/v1/",
-      expect.objectContaining({
-        headers: {
-          apikey: "secret-server-key",
-          Authorization: "Bearer secret-server-key",
-        },
-      }),
     );
-    await expect(response.json()).resolves.toMatchObject({
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+      apikey: "secret-server-key",
+    });
+    await expect(response.json()).resolves.toEqual({
       ok: true,
-      supabase: { connected: true },
+      environment: "preview",
+      supabase: {
+        configured: true,
+        connected: true,
+        projectRef: "preview-project",
+      },
     });
   });
 });
