@@ -310,7 +310,13 @@ async function saveOwnerApplicationDraft(
 }
 
 async function tabTo(page: Page, target: Locator) {
-  for (let index = 0; index < 40; index += 1) {
+  const budget = await page.evaluate(
+    () =>
+      document.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ).length + 5,
+  );
+  for (let index = 0; index < budget; index += 1) {
     await page.keyboard.press("Tab");
     if (
       await target.evaluate((element) => document.activeElement === element)
