@@ -76,6 +76,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
     provider: ClockedPaymentProviderAdapter,
   ) {
     this.#assertNonNegativeMoney(input.bookingPriceFils, "Booking Price");
+    this.#exactCommission(input.bookingPriceFils);
     this.#assertNonNegativeMoney(
       input.bookingServiceFeeFils,
       "Booking Service Fee",
@@ -112,7 +113,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
     if (this.#operations.get("release")?.status === "succeeded") {
       throw new Error("Payment Authorization was already released.");
     }
-    if (this.#operations.has("release")) {
+    if (this.#operations.get("release")?.status === "pending") {
       throw new Error(
         "Authorization Release already exists and must be reconciled.",
       );
@@ -580,6 +581,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       result.providerRequestId,
     );
     if (providerRequestOwner && providerRequestOwner !== operation.attemptId) {
+      this.#markReconciliationRequired(operation);
       throw new Error("provider_request_identity_conflict");
     }
     const movementReference =
@@ -588,6 +590,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       ? this.#movementOwners.get(movementReference)
       : null;
     if (movementOwner && movementOwner !== operation.attemptId) {
+      this.#markReconciliationRequired(operation);
       throw new Error("movement_identity_conflict");
     }
     this.#providerRequestOwners.set(
@@ -675,6 +678,23 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
     this.#finalizeDisputeRefund(settled);
 
     return Object.freeze({ ...settled });
+  }
+
+  #markReconciliationRequired(operation: PaymentOperationSnapshot): void {
+    const reconciling: PaymentOperationSnapshot = Object.freeze({
+      ...operation,
+      status: "pending",
+      reconciliationRequired: true,
+      retrySafe: false,
+    });
+    this.#operations.set(operation.kind, reconciling);
+    this.#operationsByLogicalId.set(operation.logicalOperationId, reconciling);
+    if (operation.kind === "refund") {
+      const refundIndex = this.#refunds.findIndex(
+        (refund) => refund.logicalOperationId === operation.logicalOperationId,
+      );
+      if (refundIndex >= 0) this.#refunds[refundIndex] = reconciling;
+    }
   }
 
   #copyOperation(kind: PaymentOperationKind): PaymentOperationSnapshot | null {

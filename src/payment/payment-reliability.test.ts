@@ -1201,11 +1201,12 @@ describe("payment lifecycle reliability", () => {
       expectedReason: "movement_identity_conflict",
     },
   ])(
-    "fails loudly when a direct adapter result reuses a $name identity",
+    "fails closed and remains reconcilable when a direct adapter result reuses a $name identity",
     async ({ providerRequestIds, movementReferences, expectedReason }) => {
       const simulator = new PaymentSimulator({
         now: () => "2026-08-16T11:00:00.000Z",
         outcomes: ["succeeded", "succeeded"],
+        reconciliationOutcomes: ["succeeded"],
         providerRequestIds,
         movementReferences,
       });
@@ -1220,11 +1221,35 @@ describe("payment lifecycle reliability", () => {
       await payment.authorize();
 
       await expect(payment.capture(55_000_000)).rejects.toThrow(expectedReason);
+      const conflictedCapture = payment.snapshot().capture!;
+      expect(conflictedCapture).toMatchObject({
+        status: "pending",
+        providerRequestId: null,
+        providerReference: null,
+        movementReference: null,
+        reconciliationRequired: true,
+      });
       expect(
         payment
           .snapshot()
           .movements.filter((movement) => movement.kind === "capture"),
       ).toHaveLength(0);
+
+      const reconciled = await payment.reconcile(
+        conflictedCapture.logicalOperationId,
+      );
+
+      expect(reconciled).toMatchObject({
+        status: "succeeded",
+        attemptId: conflictedCapture.attemptId,
+        reconciliationRequired: false,
+      });
+      expect(simulator.queries).toHaveLength(1);
+      expect(
+        payment
+          .snapshot()
+          .movements.filter((movement) => movement.kind === "capture"),
+      ).toHaveLength(1);
     },
   );
 });

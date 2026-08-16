@@ -13,6 +13,25 @@ describe("provider-neutral payment contract", () => {
     );
   });
 
+  it("rejects a Booking Price that cannot produce an exact commission at lifecycle creation", () => {
+    const simulator = new PaymentSimulator({
+      now: () => "2026-08-16T09:00:00.000Z",
+      outcomes: [],
+    });
+
+    expect(() =>
+      createPaymentLifecycle(
+        {
+          paymentLifecycleId: "pay-non-fils-aligned-commission",
+          bookingPriceFils: 101,
+          bookingServiceFeeFils: 0,
+        },
+        simulator,
+      ),
+    ).toThrow("10% Marketplace Commission must be exact in fils");
+    expect(simulator.requests).toHaveLength(0);
+  });
+
   it("authorizes and captures only the exact full Customer Total", async () => {
     const simulator = new PaymentSimulator({
       now: () => "2026-08-16T09:00:00.000Z",
@@ -112,6 +131,37 @@ describe("provider-neutral payment contract", () => {
       "authorization",
       "capture",
       "release",
+    ]);
+  });
+
+  it("captures a full authorization after release definitively fails", async () => {
+    const simulator = new PaymentSimulator({
+      now: () => "2026-08-16T09:08:00.000Z",
+      outcomes: ["succeeded", "failed", "succeeded"],
+      failureRetrySafety: [false],
+    });
+    const payment = createPaymentLifecycle(
+      {
+        paymentLifecycleId: "pay-capture-after-failed-release",
+        bookingPriceFils: 80_000_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      simulator,
+    );
+    await payment.authorize();
+    const failedRelease = await payment.release(85_000_000);
+
+    const capture = await payment.capture(85_000_000);
+
+    expect(failedRelease.status).toBe("failed");
+    expect(capture).toMatchObject({
+      status: "succeeded",
+      amountFils: 85_000_000,
+    });
+    expect(simulator.requests.map((request) => request.kind)).toEqual([
+      "authorization",
+      "release",
+      "capture",
     ]);
   });
 
