@@ -319,13 +319,25 @@ async function tabTo(page: Page, target: Locator) {
       expect(
         await target.evaluate((element) => {
           const style = getComputedStyle(element);
-          return style.outlineStyle !== "none" || style.boxShadow !== "none";
+          const outlineColor = style.outlineColor.replaceAll(" ", "");
+          const opaqueOutline =
+            style.outlineStyle !== "none" &&
+            Number.parseFloat(style.outlineWidth) > 0 &&
+            outlineColor !== "transparent" &&
+            outlineColor !== "rgba(0,0,0,0)";
+          return opaqueOutline || style.boxShadow !== "none";
         }),
       ).toBe(true);
       return;
     }
   }
   throw new Error("Keyboard focus did not reach the expected control");
+}
+
+function documentActionFor(card: Locator, copy: BrowserApplicationFixture) {
+  return card
+    .getByRole("button", { name: copy.upload, exact: true })
+    .or(card.getByRole("button", { name: copy.replace, exact: true }));
 }
 
 test.describe.configure({ mode: "serial" });
@@ -513,9 +525,7 @@ test("Owner Application keeps evidence controls aligned and accessible in every 
           (input) => (input as HTMLInputElement).files?.[0]?.name,
         ),
       ).toBe(filename);
-      const documentAction = card.getByRole("button", {
-        name: locale === "en" ? copy.upload : copy.replace,
-      });
+      const documentAction = documentActionFor(card, copy);
       await tabTo(page, documentAction);
       await documentAction.click();
       if (validDocument) {
@@ -617,9 +627,7 @@ test("Owner Application keeps evidence controls aligned and accessible in every 
         mimeType: "application/pdf",
         buffer: Buffer.from("%PDF-1.7\nvisual retry fixture\n%%EOF"),
       });
-      const documentAction = card.getByRole("button", {
-        name: locale === "en" ? copy.upload : copy.replace,
-      });
+      const documentAction = documentActionFor(card, copy);
       await tabTo(page, documentAction);
       await documentAction.click();
       await expect(card.getByRole("status")).toContainText(copy.uploaded);
