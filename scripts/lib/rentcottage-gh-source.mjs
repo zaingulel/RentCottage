@@ -191,6 +191,7 @@ function requireProjectAnchor(
   project,
   { projectOwner, projectNumber, projectId },
   context,
+  errorMessage = `${context} Project identity changed during pagination`,
 ) {
   if (
     !isRecord(project) ||
@@ -201,7 +202,7 @@ function requireProjectAnchor(
     !isRecord(project.owner) ||
     project.owner.login !== projectOwner
   ) {
-    throw new Error(`${context} Project identity changed during pagination`);
+    throw new Error(errorMessage);
   }
 }
 
@@ -386,6 +387,32 @@ export function createRentCottageGhSource({
   projectNumber,
   run = runGh,
 }) {
+  const readProjectIdentity = () => {
+    const query = `query($login: String!, $number: Int!) {
+      user(login: $login) {
+        login
+        projectV2(number: $number) {
+          id number closed owner { ... on User { login } }
+        }
+      }
+    }`;
+    const response = requireGraphqlSuccess(
+      run(graphqlArgs(query, { login: projectOwner, number: projectNumber })),
+      "Fresh Project identity",
+    );
+    const user = response.data?.user;
+    if (!isRecord(user) || user.login !== projectOwner)
+      throw new Error("Fresh Project owner identity is invalid");
+    const project = user.projectV2;
+    requireProjectAnchor(
+      project,
+      { projectOwner, projectNumber },
+      "Fresh",
+      "Fresh Project identity is invalid",
+    );
+    return project;
+  };
+
   const source = {
     async assertSupported() {
       assertSupportedGhVersion(run(["--version"]));
@@ -728,11 +755,7 @@ export function createRentCottageGhSource({
 
     async execute(operation) {
       if (operation.type === "add-project-item") {
-        const { project } = await source.readProjectEvidence();
-        if (
-          !hasFreshProjectCoordinates(project, { projectOwner, projectNumber })
-        )
-          throw new Error("Fresh Project response is invalid");
+        const project = readProjectIdentity();
         const query = `mutation($projectId: ID!, $contentId: ID!) {
           addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } }
         }`;

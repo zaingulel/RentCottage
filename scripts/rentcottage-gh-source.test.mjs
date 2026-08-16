@@ -1106,6 +1106,107 @@ describe("RentCottage gh source", () => {
     });
   });
 
+  it("uses a fresh identity-only Project query before adding an item", async () => {
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(
+        JSON.stringify({
+          data: {
+            user: {
+              login: "zaingulel",
+              projectV2: {
+                id: "project-4",
+                number: 4,
+                closed: false,
+                owner: { login: "zaingulel" },
+              },
+            },
+          },
+        }),
+      )
+      .mockReturnValueOnce(
+        JSON.stringify({
+          data: { addProjectV2ItemById: { item: { id: "item-55" } } },
+        }),
+      );
+
+    await sourceWith(run).execute({
+      type: "add-project-item",
+      contentNodeId: "issue-55",
+    });
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(queryFrom(run.mock.calls[0][0])).not.toMatch(
+      /\b(fields|items)\s*\(/,
+    );
+    expect(variables(run.mock.calls[0][0])).toMatchObject({
+      login: "zaingulel",
+      number: "4",
+    });
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      projectId: "project-4",
+      contentId: "issue-55",
+    });
+  });
+
+  it.each([
+    [
+      "changed lookup owner",
+      (response) => {
+        response.data.user.login = "another-owner";
+      },
+      "Fresh Project owner identity is invalid",
+    ],
+    [
+      "changed Project owner",
+      (response) => {
+        response.data.user.projectV2.owner.login = "another-owner";
+      },
+      "Fresh Project identity is invalid",
+    ],
+    [
+      "closed Project",
+      (response) => {
+        response.data.user.projectV2.closed = true;
+      },
+      "Fresh Project identity is invalid",
+    ],
+    [
+      "changed Project number",
+      (response) => {
+        response.data.user.projectV2.number = 5;
+      },
+      "Fresh Project identity is invalid",
+    ],
+  ])(
+    "rejects %s before adding an item",
+    async (_name, mutate, errorMessage) => {
+      const response = {
+        data: {
+          user: {
+            login: "zaingulel",
+            projectV2: {
+              id: "project-4",
+              number: 4,
+              closed: false,
+              owner: { login: "zaingulel" },
+            },
+          },
+        },
+      };
+      mutate(response);
+      const run = vi.fn(() => JSON.stringify(response));
+
+      await expect(
+        sourceWith(run).execute({
+          type: "add-project-item",
+          contentNodeId: "issue-55",
+        }),
+      ).rejects.toThrow(errorMessage);
+      expect(run).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("uses freshly read lean evidence coordinates before a field mutation", async () => {
     const run = vi
       .fn()
