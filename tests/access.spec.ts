@@ -636,7 +636,7 @@ test("Owner Application keeps evidence controls aligned and accessible in every 
 
     await tabTo(page, submit);
     if (locale === "ckb") {
-      await submit.click();
+      await page.keyboard.press("Enter");
       await expect(page.getByText(copy.submittedStatus)).toBeVisible();
       await expect(page.getByRole("button", { name: copy.submit })).toHaveCount(
         0,
