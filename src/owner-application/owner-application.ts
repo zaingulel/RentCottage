@@ -1,3 +1,12 @@
+import type { OwnerApplicationStatus } from "./owner-application-status";
+
+export {
+  isOwnerApplicationStatus,
+  ownerApplicationStatuses,
+  parseOwnerApplicationStatus,
+} from "./owner-application-status";
+export type { OwnerApplicationStatus } from "./owner-application-status";
+
 export const verificationDocumentKinds = [
   "identity",
   "company_registration",
@@ -12,8 +21,6 @@ export type VerificationDocumentKind =
   (typeof verificationDocumentKinds)[number];
 export type OwnerApplicantKind = "individual" | "company";
 export type OwnerLicensingBasis = "licence" | "exemption";
-export type OwnerApplicationStatus = "draft" | "submitted";
-
 export interface OwnerApplicationDraft {
   applicantKind: OwnerApplicantKind;
   legalName: string;
@@ -64,6 +71,8 @@ export interface OwnerApplicationSnapshot {
   };
   documents: OwnerVerificationDocument[];
   submittedAt: string | null;
+  version: number;
+  reviewDueAt: string | null;
 }
 
 export interface RegisteredVerificationDocument {
@@ -105,6 +114,7 @@ export interface OwnerApplicationRepository {
     originalFilename: string;
     mediaType: string;
     sizeBytes: number;
+    contentDigest: string;
   }): Promise<string>;
   registerDocument(cleanupId: string): Promise<RegisteredVerificationDocument>;
   reconcileDocumentRegistration(
@@ -140,7 +150,6 @@ export interface OwnerApplicationDiagnostics {
   report(
     event: string,
     context: Record<string, string | number | boolean | null>,
-    cause: unknown,
   ): void;
 }
 
@@ -285,11 +294,10 @@ export function documentAccessDeadlineVerdict(
 }
 
 const consoleDiagnostics: OwnerApplicationDiagnostics = {
-  report(event, context, cause) {
+  report(event, context) {
     console.error("Owner Application operation failed", {
       event,
       ...context,
-      cause,
     });
   },
 };
@@ -301,7 +309,13 @@ function reportFailure(
   context: Record<string, string | number | boolean | null> = {},
 ) {
   try {
-    diagnostics.report(event, context, cause);
+    void cause;
+    const safeContext = Object.fromEntries(
+      Object.entries(context).filter(([key]) =>
+        ["documentKind", "cleanupCount"].includes(key),
+      ),
+    );
+    diagnostics.report(event, safeContext);
   } catch {}
 }
 
@@ -327,6 +341,13 @@ function bytesMatchMediaType(bytes: Uint8Array, mediaType: string): boolean {
     bytes[1] === 0xd8 &&
     bytes[2] === 0xff
   );
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 export function createOwnerApplication({
@@ -448,7 +469,10 @@ export function createOwnerApplication({
         });
         return { status: "unavailable" } as const;
       }
-      if (!application || application.status !== "draft") {
+      if (
+        !application ||
+        !["draft", "needs_information", "expired"].includes(application.status)
+      ) {
         return { status: "application_required" } as const;
       }
       if (
@@ -479,6 +503,7 @@ export function createOwnerApplication({
 
       let cleanupId: string;
       try {
+        const contentDigest = await sha256Hex(file.bytes);
         cleanupId = await repository.prepareDocumentUpload({
           ownerUserId: application.ownerUserId,
           applicationId: application.applicationId,
@@ -487,6 +512,7 @@ export function createOwnerApplication({
           originalFilename: normalizedFile.name,
           mediaType: file.type,
           sizeBytes: file.size,
+          contentDigest,
         });
       } catch (error) {
         reportFailure(diagnostics, "document_upload_prepare_failed", error, {

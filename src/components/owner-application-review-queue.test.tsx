@@ -20,7 +20,10 @@ const applications: SubmittedOwnerApplicationReview[] = [
   {
     applicationId: "20000000-0000-4000-8000-000000000001",
     legalName: "Synthetic Owner",
+    status: "submitted",
+    version: 2,
     submittedAt: "2026-08-16T10:00:00.000Z",
+    reviewDueAt: "2026-08-19T10:00:00.000Z",
     documents: [
       {
         id: "40000000-0000-4000-8000-000000000001",

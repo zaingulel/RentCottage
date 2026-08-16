@@ -4,9 +4,11 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { OwnerApplicationForm } from "@/components/owner-application-form";
+import { OwnerApplicationReviewStatus } from "@/components/owner-application-review-status";
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import { isLocale } from "@/i18n/routing";
 import { createRequestOwnerApplication } from "@/owner-application/request-owner-application";
+import { loadOwnerApplicationOwnerReview } from "@/owner-application/supabase-owner-application-review";
 
 async function loadOwnerApplicationPage() {
   const client = await createRequestSupabaseClient();
@@ -15,9 +17,13 @@ async function loadOwnerApplicationPage() {
     return { status: "access_required" as const };
   }
   const applicationService = await createRequestOwnerApplication();
+  const application = await applicationService.load();
   return {
     status: "ready" as const,
-    application: await applicationService.load(),
+    application,
+    review: application
+      ? await loadOwnerApplicationOwnerReview(client, application.applicationId)
+      : null,
   };
 }
 
@@ -36,7 +42,7 @@ export default async function OwnerApplicationPage({
     unstable_rethrow(error);
     console.error("Owner Application page load failed", {
       phase: "owner_application_page_load",
-      cause: error,
+      result: "unavailable",
     });
   }
 
@@ -77,6 +83,13 @@ export default async function OwnerApplicationPage({
         <Link href={`/${locale}`}>RentCottage</Link>
         <span>{copy.eyebrow}</span>
       </header>
+      {page.application && page.review ? (
+        <OwnerApplicationReviewStatus
+          locale={locale}
+          application={page.application}
+          review={page.review}
+        />
+      ) : null}
       <OwnerApplicationForm locale={locale} application={page.application} />
     </main>
   );

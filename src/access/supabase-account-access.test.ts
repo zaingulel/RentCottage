@@ -35,6 +35,23 @@ describe("Supabase account context boundary", () => {
     });
   });
 
+  it.each(["expired", "suspended"] as const)(
+    "accepts the servicing-only Cottage Owner state %s",
+    (approvalState) => {
+      expect(
+        parseAccountContext({
+          user_id: "81f35355-d3f7-4bfd-bfc4-e4a6887adfc3",
+          role: "cottage_owner",
+          owner_approval_state: approvalState,
+        }),
+      ).toEqual({
+        userId: "81f35355-d3f7-4bfd-bfc4-e4a6887adfc3",
+        role: "cottage_owner",
+        approvalState,
+      });
+    },
+  );
+
   it.each([
     undefined,
     { user_id: "not-a-uuid", role: "customer", owner_approval_state: null },
@@ -56,11 +73,6 @@ describe("Supabase account context boundary", () => {
       user_id: "81f35355-d3f7-4bfd-bfc4-e4a6887adfc3",
       role: "cottage_owner",
       owner_approval_state: null,
-    },
-    {
-      user_id: "81f35355-d3f7-4bfd-bfc4-e4a6887adfc3",
-      role: "cottage_owner",
-      owner_approval_state: "suspended",
     },
   ])("rejects invalid provider data %#", (value) => {
     expect(() => parseAccountContext(value)).toThrow(/Account context/);

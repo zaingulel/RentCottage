@@ -31,6 +31,8 @@ const emptySnapshot: OwnerApplicationSnapshot = {
   },
   documents: [],
   submittedAt: null,
+  version: 1,
+  reviewDueAt: null,
 };
 
 const validPdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
@@ -449,7 +451,9 @@ describe("Owner Application", () => {
 
   it("uses the production UUID generator with its Crypto receiver", async () => {
     const { repository, storage } = setup();
+    const subtle = crypto.subtle;
     const strictCrypto = {
+      subtle,
       randomUUID(this: unknown) {
         if (this !== strictCrypto) throw new TypeError("Illegal invocation");
         return "30000000-0000-4000-8000-000000000001";
@@ -580,10 +584,8 @@ describe("Owner Application", () => {
     expect(diagnostics.report).toHaveBeenCalledWith(
       "document_registration_reconciliation_failed",
       {
-        cleanupId: "50000000-0000-4000-8000-000000000001",
         documentKind: "identity",
       },
-      expect.any(Error),
     );
   });
 

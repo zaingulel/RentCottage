@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 
 import {
   ActionButton,
@@ -20,7 +21,7 @@ import { useExclusiveAction } from "./use-exclusive-action";
 
 const idleDocumentAccessState: OwnerDocumentAccessState = { status: "idle" };
 
-function ReviewDocument({
+export function ReviewDocument({
   locale,
   document,
 }: {
@@ -156,7 +157,11 @@ export function OwnerApplicationReviewQueue({
         >
           <header>
             <div>
-              <span>{copy.submitted}</span>
+              <span>
+                {application.status === "under_review"
+                  ? copy.underReview
+                  : copy.submitted}
+              </span>
               <h2>{application.legalName}</h2>
             </div>
             <time dateTime={application.submittedAt}>
@@ -167,6 +172,22 @@ export function OwnerApplicationReviewQueue({
               }).format(new Date(application.submittedAt))}
             </time>
           </header>
+          <p>
+            {copy.reviewDue}:{" "}
+            <time dateTime={application.reviewDueAt}>
+              {new Intl.DateTimeFormat(locale, {
+                dateStyle: "medium",
+                timeStyle: "short",
+                timeZone: "Asia/Baghdad",
+              }).format(new Date(application.reviewDueAt))}
+            </time>
+          </p>
+          <Link
+            className="action action-primary action-content"
+            href={`/${locale}/administrator/owner-applications/${application.applicationId}`}
+          >
+            {copy.openApplication}
+          </Link>
           <h3>{copy.documents}</h3>
           <ul>
             {application.documents.map((document) => (

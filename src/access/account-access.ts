@@ -5,7 +5,7 @@ export type AccountContext =
   | {
       userId: string;
       role: "cottage_owner";
-      approvalState: "prospective" | "approved";
+      approvalState: "prospective" | "approved" | "expired" | "suspended";
     }
   | { userId: string; role: "platform_administrator" };
 

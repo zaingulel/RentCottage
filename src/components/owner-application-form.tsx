@@ -22,6 +22,7 @@ import {
   verificationDocumentKinds,
 } from "@/owner-application/owner-application";
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
+import { ownerApplicationStatusMessages } from "@/i18n/owner-application-status-messages";
 import type { Locale } from "@/i18n/routing";
 
 import {
@@ -142,7 +143,7 @@ function InvalidFieldMessage({
   ) : null;
 }
 
-function VerificationDocumentRow({
+export function VerificationDocumentRow({
   locale,
   kind,
   savedDocument,
@@ -202,7 +203,9 @@ export function OwnerApplicationForm({
   application: OwnerApplicationSnapshot | null;
 }) {
   const copy = copyFor(locale);
-  const submitted = application?.status === "submitted";
+  const statusCopy = ownerApplicationStatusMessages[locale];
+  const submitted = Boolean(application && application.status !== "draft");
+  const applicationStatus = application?.status ?? "draft";
   const [saveState, saveAction] = useActionState(saveOwnerApplicationAction, {
     status: "idle",
   });
@@ -235,12 +238,16 @@ export function OwnerApplicationForm({
     <div className="owner-application-layout">
       <aside className="application-progress-card">
         <span
-          className={`application-status application-status-${submitted ? "submitted" : "draft"}`}
+          className={`application-status application-status-${applicationStatus}`}
         >
-          {submitted ? copy.submittedStatus : copy.draftStatus}
+          {statusCopy.statuses[applicationStatus]}
         </span>
         <h1>{copy.title}</h1>
-        <p>{submitted ? copy.submittedNote : copy.intro}</p>
+        <p>
+          {applicationStatus === "draft"
+            ? copy.intro
+            : statusCopy.guidance[applicationStatus]}
+        </p>
         <p className="application-privacy-note">{copy.privacyNote}</p>
       </aside>
 

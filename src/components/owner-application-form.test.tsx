@@ -53,10 +53,124 @@ const draft: OwnerApplicationSnapshot = {
     },
   ],
   submittedAt: null,
+  version: 1,
+  reviewDueAt: null,
 };
 
 describe("Owner Application form", () => {
   beforeEach(() => vi.resetAllMocks());
+
+  it.each([
+    [
+      "en",
+      "submitted",
+      "Your application is locked while it awaits initial review.",
+    ],
+    [
+      "en",
+      "needs_information",
+      "Your review clock is paused. Provide only the requested information in Owner Backoffice.",
+    ],
+    [
+      "en",
+      "under_review",
+      "Your response was received and review is underway. Your application remains locked.",
+    ],
+    [
+      "en",
+      "approved",
+      "Your owner identity is approved. This does not publish a cottage or enable bookings yet.",
+    ],
+    [
+      "en",
+      "rejected",
+      "Your application was rejected and remains read-only. Review the notice for the decision reason.",
+    ],
+    [
+      "en",
+      "expired",
+      "Your approval expired. Existing servicing remains available, but new business is blocked until renewal is approved.",
+    ],
+    [
+      "en",
+      "suspended",
+      "Your owner account is suspended for new business. Your application remains read-only.",
+    ],
+    ["ar", "submitted", "طلبك مقفل أثناء انتظار المراجعة الأولية."],
+    [
+      "ar",
+      "needs_information",
+      "توقفت مهلة المراجعة مؤقتاً. قدّم فقط المعلومات المطلوبة في لوحة المالك.",
+    ],
+    ["ar", "under_review", "تم استلام ردك والمراجعة جارية. يبقى طلبك مقفلاً."],
+    [
+      "ar",
+      "approved",
+      "تمت الموافقة على هوية المالك. هذا لا ينشر كوخاً ولا يفعّل الحجوزات بعد.",
+    ],
+    [
+      "ar",
+      "rejected",
+      "رُفض طلبك ويبقى للقراءة فقط. راجع الإشعار لمعرفة سبب القرار.",
+    ],
+    [
+      "ar",
+      "expired",
+      "انتهت موافقتك. تستمر خدمة الأعمال القائمة، لكن الأعمال الجديدة محظورة حتى قبول التجديد.",
+    ],
+    [
+      "ar",
+      "suspended",
+      "حساب المالك معلّق للأعمال الجديدة. يبقى طلبك للقراءة فقط.",
+    ],
+    [
+      "ckb",
+      "submitted",
+      "داواکارییەکەت قفڵە تا پێداچوونەوەی سەرەتایی دەست پێ بکات.",
+    ],
+    [
+      "ckb",
+      "needs_information",
+      "کاتی پێداچوونەوە ڕاگیراوە. تەنها زانیارییە داواکراوەکان لە بەشی خاوەن بنێرە.",
+    ],
+    [
+      "ckb",
+      "under_review",
+      "وەڵامەکەت وەرگیرا و پێداچوونەوە بەردەوامە. داواکارییەکەت هەر قفڵە.",
+    ],
+    [
+      "ckb",
+      "approved",
+      "ناسنامەی خاوەن پەسەندکرا. ئەمە هێشتا کۆخ بڵاوناکاتەوە یان حجز چالاک ناکات.",
+    ],
+    [
+      "ckb",
+      "rejected",
+      "داواکارییەکەت ڕەتکرایەوە و تەنها بۆ خوێندنەوەیە. هۆکاری بڕیارەکە لە ئاگادارکردنەوەکە ببینە.",
+    ],
+    [
+      "ckb",
+      "expired",
+      "پەسەندکردنەکەت بەسەرچوو. خزمەتگوزارییە هەبووەکان بەردەوامن، بەڵام کاری نوێ تا پەسەندکردنی نوێکردنەوە ڕاگیراوە.",
+    ],
+    [
+      "ckb",
+      "suspended",
+      "هەژماری خاوەن بۆ کاری نوێ ڕاگیراوە. داواکارییەکەت تەنها بۆ خوێندنەوەیە.",
+    ],
+  ] as const)(
+    "shows accurate %s guidance for %s",
+    (locale, status, guidance) => {
+      const { unmount } = render(
+        <OwnerApplicationForm
+          locale={locale}
+          application={{ ...draft, status }}
+        />,
+      );
+      expect(screen.getByText(guidance)).toBeVisible();
+      unmount();
+    },
+  );
 
   it("shows every application section and allows a partial draft", () => {
     render(<OwnerApplicationForm locale="en" application={null} />);
@@ -385,6 +499,23 @@ describe("Owner Application form", () => {
     expect(
       screen.queryByRole("button", { name: "Submit application" }),
     ).toBeNull();
+  });
+
+  it("keeps the locked application rail consistent with later review states", () => {
+    render(
+      <OwnerApplicationForm
+        locale="en"
+        application={{
+          ...draft,
+          status: "needs_information",
+          submittedAt: "2026-08-14T10:30:00.000Z",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Needs information")).toBeVisible();
+    expect(screen.queryByText("Submitted for review")).toBeNull();
+    expect(screen.getByLabelText("Legal name")).toBeDisabled();
   });
 
   it("names every missing item when submission is incomplete", async () => {
