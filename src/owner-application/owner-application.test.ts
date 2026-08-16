@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createOwnerApplication,
+  documentAccessDeadlineVerdict,
   type OwnerApplicationRepository,
   type OwnerApplicationSnapshot,
   type VerificationDocumentStorage,
@@ -81,6 +82,16 @@ function setup(snapshot: OwnerApplicationSnapshot | null = emptySnapshot) {
 }
 
 describe("Owner Application", () => {
+  it("returns a submission-anchored document access deadline verdict", () => {
+    expect(documentAccessDeadlineVerdict(1_000, 60, 60_999)).toEqual({
+      status: "ready",
+      remainingMilliseconds: 1,
+    });
+    expect(documentAccessDeadlineVerdict(1_000, 60, 61_000)).toEqual({
+      status: "expired",
+    });
+  });
+
   it("saves a partial Draft Owner Application for later visits", async () => {
     const { application, repository } = setup();
 
@@ -681,13 +692,13 @@ describe("Owner Application", () => {
     );
   });
 
-  it("withholds a signed URL when its prepared grant expired", async () => {
+  it("returns an explicit expired state without a signed URL when its prepared grant expired", async () => {
     const { application, repository, storage } = setup();
     vi.mocked(repository.completeDocumentAccess).mockResolvedValue("expired");
 
     await expect(
       application.createDocumentAccess("40000000-0000-4000-8000-000000000001"),
-    ).resolves.toEqual({ status: "unavailable" });
+    ).resolves.toEqual({ status: "expired" });
     expect(storage.createSignedUrl).toHaveBeenCalledWith(
       "owner/application/identity/document.pdf",
       60,

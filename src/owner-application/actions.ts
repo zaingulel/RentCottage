@@ -58,7 +58,7 @@ export type SubmitOwnerApplicationState =
   | { status: "incomplete"; missingItems: string[] };
 
 export type OwnerDocumentAccessState =
-  | { status: "idle" | "denied" | "unavailable" }
+  | { status: "idle" | "denied" | "unavailable" | "expired" }
   | {
       status: "ready";
       url: string;

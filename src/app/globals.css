@@ -544,8 +544,7 @@ input[type="file"].form-control::file-selector-button {
   background: var(--card);
 }
 
-.administrator-review-card > header,
-.administrator-review-document {
+.administrator-review-card > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -567,18 +566,35 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .administrator-review-document {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
   padding-block: 0.75rem;
   border-block-start: 1px solid var(--line);
-  flex-wrap: wrap;
 }
 
-.administrator-review-document div {
+.administrator-review-document > div {
   display: grid;
   gap: 0.2rem;
 }
 
-.administrator-review-document p {
-  flex-basis: 100%;
+.administrator-review-filename {
+  overflow-wrap: anywhere;
+}
+
+.administrator-review-document .action-feedback {
+  grid-column: 1 / -1;
+}
+
+.administrator-review-pending {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.4rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .administrator-review-next {
@@ -665,6 +681,15 @@ input[type="file"].form-control::file-selector-button {
 
   .application-missing ul {
     columns: 1;
+  }
+
+  .administrator-review-document {
+    grid-template-columns: 1fr;
+  }
+
+  .administrator-review-document form,
+  .administrator-review-document .action {
+    width: 100%;
   }
 }
 

@@ -1,21 +1,24 @@
 "use client";
 
-import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import {
+  ActionButton,
+  ActionFeedback,
+  ActionLink,
+} from "@/components/interaction-controls";
 import { ownerApplicationReviewMessages } from "@/i18n/owner-application-review-messages";
 import type { Locale } from "@/i18n/routing";
 import {
   createOwnerDocumentAccessAction,
   type OwnerDocumentAccessState,
 } from "@/owner-application/actions";
+import { documentAccessDeadlineVerdict } from "@/owner-application/owner-application";
 import type { SubmittedOwnerApplicationReview } from "@/owner-application/supabase-owner-application";
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
+import { useExclusiveAction } from "./use-exclusive-action";
 
-function AccessButton({ children }: { children: string }) {
-  const { pending } = useFormStatus();
-  return <button disabled={pending}>{children}</button>;
-}
+const idleDocumentAccessState: OwnerDocumentAccessState = { status: "idle" };
 
 function ReviewDocument({
   locale,
@@ -26,31 +29,107 @@ function ReviewDocument({
 }) {
   const copy = ownerApplicationReviewMessages[locale];
   const documentCopy = ownerApplicationMessages[locale].documentKinds;
-  const [state, action] = useActionState(createOwnerDocumentAccessAction, {
-    status: "idle",
-  } as OwnerDocumentAccessState);
+  const expiryTimer = useRef<number | undefined>(undefined);
+  const [state, setState] = useState<OwnerDocumentAccessState>(
+    idleDocumentAccessState,
+  );
+  const { pending, run } = useExclusiveAction();
+
+  useEffect(
+    () => () => {
+      if (expiryTimer.current !== undefined) {
+        window.clearTimeout(expiryTimer.current);
+      }
+    },
+    [],
+  );
+
+  function createDocumentAccess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    void run(async () => {
+      const attemptStartedAt = Date.now();
+      if (expiryTimer.current !== undefined) {
+        window.clearTimeout(expiryTimer.current);
+        expiryTimer.current = undefined;
+      }
+      try {
+        const next = await createOwnerDocumentAccessAction(
+          idleDocumentAccessState,
+          formData,
+        );
+        if (next.status !== "ready") {
+          setState(next);
+          return;
+        }
+        const verdict = documentAccessDeadlineVerdict(
+          attemptStartedAt,
+          next.expiresInSeconds,
+          Date.now(),
+        );
+        if (verdict.status === "expired") {
+          setState(verdict);
+          return;
+        }
+        setState(next);
+        expiryTimer.current = window.setTimeout(() => {
+          setState((current) =>
+            current.status === "ready" && current.url === next.url
+              ? { status: "expired" }
+              : current,
+          );
+        }, verdict.remainingMilliseconds);
+      } catch {
+        setState({ status: "unavailable" });
+      }
+    });
+  }
 
   return (
     <li className="administrator-review-document">
       <div>
         <strong>{documentCopy[document.kind].title}</strong>
-        <span>{document.originalFilename}</span>
+        <span className="administrator-review-filename">
+          {document.originalFilename}
+        </span>
       </div>
-      <form action={action}>
+      <form onSubmit={createDocumentAccess}>
         <input type="hidden" name="documentId" value={document.id} />
-        <AccessButton>{copy.createLink}</AccessButton>
+        <ActionButton
+          kind="secondary"
+          size="compact"
+          type="submit"
+          pending={pending}
+        >
+          {copy.createLink}
+        </ActionButton>
       </form>
-      {state.status === "ready" ? (
-        <p role="status">
+      {pending ? (
+        <p role="status" className="administrator-review-pending">
+          <span aria-hidden="true">…</span> {copy.pending}
+        </p>
+      ) : state.status === "ready" ? (
+        <ActionFeedback kind="success">
           {copy.linkReady}{" "}
-          <a href={state.url} target="_blank" rel="noreferrer">
+          <ActionLink
+            kind="text"
+            href={state.url}
+            target="_blank"
+            rel="noreferrer"
+          >
             {copy.openDocument}
-          </a>
-        </p>
-      ) : state.status === "denied" || state.status === "unavailable" ? (
-        <p role="alert">
-          {state.status === "denied" ? copy.denied : copy.unavailable}
-        </p>
+          </ActionLink>
+        </ActionFeedback>
+      ) : state.status === "denied" ||
+        state.status === "unavailable" ||
+        state.status === "expired" ? (
+        <ActionFeedback kind="error">
+          {state.status === "denied"
+            ? copy.denied
+            : state.status === "expired"
+              ? copy.expired
+              : copy.unavailable}
+        </ActionFeedback>
       ) : null}
     </li>
   );
