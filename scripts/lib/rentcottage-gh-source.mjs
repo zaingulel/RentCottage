@@ -104,6 +104,7 @@ const FIELD_VALUE_SELECTION = `
   ... on ProjectV2ItemFieldUserValue { ${FIELD_COORDINATE_SELECTION} }
   ... on ProjectV2ItemIssueFieldValue { ${FIELD_COORDINATE_SELECTION} }
 `;
+const FIELD_VALUE_ORDER = "orderBy: { field: POSITION, direction: ASC }";
 
 function graphqlArgs(query, variables = {}) {
   const args = ["api", "graphql", "-f", `query=${query}`];
@@ -223,6 +224,41 @@ function requireItemAnchor(item, expected, repository, context) {
       `${context} item or issue identity changed during pagination`,
     );
   }
+}
+
+function isInitialRepositoryIssue(item, repository) {
+  return (
+    isRecord(item) &&
+    typeof item.id === "string" &&
+    isRecord(item.content) &&
+    item.content.__typename === "Issue" &&
+    typeof item.content.id === "string" &&
+    Number.isInteger(item.content.number) &&
+    item.content.repository?.nameWithOwner === repository
+  );
+}
+
+function normalizeInitialItem(item) {
+  const content = isRecord(item.content) ? item.content : null;
+  const availableIssue =
+    content?.__typename === "Issue" &&
+    typeof content.id === "string" &&
+    Number.isInteger(content.number) &&
+    typeof content.repository?.nameWithOwner === "string";
+  const type =
+    content?.__typename === "Issue" && !availableIssue
+      ? "Unavailable"
+      : (content?.__typename ?? "Unavailable");
+  return {
+    id: item.id,
+    content: {
+      type,
+      ...(Number.isInteger(content?.number) ? { number: content.number } : {}),
+      ...(typeof content?.repository?.nameWithOwner === "string"
+        ? { repository: content.repository.nameWithOwner }
+        : {}),
+    },
+  };
 }
 
 function linkedPullRequestIdentity(pullRequest) {
@@ -345,7 +381,7 @@ const PROJECT_EVIDENCE_QUERY = `query($login: String!, $number: Int!) {
         totalCount nodes {
           id
           content { __typename ... on Issue { id number repository { nameWithOwner } labels(first: ${CONNECTION_PAGE_SIZE}) { totalCount nodes { id name } pageInfo { hasNextPage endCursor } } } }
-          fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}) {
+          fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, ${FIELD_VALUE_ORDER}) {
             totalCount nodes {
               ${FIELD_VALUE_SELECTION}
             }
@@ -411,6 +447,121 @@ export function createRentCottageGhSource({
       "Fresh Project identity is invalid",
     );
     return project;
+  };
+
+  const readFreshProjectCoordinates = () => {
+    const read = (query, variables, context) =>
+      requireGraphqlSuccess(run(graphqlArgs(query, variables)), context);
+    const query = `query($login: String!, $number: Int!) {
+      user(login: $login) { login projectV2(number: $number) {
+        id number closed owner { ... on User { login } }
+        fields(first: ${CONNECTION_PAGE_SIZE}) {
+          totalCount nodes { __typename ... on ProjectV2FieldCommon { id name } ... on ProjectV2SingleSelectField { id name options { id name } } }
+          pageInfo { hasNextPage endCursor }
+        }
+        items(first: ${CONNECTION_PAGE_SIZE}) {
+          totalCount nodes { id content { __typename ... on Issue { id number repository { nameWithOwner } } } }
+          pageInfo { hasNextPage endCursor }
+        }
+      } }
+    }`;
+    const response = read(
+      query,
+      { login: projectOwner, number: projectNumber },
+      "Fresh Project coordinates",
+    );
+    const user = response.data?.user;
+    const project = user?.projectV2;
+    if (!isRecord(user) || user.login !== projectOwner)
+      throw new Error("Fresh Project owner identity is invalid");
+    requireProjectAnchor(
+      project,
+      { projectOwner, projectNumber },
+      "Fresh Project coordinates",
+      "Fresh Project response is invalid",
+    );
+
+    const fields = createConnectionState(
+      project.fields,
+      "Fresh Project fields",
+      (field) => field?.id,
+    );
+    while (fields.hasNextPage) {
+      const pageQuery = `query($login: String!, $number: Int!, $cursor: String!) {
+        user(login: $login) { login projectV2(number: $number) {
+          id number closed owner { ... on User { login } }
+          fields(first: ${CONNECTION_PAGE_SIZE}, after: $cursor) {
+            totalCount nodes { __typename ... on ProjectV2FieldCommon { id name } ... on ProjectV2SingleSelectField { id name options { id name } } }
+            pageInfo { hasNextPage endCursor }
+          }
+        } }
+      }`;
+      const page = read(
+        pageQuery,
+        { login: projectOwner, number: projectNumber, cursor: fields.cursor },
+        "Fresh Project fields",
+      );
+      if (page.data?.user?.login !== projectOwner)
+        throw new Error(
+          "Fresh Project fields owner identity changed during pagination",
+        );
+      const pageProject = page.data?.user?.projectV2;
+      requireProjectAnchor(
+        pageProject,
+        { projectOwner, projectNumber, projectId: project.id },
+        "Fresh Project fields",
+      );
+      appendConnectionPage(fields, pageProject.fields, (field) => field?.id);
+    }
+
+    const items = createConnectionState(
+      project.items,
+      "Fresh Project items",
+      (item) => item?.id,
+    );
+    while (items.hasNextPage) {
+      const pageQuery = `query($login: String!, $number: Int!, $cursor: String!) {
+        user(login: $login) { login projectV2(number: $number) {
+          id number closed owner { ... on User { login } }
+          items(first: ${CONNECTION_PAGE_SIZE}, after: $cursor) {
+            totalCount nodes { id content { __typename ... on Issue { id number repository { nameWithOwner } } } }
+            pageInfo { hasNextPage endCursor }
+          }
+        } }
+      }`;
+      const page = read(
+        pageQuery,
+        { login: projectOwner, number: projectNumber, cursor: items.cursor },
+        "Fresh Project items",
+      );
+      if (page.data?.user?.login !== projectOwner)
+        throw new Error(
+          "Fresh Project items owner identity changed during pagination",
+        );
+      const pageProject = page.data?.user?.projectV2;
+      requireProjectAnchor(
+        pageProject,
+        { projectOwner, projectNumber, projectId: project.id },
+        "Fresh Project items",
+      );
+      appendConnectionPage(items, pageProject.items, (item) => item?.id);
+    }
+
+    return {
+      project: {
+        id: project.id,
+        number: project.number,
+        owner: { login: user.login },
+        closed: project.closed,
+        items: { totalCount: items.totalCount },
+        fields: { totalCount: fields.totalCount },
+      },
+      fields: { totalCount: fields.totalCount, fields: fields.nodes },
+      items: {
+        totalCount: items.totalCount,
+        items: items.nodes.map(normalizeInitialItem),
+      },
+    };
   };
 
   const source = {
@@ -483,7 +634,7 @@ export function createRentCottageGhSource({
               totalCount nodes {
                 id
                 content { __typename ... on Issue { id number repository { nameWithOwner } labels(first: ${CONNECTION_PAGE_SIZE}) { totalCount nodes { id name } pageInfo { hasNextPage endCursor } } } }
-                fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}) {
+                fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, ${FIELD_VALUE_ORDER}) {
                   totalCount nodes { ${FIELD_VALUE_SELECTION} }
                   pageInfo { hasNextPage endCursor }
                 }
@@ -513,8 +664,10 @@ export function createRentCottageGhSource({
       const normalizedItems = [];
       for (const item of items.nodes) {
         const context = `Project item ${item?.id ?? "unknown"}`;
-        // Self-anchoring validates the initial item shape and repository before nested pagination.
-        requireItemAnchor(item, item, repository, context);
+        if (!isInitialRepositoryIssue(item, repository)) {
+          normalizedItems.push(normalizeInitialItem(item));
+          continue;
+        }
 
         const labels = createConnectionState(
           item.content.labels,
@@ -559,7 +712,7 @@ export function createRentCottageGhSource({
           const query = `query($itemId: ID!, $cursor: String!) {
             node(id: $itemId) { ... on ProjectV2Item {
               id content { __typename ... on Issue { id number repository { nameWithOwner } } }
-              fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, after: $cursor) {
+              fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, after: $cursor, ${FIELD_VALUE_ORDER}) {
                 totalCount nodes { ${FIELD_VALUE_SELECTION} }
                 pageInfo { hasNextPage endCursor }
               }
@@ -607,7 +760,7 @@ export function createRentCottageGhSource({
             const query = `query($itemId: ID!, $fieldCursor: String, $pullRequestCursor: String!) {
               node(id: $itemId) { ... on ProjectV2Item {
                 id content { __typename ... on Issue { id number repository { nameWithOwner } } }
-                fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, after: $fieldCursor) {
+                fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, after: $fieldCursor, ${FIELD_VALUE_ORDER}) {
                   nodes { __typename ... on ProjectV2ItemFieldPullRequestValue { field { ... on ProjectV2FieldCommon { id name } } pullRequests(first: ${LINKED_PULL_REQUEST_PAGE_SIZE}, after: $pullRequestCursor) { totalCount nodes { id number url repository { nameWithOwner } } pageInfo { hasNextPage endCursor } } } }
                 }
               } }
@@ -776,7 +929,7 @@ export function createRentCottageGhSource({
       }
 
       if (operation.type === "set-project-field") {
-        const { project, fields, items } = await source.readProjectEvidence();
+        const { project, fields, items } = readFreshProjectCoordinates();
         if (
           !hasFreshProjectCoordinates(project, { projectOwner, projectNumber })
         )

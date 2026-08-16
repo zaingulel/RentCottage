@@ -75,6 +75,7 @@ function completeSource() {
     },
   };
   return {
+    evidence,
     assertSupported: vi.fn().mockResolvedValue(undefined),
     readProjectEvidence: vi.fn().mockResolvedValue(evidence),
     listIssues: vi.fn().mockResolvedValue([
@@ -139,7 +140,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("reads native blockers for new issues discovered from Project 4", async () => {
     const source = completeSource();
-    const evidence = await source.readProjectEvidence();
+    const { evidence } = source;
     const { project, items } = evidence;
     project.items.totalCount = 2;
     items.totalCount = 2;
@@ -233,7 +234,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("preserves the Project item to pull-request association", async () => {
     const source = completeSource();
-    const { items } = await source.readProjectEvidence();
+    const { items } = source.evidence;
     items.items[0]["linked pull requests"] = [
       {
         number: 70,
@@ -252,8 +253,6 @@ describe("RentCottage GitHub adapter", () => {
       source,
       policy: policy(),
     });
-    source.readProjectEvidence.mockClear();
-
     const observed = await github.observe({ type: "audit" });
 
     expect(observed.pullRequests).toEqual([
@@ -264,7 +263,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("observes multiple items once and reads each distinct linked or explicit pull request once", async () => {
     const source = completeSource();
-    const evidence = await source.readProjectEvidence();
+    const { evidence } = source;
     evidence.project.items.totalCount = 2;
     evidence.items.totalCount = 2;
     evidence.items.items[0]["linked pull requests"] = [
@@ -310,7 +309,6 @@ describe("RentCottage GitHub adapter", () => {
       mergedAt: null,
       closingIssuesReferences: [],
     }));
-    source.readProjectEvidence.mockClear();
     source.listIssues.mockClear();
     const github = createRentCottageGitHubAdapter({
       source,
@@ -331,7 +329,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("rejects a Project item link to a pull request in another repository", async () => {
     const source = completeSource();
-    const { items } = await source.readProjectEvidence();
+    const { items } = source.evidence;
     items.items[0]["linked pull requests"] = [
       {
         number: 70,
@@ -357,7 +355,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("rejects missing linked-pull-request evidence for an Issue item", async () => {
     const source = completeSource();
-    const { items } = await source.readProjectEvidence();
+    const { items } = source.evidence;
     delete items.items[0]["linked pull requests"];
     const github = createRentCottageGitHubAdapter({
       source,
@@ -377,7 +375,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("rejects a closing issue reference from another repository", async () => {
     const source = completeSource();
-    const { items } = await source.readProjectEvidence();
+    const { items } = source.evidence;
     items.items[0]["linked pull requests"] = [
       {
         number: 70,
@@ -417,7 +415,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("marks evidence incomplete when a required Project option is missing", async () => {
     const source = completeSource();
-    const { fields } = await source.readProjectEvidence();
+    const { fields } = source.evidence;
     fields.fields.find(({ name }) => name === "Status").options = [
       { id: "status-backlog", name: "Backlog" },
     ];
@@ -469,7 +467,7 @@ describe("RentCottage GitHub adapter", () => {
     },
   ])("rejects $name before field normalization", async ({ change }) => {
     const source = completeSource();
-    const { fields, project } = await source.readProjectEvidence();
+    const { fields, project } = source.evidence;
     change(fields, project);
     const github = createRentCottageGitHubAdapter({
       source,
@@ -486,57 +484,42 @@ describe("RentCottage GitHub adapter", () => {
     });
   });
 
-  it("marks draft or foreign Project items as incomplete evidence", async () => {
-    const source = completeSource();
-    const evidence = await source.readProjectEvidence();
-    evidence.items = {
-      totalCount: 1,
-      items: [
+  it.each([
+    ["draft", { type: "DraftIssue" }],
+    ["pull request", { type: "PullRequest" }],
+    [
+      "foreign Issue",
+      { type: "Issue", number: 55, repository: "other/repository" },
+    ],
+    ["unavailable item", { type: "Unavailable" }],
+  ])(
+    "classifies an initial %s with the specific project-evidence error",
+    async (_name, content) => {
+      const source = completeSource();
+      source.evidence.items.items = [
         {
-          id: "draft-item",
-          content: { type: "DraftIssue" },
-          area: "Foundation & quality",
-          status: "Backlog",
+          id: "unsupported-item",
+          content,
         },
-      ],
-    };
-    const github = createRentCottageGitHubAdapter({
-      source,
-      policy: policy(),
-    });
+      ];
+      const github = createRentCottageGitHubAdapter({
+        source,
+        policy: policy(),
+      });
 
-    const observed = await github.observe({ type: "audit" });
+      const observed = await github.observe({ type: "audit" });
 
-    expect(observed).toMatchObject({
-      complete: false,
-      evidenceErrors: [
+      expect(observed.complete).toBe(false);
+      expect(observed.evidenceErrors).toEqual([
         "Project contains a draft, pull request, foreign item, or unavailable item",
-      ],
-    });
-  });
-
-  it("rejects an Issue item whose repository provenance is unavailable", async () => {
-    const source = completeSource();
-    const { items } = await source.readProjectEvidence();
-    delete items.items[0].content.repository;
-    const github = createRentCottageGitHubAdapter({
-      source,
-      policy: policy(),
-    });
-
-    const observed = await github.observe({ type: "audit" });
-
-    expect(observed).toMatchObject({
-      complete: false,
-      evidenceErrors: [
-        "Project items response does not match the expected GitHub schema",
-      ],
-    });
-  });
+      ]);
+      expect(source.readPullRequest).not.toHaveBeenCalled();
+    },
+  );
 
   it("marks the wrong Project identity as incomplete evidence", async () => {
     const source = completeSource();
-    const evidence = await source.readProjectEvidence();
+    const { evidence } = source;
     evidence.project = {
       id: "project-5",
       number: 5,
@@ -560,7 +543,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("turns malformed provider JSON into explicit incomplete evidence", async () => {
     const source = completeSource();
-    const evidence = await source.readProjectEvidence();
+    const { evidence } = source;
     evidence.project = { id: "project-4", owner: null };
     const github = createRentCottageGitHubAdapter({
       source,
@@ -600,7 +583,7 @@ describe("RentCottage GitHub adapter", () => {
 
   it("marks an unknown Project item Status as incomplete evidence", async () => {
     const source = completeSource();
-    const { items } = await source.readProjectEvidence();
+    const { items } = source.evidence;
     items.items[0].status = "Unexpected";
     const github = createRentCottageGitHubAdapter({
       source,

@@ -104,6 +104,18 @@ function projectItem(number = 55, overrides = {}) {
   };
 }
 
+function freshCoordinateItem(number = 55) {
+  return {
+    id: `item-${number}`,
+    content: {
+      __typename: "Issue",
+      id: `issue-${number}`,
+      number,
+      repository: { nameWithOwner: repository },
+    },
+  };
+}
+
 function projectResponse({ fieldConnection, itemConnection } = {}) {
   return {
     data: {
@@ -338,6 +350,39 @@ describe("RentCottage gh source", () => {
     }
   });
 
+  it.each([
+    ["draft", { __typename: "DraftIssue" }, { type: "DraftIssue" }],
+    ["pull request", { __typename: "PullRequest" }, { type: "PullRequest" }],
+    [
+      "foreign Issue",
+      {
+        __typename: "Issue",
+        id: "issue-55",
+        number: 55,
+        repository: { nameWithOwner: "other/repository" },
+      },
+      { type: "Issue", number: 55, repository: "other/repository" },
+    ],
+    ["unavailable", null, { type: "Unavailable" }],
+  ])(
+    "preserves an initial %s item for project-evidence classification",
+    async (_name, content, expectedContent) => {
+      const item = projectItem();
+      item.content = content;
+      const response = projectResponse({
+        itemConnection: connection([item]),
+      });
+
+      const evidence = await sourceWith(
+        vi.fn(() => JSON.stringify(response)),
+      ).readProjectEvidence();
+
+      expect(evidence.items.items).toEqual([
+        { id: "item-55", content: expectedContent },
+      ]);
+    },
+  );
+
   it("tolerates a populated unconsumed Text field without normalizing it", async () => {
     const response = projectResponse();
 
@@ -431,7 +476,11 @@ describe("RentCottage gh source", () => {
     expect(variables(run.mock.calls[1][0])).toMatchObject({
       cursor: "items-1",
     });
-    expect(run.mock.calls[1][0].join(" ")).not.toContain("fields(first:");
+    const overflowQuery = queryFrom(run.mock.calls[1][0]);
+    expect(overflowQuery).not.toContain("fields(first:");
+    expect(overflowQuery).toMatch(
+      /fieldValues\(first:\s*20,\s*orderBy:\s*\{\s*field:\s*POSITION,\s*direction:\s*ASC\s*\}\)/,
+    );
   });
 
   it("paginates item field values independently without replaying completed connections", async () => {
@@ -583,6 +632,11 @@ describe("RentCottage gh source", () => {
       fieldCursor: "field-values-1",
       pullRequestCursor: "pull-requests-1",
     });
+    for (const call of run.mock.calls) {
+      expect(queryFrom(call[0])).toMatch(
+        /fieldValues\(first:\s*20(?:,\s*after:\s*\$\w+)?\s*,\s*orderBy:\s*\{\s*field:\s*POSITION,\s*direction:\s*ASC\s*\}\)/,
+      );
+    }
   });
 
   it("normalizes linked pull requests after more than ten provider-sized pages", async () => {
@@ -1210,7 +1264,13 @@ describe("RentCottage gh source", () => {
   it("uses freshly read lean evidence coordinates before a field mutation", async () => {
     const run = vi
       .fn()
-      .mockReturnValueOnce(JSON.stringify(projectResponse()))
+      .mockReturnValueOnce(
+        JSON.stringify(
+          projectResponse({
+            itemConnection: connection([freshCoordinateItem()]),
+          }),
+        ),
+      )
       .mockReturnValueOnce(
         JSON.stringify({
           data: { update: { projectV2Item: { id: "item-55" } } },
@@ -1234,5 +1294,73 @@ describe("RentCottage gh source", () => {
     expect(run.mock.calls[0][0].join(" ")).not.toMatch(
       /project (view|field-list|item-list)/,
     );
+    const freshnessQuery = queryFrom(run.mock.calls[0][0]);
+    expect(freshnessQuery).toMatch(/\bfields\(first:\s*100\)/);
+    expect(freshnessQuery).toMatch(/\bitems\(first:\s*100\)/);
+    expect(freshnessQuery).toMatch(/\.\.\. on Issue\s*\{\s*id\b/);
+    expect(freshnessQuery).not.toMatch(
+      /\b(labels|fieldValues|pullRequests)\s*\(/,
+    );
+  });
+
+  it("paginates lean field and item coordinates before a field mutation", async () => {
+    const allFields = fields();
+    const first = projectResponse({
+      fieldConnection: connection([allFields[0]], {
+        totalCount: 4,
+        hasNextPage: true,
+        endCursor: "fresh-fields-1",
+      }),
+      itemConnection: connection([freshCoordinateItem(55)], {
+        totalCount: 2,
+        hasNextPage: true,
+        endCursor: "fresh-items-1",
+      }),
+    });
+    const fieldOverflow = projectResponse({
+      fieldConnection: connection(allFields.slice(1), { totalCount: 4 }),
+    });
+    const itemOverflow = projectResponse({
+      itemConnection: connection([freshCoordinateItem(63)], { totalCount: 2 }),
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(fieldOverflow))
+      .mockReturnValueOnce(JSON.stringify(itemOverflow))
+      .mockReturnValueOnce(
+        JSON.stringify({
+          data: { update: { projectV2Item: { id: "item-55" } } },
+        }),
+      );
+
+    await sourceWith(run).execute({
+      type: "set-project-field",
+      issueNumber: 55,
+      field: "Status",
+      value: "In progress",
+    });
+
+    expect(run).toHaveBeenCalledTimes(4);
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      cursor: "fresh-fields-1",
+    });
+    expect(variables(run.mock.calls[2][0])).toMatchObject({
+      cursor: "fresh-items-1",
+    });
+    for (const call of run.mock.calls.slice(0, 3)) {
+      expect(queryFrom(call[0])).not.toMatch(
+        /\b(labels|fieldValues|pullRequests)\s*\(/,
+      );
+    }
+    for (const call of [run.mock.calls[0], run.mock.calls[2]]) {
+      expect(queryFrom(call[0])).toMatch(/\.\.\. on Issue\s*\{\s*id\b/);
+    }
+    expect(variables(run.mock.calls[3][0])).toMatchObject({
+      projectId: "project-4",
+      itemId: "item-55",
+      fieldId: "field-status",
+      optionId: "status-progress",
+    });
   });
 });

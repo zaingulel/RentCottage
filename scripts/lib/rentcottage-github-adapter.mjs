@@ -53,6 +53,14 @@ function isProjectItemsResponse(value) {
   );
 }
 
+function isRepositoryIssueItem(item, repository) {
+  return (
+    item.content.type === "Issue" &&
+    Number.isInteger(item.content.number) &&
+    item.content.repository === repository
+  );
+}
+
 function isIssueResponse(issue) {
   return (
     isRecord(issue) &&
@@ -180,7 +188,7 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
         const dependencyIssueNumbers = new Set([
           ...policy.issues.keys(),
           ...rawItems.items
-            .filter((item) => item.content.type === "Issue")
+            .filter((item) => isRepositoryIssueItem(item, policy.repository))
             .map((item) => item.content.number),
         ]);
         blockerEntries = await Promise.all(
@@ -224,7 +232,7 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
       if (intent.pullRequestNumber)
         pullRequestNumbers.add(intent.pullRequestNumber);
       const linkedPullRequestsByItem = rawItems.items
-        .filter((item) => item.content.type === "Issue")
+        .filter((item) => isRepositoryIssueItem(item, policy.repository))
         .map((item) => [item, item["linked pull requests"]]);
       if (
         linkedPullRequestsByItem.some(
@@ -301,10 +309,7 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
         evidenceErrors.push("Project items pagination was truncated");
       if (
         rawItems.items.some(
-          (item) =>
-            item.content?.type !== "Issue" ||
-            !Number.isInteger(item.content?.number) ||
-            item.content.repository !== policy.repository,
+          (item) => !isRepositoryIssueItem(item, policy.repository),
         )
       ) {
         evidenceErrors.push(
@@ -350,7 +355,9 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
       ) {
         evidenceErrors.push("Project Area options do not match the contract");
       }
-      for (const item of rawItems.items) {
+      for (const item of rawItems.items.filter((item) =>
+        isRepositoryIssueItem(item, policy.repository),
+      )) {
         if (
           item.area !== null &&
           fields.Area &&
