@@ -480,6 +480,10 @@ export function createRentCottageGhSource({
       "Fresh Project coordinates",
       "Fresh Project response is invalid",
     );
+    const initialProjectTotals = Object.freeze({
+      fields: project.fields?.totalCount,
+      items: project.items?.totalCount,
+    });
 
     const fields = createConnectionState(
       project.fields,
@@ -553,8 +557,8 @@ export function createRentCottageGhSource({
         number: project.number,
         owner: { login: user.login },
         closed: project.closed,
-        items: { totalCount: items.totalCount },
-        fields: { totalCount: fields.totalCount },
+        items: { totalCount: initialProjectTotals.items },
+        fields: { totalCount: initialProjectTotals.fields },
       },
       fields: { totalCount: fields.totalCount, fields: fields.nodes },
       items: {
@@ -701,10 +705,14 @@ export function createRentCottageGhSource({
           fieldValueIdentity,
           PROJECT_FIELD_VALUE_PAGE_SIZE,
         );
-        const fieldValuePageCursor = new Map(
+        const fieldValuePageEvidence = new Map(
           item.fieldValues.nodes.map((value) => [
             fieldValueIdentity(value),
-            null,
+            {
+              cursor: null,
+              totalCount: item.fieldValues.totalCount,
+              pageInfo: { ...item.fieldValues.pageInfo },
+            },
           ]),
         );
         while (fieldValues.hasNextPage) {
@@ -729,11 +737,13 @@ export function createRentCottageGhSource({
             page.data.node.fieldValues,
             fieldValueIdentity,
           );
-          for (const value of page.data.node.fieldValues.nodes)
-            fieldValuePageCursor.set(
-              fieldValueIdentity(value),
-              pageStartCursor,
-            );
+          for (const value of page.data.node.fieldValues.nodes) {
+            fieldValuePageEvidence.set(fieldValueIdentity(value), {
+              cursor: pageStartCursor,
+              totalCount: page.data.node.fieldValues.totalCount,
+              pageInfo: { ...page.data.node.fieldValues.pageInfo },
+            });
+          }
         }
         item.fieldValues = fieldValues.nodes;
 
@@ -757,11 +767,16 @@ export function createRentCottageGhSource({
             LINKED_PULL_REQUEST_PAGE_SIZE,
           );
           while (pullRequests.hasNextPage) {
+            const expectedFieldValuePage = fieldValuePageEvidence.get(
+              linkedCoordinate.id,
+            );
             const query = `query($itemId: ID!, $fieldCursor: String, $pullRequestCursor: String!) {
               node(id: $itemId) { ... on ProjectV2Item {
                 id content { __typename ... on Issue { id number repository { nameWithOwner } } }
                 fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, after: $fieldCursor, ${FIELD_VALUE_ORDER}) {
+                  totalCount
                   nodes { __typename ... on ProjectV2ItemFieldPullRequestValue { field { ... on ProjectV2FieldCommon { id name } } pullRequests(first: ${LINKED_PULL_REQUEST_PAGE_SIZE}, after: $pullRequestCursor) { totalCount nodes { id number url repository { nameWithOwner } } pageInfo { hasNextPage endCursor } } } }
+                  pageInfo { hasNextPage endCursor }
                 }
               } }
             }`;
@@ -769,13 +784,29 @@ export function createRentCottageGhSource({
               query,
               {
                 itemId: item.id,
-                fieldCursor: fieldValuePageCursor.get(linkedCoordinate.id),
+                fieldCursor: expectedFieldValuePage.cursor,
                 pullRequestCursor: pullRequests.cursor,
               },
               `${context} linked pull requests`,
             );
             requireItemAnchor(page.data?.node, item, repository, context);
-            const matches = page.data.node.fieldValues?.nodes?.filter(
+            const pageFieldValues = requireConnection(
+              page.data.node.fieldValues,
+              `${context} linked pull-request field values`,
+            );
+            if (
+              pageFieldValues.totalCount !==
+                expectedFieldValuePage.totalCount ||
+              pageFieldValues.pageInfo.hasNextPage !==
+                expectedFieldValuePage.pageInfo.hasNextPage ||
+              pageFieldValues.pageInfo.endCursor !==
+                expectedFieldValuePage.pageInfo.endCursor
+            ) {
+              throw new Error(
+                `${context} linked pull-request field-value page changed during pagination`,
+              );
+            }
+            const matches = pageFieldValues.nodes.filter(
               (value) => value?.field?.id === linkedCoordinate.id,
             );
             if (
@@ -817,8 +848,6 @@ export function createRentCottageGhSource({
           number: project.number,
           owner: { login: user.login },
           closed: project.closed,
-          items: { totalCount: items.totalCount },
-          fields: { totalCount: fields.totalCount },
         },
         fields: { totalCount: fields.totalCount, fields: fields.nodes },
         items: { totalCount: items.totalCount, items: normalizedItems },

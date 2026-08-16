@@ -20,11 +20,7 @@ function isProjectResponse(value) {
     Number.isInteger(value.number) &&
     isRecord(value.owner) &&
     typeof value.owner.login === "string" &&
-    typeof value.closed === "boolean" &&
-    isRecord(value.items) &&
-    isNonnegativeInteger(value.items.totalCount) &&
-    isRecord(value.fields) &&
-    isNonnegativeInteger(value.fields.totalCount)
+    typeof value.closed === "boolean"
   );
 }
 

@@ -302,6 +302,8 @@ describe("RentCottage gh source", () => {
     expect(evidence.items.items.map(({ content }) => content.number)).toEqual([
       55, 63,
     ]);
+    expect(evidence.project).not.toHaveProperty("items");
+    expect(evidence.project).not.toHaveProperty("fields");
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0][0].slice(0, 2)).toEqual(["api", "graphql"]);
     const invocation = run.mock.calls[0][0].join(" ");
@@ -605,13 +607,17 @@ describe("RentCottage gh source", () => {
       item,
       connection([status, linkedOverflow, notes], { totalCount: 4 }),
     );
-    const pullRequestOverflow = fieldValuePage(item, {
-      nodes: [
-        linkedPullRequests([secondPullRequest], {
-          totalCount: 2,
-        }),
-      ],
-    });
+    const pullRequestOverflow = fieldValuePage(
+      item,
+      connection(
+        [
+          status,
+          linkedPullRequests([secondPullRequest], { totalCount: 2 }),
+          notes,
+        ],
+        { totalCount: 4 },
+      ),
+    );
     const run = vi
       .fn()
       .mockReturnValueOnce(
@@ -637,7 +643,114 @@ describe("RentCottage gh source", () => {
         /fieldValues\(first:\s*20(?:,\s*after:\s*\$\w+)?\s*,\s*orderBy:\s*\{\s*field:\s*POSITION,\s*direction:\s*ASC\s*\}\)/,
       );
     }
+    expect(queryFrom(run.mock.calls[2][0])).toMatch(
+      /fieldValues[\s\S]*totalCount[\s\S]*pageInfo\s*\{\s*hasNextPage\s+endCursor\s*\}/,
+    );
   });
+
+  it.each([
+    [
+      "missing totalCount",
+      (fieldValues) => {
+        delete fieldValues.totalCount;
+      },
+      "pagination evidence is invalid",
+    ],
+    [
+      "malformed pageInfo",
+      (fieldValues) => {
+        fieldValues.pageInfo.hasNextPage = "yes";
+      },
+      "pagination evidence is invalid",
+    ],
+    [
+      "changed totalCount",
+      (fieldValues) => {
+        fieldValues.totalCount += 1;
+      },
+      "page changed during pagination",
+    ],
+    [
+      "changed pageInfo",
+      (fieldValues) => {
+        fieldValues.pageInfo = {
+          hasNextPage: true,
+          endCursor: "changed-field-values",
+        };
+      },
+      "page changed during pagination",
+    ],
+    [
+      "changed item ID",
+      (_fieldValues, item) => {
+        item.id = "item-changed";
+      },
+      "item or issue identity changed during pagination",
+    ],
+    [
+      "changed Issue repository",
+      (_fieldValues, item) => {
+        item.content.repository.nameWithOwner = "other/repository";
+      },
+      "item or issue identity changed during pagination",
+    ],
+    [
+      "changed linked field ID",
+      (fieldValues) => {
+        fieldValues.nodes[2].field.id = "field-changed";
+      },
+      "linked pull-request field identity changed",
+    ],
+    [
+      "changed linked field name",
+      (fieldValues) => {
+        fieldValues.nodes[2].field.name = "Changed linked field";
+      },
+      "linked pull-request field identity changed",
+    ],
+    [
+      "changed linked field type",
+      (fieldValues) => {
+        fieldValues.nodes[2].__typename = "ProjectV2ItemFieldTextValue";
+      },
+      "linked pull-request field identity changed",
+    ],
+  ])(
+    "rejects linked-PR outer reread with %s",
+    async (_name, mutate, message) => {
+      const item = projectItem();
+      const pullRequest = (number) => ({
+        id: `pr-${number}`,
+        number,
+        url: `https://github.com/zaingulel/RentCottage/pull/${number}`,
+        repository: { nameWithOwner: repository },
+      });
+      item.fieldValues.nodes[2] = linkedPullRequests([pullRequest(70)], {
+        totalCount: 2,
+        hasNextPage: true,
+        endCursor: "pull-requests-1",
+      });
+      const outerFieldValues = structuredClone(item.fieldValues);
+      outerFieldValues.nodes[2] = linkedPullRequests([pullRequest(71)], {
+        totalCount: 2,
+      });
+      const outerReread = fieldValuePage(item, outerFieldValues);
+      outerReread.data.node.content = structuredClone(item.content);
+      mutate(outerFieldValues, outerReread.data.node);
+      const run = vi
+        .fn()
+        .mockReturnValueOnce(
+          JSON.stringify(
+            projectResponse({ itemConnection: connection([item]) }),
+          ),
+        )
+        .mockReturnValueOnce(JSON.stringify(outerReread));
+
+      await expect(sourceWith(run).readProjectEvidence()).rejects.toThrow(
+        message,
+      );
+    },
+  );
 
   it("normalizes linked pull requests after more than ten provider-sized pages", async () => {
     const item = projectItem();
@@ -655,19 +768,17 @@ describe("RentCottage gh source", () => {
     });
     const overflowPages = Array.from({ length: 10 }, (_, index) => {
       const page = connectionPage(pullRequests, index + 1, 20, "pull-requests");
+      const fieldValueNodes = structuredClone(item.fieldValues.nodes);
+      fieldValueNodes[2] = linkedPullRequests(page.nodes, {
+        totalCount: page.totalCount,
+        hasNextPage: page.pageInfo.hasNextPage,
+        endCursor: page.pageInfo.endCursor,
+      });
       return {
         data: {
           node: {
             ...item,
-            fieldValues: {
-              nodes: [
-                linkedPullRequests(page.nodes, {
-                  totalCount: page.totalCount,
-                  hasNextPage: page.pageInfo.hasNextPage,
-                  endCursor: page.pageInfo.endCursor,
-                }),
-              ],
-            },
+            fieldValues: connection(fieldValueNodes, { totalCount: 4 }),
           },
         },
       };
@@ -843,13 +954,17 @@ describe("RentCottage gh source", () => {
         },
       },
     };
+    const pullRequestFieldValues = structuredClone(
+      pullRequestItem.fieldValues.nodes,
+    );
+    pullRequestFieldValues[2] = linkedPullRequests([pullRequestTwo], {
+      totalCount: 2,
+    });
     const pullRequestPage = {
       data: {
         node: {
           ...pullRequestItem,
-          fieldValues: {
-            nodes: [linkedPullRequests([pullRequestTwo], { totalCount: 2 })],
-          },
+          fieldValues: connection(pullRequestFieldValues, { totalCount: 4 }),
         },
       },
     };
@@ -1363,4 +1478,56 @@ describe("RentCottage gh source", () => {
       optionId: "status-progress",
     });
   });
+
+  it.each([
+    {
+      connectionName: "fields",
+      first: projectResponse({
+        fieldConnection: connection([fields()[0]], {
+          totalCount: 4,
+          hasNextPage: true,
+          endCursor: "fresh-fields-1",
+        }),
+        itemConnection: connection([freshCoordinateItem()]),
+      }),
+      overflow: projectResponse({
+        fieldConnection: connection(fields().slice(1), { totalCount: 5 }),
+      }),
+    },
+    {
+      connectionName: "items",
+      first: projectResponse({
+        itemConnection: connection([freshCoordinateItem(55)], {
+          totalCount: 2,
+          hasNextPage: true,
+          endCursor: "fresh-items-1",
+        }),
+      }),
+      overflow: projectResponse({
+        itemConnection: connection([freshCoordinateItem(63)], {
+          totalCount: 3,
+        }),
+      }),
+    },
+  ])(
+    "fails before a field mutation when fresh Project $connectionName totals drift",
+    async ({ connectionName, first, overflow }) => {
+      const run = vi
+        .fn()
+        .mockReturnValueOnce(JSON.stringify(first))
+        .mockReturnValueOnce(JSON.stringify(overflow));
+
+      await expect(
+        sourceWith(run).execute({
+          type: "set-project-field",
+          issueNumber: 55,
+          field: "Status",
+          value: "In progress",
+        }),
+      ).rejects.toThrow(
+        `Fresh Project ${connectionName} totalCount changed during pagination`,
+      );
+      expect(run).toHaveBeenCalledTimes(2);
+    },
+  );
 });

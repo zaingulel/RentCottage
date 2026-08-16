@@ -29,8 +29,6 @@ function completeSource() {
       number: 4,
       owner: { login: "zaingulel" },
       closed: false,
-      items: { totalCount: 1 },
-      fields: { totalCount: 3 },
     },
     fields: {
       totalCount: 3,
@@ -141,8 +139,7 @@ describe("RentCottage GitHub adapter", () => {
   it("reads native blockers for new issues discovered from Project 4", async () => {
     const source = completeSource();
     const { evidence } = source;
-    const { project, items } = evidence;
-    project.items.totalCount = 2;
+    const { items } = evidence;
     items.totalCount = 2;
     items.items.push({
       id: "item-63",
@@ -264,7 +261,6 @@ describe("RentCottage GitHub adapter", () => {
   it("observes multiple items once and reads each distinct linked or explicit pull request once", async () => {
     const source = completeSource();
     const { evidence } = source;
-    evidence.project.items.totalCount = 2;
     evidence.items.totalCount = 2;
     evidence.items.items[0]["linked pull requests"] = [
       {
@@ -435,13 +431,12 @@ describe("RentCottage GitHub adapter", () => {
   it.each([
     {
       name: "duplicate Area field",
-      change(fields, project) {
+      change(fields) {
         fields.fields.push({
           ...structuredClone(fields.fields[0]),
           id: "field-area-duplicate",
         });
         fields.totalCount = 4;
-        project.fields.totalCount = 4;
       },
     },
     {
@@ -467,8 +462,8 @@ describe("RentCottage GitHub adapter", () => {
     },
   ])("rejects $name before field normalization", async ({ change }) => {
     const source = completeSource();
-    const { fields, project } = source.evidence;
-    change(fields, project);
+    const { fields } = source.evidence;
+    change(fields);
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -525,8 +520,6 @@ describe("RentCottage GitHub adapter", () => {
       number: 5,
       owner: { login: "someone-else" },
       closed: false,
-      items: { totalCount: 1 },
-      fields: { totalCount: 3 },
     };
     const github = createRentCottageGitHubAdapter({
       source,
