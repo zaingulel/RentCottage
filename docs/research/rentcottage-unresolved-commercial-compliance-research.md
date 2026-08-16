@@ -2,6 +2,8 @@
 
 **Research date:** 2 August 2026
 
+**Payment evidence refreshed:** 16 August 2026
+
 **Purpose:** Resolve, where public evidence permits, the proposed customer booking fee, payment-provider shortlist, and owner-document requirements for the RentCottage Minimum Viable Product (MVP).
 
 **Status:** Product and commercial research, not Iraqi legal, tax, accounting, or regulatory advice.
@@ -67,57 +69,29 @@ The Central Bank of Iraq publishes the authoritative list of licensed electronic
 
 CBI identifies Electronic Payment Services Regulation No. 2 of 2024 and related technical and financial instructions as part of the current legal framework. RentCottage should contract only through the appropriate licensed structure and should not operate its own customer wallet or directly improvise custody of funds. [CBI electronic-payment legal framework](https://cbi.iq/news/print_news/2868) and [Electronic Payment Services Regulation No. 2 of 2024](https://cbi.iq/news/print_news/2577)
 
-### Candidate 1: Qi Card
+### Qi-first provider evidence matrix — 16 August 2026
 
-**Publicly evidenced capabilities**
+This matrix separates **public documentation** from **demonstrated behaviour**. No provider credentials were used, no provider was contacted, and no external sandbox transaction was authorised for this ticket. Sandbox proof is therefore **not evidenced for Qi Card, ZainCash or AsiaPay**, even where public documentation describes a test environment. “Not evidenced” means the cited public material does not establish the complete RentCottage requirement; it is not a claim that the provider cannot support it.
 
-- Web and mobile payment gateway accepting cards and SuperQi wallet payments.
-- Iraqi dinar support.
-- Hosted payment surfaces, 3-D Secure and tokenised card support.
-- Payment status queries and signed webhook notifications.
-- Payment cancellation, including a successfully processed payment awaiting confirmation.
-- Full and partial refunds.
-- Public documentation that refers to refunds following confirmation in a two-stage payment.
+| Required evidence | Qi Card — investigate first | ZainCash | AsiaPay |
+| --- | --- | --- | --- |
+| Licensing | **Documented.** CBI lists Global Smart Card Company with issuer, processor and acquirer licence no. 11 dated 3 October 2019. | **Documented.** CBI lists Zain Cash with mobile-payment licence no. 1 dated 22 December 2015. | **Documented.** CBI lists AsiaPay with mobile-payment, processor and acquirer licence no. 2 dated 22 December 2015. |
+| Authorisation and funds reservation | **Partly documented.** Public material describes cardholder authorisation and capture, and separately refers to two-stage payments. The reserved-funds semantics, supported instruments and authorisation window for RentCottage's terminal are **not evidenced**. | **Not evidenced.** Public v2 material documents transaction initiation, pending/final statuses and inquiry, but not a separate full-total reservation. | **Not evidenced.** The public flow creates and completes a payment order; it does not document a separate reservation. |
+| Delayed capture | **Partly documented, not proven.** The refund guide refers to confirmation after a two-stage payment, but enabled delayed-capture behaviour and limits for the proposed terminal are **not evidenced**. | **Not evidenced.** | **Not evidenced.** |
+| Release or void before capture | **Partly documented.** Cancellation is documented before processing or while a successful payment awaits confirmation. Whether this is the exact release of every supported authorisation is **not evidenced**. | **Not evidenced.** Public reversal/refund material does not establish release of an uncaptured authorisation. | **Not evidenced.** |
+| Full and partial refunds | **Documented.** The refund endpoint states full or partial refunds and a cumulative ceiling equal to the payment amount. | **Partly documented.** Refund/reversal states and events are public, but the documentation says full versus partial support depends on the commercial agreement. | **Partly documented.** A signed refund endpoint and refund status/amount are public; partial-refund rules and cumulative ceilings are **not evidenced**. |
+| Signed, retryable and reconcilable events | **Documented.** Webhooks carry an RSA signature and are repeated until HTTP 200; payment status can be queried. Qi requires a unique request ID per operation within each Merchant Terminal, so RentCottage must not reuse one provider request ID across attempts. | **Partly documented.** Redirects/webhooks use signed JSON Web Tokens, `eventId` is the duplicate-delivery key, and inquiry is the fallback. Webhooks are production-only and cannot be tested in the public UAT flow, so retry behaviour remains **not evidenced**. | **Partly documented.** Requests/responses use signed JSON Web Tokens and order status is queryable; notification retry and duplicate-delivery rules are **not evidenced**. |
+| Payment disputes and chargebacks | **Not evidenced.** Public gateway pages do not establish dispute evidence, deadlines, liability or chargeback allocation. | **Not evidenced.** | **Not evidenced.** |
+| Customer charging | **Documented.** Hosted web/native flows support cards and SuperQi with IQD and 3-D Secure. | **Documented for the gateway/wallet flow.** IQD is required; the exact instrument coverage and RentCottage commercial configuration remain **not evidenced**. | **Documented.** Hosted checkout creates IQD payment orders. |
+| Cottage Owner or sub-merchant settlement | **Not evidenced.** No public proof of onboarding multiple Cottage Owners, split settlement, net payout, payout timing or lawful recovery. | **Not evidenced for a marketplace.** Merchant/company wallets and ordinary transfers are documented, but sub-merchant onboarding and booking-level net settlement are not. | **Not evidenced.** |
+| IQD precision | **Documented.** Signature rules require three decimal places for IQD, matching 1 IQD = 1,000 fils. | **Not evidenced precisely.** IQD is required, but the public v2 material reviewed does not state the accepted fractional precision. | **Documented by the public examples as three decimal places**, including `1250.000`; contractual precision still requires confirmation. |
+| Pricing, reserves and fees | **Not evidenced for RentCottage.** Public pages do not provide the applicable transaction, refund, settlement, dispute, reserve or failed-operation tariff. | **Partly documented.** Merchant/company gateway pricing is 0.6% with a minimum IQD 150, with other wallet/bank-transfer fees published. Refund, dispute, reserve and marketplace-settlement pricing remain **not evidenced**. | **Not evidenced.** The public guide says fees are competitive but provides no binding tariff, reserve or marketplace cost allocation. |
+| Onboarding requirements | **Partly documented.** Merchant Terminal and application programming interface credentials come from the acquirer; entity, Cottage Owner and marketplace underwriting requirements are **not evidenced**. | **Partly documented.** Business-wallet Know Your Customer and company documents are public, and production credentials follow contract/onboarding. Marketplace/sub-merchant requirements remain **not evidenced**. | **Partly documented.** Merchant approval precedes production/sandbox credentials; detailed marketplace and sub-merchant underwriting is **not evidenced**. |
+| Sandbox demonstration for RentCottage | **Not evidenced — no external transaction authorised.** | **Not evidenced — no external transaction authorised.** Public documentation also says webhooks do not work in UAT. | **Not evidenced — no external transaction authorised.** |
 
-Sources: [Qi Card gateway introduction](https://developers-gate.qi.iq/docs/getting-started/payment-gateway-intro), [cancel payment](https://developers-gate.qi.iq/docs/api-endpoints/cancel-payment), [refund payment](https://developers-gate.qi.iq/docs/api-endpoints/refund-payment), and [webhook setup](https://developers-gate.qi.iq/docs/webhook-guide/webhook-setup).
+Sources: [CBI licensed electronic payment providers](https://www.cbi.iq/page/25), [Qi gateway introduction](https://developers-gate.qi.iq/docs/getting-started/payment-gateway-intro), [Qi signature-based authentication](https://developers-gate.qi.iq/docs/api-auth/signature-based), [Qi cancellation](https://developers-gate.qi.iq/docs/api-endpoints/cancel-payment), [Qi refunds](https://developers-gate.qi.iq/docs/api-endpoints/refund-payment), [Qi webhooks](https://developers-gate.qi.iq/docs/webhook-guide/webhook-setup), [ZainCash v2 gateway documentation](https://docs.zaincash.iq/), [ZainCash business pricing and requirements](https://www.zaincash.iq/business-wallets), and [AsiaPay integration documentation](https://www.asiapay.iq/integration).
 
-**What is not proven publicly**
-
-- That two-stage authorisation and later capture is enabled for every card type or merchant terminal.
-- The authorisation validity window that RentCottage would receive.
-- Automatic split settlement between RentCottage and multiple cottage owners.
-- Sub-merchant onboarding, owner Know Your Customer checks, payout timing, rolling reserves and chargeback allocation.
-- RentCottage's actual pricing and contract terms.
-
-**Assessment:** First provider to approach and test. Do not name Qi as selected until a sandbox demonstrates the full booking lifecycle and the commercial contract resolves marketplace settlement.
-
-### Candidate 2: ZainCash
-
-**Publicly evidenced capabilities**
-
-- CBI-listed mobile payment provider.
-- Merchant gateway, IQD wallet payments, transaction status and refund lifecycle.
-- Public merchant and company pricing.
-- Public merchant Know Your Customer document requirements.
-
-Sources: [ZainCash gateway documentation](https://docs.zaincash.iq/), [business pricing and requirements](https://www.zaincash.iq/business-wallets), and [CBI provider list](https://www.cbi.iq/page/25).
-
-**Not publicly established:** A pre-authorisation hold followed by delayed capture, card coverage comparable to Qi, or automatic marketplace split payouts.
-
-**Assessment:** Strong commercial fallback and useful pricing benchmark. It cannot yet be treated as supporting the agreed Airbnb-style flow.
-
-### Candidate 3: AsiaPay
-
-**Publicly evidenced capabilities**
-
-- CBI-listed mobile payment provider.
-- IQD checkout, payment-order queries and refunds through a public integration guide.
-
-Sources: [AsiaPay integration documentation](https://www.asiapay.iq/integration) and [CBI provider list](https://www.cbi.iq/page/25).
-
-**Not publicly established:** A true authorisation hold with later capture, authorisation release, or marketplace split settlement.
-
-**Assessment:** Include in the request for proposal, but place behind Qi until the missing lifecycle capabilities are demonstrated.
+**Assessment:** Qi remains the first candidate to validate because its public material covers more of the provider-neutral contract. This is an investigation order, not a provider selection. No provider can be marked selected until the exact lifecycle, dispute handling, owner settlement, commercial allocation and onboarding requirements are demonstrated and confirmed in writing.
 
 ### Mandatory provider validation checklist
 
