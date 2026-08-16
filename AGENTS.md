@@ -43,6 +43,10 @@ Use the installed skills rather than reproducing their methods: `codebase-design
 
 Keep orchestration in the active work session. The repository records the desired outcome and software evidence; it does not maintain a custom checkpoint or workflow state machine.
 
+### Delivery authority
+
+Load [`docs/agents/delivery.md`](docs/agents/delivery.md) only when preparing or executing an owner-approved delivery. Selection-only resume, planning and ordinary construction do not preload it. That authority owns outward delivery, reconciliation, terminal release, refusal and recovery guidance.
+
 ### Roles
 
 - **Coordinator:** owns scope, integration, verification and owner communication. It selects the smallest useful team for the ticket.
