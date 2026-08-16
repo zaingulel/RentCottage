@@ -5,6 +5,9 @@ import { createClient } from "@supabase/supabase-js";
 
 type BrowserLocale = "en" | "ar" | "ckb";
 
+const reviewDocumentFilename =
+  "synthetic-long-private-identity-evidence-filename-that-must-wrap-without-truncation.pdf";
+
 type BrowserApplicationFixture = {
   privacyNote: string;
   documentsSection: string;
@@ -46,6 +49,11 @@ const browserFixtures: Record<
       ownerApplicationCta: string;
     };
     application: BrowserApplicationFixture;
+    review: {
+      title: string;
+      createLink: string;
+      openDocument: string;
+    };
   }
 > = {
   en: {
@@ -93,6 +101,11 @@ const browserFixtures: Record<
       syntheticLayoutAlert:
         "Synthetic geometry fixture: this intentionally long private-document validation detail must wrap across several lines so the shared feedback row is measured under unequal content heights.",
     },
+    review: {
+      title: "Submitted Owner Applications",
+      createLink: "Create secure link",
+      openDocument: "Open secure document",
+    },
   },
   ar: {
     access: {
@@ -138,6 +151,11 @@ const browserFixtures: Record<
       syntheticLayoutAlert:
         "تركيبة هندسية اصطناعية: هذه التفاصيل الطويلة لاختبار تخطيط التحقق من الوثيقة الخاصة يجب أن تلتف عبر عدة أسطر لقياس صف الملاحظات المشتركة بارتفاعات محتوى مختلفة.",
     },
+    review: {
+      title: "طلبات المالك المرسلة",
+      createLink: "أنشئ رابطاً آمناً",
+      openDocument: "افتح الوثيقة الآمنة",
+    },
   },
   ckb: {
     access: {
@@ -182,6 +200,11 @@ const browserFixtures: Record<
       invalidDocument: "PDF یان JPEG یان PNG تا 5 مێگابایت هەڵبژێرە.",
       syntheticLayoutAlert:
         "تاقیکردنەوەی ئەندازیاری دەستکرد: ئەم وردەکارییە درێژەیەی پشتڕاستکردنەوەی بەڵگەی تایبەت دەبێت لە چەند دێڕێکدا بپێچرێتەوە بۆ پێوانەکردنی ڕیزی هاوبەشی تێبینییەکان بە بەرزی ناهاوشێوەی ناوەڕۆک.",
+    },
+    review: {
+      title: "داواکارییە نێردراوەکانی خاوەن",
+      createLink: "بەستەری پارێزراو دروست بکە",
+      openDocument: "بەڵگەنامە پارێزراوەکە بکەرەوە",
     },
   },
 };
@@ -420,7 +443,7 @@ test("a Cottage Owner saves, resumes and submits a complete private application"
   await expect(page.getByLabel("Parking")).toBeChecked();
 
   const evidence = [
-    ["Identity evidence", "identity.pdf"],
+    ["Identity evidence", reviewDocumentFilename],
     ["Authority-to-rent evidence", "authority.pdf"],
     ["Licence or exemption evidence", "licence.pdf"],
     ["Payout-account evidence", "payout.pdf"],
@@ -431,7 +454,7 @@ test("a Cottage Owner saves, resumes and submits a complete private application"
       name: filename,
       mimeType: "application/pdf",
       buffer:
-        filename === "identity.pdf"
+        filename === reviewDocumentFilename
           ? Buffer.concat([
               Buffer.from("%PDF-1.7\n"),
               Buffer.alloc(1_099_980),
@@ -703,20 +726,72 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(
     page.getByRole("heading", { name: "Submitted Owner Applications" }),
   ).toBeVisible();
-  await expect(page.getByText("identity.pdf").first()).toBeVisible();
   const accessedAfter = new Date(Date.now() - 5_000).toISOString();
-  const identityDocument = page
-    .locator("li")
-    .filter({ hasText: "identity.pdf" })
-    .first();
-  await identityDocument
-    .getByRole("button", { name: "Create secure link" })
-    .click();
-  const secureLink = identityDocument.getByRole("link", {
-    name: "Open secure document",
-  });
-  await expect(secureLink).toBeVisible();
-  const signedUrl = await secureLink.getAttribute("href");
+  let signedUrl: string | null = null;
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    const copy = browserFixtures[locale].review;
+    const direction = locale === "en" ? "ltr" : "rtl";
+    await page.goto(`/${locale}/administrator/owner-applications`);
+    await expect(page.locator("html")).toHaveAttribute("dir", direction);
+    await expect(page.getByRole("heading", { name: copy.title })).toBeVisible();
+    await expect(page.getByText(reviewDocumentFilename).first()).toBeVisible();
+    const identityDocument = page
+      .locator("li")
+      .filter({ hasText: reviewDocumentFilename })
+      .first();
+    const createLink = identityDocument.getByRole("button", {
+      name: copy.createLink,
+    });
+    await tabTo(page, createLink);
+    if (testInfo.project.name !== "worker") {
+      await page.screenshot({
+        path: testInfo.outputPath(`${locale}-administrator-review-idle.png`),
+        fullPage: true,
+      });
+    }
+    await page.keyboard.press("Enter");
+    const secureLink = identityDocument.getByRole("link", {
+      name: copy.openDocument,
+    });
+    await expect(secureLink).toBeVisible();
+    if (testInfo.project.name !== "worker") {
+      await page.screenshot({
+        path: testInfo.outputPath(`${locale}-administrator-review-ready.png`),
+        fullPage: true,
+      });
+    }
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error("Browser viewport is unavailable");
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    const controlBox = await createLink.boundingBox();
+    expect(controlBox?.x).toBeGreaterThanOrEqual(0);
+    expect((controlBox?.x ?? 0) + (controlBox?.width ?? 0)).toBeLessThanOrEqual(
+      viewport.width,
+    );
+    const filenameBox = await identityDocument
+      .getByText(reviewDocumentFilename)
+      .boundingBox();
+    expect(filenameBox?.x).toBeGreaterThanOrEqual(0);
+    expect(
+      (filenameBox?.x ?? 0) + (filenameBox?.width ?? 0),
+    ).toBeLessThanOrEqual(viewport.width);
+    expect(
+      await identityDocument
+        .getByText(reviewDocumentFilename)
+        .evaluate(
+          (element) =>
+            element.scrollWidth <= element.clientWidth &&
+            getComputedStyle(element).overflowWrap === "anywhere",
+        ),
+    ).toBe(true);
+    signedUrl = await secureLink.getAttribute("href");
+  }
   if (!signedUrl) throw new Error("Secure document link has no URL");
   const documentResponse = await page.request.get(signedUrl);
   expect(documentResponse.status()).toBe(200);

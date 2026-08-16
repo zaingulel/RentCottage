@@ -272,6 +272,18 @@ export function isVerificationDocumentKindRequired(
   return true;
 }
 
+export function documentAccessDeadlineVerdict(
+  attemptStartedAt: number,
+  expiresInSeconds: number,
+  resolvedAt: number,
+) {
+  const remainingMilliseconds =
+    attemptStartedAt + expiresInSeconds * 1_000 - resolvedAt;
+  return remainingMilliseconds > 0
+    ? { status: "ready" as const, remainingMilliseconds }
+    : { status: "expired" as const };
+}
+
 const consoleDiagnostics: OwnerApplicationDiagnostics = {
   report(event, context, cause) {
     console.error("Owner Application operation failed", {
@@ -632,7 +644,7 @@ export function createOwnerApplication({
           expiresInSeconds,
         );
         if (completion === "expired") {
-          return { status: "unavailable" } as const;
+          return { status: "expired" } as const;
         }
       } catch (error) {
         reportFailure(diagnostics, "document_access_completion_failed", error, {

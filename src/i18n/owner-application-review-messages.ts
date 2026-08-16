@@ -12,10 +12,12 @@ export const ownerApplicationReviewMessages: Record<
     submitted: string;
     documents: string;
     createLink: string;
+    pending: string;
     linkReady: string;
     openDocument: string;
     denied: string;
     unavailable: string;
+    expired: string;
     nextPage: string;
   }
 > = {
@@ -31,10 +33,13 @@ export const ownerApplicationReviewMessages: Record<
     submitted: "Submitted",
     documents: "Verification documents",
     createLink: "Create secure link",
+    pending: "Creating secure link.",
     linkReady: "Secure link ready for up to 60 seconds.",
     openDocument: "Open secure document",
     denied: "You do not have permission to access this private document.",
     unavailable: "The private review queue is temporarily unavailable.",
+    expired:
+      "This secure link has expired. Create a new secure link to continue.",
     nextPage: "Next applications",
   },
   ar: {
@@ -49,10 +54,13 @@ export const ownerApplicationReviewMessages: Record<
     submitted: "أُرسل",
     documents: "وثائق التحقق",
     createLink: "أنشئ رابطاً آمناً",
+    pending: "يجري إنشاء الرابط الآمن.",
     linkReady: "الرابط الآمن جاهز لمدة تصل إلى 60 ثانية.",
     openDocument: "افتح الوثيقة الآمنة",
     denied: "لا تملك صلاحية الوصول إلى هذه الوثيقة الخاصة.",
     unavailable: "قائمة المراجعة الخاصة غير متاحة مؤقتاً.",
+    expired:
+      "انتهت صلاحية هذا الرابط الآمن. أنشئ رابطاً آمناً جديداً للمتابعة.",
     nextPage: "الطلبات التالية",
   },
   ckb: {
@@ -67,10 +75,13 @@ export const ownerApplicationReviewMessages: Record<
     submitted: "نێردراوە",
     documents: "بەڵگەنامەکانی پشتڕاستکردنەوە",
     createLink: "بەستەری پارێزراو دروست بکە",
+    pending: "بەستەری پارێزراو دروست دەکرێت.",
     linkReady: "بەستەرە پارێزراوەکە بۆ ماوەی تا 60 چرکە ئامادەیە.",
     openDocument: "بەڵگەنامە پارێزراوەکە بکەرەوە",
     denied: "دەسەڵاتی دەستگەیشتن بەم بەڵگەنامە نهێنییە نییە.",
     unavailable: "ڕیزی پێداچوونەوەی نهێنی کاتێکی کورت بەردەست نییە.",
+    expired:
+      "ئەم بەستەرە پارێزراوە بەسەرچووە. بۆ بەردەوامبوون بەستەرێکی نوێ دروست بکە.",
     nextPage: "داواکارییەکانی دواتر",
   },
 };
