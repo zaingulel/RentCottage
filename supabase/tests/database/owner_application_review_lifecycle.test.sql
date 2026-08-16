@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(52);
+select plan(59);
 
 select has_table('public', 'owner_application_transitions', 'application transitions are durable');
 select has_table('public', 'owner_application_information_requests', 'scoped information requests are durable');
@@ -10,18 +10,22 @@ select has_table('public', 'owner_application_notices', 'Owner Backoffice notice
 select has_table('public', 'owner_verification_document_versions', 'verification evidence is versioned');
 select has_table('public', 'owner_application_verification_records', 'decisions bind an immutable verification record');
 select has_table('public', 'owner_application_renewal_work', 'evidence expiry creates renewal work');
+select hasnt_column('public', 'owner_application_notices', 'read_at',
+  'notices do not imply unimplemented read acknowledgement');
 
 insert into auth.users (id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at)
 values
   ('00000000-0000-0000-0000-000000000301', 'authenticated', 'authenticated', '+9647500000301', now(), null, null),
   ('00000000-0000-0000-0000-000000000304', 'authenticated', 'authenticated', null, null, 'reviewer@example.test', now()),
-  ('00000000-0000-0000-0000-000000000305', 'authenticated', 'authenticated', '+9647500000305', now(), null, null);
+  ('00000000-0000-0000-0000-000000000305', 'authenticated', 'authenticated', '+9647500000305', now(), null, null),
+  ('00000000-0000-0000-0000-000000000306', 'authenticated', 'authenticated', '+9647500000306', now(), null, null);
 
 insert into public.account_contexts (user_id, role, owner_approval_state)
 values
   ('00000000-0000-0000-0000-000000000301', 'cottage_owner', 'prospective'),
   ('00000000-0000-0000-0000-000000000304', 'platform_administrator', null),
-  ('00000000-0000-0000-0000-000000000305', 'cottage_owner', 'prospective');
+  ('00000000-0000-0000-0000-000000000305', 'cottage_owner', 'prospective'),
+  ('00000000-0000-0000-0000-000000000306', 'cottage_owner', 'prospective');
 
 insert into public.owner_applications (
   id, owner_user_id, applicant_kind, legal_name, licensing_basis, status,
@@ -247,8 +251,61 @@ select throws_ok(
 );
 
 reset role;
+alter table public.owner_applications
+  drop constraint owner_application_review_clock_matches_status;
+create function pg_temp.request_information_sqlstate()
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform public.review_owner_application(
+    '20000000-0000-4000-8000-000000000301', 2, 'request_information',
+    'Provide the renewed licence.', array['exact_address'], '{}',
+    null, null, null, '{}'::jsonb
+  );
+  raise exception 'unexpected success';
+exception when others then
+  if sqlstate = 'P0001' then return 'NO_ERROR'; end if;
+  return sqlstate;
+end;
+$$;
 update public.owner_applications
-set review_due_at = now() + interval '70 hours'
+set review_due_at = null
+where id = '20000000-0000-4000-8000-000000000301';
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  true
+);
+select results_eq(
+  $$select pg_temp.request_information_sqlstate()$$,
+  array['RC422'::text],
+  'missing information cannot pause a null review deadline'
+);
+
+reset role;
+update public.owner_applications
+set review_started_at = null, review_due_at = now() + interval '70 hours'
+where id = '20000000-0000-4000-8000-000000000301';
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  true
+);
+select results_eq(
+  $$select pg_temp.request_information_sqlstate()$$,
+  array['RC422'::text],
+  'missing information cannot pause an unstarted review clock'
+);
+
+reset role;
+update public.owner_applications
+set review_started_at = now() - interval '2 hours',
+  review_due_at = now() + interval '70 hours'
 where id = '20000000-0000-4000-8000-000000000301';
 set local role authenticated;
 select set_config(
@@ -433,6 +490,38 @@ select results_eq(
 );
 
 reset role;
+insert into public.owner_applications (
+  id, owner_user_id, applicant_kind, legal_name, licensing_basis, status,
+  submitted_at, review_started_at, review_due_at
+) values (
+  '20000000-0000-4000-8000-000000000306',
+  '00000000-0000-0000-0000-000000000306',
+  'individual', 'No Evidence Owner', 'licence', 'under_review',
+  now(), now(), now() + interval '72 hours'
+);
+insert into public.owner_application_cottage_profiles (
+  application_id, name, governorate, approximate_location, exact_address,
+  capacity, bedrooms, bathrooms, description, house_rules
+) values (
+  '20000000-0000-4000-8000-000000000306', 'No Evidence Cottage', 'Erbil',
+  'Shaqlawa', 'Private road', 8, 3, 2, 'Description', 'Rules'
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  true
+);
+select throws_ok(
+  $$select public.review_owner_application(
+    '20000000-0000-4000-8000-000000000306', 1, 'approve',
+    'No evidence must not be approved.', '{}', '{}',
+    'Erbil Governorate', 'licence', 'Tourism licence 2026-99', '{}'::jsonb
+  )$$,
+  'RC422', null, 'approval without content-bound evidence is intentionally invalid'
+);
+
+reset role;
 select throws_ok(
   $$update public.owner_application_verification_records set reason = 'rewrite'$$,
   'RC405', null, 'a verification decision cannot be rewritten'
@@ -446,7 +535,7 @@ select throws_ok(
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  '{"sub":"00000000-0000-0000-0000-000000000301","role":"authenticated","aal":"aal1"}',
   true
 );
 
@@ -455,7 +544,44 @@ select results_eq(
     '00000000-0000-0000-0000-000000000301'
   )$$,
   array[true],
-  'an approved owner may start new business'
+  'an approved owner may check their own new-business eligibility'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000305","role":"authenticated","aal":"aal1"}',
+  true
+);
+select throws_ok(
+  $$select public.owner_can_start_new_business(
+    '00000000-0000-0000-0000-000000000301'
+  )$$,
+  '42501', null, 'an owner cannot inspect another owner eligibility'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal1"}',
+  true
+);
+select throws_ok(
+  $$select public.owner_can_start_new_business(
+    '00000000-0000-0000-0000-000000000301'
+  )$$,
+  '42501', null, 'an AAL1 administrator cannot inspect owner eligibility'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  true
+);
+select results_eq(
+  $$select public.owner_can_start_new_business(
+    '00000000-0000-0000-0000-000000000301'
+  )$$,
+  array[true],
+  'an AAL2 administrator may inspect owner eligibility'
 );
 
 reset role;
@@ -491,6 +617,12 @@ select results_eq(
 );
 
 reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000301","role":"authenticated","aal":"aal1"}',
+  true
+);
 select results_eq(
   $$select status::text, owner_approval_state::text
     from public.owner_applications
@@ -515,6 +647,7 @@ select results_eq(
   'an expired owner fails closed for publication and new Booking Requests'
 );
 
+reset role;
 update public.owner_verification_documents
 set content_digest = repeat('c', 64), digest_source = 'sha256'
 where application_id = '20000000-0000-4000-8000-000000000301'

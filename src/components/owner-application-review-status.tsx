@@ -165,7 +165,11 @@ function ResponseFeedback({
   const copy = ownerApplicationStatusMessages[locale];
   return state.status === "submitted" ? (
     <ActionFeedback kind="success">{copy.submitted}</ActionFeedback>
-  ) : state.status === "invalid" || state.status === "unavailable" ? (
+  ) : state.status === "invalid" ? (
+    <ActionFeedback kind="error">{copy.invalid}</ActionFeedback>
+  ) : state.status === "conflict" ? (
+    <ActionFeedback kind="error">{copy.conflict}</ActionFeedback>
+  ) : state.status === "unavailable" ? (
     <ActionFeedback kind="error">{copy.unavailable}</ActionFeedback>
   ) : null;
 }
@@ -188,6 +192,11 @@ export function OwnerApplicationReviewStatus({
     submitOwnerApplicationRenewalAction,
     idle,
   );
+  const dateTimeFormat = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Baghdad",
+  });
   return (
     <section className="application-section owner-review-status">
       <span
@@ -202,11 +211,7 @@ export function OwnerApplicationReviewStatus({
             {review.notices.map((notice, index) => (
               <li key={`${notice.createdAt}-${index}`}>
                 <time dateTime={notice.createdAt}>
-                  {new Intl.DateTimeFormat(locale, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                    timeZone: "Asia/Baghdad",
-                  }).format(new Date(notice.createdAt))}
+                  {dateTimeFormat.format(new Date(notice.createdAt))}
                 </time>
                 {notice.reason ? ` · ${notice.reason}` : ""}
               </li>

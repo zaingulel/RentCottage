@@ -52,6 +52,16 @@ describe("Supabase account context boundary", () => {
     },
   );
 
+  it("rejects an unknown non-null Cottage Owner approval state", () => {
+    expect(() =>
+      parseAccountContext({
+        user_id: "81f35355-d3f7-4bfd-bfc4-e4a6887adfc3",
+        role: "cottage_owner",
+        owner_approval_state: "pending_manual_override",
+      }),
+    ).toThrow("Account context has an invalid owner approval state");
+  });
+
   it.each([
     undefined,
     { user_id: "not-a-uuid", role: "customer", owner_approval_state: null },

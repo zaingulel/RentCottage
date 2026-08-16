@@ -7,6 +7,7 @@ import { verificationDocumentMaximumBytes } from "./owner-application";
 import {
   executeOwnerApplicationInformationResponse,
   executeOwnerApplicationRenewalSubmission,
+  ownerApplicationReviewFailureStatus,
 } from "./owner-application-review";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 
@@ -71,7 +72,7 @@ export type OwnerDocumentAccessState =
     };
 
 export type OwnerApplicationResponseState = {
-  status: "idle" | "submitted" | "invalid" | "unavailable";
+  status: "idle" | "submitted" | "invalid" | "conflict" | "unavailable";
 };
 
 function localeFrom(formData: FormData) {
@@ -212,13 +213,7 @@ export async function respondToOwnerApplicationAction(
         .filter((value): value is string => typeof value === "string"),
     });
   } catch (error) {
-    return {
-      status:
-        error instanceof Error &&
-        error.message === "Owner Application review command is invalid"
-          ? "invalid"
-          : "unavailable",
-    };
+    return { status: ownerApplicationReviewFailureStatus(error) };
   }
   revalidatePath(`/${locale}/owner/application`);
   revalidatePath(`/${locale}/administrator/owner-applications`);
@@ -239,8 +234,8 @@ export async function submitOwnerApplicationRenewalAction(
         .getAll("confirmedDocumentKinds")
         .filter((value): value is string => typeof value === "string"),
     });
-  } catch {
-    return { status: "unavailable" };
+  } catch (error) {
+    return { status: ownerApplicationReviewFailureStatus(error) };
   }
   revalidatePath(`/${locale}/owner/application`);
   revalidatePath(`/${locale}/administrator/owner-applications`);

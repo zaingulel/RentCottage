@@ -84,6 +84,33 @@ function invalid(): never {
   throw new Error("Owner Application review command is invalid");
 }
 
+const conflictMessage =
+  "Owner Application review command conflicts with newer data";
+
+function providerErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function providerFailure(error: unknown, unavailableMessage: string): never {
+  const code = providerErrorCode(error);
+  if (code === "RC422") invalid();
+  if (code === "RC409") throw new Error(conflictMessage);
+  throw new Error(unavailableMessage);
+}
+
+export function ownerApplicationReviewFailureStatus(
+  error: unknown,
+): "invalid" | "conflict" | "unavailable" {
+  if (!(error instanceof Error)) return "unavailable";
+  if (error.message === "Owner Application review command is invalid") {
+    return "invalid";
+  }
+  if (error.message === conflictMessage) return "conflict";
+  return "unavailable";
+}
+
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
   return value as Record<string, unknown>;
@@ -238,8 +265,69 @@ export async function executeOwnerApplicationReviewCommand(
       approval?.licenceOrExemptionBasis ?? null,
     requested_expiry_dates: approval?.relevantExpiryDates ?? {},
   });
-  if (error) throw new Error("Owner Application review is unavailable");
+  if (error) providerFailure(error, "Owner Application review is unavailable");
   return parseOwnerApplicationReviewResult(data);
+}
+
+function parseResponseFieldValue(
+  field: OwnerApplicationResponseField,
+  value: unknown,
+): string | number | string[] {
+  const requiredTextMaximums: Partial<
+    Record<OwnerApplicationResponseField, number>
+  > = {
+    legal_name: 120,
+    cottage_name: 120,
+    governorate: 120,
+    approximate_location: 240,
+    exact_address: 240,
+    description: 2000,
+    house_rules: 1500,
+  };
+  const requiredMaximum = requiredTextMaximums[field];
+  if (requiredMaximum !== undefined) return boundedText(value, requiredMaximum);
+  if (field === "company_name" || field === "exemption_basis") {
+    if (typeof value !== "string") invalid();
+    const normalized = value.trim();
+    if (normalized.length > (field === "company_name" ? 120 : 1000)) invalid();
+    return normalized;
+  }
+  if (field === "licensing_basis") {
+    if (value !== "licence" && value !== "exemption") invalid();
+    return value;
+  }
+  if (field === "capacity" || field === "bedrooms" || field === "bathrooms") {
+    const maximum = field === "capacity" ? 100 : 50;
+    if (
+      !Number.isInteger(value) ||
+      (value as number) < 1 ||
+      (value as number) > maximum
+    ) {
+      invalid();
+    }
+    return value as number;
+  }
+  if (field === "amenities") {
+    const allowed = [
+      "garden",
+      "parking",
+      "pool",
+      "air_conditioning",
+      "wifi",
+      "outdoor_seating",
+    ] as const;
+    if (
+      !Array.isArray(value) ||
+      value.length > 6 ||
+      !value.every((item): item is string =>
+        allowed.includes(item as (typeof allowed)[number]),
+      )
+    ) {
+      invalid();
+    }
+    return value;
+  }
+  return invalid();
 }
 
 export async function executeOwnerApplicationInformationResponse(
@@ -256,16 +344,20 @@ export async function executeOwnerApplicationInformationResponse(
   ) {
     invalid();
   }
-  const fieldValues = input.fieldValues as Record<string, unknown>;
-  if (
-    Object.keys(fieldValues).some(
-      (field) =>
-        !ownerApplicationResponseFields.includes(
-          field as OwnerApplicationResponseField,
-        ),
-    )
-  ) {
-    invalid();
+  const suppliedFieldValues = input.fieldValues as Record<string, unknown>;
+  const fieldValues: Record<string, string | number | string[]> = {};
+  for (const [field, fieldValue] of Object.entries(suppliedFieldValues)) {
+    if (
+      !ownerApplicationResponseFields.includes(
+        field as OwnerApplicationResponseField,
+      )
+    ) {
+      invalid();
+    }
+    fieldValues[field] = parseResponseFieldValue(
+      field as OwnerApplicationResponseField,
+      fieldValue,
+    );
   }
   const confirmedDocumentKinds = uniqueKnownValues(
     input.confirmedDocumentKinds,
@@ -279,7 +371,8 @@ export async function executeOwnerApplicationInformationResponse(
       confirmed_document_kinds: confirmedDocumentKinds,
     },
   );
-  if (error) throw new Error("Owner Application response is unavailable");
+  if (error)
+    providerFailure(error, "Owner Application response is unavailable");
   return parseOwnerApplicationReviewResult(data);
 }
 
@@ -303,6 +396,6 @@ export async function executeOwnerApplicationRenewalSubmission(
     expected_version: input.expectedVersion as number,
     confirmed_document_kinds: confirmedDocumentKinds,
   });
-  if (error) throw new Error("Owner Application renewal is unavailable");
+  if (error) providerFailure(error, "Owner Application renewal is unavailable");
   return parseOwnerApplicationReviewResult(data);
 }

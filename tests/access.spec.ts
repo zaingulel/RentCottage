@@ -847,7 +847,11 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   });
 
   await page.getByRole("button", { name: "Start review" }).click();
-  await expect(page.getByText("Under review", { exact: true })).toBeVisible();
+  const currentAdministratorStatus = page
+    .locator(".administrator-review-detail > .application-section")
+    .first()
+    .locator(".application-status");
+  await expect(currentAdministratorStatus).toHaveText("Under review");
   const informationRequest = page
     .locator("form.review-action-card")
     .filter({ hasText: "Request missing information" });
@@ -859,9 +863,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await informationRequest
     .getByRole("button", { name: "Request missing information" })
     .click();
-  await expect(
-    page.getByText("Needs information", { exact: true }),
-  ).toBeVisible();
+  await expect(currentAdministratorStatus).toHaveText("Needs information");
   await page.screenshot({
     path: testInfo.outputPath("en-administrator-review-needs-information.png"),
     fullPage: true,

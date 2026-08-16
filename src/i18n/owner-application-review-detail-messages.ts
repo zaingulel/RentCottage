@@ -22,25 +22,30 @@ const en = {
   licence: "Licence",
   exemption: "Exemption",
   basis: "Licence or exemption basis",
-  expiryKind: "Evidence with an expiry",
   expiryDate: "Expiry date",
   completed: "Application state updated.",
   invalid: "Check the required review fields.",
+  conflict: "This application changed. Reload it before trying again.",
   unavailable: "The review action is temporarily unavailable.",
   noHistory: "No lifecycle transitions are recorded yet.",
-  status: "Status",
   legalName: "Legal name",
   applicantKind: "Applicant type",
+  applicantKinds: {
+    individual: "Individual",
+    company: "Company",
+  },
   companyName: "Company name",
   exactAddress: "Exact private address",
   description: "Description",
   houseRules: "House Rules",
+  notProvided: "Not provided",
 } as const;
 
-export const ownerApplicationReviewDetailMessages: Record<
-  Locale,
-  Record<keyof typeof en, string>
-> = {
+type Copy = Omit<Record<keyof typeof en, string>, "applicantKinds"> & {
+  applicantKinds: Record<keyof typeof en.applicantKinds, string>;
+};
+
+export const ownerApplicationReviewDetailMessages: Record<Locale, Copy> = {
   en,
   ar: {
     title: "مراجعة طلب المالك",
@@ -64,19 +69,23 @@ export const ownerApplicationReviewDetailMessages: Record<
     licence: "ترخيص",
     exemption: "إعفاء",
     basis: "أساس الترخيص أو الإعفاء",
-    expiryKind: "الدليل ذو تاريخ انتهاء",
     expiryDate: "تاريخ الانتهاء",
     completed: "تم تحديث حالة الطلب.",
     invalid: "راجع حقول المراجعة المطلوبة.",
+    conflict: "تغيّر هذا الطلب. أعد تحميله قبل المحاولة مرة أخرى.",
     unavailable: "إجراء المراجعة غير متاح مؤقتاً.",
     noHistory: "لا توجد انتقالات مسجلة بعد.",
-    status: "الحالة",
     legalName: "الاسم القانوني",
     applicantKind: "نوع مقدم الطلب",
+    applicantKinds: {
+      individual: "فرد",
+      company: "شركة",
+    },
     companyName: "اسم الشركة",
     exactAddress: "العنوان الدقيق الخاص",
     description: "الوصف",
     houseRules: "قواعد البيت",
+    notProvided: "غير مقدّم",
   },
   ckb: {
     title: "پێداچوونەوەی داواکاری خاوەن",
@@ -100,18 +109,22 @@ export const ownerApplicationReviewDetailMessages: Record<
     licence: "مۆڵەت",
     exemption: "بەخشین",
     basis: "بنەمای مۆڵەت یان بەخشین",
-    expiryKind: "بەڵگەی خاوەن بەرواری بەسەرچوون",
     expiryDate: "بەرواری بەسەرچوون",
     completed: "دۆخی داواکاری نوێ کرایەوە.",
     invalid: "خانە پێویستەکانی پێداچوونەوە بپشکنە.",
+    conflict: "ئەم داواکارییە گۆڕاوە. پێش هەوڵدانەوە دووبارە باری بکەرەوە.",
     unavailable: "کرداری پێداچوونەوە کاتێکی کورت بەردەست نییە.",
     noHistory: "هێشتا هیچ گۆڕانێکی دۆخ تۆمار نەکراوە.",
-    status: "دۆخ",
     legalName: "ناوی یاسایی",
     applicantKind: "جۆری داواکار",
+    applicantKinds: {
+      individual: "تاک",
+      company: "کۆمپانیا",
+    },
     companyName: "ناوی کۆمپانیا",
     exactAddress: "ناونیشانی وردی تایبەت",
     description: "وەسف",
     houseRules: "یاساکانی ماڵ",
+    notProvided: "پێشکەش نەکراوە",
   },
 };

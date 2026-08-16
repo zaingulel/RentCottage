@@ -191,8 +191,7 @@ create table public.owner_application_notices (
     'expired', 'suspended'
   )),
   reason text,
-  created_at timestamptz not null default now(),
-  read_at timestamptz
+  created_at timestamptz not null default now()
 );
 
 create index owner_application_notices_owner_idx
@@ -488,6 +487,8 @@ begin
     where id = application.id returning * into application;
   elsif requested_action = 'request_information' then
     if application.status not in ('submitted', 'under_review')
+      or application.review_started_at is null
+      or application.review_due_at is null
       or char_length(btrim(coalesce(requested_reason, ''))) not between 1 and 1000
       or cardinality(coalesce(requested_fields, '{}'))
         + cardinality(coalesce(requested_document_kinds, '{}')) < 1
@@ -553,7 +554,8 @@ begin
         and versions.content_digest = documents.content_digest
         and versions.digest_source = 'sha256';
 
-      if coalesce(cardinality(evidence_version_ids), 0) <> (
+      if coalesce(cardinality(evidence_version_ids), 0) < 1
+        or coalesce(cardinality(evidence_version_ids), 0) <> (
         select count(*) from public.owner_verification_documents
         where application_id = application.id
       ) then
@@ -850,12 +852,19 @@ grant execute on function public.respond_to_owner_application_request(
 
 create function public.owner_can_start_new_business(target_owner_user_id uuid)
 returns boolean
-language sql
+language plpgsql
 stable
 security definer
 set search_path = ''
 as $$
-  select exists (
+begin
+  if (select auth.uid()) is null
+    or ((select auth.uid()) <> target_owner_user_id
+      and not (select public.is_platform_administrator('aal2'))) then
+    raise exception 'Owner eligibility access is denied' using errcode = '42501';
+  end if;
+
+  return exists (
     select 1
     from public.owner_applications applications
     join public.account_contexts contexts on contexts.user_id = applications.owner_user_id
@@ -870,6 +879,7 @@ as $$
           or public.owner_application_parse_expiry_date(expiry.value) <= current_date
       )
   );
+end;
 $$;
 
 revoke all on function public.owner_can_start_new_business(uuid) from public;

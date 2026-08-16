@@ -16,6 +16,17 @@ import {
   type VerificationDocumentKind,
 } from "./owner-application";
 
+const ownerApplicationNoticeKinds = [
+  "information_requested",
+  "response_received",
+  "approved",
+  "rejected",
+  "expired",
+  "suspended",
+] as const;
+
+type OwnerApplicationNoticeKind = (typeof ownerApplicationNoticeKinds)[number];
+
 export interface OwnerApplicationReviewDetail {
   applicationId: string;
   version: number;
@@ -62,13 +73,7 @@ export interface OwnerApplicationOwnerReview {
   } | null;
   renewalDocumentKinds: VerificationDocumentKind[];
   notices: Array<{
-    kind:
-      | "information_requested"
-      | "response_received"
-      | "approved"
-      | "rejected"
-      | "expired"
-      | "suspended";
+    kind: OwnerApplicationNoticeKind;
     reason: string;
     createdAt: string;
   }>;
@@ -176,6 +181,7 @@ export async function loadOwnerApplicationReviewDetail(
     !isOwnerApplicationStatus(status) ||
     status === "draft" ||
     !Number.isInteger(application.version) ||
+    (application.version as number) < 1 ||
     (applicantKind !== "individual" && applicantKind !== "company") ||
     (licensingBasis !== "licence" && licensingBasis !== "exemption") ||
     !Array.isArray(profile.amenities) ||
@@ -341,17 +347,14 @@ export async function loadOwnerApplicationOwnerReview(
       const notice = row(value);
       const kind = notice.kind;
       if (
-        kind !== "information_requested" &&
-        kind !== "response_received" &&
-        kind !== "approved" &&
-        kind !== "rejected" &&
-        kind !== "expired" &&
-        kind !== "suspended"
+        !ownerApplicationNoticeKinds.includes(
+          kind as OwnerApplicationNoticeKind,
+        )
       ) {
         throw new Error("Owner Application notice is invalid");
       }
       return {
-        kind,
+        kind: kind as OwnerApplicationNoticeKind,
         reason: optionalText(notice.reason),
         createdAt: requiredText(notice.created_at),
       };

@@ -44,6 +44,10 @@ export default async function OwnerApplicationReviewDetailPage({
     page = await loadOwnerApplicationReviewDetailPage(applicationId);
   } catch (error) {
     unstable_rethrow(error);
+    console.error("Owner Application review detail load failed", {
+      phase: "owner_application_review_detail_load",
+      result: "unavailable",
+    });
   }
 
   if (!page) {

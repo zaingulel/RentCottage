@@ -1,4 +1,4 @@
-import type { OwnerApplicationStatus } from "@/owner-application/owner-application";
+import type { OwnerApplicationStatus } from "@/owner-application/owner-application-status";
 import type { Locale } from "./routing";
 
 type Copy = {
@@ -9,6 +9,8 @@ type Copy = {
   submitRenewal: string;
   reason: string;
   submitted: string;
+  invalid: string;
+  conflict: string;
   unavailable: string;
   requestedInformation: string;
   renewalInformation: string;
@@ -46,6 +48,8 @@ export const ownerApplicationStatusMessages: Record<Locale, Copy> = {
     submitRenewal: "Submit replacement evidence",
     reason: "RentCottage requested",
     submitted: "Your response was submitted.",
+    invalid: "Check the requested information before sending it.",
+    conflict: "Your application changed. Reload it before trying again.",
     unavailable: "Your response could not be submitted. Nothing changed.",
     requestedInformation: "Provide only the requested information below.",
     renewalInformation: "Replace the expired evidence below for review.",
@@ -78,6 +82,8 @@ export const ownerApplicationStatusMessages: Record<Locale, Copy> = {
     submitRenewal: "أرسل الأدلة البديلة",
     reason: "طلبت RentCottage",
     submitted: "تم إرسال ردك.",
+    invalid: "راجع المعلومات المطلوبة قبل إرسالها.",
+    conflict: "تغيّر طلبك. أعد تحميله قبل المحاولة مرة أخرى.",
     unavailable: "تعذر إرسال ردك. لم يتغير شيء.",
     requestedInformation: "قدّم المعلومات المطلوبة فقط أدناه.",
     renewalInformation: "استبدل الأدلة المنتهية أدناه للمراجعة.",
@@ -113,6 +119,8 @@ export const ownerApplicationStatusMessages: Record<Locale, Copy> = {
     submitRenewal: "بەڵگەی جێگرەوە بنێرە",
     reason: "RentCottage داوای کردووە",
     submitted: "وەڵامەکەت نێردرا.",
+    invalid: "پێش ناردن زانیارییە داواکراوەکان بپشکنە.",
+    conflict: "داواکارییەکەت گۆڕاوە. پێش هەوڵدانەوە دووبارە باری بکەرەوە.",
     unavailable: "وەڵامەکەت نەنێردرا. هیچ شتێک نەگۆڕا.",
     requestedInformation: "تەنها زانیارییە داواکراوەکان پێشکەش بکە.",
     renewalInformation: "بەڵگە بەسەرچووەکان بۆ پێداچوونەوە بگۆڕە.",

@@ -6,12 +6,14 @@ import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { isLocale } from "@/i18n/routing";
 import {
   executeOwnerApplicationReviewCommand,
+  ownerApplicationReviewFailureStatus,
+  parseOwnerApplicationReviewCommand,
   type OwnerApplicationReviewCommand,
 } from "./owner-application-review";
 import { verificationDocumentKinds } from "./owner-application";
 
 export type ReviewOwnerApplicationActionState = {
-  status: "idle" | "completed" | "invalid" | "unavailable";
+  status: "idle" | "completed" | "invalid" | "conflict" | "unavailable";
 };
 
 function text(formData: FormData, name: string): string {
@@ -69,17 +71,11 @@ export async function reviewOwnerApplicationAction(
   if (!isLocale(locale)) return { status: "invalid" };
   let command: OwnerApplicationReviewCommand;
   try {
-    command = commandFrom(formData) as OwnerApplicationReviewCommand;
+    command = parseOwnerApplicationReviewCommand(commandFrom(formData));
     const client = await createRequestSupabaseClient();
     await executeOwnerApplicationReviewCommand(client, command);
   } catch (error) {
-    return {
-      status:
-        error instanceof Error &&
-        error.message === "Owner Application review command is invalid"
-          ? "invalid"
-          : "unavailable",
-    };
+    return { status: ownerApplicationReviewFailureStatus(error) };
   }
   revalidatePath(
     `/${locale}/administrator/owner-applications/${command.applicationId}`,

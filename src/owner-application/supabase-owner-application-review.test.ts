@@ -77,8 +77,55 @@ describe("Supabase Owner Application review adapter", () => {
     expect(application.select).toHaveBeenCalledWith(
       expect.not.stringContaining("owner_user_id"),
     );
+    expect(detail).not.toBeNull();
     expect(detail).not.toHaveProperty("ownerUserId");
   });
+
+  it.each([0, -1])(
+    "rejects invalid loaded snapshot version %s",
+    async (version) => {
+      const application = queryResult({
+        id: "20000000-0000-4000-8000-000000000001",
+        version,
+        status: "submitted",
+        submitted_at: "2026-08-16T12:00:00.000Z",
+        review_due_at: "2026-08-19T12:00:00.000Z",
+        applicant_kind: "individual",
+        legal_name: "Private owner",
+        company_name: null,
+        licensing_basis: "licence",
+        exemption_basis: null,
+      });
+      const tableQueries = {
+        owner_applications: application,
+        owner_application_cottage_profiles: queryResult({
+          name: "Garden House",
+          governorate: "Erbil",
+          approximate_location: "Shaqlawa",
+          exact_address: "Private road",
+          capacity: 8,
+          bedrooms: 3,
+          bathrooms: 2,
+          amenities: [],
+          description: "Description",
+          house_rules: "Rules",
+        }),
+        owner_verification_documents: queryResult([]),
+        owner_application_information_requests: queryResult(null),
+        owner_application_transitions: queryResult([]),
+      };
+      const from = vi.fn(
+        (table: keyof typeof tableQueries) => tableQueries[table],
+      );
+
+      await expect(
+        loadOwnerApplicationReviewDetail(
+          { from } as unknown as SupabaseClient,
+          "20000000-0000-4000-8000-000000000001",
+        ),
+      ).rejects.toThrow("Owner Application review detail is invalid");
+    },
+  );
 
   it("loads owner request scope through the safe RPC without selecting the base table", async () => {
     const renewal = queryResult(null);
@@ -119,5 +166,27 @@ describe("Supabase Owner Application review adapter", () => {
     expect(from).not.toHaveBeenCalledWith(
       "owner_application_information_requests",
     );
+  });
+
+  it("rejects an unknown Owner Backoffice notice kind", async () => {
+    const renewal = queryResult(null);
+    const notices = queryResult([
+      {
+        kind: "internal_only",
+        reason: null,
+        created_at: "2026-08-16T12:00:00.000Z",
+      },
+    ]);
+    const from = vi.fn((table: string) =>
+      table === "owner_application_renewal_work" ? renewal : notices,
+    );
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+
+    await expect(
+      loadOwnerApplicationOwnerReview(
+        { from, rpc } as unknown as SupabaseClient,
+        "20000000-0000-4000-8000-000000000001",
+      ),
+    ).rejects.toThrow("Owner Application notice is invalid");
   });
 });

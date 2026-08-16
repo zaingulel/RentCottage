@@ -11,10 +11,8 @@ import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import { ownerApplicationReviewDetailMessages } from "@/i18n/owner-application-review-detail-messages";
 import { ownerApplicationStatusMessages } from "@/i18n/owner-application-status-messages";
 import type { Locale } from "@/i18n/routing";
-import {
-  ownerApplicationResponseFields,
-  type OwnerApplicationStatus,
-} from "@/owner-application/owner-application-review";
+import { ownerApplicationResponseFields } from "@/owner-application/owner-application-review";
+import type { OwnerApplicationStatus } from "@/owner-application/owner-application-status";
 import {
   reviewOwnerApplicationAction,
   type ReviewOwnerApplicationActionState,
@@ -68,6 +66,11 @@ export function OwnerApplicationReviewDetailView({
   const copy = ownerApplicationReviewDetailMessages[locale];
   const ownerCopy = ownerApplicationMessages[locale];
   const [state, action] = useActionState(reviewOwnerApplicationAction, idle);
+  const dateTimeFormat = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Baghdad",
+  });
   const canDecide =
     detail.status === "submitted" || detail.status === "under_review";
 
@@ -86,7 +89,7 @@ export function OwnerApplicationReviewDetailView({
           </div>
           <div>
             <dt>{copy.applicantKind}</dt>
-            <dd>{detail.applicantKind}</dd>
+            <dd>{copy.applicantKinds[detail.applicantKind]}</dd>
           </div>
           {detail.companyName ? (
             <div>
@@ -98,11 +101,7 @@ export function OwnerApplicationReviewDetailView({
             <dt>{copy.submitted}</dt>
             <dd>
               <time dateTime={detail.submittedAt}>
-                {new Intl.DateTimeFormat(locale, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                  timeZone: "Asia/Baghdad",
-                }).format(new Date(detail.submittedAt))}
+                {dateTimeFormat.format(new Date(detail.submittedAt))}
               </time>
             </dd>
           </div>
@@ -111,11 +110,7 @@ export function OwnerApplicationReviewDetailView({
               <dt>{copy.reviewDue}</dt>
               <dd>
                 <time dateTime={detail.reviewDueAt}>
-                  {new Intl.DateTimeFormat(locale, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                    timeZone: "Asia/Baghdad",
-                  }).format(new Date(detail.reviewDueAt))}
+                  {dateTimeFormat.format(new Date(detail.reviewDueAt))}
                 </time>
               </dd>
             </div>
@@ -147,15 +142,15 @@ export function OwnerApplicationReviewDetailView({
           </div>
           <div>
             <dt>{ownerCopy.capacity}</dt>
-            <dd>{detail.cottage.capacity}</dd>
+            <dd>{detail.cottage.capacity ?? copy.notProvided}</dd>
           </div>
           <div>
             <dt>{ownerCopy.bedrooms}</dt>
-            <dd>{detail.cottage.bedrooms}</dd>
+            <dd>{detail.cottage.bedrooms ?? copy.notProvided}</dd>
           </div>
           <div>
             <dt>{ownerCopy.bathrooms}</dt>
-            <dd>{detail.cottage.bathrooms}</dd>
+            <dd>{detail.cottage.bathrooms ?? copy.notProvided}</dd>
           </div>
           <div>
             <dt>{copy.description}</dt>
@@ -287,14 +282,13 @@ export function OwnerApplicationReviewDetailView({
               <fieldset>
                 <legend>{copy.expiryDate}</legend>
                 {detail.documents.map((document) => (
-                  <label key={document.kind}>
+                  <label key={document.id}>
                     {ownerCopy.documentKinds[document.kind].title}
                     <FormControl
                       kind="input"
                       type="date"
                       name={`expiryDate:${document.kind}`}
                       aria-label={`${copy.expiryDate}: ${ownerCopy.documentKinds[document.kind].title}`}
-                      required={document.kind === "licensing_or_exemption"}
                     />
                   </label>
                 ))}
@@ -347,6 +341,8 @@ export function OwnerApplicationReviewDetailView({
           <ActionFeedback kind="success">{copy.completed}</ActionFeedback>
         ) : state.status === "invalid" ? (
           <ActionFeedback kind="error">{copy.invalid}</ActionFeedback>
+        ) : state.status === "conflict" ? (
+          <ActionFeedback kind="error">{copy.conflict}</ActionFeedback>
         ) : state.status === "unavailable" ? (
           <ActionFeedback kind="error">{copy.unavailable}</ActionFeedback>
         ) : null}
@@ -362,24 +358,26 @@ export function OwnerApplicationReviewDetailView({
             {detail.transitions.map((transition, index) => (
               <li key={`${transition.occurredAt}-${index}`}>
                 <time dateTime={transition.occurredAt}>
-                  {new Intl.DateTimeFormat(locale, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                    timeZone: "Asia/Baghdad",
-                  }).format(new Date(transition.occurredAt))}
+                  {dateTimeFormat.format(new Date(transition.occurredAt))}
                 </time>{" "}
                 ·{" "}
-                {
-                  ownerApplicationStatusMessages[locale].statuses[
-                    transition.fromStatus
-                  ]
-                }{" "}
-                →{" "}
-                {
-                  ownerApplicationStatusMessages[locale].statuses[
-                    transition.toStatus
-                  ]
-                }
+                <span className="review-transition" dir="ltr">
+                  <bdi dir="auto">
+                    {
+                      ownerApplicationStatusMessages[locale].statuses[
+                        transition.fromStatus
+                      ]
+                    }
+                  </bdi>{" "}
+                  →{" "}
+                  <bdi dir="auto">
+                    {
+                      ownerApplicationStatusMessages[locale].statuses[
+                        transition.toStatus
+                      ]
+                    }
+                  </bdi>
+                </span>
                 {transition.reason ? ` · ${transition.reason}` : ""}
               </li>
             ))}
