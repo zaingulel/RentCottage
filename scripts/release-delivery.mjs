@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { lstatSync, rmSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -322,10 +322,9 @@ function cleanGeneratedPaths(executeGit, target, readStat) {
   return paths;
 }
 
-function removeAllowedGeneratedContent(target, paths) {
-  for (const path of paths) {
-    rmSync(resolve(target, path), { force: true, recursive: true });
-  }
+function removeAllowedGeneratedContent(executeGit, target, paths) {
+  if (paths.length === 0) return;
+  git(executeGit, target, ["clean", "-ffdx", "--", ...paths]);
 }
 
 function parseGithubEvidence(raw, expected) {
@@ -570,7 +569,7 @@ export function releaseDelivery(input) {
 
   try {
     if (record) {
-      removeAllowedGeneratedContent(target, generatedPaths);
+      removeAllowedGeneratedContent(executeGit, target, generatedPaths);
       git(executeGit, cwd, ["worktree", "remove", "--", target]);
     }
     records = inventory(executeGit, cwd);

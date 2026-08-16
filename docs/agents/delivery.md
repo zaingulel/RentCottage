@@ -17,7 +17,7 @@ The coordinator presents the finished evidence packet before any outward action.
 
 Keep one writer for the ticket. The coordinator makes two live ownership observations: once before beginning outward delivery and again immediately before terminal release. Both must establish that the writer has stopped. The coordinator also confirms that no replacement writer or overlapping task has acquired the target, and preserves that exclusivity until the release command returns a terminal result. Git cleanliness or absent lock files are not ownership evidence. `active` and `unknown` ownership stop release.
 
-Follow the existing review order: exact-head CodeRabbit approval and resolved findings first, then exact-head `quality` CI, then an authorised merge. Reconcile the issue and Project after the merged state is authoritative. GitHub's merged-branch setting owns remote topic-branch deletion; this release authority does not add another remote deletion path.
+Follow the existing review order: exact-head CodeRabbit approval and resolved findings first, then exact-head `quality` CI, then an authorised merge. Independent review of the finished change and every applicable executable verification must also be complete before merge; CodeRabbit supplements this evidence and never replaces it. Reconcile the issue and Project after the merged state is authoritative, then run `npm run verify:board`; unavailable or failing board evidence stops delivery. GitHub's merged-branch setting owns remote topic-branch deletion; this release authority does not add another remote deletion path.
 
 ## Terminal release
 

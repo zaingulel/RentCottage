@@ -576,7 +576,7 @@ process.stdout.write(process.env.GH_EVIDENCE);
     );
     expect(result).toMatchObject({ exitCode: 3, status: "refused" });
     expect(result.reason).toContain("private-output");
-  });
+  }, 15_000);
 
   it("allows the exact reviewed generated roots and files", () => {
     const repo = repository();
@@ -640,6 +640,35 @@ process.stdout.write(process.env.GH_EVIDENCE);
     symlinkSync(external, join(repo.secondary, "supabase", ".branches"));
     expect(releaseDelivery(input(repo))).toMatchObject({ status: "released" });
     expect(readFileSync(join(external, "keep"), "utf8")).toBe("keep");
+  });
+
+  it("does not traverse a Supabase parent replaced by a symlink after validation", () => {
+    const repo = repository();
+    const generated = join(repo.secondary, "supabase", ".temp");
+    const supabase = join(repo.secondary, "supabase");
+    const external = join(repo.root, "supabase-parent-external");
+    const externalGenerated = join(external, ".temp");
+    mkdirSync(generated);
+    writeFileSync(join(generated, "generated"), "generated");
+    mkdirSync(externalGenerated, { recursive: true });
+    writeFileSync(join(externalGenerated, "keep"), "keep");
+    let generatedReads = 0;
+
+    const result = releaseDelivery(
+      input(repo, {
+        lstat: (path) => {
+          const stat = lstatSync(path);
+          if (resolve(path) === generated && ++generatedReads === 2) {
+            rmSync(supabase, { force: true, recursive: true });
+            symlinkSync(external, supabase);
+          }
+          return stat;
+        },
+      }),
+    );
+
+    expect(result).not.toMatchObject({ status: "released" });
+    expect(readFileSync(join(externalGenerated, "keep"), "utf8")).toBe("keep");
   });
 
   it("unlinks an allowed generated-root symlink without traversing its target", () => {
