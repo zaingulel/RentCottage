@@ -146,12 +146,12 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
       let rawIssues;
       try {
         await source.assertSupported();
-        [project, rawFields, rawItems, rawIssues] = await Promise.all([
-          source.readProject(),
-          source.readProjectFields(),
-          source.readProjectItems(),
+        const [projectEvidence, issues] = await Promise.all([
+          source.readProjectEvidence(),
           source.listIssues(),
         ]);
+        ({ project, fields: rawFields, items: rawItems } = projectEvidence);
+        rawIssues = issues;
       } catch (error) {
         return incompleteObservation(policy, [
           `GitHub evidence unavailable: ${errorDiagnostic(error)}`,
@@ -232,21 +232,9 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
       const linkedIssuesByPullRequest = new Map();
       if (intent.pullRequestNumber)
         pullRequestNumbers.add(intent.pullRequestNumber);
-      let linkedPullRequestsByItem;
-      try {
-        linkedPullRequestsByItem = await Promise.all(
-          rawItems.items
-            .filter((item) => item.content.type === "Issue")
-            .map(async (item) => [
-              item,
-              await source.listLinkedPullRequests(item.id),
-            ]),
-        );
-      } catch (error) {
-        return incompleteObservation(policy, [
-          `GitHub evidence unavailable: ${errorDiagnostic(error)}`,
-        ]);
-      }
+      const linkedPullRequestsByItem = rawItems.items
+        .filter((item) => item.content.type === "Issue")
+        .map((item) => [item, item["linked pull requests"] ?? []]);
       if (
         linkedPullRequestsByItem.some(
           ([, pullRequests]) =>

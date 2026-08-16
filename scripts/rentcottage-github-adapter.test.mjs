@@ -23,18 +23,17 @@ function policy() {
 }
 
 function completeSource() {
-  return {
-    assertSupported: vi.fn().mockResolvedValue(undefined),
-    readProject: vi.fn().mockResolvedValue({
+  const evidence = {
+    project: {
       id: "project-4",
       number: 4,
       owner: { login: "zaingulel" },
       closed: false,
       items: { totalCount: 1 },
-      fields: { totalCount: 2 },
-    }),
-    readProjectFields: vi.fn().mockResolvedValue({
-      totalCount: 2,
+      fields: { totalCount: 3 },
+    },
+    fields: {
+      totalCount: 3,
       fields: [
         {
           id: "field-area",
@@ -52,9 +51,13 @@ function completeSource() {
             { id: "status-done", name: "Done" },
           ],
         },
+        {
+          id: "field-linked",
+          name: "Linked pull requests",
+        },
       ],
-    }),
-    readProjectItems: vi.fn().mockResolvedValue({
+    },
+    items: {
       totalCount: 1,
       items: [
         {
@@ -69,7 +72,11 @@ function completeSource() {
           "linked pull requests": [],
         },
       ],
-    }),
+    },
+  };
+  return {
+    assertSupported: vi.fn().mockResolvedValue(undefined),
+    readProjectEvidence: vi.fn().mockResolvedValue(evidence),
     listIssues: vi.fn().mockResolvedValue([
       {
         id: 550,
@@ -83,7 +90,6 @@ function completeSource() {
       },
     ]),
     listBlockedBy: vi.fn().mockResolvedValue([]),
-    listLinkedPullRequests: vi.fn().mockResolvedValue([]),
     readPullRequest: vi.fn(),
     execute: vi.fn(),
   };
@@ -133,10 +139,9 @@ describe("RentCottage GitHub adapter", () => {
 
   it("reads native blockers for new issues discovered from Project 4", async () => {
     const source = completeSource();
-    const project = await source.readProject();
+    const evidence = await source.readProjectEvidence();
+    const { project, items } = evidence;
     project.items.totalCount = 2;
-    source.readProject.mockResolvedValue(project);
-    const items = await source.readProjectItems();
     items.totalCount = 2;
     items.items.push({
       id: "item-63",
@@ -149,7 +154,6 @@ describe("RentCottage GitHub adapter", () => {
       },
       "linked pull requests": [],
     });
-    source.readProjectItems.mockResolvedValue(items);
     const issues = await source.listIssues();
     issues.push({
       id: 630,
@@ -229,13 +233,14 @@ describe("RentCottage GitHub adapter", () => {
 
   it("preserves the Project item to pull-request association", async () => {
     const source = completeSource();
-    source.listLinkedPullRequests.mockResolvedValue([
+    const { items } = await source.readProjectEvidence();
+    items.items[0]["linked pull requests"] = [
       {
         number: 70,
         url: "https://github.com/zaingulel/RentCottage/pull/70",
         repository: { nameWithOwner: "zaingulel/RentCottage" },
       },
-    ]);
+    ];
     source.readPullRequest.mockResolvedValue({
       number: 70,
       state: "OPEN",
@@ -253,18 +258,86 @@ describe("RentCottage GitHub adapter", () => {
     expect(observed.pullRequests).toEqual([
       expect.objectContaining({ number: 70, linkedIssues: [55] }),
     ]);
-    expect(source.listLinkedPullRequests).toHaveBeenCalledWith("item-55");
+    expect(source.readProjectEvidence).toHaveBeenCalledTimes(2);
+  });
+
+  it("observes multiple items once and reads each distinct linked or explicit pull request once", async () => {
+    const source = completeSource();
+    const evidence = await source.readProjectEvidence();
+    evidence.project.items.totalCount = 2;
+    evidence.items.totalCount = 2;
+    evidence.items.items[0]["linked pull requests"] = [
+      {
+        number: 70,
+        url: "https://github.com/zaingulel/RentCottage/pull/70",
+        repository: { nameWithOwner: "zaingulel/RentCottage" },
+      },
+    ];
+    evidence.items.items.push({
+      ...structuredClone(evidence.items.items[0]),
+      id: "item-63",
+      content: {
+        number: 63,
+        type: "Issue",
+        repository: "zaingulel/RentCottage",
+      },
+      "linked pull requests": [
+        {
+          number: 70,
+          url: "https://github.com/zaingulel/RentCottage/pull/70",
+          repository: { nameWithOwner: "zaingulel/RentCottage" },
+        },
+        {
+          number: 71,
+          url: "https://github.com/zaingulel/RentCottage/pull/71",
+          repository: { nameWithOwner: "zaingulel/RentCottage" },
+        },
+      ],
+    });
+    const issues = await source.listIssues();
+    issues.push({
+      ...structuredClone(issues[0]),
+      id: 630,
+      node_id: "issue-node-63",
+      number: 63,
+      title: "Second ticket",
+    });
+    source.readPullRequest.mockImplementation(async (number) => ({
+      number,
+      state: "OPEN",
+      isDraft: false,
+      mergedAt: null,
+      closingIssuesReferences: [],
+    }));
+    source.readProjectEvidence.mockClear();
+    source.listIssues.mockClear();
+    const github = createRentCottageGitHubAdapter({
+      source,
+      policy: policy(),
+    });
+
+    const observed = await github.observe({
+      type: "audit",
+      pullRequestNumber: 70,
+    });
+
+    expect(observed.complete).toBe(true);
+    expect(source.readProjectEvidence).toHaveBeenCalledTimes(1);
+    expect(source.readPullRequest.mock.calls.map(([number]) => number)).toEqual(
+      [70, 71],
+    );
   });
 
   it("rejects a Project item link to a pull request in another repository", async () => {
     const source = completeSource();
-    source.listLinkedPullRequests.mockResolvedValue([
+    const { items } = await source.readProjectEvidence();
+    items.items[0]["linked pull requests"] = [
       {
         number: 70,
         url: "https://github.com/other/repository/pull/70",
         repository: { nameWithOwner: "other/repository" },
       },
-    ]);
+    ];
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -283,13 +356,14 @@ describe("RentCottage GitHub adapter", () => {
 
   it("rejects a closing issue reference from another repository", async () => {
     const source = completeSource();
-    source.listLinkedPullRequests.mockResolvedValue([
+    const { items } = await source.readProjectEvidence();
+    items.items[0]["linked pull requests"] = [
       {
         number: 70,
         url: "https://github.com/zaingulel/RentCottage/pull/70",
         repository: { nameWithOwner: "zaingulel/RentCottage" },
       },
-    ]);
+    ];
     source.readPullRequest.mockResolvedValue({
       number: 70,
       state: "OPEN",
@@ -322,11 +396,10 @@ describe("RentCottage GitHub adapter", () => {
 
   it("marks evidence incomplete when a required Project option is missing", async () => {
     const source = completeSource();
-    const fields = await source.readProjectFields();
+    const { fields } = await source.readProjectEvidence();
     fields.fields.find(({ name }) => name === "Status").options = [
       { id: "status-backlog", name: "Backlog" },
     ];
-    source.readProjectFields.mockResolvedValue(fields);
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -348,8 +421,8 @@ describe("RentCottage GitHub adapter", () => {
           ...structuredClone(fields.fields[0]),
           id: "field-area-duplicate",
         });
-        fields.totalCount = 3;
-        project.fields.totalCount = 3;
+        fields.totalCount = 4;
+        project.fields.totalCount = 4;
       },
     },
     {
@@ -375,11 +448,8 @@ describe("RentCottage GitHub adapter", () => {
     },
   ])("rejects $name before field normalization", async ({ change }) => {
     const source = completeSource();
-    const fields = await source.readProjectFields();
-    const project = await source.readProject();
+    const { fields, project } = await source.readProjectEvidence();
     change(fields, project);
-    source.readProjectFields.mockResolvedValue(fields);
-    source.readProject.mockResolvedValue(project);
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -397,7 +467,8 @@ describe("RentCottage GitHub adapter", () => {
 
   it("marks draft or foreign Project items as incomplete evidence", async () => {
     const source = completeSource();
-    source.readProjectItems.mockResolvedValue({
+    const evidence = await source.readProjectEvidence();
+    evidence.items = {
       totalCount: 1,
       items: [
         {
@@ -407,7 +478,7 @@ describe("RentCottage GitHub adapter", () => {
           status: "Backlog",
         },
       ],
-    });
+    };
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -425,9 +496,8 @@ describe("RentCottage GitHub adapter", () => {
 
   it("rejects an Issue item whose repository provenance is unavailable", async () => {
     const source = completeSource();
-    const items = await source.readProjectItems();
+    const { items } = await source.readProjectEvidence();
     delete items.items[0].content.repository;
-    source.readProjectItems.mockResolvedValue(items);
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -445,14 +515,15 @@ describe("RentCottage GitHub adapter", () => {
 
   it("marks the wrong Project identity as incomplete evidence", async () => {
     const source = completeSource();
-    source.readProject.mockResolvedValue({
+    const evidence = await source.readProjectEvidence();
+    evidence.project = {
       id: "project-5",
       number: 5,
       owner: { login: "someone-else" },
       closed: false,
       items: { totalCount: 1 },
-      fields: { totalCount: 2 },
-    });
+      fields: { totalCount: 3 },
+    };
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -468,7 +539,8 @@ describe("RentCottage GitHub adapter", () => {
 
   it("turns malformed provider JSON into explicit incomplete evidence", async () => {
     const source = completeSource();
-    source.readProject.mockResolvedValue({ id: "project-4", owner: null });
+    const evidence = await source.readProjectEvidence();
+    evidence.project = { id: "project-4", owner: null };
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -489,7 +561,9 @@ describe("RentCottage GitHub adapter", () => {
 
   it("turns an unavailable GitHub API into explicit incomplete evidence", async () => {
     const source = completeSource();
-    source.readProject.mockRejectedValue(new Error("permission denied"));
+    source.readProjectEvidence.mockRejectedValue(
+      new Error("permission denied"),
+    );
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
@@ -505,9 +579,8 @@ describe("RentCottage GitHub adapter", () => {
 
   it("marks an unknown Project item Status as incomplete evidence", async () => {
     const source = completeSource();
-    const items = await source.readProjectItems();
+    const { items } = await source.readProjectEvidence();
     items.items[0].status = "Unexpected";
-    source.readProjectItems.mockResolvedValue(items);
     const github = createRentCottageGitHubAdapter({
       source,
       policy: policy(),
