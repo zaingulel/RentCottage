@@ -13,8 +13,8 @@ export async function GET(request: Request) {
     try {
       const response = await fetch(`${environment.supabase.url}/rest/v1/`, {
         headers: {
-          apikey: environment.supabase.publishableKey,
-          Authorization: `Bearer ${environment.supabase.publishableKey}`,
+          apikey: environment.supabase.secretKey,
+          Authorization: `Bearer ${environment.supabase.secretKey}`,
         },
         signal: AbortSignal.timeout(5_000),
       });
