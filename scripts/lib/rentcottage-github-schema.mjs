@@ -20,7 +20,7 @@ export function isProjectFieldRecord(field) {
 
 export function hasUniqueProjectFieldCoordinates(fields) {
   const trackedFields = fields.filter(({ name }) =>
-    ["Area", "Status"].includes(name),
+    ["Area", "Status", "Linked pull requests"].includes(name),
   );
   const options = trackedFields.flatMap((field) => field.options ?? []);
   const hasDuplicates = (values) => new Set(values).size !== values.length;
@@ -31,6 +31,16 @@ export function hasUniqueProjectFieldCoordinates(fields) {
     trackedFields.every(
       (field) => !hasDuplicates((field.options ?? []).map(({ name }) => name)),
     )
+  );
+}
+
+export function isLinkedPullRequestRecord(pullRequest) {
+  return (
+    isRecord(pullRequest) &&
+    Number.isInteger(pullRequest.number) &&
+    typeof pullRequest.url === "string" &&
+    isRecord(pullRequest.repository) &&
+    typeof pullRequest.repository.nameWithOwner === "string"
   );
 }
 
@@ -52,6 +62,6 @@ export function isProjectItemRecord(item) {
       typeof item.status === "string") &&
     (item["linked pull requests"] === undefined ||
       (Array.isArray(item["linked pull requests"]) &&
-        item["linked pull requests"].every((url) => typeof url === "string")))
+        item["linked pull requests"].every(isLinkedPullRequestRecord)))
   );
 }

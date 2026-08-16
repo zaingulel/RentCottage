@@ -4,10 +4,194 @@ import {
   runGh,
 } from "./lib/rentcottage-gh-source.mjs";
 
-function expectVariableFlag(args, variable, flag) {
-  const index = args.findIndex((arg) => arg.startsWith(`${variable}=`));
-  expect(index).toBeGreaterThan(0);
-  expect(args[index - 1]).toBe(flag);
+const repository = "zaingulel/RentCottage";
+
+function connection(nodes, options = {}) {
+  return {
+    totalCount: options.totalCount ?? nodes.length,
+    nodes,
+    pageInfo: {
+      hasNextPage: options.hasNextPage ?? false,
+      endCursor: options.endCursor ?? null,
+    },
+  };
+}
+
+function connectionPage(nodes, pageIndex, pageSize, cursorPrefix) {
+  const start = pageIndex * pageSize;
+  const pageNodes = nodes.slice(start, start + pageSize);
+  const hasNextPage = start + pageNodes.length < nodes.length;
+  return connection(pageNodes, {
+    totalCount: nodes.length,
+    hasNextPage,
+    endCursor: hasNextPage ? `${cursorPrefix}-${pageIndex + 1}` : null,
+  });
+}
+
+function fields() {
+  return [
+    {
+      __typename: "ProjectV2SingleSelectField",
+      id: "field-area",
+      name: "Area",
+      options: [{ id: "area-foundation", name: "Foundation & quality" }],
+    },
+    {
+      __typename: "ProjectV2SingleSelectField",
+      id: "field-status",
+      name: "Status",
+      options: [
+        { id: "status-backlog", name: "Backlog" },
+        { id: "status-progress", name: "In progress" },
+      ],
+    },
+    {
+      __typename: "ProjectV2Field",
+      id: "field-linked",
+      name: "Linked pull requests",
+    },
+    {
+      __typename: "ProjectV2Field",
+      id: "field-notes",
+      name: "Notes",
+    },
+  ];
+}
+
+function singleSelect(field, name) {
+  return {
+    __typename: "ProjectV2ItemFieldSingleSelectValue",
+    field: { id: field.id, name: field.name },
+    name,
+    optionId: field.options.find((option) => option.name === name)?.id,
+  };
+}
+
+function linkedPullRequests(nodes = [], options = {}) {
+  return {
+    __typename: "ProjectV2ItemFieldPullRequestValue",
+    field: { id: "field-linked", name: "Linked pull requests" },
+    pullRequests: connection(nodes, options),
+  };
+}
+
+function textValue(text = "Internal delivery note") {
+  return {
+    __typename: "ProjectV2ItemFieldTextValue",
+    field: { id: "field-notes", name: "Notes" },
+    text,
+  };
+}
+
+function projectItem(number = 55, overrides = {}) {
+  const projectFields = fields();
+  return {
+    id: `item-${number}`,
+    content: {
+      __typename: "Issue",
+      id: `issue-${number}`,
+      number,
+      repository: { nameWithOwner: repository },
+      labels: connection([{ id: `label-${number}`, name: "ready-for-agent" }]),
+    },
+    fieldValues: connection([
+      singleSelect(projectFields[0], "Foundation & quality"),
+      singleSelect(projectFields[1], "Backlog"),
+      linkedPullRequests(),
+      textValue(),
+    ]),
+    ...overrides,
+  };
+}
+
+function freshCoordinateItem(number = 55) {
+  return {
+    id: `item-${number}`,
+    content: {
+      __typename: "Issue",
+      id: `issue-${number}`,
+      number,
+      repository: { nameWithOwner: repository },
+    },
+  };
+}
+
+function projectResponse({ fieldConnection, itemConnection } = {}) {
+  return {
+    data: {
+      user: {
+        login: "zaingulel",
+        projectV2: {
+          id: "project-4",
+          number: 4,
+          closed: false,
+          owner: { login: "zaingulel" },
+          fields: fieldConnection ?? connection(fields()),
+          items: itemConnection ?? connection([projectItem()]),
+        },
+      },
+    },
+  };
+}
+
+function fieldValuePage(item, fieldValues) {
+  return {
+    data: {
+      node: {
+        ...item,
+        fieldValues,
+      },
+    },
+  };
+}
+
+function sourceWith(run) {
+  return createRentCottageGhSource({
+    repository,
+    projectOwner: "zaingulel",
+    projectNumber: 4,
+    run,
+  });
+}
+
+function variables(args) {
+  return Object.fromEntries(
+    args
+      .filter((arg) => /^[A-Za-z][A-Za-z0-9]*=/.test(arg))
+      .map((arg) => {
+        const separator = arg.indexOf("=");
+        return [arg.slice(0, separator), arg.slice(separator + 1)];
+      }),
+  );
+}
+
+function queryFrom(args) {
+  const query = args.find((arg) => arg.startsWith("query="));
+  expect(query).toBeDefined();
+  return query.slice("query=".length);
+}
+
+function connectionFirst(query, name, { required = true } = {}) {
+  const match = query.match(new RegExp(`${name}\\(first:\\s*(\\d+)`));
+  if (!required && !match) return 0;
+  expect(match, `${name} connection is missing`).not.toBeNull();
+  return Number(match[1]);
+}
+
+function projectQueryMaximumPossibleNodes(query) {
+  const fields = connectionFirst(query, "fields", { required: false });
+  const items = connectionFirst(query, "items");
+  const labelsPerItem = connectionFirst(query, "labels");
+  const fieldValuesPerItem = connectionFirst(query, "fieldValues");
+  const pullRequestsPerFieldValue = connectionFirst(query, "pullRequests");
+
+  return (
+    fields +
+    items +
+    items * labelsPerItem +
+    items * fieldValuesPerItem +
+    items * fieldValuesPerItem * pullRequestsPerFieldValue
+  );
 }
 
 describe("RentCottage gh source", () => {
@@ -49,45 +233,6 @@ describe("RentCottage gh source", () => {
     expect(message.length).toBeLessThan(1_500);
   });
 
-  it("summarizes GraphQL semantic errors without exposing response messages", async () => {
-    const privateBody = "private-graphql-body";
-    const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
-    const codeSecret = "github_pat_abcdefghijklmnopqrstuvwxyz1234567890";
-    const run = vi.fn(() =>
-      JSON.stringify({
-        errors: [
-          {
-            message: `${privateBody} Bearer ${secret} ${"detail".repeat(5_000)}`,
-            extensions: { code: "FORBIDDEN" },
-          },
-          { message: "secondary failure", extensions: { code: codeSecret } },
-        ],
-      }),
-    );
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
-    });
-
-    let message;
-    try {
-      await source.listLinkedPullRequests("item-55");
-    } catch (error) {
-      message = error.message;
-    }
-
-    expect(message).toContain(
-      "Project item item-55 linked pull requests failed",
-    );
-    expect(message).toContain("FORBIDDEN");
-    expect(message).not.toContain(privateBody);
-    expect(message).not.toContain(secret);
-    expect(message).not.toContain(codeSecret);
-    expect(message.length).toBeLessThan(1_500);
-  });
-
   it.each([
     ["object", { message: "reviewer-reproduced-object" }],
     ["string", "malformed-errors-string"],
@@ -109,22 +254,16 @@ describe("RentCottage gh source", () => {
                 : errors,
         }),
       );
-      const source = createRentCottageGhSource({
-        repository: "zaingulel/RentCottage",
-        projectOwner: "zaingulel",
-        projectNumber: 4,
-        run,
-      });
 
       let message;
       try {
-        await source.listLinkedPullRequests("item-55");
+        await sourceWith(run).readProjectEvidence();
       } catch (error) {
         message = error.message;
       }
 
       expect(message).toContain(
-        "Project item item-55 linked pull requests returned malformed GraphQL errors evidence",
+        "Project evidence returned malformed GraphQL errors evidence",
       );
       expect(message).not.toContain(secret);
       expect(message.length).toBeLessThan(1_500);
@@ -133,18 +272,12 @@ describe("RentCottage gh source", () => {
 
   it("bounds and redacts provider-derived malformed GraphQL context", async () => {
     const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
-    const itemId = `item-55\u0000 Bearer ${secret} ${"context".repeat(5_000)}`;
+    const pullRequestNumber = `70\u0000 Bearer ${secret} ${"context".repeat(5_000)}`;
     const run = vi.fn(() => JSON.stringify({ errors: {} }));
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
-    });
 
     let message;
     try {
-      await source.listLinkedPullRequests(itemId);
+      await sourceWith(run).readPullRequest(pullRequestNumber);
     } catch (error) {
       message = error.message;
     }
@@ -155,424 +288,1168 @@ describe("RentCottage gh source", () => {
     expect(message.length).toBeLessThan(500);
   });
 
-  it.each([
-    {
-      identity: "database ID",
-      duplicate: { id: 550, number: 56 },
-    },
-    {
-      identity: "repository issue number",
-      duplicate: { id: 551, number: 55 },
-    },
-  ])(
-    "rejects contradictory duplicate REST issue $identity across pages",
-    async ({ duplicate }) => {
-      const issue = {
-        id: 550,
-        number: 55,
-        state: "open",
-        body: "approved body",
-      };
-      const run = vi
-        .fn()
-        .mockReturnValue(
-          JSON.stringify([
-            [issue],
-            [{ ...issue, ...duplicate, state: "closed", body: "changed body" }],
-          ]),
-        );
-      const source = createRentCottageGhSource({
-        repository: "zaingulel/RentCottage",
-        projectOwner: "zaingulel",
-        projectNumber: 4,
-        run,
-      });
-
-      await expect(source.listIssues()).rejects.toThrow(
-        "Issue pagination returned a duplicate stable identity",
-      );
-    },
-  );
-
-  it.each([
-    {
-      identity: "database ID",
-      duplicate: { id: 520, number: 53 },
-    },
-    {
-      identity: "repository issue number",
-      duplicate: { id: 521, number: 52 },
-    },
-  ])(
-    "rejects contradictory duplicate REST dependency $identity across pages",
-    async ({ duplicate }) => {
-      const dependency = { id: 520, number: 52, state: "open" };
-      const run = vi
-        .fn()
-        .mockReturnValue(
-          JSON.stringify([
-            [dependency],
-            [{ ...dependency, ...duplicate, state: "closed" }],
-          ]),
-        );
-      const source = createRentCottageGhSource({
-        repository: "zaingulel/RentCottage",
-        projectOwner: "zaingulel",
-        projectNumber: 4,
-        run,
-      });
-
-      await expect(source.listBlockedBy(55)).rejects.toThrow(
-        "#55 dependency pagination returned a duplicate stable identity",
-      );
-    },
-  );
-
-  it("paginates pull-request closing references until totalCount is proven", async () => {
-    const base = {
-      number: 70,
-      state: "OPEN",
-      isDraft: false,
-      mergedAt: null,
-      url: "https://github.com/zaingulel/RentCottage/pull/70",
-    };
-    const run = vi
-      .fn()
-      .mockReturnValueOnce(
-        JSON.stringify({
-          data: {
-            repository: {
-              pullRequest: {
-                ...base,
-                closingIssuesReferences: {
-                  totalCount: 2,
-                  nodes: [
-                    {
-                      number: 55,
-                      repository: {
-                        name: "RentCottage",
-                        owner: { login: "zaingulel" },
-                      },
-                    },
-                  ],
-                  pageInfo: { hasNextPage: true, endCursor: "cursor-1" },
-                },
-              },
-            },
-          },
+  it("reads multiple Project items with one lean GraphQL call and no broad or per-item query", async () => {
+    const run = vi.fn(() =>
+      JSON.stringify(
+        projectResponse({
+          itemConnection: connection([projectItem(55), projectItem(63)]),
         }),
-      )
-      .mockReturnValueOnce(
-        JSON.stringify({
-          data: {
-            repository: {
-              pullRequest: {
-                ...base,
-                closingIssuesReferences: {
-                  totalCount: 2,
-                  nodes: [
-                    {
-                      number: 64,
-                      repository: {
-                        name: "RentCottage",
-                        owner: { login: "zaingulel" },
-                      },
-                    },
-                  ],
-                  pageInfo: { hasNextPage: false, endCursor: null },
-                },
-              },
-            },
-          },
-        }),
-      );
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
-    });
+      ),
+    );
 
-    const pullRequest = await source.readPullRequest(70);
+    const evidence = await sourceWith(run).readProjectEvidence();
 
-    expect(pullRequest.closingIssuesReferences).toEqual([
-      {
-        number: 55,
-        repository: {
-          name: "RentCottage",
-          owner: { login: "zaingulel" },
-        },
-      },
-      {
-        number: 64,
-        repository: {
-          name: "RentCottage",
-          owner: { login: "zaingulel" },
-        },
-      },
+    expect(evidence.items.items.map(({ content }) => content.number)).toEqual([
+      55, 63,
     ]);
-    expect(run).toHaveBeenCalledTimes(2);
-    const secondArgs = run.mock.calls[1][0];
-    expectVariableFlag(secondArgs, "owner", "-f");
-    expectVariableFlag(secondArgs, "name", "-f");
-    expectVariableFlag(secondArgs, "pullRequestNumber", "-F");
-    expectVariableFlag(secondArgs, "cursor", "-f");
+    expect(evidence.project).not.toHaveProperty("items");
+    expect(evidence.project).not.toHaveProperty("fields");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0][0].slice(0, 2)).toEqual(["api", "graphql"]);
+    const invocation = run.mock.calls[0][0].join(" ");
+    expect(invocation).not.toMatch(/project (view|field-list|item-list)/);
+    expect(invocation).not.toContain("fieldValueByName");
+    expect(invocation).toContain("ProjectV2ItemFieldValueCommon");
+    for (const typename of [
+      "ProjectV2ItemFieldLabelValue",
+      "ProjectV2ItemFieldMilestoneValue",
+      "ProjectV2ItemFieldPullRequestValue",
+      "ProjectV2ItemFieldRepositoryValue",
+      "ProjectV2ItemFieldReviewerValue",
+      "ProjectV2ItemFieldUserValue",
+      "ProjectV2ItemIssueFieldValue",
+    ]) {
+      expect(invocation).toContain(typename);
+    }
   });
 
-  it("paginates Project linked pull requests until totalCount is proven", async () => {
-    const connection = (nodes, hasNextPage, endCursor) => ({
+  it("keeps every Project-items query within GitHub's possible-node limit", async () => {
+    const providerMaximumPossibleNodes = 500_000;
+    const first = projectResponse({
+      itemConnection: connection([projectItem(55)], {
+        totalCount: 2,
+        hasNextPage: true,
+        endCursor: "items-1",
+      }),
+    });
+    const overflow = projectResponse({
+      itemConnection: connection([projectItem(63)], { totalCount: 2 }),
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(overflow));
+
+    await sourceWith(run).readProjectEvidence();
+
+    const itemQueries = run.mock.calls.map(([args]) => queryFrom(args));
+    expect(itemQueries).toHaveLength(2);
+    for (const query of itemQueries) {
+      expect(connectionFirst(query, "items")).toBe(100);
+      expect(projectQueryMaximumPossibleNodes(query)).toBeLessThanOrEqual(
+        providerMaximumPossibleNodes,
+      );
+    }
+  });
+
+  it.each([
+    ["draft", { __typename: "DraftIssue" }, { type: "DraftIssue" }],
+    ["pull request", { __typename: "PullRequest" }, { type: "PullRequest" }],
+    [
+      "foreign Issue",
+      {
+        __typename: "Issue",
+        id: "issue-55",
+        number: 55,
+        repository: { nameWithOwner: "other/repository" },
+      },
+      { type: "Issue", number: 55, repository: "other/repository" },
+    ],
+    ["unavailable", null, { type: "Unavailable" }],
+  ])(
+    "preserves an initial %s item for project-evidence classification",
+    async (_name, content, expectedContent) => {
+      const item = projectItem();
+      item.content = content;
+      const response = projectResponse({
+        itemConnection: connection([item]),
+      });
+
+      const evidence = await sourceWith(
+        vi.fn(() => JSON.stringify(response)),
+      ).readProjectEvidence();
+
+      expect(evidence.items.items).toEqual([
+        { id: "item-55", content: expectedContent },
+      ]);
+    },
+  );
+
+  it("tolerates a populated unconsumed Text field without normalizing it", async () => {
+    const response = projectResponse();
+
+    const evidence = await sourceWith(
+      vi.fn(() => JSON.stringify(response)),
+    ).readProjectEvidence();
+
+    expect(evidence.items.items[0]).toMatchObject({
+      area: "Foundation & quality",
+      status: "Backlog",
+      "linked pull requests": [],
+    });
+    expect(evidence.items.items[0]).not.toHaveProperty("Notes");
+  });
+
+  it.each([
+    [
+      "missing coordinate",
+      (value) => {
+        delete value.field;
+      },
+      "field values returned an invalid identity",
+    ],
+    [
+      "unknown coordinate",
+      (value) => {
+        value.field.id = "field-notes-unknown";
+      },
+      "Notes field identity changed",
+    ],
+  ])(
+    "rejects an unconsumed Text value with a %s",
+    async (_name, mutate, message) => {
+      const response = projectResponse();
+      mutate(response.data.user.projectV2.items.nodes[0].fieldValues.nodes[3]);
+
+      await expect(
+        sourceWith(vi.fn(() => JSON.stringify(response))).readProjectEvidence(),
+      ).rejects.toThrow(message);
+    },
+  );
+
+  it("paginates only Project fields when only fields overflow", async () => {
+    const allFields = fields();
+    const first = projectResponse({
+      fieldConnection: connection([allFields[0]], {
+        totalCount: 4,
+        hasNextPage: true,
+        endCursor: "fields-1",
+      }),
+    });
+    const overflow = projectResponse({
+      fieldConnection: connection(allFields.slice(1), { totalCount: 4 }),
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(overflow));
+
+    const evidence = await sourceWith(run).readProjectEvidence();
+
+    expect(evidence.fields.fields).toHaveLength(4);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      cursor: "fields-1",
+    });
+    expect(run.mock.calls[1][0].join(" ")).not.toContain("items(first:");
+  });
+
+  it("paginates only Project items when only items overflow", async () => {
+    const first = projectResponse({
+      itemConnection: connection([projectItem(55)], {
+        totalCount: 2,
+        hasNextPage: true,
+        endCursor: "items-1",
+      }),
+    });
+    const overflow = projectResponse({
+      itemConnection: connection([projectItem(63)], { totalCount: 2 }),
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(overflow));
+
+    const evidence = await sourceWith(run).readProjectEvidence();
+
+    expect(evidence.items.items.map(({ content }) => content.number)).toEqual([
+      55, 63,
+    ]);
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      cursor: "items-1",
+    });
+    const overflowQuery = queryFrom(run.mock.calls[1][0]);
+    expect(overflowQuery).not.toContain("fields(first:");
+    expect(overflowQuery).toMatch(
+      /fieldValues\(first:\s*20,\s*orderBy:\s*\{\s*field:\s*POSITION,\s*direction:\s*ASC\s*\}\)/,
+    );
+  });
+
+  it("paginates item field values independently without replaying completed connections", async () => {
+    const item = projectItem();
+    const [area, status, linked, notes] = item.fieldValues.nodes;
+    item.fieldValues = connection([area], {
+      totalCount: 4,
+      hasNextPage: true,
+      endCursor: "field-values-1",
+    });
+    const initial = projectResponse({ itemConnection: connection([item]) });
+    const overflow = {
       data: {
         node: {
-          fieldValueByName: {
-            pullRequests: {
-              totalCount: 2,
-              nodes,
-              pageInfo: { hasNextPage, endCursor },
-            },
-          },
+          ...item,
+          fieldValues: connection([status, linked, notes], { totalCount: 4 }),
         },
       },
-    });
+    };
     const run = vi
       .fn()
-      .mockReturnValueOnce(
-        JSON.stringify(
-          connection(
-            [
-              {
-                number: 70,
-                url: "https://github.com/zaingulel/RentCottage/pull/70",
-                repository: { nameWithOwner: "zaingulel/RentCottage" },
-              },
-            ],
-            true,
-            "cursor-1",
-          ),
-        ),
-      )
-      .mockReturnValueOnce(
-        JSON.stringify(
-          connection(
-            [
-              {
-                number: 71,
-                url: "https://github.com/zaingulel/RentCottage/pull/71",
-                repository: { nameWithOwner: "zaingulel/RentCottage" },
-              },
-            ],
-            false,
-            null,
-          ),
-        ),
-      );
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
+      .mockReturnValueOnce(JSON.stringify(initial))
+      .mockReturnValueOnce(JSON.stringify(overflow));
+
+    const evidence = await sourceWith(run).readProjectEvidence();
+
+    expect(evidence.items.items[0]).toMatchObject({
+      area: "Foundation & quality",
+      status: "Backlog",
+      "linked pull requests": [],
     });
-
-    const pullRequests = await source.listLinkedPullRequests("item-55");
-
-    expect(pullRequests.map(({ number }) => number)).toEqual([70, 71]);
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      itemId: "item-55",
+      cursor: "field-values-1",
+    });
+    const overflowQuery = run.mock.calls[1][0].join(" ");
+    expect(overflowQuery).toContain("ProjectV2ItemFieldValueCommon");
+    expect(overflowQuery).not.toContain("labels(first:");
+    expect(overflowQuery).not.toContain("items(first:");
     expect(run).toHaveBeenCalledTimes(2);
-    const secondArgs = run.mock.calls[1][0];
-    expectVariableFlag(secondArgs, "itemId", "-F");
-    expectVariableFlag(secondArgs, "cursor", "-f");
   });
 
-  it("rejects duplicate linked pull-request identities across pages", async () => {
-    const linkedPullRequest = {
+  it("normalizes field values after more than ten provider-sized pages", async () => {
+    const item = projectItem();
+    const extraFields = Array.from({ length: 197 }, (_, index) => ({
+      __typename: "ProjectV2Field",
+      id: `field-extra-${index + 1}`,
+      name: `Extra ${index + 1}`,
+    }));
+    const allFields = [...fields(), ...extraFields];
+    const allValues = [
+      ...item.fieldValues.nodes,
+      ...extraFields.map((field) => ({
+        __typename: "ProjectV2ItemFieldTextValue",
+        field: { id: field.id, name: field.name },
+        text: "Unconsumed evidence",
+      })),
+    ];
+    item.fieldValues = connectionPage(allValues, 0, 20, "field-values");
+    const initial = projectResponse({
+      fieldConnection: connectionPage(allFields, 0, 100, "fields"),
+      itemConnection: connection([item]),
+    });
+    const fieldPages = [1, 2].map((pageIndex) =>
+      projectResponse({
+        fieldConnection: connectionPage(allFields, pageIndex, 100, "fields"),
+      }),
+    );
+    const fieldValuePages = Array.from({ length: 10 }, (_, index) =>
+      fieldValuePage(
+        item,
+        connectionPage(allValues, index + 1, 20, "field-values"),
+      ),
+    );
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(initial))
+      .mockReturnValueOnce(JSON.stringify(fieldPages[0]))
+      .mockReturnValueOnce(JSON.stringify(fieldPages[1]));
+    for (const page of fieldValuePages)
+      run.mockReturnValueOnce(JSON.stringify(page));
+
+    const evidence = await sourceWith(run).readProjectEvidence();
+
+    expect(evidence.items.items[0]).toMatchObject({
+      area: "Foundation & quality",
+      status: "Backlog",
+      "linked pull requests": [],
+    });
+    expect(variables(run.mock.calls.at(-1)[0])).toMatchObject({
+      itemId: "item-55",
+      cursor: "field-values-10",
+    });
+  });
+
+  it("uses the field-value page cursor when a later linked-PR value overflows", async () => {
+    const item = projectItem();
+    const [area, status, , notes] = item.fieldValues.nodes;
+    const firstPullRequest = {
+      id: "pr-70",
       number: 70,
       url: "https://github.com/zaingulel/RentCottage/pull/70",
-      repository: { nameWithOwner: "zaingulel/RentCottage" },
+      repository: { nameWithOwner: repository },
     };
-    const response = (hasNextPage, endCursor) =>
-      JSON.stringify({
-        data: {
-          node: {
-            fieldValueByName: {
-              pullRequests: {
-                totalCount: 2,
-                nodes: [linkedPullRequest],
-                pageInfo: { hasNextPage, endCursor },
-              },
-            },
-          },
-        },
-      });
+    const secondPullRequest = {
+      ...firstPullRequest,
+      id: "pr-71",
+      number: 71,
+      url: "https://github.com/zaingulel/RentCottage/pull/71",
+    };
+    item.fieldValues = connection([area], {
+      totalCount: 4,
+      hasNextPage: true,
+      endCursor: "field-values-1",
+    });
+    const linkedOverflow = linkedPullRequests([firstPullRequest], {
+      totalCount: 2,
+      hasNextPage: true,
+      endCursor: "pull-requests-1",
+    });
+    const fieldOverflow = fieldValuePage(
+      item,
+      connection([status, linkedOverflow, notes], { totalCount: 4 }),
+    );
+    const pullRequestOverflow = fieldValuePage(
+      item,
+      connection(
+        [
+          status,
+          linkedPullRequests([secondPullRequest], { totalCount: 2 }),
+          notes,
+        ],
+        { totalCount: 4 },
+      ),
+    );
     const run = vi
       .fn()
-      .mockReturnValueOnce(response(true, "cursor-1"))
-      .mockReturnValueOnce(response(false, null));
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
-    });
+      .mockReturnValueOnce(
+        JSON.stringify(projectResponse({ itemConnection: connection([item]) })),
+      )
+      .mockReturnValueOnce(JSON.stringify(fieldOverflow))
+      .mockReturnValueOnce(JSON.stringify(pullRequestOverflow));
 
-    await expect(source.listLinkedPullRequests("item-55")).rejects.toThrow(
-      "Project item item-55 linked pull requests returned a duplicate identity",
+    const evidence = await sourceWith(run).readProjectEvidence();
+
+    expect(
+      evidence.items.items[0]["linked pull requests"].map(
+        ({ number }) => number,
+      ),
+    ).toEqual([70, 71]);
+    expect(variables(run.mock.calls[2][0])).toMatchObject({
+      itemId: "item-55",
+      fieldCursor: "field-values-1",
+      pullRequestCursor: "pull-requests-1",
+    });
+    for (const call of run.mock.calls) {
+      expect(queryFrom(call[0])).toMatch(
+        /fieldValues\(first:\s*20(?:,\s*after:\s*\$\w+)?\s*,\s*orderBy:\s*\{\s*field:\s*POSITION,\s*direction:\s*ASC\s*\}\)/,
+      );
+    }
+    expect(queryFrom(run.mock.calls[2][0])).toMatch(
+      /fieldValues[\s\S]*totalCount[\s\S]*pageInfo\s*\{\s*hasNextPage\s+endCursor\s*\}/,
     );
   });
 
-  it("rejects duplicate closing-issue identities across pages", async () => {
-    const closingIssue = {
-      number: 55,
-      repository: {
-        name: "RentCottage",
-        owner: { login: "zaingulel" },
+  it.each([
+    [
+      "missing totalCount",
+      (fieldValues) => {
+        delete fieldValues.totalCount;
+      },
+      "pagination evidence is invalid",
+    ],
+    [
+      "malformed pageInfo",
+      (fieldValues) => {
+        fieldValues.pageInfo.hasNextPage = "yes";
+      },
+      "pagination evidence is invalid",
+    ],
+    [
+      "changed totalCount",
+      (fieldValues) => {
+        fieldValues.totalCount += 1;
+      },
+      "page changed during pagination",
+    ],
+    [
+      "changed pageInfo",
+      (fieldValues) => {
+        fieldValues.pageInfo = {
+          hasNextPage: true,
+          endCursor: "changed-field-values",
+        };
+      },
+      "page changed during pagination",
+    ],
+    [
+      "changed item ID",
+      (_fieldValues, item) => {
+        item.id = "item-changed";
+      },
+      "item or issue identity changed during pagination",
+    ],
+    [
+      "changed Issue repository",
+      (_fieldValues, item) => {
+        item.content.repository.nameWithOwner = "other/repository";
+      },
+      "item or issue identity changed during pagination",
+    ],
+    [
+      "changed linked field ID",
+      (fieldValues) => {
+        fieldValues.nodes[2].field.id = "field-changed";
+      },
+      "linked pull-request field identity changed",
+    ],
+    [
+      "changed linked field name",
+      (fieldValues) => {
+        fieldValues.nodes[2].field.name = "Changed linked field";
+      },
+      "linked pull-request field identity changed",
+    ],
+    [
+      "changed linked field type",
+      (fieldValues) => {
+        fieldValues.nodes[2].__typename = "ProjectV2ItemFieldTextValue";
+      },
+      "linked pull-request field identity changed",
+    ],
+  ])(
+    "rejects linked-PR outer reread with %s",
+    async (_name, mutate, message) => {
+      const item = projectItem();
+      const pullRequest = (number) => ({
+        id: `pr-${number}`,
+        number,
+        url: `https://github.com/zaingulel/RentCottage/pull/${number}`,
+        repository: { nameWithOwner: repository },
+      });
+      item.fieldValues.nodes[2] = linkedPullRequests([pullRequest(70)], {
+        totalCount: 2,
+        hasNextPage: true,
+        endCursor: "pull-requests-1",
+      });
+      const outerFieldValues = structuredClone(item.fieldValues);
+      outerFieldValues.nodes[2] = linkedPullRequests([pullRequest(71)], {
+        totalCount: 2,
+      });
+      const outerReread = fieldValuePage(item, outerFieldValues);
+      outerReread.data.node.content = structuredClone(item.content);
+      mutate(outerFieldValues, outerReread.data.node);
+      const run = vi
+        .fn()
+        .mockReturnValueOnce(
+          JSON.stringify(
+            projectResponse({ itemConnection: connection([item]) }),
+          ),
+        )
+        .mockReturnValueOnce(JSON.stringify(outerReread));
+
+      await expect(sourceWith(run).readProjectEvidence()).rejects.toThrow(
+        message,
+      );
+    },
+  );
+
+  it("normalizes linked pull requests after more than ten provider-sized pages", async () => {
+    const item = projectItem();
+    const pullRequests = Array.from({ length: 201 }, (_, index) => ({
+      id: `pr-${index + 1}`,
+      number: index + 1,
+      url: `https://github.com/zaingulel/RentCottage/pull/${index + 1}`,
+      repository: { nameWithOwner: repository },
+    }));
+    const firstPage = connectionPage(pullRequests, 0, 20, "pull-requests");
+    item.fieldValues.nodes[2] = linkedPullRequests(firstPage.nodes, {
+      totalCount: firstPage.totalCount,
+      hasNextPage: firstPage.pageInfo.hasNextPage,
+      endCursor: firstPage.pageInfo.endCursor,
+    });
+    const overflowPages = Array.from({ length: 10 }, (_, index) => {
+      const page = connectionPage(pullRequests, index + 1, 20, "pull-requests");
+      const fieldValueNodes = structuredClone(item.fieldValues.nodes);
+      fieldValueNodes[2] = linkedPullRequests(page.nodes, {
+        totalCount: page.totalCount,
+        hasNextPage: page.pageInfo.hasNextPage,
+        endCursor: page.pageInfo.endCursor,
+      });
+      return {
+        data: {
+          node: {
+            ...item,
+            fieldValues: connection(fieldValueNodes, { totalCount: 4 }),
+          },
+        },
+      };
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(
+        JSON.stringify(projectResponse({ itemConnection: connection([item]) })),
+      );
+    for (const page of overflowPages)
+      run.mockReturnValueOnce(JSON.stringify(page));
+
+    const evidence = await sourceWith(run).readProjectEvidence();
+
+    expect(
+      evidence.items.items[0]["linked pull requests"].map(
+        ({ number }) => number,
+      ),
+    ).toEqual(pullRequests.map(({ number }) => number));
+    expect(variables(run.mock.calls.at(-1)[0])).toMatchObject({
+      itemId: "item-55",
+      pullRequestCursor: "pull-requests-10",
+    });
+  });
+
+  it.each([
+    {
+      name: "cross-page truncation",
+      page(values) {
+        return connection(values.slice(0, 2), { totalCount: 4 });
+      },
+      message: "field values pagination was truncated",
+    },
+    {
+      name: "duplicate field ID",
+      page(values, area) {
+        return connection([area, ...values], { totalCount: 4 });
+      },
+      message: "field values returned a duplicate identity",
+    },
+    {
+      name: "changed total",
+      page(values) {
+        return connection(values, { totalCount: 5 });
+      },
+      message: "field values totalCount changed during pagination",
+    },
+    {
+      name: "repeated cursor",
+      page(values) {
+        return connection([values[0]], {
+          totalCount: 4,
+          hasNextPage: true,
+          endCursor: "field-values-1",
+        });
+      },
+      message: "field values pagination cursor was repeated",
+    },
+  ])("rejects field-value $name", async ({ page, message }) => {
+    const item = projectItem();
+    const [area, ...remaining] = item.fieldValues.nodes;
+    item.fieldValues = connection([area], {
+      totalCount: 4,
+      hasNextPage: true,
+      endCursor: "field-values-1",
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(
+        JSON.stringify(projectResponse({ itemConnection: connection([item]) })),
+      )
+      .mockReturnValueOnce(
+        JSON.stringify(fieldValuePage(item, page(remaining, area))),
+      );
+
+    await expect(sourceWith(run).readProjectEvidence()).rejects.toThrow(
+      message,
+    );
+  });
+
+  it("rejects missing field-value cursors and changed item or repository anchors", async () => {
+    const missingCursorItem = projectItem();
+    missingCursorItem.fieldValues.pageInfo.hasNextPage = true;
+    await expect(
+      sourceWith(
+        vi.fn(() =>
+          JSON.stringify(
+            projectResponse({
+              itemConnection: connection([missingCursorItem]),
+            }),
+          ),
+        ),
+      ).readProjectEvidence(),
+    ).rejects.toThrow("field values pagination cursor is unavailable");
+
+    for (const changeAnchor of [
+      (item) => {
+        item.id = "item-changed";
+      },
+      (item) => {
+        item.content.repository.nameWithOwner = "other/repository";
+      },
+    ]) {
+      const item = projectItem();
+      const [area, ...remaining] = item.fieldValues.nodes;
+      item.fieldValues = connection([area], {
+        totalCount: 4,
+        hasNextPage: true,
+        endCursor: "field-values-1",
+      });
+      const overflowItem = structuredClone(item);
+      changeAnchor(overflowItem);
+      const run = vi
+        .fn()
+        .mockReturnValueOnce(
+          JSON.stringify(
+            projectResponse({ itemConnection: connection([item]) }),
+          ),
+        )
+        .mockReturnValueOnce(
+          JSON.stringify(
+            fieldValuePage(
+              overflowItem,
+              connection(remaining, { totalCount: 4 }),
+            ),
+          ),
+        );
+
+      await expect(sourceWith(run).readProjectEvidence()).rejects.toThrow(
+        "item or issue identity changed during pagination",
+      );
+    }
+  });
+
+  it("keeps independent nested cursors for labels and linked pull requests on different items", async () => {
+    const labelItem = projectItem(55);
+    labelItem.content.labels = connection([{ id: "label-a", name: "one" }], {
+      totalCount: 2,
+      hasNextPage: true,
+      endCursor: "labels-55",
+    });
+    const pullRequest = {
+      id: "pr-70",
+      number: 70,
+      url: "https://github.com/zaingulel/RentCottage/pull/70",
+      repository: { nameWithOwner: repository },
+    };
+    const pullRequestTwo = {
+      ...pullRequest,
+      id: "pr-71",
+      number: 71,
+      url: "https://github.com/zaingulel/RentCottage/pull/71",
+    };
+    const pullRequestItem = projectItem(63);
+    pullRequestItem.fieldValues.nodes[2] = linkedPullRequests([pullRequest], {
+      totalCount: 2,
+      hasNextPage: true,
+      endCursor: "prs-63",
+    });
+    const initial = projectResponse({
+      itemConnection: connection([labelItem, pullRequestItem]),
+    });
+    const labelPage = {
+      data: {
+        node: {
+          ...labelItem,
+          content: {
+            ...labelItem.content,
+            labels: connection([{ id: "label-b", name: "two" }], {
+              totalCount: 2,
+            }),
+          },
+        },
       },
     };
-    const response = (hasNextPage, endCursor) =>
-      JSON.stringify({
-        data: {
-          repository: {
-            pullRequest: {
-              number: 70,
-              state: "OPEN",
-              isDraft: false,
-              mergedAt: null,
-              url: "https://github.com/zaingulel/RentCottage/pull/70",
-              closingIssuesReferences: {
-                totalCount: 2,
-                nodes: [closingIssue],
-                pageInfo: { hasNextPage, endCursor },
-              },
-            },
-          },
+    const pullRequestFieldValues = structuredClone(
+      pullRequestItem.fieldValues.nodes,
+    );
+    pullRequestFieldValues[2] = linkedPullRequests([pullRequestTwo], {
+      totalCount: 2,
+    });
+    const pullRequestPage = {
+      data: {
+        node: {
+          ...pullRequestItem,
+          fieldValues: connection(pullRequestFieldValues, { totalCount: 4 }),
         },
-      });
+      },
+    };
     const run = vi
       .fn()
-      .mockReturnValueOnce(response(true, "cursor-1"))
-      .mockReturnValueOnce(response(false, null));
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
-    });
+      .mockReturnValueOnce(JSON.stringify(initial))
+      .mockReturnValueOnce(JSON.stringify(labelPage))
+      .mockReturnValueOnce(JSON.stringify(pullRequestPage));
 
-    await expect(source.readPullRequest(70)).rejects.toThrow(
-      "Pull request #70 closing references returned a duplicate identity",
+    const evidence = await sourceWith(run).readProjectEvidence();
+
+    expect(evidence.items.items[0].labels).toEqual(["one", "two"]);
+    expect(
+      evidence.items.items[1]["linked pull requests"].map(
+        ({ number }) => number,
+      ),
+    ).toEqual([70, 71]);
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      itemId: "item-55",
+      cursor: "labels-55",
+    });
+    expect(variables(run.mock.calls[2][0])).toMatchObject({
+      itemId: "item-63",
+      pullRequestCursor: "prs-63",
+    });
+  });
+
+  it.each([
+    [
+      "malformed pageInfo",
+      (response) =>
+        delete response.data.user.projectV2.items.pageInfo.hasNextPage,
+      "pagination evidence is invalid",
+    ],
+    [
+      "missing cursor",
+      (response) => {
+        response.data.user.projectV2.items.pageInfo.hasNextPage = true;
+      },
+      "pagination cursor is unavailable",
+    ],
+    [
+      "truncation",
+      (response) => {
+        response.data.user.projectV2.items.totalCount = 2;
+      },
+      "pagination was truncated",
+    ],
+    [
+      "duplicate field coordinate",
+      (response) => {
+        response.data.user.projectV2.fields.nodes[1].id = "field-area";
+      },
+      "Project fields returned a duplicate identity",
+    ],
+    [
+      "duplicate item field value",
+      (response) => {
+        const values = response.data.user.projectV2.items.nodes[0].fieldValues;
+        values.nodes.push(structuredClone(values.nodes[0]));
+        values.totalCount += 1;
+      },
+      "duplicate identity",
+    ],
+    [
+      "wrong field name",
+      (response) => {
+        response.data.user.projectV2.items.nodes[0].fieldValues.nodes[0].field.name =
+          "Status";
+      },
+      "Area field identity changed",
+    ],
+    [
+      "wrong field ID",
+      (response) => {
+        response.data.user.projectV2.items.nodes[0].fieldValues.nodes[0].field.id =
+          "field-area-changed";
+      },
+      "Area field identity changed",
+    ],
+    [
+      "wrong field type",
+      (response) => {
+        response.data.user.projectV2.items.nodes[0].fieldValues.nodes[0].__typename =
+          "ProjectV2ItemFieldTextValue";
+      },
+      "Area field value type is invalid",
+    ],
+    [
+      "wrong option identity",
+      (response) => {
+        response.data.user.projectV2.items.nodes[0].fieldValues.nodes[0].optionId =
+          "area-changed";
+      },
+      "Area option identity is invalid",
+    ],
+    [
+      "safety limit",
+      (response) => {
+        response.data.user.projectV2.items.totalCount = 1_001;
+      },
+      "1000-item safety limit",
+    ],
+  ])("fails closed for %s evidence", async (_name, mutate, message) => {
+    const response = projectResponse();
+    mutate(response);
+    const source = sourceWith(vi.fn(() => JSON.stringify(response)));
+
+    await expect(source.readProjectEvidence()).rejects.toThrow(message);
+  });
+
+  it.each([
+    [
+      "missing Area coordinate",
+      (response) => {
+        const fieldsConnection = response.data.user.projectV2.fields;
+        fieldsConnection.nodes = fieldsConnection.nodes.filter(
+          ({ name }) => name !== "Area",
+        );
+        fieldsConnection.totalCount -= 1;
+      },
+      "Project Area field coordinate is unavailable or ambiguous",
+    ],
+    [
+      "duplicate Status coordinate",
+      (response) => {
+        const fieldsConnection = response.data.user.projectV2.fields;
+        fieldsConnection.nodes.push({
+          ...structuredClone(fieldsConnection.nodes[1]),
+          id: "field-status-two",
+        });
+        fieldsConnection.totalCount += 1;
+      },
+      "coordinates are invalid or ambiguous",
+    ],
+  ])("rejects %s", async (_name, mutate, message) => {
+    const response = projectResponse();
+    mutate(response);
+
+    await expect(
+      sourceWith(vi.fn(() => JSON.stringify(response))).readProjectEvidence(),
+    ).rejects.toThrow(message);
+  });
+
+  it("treats missing Area, Status, and linked-pull-request values as null or empty", async () => {
+    const response = projectResponse();
+    response.data.user.projectV2.items.nodes[0].fieldValues = connection([]);
+
+    const evidence = await sourceWith(
+      vi.fn(() => JSON.stringify(response)),
+    ).readProjectEvidence();
+
+    expect(evidence.items.items[0]).toMatchObject({
+      area: null,
+      status: null,
+      "linked pull requests": [],
+    });
+  });
+
+  it("rejects repeated identities, changed totals, and wrong Project anchors", async () => {
+    const first = projectResponse({
+      itemConnection: connection([projectItem(55)], {
+        totalCount: 2,
+        hasNextPage: true,
+        endCursor: "items-1",
+      }),
+    });
+    const repeated = projectResponse({
+      itemConnection: connection([projectItem(55)], { totalCount: 2 }),
+    });
+    const duplicateRun = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(repeated));
+    await expect(
+      sourceWith(duplicateRun).readProjectEvidence(),
+    ).rejects.toThrow("Project items returned a duplicate identity");
+
+    const changed = projectResponse({
+      itemConnection: connection([projectItem(63)], { totalCount: 3 }),
+    });
+    const totalRun = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(changed));
+    await expect(sourceWith(totalRun).readProjectEvidence()).rejects.toThrow(
+      "Project items totalCount changed during pagination",
+    );
+
+    const wrongAnchor = projectResponse({
+      itemConnection: connection([projectItem(63)], { totalCount: 2 }),
+    });
+    wrongAnchor.data.user.projectV2.id = "project-changed";
+    const anchorRun = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(wrongAnchor));
+    await expect(sourceWith(anchorRun).readProjectEvidence()).rejects.toThrow(
+      "Project items Project identity changed during pagination",
     );
   });
 
-  it("rejects provider connections over the safety cap", async () => {
-    const run = vi.fn().mockReturnValue(
+  it("rejects a repeated pagination cursor before replaying a completed page", async () => {
+    const first = projectResponse({
+      itemConnection: connection([projectItem(55)], {
+        totalCount: 3,
+        hasNextPage: true,
+        endCursor: "items-repeated",
+      }),
+    });
+    const repeatedCursor = projectResponse({
+      itemConnection: connection([projectItem(63)], {
+        totalCount: 3,
+        hasNextPage: true,
+        endCursor: "items-repeated",
+      }),
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(repeatedCursor));
+
+    await expect(sourceWith(run).readProjectEvidence()).rejects.toThrow(
+      "Project items pagination cursor was repeated",
+    );
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("summarizes GraphQL errors without exposing provider messages", async () => {
+    const privateBody = "private-graphql-body";
+    const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+    const codeSecret = "github_pat_abcdefghijklmnopqrstuvwxyz1234567890";
+    const run = vi.fn(() =>
       JSON.stringify({
-        data: {
-          node: {
-            fieldValueByName: {
-              pullRequests: {
-                totalCount: 1_001,
-                nodes: [],
-                pageInfo: { hasNextPage: true, endCursor: "cursor-1" },
-              },
-            },
+        errors: [
+          {
+            message: `${privateBody} Bearer ${secret} ${"detail".repeat(5_000)}`,
+            extensions: { code: "FORBIDDEN" },
           },
-        },
+          { message: "secondary failure", extensions: { code: codeSecret } },
+        ],
       }),
     );
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
-    });
 
-    await expect(source.listLinkedPullRequests("item-55")).rejects.toThrow(
-      "Project item item-55 linked pull requests exceeds the 1000-item safety limit",
-    );
-    expect(run).toHaveBeenCalledTimes(1);
+    try {
+      await sourceWith(run).readProjectEvidence();
+      throw new Error("expected Project evidence to fail");
+    } catch (error) {
+      expect(error.message).toContain("Project evidence failed");
+      expect(error.message).toContain("FORBIDDEN");
+      expect(error.message).not.toContain(privateBody);
+      expect(error.message).not.toContain(secret);
+      expect(error.message).not.toContain(codeSecret);
+      expect(error.message.length).toBeLessThan(1_500);
+    }
   });
 
-  it("rejects a provider connection that ends before totalCount", async () => {
-    const run = vi.fn().mockReturnValue(
-      JSON.stringify({
-        data: {
-          node: {
-            fieldValueByName: {
-              pullRequests: {
-                totalCount: 2,
-                nodes: [
-                  {
-                    number: 70,
-                    url: "https://github.com/zaingulel/RentCottage/pull/70",
-                    repository: { nameWithOwner: "zaingulel/RentCottage" },
-                  },
-                ],
-                pageInfo: { hasNextPage: false, endCursor: null },
-              },
-            },
+  it("rejects contradictory duplicate REST issue identities across pages", async () => {
+    const issue = { id: 550, number: 55, state: "open", body: "approved" };
+    const run = vi.fn(() =>
+      JSON.stringify([[issue], [{ ...issue, id: 551, state: "closed" }]]),
+    );
+
+    await expect(sourceWith(run).listIssues()).rejects.toThrow(
+      "Issue pagination returned a duplicate stable identity",
+    );
+  });
+
+  it("paginates pull-request closing references until totalCount is proven", async () => {
+    const pullRequest = (nodes, hasNextPage, endCursor) => ({
+      data: {
+        repository: {
+          pullRequest: {
+            number: 70,
+            state: "OPEN",
+            isDraft: false,
+            mergedAt: null,
+            url: "https://github.com/zaingulel/RentCottage/pull/70",
+            closingIssuesReferences: connection(nodes, {
+              totalCount: 2,
+              hasNextPage,
+              endCursor,
+            }),
           },
         },
-      }),
-    );
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
+      },
     });
+    const closingIssue = (number) => ({
+      number,
+      repository: { name: "RentCottage", owner: { login: "zaingulel" } },
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(
+        JSON.stringify(pullRequest([closingIssue(55)], true, "closing-1")),
+      )
+      .mockReturnValueOnce(
+        JSON.stringify(pullRequest([closingIssue(63)], false, null)),
+      );
 
-    await expect(source.listLinkedPullRequests("item-55")).rejects.toThrow(
-      "Project item item-55 linked pull requests pagination was truncated",
-    );
+    const result = await sourceWith(run).readPullRequest(70);
+
+    expect(result.closingIssuesReferences.map(({ number }) => number)).toEqual([
+      55, 63,
+    ]);
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      cursor: "closing-1",
+    });
   });
 
-  it("resolves fresh Project item, field, and option IDs before a field write", async () => {
+  it("uses a fresh identity-only Project query before adding an item", async () => {
     const run = vi
       .fn()
       .mockReturnValueOnce(
         JSON.stringify({
-          id: "project-fresh",
-          number: 4,
-          owner: { login: "zaingulel" },
-          closed: false,
-          items: { totalCount: 1 },
-          fields: { totalCount: 2 },
-        }),
-      )
-      .mockReturnValueOnce(
-        JSON.stringify({
-          totalCount: 2,
-          fields: [
-            {
-              id: "status-field-fresh",
-              name: "Status",
-              options: [{ id: "in-progress-fresh", name: "In progress" }],
-            },
-            { id: "area-field", name: "Area", options: [] },
-          ],
-        }),
-      )
-      .mockReturnValueOnce(
-        JSON.stringify({
-          totalCount: 1,
-          items: [
-            {
-              id: "item-55-fresh",
-              content: {
-                number: 55,
-                type: "Issue",
-                repository: "zaingulel/RentCottage",
+          data: {
+            user: {
+              login: "zaingulel",
+              projectV2: {
+                id: "project-4",
+                number: 4,
+                closed: false,
+                owner: { login: "zaingulel" },
               },
             },
-          ],
+          },
         }),
       )
-      .mockReturnValueOnce(JSON.stringify({ data: { update: {} } }));
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
+      .mockReturnValueOnce(
+        JSON.stringify({
+          data: { addProjectV2ItemById: { item: { id: "item-55" } } },
+        }),
+      );
+
+    await sourceWith(run).execute({
+      type: "add-project-item",
+      contentNodeId: "issue-55",
     });
 
-    await source.execute({
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(queryFrom(run.mock.calls[0][0])).not.toMatch(
+      /\b(fields|items)\s*\(/,
+    );
+    expect(variables(run.mock.calls[0][0])).toMatchObject({
+      login: "zaingulel",
+      number: "4",
+    });
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      projectId: "project-4",
+      contentId: "issue-55",
+    });
+  });
+
+  it.each([
+    [
+      "changed lookup owner",
+      (response) => {
+        response.data.user.login = "another-owner";
+      },
+      "Fresh Project owner identity is invalid",
+    ],
+    [
+      "changed Project owner",
+      (response) => {
+        response.data.user.projectV2.owner.login = "another-owner";
+      },
+      "Fresh Project identity is invalid",
+    ],
+    [
+      "closed Project",
+      (response) => {
+        response.data.user.projectV2.closed = true;
+      },
+      "Fresh Project identity is invalid",
+    ],
+    [
+      "changed Project number",
+      (response) => {
+        response.data.user.projectV2.number = 5;
+      },
+      "Fresh Project identity is invalid",
+    ],
+  ])(
+    "rejects %s before adding an item",
+    async (_name, mutate, errorMessage) => {
+      const response = {
+        data: {
+          user: {
+            login: "zaingulel",
+            projectV2: {
+              id: "project-4",
+              number: 4,
+              closed: false,
+              owner: { login: "zaingulel" },
+            },
+          },
+        },
+      };
+      mutate(response);
+      const run = vi.fn(() => JSON.stringify(response));
+
+      await expect(
+        sourceWith(run).execute({
+          type: "add-project-item",
+          contentNodeId: "issue-55",
+        }),
+      ).rejects.toThrow(errorMessage);
+      expect(run).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("uses freshly read lean evidence coordinates before a field mutation", async () => {
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(
+        JSON.stringify(
+          projectResponse({
+            itemConnection: connection([freshCoordinateItem()]),
+          }),
+        ),
+      )
+      .mockReturnValueOnce(
+        JSON.stringify({
+          data: { update: { projectV2Item: { id: "item-55" } } },
+        }),
+      );
+
+    await sourceWith(run).execute({
+      type: "set-project-field",
+      issueNumber: 55,
+      field: "Status",
+      value: "In progress",
+    });
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      projectId: "project-4",
+      itemId: "item-55",
+      fieldId: "field-status",
+      optionId: "status-progress",
+    });
+    expect(run.mock.calls[0][0].join(" ")).not.toMatch(
+      /project (view|field-list|item-list)/,
+    );
+    const freshnessQuery = queryFrom(run.mock.calls[0][0]);
+    expect(freshnessQuery).toMatch(/\bfields\(first:\s*100\)/);
+    expect(freshnessQuery).toMatch(/\bitems\(first:\s*100\)/);
+    expect(freshnessQuery).toMatch(/\.\.\. on Issue\s*\{\s*id\b/);
+    expect(freshnessQuery).not.toMatch(
+      /\b(labels|fieldValues|pullRequests)\s*\(/,
+    );
+  });
+
+  it("paginates lean field and item coordinates before a field mutation", async () => {
+    const allFields = fields();
+    const first = projectResponse({
+      fieldConnection: connection([allFields[0]], {
+        totalCount: 4,
+        hasNextPage: true,
+        endCursor: "fresh-fields-1",
+      }),
+      itemConnection: connection([freshCoordinateItem(55)], {
+        totalCount: 2,
+        hasNextPage: true,
+        endCursor: "fresh-items-1",
+      }),
+    });
+    const fieldOverflow = projectResponse({
+      fieldConnection: connection(allFields.slice(1), { totalCount: 4 }),
+    });
+    const itemOverflow = projectResponse({
+      itemConnection: connection([freshCoordinateItem(63)], { totalCount: 2 }),
+    });
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(JSON.stringify(first))
+      .mockReturnValueOnce(JSON.stringify(fieldOverflow))
+      .mockReturnValueOnce(JSON.stringify(itemOverflow))
+      .mockReturnValueOnce(
+        JSON.stringify({
+          data: { update: { projectV2Item: { id: "item-55" } } },
+        }),
+      );
+
+    await sourceWith(run).execute({
       type: "set-project-field",
       issueNumber: 55,
       field: "Status",
@@ -580,195 +1457,77 @@ describe("RentCottage gh source", () => {
     });
 
     expect(run).toHaveBeenCalledTimes(4);
-    expect(run.mock.calls[3][0]).toEqual(
-      expect.arrayContaining([
-        "projectId=project-fresh",
-        "itemId=item-55-fresh",
-        "fieldId=status-field-fresh",
-        "optionId=in-progress-fresh",
-      ]),
-    );
-    const mutationArgs = run.mock.calls[3][0];
-    expectVariableFlag(mutationArgs, "projectId", "-F");
-    expectVariableFlag(mutationArgs, "itemId", "-F");
-    expectVariableFlag(mutationArgs, "fieldId", "-F");
-    expectVariableFlag(mutationArgs, "optionId", "-f");
-  });
-
-  it("rejects malformed fresh Project coordinates before a field mutation", async () => {
-    const run = vi.fn().mockReturnValueOnce(JSON.stringify({ number: 4 }));
-    const source = createRentCottageGhSource({
-      repository: "zaingulel/RentCottage",
-      projectOwner: "zaingulel",
-      projectNumber: 4,
-      run,
+    expect(variables(run.mock.calls[1][0])).toMatchObject({
+      cursor: "fresh-fields-1",
     });
-
-    await expect(
-      source.execute({
-        type: "set-project-field",
-        issueNumber: 55,
-        field: "Status",
-        value: "In progress",
-      }),
-    ).rejects.toThrow("Fresh Project response is invalid");
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(variables(run.mock.calls[2][0])).toMatchObject({
+      cursor: "fresh-items-1",
+    });
+    for (const call of run.mock.calls.slice(0, 3)) {
+      expect(queryFrom(call[0])).not.toMatch(
+        /\b(labels|fieldValues|pullRequests)\s*\(/,
+      );
+    }
+    for (const call of [run.mock.calls[0], run.mock.calls[2]]) {
+      expect(queryFrom(call[0])).toMatch(/\.\.\. on Issue\s*\{\s*id\b/);
+    }
+    expect(variables(run.mock.calls[3][0])).toMatchObject({
+      projectId: "project-4",
+      itemId: "item-55",
+      fieldId: "field-status",
+      optionId: "status-progress",
+    });
   });
 
   it.each([
     {
-      name: "wrong Project identity",
-      responses: [
-        {
-          id: "project-fresh",
-          number: 5,
-          owner: { login: "someone-else" },
-          closed: false,
-          items: { totalCount: 1 },
-          fields: { totalCount: 1 },
-        },
-      ],
-      message: "Fresh Project response is invalid",
-      calls: 1,
+      connectionName: "fields",
+      first: projectResponse({
+        fieldConnection: connection([fields()[0]], {
+          totalCount: 4,
+          hasNextPage: true,
+          endCursor: "fresh-fields-1",
+        }),
+        itemConnection: connection([freshCoordinateItem()]),
+      }),
+      overflow: projectResponse({
+        fieldConnection: connection(fields().slice(1), { totalCount: 5 }),
+      }),
     },
     {
-      name: "truncated fields",
-      responses: [
-        {
-          id: "project-fresh",
-          number: 4,
-          owner: { login: "zaingulel" },
-          closed: false,
-          items: { totalCount: 1 },
-          fields: { totalCount: 2 },
-        },
-        {
+      connectionName: "items",
+      first: projectResponse({
+        itemConnection: connection([freshCoordinateItem(55)], {
           totalCount: 2,
-          fields: [
-            {
-              id: "status-field",
-              name: "Status",
-              options: [{ id: "in-progress", name: "In progress" }],
-            },
-          ],
-        },
-      ],
-      message: "Fresh Project fields response is invalid",
-      calls: 2,
-    },
-    {
-      name: "malformed field options",
-      responses: [
-        {
-          id: "project-fresh",
-          number: 4,
-          owner: { login: "zaingulel" },
-          closed: false,
-          items: { totalCount: 1 },
-          fields: { totalCount: 1 },
-        },
-        {
-          totalCount: 1,
-          fields: [
-            {
-              id: "status-field",
-              name: "Status",
-              options: [{ id: 7, name: "In progress" }],
-            },
-          ],
-        },
-      ],
-      message: "Fresh Project fields response is invalid",
-      calls: 2,
-    },
-    {
-      name: "duplicate field coordinates",
-      responses: [
-        {
-          id: "project-fresh",
-          number: 4,
-          owner: { login: "zaingulel" },
-          closed: false,
-          items: { totalCount: 1 },
-          fields: { totalCount: 2 },
-        },
-        {
-          totalCount: 2,
-          fields: [
-            {
-              id: "duplicate-field",
-              name: "Status",
-              options: [{ id: "in-progress", name: "In progress" }],
-            },
-            {
-              id: "duplicate-field",
-              name: "Area",
-              options: [{ id: "foundation", name: "Foundation & quality" }],
-            },
-          ],
-        },
-      ],
-      message: "Fresh Project fields response is invalid",
-      calls: 2,
-    },
-    {
-      name: "duplicate items",
-      responses: [
-        {
-          id: "project-fresh",
-          number: 4,
-          owner: { login: "zaingulel" },
-          closed: false,
-          items: { totalCount: 2 },
-          fields: { totalCount: 1 },
-        },
-        {
-          totalCount: 1,
-          fields: [
-            {
-              id: "status-field",
-              name: "Status",
-              options: [{ id: "in-progress", name: "In progress" }],
-            },
-          ],
-        },
-        {
-          totalCount: 2,
-          items: ["a", "b"].map((suffix) => ({
-            id: `item-${suffix}`,
-            content: {
-              number: 55,
-              type: "Issue",
-              repository: "zaingulel/RentCottage",
-            },
-          })),
-        },
-      ],
-      message: "Fresh Project items response is invalid",
-      calls: 3,
+          hasNextPage: true,
+          endCursor: "fresh-items-1",
+        }),
+      }),
+      overflow: projectResponse({
+        itemConnection: connection([freshCoordinateItem(63)], {
+          totalCount: 3,
+        }),
+      }),
     },
   ])(
-    "rejects $name before a field mutation",
-    async ({ responses, message, calls }) => {
-      const run = vi.fn();
-      for (const response of responses)
-        run.mockReturnValueOnce(JSON.stringify(response));
-      const source = createRentCottageGhSource({
-        repository: "zaingulel/RentCottage",
-        projectOwner: "zaingulel",
-        projectNumber: 4,
-        run,
-      });
+    "fails before a field mutation when fresh Project $connectionName totals drift",
+    async ({ connectionName, first, overflow }) => {
+      const run = vi
+        .fn()
+        .mockReturnValueOnce(JSON.stringify(first))
+        .mockReturnValueOnce(JSON.stringify(overflow));
 
       await expect(
-        source.execute({
+        sourceWith(run).execute({
           type: "set-project-field",
           issueNumber: 55,
           field: "Status",
           value: "In progress",
         }),
-      ).rejects.toThrow(message);
-      expect(run).toHaveBeenCalledTimes(calls);
+      ).rejects.toThrow(
+        `Fresh Project ${connectionName} totalCount changed during pagination`,
+      );
+      expect(run).toHaveBeenCalledTimes(2);
     },
   );
 });

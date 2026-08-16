@@ -17,6 +17,11 @@ import {
 
 export { runGh };
 
+const CONNECTION_PAGE_SIZE = 100;
+const CONNECTION_ITEM_LIMIT = 1_000;
+const PROJECT_FIELD_VALUE_PAGE_SIZE = 20;
+const LINKED_PULL_REQUEST_PAGE_SIZE = 20;
+
 function parseJson(serialized, context) {
   try {
     return JSON.parse(serialized);
@@ -78,6 +83,317 @@ function hasFreshItemCoordinates(items, project, operation, repository) {
   );
 }
 
+const PROJECT_FIELD_NAMES = ["Area", "Status", "Linked pull requests"];
+
+const FIELD_COORDINATE_SELECTION = `field { ... on ProjectV2FieldCommon { id name } }`;
+const FIELD_VALUE_SELECTION = `
+  __typename
+  ... on ProjectV2ItemFieldValueCommon { ${FIELD_COORDINATE_SELECTION} }
+  ... on ProjectV2ItemFieldLabelValue { ${FIELD_COORDINATE_SELECTION} }
+  ... on ProjectV2ItemFieldMilestoneValue { ${FIELD_COORDINATE_SELECTION} }
+  ... on ProjectV2ItemFieldPullRequestValue {
+    ${FIELD_COORDINATE_SELECTION}
+    pullRequests(first: ${LINKED_PULL_REQUEST_PAGE_SIZE}) {
+      totalCount nodes { id number url repository { nameWithOwner } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on ProjectV2ItemFieldRepositoryValue { ${FIELD_COORDINATE_SELECTION} }
+  ... on ProjectV2ItemFieldReviewerValue { ${FIELD_COORDINATE_SELECTION} }
+  ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+  ... on ProjectV2ItemFieldUserValue { ${FIELD_COORDINATE_SELECTION} }
+  ... on ProjectV2ItemIssueFieldValue { ${FIELD_COORDINATE_SELECTION} }
+`;
+const FIELD_VALUE_ORDER = "orderBy: { field: POSITION, direction: ASC }";
+
+function graphqlArgs(query, variables = {}) {
+  const args = ["api", "graphql", "-f", `query=${query}`];
+  for (const [name, value] of Object.entries(variables)) {
+    if (value === null || value === undefined) continue;
+    args.push(Number.isInteger(value) ? "-F" : "-f", `${name}=${value}`);
+  }
+  return args;
+}
+
+function requireConnection(connection, context) {
+  if (
+    !isRecord(connection) ||
+    !Number.isInteger(connection.totalCount) ||
+    connection.totalCount < 0 ||
+    !Array.isArray(connection.nodes) ||
+    !isRecord(connection.pageInfo) ||
+    typeof connection.pageInfo.hasNextPage !== "boolean" ||
+    (connection.pageInfo.endCursor !== null &&
+      typeof connection.pageInfo.endCursor !== "string")
+  ) {
+    throw new Error(`${context} pagination evidence is invalid`);
+  }
+  if (connection.totalCount > CONNECTION_ITEM_LIMIT)
+    throw new Error(
+      `${context} exceeds the ${CONNECTION_ITEM_LIMIT}-item safety limit`,
+    );
+  if (connection.pageInfo.hasNextPage && !connection.pageInfo.endCursor)
+    throw new Error(`${context} pagination cursor is unavailable`);
+  return connection;
+}
+
+function createConnectionState(
+  connection,
+  context,
+  identityFrom,
+  pageSize = CONNECTION_PAGE_SIZE,
+) {
+  const first = requireConnection(connection, context);
+  const state = {
+    context,
+    totalCount: first.totalCount,
+    nodes: [],
+    identities: new Set(),
+    cursors: new Set(),
+    cursor: null,
+    hasNextPage: false,
+    pages: 0,
+    pageSize,
+  };
+  appendConnectionPage(state, first, identityFrom);
+  return state;
+}
+
+function appendConnectionPage(state, connection, identityFrom) {
+  const page = requireConnection(connection, state.context);
+  if (page.totalCount !== state.totalCount)
+    throw new Error(`${state.context} totalCount changed during pagination`);
+  if (state.pages >= Math.ceil(CONNECTION_ITEM_LIMIT / state.pageSize))
+    throw new Error(
+      `${state.context} pagination exceeded the page safety limit`,
+    );
+  for (const node of page.nodes) {
+    const identity = identityFrom(node);
+    if (typeof identity !== "string" || identity.length === 0)
+      throw new Error(`${state.context} returned an invalid identity`);
+    if (state.identities.has(identity))
+      throw new Error(`${state.context} returned a duplicate identity`);
+    state.identities.add(identity);
+    state.nodes.push(node);
+  }
+  state.pages += 1;
+  if (state.nodes.length > state.totalCount)
+    throw new Error(`${state.context} returned more nodes than totalCount`);
+  state.hasNextPage = page.pageInfo.hasNextPage;
+  if (state.hasNextPage && state.cursors.has(page.pageInfo.endCursor))
+    throw new Error(`${state.context} pagination cursor was repeated`);
+  if (state.hasNextPage) state.cursors.add(page.pageInfo.endCursor);
+  state.cursor = page.pageInfo.endCursor;
+  if (!state.hasNextPage && state.nodes.length !== state.totalCount)
+    throw new Error(`${state.context} pagination was truncated`);
+}
+
+function requireProjectAnchor(
+  project,
+  { projectOwner, projectNumber, projectId },
+  context,
+  errorMessage = `${context} Project identity changed during pagination`,
+) {
+  if (
+    !isRecord(project) ||
+    typeof project.id !== "string" ||
+    (projectId !== undefined && project.id !== projectId) ||
+    project.number !== projectNumber ||
+    project.closed !== false ||
+    !isRecord(project.owner) ||
+    project.owner.login !== projectOwner
+  ) {
+    throw new Error(errorMessage);
+  }
+}
+
+function requireItemAnchor(item, expected, repository, context) {
+  if (
+    !isRecord(item) ||
+    typeof item.id !== "string" ||
+    item.id !== expected.id ||
+    !isRecord(item.content) ||
+    item.content.__typename !== "Issue" ||
+    typeof item.content.id !== "string" ||
+    item.content.id !== expected.content.id ||
+    !Number.isInteger(item.content.number) ||
+    item.content.number !== expected.content.number ||
+    item.content.repository?.nameWithOwner !== repository
+  ) {
+    throw new Error(
+      `${context} item or issue identity changed during pagination`,
+    );
+  }
+}
+
+function isInitialRepositoryIssue(item, repository) {
+  return (
+    isRecord(item) &&
+    typeof item.id === "string" &&
+    isRecord(item.content) &&
+    item.content.__typename === "Issue" &&
+    typeof item.content.id === "string" &&
+    Number.isInteger(item.content.number) &&
+    item.content.repository?.nameWithOwner === repository
+  );
+}
+
+function normalizeInitialItem(item) {
+  const content = isRecord(item.content) ? item.content : null;
+  const availableIssue =
+    content?.__typename === "Issue" &&
+    typeof content.id === "string" &&
+    Number.isInteger(content.number) &&
+    typeof content.repository?.nameWithOwner === "string";
+  const type =
+    content?.__typename === "Issue" && !availableIssue
+      ? "Unavailable"
+      : (content?.__typename ?? "Unavailable");
+  return {
+    id: item.id,
+    content: {
+      type,
+      ...(Number.isInteger(content?.number) ? { number: content.number } : {}),
+      ...(typeof content?.repository?.nameWithOwner === "string"
+        ? { repository: content.repository.nameWithOwner }
+        : {}),
+    },
+  };
+}
+
+function linkedPullRequestIdentity(pullRequest) {
+  if (
+    !isRecord(pullRequest) ||
+    typeof pullRequest.id !== "string" ||
+    !Number.isInteger(pullRequest.number) ||
+    typeof pullRequest.url !== "string" ||
+    typeof pullRequest.repository?.nameWithOwner !== "string"
+  ) {
+    return null;
+  }
+  return `${pullRequest.repository.nameWithOwner}#${pullRequest.number}`;
+}
+
+function requireTrackedFields(fields) {
+  if (
+    !fields.every(isProjectFieldRecord) ||
+    !hasUniqueProjectFieldCoordinates(fields)
+  ) {
+    throw new Error("Project field coordinates are invalid or ambiguous");
+  }
+  const coordinates = new Map();
+  for (const name of PROJECT_FIELD_NAMES) {
+    const matches = fields.filter((field) => field.name === name);
+    if (matches.length !== 1)
+      throw new Error(
+        `Project ${name} field coordinate is unavailable or ambiguous`,
+      );
+    if (name !== "Linked pull requests" && !Array.isArray(matches[0].options))
+      throw new Error(`Project ${name} field options are unavailable`);
+    coordinates.set(name, matches[0]);
+  }
+  return coordinates;
+}
+
+function fieldValueIdentity(value) {
+  return value?.field?.id;
+}
+
+function requireItemFieldValues(item, coordinates, projectFields) {
+  const valuesById = new Map();
+  const projectFieldsById = new Map(
+    projectFields.map((coordinate) => [coordinate.id, coordinate]),
+  );
+  for (const value of item.fieldValues) {
+    if (
+      !isRecord(value) ||
+      typeof value.__typename !== "string" ||
+      !isRecord(value.field) ||
+      typeof value.field.id !== "string" ||
+      typeof value.field.name !== "string"
+    ) {
+      throw new Error(
+        `Project item ${item.id} field value identity is invalid`,
+      );
+    }
+    if (valuesById.has(value.field.id))
+      throw new Error(`Project item ${item.id} has a duplicate field value`);
+    const coordinateByName = coordinates.get(value.field.name);
+    const coordinateById = projectFieldsById.get(value.field.id);
+    if (
+      !coordinateById ||
+      coordinateById.name !== value.field.name ||
+      (coordinateByName && coordinateByName.id !== value.field.id)
+    ) {
+      throw new Error(
+        `Project item ${item.id} ${coordinateById?.name ?? value.field.name} field identity changed`,
+      );
+    }
+    valuesById.set(value.field.id, value);
+  }
+
+  const normalized = {};
+  for (const name of PROJECT_FIELD_NAMES) {
+    const coordinate = coordinates.get(name);
+    const value = valuesById.get(coordinate.id);
+    if (!value) {
+      normalized[name] = name === "Linked pull requests" ? [] : null;
+      continue;
+    }
+    if (value.field.name !== name)
+      throw new Error(`Project item ${item.id} ${name} field identity changed`);
+    const expectedType =
+      name === "Linked pull requests"
+        ? "ProjectV2ItemFieldPullRequestValue"
+        : "ProjectV2ItemFieldSingleSelectValue";
+    if (value.__typename !== expectedType)
+      throw new Error(
+        `Project item ${item.id} ${name} field value type is invalid`,
+      );
+    if (name === "Linked pull requests") {
+      normalized[name] = value.pullRequests;
+    } else {
+      if (typeof value.name !== "string" || typeof value.optionId !== "string")
+        throw new Error(`Project item ${item.id} ${name} value is invalid`);
+      const matchingOptions = coordinate.options.filter(
+        (option) => option.name === value.name && option.id === value.optionId,
+      );
+      if (matchingOptions.length !== 1)
+        throw new Error(
+          `Project item ${item.id} ${name} option identity is invalid`,
+        );
+      normalized[name] = value.name;
+    }
+  }
+  return normalized;
+}
+
+const PROJECT_EVIDENCE_QUERY = `query($login: String!, $number: Int!) {
+  user(login: $login) {
+    login
+    projectV2(number: $number) {
+      id number closed owner { ... on User { login } }
+      fields(first: ${CONNECTION_PAGE_SIZE}) {
+        totalCount nodes { __typename ... on ProjectV2FieldCommon { id name } ... on ProjectV2SingleSelectField { id name options { id name } } }
+        pageInfo { hasNextPage endCursor }
+      }
+      items(first: ${CONNECTION_PAGE_SIZE}) {
+        totalCount nodes {
+          id
+          content { __typename ... on Issue { id number repository { nameWithOwner } labels(first: ${CONNECTION_PAGE_SIZE}) { totalCount nodes { id name } pageInfo { hasNextPage endCursor } } } }
+          fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, ${FIELD_VALUE_ORDER}) {
+            totalCount nodes {
+              ${FIELD_VALUE_SELECTION}
+            }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}`;
+
 function requireGraphqlSuccess(serialized, context) {
   const response = parseJson(serialized, context);
   const errors = graphqlResponseErrors(response, context);
@@ -85,66 +401,20 @@ function requireGraphqlSuccess(serialized, context) {
   return response;
 }
 
-const CONNECTION_PAGE_SIZE = 100;
-const CONNECTION_ITEM_LIMIT = 1_000;
-
 function readBoundedConnection({
   context,
   readPage,
   connectionFrom,
   identityFrom,
-  emptyWhen = () => false,
 }) {
-  const nodes = [];
-  const identities = new Set();
-  let cursor = null;
-  let expectedTotal = null;
-  for (
-    let page = 0;
-    page < CONNECTION_ITEM_LIMIT / CONNECTION_PAGE_SIZE;
-    page += 1
-  ) {
-    const value = readPage(cursor);
-    if (emptyWhen(value)) return { value, nodes: [] };
+  let state = null;
+  while (!state || state.hasNextPage) {
+    const value = readPage(state?.cursor ?? null);
     const connection = connectionFrom(value);
-    if (
-      !isRecord(connection) ||
-      !Number.isInteger(connection.totalCount) ||
-      connection.totalCount < 0 ||
-      !Array.isArray(connection.nodes) ||
-      !isRecord(connection.pageInfo) ||
-      typeof connection.pageInfo.hasNextPage !== "boolean" ||
-      (connection.pageInfo.endCursor !== null &&
-        typeof connection.pageInfo.endCursor !== "string")
-    ) {
-      throw new Error(`${context} pagination evidence is invalid`);
-    }
-    if (connection.totalCount > CONNECTION_ITEM_LIMIT)
-      throw new Error(
-        `${context} exceeds the ${CONNECTION_ITEM_LIMIT}-item safety limit`,
-      );
-    expectedTotal ??= connection.totalCount;
-    if (connection.totalCount !== expectedTotal)
-      throw new Error(`${context} totalCount changed during pagination`);
-    for (const node of connection.nodes) {
-      const identity = identityFrom(node);
-      if (identities.has(identity))
-        throw new Error(`${context} returned a duplicate identity`);
-      identities.add(identity);
-      nodes.push(node);
-    }
-    if (nodes.length > expectedTotal)
-      throw new Error(`${context} returned more nodes than totalCount`);
-    if (!connection.pageInfo.hasNextPage) {
-      if (nodes.length !== expectedTotal)
-        throw new Error(`${context} pagination was truncated`);
-      return { value, nodes };
-    }
-    if (!connection.pageInfo.endCursor)
-      throw new Error(`${context} pagination cursor is unavailable`);
-    cursor = connection.pageInfo.endCursor;
+    if (state) appendConnectionPage(state, connection, identityFrom);
+    else state = createConnectionState(connection, context, identityFrom);
   }
-  throw new Error(`${context} pagination exceeded the page safety limit`);
+  return state.nodes;
 }
 
 export function createRentCottageGhSource({
@@ -153,39 +423,435 @@ export function createRentCottageGhSource({
   projectNumber,
   run = runGh,
 }) {
-  const projectArgs = [String(projectNumber), "--owner", projectOwner];
+  const readProjectIdentity = () => {
+    const query = `query($login: String!, $number: Int!) {
+      user(login: $login) {
+        login
+        projectV2(number: $number) {
+          id number closed owner { ... on User { login } }
+        }
+      }
+    }`;
+    const response = requireGraphqlSuccess(
+      run(graphqlArgs(query, { login: projectOwner, number: projectNumber })),
+      "Fresh Project identity",
+    );
+    const user = response.data?.user;
+    if (!isRecord(user) || user.login !== projectOwner)
+      throw new Error("Fresh Project owner identity is invalid");
+    const project = user.projectV2;
+    requireProjectAnchor(
+      project,
+      { projectOwner, projectNumber },
+      "Fresh",
+      "Fresh Project identity is invalid",
+    );
+    return project;
+  };
+
+  const readFreshProjectCoordinates = () => {
+    const read = (query, variables, context) =>
+      requireGraphqlSuccess(run(graphqlArgs(query, variables)), context);
+    const query = `query($login: String!, $number: Int!) {
+      user(login: $login) { login projectV2(number: $number) {
+        id number closed owner { ... on User { login } }
+        fields(first: ${CONNECTION_PAGE_SIZE}) {
+          totalCount nodes { __typename ... on ProjectV2FieldCommon { id name } ... on ProjectV2SingleSelectField { id name options { id name } } }
+          pageInfo { hasNextPage endCursor }
+        }
+        items(first: ${CONNECTION_PAGE_SIZE}) {
+          totalCount nodes { id content { __typename ... on Issue { id number repository { nameWithOwner } } } }
+          pageInfo { hasNextPage endCursor }
+        }
+      } }
+    }`;
+    const response = read(
+      query,
+      { login: projectOwner, number: projectNumber },
+      "Fresh Project coordinates",
+    );
+    const user = response.data?.user;
+    const project = user?.projectV2;
+    if (!isRecord(user) || user.login !== projectOwner)
+      throw new Error("Fresh Project owner identity is invalid");
+    requireProjectAnchor(
+      project,
+      { projectOwner, projectNumber },
+      "Fresh Project coordinates",
+      "Fresh Project response is invalid",
+    );
+    const initialProjectTotals = Object.freeze({
+      fields: project.fields?.totalCount,
+      items: project.items?.totalCount,
+    });
+
+    const fields = createConnectionState(
+      project.fields,
+      "Fresh Project fields",
+      (field) => field?.id,
+    );
+    while (fields.hasNextPage) {
+      const pageQuery = `query($login: String!, $number: Int!, $cursor: String!) {
+        user(login: $login) { login projectV2(number: $number) {
+          id number closed owner { ... on User { login } }
+          fields(first: ${CONNECTION_PAGE_SIZE}, after: $cursor) {
+            totalCount nodes { __typename ... on ProjectV2FieldCommon { id name } ... on ProjectV2SingleSelectField { id name options { id name } } }
+            pageInfo { hasNextPage endCursor }
+          }
+        } }
+      }`;
+      const page = read(
+        pageQuery,
+        { login: projectOwner, number: projectNumber, cursor: fields.cursor },
+        "Fresh Project fields",
+      );
+      if (page.data?.user?.login !== projectOwner)
+        throw new Error(
+          "Fresh Project fields owner identity changed during pagination",
+        );
+      const pageProject = page.data?.user?.projectV2;
+      requireProjectAnchor(
+        pageProject,
+        { projectOwner, projectNumber, projectId: project.id },
+        "Fresh Project fields",
+      );
+      appendConnectionPage(fields, pageProject.fields, (field) => field?.id);
+    }
+
+    const items = createConnectionState(
+      project.items,
+      "Fresh Project items",
+      (item) => item?.id,
+    );
+    while (items.hasNextPage) {
+      const pageQuery = `query($login: String!, $number: Int!, $cursor: String!) {
+        user(login: $login) { login projectV2(number: $number) {
+          id number closed owner { ... on User { login } }
+          items(first: ${CONNECTION_PAGE_SIZE}, after: $cursor) {
+            totalCount nodes { id content { __typename ... on Issue { id number repository { nameWithOwner } } } }
+            pageInfo { hasNextPage endCursor }
+          }
+        } }
+      }`;
+      const page = read(
+        pageQuery,
+        { login: projectOwner, number: projectNumber, cursor: items.cursor },
+        "Fresh Project items",
+      );
+      if (page.data?.user?.login !== projectOwner)
+        throw new Error(
+          "Fresh Project items owner identity changed during pagination",
+        );
+      const pageProject = page.data?.user?.projectV2;
+      requireProjectAnchor(
+        pageProject,
+        { projectOwner, projectNumber, projectId: project.id },
+        "Fresh Project items",
+      );
+      appendConnectionPage(items, pageProject.items, (item) => item?.id);
+    }
+
+    return {
+      project: {
+        id: project.id,
+        number: project.number,
+        owner: { login: user.login },
+        closed: project.closed,
+        items: { totalCount: initialProjectTotals.items },
+        fields: { totalCount: initialProjectTotals.fields },
+      },
+      fields: { totalCount: fields.totalCount, fields: fields.nodes },
+      items: {
+        totalCount: items.totalCount,
+        items: items.nodes.map(normalizeInitialItem),
+      },
+    };
+  };
+
   const source = {
     async assertSupported() {
       assertSupportedGhVersion(run(["--version"]));
     },
 
-    async readProject() {
-      return parseJson(
-        run(["project", "view", ...projectArgs, "--format", "json"]),
-        "Project",
+    async readProjectEvidence() {
+      const read = (query, variables, context) =>
+        requireGraphqlSuccess(run(graphqlArgs(query, variables)), context);
+      const response = read(
+        PROJECT_EVIDENCE_QUERY,
+        { login: projectOwner, number: projectNumber },
+        "Project evidence",
       );
-    },
+      const user = response.data?.user;
+      const project = user?.projectV2;
+      if (!isRecord(user) || user.login !== projectOwner)
+        throw new Error("Project owner identity is invalid");
+      requireProjectAnchor(
+        project,
+        { projectOwner, projectNumber },
+        "Project evidence",
+      );
 
-    async readProjectFields() {
-      return parseJson(
-        run(["project", "field-list", ...projectArgs, "--format", "json"]),
+      const fields = createConnectionState(
+        project.fields,
         "Project fields",
+        (field) => field?.id,
       );
-    },
+      while (fields.hasNextPage) {
+        const query = `query($login: String!, $number: Int!, $cursor: String!) {
+          user(login: $login) { login projectV2(number: $number) {
+            id number closed owner { ... on User { login } }
+            fields(first: ${CONNECTION_PAGE_SIZE}, after: $cursor) {
+              totalCount nodes { __typename ... on ProjectV2FieldCommon { id name } ... on ProjectV2SingleSelectField { id name options { id name } } }
+              pageInfo { hasNextPage endCursor }
+            }
+          } }
+        }`;
+        const page = read(
+          query,
+          { login: projectOwner, number: projectNumber, cursor: fields.cursor },
+          "Project fields",
+        );
+        if (page.data?.user?.login !== projectOwner)
+          throw new Error(
+            "Project fields owner identity changed during pagination",
+          );
+        const pageProject = page.data?.user?.projectV2;
+        requireProjectAnchor(
+          pageProject,
+          { projectOwner, projectNumber, projectId: project.id },
+          "Project fields",
+        );
+        appendConnectionPage(fields, pageProject.fields, (field) => field?.id);
+      }
+      const coordinates = requireTrackedFields(fields.nodes);
 
-    async readProjectItems() {
-      return parseJson(
-        run([
-          "project",
-          "item-list",
-          ...projectArgs,
-          "--format",
-          "json",
-          "--limit",
-          "100",
-        ]),
+      const items = createConnectionState(
+        project.items,
         "Project items",
+        (item) => item?.id,
       );
+      while (items.hasNextPage) {
+        const query = `query($login: String!, $number: Int!, $cursor: String!) {
+          user(login: $login) { login projectV2(number: $number) {
+            id number closed owner { ... on User { login } }
+            items(first: ${CONNECTION_PAGE_SIZE}, after: $cursor) {
+              totalCount nodes {
+                id
+                content { __typename ... on Issue { id number repository { nameWithOwner } labels(first: ${CONNECTION_PAGE_SIZE}) { totalCount nodes { id name } pageInfo { hasNextPage endCursor } } } }
+                fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, ${FIELD_VALUE_ORDER}) {
+                  totalCount nodes { ${FIELD_VALUE_SELECTION} }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+              pageInfo { hasNextPage endCursor }
+            }
+          } }
+        }`;
+        const page = read(
+          query,
+          { login: projectOwner, number: projectNumber, cursor: items.cursor },
+          "Project items",
+        );
+        if (page.data?.user?.login !== projectOwner)
+          throw new Error(
+            "Project items owner identity changed during pagination",
+          );
+        const pageProject = page.data?.user?.projectV2;
+        requireProjectAnchor(
+          pageProject,
+          { projectOwner, projectNumber, projectId: project.id },
+          "Project items",
+        );
+        appendConnectionPage(items, pageProject.items, (item) => item?.id);
+      }
+
+      const normalizedItems = [];
+      for (const item of items.nodes) {
+        const context = `Project item ${item?.id ?? "unknown"}`;
+        if (!isInitialRepositoryIssue(item, repository)) {
+          normalizedItems.push(normalizeInitialItem(item));
+          continue;
+        }
+
+        const labels = createConnectionState(
+          item.content.labels,
+          `${context} labels`,
+          (label) => label?.id,
+        );
+        while (labels.hasNextPage) {
+          const query = `query($itemId: ID!, $cursor: String!) {
+            node(id: $itemId) { ... on ProjectV2Item {
+              id content { __typename ... on Issue { id number repository { nameWithOwner } labels(first: ${CONNECTION_PAGE_SIZE}, after: $cursor) { totalCount nodes { id name } pageInfo { hasNextPage endCursor } } } }
+            } }
+          }`;
+          const page = read(
+            query,
+            { itemId: item.id, cursor: labels.cursor },
+            `${context} labels`,
+          );
+          requireItemAnchor(page.data?.node, item, repository, context);
+          appendConnectionPage(
+            labels,
+            page.data.node.content.labels,
+            (label) => label?.id,
+          );
+        }
+        if (labels.nodes.some((label) => typeof label?.name !== "string"))
+          throw new Error(`${context} label evidence is invalid`);
+
+        const fieldValues = createConnectionState(
+          item.fieldValues,
+          `${context} field values`,
+          fieldValueIdentity,
+          PROJECT_FIELD_VALUE_PAGE_SIZE,
+        );
+        const fieldValuePageEvidence = new Map(
+          item.fieldValues.nodes.map((value) => [
+            fieldValueIdentity(value),
+            {
+              cursor: null,
+              totalCount: item.fieldValues.totalCount,
+              pageInfo: { ...item.fieldValues.pageInfo },
+            },
+          ]),
+        );
+        while (fieldValues.hasNextPage) {
+          const pageStartCursor = fieldValues.cursor;
+          const query = `query($itemId: ID!, $cursor: String!) {
+            node(id: $itemId) { ... on ProjectV2Item {
+              id content { __typename ... on Issue { id number repository { nameWithOwner } } }
+              fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, after: $cursor, ${FIELD_VALUE_ORDER}) {
+                totalCount nodes { ${FIELD_VALUE_SELECTION} }
+                pageInfo { hasNextPage endCursor }
+              }
+            } }
+          }`;
+          const page = read(
+            query,
+            { itemId: item.id, cursor: pageStartCursor },
+            `${context} field values`,
+          );
+          requireItemAnchor(page.data?.node, item, repository, context);
+          appendConnectionPage(
+            fieldValues,
+            page.data.node.fieldValues,
+            fieldValueIdentity,
+          );
+          for (const value of page.data.node.fieldValues.nodes) {
+            fieldValuePageEvidence.set(fieldValueIdentity(value), {
+              cursor: pageStartCursor,
+              totalCount: page.data.node.fieldValues.totalCount,
+              pageInfo: { ...page.data.node.fieldValues.pageInfo },
+            });
+          }
+        }
+        item.fieldValues = fieldValues.nodes;
+
+        const linkedCoordinate = coordinates.get("Linked pull requests");
+        const linkedValue = item.fieldValues.find(
+          (value) => value?.field?.id === linkedCoordinate.id,
+        );
+        if (linkedValue) {
+          if (
+            linkedValue.__typename !== "ProjectV2ItemFieldPullRequestValue" ||
+            linkedValue.field?.name !== linkedCoordinate.name
+          ) {
+            throw new Error(
+              `${context} Linked pull requests field value type is invalid`,
+            );
+          }
+          const pullRequests = createConnectionState(
+            linkedValue.pullRequests,
+            `${context} linked pull requests`,
+            linkedPullRequestIdentity,
+            LINKED_PULL_REQUEST_PAGE_SIZE,
+          );
+          while (pullRequests.hasNextPage) {
+            const expectedFieldValuePage = fieldValuePageEvidence.get(
+              linkedCoordinate.id,
+            );
+            const query = `query($itemId: ID!, $fieldCursor: String, $pullRequestCursor: String!) {
+              node(id: $itemId) { ... on ProjectV2Item {
+                id content { __typename ... on Issue { id number repository { nameWithOwner } } }
+                fieldValues(first: ${PROJECT_FIELD_VALUE_PAGE_SIZE}, after: $fieldCursor, ${FIELD_VALUE_ORDER}) {
+                  totalCount
+                  nodes { __typename ... on ProjectV2ItemFieldPullRequestValue { field { ... on ProjectV2FieldCommon { id name } } pullRequests(first: ${LINKED_PULL_REQUEST_PAGE_SIZE}, after: $pullRequestCursor) { totalCount nodes { id number url repository { nameWithOwner } } pageInfo { hasNextPage endCursor } } } }
+                  pageInfo { hasNextPage endCursor }
+                }
+              } }
+            }`;
+            const page = read(
+              query,
+              {
+                itemId: item.id,
+                fieldCursor: expectedFieldValuePage.cursor,
+                pullRequestCursor: pullRequests.cursor,
+              },
+              `${context} linked pull requests`,
+            );
+            requireItemAnchor(page.data?.node, item, repository, context);
+            const pageFieldValues = requireConnection(
+              page.data.node.fieldValues,
+              `${context} linked pull-request field values`,
+            );
+            if (
+              pageFieldValues.totalCount !==
+                expectedFieldValuePage.totalCount ||
+              pageFieldValues.pageInfo.hasNextPage !==
+                expectedFieldValuePage.pageInfo.hasNextPage ||
+              pageFieldValues.pageInfo.endCursor !==
+                expectedFieldValuePage.pageInfo.endCursor
+            ) {
+              throw new Error(
+                `${context} linked pull-request field-value page changed during pagination`,
+              );
+            }
+            const matches = pageFieldValues.nodes.filter(
+              (value) => value?.field?.id === linkedCoordinate.id,
+            );
+            if (
+              matches?.length !== 1 ||
+              matches[0].field.name !== linkedCoordinate.name ||
+              matches[0].__typename !== "ProjectV2ItemFieldPullRequestValue"
+            ) {
+              throw new Error(
+                `${context} linked pull-request field identity changed`,
+              );
+            }
+            appendConnectionPage(
+              pullRequests,
+              matches[0].pullRequests,
+              linkedPullRequestIdentity,
+            );
+          }
+          linkedValue.pullRequests = pullRequests.nodes;
+        }
+
+        const values = requireItemFieldValues(item, coordinates, fields.nodes);
+        normalizedItems.push({
+          id: item.id,
+          area: values.Area,
+          status: values.Status,
+          content: {
+            type: item.content.__typename,
+            number: item.content.number,
+            repository: item.content.repository.nameWithOwner,
+          },
+          labels: labels.nodes.map(({ name }) => name),
+          "linked pull requests": values["Linked pull requests"],
+        });
+      }
+
+      return {
+        project: {
+          id: project.id,
+          number: project.number,
+          owner: { login: user.login },
+          closed: project.closed,
+        },
+        fields: { totalCount: fields.totalCount, fields: fields.nodes },
+        items: { totalCount: items.totalCount, items: normalizedItems },
+      };
     },
 
     async listIssues() {
@@ -212,50 +878,6 @@ export function createRentCottageGhSource({
       );
     },
 
-    async listLinkedPullRequests(itemId) {
-      const query = `query($itemId: ID!, $cursor: String) {
-        node(id: $itemId) {
-          ... on ProjectV2Item {
-            fieldValueByName(name: "Linked pull requests") {
-              ... on ProjectV2ItemFieldPullRequestValue {
-                pullRequests(first: ${CONNECTION_PAGE_SIZE}, after: $cursor) {
-                  totalCount
-                  nodes { number url repository { nameWithOwner } }
-                  pageInfo { hasNextPage endCursor }
-                }
-              }
-            }
-          }
-        }
-      }`;
-      const { nodes } = readBoundedConnection({
-        context: `Project item ${itemId} linked pull requests`,
-        readPage(cursor) {
-          const args = [
-            "api",
-            "graphql",
-            "-f",
-            `query=${query}`,
-            "-F",
-            `itemId=${itemId}`,
-          ];
-          if (cursor) args.push("-f", `cursor=${cursor}`);
-          const response = requireGraphqlSuccess(
-            run(args),
-            `Project item ${itemId} linked pull requests`,
-          );
-          if (!isRecord(response.data?.node))
-            throw new Error(`Project item ${itemId} is unavailable`);
-          return response.data.node.fieldValueByName ?? null;
-        },
-        connectionFrom: (fieldValue) => fieldValue.pullRequests,
-        identityFrom: (pullRequest) =>
-          `${pullRequest.repository?.nameWithOwner}#${pullRequest.number}`,
-        emptyWhen: (fieldValue) => fieldValue === null,
-      });
-      return nodes;
-    },
-
     async readPullRequest(pullRequestNumber) {
       const [owner, name] = repository.split("/");
       const query = `query($owner: String!, $name: String!, $pullRequestNumber: Int!, $cursor: String) {
@@ -271,7 +893,7 @@ export function createRentCottageGhSource({
         }
       }`;
       let firstPullRequest = null;
-      const { nodes } = readBoundedConnection({
+      const nodes = readBoundedConnection({
         context: `Pull request #${pullRequestNumber} closing references`,
         readPage(cursor) {
           const args = [
@@ -315,11 +937,7 @@ export function createRentCottageGhSource({
 
     async execute(operation) {
       if (operation.type === "add-project-item") {
-        const project = await source.readProject();
-        if (
-          !hasFreshProjectCoordinates(project, { projectOwner, projectNumber })
-        )
-          throw new Error("Fresh Project response is invalid");
+        const project = readProjectIdentity();
         const query = `mutation($projectId: ID!, $contentId: ID!) {
           addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } }
         }`;
@@ -340,15 +958,13 @@ export function createRentCottageGhSource({
       }
 
       if (operation.type === "set-project-field") {
-        const project = await source.readProject();
+        const { project, fields, items } = readFreshProjectCoordinates();
         if (
           !hasFreshProjectCoordinates(project, { projectOwner, projectNumber })
         )
           throw new Error("Fresh Project response is invalid");
-        const fields = await source.readProjectFields();
         if (!hasFreshFieldCoordinates(fields, project))
           throw new Error("Fresh Project fields response is invalid");
-        const items = await source.readProjectItems();
         if (!hasFreshItemCoordinates(items, project, operation, repository))
           throw new Error("Fresh Project items response is invalid");
         const matchingFields = fields.fields.filter(

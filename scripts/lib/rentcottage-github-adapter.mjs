@@ -2,6 +2,7 @@ import { sameValues } from "./value-comparison.mjs";
 import { hasUniqueRepositoryIssueIdentities } from "./github-pagination.mjs";
 import {
   hasUniqueProjectFieldCoordinates,
+  isLinkedPullRequestRecord,
   isProjectFieldRecord,
   isProjectItemRecord,
   isRecord,
@@ -19,11 +20,7 @@ function isProjectResponse(value) {
     Number.isInteger(value.number) &&
     isRecord(value.owner) &&
     typeof value.owner.login === "string" &&
-    typeof value.closed === "boolean" &&
-    isRecord(value.items) &&
-    isNonnegativeInteger(value.items.totalCount) &&
-    isRecord(value.fields) &&
-    isNonnegativeInteger(value.fields.totalCount)
+    typeof value.closed === "boolean"
   );
 }
 
@@ -49,6 +46,14 @@ function isProjectItemsResponse(value) {
         (item.content.type !== "Issue" ||
           Number.isInteger(item.content.number)),
     )
+  );
+}
+
+function isRepositoryIssueItem(item, repository) {
+  return (
+    item.content.type === "Issue" &&
+    Number.isInteger(item.content.number) &&
+    item.content.repository === repository
   );
 }
 
@@ -127,16 +132,6 @@ function pullRequestLink(url) {
   return match ? { repository: match[1], number: Number(match[2]) } : null;
 }
 
-function isLinkedPullRequestResponse(pullRequest) {
-  return (
-    isRecord(pullRequest) &&
-    Number.isInteger(pullRequest.number) &&
-    typeof pullRequest.url === "string" &&
-    isRecord(pullRequest.repository) &&
-    typeof pullRequest.repository.nameWithOwner === "string"
-  );
-}
-
 export function createRentCottageGitHubAdapter({ source, policy }) {
   return {
     async observe(intent) {
@@ -146,12 +141,12 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
       let rawIssues;
       try {
         await source.assertSupported();
-        [project, rawFields, rawItems, rawIssues] = await Promise.all([
-          source.readProject(),
-          source.readProjectFields(),
-          source.readProjectItems(),
+        const [projectEvidence, issues] = await Promise.all([
+          source.readProjectEvidence(),
           source.listIssues(),
         ]);
+        ({ project, fields: rawFields, items: rawItems } = projectEvidence);
+        rawIssues = issues;
       } catch (error) {
         return incompleteObservation(policy, [
           `GitHub evidence unavailable: ${errorDiagnostic(error)}`,
@@ -189,7 +184,7 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
         const dependencyIssueNumbers = new Set([
           ...policy.issues.keys(),
           ...rawItems.items
-            .filter((item) => item.content.type === "Issue")
+            .filter((item) => isRepositoryIssueItem(item, policy.repository))
             .map((item) => item.content.number),
         ]);
         blockerEntries = await Promise.all(
@@ -232,26 +227,14 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
       const linkedIssuesByPullRequest = new Map();
       if (intent.pullRequestNumber)
         pullRequestNumbers.add(intent.pullRequestNumber);
-      let linkedPullRequestsByItem;
-      try {
-        linkedPullRequestsByItem = await Promise.all(
-          rawItems.items
-            .filter((item) => item.content.type === "Issue")
-            .map(async (item) => [
-              item,
-              await source.listLinkedPullRequests(item.id),
-            ]),
-        );
-      } catch (error) {
-        return incompleteObservation(policy, [
-          `GitHub evidence unavailable: ${errorDiagnostic(error)}`,
-        ]);
-      }
+      const linkedPullRequestsByItem = rawItems.items
+        .filter((item) => isRepositoryIssueItem(item, policy.repository))
+        .map((item) => [item, item["linked pull requests"]]);
       if (
         linkedPullRequestsByItem.some(
           ([, pullRequests]) =>
             !Array.isArray(pullRequests) ||
-            !pullRequests.every(isLinkedPullRequestResponse),
+            !pullRequests.every(isLinkedPullRequestRecord),
         )
       ) {
         return incompleteObservation(policy, [
@@ -318,24 +301,17 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
           "Project identity does not match RentCottage Project 4",
         );
       }
-      if (project.items.totalCount !== rawItems.totalCount)
-        evidenceErrors.push("Project item counts disagree between reads");
       if (rawItems.totalCount !== rawItems.items.length)
         evidenceErrors.push("Project items pagination was truncated");
       if (
         rawItems.items.some(
-          (item) =>
-            item.content?.type !== "Issue" ||
-            !Number.isInteger(item.content?.number) ||
-            item.content.repository !== policy.repository,
+          (item) => !isRepositoryIssueItem(item, policy.repository),
         )
       ) {
         evidenceErrors.push(
           "Project contains a draft, pull request, foreign item, or unavailable item",
         );
       }
-      if (project.fields.totalCount !== rawFields.totalCount)
-        evidenceErrors.push("Project field counts disagree between reads");
       if (rawFields.totalCount !== rawFields.fields.length)
         evidenceErrors.push("Project fields pagination was truncated");
       if (!hasUniqueProjectFieldCoordinates(rawFields.fields))
@@ -375,7 +351,9 @@ export function createRentCottageGitHubAdapter({ source, policy }) {
       ) {
         evidenceErrors.push("Project Area options do not match the contract");
       }
-      for (const item of rawItems.items) {
+      for (const item of rawItems.items.filter((item) =>
+        isRepositoryIssueItem(item, policy.repository),
+      )) {
         if (
           item.area !== null &&
           fields.Area &&
