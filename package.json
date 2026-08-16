@@ -20,6 +20,7 @@
     "cf-typegen": "wrangler types cloudflare-env.d.ts",
     "verify:board": "node scripts/verify-rentcottage-project.mjs",
     "reconcile:board": "node scripts/reconcile-rentcottage-project.mjs",
+    "release:delivery": "node scripts/release-delivery.mjs",
     "verify": "node scripts/verify.mjs",
     "verify:access": "node scripts/verify-access.mjs",
     "verify:preview": "node scripts/verify-preview.mjs"

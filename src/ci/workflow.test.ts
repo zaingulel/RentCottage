@@ -44,6 +44,42 @@ const normalizedExpression = (value: string) =>
   value.replace(/\s+/g, " ").trim();
 
 describe("GitHub Actions delivery checks", () => {
+  it("keeps terminal delivery release progressively registered from the document map", () => {
+    const agents = readFileSync(resolve("AGENTS.md"), "utf8");
+    const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
+    const implementation = readFileSync(
+      resolve("scripts/release-delivery.mjs"),
+      "utf8",
+    );
+    const behaviourTest = readFileSync(
+      resolve("scripts/release-delivery.test.mjs"),
+      "utf8",
+    );
+    const packageJson = JSON.parse(
+      readFileSync(resolve("package.json"), "utf8"),
+    );
+
+    expect(agents).toContain("docs/agents/delivery.md");
+    expect(agents).toContain("only when preparing or executing");
+    expect(agents).not.toContain("git update-ref");
+    expect(agents).not.toContain("worktree remove");
+    expect(delivery).toContain("Load trigger:");
+    expect(delivery).toContain("Owns:");
+    expect(delivery).toContain("terminal release");
+    expect(delivery).toContain("Does not own:");
+    expect(delivery).toContain("Required inputs:");
+    expect(delivery).toContain("Stop conditions:");
+    expect(delivery).toContain("Next route:");
+    expect(delivery).toContain("release:delivery");
+    expect(delivery).toContain("scripts/release-delivery.mjs");
+    expect(delivery).toContain("scripts/release-delivery.test.mjs");
+    expect(packageJson.scripts["release:delivery"]).toBe(
+      "node scripts/release-delivery.mjs",
+    );
+    expect(implementation.length).toBeGreaterThan(0);
+    expect(behaviourTest.length).toBeGreaterThan(0);
+  });
+
   it("makes CodeRabbit approval the CI sequencing signal without waiting on GitHub Checks", () => {
     const codeRabbit = parse(readFileSync(resolve(".coderabbit.yaml"), "utf8"));
 
