@@ -76,8 +76,14 @@ describe("GitHub Actions delivery checks", () => {
     expect(packageJson.scripts["release:delivery"]).toBe(
       "node scripts/release-delivery.mjs",
     );
-    expect(implementation.length).toBeGreaterThan(0);
-    expect(behaviourTest.length).toBeGreaterThan(0);
+    expect(implementation).toContain("export function releaseDelivery(input)");
+    expect(behaviourTest).toContain('describe("releaseDelivery"');
+    expect(behaviourTest).toContain(
+      "releases the exact clean secondary worktree and compare-deletes its branch",
+    );
+    expect(behaviourTest).toContain(
+      "refuses an active writer before reading GitHub or mutating the target",
+    );
   });
 
   it("makes CodeRabbit approval the CI sequencing signal without waiting on GitHub Checks", () => {

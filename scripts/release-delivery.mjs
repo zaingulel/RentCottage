@@ -34,6 +34,12 @@ const ALLOWED_IGNORED_FILES = new Set([
 ]);
 const MAX_TARGET_LENGTH = 1_024;
 const GIT_TIMEOUT_MS = 30_000;
+const VERIFIED_REPOSITORY = Object.freeze({
+  host: "github.com",
+  owner: "zaingulel",
+  name: "RentCottage",
+});
+const VERIFIED_REPOSITORY_SLUG = `${VERIFIED_REPOSITORY.owner}/${VERIFIED_REPOSITORY.name}`;
 
 class EvidenceError extends Error {}
 
@@ -318,7 +324,7 @@ function cleanGeneratedPaths(executeGit, target, readStat) {
 
 function removeAllowedGeneratedContent(target, paths) {
   for (const path of paths) {
-    rmSync(resolve(target, path), { recursive: true });
+    rmSync(resolve(target, path), { force: true, recursive: true });
   }
 }
 
@@ -356,7 +362,7 @@ function parseGithubEvidence(raw, expected) {
     throw new Error("GitHub evidence is incomplete or malformed");
   }
   if (
-    repository.nameWithOwner !== "zaingulel/RentCottage" ||
+    repository.nameWithOwner !== VERIFIED_REPOSITORY_SLUG ||
     pullRequest.headRepository.nameWithOwner !== repository.nameWithOwner ||
     pullRequest.baseRepository.nameWithOwner !== repository.nameWithOwner
   )
@@ -379,14 +385,14 @@ function defaultGithub(args) {
     [
       "api",
       "--hostname",
-      "github.com",
+      VERIFIED_REPOSITORY.host,
       "graphql",
       "-f",
       `query=${query}`,
       "-F",
-      "owner=zaingulel",
+      `owner=${VERIFIED_REPOSITORY.owner}`,
       "-F",
-      "name=RentCottage",
+      `name=${VERIFIED_REPOSITORY.name}`,
       "-F",
       `number=${args.pullRequest}`,
     ],
@@ -409,9 +415,11 @@ function verifyOrigin(executeGit, cwd) {
   } catch {
     throw new EvidenceError("origin identity evidence is unavailable");
   }
-  const expected =
-    /^(?:https:\/\/github\.com\/|git@github\.com:)zaingulel\/RentCottage$/;
-  if (!expected.test(configured) || !expected.test(effective)) {
+  const expected = new Set([
+    `https://${VERIFIED_REPOSITORY.host}/${VERIFIED_REPOSITORY_SLUG}`,
+    `git@${VERIFIED_REPOSITORY.host}:${VERIFIED_REPOSITORY_SLUG}`,
+  ]);
+  if (!expected.has(configured) || !expected.has(effective)) {
     throw new Error("origin is not the verified RentCottage repository");
   }
 }

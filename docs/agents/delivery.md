@@ -36,6 +36,8 @@ The stable command is `release:delivery`; its implementation is `scripts/release
 
 The command treats `--writer-state` as a coordinator assertion, not as discovered filesystem truth. It validates all arguments before external work, reads bounded same-repository GitHub evidence, refreshes the verified default branch, repeats local identity and cleanliness checks, removes only allowed generated output plus the exact worktree without force, compare-deletes only the exact unchanged branch, and verifies both identities are absent. It never sweeps historical residue or uses a committed candidate roster.
 
+Provider evidence is pinned to the `zaingulel/RentCottage` repository on `github.com`. A repository rename, transfer, fork or alternate host must be reviewed and updated in the command contract before release can proceed.
+
 The single-line JSON result is bounded and names the target and reason:
 
 - Exit `0`: `released`, `recovered`, or `already-released`.

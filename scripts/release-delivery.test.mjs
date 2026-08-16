@@ -2,17 +2,19 @@ import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { releaseDelivery } from "./release-delivery.mjs";
 
@@ -34,6 +36,7 @@ function gitExecutor(repo, inspect) {
 
 function repository({ mergeMode = "merge" } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "release-delivery-")));
+  onTestFinished(() => rmSync(root, { force: true, recursive: true }));
   const remote = join(root, "remote.git");
   const primary = join(root, "primary");
   const secondary = join(root, "secondary");
@@ -200,6 +203,9 @@ process.stdout.write(process.env.GH_EVIDENCE);
     );
     chmodSync(gitWrapper, 0o755);
     chmodSync(ghWrapper, 0o755);
+    const realGit = execFileSync("sh", ["-c", "command -v git"], {
+      encoding: "utf8",
+    }).trim();
     const result = spawnSync(
       process.execPath,
       [
@@ -221,7 +227,7 @@ process.stdout.write(process.env.GH_EVIDENCE);
         env: {
           ...process.env,
           PATH: `${fakeBin}:${process.env.PATH}`,
-          REAL_GIT: "/usr/bin/git",
+          REAL_GIT: realGit,
           TEST_REMOTE: repo.remote,
           GH_ARGUMENTS: ghArguments,
           GH_EVIDENCE: github(repo)(),
@@ -594,6 +600,28 @@ process.stdout.write(process.env.GH_EVIDENCE);
       exitCode: 0,
       status: "released",
     });
+  });
+
+  it("treats an allowed generated path that vanishes after validation as removed", () => {
+    const repo = repository();
+    const generated = join(repo.secondary, ".next");
+    mkdirSync(generated);
+    writeFileSync(join(generated, "generated"), "generated");
+    let generatedReads = 0;
+
+    const result = releaseDelivery(
+      input(repo, {
+        lstat: (path) => {
+          const stat = lstatSync(path);
+          if (resolve(path) === generated && ++generatedReads === 2) {
+            rmSync(generated, { force: true, recursive: true });
+          }
+          return stat;
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({ exitCode: 0, status: "released" });
   });
 
   it("refuses an arbitrary ignored tsbuildinfo file", () => {
