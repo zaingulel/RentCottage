@@ -26,7 +26,7 @@ const applications: SubmittedOwnerApplicationReview[] = [
         id: "40000000-0000-4000-8000-000000000001",
         kind: "identity",
         originalFilename:
-          "synthetic-long-private-identity-evidence-filename-that-must-wrap-without-truncation.pdf",
+          "syntheticlongprivateidentityevidencefilenamethatmustwrapwithouttruncation.pdf",
       },
       {
         id: "40000000-0000-4000-8000-000000000002",
@@ -53,7 +53,7 @@ describe("Owner Application review queue", () => {
     expect(within(document).getByText("Identity evidence")).toBeVisible();
     expect(
       within(document).getByText(
-        "synthetic-long-private-identity-evidence-filename-that-must-wrap-without-truncation.pdf",
+        "syntheticlongprivateidentityevidencefilenamethatmustwrapwithouttruncation.pdf",
       ),
     ).toHaveClass("administrator-review-filename");
     expect(
@@ -177,6 +177,10 @@ describe("Owner Application review queue", () => {
     );
 
     fireEvent.submit(form);
+    expect(createOwnerDocumentAccessAction).toHaveBeenLastCalledWith(
+      { status: "idle" },
+      expect.any(FormData),
+    );
     await waitFor(() =>
       expect(
         within(document).queryByRole("link", { name: "Open secure document" }),
@@ -297,6 +301,10 @@ describe("Owner Application review queue", () => {
       .getByRole("button", { name: "Create secure link" })
       .closest("form")!;
     fireEvent.submit(form);
+    expect(createOwnerDocumentAccessAction).toHaveBeenLastCalledWith(
+      { status: "idle" },
+      expect.any(FormData),
+    );
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent(
         "This secure link has expired.",

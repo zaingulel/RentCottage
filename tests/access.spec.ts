@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 type BrowserLocale = "en" | "ar" | "ckb";
 
 const reviewDocumentFilename =
-  "synthetic-long-private-identity-evidence-filename-that-must-wrap-without-truncation.pdf";
+  "syntheticlongprivateidentityevidencefilenamethatmustwrapwithouttruncation.pdf";
 
 type BrowserApplicationFixture = {
   privacyNote: string;
@@ -727,7 +727,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     page.getByRole("heading", { name: "Submitted Owner Applications" }),
   ).toBeVisible();
   const accessedAfter = new Date(Date.now() - 5_000).toISOString();
-  let signedUrl: string | null = null;
   for (const locale of ["en", "ar", "ckb"] as const) {
     const copy = browserFixtures[locale].review;
     const direction = locale === "en" ? "ltr" : "rtl";
@@ -774,24 +773,38 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     expect((controlBox?.x ?? 0) + (controlBox?.width ?? 0)).toBeLessThanOrEqual(
       viewport.width,
     );
-    const filenameBox = await identityDocument
+    const filenameGeometry = await identityDocument
       .getByText(reviewDocumentFilename)
-      .boundingBox();
-    expect(filenameBox?.x).toBeGreaterThanOrEqual(0);
-    expect(
-      (filenameBox?.x ?? 0) + (filenameBox?.width ?? 0),
-    ).toBeLessThanOrEqual(viewport.width);
-    expect(
-      await identityDocument
-        .getByText(reviewDocumentFilename)
-        .evaluate(
-          (element) =>
-            element.scrollWidth <= element.clientWidth &&
-            getComputedStyle(element).overflowWrap === "anywhere",
-        ),
-    ).toBe(true);
-    signedUrl = await secureLink.getAttribute("href");
+      .evaluate((element) => {
+        const row = element.closest(".administrator-review-document");
+        if (!row) throw new Error("Filename is not inside a review row");
+        if (!element.textContent) throw new Error("Filename text is missing");
+        const rowBox = row.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const lineBoxes = [...range.getClientRects()];
+        return {
+          lineCount: lineBoxes.length,
+          staysInsideRow: lineBoxes.every(
+            (box) =>
+              box.left >= rowBox.left - 1 && box.right <= rowBox.right + 1,
+          ),
+          wrapsAnywhere: getComputedStyle(element).overflowWrap === "anywhere",
+        };
+      });
+    expect(filenameGeometry.staysInsideRow).toBe(true);
+    expect(filenameGeometry.wrapsAnywhere).toBe(true);
+    if (testInfo.project.name === "mobile") {
+      expect(filenameGeometry.lineCount).toBeGreaterThan(1);
+    }
   }
+  const finalCopy = browserFixtures.ckb.review;
+  const signedUrl = await page
+    .locator("li")
+    .filter({ hasText: reviewDocumentFilename })
+    .first()
+    .getByRole("link", { name: finalCopy.openDocument })
+    .getAttribute("href");
   if (!signedUrl) throw new Error("Secure document link has no URL");
   const documentResponse = await page.request.get(signedUrl);
   expect(documentResponse.status()).toBe(200);

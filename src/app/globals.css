@@ -574,7 +574,7 @@ input[type="file"].form-control::file-selector-button {
   border-block-start: 1px solid var(--line);
 }
 
-.administrator-review-document div {
+.administrator-review-document > div {
   display: grid;
   gap: 0.2rem;
 }

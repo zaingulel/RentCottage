@@ -18,6 +18,8 @@ import type { SubmittedOwnerApplicationReview } from "@/owner-application/supaba
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import { useExclusiveAction } from "./use-exclusive-action";
 
+const idleDocumentAccessState: OwnerDocumentAccessState = { status: "idle" };
+
 function ReviewDocument({
   locale,
   document,
@@ -28,9 +30,9 @@ function ReviewDocument({
   const copy = ownerApplicationReviewMessages[locale];
   const documentCopy = ownerApplicationMessages[locale].documentKinds;
   const expiryTimer = useRef<number | undefined>(undefined);
-  const [state, setState] = useState<OwnerDocumentAccessState>({
-    status: "idle",
-  });
+  const [state, setState] = useState<OwnerDocumentAccessState>(
+    idleDocumentAccessState,
+  );
   const { pending, run } = useExclusiveAction();
 
   useEffect(
@@ -52,7 +54,10 @@ function ReviewDocument({
         expiryTimer.current = undefined;
       }
       try {
-        const next = await createOwnerDocumentAccessAction(state, formData);
+        const next = await createOwnerDocumentAccessAction(
+          idleDocumentAccessState,
+          formData,
+        );
         if (next.status !== "ready") {
           setState(next);
           return;
