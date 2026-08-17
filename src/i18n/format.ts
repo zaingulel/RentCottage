@@ -1,7 +1,7 @@
 import type { Locale } from "./routing";
 
 const numberLocales: Record<Locale, string> = {
-  ar: "ar-IQ",
+  ar: "ar-IQ-u-nu-latn",
   ckb: "ckb-IQ",
   en: "en-IQ",
 };
