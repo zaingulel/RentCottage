@@ -8,6 +8,30 @@ export const cottageProfileAmenities = [
 ] as const;
 
 export const cottageProfileSourceLanguages = ["ar", "ckb", "en"] as const;
+export const cottageProfilePhotoMediaTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+export const cottageProfilePhotoBucketName = "cottage-profile-photos";
+export const cottageProfileMaximumPhotoBytes = 5_242_880;
+export const cottageProfileMaximumPhotoFilenameLength = 180;
+export const cottageProfileMaximumLengths = {
+  name: 120,
+  governorate: 120,
+  approximateLocation: 240,
+  exactAddress: 240,
+  privateDirections: 1000,
+  description: 2000,
+  houseRules: 1500,
+} as const;
+export const cottageProfileNumberRanges = {
+  exactLatitude: { minimum: -90, maximum: 90 },
+  exactLongitude: { minimum: -180, maximum: 180 },
+  capacity: { minimum: 1, maximum: 100 },
+  bedrooms: { minimum: 1, maximum: 50 },
+  bathrooms: { minimum: 1, maximum: 50 },
+} as const;
 
 export type CottageProfileStatus = "draft" | "submitted_for_content_approval";
 export type CottageProfileSourceLanguage =
@@ -79,9 +103,21 @@ export interface PreparedCottageProfilePhoto {
   objectPath: string;
 }
 
+export interface CottageProfileAdministratorCursor {
+  updatedAt: string;
+  profileId: string;
+}
+
+export interface CottageProfileAdministratorPage {
+  profiles: CottageProfile[];
+  nextCursor: CottageProfileAdministratorCursor | null;
+}
+
 export interface CottageProfileRepository {
   listOwner(): Promise<CottageProfile[]>;
-  listAdministrator(): Promise<CottageProfile[]>;
+  listAdministrator(
+    cursor?: CottageProfileAdministratorCursor,
+  ): Promise<CottageProfileAdministratorPage>;
   load(profileId: string): Promise<CottageProfile | null>;
   createDraft(): Promise<CottageProfile>;
   updateOwner(input: {
@@ -126,21 +162,11 @@ export interface CottageProfileStorage {
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const knownAmenities = new Set<string>(cottageProfileAmenities);
-const maximumPhotoBytes = 5_242_880;
 const photoExtensions = new Map([
   ["image/jpeg", "jpg"],
   ["image/png", "png"],
   ["image/webp", "webp"],
 ]);
-const maximumLengths = {
-  name: 120,
-  governorate: 120,
-  approximateLocation: 240,
-  exactAddress: 240,
-  privateDirections: 1000,
-  description: 2000,
-  houseRules: 1500,
-} as const;
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -176,14 +202,37 @@ function parseDraftValues(
   }
   const input = value as Record<string, unknown>;
   const invalid: string[] = [];
-  for (const [field, maximum] of Object.entries(maximumLengths)) {
+  for (const [field, maximum] of Object.entries(cottageProfileMaximumLengths)) {
     if (text(input[field]).length > maximum) invalid.push(field);
   }
-  const exactLatitude = optionalNumber(input.exactLatitude, -90, 90);
-  const exactLongitude = optionalNumber(input.exactLongitude, -180, 180);
-  const capacity = optionalNumber(input.capacity, 1, 100, true);
-  const bedrooms = optionalNumber(input.bedrooms, 1, 50, true);
-  const bathrooms = optionalNumber(input.bathrooms, 1, 50, true);
+  const exactLatitude = optionalNumber(
+    input.exactLatitude,
+    cottageProfileNumberRanges.exactLatitude.minimum,
+    cottageProfileNumberRanges.exactLatitude.maximum,
+  );
+  const exactLongitude = optionalNumber(
+    input.exactLongitude,
+    cottageProfileNumberRanges.exactLongitude.minimum,
+    cottageProfileNumberRanges.exactLongitude.maximum,
+  );
+  const capacity = optionalNumber(
+    input.capacity,
+    cottageProfileNumberRanges.capacity.minimum,
+    cottageProfileNumberRanges.capacity.maximum,
+    true,
+  );
+  const bedrooms = optionalNumber(
+    input.bedrooms,
+    cottageProfileNumberRanges.bedrooms.minimum,
+    cottageProfileNumberRanges.bedrooms.maximum,
+    true,
+  );
+  const bathrooms = optionalNumber(
+    input.bathrooms,
+    cottageProfileNumberRanges.bathrooms.minimum,
+    cottageProfileNumberRanges.bathrooms.maximum,
+    true,
+  );
   for (const [field, parsed] of Object.entries({
     exactLatitude,
     exactLongitude,
@@ -292,7 +341,8 @@ export function createCottageProfile({
 }) {
   return {
     listOwner: () => repository.listOwner(),
-    listAdministrator: () => repository.listAdministrator(),
+    listAdministrator: (cursor?: CottageProfileAdministratorCursor) =>
+      repository.listAdministrator(cursor),
 
     load(profileId: string) {
       if (!uuidPattern.test(profileId)) return Promise.resolve(null);
@@ -388,10 +438,10 @@ export function createCottageProfile({
         !photoExtensions.has(file.type) ||
         !Number.isInteger(file.size) ||
         file.size < 1 ||
-        file.size > maximumPhotoBytes ||
+        file.size > cottageProfileMaximumPhotoBytes ||
         file.bytes.byteLength !== file.size ||
         file.name.trim().length < 1 ||
-        file.name.trim().length > 180 ||
+        file.name.trim().length > cottageProfileMaximumPhotoFilenameLength ||
         !photoBytesMatchMediaType(file.bytes, file.type)
       ) {
         return { status: "invalid_photo" as const };

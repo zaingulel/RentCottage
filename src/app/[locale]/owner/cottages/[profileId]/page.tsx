@@ -11,11 +11,11 @@ import { isLocale } from "@/i18n/routing";
 async function loadOwnerCottage(profileId: string) {
   const client = await createRequestSupabaseClient();
   const context = await new SupabaseAccountContextStore(client).resolve();
-  if (
-    context?.role !== "cottage_owner" ||
-    context.approvalState === "prospective"
-  ) {
+  if (context?.role !== "cottage_owner") {
     return { status: "access_required" as const };
+  }
+  if (context.approvalState === "prospective") {
+    return { status: "prospective" as const };
   }
   const cottageProfile = await createRequestCottageProfile();
   return {
@@ -59,6 +59,17 @@ export default async function OwnerCottageProfilePage({
         <section className="access-required-card">
           <h1>{copy.editorTitle}</h1>
           <p>{copy.accessRequired}</p>
+          <Link href={`/${locale}/owner/access`}>{copy.ownerAccessAction}</Link>
+        </section>
+      </main>
+    );
+  }
+  if (page.status === "prospective") {
+    return (
+      <main className="owner-application-page access-required-page">
+        <section className="access-required-card">
+          <h1>{copy.editorTitle}</h1>
+          <p>{copy.prospective}</p>
           <Link href={`/${locale}/owner/application`}>
             {copy.ownerApplication}
           </Link>

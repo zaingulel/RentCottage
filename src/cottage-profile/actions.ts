@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { isLocale, type Locale } from "@/i18n/routing";
+import { cottageProfileMaximumPhotoBytes } from "./cottage-profile";
 import { createRequestCottageProfile } from "./request-cottage-profile";
 
 export type CottageProfileActionState = {
@@ -141,7 +142,7 @@ export async function uploadCottageProfilePhotoAction(
     !(photo instanceof File) ||
     !Number.isInteger(photo.size) ||
     photo.size < 1 ||
-    photo.size > 5_242_880
+    photo.size > cottageProfileMaximumPhotoBytes
   ) {
     return { status: "invalid_photo" };
   }

@@ -4,41 +4,52 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
+import type { CottageProfileAdministratorCursor } from "@/cottage-profile/cottage-profile";
+import { parseAdministratorCottageProfileCursor } from "@/cottage-profile/supabase-cottage-profile";
 import { CottageProfileOverview } from "@/components/cottage-profile-overview";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
 
-async function loadAdministratorCottages() {
+async function loadAdministratorCottages(
+  cursor?: CottageProfileAdministratorCursor,
+) {
   const client = await createRequestSupabaseClient();
   const [context, authorization] = await Promise.all([
     new SupabaseAccountContextStore(client).resolve(),
     client.rpc("is_platform_administrator", { required_assurance: "aal2" }),
   ]);
-  if (
-    context?.role !== "platform_administrator" ||
-    authorization.error ||
-    authorization.data !== true
-  ) {
+  if (context?.role !== "platform_administrator") {
     return { status: "access_required" as const };
   }
+  if (authorization.error) throw authorization.error;
+  if (authorization.data !== true)
+    return { status: "access_required" as const };
   const cottageProfile = await createRequestCottageProfile();
   return {
     status: "ready" as const,
-    profiles: await cottageProfile.listAdministrator(),
+    page: await cottageProfile.listAdministrator(cursor),
   };
 }
 
 export default async function AdministratorCottagesPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const copy = cottageProfileMessages[locale];
   let page: Awaited<ReturnType<typeof loadAdministratorCottages>> | undefined;
   try {
-    page = await loadAdministratorCottages();
+    const query = searchParams ? await searchParams : {};
+    page = await loadAdministratorCottages(
+      parseAdministratorCottageProfileCursor(
+        query.afterUpdatedAt,
+        query.afterProfileId,
+      ),
+    );
   } catch (error) {
     unstable_rethrow(error);
     console.error("Administrator Cottage Profile overview load failed", {
@@ -57,7 +68,7 @@ export default async function AdministratorCottagesPage({
           <p>{!page ? copy.unavailable : copy.adminAccessRequired}</p>
           {page ? (
             <Link href={`/${locale}/administrator/access`}>
-              {copy.adminAccessRequired}
+              {copy.administratorAccessAction}
             </Link>
           ) : null}
         </section>
@@ -73,7 +84,15 @@ export default async function AdministratorCottagesPage({
       <CottageProfileOverview
         locale={locale}
         actor="administrator"
-        profiles={page.profiles}
+        profiles={page.page.profiles}
+        continuationHref={
+          page.page.nextCursor
+            ? `/${locale}/administrator/cottages?${new URLSearchParams({
+                afterUpdatedAt: page.page.nextCursor.updatedAt,
+                afterProfileId: page.page.nextCursor.profileId,
+              })}`
+            : undefined
+        }
       />
     </main>
   );

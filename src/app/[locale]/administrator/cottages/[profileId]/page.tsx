@@ -14,13 +14,12 @@ async function loadAdministratorCottage(profileId: string) {
     new SupabaseAccountContextStore(client).resolve(),
     client.rpc("is_platform_administrator", { required_assurance: "aal2" }),
   ]);
-  if (
-    context?.role !== "platform_administrator" ||
-    authorization.error ||
-    authorization.data !== true
-  ) {
+  if (context?.role !== "platform_administrator") {
     return { status: "access_required" as const };
   }
+  if (authorization.error) throw authorization.error;
+  if (authorization.data !== true)
+    return { status: "access_required" as const };
   const cottageProfile = await createRequestCottageProfile();
   return {
     status: "ready" as const,
@@ -57,7 +56,7 @@ export default async function AdministratorCottageProfilePage({
           <p>{!page ? copy.unavailable : copy.adminAccessRequired}</p>
           {page ? (
             <Link href={`/${locale}/administrator/access`}>
-              {copy.adminAccessRequired}
+              {copy.administratorAccessAction}
             </Link>
           ) : null}
         </section>

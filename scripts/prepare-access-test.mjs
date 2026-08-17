@@ -15,8 +15,127 @@ if (!url || !secretKey || !publishableKey) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const password = "Local-test-password-2026";
-  const { data: users, error: listError } = await client.auth.admin.listUsers();
+  const { data: users, error: listError } = await client.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
   if (listError) throw listError;
+  const cottageOwnerFixtures = [
+    { profile: "mobile", phone: "+9647510000000" },
+    { profile: "desktop", phone: "+9647510000001" },
+    { profile: "worker", phone: "+9647510000002" },
+  ];
+  const requiredDocumentKinds = [
+    "identity",
+    "authority_to_rent",
+    "licensing_or_exemption",
+    "payout_account",
+  ];
+
+  const assertApprovedOwnerFixture = async (
+    fixture,
+    ownerUserId,
+    fixtureOwner,
+  ) => {
+    const { data: context, error: contextError } = await fixtureOwner
+      .from("account_contexts")
+      .select("role, owner_approval_state")
+      .eq("user_id", ownerUserId)
+      .maybeSingle();
+    if (contextError) throw contextError;
+    const { data: application, error: applicationError } = await fixtureOwner
+      .from("owner_applications")
+      .select(
+        "id, status, submitted_at, decided_at, current_verification_record_id",
+      )
+      .eq("owner_user_id", ownerUserId)
+      .maybeSingle();
+    if (applicationError) throw applicationError;
+    const { data: profile, error: profileError } = application
+      ? await fixtureOwner
+          .from("owner_application_cottage_profiles")
+          .select("id, application_id, owner_user_id")
+          .eq("application_id", application.id)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (profileError) throw profileError;
+    const { data: documents, error: documentsError } = application
+      ? await fixtureOwner
+          .from("owner_verification_documents")
+          .select("kind, object_path")
+          .eq("application_id", application.id)
+      : { data: [], error: null };
+    if (documentsError) throw documentsError;
+
+    const missing = [];
+    if (
+      context?.role !== "cottage_owner" ||
+      context.owner_approval_state !== "approved"
+    ) {
+      missing.push("approved owner access context");
+    }
+    if (
+      !application ||
+      application.status !== "approved" ||
+      !application.submitted_at ||
+      !application.decided_at ||
+      !application.current_verification_record_id
+    ) {
+      missing.push("submitted and approved application evidence");
+    }
+    if (
+      !profile ||
+      profile.owner_user_id !== ownerUserId ||
+      profile.application_id !== application?.id
+    ) {
+      missing.push("application-linked Cottage Profile");
+    }
+    const documentsByKind = new Map(
+      documents.map((document) => [document.kind, document]),
+    );
+    for (const kind of requiredDocumentKinds) {
+      const document = documentsByKind.get(kind);
+      if (!document) {
+        missing.push(`${kind} document`);
+        continue;
+      }
+      const { error: downloadError } = await client.storage
+        .from("owner-verification")
+        .download(document.object_path);
+      if (downloadError) missing.push(`${kind} document object`);
+    }
+    if (missing.length > 0) {
+      throw new Error(
+        `${fixture.profile} approved-owner fixture is incomplete: ${missing.join(", ")}`,
+      );
+    }
+    return application;
+  };
+
+  if (process.env.ACCESS_FIXTURE_VALIDATE_EXISTING === "1") {
+    for (const fixture of cottageOwnerFixtures) {
+      const fixtureOwner = createClient(url, publishableKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const { data: signedIn, error: signInError } =
+        await fixtureOwner.auth.signInWithPassword({
+          phone: fixture.phone,
+          password,
+        });
+      if (signInError || !signedIn.user) {
+        throw new Error(
+          `${fixture.profile} approved-owner fixture identity is missing`,
+          { cause: signInError },
+        );
+      }
+      await assertApprovedOwnerFixture(fixture, signedIn.user.id, fixtureOwner);
+    }
+    console.log(
+      "Verified complete approved Cottage Profile fixtures for every browser project.",
+    );
+    process.exit(0);
+  }
+
   for (const profile of ["mobile", "desktop", "worker"]) {
     const email = `platform-administrator-${profile}@rentcottage.test`;
     const existing = users.users.find((user) => user.email === email);
@@ -208,19 +327,26 @@ if (!url || !secretKey || !publishableKey) {
     );
   }
 
-  const cottageOwnerFixtures = [
-    { profile: "mobile", phone: "+9647510000000" },
-    { profile: "desktop", phone: "+9647510000001" },
-    { profile: "worker", phone: "+9647510000002" },
-  ];
   for (const fixture of cottageOwnerFixtures) {
-    const { data: fixtureIdentity, error: fixtureIdentityError } =
-      await client.auth.admin.createUser({
+    const existingFixtureIdentity = users.users.find(
+      (user) => user.phone === fixture.phone,
+    );
+    let fixtureIdentity = existingFixtureIdentity;
+    if (!fixtureIdentity) {
+      const { data, error } = await client.auth.admin.createUser({
         phone: fixture.phone,
         password,
         phone_confirm: true,
       });
-    if (fixtureIdentityError) throw fixtureIdentityError;
+      if (error) throw error;
+      fixtureIdentity = data.user;
+    } else {
+      const { error } = await client.auth.admin.updateUserById(
+        fixtureIdentity.id,
+        { password },
+      );
+      if (error) throw error;
+    }
     const fixtureOwner = createClient(url, publishableKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
@@ -230,11 +356,19 @@ if (!url || !secretKey || !publishableKey) {
         password,
       });
     if (ownerVerifyError) throw ownerVerifyError;
-    if (
-      !verifiedOwner.user ||
-      verifiedOwner.user.id !== fixtureIdentity.user.id
-    ) {
+    if (!verifiedOwner.user || verifiedOwner.user.id !== fixtureIdentity.id) {
       throw new Error("Fixture owner was not created");
+    }
+    const { data: existingApplication, error: existingApplicationError } =
+      await fixtureOwner.from("owner_applications").select("id").maybeSingle();
+    if (existingApplicationError) throw existingApplicationError;
+    if (existingApplication) {
+      await assertApprovedOwnerFixture(
+        fixture,
+        verifiedOwner.user.id,
+        fixtureOwner,
+      );
+      continue;
     }
     const { error: fixtureClaimError } = await fixtureOwner.rpc(
       "claim_marketplace_role",
@@ -321,6 +455,11 @@ if (!url || !secretKey || !publishableKey) {
       },
     );
     if (fixtureApproveError) throw fixtureApproveError;
+    await assertApprovedOwnerFixture(
+      fixture,
+      verifiedOwner.user.id,
+      fixtureOwner,
+    );
   }
   console.log(
     "Concurrent verification registration preserved all 8 displaced objects for cleanup.",

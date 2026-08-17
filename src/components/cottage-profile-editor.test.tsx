@@ -11,7 +11,11 @@ vi.mock("@/cottage-profile/actions", () => ({
 }));
 
 import type { CottageProfile } from "@/cottage-profile/cottage-profile";
-import { previewCottageProfilePhotoAction } from "@/cottage-profile/actions";
+import {
+  deleteCottageProfilePhotoAction,
+  previewCottageProfilePhotoAction,
+  submitCottageProfileAction,
+} from "@/cottage-profile/actions";
 import { CottageProfileEditor } from "./cottage-profile-editor";
 
 const profile: CottageProfile = {
@@ -108,6 +112,63 @@ describe("Cottage Profile editor", () => {
     expect(screen.getByText("Submitted owner description")).toBeVisible();
     expect(screen.getByText("Submitted owner rules")).toBeVisible();
   });
+
+  it.each([
+    [
+      "submitted",
+      "ar",
+      submitCottageProfileAction,
+      "الإرسال للموافقة على المحتوى",
+      "تم إرسال ملف الكوخ.",
+    ],
+    [
+      "deleted",
+      "ckb",
+      deleteCottageProfilePhotoAction,
+      "سڕینەوەی وێنە",
+      "وێنە سڕایەوە.",
+    ],
+  ] as const)(
+    "announces the localized %s success result",
+    async (status, locale, action, buttonName, message) => {
+      vi.mocked(action).mockResolvedValue({ status });
+      render(
+        <CottageProfileEditor
+          locale={locale}
+          actor="owner"
+          editable
+          profile={{
+            ...profile,
+            photos:
+              status === "deleted"
+                ? [
+                    {
+                      id: "71000000-0000-4000-8000-000000000001",
+                      originalFilename: "private-cottage.webp",
+                      mediaType: "image/webp",
+                      sizeBytes: 128,
+                      state: "ready",
+                      updatedAt: "2026-08-17T09:05:00.000Z",
+                    },
+                  ]
+                : [],
+          }}
+        />,
+      );
+
+      fireEvent.submit(
+        screen
+          .getByRole("button", {
+            name: buttonName,
+          })
+          .closest("form")!,
+      );
+
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(message),
+      );
+    },
+  );
 
   it.each([
     ["ar", "denied", "لا يُسمح لك بمعاينة هذه الصورة الخاصة."],

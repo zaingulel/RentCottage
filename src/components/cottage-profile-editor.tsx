@@ -37,15 +37,22 @@ function Feedback({
       ? copy.saved
       : state.status === "uploaded"
         ? copy.uploaded
-        : state.status === "incomplete"
-          ? copy.incomplete
-          : state.status === "conflict"
-            ? copy.conflict
-            : copy.failed;
+        : state.status === "deleted"
+          ? copy.deleted
+          : state.status === "submitted"
+            ? copy.submittedSuccess
+            : state.status === "incomplete"
+              ? copy.incomplete
+              : state.status === "conflict"
+                ? copy.conflict
+                : copy.failed;
   return (
     <p
       role={
-        state.status === "saved" || state.status === "uploaded"
+        state.status === "saved" ||
+        state.status === "uploaded" ||
+        state.status === "deleted" ||
+        state.status === "submitted"
           ? "status"
           : "alert"
       }

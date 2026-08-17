@@ -46,7 +46,7 @@ function setup() {
   };
   const repository: CottageProfileRepository = {
     listOwner: async () => profiles,
-    listAdministrator: async () => profiles,
+    listAdministrator: async () => ({ profiles, nextCursor: null }),
     load: async () => stored,
     createDraft: async () => {
       const created = {
@@ -122,6 +122,7 @@ function setup() {
   return {
     cottageProfile: createCottageProfile({ repository, storage }),
     repository,
+    storage,
     uploadedObjects,
     removedObjects,
   };
@@ -192,6 +193,60 @@ describe("Cottage Profile", () => {
     });
   });
 
+  it.each([
+    ["invalid magic bytes", 12, new Uint8Array(12)],
+    [
+      "a byte-length mismatch",
+      13,
+      new Uint8Array([
+        0x52, 0x49, 0x46, 0x46, 0x04, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+      ]),
+    ],
+  ])("rejects %s before preparing private storage", async (_, size, bytes) => {
+    const { cottageProfile, repository } = setup();
+    const prepare = vi.spyOn(repository, "preparePhotoUpload");
+
+    await expect(
+      cottageProfile.uploadPhoto(profileId, {
+        name: "invalid.webp",
+        type: "image/webp",
+        size,
+        bytes,
+      }),
+    ).resolves.toEqual({ status: "invalid_photo" });
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["storage upload", "upload_reconciliation_required"],
+    ["photo registration", "registration_reconciliation_required"],
+  ] as const)(
+    "reports durable reconciliation when %s fails",
+    async (failure, status) => {
+      const { cottageProfile, repository, storage } = setup();
+      const bytes = new Uint8Array([
+        0x52, 0x49, 0x46, 0x46, 0x04, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+      ]);
+      if (failure === "photo registration") {
+        vi.spyOn(repository, "registerPhoto").mockRejectedValueOnce(
+          new Error("registration unavailable"),
+        );
+      } else {
+        vi.spyOn(storage, "upload").mockRejectedValueOnce(
+          new Error("storage unavailable"),
+        );
+      }
+      const result = await cottageProfile.uploadPhoto(profileId, {
+        name: "cottage.webp",
+        type: "image/webp",
+        size: bytes.byteLength,
+        bytes,
+      });
+
+      expect(result.status).toBe(status);
+    },
+  );
+
   it("returns the submitted profile with its immutable owner source", async () => {
     const { cottageProfile } = setup();
 
@@ -246,6 +301,58 @@ describe("Cottage Profile", () => {
     expect(removedObjects).toEqual([
       `${ownerUserId}/${profileId}/72000000-0000-4000-8000-000000000001.webp`,
     ]);
+  });
+
+  it.each(["storage removal", "metadata completion"] as const)(
+    "keeps a durable deletion-pending result when %s fails",
+    async (failure) => {
+      const { cottageProfile, repository, storage } = setup();
+      if (failure === "storage removal") {
+        vi.spyOn(storage, "remove").mockRejectedValueOnce(
+          new Error("storage unavailable"),
+        );
+      } else {
+        vi.spyOn(repository, "completePhotoDeletion").mockRejectedValueOnce(
+          new Error("database unavailable"),
+        );
+      }
+
+      await expect(
+        cottageProfile.deletePhoto("71000000-0000-4000-8000-000000000001"),
+      ).resolves.toEqual({ status: "deletion_reconciliation_required" });
+    },
+  );
+
+  it("lets an owner recover a pending upload through the authorized deletion seam", async () => {
+    const { cottageProfile, repository, storage } = setup();
+    vi.spyOn(storage, "upload").mockRejectedValueOnce(
+      new Error("storage unavailable"),
+    );
+    const prepareDeletion = vi.spyOn(repository, "preparePhotoDeletion");
+    const completeDeletion = vi.spyOn(repository, "completePhotoDeletion");
+    const bytes = new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 0x04, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+    ]);
+
+    const failedUpload = await cottageProfile.uploadPhoto(profileId, {
+      name: "cottage.webp",
+      type: "image/webp",
+      size: bytes.byteLength,
+      bytes,
+    });
+    expect(failedUpload).toEqual({
+      status: "upload_reconciliation_required",
+      photoId: "71000000-0000-4000-8000-000000000001",
+    });
+    if (failedUpload.status !== "upload_reconciliation_required") {
+      throw new Error("Expected a recoverable pending photo");
+    }
+
+    await expect(
+      cottageProfile.deletePhoto(failedUpload.photoId),
+    ).resolves.toEqual({ status: "deleted" });
+    expect(prepareDeletion).toHaveBeenCalledWith(failedUpload.photoId);
+    expect(completeDeletion).toHaveBeenCalledWith(failedUpload.photoId);
   });
 
   it("keeps submitted owner source unchanged when an administrator edits the working copy", async () => {

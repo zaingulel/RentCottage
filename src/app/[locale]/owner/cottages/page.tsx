@@ -60,7 +60,7 @@ export default async function OwnerCottagesPage({
         <section className="access-required-card">
           <h1>{copy.overviewTitle}</h1>
           <p>{copy.accessRequired}</p>
-          <Link href={`/${locale}/owner/access`}>{copy.accessRequired}</Link>
+          <Link href={`/${locale}/owner/access`}>{copy.ownerAccessAction}</Link>
         </section>
       </main>
     );

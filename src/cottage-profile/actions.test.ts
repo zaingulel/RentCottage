@@ -82,4 +82,30 @@ describe("Cottage Profile actions", () => {
     expect(arrayBuffer).not.toHaveBeenCalled();
     expect(createRequestCottageProfile).not.toHaveBeenCalled();
   });
+
+  it("accepts a photo at the exact 5 MiB action boundary", async () => {
+    const uploadPhoto = vi.fn().mockResolvedValue({ status: "uploaded" });
+    createRequestCottageProfile.mockResolvedValue({ uploadPhoto });
+    const form = new FormData();
+    const photo = new File([new Uint8Array([0x52])], "maximum.webp", {
+      type: "image/webp",
+    });
+    const arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(12));
+    Object.defineProperties(photo, {
+      size: { value: 5_242_880 },
+      arrayBuffer: { value: arrayBuffer },
+    });
+    form.set("locale", "en");
+    form.set("profileId", "70000000-0000-4000-8000-000000000001");
+    form.set("photo", photo);
+
+    await expect(
+      uploadCottageProfilePhotoAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "uploaded" });
+    expect(arrayBuffer).toHaveBeenCalledOnce();
+    expect(uploadPhoto).toHaveBeenCalledWith(
+      "70000000-0000-4000-8000-000000000001",
+      expect.objectContaining({ size: 5_242_880 }),
+    );
+  });
 });

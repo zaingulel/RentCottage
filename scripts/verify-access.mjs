@@ -137,6 +137,14 @@ export function main(
       stdio: "inherit",
     });
     if (prepared.status !== 0) return prepared.status;
+    const rerun = execute("node", ["scripts/prepare-access-test.mjs"], {
+      env: {
+        ...accessEnvironment,
+        ACCESS_FIXTURE_VALIDATE_EXISTING: "1",
+      },
+      stdio: "inherit",
+    });
+    if (rerun.status !== 0) return rerun.status;
 
     const browserEnvironment = {
       ...accessEnvironment,

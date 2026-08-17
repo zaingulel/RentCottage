@@ -18,11 +18,13 @@ export function CottageProfileOverview({
   actor,
   profiles,
   canCreate = false,
+  continuationHref,
 }: {
   locale: Locale;
   actor: "owner" | "administrator";
   profiles: CottageProfile[];
   canCreate?: boolean;
+  continuationHref?: string;
 }) {
   const copy = cottageProfileMessages[locale];
   const [createState, createAction] = useActionState(
@@ -70,6 +72,9 @@ export function CottageProfileOverview({
           </article>
         ))}
       </div>
+      {actor === "administrator" && continuationHref ? (
+        <Link href={continuationHref}>{copy.nextCottages}</Link>
+      ) : null}
       {actor === "owner" && canCreate ? (
         <form action={createAction} className="cottage-profile-create-form">
           <input type="hidden" name="locale" value={locale} />

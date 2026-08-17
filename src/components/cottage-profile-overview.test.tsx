@@ -82,4 +82,19 @@ describe("Cottage Profile overview", () => {
       ),
     );
   });
+
+  it("shows a localized administrator continuation link", () => {
+    render(
+      <CottageProfileOverview
+        locale="ar"
+        actor="administrator"
+        profiles={[profile]}
+        continuationHref="/ar/administrator/cottages?afterProfileId=next"
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "ملفات الأكواخ التالية" }),
+    ).toHaveAttribute("href", "/ar/administrator/cottages?afterProfileId=next");
+  });
 });

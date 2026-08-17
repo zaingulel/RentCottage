@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(78);
+select plan(90);
 
 insert into auth.users (
   id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at
@@ -195,6 +195,129 @@ select results_eq(
     from public.cottage_profile_photos$$,
   $$values ('pending'::text, 'image/webp'::text, 128, true)$$,
   'photo metadata is pending at the non-overwriting server-generated path'
+);
+
+select set_config(
+  'test.cottage_recovery_photo_id',
+  (select id::text from public.cottage_profile_photos limit 1),
+  true
+);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000703","role":"authenticated","aal":"aal1"}',
+  true
+);
+select throws_ok(
+  $$select public.prepare_cottage_profile_photo_deletion(
+    current_setting('test.cottage_recovery_photo_id')::uuid
+  )$$,
+  '42501', null,
+  'another owner cannot recover a pending photo owned by a different account'
+);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000705","role":"authenticated","aal":"aal1"}',
+  true
+);
+select throws_ok(
+  $$select public.prepare_cottage_profile_photo_deletion(
+    current_setting('test.cottage_recovery_photo_id')::uuid
+  )$$,
+  '42501', null,
+  'a Customer cannot recover an owner pending photo'
+);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal1"}',
+  true
+);
+select throws_ok(
+  $$select public.prepare_cottage_profile_photo_deletion(
+    current_setting('test.cottage_recovery_photo_id')::uuid
+  )$$,
+  '42501', null,
+  'an AAL1 administrator cannot recover a pending Cottage Profile photo'
+);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000701","role":"authenticated","aal":"aal1"}',
+  true
+);
+select lives_ok(
+  $$select public.prepare_cottage_profile_photo_deletion(
+    current_setting('test.cottage_recovery_photo_id')::uuid
+  )$$,
+  'the owning approved account can prepare a stranded pending photo for cleanup'
+);
+select results_eq(
+  $$select state::text from public.cottage_profile_photos
+    where id = current_setting('test.cottage_recovery_photo_id')::uuid$$,
+  array['deletion_pending'::text],
+  'owner recovery durably records deletion pending before privileged storage cleanup'
+);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal2"}',
+  true
+);
+select lives_ok(
+  $$select public.prepare_cottage_profile_photo_deletion(
+    current_setting('test.cottage_recovery_photo_id')::uuid
+  )$$,
+  'an AAL2 administrator can take responsibility for an owner-started deletion retry'
+);
+select lives_ok(
+  $$select public.prepare_cottage_profile_photo_deletion(
+    current_setting('test.cottage_recovery_photo_id')::uuid
+  )$$,
+  'the same AAL2 administrator can safely retry recovery without another audit event'
+);
+select results_eq(
+  $$select event_kind, administrator_user_id, changed_fields, object_path is not null
+    from public.cottage_profile_administrator_audit
+    where event_kind = 'photo_deletion_recovered'$$,
+  $$values (
+    'photo_deletion_recovered'::text,
+    '00000000-0000-0000-0000-000000000704'::uuid,
+    array['photos']::text[], true
+  )$$,
+  'the AAL2 administrator sees one attributed recovery audit for the exact private path'
+);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000701","role":"authenticated","aal":"aal1"}',
+  true
+);
+select is_empty(
+  $$select id from public.cottage_profile_administrator_audit
+    where event_kind = 'photo_deletion_recovered'$$,
+  'the owner cannot read the administrator recovery audit'
+);
+set local role service_role;
+select lives_ok(
+  $$select public.complete_cottage_profile_photo_deletion(
+    current_setting('test.cottage_recovery_photo_id')::uuid
+  )$$,
+  'service reconciliation removes stranded metadata only after owner authorization'
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000701","role":"authenticated","aal":"aal1"}',
+  true
+);
+select is_empty(
+  $$select id from public.cottage_profile_photos
+    where id = current_setting('test.cottage_recovery_photo_id')::uuid$$,
+  'owner recovery releases the photo quota consumed by the stranded row'
+);
+select lives_ok(
+  $$select public.prepare_cottage_profile_photo_upload(
+    (select id from public.owner_application_cottage_profiles
+      where application_id = '20000000-0000-4000-8000-000000000701'),
+    'shaqlawa-cottage.webp', 'image/webp', 128
+  )$$,
+  'the recovered Cottage Profile can prepare a replacement photo'
 );
 
 reset role;
@@ -620,7 +743,8 @@ select results_eq(
   $$select profiles.version, profiles.description,
       (select count(*)::integer
        from public.cottage_profile_administrator_audit audit
-       where audit.profile_id = profiles.id)
+       where audit.profile_id = profiles.id
+         and audit.event_kind = 'working_copy_updated')
     from public.owner_application_cottage_profiles profiles
     where profiles.application_id = '20000000-0000-4000-8000-000000000701'$$,
   $$values (3::bigint, 'Owner working-copy description'::text, 0)$$,
@@ -647,6 +771,7 @@ select results_eq(
       on revisions.id = profiles.submitted_source_revision_id
     join public.cottage_profile_administrator_audit audit
       on audit.profile_id = profiles.id
+      and audit.event_kind = 'working_copy_updated'
     where profiles.application_id = '20000000-0000-4000-8000-000000000701'$$,
   $$values (
     4::bigint, 'Administrator working-copy description'::text,
@@ -745,7 +870,7 @@ select results_eq(
       (select count(*)::integer from public.cottage_profile_photos),
       (select count(*)::integer from public.cottage_profile_source_revisions),
       (select count(*)::integer from public.cottage_profile_administrator_audit)$$,
-  $$values (1, 1, 2)$$,
+  $$values (1, 1, 3)$$,
   'an AAL2 administrator sees only the existing private photo, source, and attributed audit rows'
 );
 
@@ -876,13 +1001,6 @@ select results_eq(
     where event_kind in ('photo_upload_prepared', 'photo_deletion_prepared')$$,
   $$values (2, true)$$,
   'administrator photo audit events remain immutable after photo metadata deletion'
-);
-
-set local role authenticated;
-select set_config(
-  'request.jwt.claims',
-  '{"sub":"00000000-0000-0000-0000-000000000701","role":"authenticated","aal":"aal1"}',
-  true
 );
 
 reset role;

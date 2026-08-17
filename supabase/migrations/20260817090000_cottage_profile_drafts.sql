@@ -726,7 +726,7 @@ create table public.cottage_profile_administrator_audit (
   event_kind text not null default 'working_copy_updated' check (
     event_kind in (
       'working_copy_updated', 'photo_upload_prepared',
-      'photo_deletion_prepared'
+      'photo_deletion_prepared', 'photo_deletion_recovered'
     )
   ),
   object_path text,
@@ -737,7 +737,10 @@ create table public.cottage_profile_administrator_audit (
       and resulting_version > previous_version
       and object_path is null
     ) or (
-      event_kind in ('photo_upload_prepared', 'photo_deletion_prepared')
+      event_kind in (
+        'photo_upload_prepared', 'photo_deletion_prepared',
+        'photo_deletion_recovered'
+      )
       and resulting_version = previous_version
       and changed_fields = array['photos']::text[]
       and object_path is not null
@@ -969,7 +972,25 @@ begin
     raise exception 'Cottage Profile photo deletion is denied'
       using errcode = '42501';
   end if;
-  if photo.state = 'deletion_pending' then return photo; end if;
+  if photo.state = 'deletion_pending' then
+    if actor_is_administrator and not exists (
+      select 1
+      from public.cottage_profile_administrator_audit audit
+      where audit.profile_id = profile.id
+        and audit.administrator_user_id = (select auth.uid())
+        and audit.event_kind = 'photo_deletion_recovered'
+        and audit.object_path = photo.object_path
+    ) then
+      insert into public.cottage_profile_administrator_audit (
+        profile_id, administrator_user_id, previous_version, resulting_version,
+        changed_fields, event_kind, object_path
+      ) values (
+        profile.id, (select auth.uid()), profile.version, profile.version,
+        array['photos'], 'photo_deletion_recovered', photo.object_path
+      );
+    end if;
+    return photo;
+  end if;
   if profile.status = 'submitted_for_content_approval'
     and photo.state = 'ready'
     and public.cottage_profile_ready_photo_count(profile.id) <= 1 then

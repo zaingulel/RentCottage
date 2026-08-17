@@ -47,6 +47,7 @@ const browserFixtures: Record<
       verify: string;
       verifiedOwner: string;
       ownerApplicationCta: string;
+      cottageProfilesCta: string;
     };
     application: BrowserApplicationFixture;
     review: {
@@ -65,6 +66,7 @@ const browserFixtures: Record<
       verifiedOwner:
         "Verified. Your Cottage Owner access is awaiting approval.",
       ownerApplicationCta: "Continue to Owner Application",
+      cottageProfilesCta: "Open Cottage Profiles",
     },
     application: {
       privacyNote:
@@ -115,6 +117,7 @@ const browserFixtures: Record<
       verify: "تحقق",
       verifiedOwner: "تم التحقق. حساب المالك ما زال بانتظار الموافقة.",
       ownerApplicationCta: "تابع إلى طلب المالك",
+      cottageProfilesCta: "افتح ملفات الأكواخ",
     },
     application: {
       privacyNote:
@@ -165,6 +168,7 @@ const browserFixtures: Record<
       verify: "پشتڕاست بکەرەوە",
       verifiedOwner: "پشتڕاست کرایەوە. هەژماری خاوەن چاوەڕێی پەسەندە.",
       ownerApplicationCta: "بەردەوام بە بۆ داواکاری خاوەن",
+      cottageProfilesCta: "پرۆفایلەکانی کۆتێج بکەرەوە",
     },
     application: {
       privacyNote:
@@ -412,7 +416,7 @@ async function expectCottageProfileSectionTitlesAligned(
       });
     });
 
-  expect(positions).toHaveLength(3);
+  expect(positions).toHaveLength(sectionNames.length);
   for (const position of positions) {
     expect(position.inlineOffset).toBeLessThanOrEqual(0.5);
     expect(position.blockOffset).toBeGreaterThanOrEqual(1);
@@ -804,7 +808,11 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page.getByLabel("Verification code").fill("123456");
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page.getByText(/Verified/)).toBeVisible();
-  await page.getByRole("link", { name: "Open Cottage Profiles" }).click();
+  await page
+    .getByRole("link", {
+      name: browserFixtures.en.access.cottageProfilesCta,
+    })
+    .click();
 
   await expect(
     page.getByRole("heading", { name: "Your cottages" }),
