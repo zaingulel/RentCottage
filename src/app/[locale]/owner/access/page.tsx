@@ -21,14 +21,12 @@ export default async function OwnerAccessPage({
       </ActionLink>
       <h1>{copy.ownerTitle}</h1>
       <p>{copy.ownerIntro}</p>
-      <PhoneAccessForm locale={locale} role="cottage_owner" />
-      <ActionLink
-        kind="secondary"
-        width="content"
-        href={`/${locale}/owner/application`}
-      >
-        {copy.ownerApplicationCta}
-      </ActionLink>
+      <PhoneAccessForm
+        locale={locale}
+        role="cottage_owner"
+        applicationHref={`/${locale}/owner/application`}
+        cottageProfilesHref={`/${locale}/owner/cottages`}
+      />
     </main>
   );
 }

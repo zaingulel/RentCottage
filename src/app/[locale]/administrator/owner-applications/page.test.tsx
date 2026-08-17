@@ -134,5 +134,8 @@ describe("Owner Application administrator review page", () => {
       submittedAt: "2026-08-14T10:00:00.123456Z",
       applicationId: "20000000-0000-4000-8000-000000000001",
     });
+    expect(
+      screen.getByRole("link", { name: "Manage Cottage Profiles" }),
+    ).toHaveAttribute("href", "/en/administrator/cottages");
   });
 });

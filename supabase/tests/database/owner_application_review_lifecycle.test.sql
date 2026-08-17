@@ -185,7 +185,7 @@ select throws_ok(
 
 reset role;
 select results_eq(
-  $$select legal_name, version, name, exact_address
+  $$select legal_name, owner_applications.version, name, exact_address
     from public.owner_applications
     join public.owner_application_cottage_profiles
       on application_id = owner_applications.id
@@ -398,7 +398,8 @@ select throws_ok(
 );
 
 select results_eq(
-  $$select status::text, version, exact_address, capacity, amenities
+  $$select owner_applications.status::text, owner_applications.version,
+      exact_address, capacity, amenities
     from public.owner_applications
     join public.owner_application_cottage_profiles
       on application_id = owner_applications.id

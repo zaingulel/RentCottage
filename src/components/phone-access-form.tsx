@@ -10,6 +10,7 @@ import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
   ActionFeedback,
+  ActionLink,
   FormControl,
 } from "./interaction-controls";
 import { useExclusiveAction } from "./use-exclusive-action";
@@ -17,14 +18,21 @@ import { useExclusiveAction } from "./use-exclusive-action";
 export function PhoneAccessForm({
   locale,
   role,
+  applicationHref,
+  cottageProfilesHref,
 }: {
   locale: Locale;
   role: MarketplaceRole;
+  applicationHref?: string;
+  cottageProfilesHref?: string;
 }) {
   const copy = accessMessages[locale];
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<"phone" | "code" | "verified">("phone");
+  const [ownerDestination, setOwnerDestination] = useState<
+    "application" | "cottages"
+  >();
   const [message, setMessage] = useState("");
   const { pending, run } = useExclusiveAction();
 
@@ -47,8 +55,20 @@ export function PhoneAccessForm({
     if (!result) return;
     if (result.status === "authenticated") {
       setStage("verified");
+      if (result.context.role === "cottage_owner") {
+        setOwnerDestination(
+          result.context.approvalState === "prospective"
+            ? "application"
+            : "cottages",
+        );
+      }
       setMessage(
-        role === "customer" ? copy.verifiedCustomer : copy.verifiedOwner,
+        role === "customer"
+          ? copy.verifiedCustomer
+          : result.context.role === "cottage_owner" &&
+              result.context.approvalState !== "prospective"
+            ? copy.verifiedApprovedOwner
+            : copy.verifiedOwner,
       );
     } else {
       setMessage(
@@ -117,6 +137,20 @@ export function PhoneAccessForm({
           {message}
         </ActionFeedback>
       )}
+      {stage === "verified" &&
+      ownerDestination === "application" &&
+      applicationHref ? (
+        <ActionLink kind="secondary" width="content" href={applicationHref}>
+          {copy.ownerApplicationCta}
+        </ActionLink>
+      ) : null}
+      {stage === "verified" &&
+      ownerDestination === "cottages" &&
+      cottageProfilesHref ? (
+        <ActionLink kind="secondary" width="content" href={cottageProfilesHref}>
+          {copy.cottageProfilesCta}
+        </ActionLink>
+      ) : null}
     </section>
   );
 }

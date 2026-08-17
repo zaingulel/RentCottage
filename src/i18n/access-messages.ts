@@ -10,6 +10,7 @@ export const accessMessages: Record<
     verify: string;
     verifiedCustomer: string;
     verifiedOwner: string;
+    verifiedApprovedOwner: string;
     invalidPhone: string;
     invalidCode: string;
     unavailable: string;
@@ -17,6 +18,7 @@ export const accessMessages: Record<
     ownerTitle: string;
     ownerIntro: string;
     ownerApplicationCta: string;
+    cottageProfilesCta: string;
     administratorTitle: string;
     email: string;
     password: string;
@@ -27,6 +29,7 @@ export const accessMessages: Record<
     mfaChallenge: string;
     administratorReady: string;
     reviewApplications: string;
+    manageCottageProfiles: string;
     invalidSignIn: string;
   }
 > = {
@@ -38,6 +41,7 @@ export const accessMessages: Record<
     verify: "تحقق",
     verifiedCustomer: "تم التحقق. لديك صلاحيات العميل فقط.",
     verifiedOwner: "تم التحقق. حساب المالك ما زال بانتظار الموافقة.",
+    verifiedApprovedOwner: "تم التحقق. ملفات الأكواخ الخاصة بك جاهزة.",
     invalidPhone: "أدخل رقمًا عراقيًا صحيحًا يبدأ بـ +964.",
     invalidCode: "تعذر التحقق من الرمز.",
     unavailable: "التحقق غير متاح الآن. حاول مرة أخرى.",
@@ -45,6 +49,7 @@ export const accessMessages: Record<
     ownerTitle: "دخول مالك البيت",
     ownerIntro: "تحقق من رقمك لبدء طلب المالك الخاص بك.",
     ownerApplicationCta: "تابع إلى طلب المالك",
+    cottageProfilesCta: "افتح ملفات الأكواخ",
     administratorTitle: "دخول مسؤول المنصة",
     email: "البريد الإلكتروني",
     password: "كلمة المرور",
@@ -55,6 +60,7 @@ export const accessMessages: Record<
     mfaChallenge: "أدخل الرمز من تطبيق المصادقة.",
     administratorReady: "تم التحقق متعدد العوامل. صلاحية المسؤول جاهزة.",
     reviewApplications: "راجع طلبات المالك المرسلة",
+    manageCottageProfiles: "إدارة ملفات الأكواخ",
     invalidSignIn: "بيانات الدخول غير صحيحة أو الحساب ليس لمسؤول.",
   },
   ckb: {
@@ -65,6 +71,7 @@ export const accessMessages: Record<
     verify: "پشتڕاست بکەرەوە",
     verifiedCustomer: "پشتڕاست کرایەوە. تەنها دەسەڵاتی کڕیار هەیە.",
     verifiedOwner: "پشتڕاست کرایەوە. هەژماری خاوەن چاوەڕێی پەسەندە.",
+    verifiedApprovedOwner: "پشتڕاست کرایەوە. پرۆفایلەکانی کۆتێج ئامادەن.",
     invalidPhone: "ژمارەیەکی دروستی عێراقی بە +964 بنووسە.",
     invalidCode: "کۆدەکە پشتڕاست نەکرایەوە.",
     unavailable: "پشتڕاستکردنەوە ئێستا بەردەست نییە.",
@@ -72,6 +79,7 @@ export const accessMessages: Record<
     ownerTitle: "چوونەژوورەوەی خاوەنی ماڵ",
     ownerIntro: "ژمارەکەت پشتڕاست بکەرەوە بۆ دەستپێکردنی داواکاری.",
     ownerApplicationCta: "بەردەوام بە بۆ داواکاری خاوەن",
+    cottageProfilesCta: "پرۆفایلەکانی کۆتێج بکەرەوە",
     administratorTitle: "چوونەژوورەوەی بەڕێوەبەری پلاتفۆرم",
     email: "ئیمەیڵ",
     password: "وشەی نهێنی",
@@ -82,6 +90,7 @@ export const accessMessages: Record<
     mfaChallenge: "کۆدی ئەپی پشتڕاستکەرەوە بنووسە.",
     administratorReady: "پشتڕاستکردنەوەی دوو هەنگاو تەواو بوو.",
     reviewApplications: "داواکارییە نێردراوەکانی خاوەن بپشکنە",
+    manageCottageProfiles: "پرۆفایلەکانی کۆتێج بەڕێوەببە",
     invalidSignIn:
       "زانیاری چوونەژوورەوە نادروستە یان هەژمارەکە بەڕێوەبەر نییە.",
   },
@@ -93,6 +102,7 @@ export const accessMessages: Record<
     verify: "Verify",
     verifiedCustomer: "Verified. You have Customer access only.",
     verifiedOwner: "Verified. Your Cottage Owner access is awaiting approval.",
+    verifiedApprovedOwner: "Verified. Your private Cottage Profiles are ready.",
     invalidPhone: "Enter a valid Iraqi number beginning +964.",
     invalidCode: "The verification code could not be confirmed.",
     unavailable: "Verification is unavailable. Try again.",
@@ -101,6 +111,7 @@ export const accessMessages: Record<
     ownerTitle: "Cottage Owner access",
     ownerIntro: "Verify your phone to begin your private owner application.",
     ownerApplicationCta: "Continue to Owner Application",
+    cottageProfilesCta: "Open Cottage Profiles",
     administratorTitle: "Platform Administrator access",
     email: "Email",
     password: "Password",
@@ -112,6 +123,7 @@ export const accessMessages: Record<
     administratorReady:
       "Multi-factor verification complete. Administrator access is ready.",
     reviewApplications: "Review submitted Owner Applications",
+    manageCottageProfiles: "Manage Cottage Profiles",
     invalidSignIn:
       "The sign-in is invalid or this is not an administrator account.",
   },

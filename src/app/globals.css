@@ -1654,6 +1654,252 @@ a:focus-visible {
   }
 }
 
+.cottage-profile-page {
+  min-height: 100vh;
+}
+
+.cottage-profile-overview,
+.cottage-profile-editor {
+  display: grid;
+  width: min(100% - 2rem, 70rem);
+  margin-inline: auto;
+  padding-block: clamp(2rem, 5vw, 4rem);
+  gap: 1.5rem;
+}
+
+.cottage-profile-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 1rem;
+}
+
+.cottage-profile-card,
+.cottage-profile-form > fieldset,
+.cottage-profile-photos,
+.cottage-profile-source-revision {
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background: var(--card);
+  padding: clamp(1rem, 3vw, 1.5rem);
+  box-shadow: 0 0.8rem 2.5rem rgb(38 50 44 / 7%);
+}
+
+.cottage-profile-card {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+}
+
+.cottage-profile-card > div,
+.cottage-profile-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.cottage-profile-card > div span,
+.cottage-profile-status {
+  width: fit-content;
+  border-radius: 999px;
+  background: #eef3ef;
+  padding: 0.35rem 0.65rem;
+}
+
+.cottage-profile-status.submitted_for_content_approval {
+  background: #eef3ff;
+  color: #264b8c;
+}
+
+.cottage-profile-overview button,
+.cottage-profile-editor button,
+.cottage-profile-card a {
+  min-block-size: 2.75rem;
+  border: 1px solid var(--green);
+  border-radius: 0.75rem;
+  background: var(--green);
+  color: #fff;
+  padding: 0.65rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.cottage-profile-editor button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cottage-profile-form > button,
+.cottage-photo-upload-form button,
+.cottage-profile-submit-form button {
+  inline-size: auto;
+  justify-self: end;
+}
+
+.cottage-profile-form > button,
+.cottage-photo-upload-form button {
+  background: transparent;
+  color: var(--green);
+}
+
+.cottage-photo-row a {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.cottage-profile-form,
+.cottage-profile-form > fieldset,
+.cottage-profile-photos,
+.cottage-profile-source-revision,
+.cottage-photo-upload-form,
+.cottage-profile-submit-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.cottage-profile-form > fieldset,
+.cottage-profile-form fieldset fieldset {
+  min-inline-size: 0;
+}
+
+.cottage-profile-section-title,
+.cottage-profile-photos h2,
+.cottage-profile-source-revision h2 {
+  font-family: var(--display);
+  font-size: clamp(1.15rem, 3vw, 1.5rem);
+  font-weight: 700;
+}
+
+.cottage-profile-section-title {
+  margin: 0;
+}
+
+.cottage-profile-form label,
+.cottage-photo-upload-form label {
+  display: grid;
+  gap: 0.45rem;
+  font-weight: 700;
+}
+
+.cottage-profile-form input,
+.cottage-profile-form textarea,
+.cottage-profile-form select,
+.cottage-photo-upload-form input {
+  inline-size: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #fff;
+  color: var(--ink);
+  padding: 0.75rem;
+  font: inherit;
+}
+
+.cottage-profile-form textarea {
+  min-block-size: 7rem;
+  resize: vertical;
+}
+
+.cottage-profile-form fieldset:disabled {
+  opacity: 0.74;
+}
+
+.cottage-profile-number-grid,
+.cottage-profile-coordinate-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.cottage-profile-coordinate-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.amenity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.65rem;
+  border: 0;
+  padding: 0;
+}
+
+.amenity-grid label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  padding: 0.65rem;
+}
+
+.amenity-grid input {
+  inline-size: auto;
+}
+
+.private-location-warning {
+  border-inline-start: 0.3rem solid var(--gold);
+  background: #fff7e8;
+  padding: 0.85rem 1rem;
+}
+
+.cottage-profile-photos ul {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cottage-photo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-block: 1px solid var(--line);
+  padding-block: 0.75rem;
+}
+
+.cottage-photo-row > div {
+  display: grid;
+  gap: 0.2rem;
+  overflow-wrap: anywhere;
+}
+
+.cottage-profile-source-revision dl,
+.cottage-profile-source-revision dl > div {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.cottage-profile-source-revision dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 620px) {
+  .cottage-profile-number-grid,
+  .cottage-profile-coordinate-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cottage-profile-form > button,
+  .cottage-photo-upload-form button,
+  .cottage-profile-submit-form button {
+    inline-size: 100%;
+    justify-self: stretch;
+  }
+
+  .cottage-photo-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

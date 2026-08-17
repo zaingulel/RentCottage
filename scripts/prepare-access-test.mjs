@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
+import * as OTPAuth from "otpauth";
 
 const url = process.env.SUPABASE_URL;
 const secretKey = process.env.SUPABASE_SECRET_KEY;
@@ -34,6 +36,54 @@ if (!url || !secretKey || !publishableKey) {
     );
     if (provisionError) throw provisionError;
   }
+
+  const reviewerEmail = "cottage-profile-fixture-reviewer@rentcottage.test";
+  const existingReviewer = users.users.find(
+    (user) => user.email === reviewerEmail,
+  );
+  if (existingReviewer) {
+    const { error } = await client.auth.admin.deleteUser(existingReviewer.id);
+    if (error) throw error;
+  }
+  const { data: reviewerUser, error: reviewerUserError } =
+    await client.auth.admin.createUser({
+      email: reviewerEmail,
+      password,
+      email_confirm: true,
+    });
+  if (reviewerUserError) throw reviewerUserError;
+  const { error: reviewerProvisionError } = await client.rpc(
+    "provision_platform_administrator",
+    { target_user_id: reviewerUser.user.id },
+  );
+  if (reviewerProvisionError) throw reviewerProvisionError;
+  const reviewerClient = createClient(url, publishableKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { error: reviewerSignInError } =
+    await reviewerClient.auth.signInWithPassword({
+      email: reviewerEmail,
+      password,
+    });
+  if (reviewerSignInError) throw reviewerSignInError;
+  const { data: enrolledFactor, error: enrollError } =
+    await reviewerClient.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: "Cottage Profile fixture reviewer",
+    });
+  if (enrollError) throw enrollError;
+  const { data: challenge, error: challengeError } =
+    await reviewerClient.auth.mfa.challenge({ factorId: enrolledFactor.id });
+  if (challengeError) throw challengeError;
+  const reviewerCode = new OTPAuth.TOTP({
+    secret: OTPAuth.Secret.fromBase32(enrolledFactor.totp.secret),
+  }).generate();
+  const { error: verifyFactorError } = await reviewerClient.auth.mfa.verify({
+    factorId: enrolledFactor.id,
+    challengeId: challenge.id,
+    code: reviewerCode,
+  });
+  if (verifyFactorError) throw verifyFactorError;
 
   const ownerClient = createClient(url, publishableKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -80,6 +130,7 @@ if (!url || !secretKey || !publishableKey) {
   if (applicationError) throw applicationError;
 
   const pdfBytes = new TextEncoder().encode("%PDF-1.7\nfixture\n%%EOF");
+  const pdfDigest = createHash("sha256").update(pdfBytes).digest("hex");
   const prepareUpload = async (suffix) => {
     const objectPath = `${ownerUserId}/${application.id}/identity/90000000-0000-4000-8000-00000000000${suffix}.pdf`;
     const { data: cleanupId, error: prepareError } = await client.rpc(
@@ -156,7 +207,125 @@ if (!url || !secretKey || !publishableKey) {
       "Concurrent document registration did not preserve every displaced object for cleanup",
     );
   }
+
+  const cottageOwnerFixtures = [
+    { profile: "mobile", phone: "+9647510000000" },
+    { profile: "desktop", phone: "+9647510000001" },
+    { profile: "worker", phone: "+9647510000002" },
+  ];
+  for (const fixture of cottageOwnerFixtures) {
+    const { data: fixtureIdentity, error: fixtureIdentityError } =
+      await client.auth.admin.createUser({
+        phone: fixture.phone,
+        password,
+        phone_confirm: true,
+      });
+    if (fixtureIdentityError) throw fixtureIdentityError;
+    const fixtureOwner = createClient(url, publishableKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: verifiedOwner, error: ownerVerifyError } =
+      await fixtureOwner.auth.signInWithPassword({
+        phone: fixture.phone,
+        password,
+      });
+    if (ownerVerifyError) throw ownerVerifyError;
+    if (
+      !verifiedOwner.user ||
+      verifiedOwner.user.id !== fixtureIdentity.user.id
+    ) {
+      throw new Error("Fixture owner was not created");
+    }
+    const { error: fixtureClaimError } = await fixtureOwner.rpc(
+      "claim_marketplace_role",
+      { requested_role: "cottage_owner" },
+    );
+    if (fixtureClaimError) throw fixtureClaimError;
+    const { error: fixtureSaveError } = await fixtureOwner.rpc(
+      "save_owner_application",
+      {
+        requested_applicant_kind: "individual",
+        requested_legal_name: `${fixture.profile} Cottage Owner`,
+        requested_company_name: null,
+        requested_licensing_basis: "licence",
+        requested_exemption_basis: null,
+        requested_cottage_name: `${fixture.profile} Application Cottage`,
+        requested_governorate: "Erbil",
+        requested_approximate_location: "Near Shaqlawa",
+        requested_exact_address: "Private orchard road",
+        requested_capacity: 8,
+        requested_bedrooms: 3,
+        requested_bathrooms: 2,
+        requested_amenities: ["garden", "parking"],
+        requested_description: "A private approved-owner browser fixture.",
+        requested_house_rules: "Respect neighbours and leave the cottage tidy.",
+      },
+    );
+    if (fixtureSaveError) throw fixtureSaveError;
+    const { data: fixtureApplication, error: fixtureApplicationError } =
+      await fixtureOwner.from("owner_applications").select("id").single();
+    if (fixtureApplicationError) throw fixtureApplicationError;
+
+    for (const [index, kind] of [
+      "identity",
+      "authority_to_rent",
+      "licensing_or_exemption",
+      "payout_account",
+    ].entries()) {
+      const objectPath = `${verifiedOwner.user.id}/${fixtureApplication.id}/${kind}/${crypto.randomUUID()}.pdf`;
+      const { data: cleanupId, error: fixturePrepareError } = await client.rpc(
+        "prepare_owner_verification_document_upload_v2",
+        {
+          requested_owner_user_id: verifiedOwner.user.id,
+          requested_application_id: fixtureApplication.id,
+          requested_kind: kind,
+          requested_object_path: objectPath,
+          requested_original_filename: `${fixture.profile}-${kind}-${index}.pdf`,
+          requested_media_type: "application/pdf",
+          requested_size_bytes: pdfBytes.byteLength,
+          requested_content_digest: pdfDigest,
+        },
+      );
+      if (fixturePrepareError) throw fixturePrepareError;
+      const { error: fixtureUploadError } = await client.storage
+        .from("owner-verification")
+        .upload(objectPath, pdfBytes, {
+          contentType: "application/pdf",
+          upsert: false,
+        });
+      if (fixtureUploadError) throw fixtureUploadError;
+      const { error: fixtureRegisterError } = await client.rpc(
+        "register_owner_verification_document_v2",
+        { target_cleanup_id: cleanupId },
+      );
+      if (fixtureRegisterError) throw fixtureRegisterError;
+    }
+    const { data: submittedApplication, error: fixtureSubmitError } =
+      await fixtureOwner.rpc("submit_owner_application");
+    if (fixtureSubmitError) throw fixtureSubmitError;
+    const { error: fixtureApproveError } = await reviewerClient.rpc(
+      "review_owner_application",
+      {
+        target_application_id: fixtureApplication.id,
+        expected_version: submittedApplication.version,
+        requested_action: "approve",
+        requested_reason: "Approved browser fixture.",
+        requested_fields: [],
+        requested_document_kinds: [],
+        requested_jurisdiction: "Kurdistan Region, Iraq",
+        requested_licensing_basis: "licence",
+        requested_licence_or_exemption_basis: "Test licence",
+        requested_expiry_dates: {
+          licensing_or_exemption: "2035-12-31",
+        },
+      },
+    );
+    if (fixtureApproveError) throw fixtureApproveError;
+  }
   console.log(
     "Concurrent verification registration preserved all 8 displaced objects for cleanup.",
+  );
+  console.log(
+    "Prepared approved Cottage Profile fixtures for every browser project.",
   );
 }

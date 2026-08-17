@@ -28,9 +28,11 @@ type MfaState = {
 export function AdministratorAccessForm({
   locale,
   reviewHref,
+  cottageProfilesHref,
 }: {
   locale: Locale;
   reviewHref?: string;
+  cottageProfilesHref?: string;
 }) {
   const copy = accessMessages[locale];
   const [email, setEmail] = useState("");
@@ -164,6 +166,11 @@ export function AdministratorAccessForm({
       {complete && reviewHref ? (
         <ActionLink kind="text" href={reviewHref}>
           {copy.reviewApplications}
+        </ActionLink>
+      ) : null}
+      {complete && cottageProfilesHref ? (
+        <ActionLink kind="text" href={cottageProfilesHref}>
+          {copy.manageCottageProfiles}
         </ActionLink>
       ) : null}
     </section>

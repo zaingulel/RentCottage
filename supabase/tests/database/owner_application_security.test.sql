@@ -595,11 +595,12 @@ select is_empty(
   'an MFA administrator cannot read draft Owner Applications'
 );
 
-select is_empty(
-  $$select application_id
+select results_eq(
+  $$select count(*)::bigint
     from public.owner_application_cottage_profiles
     where application_id = current_setting('test.owner_application_id')::uuid$$,
-  'an MFA administrator cannot read draft private Cottage Profiles'
+  array[1::bigint],
+  'an MFA administrator can review a private Cottage Profile independently of application review state'
 );
 
 select is_empty(
