@@ -23,6 +23,7 @@ export default async function AdministratorAccessPage({
       <AdministratorAccessForm
         locale={locale}
         reviewHref={`/${locale}/administrator/owner-applications`}
+        cottageProfilesHref={`/${locale}/administrator/cottages`}
       />
     </main>
   );

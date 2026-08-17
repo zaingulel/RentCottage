@@ -47,6 +47,7 @@ const browserFixtures: Record<
       verify: string;
       verifiedOwner: string;
       ownerApplicationCta: string;
+      cottageProfilesCta: string;
     };
     application: BrowserApplicationFixture;
     review: {
@@ -65,6 +66,7 @@ const browserFixtures: Record<
       verifiedOwner:
         "Verified. Your Cottage Owner access is awaiting approval.",
       ownerApplicationCta: "Continue to Owner Application",
+      cottageProfilesCta: "Open Cottage Profiles",
     },
     application: {
       privacyNote:
@@ -115,6 +117,7 @@ const browserFixtures: Record<
       verify: "تحقق",
       verifiedOwner: "تم التحقق. حساب المالك ما زال بانتظار الموافقة.",
       ownerApplicationCta: "تابع إلى طلب المالك",
+      cottageProfilesCta: "افتح ملفات الأكواخ",
     },
     application: {
       privacyNote:
@@ -165,6 +168,7 @@ const browserFixtures: Record<
       verify: "پشتڕاست بکەرەوە",
       verifiedOwner: "پشتڕاست کرایەوە. هەژماری خاوەن چاوەڕێی پەسەندە.",
       ownerApplicationCta: "بەردەوام بە بۆ داواکاری خاوەن",
+      cottageProfilesCta: "پرۆفایلەکانی کۆتێج بکەرەوە",
     },
     application: {
       privacyNote:
@@ -291,6 +295,9 @@ async function openOwnerApplication(
   await page.getByLabel(copy.code).fill("123456");
   await page.getByRole("button", { name: copy.verify }).click();
   await expect(page.getByText(copy.verifiedOwner)).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: copy.cottageProfilesCta }),
+  ).toHaveCount(0);
   await page.getByRole("link", { name: copy.ownerApplicationCta }).click();
 }
 
@@ -361,6 +368,109 @@ async function tabTo(page: Page, target: Locator) {
     }
   }
   throw new Error("Keyboard focus did not reach the expected control");
+}
+
+async function expectCottageProfileSectionTitlesAligned(
+  page: Page,
+  sectionNames: readonly string[],
+) {
+  for (const sectionName of sectionNames) {
+    await expect(
+      page.getByRole("group", { name: sectionName, exact: true }),
+    ).toBeVisible();
+  }
+
+  const positions = await page
+    .locator(".cottage-profile-form > fieldset")
+    .evaluateAll((fieldsets) => {
+      const direction = document.documentElement.dir;
+      const inlineStart = (rect: DOMRect) =>
+        direction === "rtl" ? rect.right : rect.left;
+      const textRect = (element: Element) => {
+        const text = [...element.childNodes].find(
+          (node) =>
+            node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+        );
+        if (!text) throw new Error("Expected visible section-title text");
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        return range.getBoundingClientRect();
+      };
+
+      return fieldsets.map((fieldset) => {
+        const titleId = fieldset.getAttribute("aria-labelledby");
+        const title = titleId ? document.getElementById(titleId) : null;
+        const firstLabel = fieldset.querySelector(":scope > label");
+        if (!title || !firstLabel) {
+          throw new Error(
+            "Expected each Cottage Profile section to have a title and label",
+          );
+        }
+        const titleRect = textRect(title);
+        return {
+          inlineOffset: Math.abs(
+            inlineStart(titleRect) - inlineStart(textRect(firstLabel)),
+          ),
+          blockOffset: titleRect.top - fieldset.getBoundingClientRect().top,
+        };
+      });
+    });
+
+  expect(positions).toHaveLength(sectionNames.length);
+  for (const position of positions) {
+    expect(position.inlineOffset).toBeLessThanOrEqual(0.5);
+    expect(position.blockOffset).toBeGreaterThanOrEqual(1);
+  }
+}
+
+async function expectCottageProfileActionHierarchy(
+  page: Page,
+  actionNames: readonly [string, string, string],
+  projectName: string,
+) {
+  const metrics = await Promise.all(
+    actionNames.map((name) =>
+      page.getByRole("button", { name, exact: true }).evaluate((button) => {
+        const parent = button.parentElement;
+        if (!parent) throw new Error("Cottage Profile action has no parent");
+        const style = getComputedStyle(button);
+        const buttonRect = button.getBoundingClientRect();
+        const parentRect = parent.getBoundingClientRect();
+        const direction = getComputedStyle(parent).direction;
+        return {
+          widthRatio: buttonRect.width / parentRect.width,
+          logicalEndOffset:
+            direction === "rtl"
+              ? Math.abs(buttonRect.left - parentRect.left)
+              : Math.abs(parentRect.right - buttonRect.right),
+          backgroundColor: style.backgroundColor,
+          borderColor: style.borderColor,
+          borderStyle: style.borderStyle,
+          borderWidth: Number.parseFloat(style.borderWidth),
+          color: style.color,
+        };
+      }),
+    ),
+  );
+  const isMobile = projectName === "mobile";
+  for (const metric of metrics) {
+    if (isMobile) expect(metric.widthRatio).toBeGreaterThanOrEqual(0.98);
+    else {
+      expect(metric.widthRatio).toBeLessThanOrEqual(0.5);
+      expect(metric.logicalEndOffset).toBeLessThanOrEqual(0.5);
+    }
+  }
+  const [save, upload, submit] = metrics;
+  expect(save.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(save.backgroundColor).toBe(upload.backgroundColor);
+  expect(save.color).toBe(upload.color);
+  for (const secondary of [save, upload]) {
+    expect(secondary.borderStyle).toBe("solid");
+    expect(secondary.borderWidth).toBeGreaterThanOrEqual(1);
+    expect(secondary.borderColor).toBe(secondary.color);
+  }
+  expect(submit.backgroundColor).toBe(save.color);
+  expect(submit.color).not.toBe(submit.backgroundColor);
 }
 
 function documentActionFor(card: Locator, copy: BrowserApplicationFixture) {
@@ -681,6 +791,178 @@ test("Owner Application keeps evidence controls aligned and accessible in every 
   }
 });
 
+test("an approved owner continues the first Cottage Profile and submits a private photo-backed working copy", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const phoneByProject: Record<string, string> = {
+    mobile: "+9647510000000",
+    desktop: "+9647510000001",
+    worker: "+9647510000002",
+  };
+  const phone = phoneByProject[testInfo.project.name];
+  if (!phone) throw new Error("Approved owner browser fixture is unmapped");
+
+  await page.goto("/en/owner/access");
+  await page.getByLabel("Iraqi phone number").fill(phone);
+  await page.getByRole("button", { name: "Send verification code" }).click();
+  await page.getByLabel("Verification code").fill("123456");
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByText(/Verified/)).toBeVisible();
+  await page
+    .getByRole("link", {
+      name: browserFixtures.en.access.cottageProfilesCta,
+    })
+    .click();
+
+  await expect(
+    page.getByRole("heading", { name: "Your cottages" }),
+  ).toBeVisible();
+  await expect(page.getByText("Started in Owner Application")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Create another cottage draft" })
+    .click();
+  await page.reload();
+  await expect(
+    page.getByRole("link", { name: "Open Cottage Profile" }),
+  ).toHaveCount(2);
+
+  const applicationProfile = page
+    .getByRole("article")
+    .filter({ hasText: "Started in Owner Application" });
+  await applicationProfile
+    .getByRole("link", { name: "Open Cottage Profile" })
+    .click();
+  await expect(
+    page.getByText(
+      "Exact address, coordinates and directions stay private and are never shown in the public listing.",
+    ),
+  ).toBeVisible();
+  await page.getByLabel("Cottage name").fill("Shaqlawa Orchard Cottage");
+  await page.getByLabel("Guest capacity").fill("10");
+  await page.getByLabel("Bedrooms").fill("4");
+  await page.getByLabel("Bathrooms").fill("3");
+  await page.getByLabel("Latitude").fill("36.408333");
+  await page.getByLabel("Longitude").fill("44.385834");
+  await page
+    .getByLabel("Private directions")
+    .fill("Continue past the orchard gate.");
+  await page.getByLabel("Wi-Fi").check();
+  await page.getByLabel("Source language").selectOption("en");
+  await page
+    .getByLabel("Source description")
+    .fill("A warm stone and wood cottage beside a private orchard.");
+  await page
+    .getByLabel("Source House Rules")
+    .fill("Respect neighbours and leave the cottage tidy.");
+  await page.getByRole("button", { name: "Save private draft" }).click();
+  await expect(page.getByRole("status")).toContainText("Private draft saved.");
+
+  const privatePng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await page.getByLabel("Choose cottage photo").setInputFiles({
+    name: "shaqlawa-orchard-cottage.png",
+    mimeType: "image/png",
+    buffer: privatePng,
+  });
+  await page.getByRole("button", { name: "Upload photo" }).click();
+  await expect(page.getByText("Photo uploaded.")).toBeVisible();
+  await expect(page.getByText("shaqlawa-orchard-cottage.png")).toBeVisible();
+  await page.getByRole("button", { name: "Create private preview" }).click();
+  const privatePreview = page.getByRole("link", {
+    name: "Create private preview",
+  });
+  await expect(privatePreview).toBeVisible();
+  const privatePreviewUrl = await privatePreview.getAttribute("href");
+  if (!privatePreviewUrl)
+    throw new Error("Private Cottage Profile preview has no URL");
+  const previewResponse = await page.request.get(privatePreviewUrl);
+  expect(previewResponse.status()).toBe(200);
+  expect(previewResponse.headers()["content-type"]).toContain("image/png");
+
+  await page.reload();
+  await expect(page.getByLabel("Source language")).toHaveValue("en");
+  await expect(page.getByText("shaqlawa-orchard-cottage.png")).toBeVisible();
+  await expectCottageProfileSectionTitlesAligned(page, [
+    "Public working-copy details",
+    "Private arrival details",
+    "Owner source content",
+  ]);
+  await expectCottageProfileActionHierarchy(
+    page,
+    ["Save private draft", "Upload photo", "Submit for content approval"],
+    testInfo.project.name,
+  );
+
+  await page.screenshot({
+    path: testInfo.outputPath("en-owner-cottage-profile-ready.png"),
+    fullPage: true,
+  });
+  const profilePath = new URL(page.url()).pathname.replace(/^\/en/, "");
+  for (const [locale, direction, heading, sectionNames, actionNames] of [
+    [
+      "ar",
+      "rtl",
+      "ملف الكوخ",
+      [
+        "تفاصيل نسخة العمل العامة",
+        "تفاصيل الوصول الخاصة",
+        "محتوى المالك الأصلي",
+      ],
+      ["حفظ المسودة الخاصة", "رفع الصورة", "الإرسال للموافقة على المحتوى"],
+    ],
+    [
+      "ckb",
+      "rtl",
+      "پرۆفایلی کۆتێج",
+      [
+        "وردەکارییە گشتییەکانی کۆپی کار",
+        "وردەکارییە تایبەتەکانی گەیشتن",
+        "ناوەڕۆکی سەرچاوەی خاوەن",
+      ],
+      [
+        "پاشەکەوتکردنی ڕەشنووسی تایبەت",
+        "بارکردنی وێنە",
+        "ناردن بۆ پەسەندکردنی ناوەڕۆک",
+      ],
+    ],
+  ] as const) {
+    await page.goto(`/${locale}${profilePath}`);
+    await expect(page.locator("html")).toHaveAttribute("dir", direction);
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expectCottageProfileSectionTitlesAligned(page, sectionNames);
+    await expectCottageProfileActionHierarchy(
+      page,
+      actionNames,
+      testInfo.project.name,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`${locale}-owner-cottage-profile-ready.png`),
+      fullPage: true,
+    });
+  }
+
+  await page.goto(`/en${profilePath}`);
+  await page
+    .getByRole("button", { name: "Submit for content approval" })
+    .click();
+  await expect(page.getByText("Submitted for content approval")).toBeVisible();
+  await expect(page.getByLabel("Cottage name")).toBeDisabled();
+  await expect(
+    page.getByRole("heading", { name: "Preserved submitted owner source" }),
+  ).toBeVisible();
+  const submittedSource = page
+    .getByRole("heading", { name: "Preserved submitted owner source" })
+    .locator("..");
+  await expect(
+    submittedSource.getByText(
+      "A warm stone and wood cottage beside a private orchard.",
+    ),
+  ).toBeVisible();
+});
+
 test("a Platform Administrator reaches access only after authenticator MFA", async ({
   page,
 }, testInfo) => {
@@ -730,6 +1012,41 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(
     page.getByRole("heading", { name: "Submitted Owner Applications" }),
   ).toBeVisible();
+  await page.getByRole("link", { name: "Manage Cottage Profiles" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Private Cottage Profiles" }),
+  ).toBeVisible();
+  const submittedProfile = page
+    .getByRole("article")
+    .filter({ hasText: "Submitted for content approval" })
+    .last();
+  await submittedProfile
+    .getByRole("link", { name: "Open Cottage Profile" })
+    .click();
+  await page.getByRole("button", { name: "Delete photo" }).click();
+  await expect(
+    page.getByRole("alert").filter({
+      hasText:
+        "Complete every required field and make sure 1–12 photos are ready before submitting.",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("shaqlawa-orchard-cottage.png")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath(
+      "en-administrator-submitted-photo-protection.png",
+    ),
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "Back to cottages" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Private Cottage Profiles" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("en-administrator-cottage-profiles.png"),
+    fullPage: true,
+  });
+
+  await page.goto("/en/administrator/owner-applications");
   const accessedAfter = new Date(Date.now() - 5_000).toISOString();
   for (const locale of ["en", "ar", "ckb"] as const) {
     const copy = browserFixtures[locale].review;

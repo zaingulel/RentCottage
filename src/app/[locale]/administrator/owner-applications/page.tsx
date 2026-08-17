@@ -4,6 +4,7 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { OwnerApplicationReviewQueue } from "@/components/owner-application-review-queue";
+import { accessMessages } from "@/i18n/access-messages";
 import { ownerApplicationReviewMessages } from "@/i18n/owner-application-review-messages";
 import { isLocale } from "@/i18n/routing";
 import {
@@ -44,6 +45,7 @@ export default async function OwnerApplicationReviewPage({
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const copy = ownerApplicationReviewMessages[locale];
+  const accessCopy = accessMessages[locale];
   let page:
     | Awaited<ReturnType<typeof loadOwnerApplicationReviewPage>>
     | undefined;
@@ -95,7 +97,12 @@ export default async function OwnerApplicationReviewPage({
     <main className="owner-application-page">
       <header className="owner-application-header">
         <Link href={`/${locale}`}>RentCottage</Link>
-        <span>{copy.eyebrow}</span>
+        <nav aria-label={copy.eyebrow}>
+          <span>{copy.eyebrow}</span>
+          <Link href={`/${locale}/administrator/cottages`}>
+            {accessCopy.manageCottageProfiles}
+          </Link>
+        </nav>
       </header>
       <section className="administrator-review-page">
         <div className="application-section-heading">

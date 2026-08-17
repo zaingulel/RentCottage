@@ -92,6 +92,120 @@ describe("access forms", () => {
     expect(verify).toBeEnabled();
   });
 
+  it("links an approved owner to Cottage Profiles after phone verification", async () => {
+    requestPhone.mockResolvedValue({ status: "code_sent" });
+    verifyPhone.mockResolvedValue({
+      status: "authenticated",
+      context: {
+        role: "cottage_owner",
+        approvalState: "approved",
+      },
+    });
+    const user = userEvent.setup();
+    render(
+      <PhoneAccessForm
+        locale="en"
+        role="cottage_owner"
+        applicationHref="/en/owner/application"
+        cottageProfilesHref="/en/owner/cottages"
+      />,
+    );
+
+    await user.type(
+      screen.getByLabelText("Iraqi phone number"),
+      "+9647500000000",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Send verification code" }),
+    );
+    await user.type(screen.getByLabelText("Verification code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Verified. Your private Cottage Profiles are ready.",
+    );
+    expect(
+      screen.getByRole("link", { name: "Open Cottage Profiles" }),
+    ).toHaveAttribute("href", "/en/owner/cottages");
+    expect(
+      screen.queryByRole("link", { name: "Continue to Owner Application" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a prospective owner on Owner Application after verification", async () => {
+    requestPhone.mockResolvedValue({ status: "code_sent" });
+    verifyPhone.mockResolvedValue({
+      status: "authenticated",
+      context: {
+        role: "cottage_owner",
+        approvalState: "prospective",
+      },
+    });
+    const user = userEvent.setup();
+    render(
+      <PhoneAccessForm
+        locale="en"
+        role="cottage_owner"
+        applicationHref="/en/owner/application"
+        cottageProfilesHref="/en/owner/cottages"
+      />,
+    );
+
+    await user.type(
+      screen.getByLabelText("Iraqi phone number"),
+      "+9647500000000",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Send verification code" }),
+    );
+    await user.type(screen.getByLabelText("Verification code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(
+      screen.getByRole("link", { name: "Continue to Owner Application" }),
+    ).toHaveAttribute("href", "/en/owner/application");
+    expect(
+      screen.queryByRole("link", { name: "Open Cottage Profiles" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each(["expired", "suspended"] as const)(
+    "describes an %s owner as servicing-only after verification",
+    async (approvalState) => {
+      requestPhone.mockResolvedValue({ status: "code_sent" });
+      verifyPhone.mockResolvedValue({
+        status: "authenticated",
+        context: { role: "cottage_owner", approvalState },
+      });
+      const user = userEvent.setup();
+      render(
+        <PhoneAccessForm
+          locale="en"
+          role="cottage_owner"
+          applicationHref="/en/owner/application"
+          cottageProfilesHref="/en/owner/cottages"
+        />,
+      );
+
+      await user.type(
+        screen.getByLabelText("Iraqi phone number"),
+        "+9647500000000",
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Send verification code" }),
+      );
+      await user.type(screen.getByLabelText("Verification code"), "123456");
+      await user.click(screen.getByRole("button", { name: "Verify" }));
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Your private profile remains available, but changes are unavailable while this owner account is expired or suspended.",
+      );
+      expect(
+        screen.getByRole("link", { name: "Open Cottage Profiles" }),
+      ).toHaveAttribute("href", "/en/owner/cottages");
+    },
+  );
+
   it("suppresses repeated administrator sign-in while preserving invalid-sign-in mapping", async () => {
     let resolveSignIn!: (value: { status: "invalid_sign_in" }) => void;
     signInAdministrator.mockReturnValue(
@@ -214,6 +328,7 @@ describe("access forms", () => {
       <AdministratorAccessForm
         locale="en"
         reviewHref="/en/administrator/owner-applications"
+        cottageProfilesHref="/en/administrator/cottages"
       />,
     );
 
@@ -228,6 +343,9 @@ describe("access forms", () => {
         name: "Review submitted Owner Applications",
       }),
     ).toHaveAttribute("href", "/en/administrator/owner-applications");
+    expect(
+      screen.getByRole("link", { name: "Manage Cottage Profiles" }),
+    ).toHaveAttribute("href", "/en/administrator/cottages");
   });
 
   it("reports an identity mismatch as unavailable after phone verification", async () => {

@@ -50,6 +50,7 @@ describe("access verification command", () => {
       ["npx", ["supabase", "test", "db"]],
       ["npx", ["supabase", "status", "-o", "json"]],
       ["node", ["scripts/prepare-access-test.mjs"]],
+      ["node", ["scripts/prepare-access-test.mjs"]],
       [
         "npx",
         [
@@ -83,11 +84,14 @@ describe("access verification command", () => {
       DO_NOT_TRACK: "1",
     });
     expect(run.mock.calls[5][2].env).toMatchObject({
+      ACCESS_FIXTURE_VALIDATE_EXISTING: "1",
+    });
+    expect(run.mock.calls[6][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       NEXTJS_ENV: "test",
       SUPABASE_PROJECT_REF: "local-test",
     });
-    expect(run.mock.calls[6][2].env).toMatchObject({
+    expect(run.mock.calls[7][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
