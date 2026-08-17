@@ -37,7 +37,7 @@ For a substantial change, state the route before editing:
 - **Exploration** for read-heavy discovery; delegate only independent, bounded reading when it preserves useful main-thread context.
 - **Plan → build → review** for cross-cutting work, a change with unclear direction, data-model changes, security/privacy work, or a substantial user-facing behaviour.
 
-Use the installed skills rather than reproducing their methods: `codebase-design` / `to-spec` / `grill-with-docs` for design, `tdd` for implementation, `code-review` before completing substantive code changes, and `diagnosing-bugs` for hard or repeated failures.
+Use the installed skills rather than reproducing their methods: `codebase-design` / `to-spec` / `grill-with-docs` for design, `tdd` for implementation, and `diagnosing-bugs` for hard or repeated failures. Route every substantive finished change through the repository's `security-code-review` skill.
 
 ## Delivery contract
 

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Security Code Review"
+  short_description: "Route RentCottage review by security evidence"
+  default_prompt: "Use $security-code-review to route this finished-change review."
+policy:
+  allow_implicit_invocation: true
