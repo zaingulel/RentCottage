@@ -14,7 +14,7 @@ Before classification, capture one fixed, worktree-inclusive bundle:
 - path and full content for every untracked in-scope file;
 - the issue and acceptance criteria, repository standards, relevant tests, and affected architecture, domain, provider, and boundary decisions.
 
-Confirm the baseline directly and require a non-empty change bundle. `HEAD` may equal the baseline during pre-commit review; staged, unstaged, and untracked inputs still make that bundle reviewable. Hash the tracked diff and the path-plus-content inputs for untracked files. Recompute both before reporting; if either hash or the in-scope path set changes, stop and restart from bundle capture.
+Confirm the baseline directly and require a non-empty change bundle. `HEAD` may equal the baseline during pre-commit review; staged, unstaged, and untracked inputs still make that bundle reviewable. Build one deterministic manifest covering every bundle input, including changes, acceptance criteria, standards, tests, and affected decisions. Each entry records its path or source identifier, type, mode, and complete content. Hash the manifest before classification, immediately before reviewer creation, and again before reporting. If the hash or in-scope path set changes, stop and restart from bundle capture.
 
 Classify only this fixed bundle before spawning reviewers.
 
@@ -42,7 +42,7 @@ Do not silently fall back if `code-review` or `security_reviewer` is unavailable
 
 ## Result
 
-Return separate Standards, Spec, and, when routed, Security verdicts. Security ends with a separate terminal `CLEAN` or `FINDINGS`; every finding includes severity, file and line, violated requirement or boundary, evidence, and impact. Do not merge or rerank verdicts. The coordinator adjudicates each finding against the repository authorities and approved scope.
+Require each routed reviewer prompt to end with its own terminal `CLEAN` or `FINDINGS` verdict. Every Security finding includes severity, file and line, violated requirement or boundary, evidence, and impact. If a required reviewer times out, crashes, or returns no valid terminal verdict, report that lane as `INCOMPLETE` or `UNAVAILABLE` and block delivery approval. Never treat an absent verdict as `CLEAN`. Do not merge or rerank verdicts. The coordinator adjudicates each finding against the repository authorities and approved scope.
 
 For representative runtime validation, report child identities, observed latency, and per-child token usage only when each is independently observable. Mark unavailable evidence as unavailable; never infer it or substitute parent usage.
 
