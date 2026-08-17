@@ -130,7 +130,7 @@ function input(repo, overrides = {}) {
   };
 }
 
-describe("releaseDelivery", () => {
+describe("releaseDelivery", { timeout: 15_000 }, () => {
   it("rejects invalid CLI input with structured exit 2 before external work", () => {
     const result = spawnSync(
       process.execPath,

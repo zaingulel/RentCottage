@@ -7,12 +7,16 @@ interface EnvironmentSource {
   SUPABASE_PUBLISHABLE_KEY?: string;
   SUPABASE_SECRET_KEY?: string;
   PRIVILEGED_AUDIT_HMAC_KEY?: string;
+  DEPLOYMENT_COMMIT?: string;
   NEXT_PUBLIC_SUPABASE_SECRET_KEY?: string;
   NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY?: string;
 }
 
 export interface ServerEnvironment {
   name: AppEnvironment;
+  deployment: {
+    commit: string | null;
+  };
   supabase: {
     projectRef: string;
     url: string;
@@ -24,7 +28,7 @@ export interface ServerEnvironment {
 
 export type PublicSupabaseEnvironment = Omit<
   ServerEnvironment,
-  "supabase" | "privilegedAuditHmacKey"
+  "supabase" | "privilegedAuditHmacKey" | "deployment"
 > & {
   supabase: Omit<ServerEnvironment["supabase"], "secretKey">;
 };
@@ -95,8 +99,20 @@ export function readServerEnvironment(
   if (privilegedAuditHmacKey.length < 32) {
     throw new Error("PRIVILEGED_AUDIT_HMAC_KEY must be at least 32 characters");
   }
+  const deploymentCommit = source.DEPLOYMENT_COMMIT;
+  const isHosted =
+    environment.name === "preview" || environment.name === "production";
+  if (
+    (isHosted && !deploymentCommit) ||
+    (deploymentCommit !== undefined && !/^[0-9a-f]{40}$/.test(deploymentCommit))
+  ) {
+    throw new Error(
+      "DEPLOYMENT_COMMIT must be a 40-character Git commit in hosted environments",
+    );
+  }
   return {
     ...environment,
+    deployment: { commit: deploymentCommit ?? null },
     privilegedAuditHmacKey,
     supabase: {
       ...environment.supabase,

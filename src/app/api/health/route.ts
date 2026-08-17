@@ -35,6 +35,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     environment: environment.name,
+    deployment: environment.deployment,
     supabase: {
       configured: true,
       connected: shouldProbe,

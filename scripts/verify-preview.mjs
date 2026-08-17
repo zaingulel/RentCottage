@@ -3,6 +3,18 @@ import { pathToFileURL } from "node:url";
 
 const USAGE = "Usage: npm run verify:preview -- <https-preview-url>";
 const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_ATTEMPTS = 6;
+const RETRY_DELAY_MS = 1_000;
+
+class PreviewVerificationError extends Error {
+  constructor(message, retryable, options) {
+    super(message, options);
+    this.retryable = retryable;
+  }
+}
+
+const wait = (delayMs) =>
+  new Promise((resolve) => setTimeout(resolve, delayMs));
 
 export function parsePreviewUrl(value) {
   const url = new URL(value);
@@ -36,23 +48,43 @@ async function requireSuccessfulResponse(
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new Error(`${description} returned HTTP ${response.status}`);
+      throw new PreviewVerificationError(
+        `${description} returned HTTP ${response.status}`,
+        response.status === 404 ||
+          response.status === 429 ||
+          response.status >= 500,
+      );
     }
-    return parseJson ? await response.json() : response;
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(
-        `${description} timed out after ${REQUEST_TIMEOUT_MS}ms`,
+    if (!parseJson) return response;
+    try {
+      return await response.json();
+    } catch (error) {
+      throw new PreviewVerificationError(
+        `${description} returned invalid JSON`,
+        true,
         { cause: error },
       );
     }
-    throw error;
+  } catch (error) {
+    if (error instanceof PreviewVerificationError) throw error;
+    if (controller.signal.aborted) {
+      throw new PreviewVerificationError(
+        `${description} timed out after ${REQUEST_TIMEOUT_MS}ms`,
+        true,
+        { cause: error },
+      );
+    }
+    throw new PreviewVerificationError(
+      `${description} request failed: ${error.message}`,
+      true,
+      { cause: error },
+    );
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function verifyPreview(origin, fetchImpl = fetch) {
+async function verifyPreviewAttempt(origin, expectedCommit, fetchImpl) {
   const shellUrl = new URL("/ar", origin).href;
   const healthUrl = new URL("/api/health?check=supabase", origin).href;
 
@@ -64,10 +96,42 @@ export async function verifyPreview(origin, fetchImpl = fetch) {
     true,
   );
   if (health?.ok !== true || health?.supabase?.connected !== true) {
-    throw new Error("Hosted health check did not prove Supabase connectivity");
+    throw new PreviewVerificationError(
+      "Hosted health check did not prove Supabase connectivity",
+      true,
+    );
+  }
+  if (health?.deployment?.commit !== expectedCommit) {
+    throw new PreviewVerificationError(
+      `Hosted preview did not serve expected commit ${expectedCommit}`,
+      true,
+    );
   }
 
   return { shellUrl, healthUrl };
+}
+
+export async function verifyPreview(
+  origin,
+  expectedCommit,
+  fetchImpl = fetch,
+  {
+    maxAttempts = MAX_ATTEMPTS,
+    retryDelayMs = RETRY_DELAY_MS,
+    sleep = wait,
+  } = {},
+) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await verifyPreviewAttempt(origin, expectedCommit, fetchImpl);
+    } catch (error) {
+      lastError = error;
+      if (!error.retryable || attempt === maxAttempts) throw error;
+      await sleep(retryDelayMs * 2 ** (attempt - 1));
+    }
+  }
+  throw lastError;
 }
 
 function currentCommit() {
@@ -81,6 +145,7 @@ export async function main(
   {
     fetchImpl = fetch,
     resolveCommit = currentCommit,
+    retryOptions,
     stderr = console.error,
     stdout = console.log,
   } = {},
@@ -95,8 +160,9 @@ export async function main(
   }
 
   try {
-    await verifyPreview(origin, fetchImpl);
-    stdout(`Verified preview ${origin.href} at commit ${resolveCommit()}`);
+    const commit = resolveCommit();
+    await verifyPreview(origin, commit, fetchImpl, retryOptions);
+    stdout(`Verified preview ${origin.href} at commit ${commit}`);
     return 0;
   } catch (error) {
     stderr(`Preview verification failed: ${error.message}`);

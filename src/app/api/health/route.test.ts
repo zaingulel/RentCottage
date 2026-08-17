@@ -9,12 +9,14 @@ describe("hosted health route", () => {
   });
 
   it("uses the server-only Supabase key only as the REST API key", async () => {
+    const deploymentCommit = "a".repeat(40);
     vi.stubEnv("APP_ENVIRONMENT", "preview");
     vi.stubEnv("SUPABASE_PROJECT_REF", "preview-project");
     vi.stubEnv("SUPABASE_URL", "https://preview-project.supabase.co");
     vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-browser-key");
     vi.stubEnv("SUPABASE_SECRET_KEY", "secret-server-key");
     vi.stubEnv("PRIVILEGED_AUDIT_HMAC_KEY", "a".repeat(32));
+    vi.stubEnv("DEPLOYMENT_COMMIT", deploymentCommit);
 
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
@@ -33,6 +35,7 @@ describe("hosted health route", () => {
     await expect(response.json()).resolves.toEqual({
       ok: true,
       environment: "preview",
+      deployment: { commit: deploymentCommit },
       supabase: {
         configured: true,
         connected: true,
