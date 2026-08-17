@@ -5,6 +5,7 @@ import {
   cottageProfileMaximumLengths,
   cottageProfileMaximumPhotoBytes,
   cottageProfileMaximumPhotoFilenameLength,
+  cottageProfileMaximumPhotos,
   cottageProfileNumberRanges,
   cottageProfilePhotoBucketName,
   cottageProfilePhotoMediaTypes,
@@ -20,6 +21,11 @@ import {
 } from "./cottage-profile";
 
 const administratorPageSize = 100;
+const ownerPageSize = 100;
+const providerMaximumRows = 1000;
+const photoProfileChunkSize = Math.floor(
+  providerMaximumRows / cottageProfileMaximumPhotos,
+);
 const administratorCursorTimestampPattern =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 const profileColumns =
@@ -338,26 +344,38 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
       }
       return [sourceRevisionId];
     });
-    const photosResult = await this.client
-      .from("cottage_profile_photos")
-      .select(photoColumns)
-      .in("profile_id", profileIds)
-      .order("created_at");
-    assertProviderSuccess(photosResult.error);
-    if (!Array.isArray(photosResult.data)) {
-      throw new Error("Cottage Profile photo data is invalid");
-    }
-    const photosByProfile = new Map<string, CottageProfilePhoto[]>();
-    for (const value of photosResult.data) {
-      const photo = record(value);
-      const profileId = requiredString(photo.profile_id);
-      if (!profileIds.includes(profileId)) {
+    const photoRows: unknown[] = [];
+    for (
+      let index = 0;
+      index < profileIds.length;
+      index += photoProfileChunkSize
+    ) {
+      const profileIdChunk = profileIds.slice(
+        index,
+        index + photoProfileChunkSize,
+      );
+      const photosResult = await this.client
+        .from("cottage_profile_photos")
+        .select(photoColumns)
+        .in("profile_id", profileIdChunk)
+        .order("created_at");
+      assertProviderSuccess(photosResult.error);
+      if (!Array.isArray(photosResult.data)) {
         throw new Error("Cottage Profile photo data is invalid");
       }
-      photosByProfile.set(profileId, [
-        ...(photosByProfile.get(profileId) ?? []),
-        parsePhoto(photo),
-      ]);
+      photoRows.push(...photosResult.data);
+    }
+    const knownProfileIds = new Set(profileIds);
+    const photosByProfile = new Map<string, CottageProfilePhoto[]>();
+    for (const value of photoRows) {
+      const photo = record(value);
+      const profileId = requiredString(photo.profile_id);
+      if (!knownProfileIds.has(profileId)) {
+        throw new Error("Cottage Profile photo data is invalid");
+      }
+      const photos = photosByProfile.get(profileId) ?? [];
+      photos.push(parsePhoto(photo));
+      photosByProfile.set(profileId, photos);
     }
     const sourcesById = new Map<string, CottageProfileSourceRevision>();
     if (sourceRevisionIds.length > 0) {
@@ -369,10 +387,11 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
       if (!Array.isArray(sourceResult.data)) {
         throw new Error("Cottage Profile submitted source is invalid");
       }
+      const knownSourceRevisionIds = new Set(sourceRevisionIds);
       for (const value of sourceResult.data) {
         const source = record(value);
         const sourceId = requiredString(source.id);
-        if (!sourceRevisionIds.includes(sourceId)) {
+        if (!knownSourceRevisionIds.has(sourceId)) {
           throw new Error("Cottage Profile submitted source is invalid");
         }
         sourcesById.set(sourceId, parseSource(source));
@@ -396,14 +415,37 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   }
 
   async listOwner(): Promise<CottageProfile[]> {
-    const { data, error } = await this.client.rpc(
-      "list_owner_cottage_profiles",
-    );
-    assertProviderSuccess(error);
-    if (!Array.isArray(data)) {
-      throw new Error("Cottage Profile list is invalid");
+    const profiles: CottageProfile[] = [];
+    let cursor: CottageProfileAdministratorCursor | undefined;
+    for (;;) {
+      const { data, error } = await this.client.rpc(
+        "list_owner_cottage_profiles",
+        {
+          target_after_updated_at: cursor?.updatedAt ?? null,
+          target_after_id: cursor?.profileId ?? null,
+          target_limit: ownerPageSize,
+        },
+      );
+      assertProviderSuccess(error);
+      if (!Array.isArray(data)) {
+        throw new Error("Cottage Profile list is invalid");
+      }
+      profiles.push(...(await this.hydrateList(data)));
+      if (data.length < ownerPageSize) return profiles;
+      const boundary = record(data.at(-1));
+      const nextCursor = parseAdministratorCottageProfileCursor(
+        boundary.updated_at,
+        boundary.id,
+      );
+      if (
+        !nextCursor ||
+        (cursor?.updatedAt === nextCursor.updatedAt &&
+          cursor.profileId === nextCursor.profileId)
+      ) {
+        throw new Error("Cottage Profile list did not advance");
+      }
+      cursor = nextCursor;
     }
-    return this.hydrateList(data);
   }
 
   async listAdministrator(

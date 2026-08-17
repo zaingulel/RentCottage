@@ -1,28 +1,17 @@
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
-import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
-import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
+import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
 import { CottageProfileOverview } from "@/components/cottage-profile-overview";
+import { OwnerCottageAccessFallback } from "@/components/owner-cottage-access-fallback";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
 
 async function loadOwnerCottages() {
-  const client = await createRequestSupabaseClient();
-  const context = await new SupabaseAccountContextStore(client).resolve();
-  if (context?.role !== "cottage_owner") {
-    return { status: "access_required" as const };
-  }
-  if (context.approvalState === "prospective") {
-    return { status: "prospective" as const };
-  }
-  const cottageProfile = await createRequestCottageProfile();
-  return {
-    status: "ready" as const,
+  return loadOwnerCottageAccess(async (cottageProfile, approvalState) => ({
     profiles: await cottageProfile.listOwner(),
-    canCreate: context.approvalState === "approved",
-  };
+    canCreate: approvalState === "approved",
+  }));
 }
 
 export default async function OwnerCottagesPage({
@@ -46,36 +35,29 @@ export default async function OwnerCottagesPage({
 
   if (!page) {
     return (
-      <main className="owner-application-page access-required-page">
-        <section className="access-required-card" role="alert">
-          <h1>{copy.overviewTitle}</h1>
-          <p>{copy.unavailable}</p>
-        </section>
-      </main>
+      <OwnerCottageAccessFallback
+        locale={locale}
+        title={copy.overviewTitle}
+        status="unavailable"
+      />
     );
   }
   if (page.status === "access_required") {
     return (
-      <main className="owner-application-page access-required-page">
-        <section className="access-required-card">
-          <h1>{copy.overviewTitle}</h1>
-          <p>{copy.accessRequired}</p>
-          <Link href={`/${locale}/owner/access`}>{copy.ownerAccessAction}</Link>
-        </section>
-      </main>
+      <OwnerCottageAccessFallback
+        locale={locale}
+        title={copy.overviewTitle}
+        status="access_required"
+      />
     );
   }
   if (page.status === "prospective") {
     return (
-      <main className="owner-application-page access-required-page">
-        <section className="access-required-card">
-          <h1>{copy.overviewTitle}</h1>
-          <p>{copy.prospective}</p>
-          <Link href={`/${locale}/owner/application`}>
-            {copy.ownerApplication}
-          </Link>
-        </section>
-      </main>
+      <OwnerCottageAccessFallback
+        locale={locale}
+        title={copy.overviewTitle}
+        status="prospective"
+      />
     );
   }
   return (
@@ -87,8 +69,8 @@ export default async function OwnerCottagesPage({
       <CottageProfileOverview
         locale={locale}
         actor="owner"
-        profiles={page.profiles}
-        canCreate={page.canCreate}
+        profiles={page.value.profiles}
+        canCreate={page.value.canCreate}
       />
     </main>
   );

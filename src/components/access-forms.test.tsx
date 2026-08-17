@@ -121,6 +121,9 @@ describe("access forms", () => {
     await user.type(screen.getByLabelText("Verification code"), "123456");
     await user.click(screen.getByRole("button", { name: "Verify" }));
 
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Verified. Your private Cottage Profiles are ready.",
+    );
     expect(
       screen.getByRole("link", { name: "Open Cottage Profiles" }),
     ).toHaveAttribute("href", "/en/owner/cottages");
@@ -165,6 +168,43 @@ describe("access forms", () => {
       screen.queryByRole("link", { name: "Open Cottage Profiles" }),
     ).not.toBeInTheDocument();
   });
+
+  it.each(["expired", "suspended"] as const)(
+    "describes an %s owner as servicing-only after verification",
+    async (approvalState) => {
+      requestPhone.mockResolvedValue({ status: "code_sent" });
+      verifyPhone.mockResolvedValue({
+        status: "authenticated",
+        context: { role: "cottage_owner", approvalState },
+      });
+      const user = userEvent.setup();
+      render(
+        <PhoneAccessForm
+          locale="en"
+          role="cottage_owner"
+          applicationHref="/en/owner/application"
+          cottageProfilesHref="/en/owner/cottages"
+        />,
+      );
+
+      await user.type(
+        screen.getByLabelText("Iraqi phone number"),
+        "+9647500000000",
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Send verification code" }),
+      );
+      await user.type(screen.getByLabelText("Verification code"), "123456");
+      await user.click(screen.getByRole("button", { name: "Verify" }));
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Your private profile remains available, but changes are unavailable while this owner account is expired or suspended.",
+      );
+      expect(
+        screen.getByRole("link", { name: "Open Cottage Profiles" }),
+      ).toHaveAttribute("href", "/en/owner/cottages");
+    },
+  );
 
   it("suppresses repeated administrator sign-in while preserving invalid-sign-in mapping", async () => {
     let resolveSignIn!: (value: { status: "invalid_sign_in" }) => void;

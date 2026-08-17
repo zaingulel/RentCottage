@@ -296,7 +296,7 @@ async function openOwnerApplication(
   await page.getByRole("button", { name: copy.verify }).click();
   await expect(page.getByText(copy.verifiedOwner)).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Open Cottage Profiles" }),
+    page.getByRole("link", { name: copy.cottageProfilesCta }),
   ).toHaveCount(0);
   await page.getByRole("link", { name: copy.ownerApplicationCta }).click();
 }
@@ -426,6 +426,7 @@ async function expectCottageProfileSectionTitlesAligned(
 async function expectCottageProfileActionHierarchy(
   page: Page,
   actionNames: readonly [string, string, string],
+  projectName: string,
 ) {
   const metrics = await Promise.all(
     actionNames.map((name) =>
@@ -451,7 +452,7 @@ async function expectCottageProfileActionHierarchy(
       }),
     ),
   );
-  const isMobile = (page.viewportSize()?.width ?? 0) <= 620;
+  const isMobile = projectName === "mobile";
   for (const metric of metrics) {
     if (isMobile) expect(metric.widthRatio).toBeGreaterThanOrEqual(0.98);
     else {
@@ -889,11 +890,11 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     "Private arrival details",
     "Owner source content",
   ]);
-  await expectCottageProfileActionHierarchy(page, [
-    "Save private draft",
-    "Upload photo",
-    "Submit for content approval",
-  ]);
+  await expectCottageProfileActionHierarchy(
+    page,
+    ["Save private draft", "Upload photo", "Submit for content approval"],
+    testInfo.project.name,
+  );
 
   await page.screenshot({
     path: testInfo.outputPath("en-owner-cottage-profile-ready.png"),
@@ -932,7 +933,11 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     await expect(page.locator("html")).toHaveAttribute("dir", direction);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
     await expectCottageProfileSectionTitlesAligned(page, sectionNames);
-    await expectCottageProfileActionHierarchy(page, actionNames);
+    await expectCottageProfileActionHierarchy(
+      page,
+      actionNames,
+      testInfo.project.name,
+    );
     await page.screenshot({
       path: testInfo.outputPath(`${locale}-owner-cottage-profile-ready.png`),
       fullPage: true,

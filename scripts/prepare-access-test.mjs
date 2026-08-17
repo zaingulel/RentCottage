@@ -2,6 +2,11 @@ import { createClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 import * as OTPAuth from "otpauth";
 
+import {
+  findAccessFixtureUser,
+  listAllAccessFixtureUsers,
+} from "./lib/access-fixture-users.mjs";
+
 const url = process.env.SUPABASE_URL;
 const secretKey = process.env.SUPABASE_SECRET_KEY;
 const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -15,11 +20,7 @@ if (!url || !secretKey || !publishableKey) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const password = "Local-test-password-2026";
-  const { data: users, error: listError } = await client.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
-  if (listError) throw listError;
+  const users = await listAllAccessFixtureUsers(client.auth.admin);
   const cottageOwnerFixtures = [
     { profile: "mobile", phone: "+9647510000000" },
     { profile: "desktop", phone: "+9647510000001" },
@@ -138,7 +139,7 @@ if (!url || !secretKey || !publishableKey) {
 
   for (const profile of ["mobile", "desktop", "worker"]) {
     const email = `platform-administrator-${profile}@rentcottage.test`;
-    const existing = users.users.find((user) => user.email === email);
+    const existing = users.find((user) => user.email === email);
     if (existing) {
       const { error } = await client.auth.admin.deleteUser(existing.id);
       if (error) throw error;
@@ -157,9 +158,7 @@ if (!url || !secretKey || !publishableKey) {
   }
 
   const reviewerEmail = "cottage-profile-fixture-reviewer@rentcottage.test";
-  const existingReviewer = users.users.find(
-    (user) => user.email === reviewerEmail,
-  );
+  const existingReviewer = users.find((user) => user.email === reviewerEmail);
   if (existingReviewer) {
     const { error } = await client.auth.admin.deleteUser(existingReviewer.id);
     if (error) throw error;
@@ -328,9 +327,7 @@ if (!url || !secretKey || !publishableKey) {
   }
 
   for (const fixture of cottageOwnerFixtures) {
-    const existingFixtureIdentity = users.users.find(
-      (user) => user.phone === fixture.phone,
-    );
+    const existingFixtureIdentity = findAccessFixtureUser(users, fixture.phone);
     let fixtureIdentity = existingFixtureIdentity;
     if (!fixtureIdentity) {
       const { data, error } = await client.auth.admin.createUser({

@@ -15,6 +15,7 @@ export const cottageProfilePhotoMediaTypes = [
 ] as const;
 export const cottageProfilePhotoBucketName = "cottage-profile-photos";
 export const cottageProfileMaximumPhotoBytes = 5_242_880;
+export const cottageProfileMaximumPhotos = 12;
 export const cottageProfileMaximumPhotoFilenameLength = 180;
 export const cottageProfileMaximumLengths = {
   name: 120,

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { requestPhoneAccess, verifyPhoneAccess } from "@/access/actions";
 import type { MarketplaceRole } from "@/access/account-access";
 import { accessMessages } from "@/i18n/access-messages";
+import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 
 import {
@@ -27,6 +28,7 @@ export function PhoneAccessForm({
   cottageProfilesHref?: string;
 }) {
   const copy = accessMessages[locale];
+  const cottageProfileCopy = cottageProfileMessages[locale];
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<"phone" | "code" | "verified">("phone");
@@ -66,9 +68,13 @@ export function PhoneAccessForm({
         role === "customer"
           ? copy.verifiedCustomer
           : result.context.role === "cottage_owner" &&
-              result.context.approvalState !== "prospective"
+              result.context.approvalState === "approved"
             ? copy.verifiedApprovedOwner
-            : copy.verifiedOwner,
+            : result.context.role === "cottage_owner" &&
+                (result.context.approvalState === "expired" ||
+                  result.context.approvalState === "suspended")
+              ? cottageProfileCopy.readOnly
+              : copy.verifiedOwner,
       );
     } else {
       setMessage(

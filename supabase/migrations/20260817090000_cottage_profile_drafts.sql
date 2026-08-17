@@ -88,7 +88,11 @@ using (
   or (select public.is_platform_administrator('aal2'))
 );
 
-create function public.list_owner_cottage_profiles()
+create function public.list_owner_cottage_profiles(
+  target_after_updated_at timestamptz default null,
+  target_after_id uuid default null,
+  target_limit integer default 100
+)
 returns setof public.owner_application_cottage_profiles
 language plpgsql
 stable
@@ -96,6 +100,14 @@ security definer
 set search_path = ''
 as $$
 begin
+  if (target_after_updated_at is null) <> (target_after_id is null) then
+    raise exception 'Cottage Profile owner cursor is invalid'
+      using errcode = '22023';
+  end if;
+  if target_limit is null or target_limit < 1 or target_limit > 100 then
+    raise exception 'Cottage Profile owner page size is invalid'
+      using errcode = '22023';
+  end if;
   if not exists (
     select 1
     from public.account_contexts
@@ -110,12 +122,21 @@ begin
   return query
   select profiles.*
   from public.owner_application_cottage_profiles profiles
-  where profiles.owner_user_id = (select auth.uid());
+  where profiles.owner_user_id = (select auth.uid())
+    and (
+      target_after_updated_at is null
+      or (profiles.updated_at, profiles.id) <
+        (target_after_updated_at, target_after_id)
+    )
+  order by profiles.updated_at desc, profiles.id desc
+  limit target_limit;
 end;
 $$;
 
-revoke all on function public.list_owner_cottage_profiles() from public;
-grant execute on function public.list_owner_cottage_profiles() to authenticated;
+revoke all on function public.list_owner_cottage_profiles(timestamptz, uuid, integer)
+  from public;
+grant execute on function public.list_owner_cottage_profiles(timestamptz, uuid, integer)
+  to authenticated;
 
 create function public.create_owner_cottage_profile_draft()
 returns public.owner_application_cottage_profiles

@@ -176,6 +176,151 @@ describe("Supabase Cottage Profile adapter", () => {
     },
   );
 
+  it("hydrates every administrator photo when the page exceeds the provider row cap", async () => {
+    const profiles = Array.from({ length: 84 }, (_, index) => {
+      const suffix = index + 1;
+      return {
+        id: `70000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`,
+        owner_user_id: "10000000-0000-4000-8000-000000000701",
+        application_id: null,
+        status: "draft",
+        version: 1,
+        name: `Cottage ${suffix}`,
+        governorate: "Erbil",
+        approximate_location: "Near Shaqlawa",
+        exact_address: "Private address",
+        exact_latitude: null,
+        exact_longitude: null,
+        private_directions: "",
+        capacity: 4,
+        bedrooms: 2,
+        bathrooms: 1,
+        amenities: ["garden"],
+        source_language: "en",
+        description: "Description",
+        house_rules: "Rules",
+        submitted_source_revision_id: null,
+        updated_at: "2026-08-17T09:15:00.000Z",
+      };
+    });
+    const photosByProfile = new Map(
+      profiles.map((profile, profileIndex) => [
+        profile.id,
+        Array.from({ length: 12 }, (_, photoIndex) => ({
+          profile_id: profile.id,
+          id: `71000000-0000-4000-8000-${String(profileIndex * 12 + photoIndex + 1).padStart(12, "0")}`,
+          original_filename: `cottage-${profileIndex + 1}-${photoIndex + 1}.webp`,
+          media_type: "image/webp",
+          size_bytes: 128,
+          state: "ready",
+          updated_at: "2026-08-17T09:05:00.000Z",
+        })),
+      ]),
+    );
+    const photoQueries: string[][] = [];
+    const photosQuery = {
+      in: vi.fn((_field: string, profileIds: string[]) => {
+        photoQueries.push(profileIds);
+        return {
+          order: vi.fn(() =>
+            result(
+              profileIds
+                .flatMap((profileId) => photosByProfile.get(profileId) ?? [])
+                .slice(0, 1000),
+            ),
+          ),
+        };
+      }),
+    };
+    const profileQuery: Record<string, ReturnType<typeof vi.fn>> = {};
+    profileQuery.order = vi.fn(() => profileQuery);
+    profileQuery.limit = vi.fn(() => result(profiles));
+    const client = {
+      from: vi.fn((table: string) => ({
+        select: vi
+          .fn()
+          .mockReturnValue(
+            table === "owner_application_cottage_profiles"
+              ? profileQuery
+              : photosQuery,
+          ),
+      })),
+      rpc: vi.fn(),
+    } as unknown as SupabaseClient;
+
+    const page = await new SupabaseCottageProfileRepository(
+      client,
+      client,
+    ).listAdministrator();
+
+    expect(page.profiles).toHaveLength(84);
+    expect(page.profiles.at(-1)?.photos).toHaveLength(12);
+    expect(photoQueries.map(({ length }) => length)).toEqual([83, 1]);
+  });
+
+  it("continues the owner list beyond the provider row cap without truncation", async () => {
+    const updatedAt = "2026-08-17T09:15:00.000Z";
+    const profiles = Array.from({ length: 101 }, (_, index) => 101 - index).map(
+      (suffix) => ({
+        id: `70000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`,
+        owner_user_id: "10000000-0000-4000-8000-000000000701",
+        application_id: null,
+        status: "draft",
+        version: 1,
+        name: `Cottage ${suffix}`,
+        governorate: "Erbil",
+        approximate_location: "Near Shaqlawa",
+        exact_address: "Private address",
+        exact_latitude: null,
+        exact_longitude: null,
+        private_directions: "",
+        capacity: 4,
+        bedrooms: 2,
+        bathrooms: 1,
+        amenities: ["garden"],
+        source_language: "en",
+        description: "Description",
+        house_rules: "Rules",
+        submitted_source_revision_id: null,
+        updated_at: updatedAt,
+      }),
+    );
+    const rpc = vi.fn((_functionName: string, args?: Record<string, unknown>) =>
+      result(
+        args?.target_after_id === profiles[99]?.id
+          ? profiles.slice(100)
+          : profiles.slice(0, 100),
+      ),
+    );
+    const photosQuery = {
+      in: vi.fn().mockReturnValue({
+        order: vi.fn(() => result([])),
+      }),
+    };
+    const client = {
+      from: vi.fn(() => ({ select: vi.fn().mockReturnValue(photosQuery) })),
+      rpc,
+    } as unknown as SupabaseClient;
+
+    const loaded = await new SupabaseCottageProfileRepository(
+      client,
+      client,
+    ).listOwner();
+
+    expect(loaded).toHaveLength(101);
+    expect(loaded.at(-1)?.name).toBe("Cottage 1");
+    expect(rpc).toHaveBeenNthCalledWith(1, "list_owner_cottage_profiles", {
+      target_after_updated_at: null,
+      target_after_id: null,
+      target_limit: 100,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "list_owner_cottage_profiles", {
+      target_after_updated_at: updatedAt,
+      target_after_id: profiles[99]?.id,
+      target_limit: 100,
+    });
+  });
+
   it("continues after the stable 100-profile administrator boundary without a duplicate", async () => {
     const updatedAt = "2026-08-17T09:15:00.123456Z";
     const rows = Array.from({ length: 101 }, (_, index) => 101 - index).map(

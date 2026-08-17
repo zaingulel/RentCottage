@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(90);
+select plan(98);
 
 insert into auth.users (
   id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at
@@ -68,6 +68,24 @@ select results_eq(
   $$select name from public.list_owner_cottage_profiles() order by created_at, id$$,
   array['Application Cottage'::text],
   'approval exposes the exact application Cottage Profile in Owner Backoffice'
+);
+
+select throws_ok(
+  $$select public.list_owner_cottage_profiles(null, null, null)$$,
+  '22023', null,
+  'the owner list rejects a null page size at the database boundary'
+);
+
+select throws_ok(
+  $$select public.list_owner_cottage_profiles(null, null, 0)$$,
+  '22023', null,
+  'the owner list rejects a zero page size at the database boundary'
+);
+
+select throws_ok(
+  $$select public.list_owner_cottage_profiles(null, null, 101)$$,
+  '22023', null,
+  'the owner list rejects a page size above its provider-safe bound'
 );
 
 select lives_ok(
@@ -1014,6 +1032,18 @@ select set_config(
   true
 );
 
+select results_eq(
+  $$select count(*)::integer from public.list_owner_cottage_profiles()$$,
+  array[2],
+  'an expired owner can list their private Cottage Profiles for servicing'
+);
+
+select throws_ok(
+  $$select public.create_owner_cottage_profile_draft()$$,
+  '42501', null,
+  'an expired owner cannot create another Cottage Profile'
+);
+
 select throws_ok(
   $$select public.update_owner_cottage_profile_draft(
     (select id from public.owner_application_cottage_profiles
@@ -1024,6 +1054,41 @@ select throws_ok(
   )$$,
   '42501', null,
   'an expired owner retains private read access but cannot change a draft'
+);
+
+reset role;
+update public.account_contexts
+set owner_approval_state = 'suspended'
+where user_id = '00000000-0000-0000-0000-000000000701';
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000701","role":"authenticated","aal":"aal1"}',
+  true
+);
+
+select results_eq(
+  $$select count(*)::integer from public.list_owner_cottage_profiles()$$,
+  array[2],
+  'a suspended owner can list their private Cottage Profiles for servicing'
+);
+
+select throws_ok(
+  $$select public.create_owner_cottage_profile_draft()$$,
+  '42501', null,
+  'a suspended owner cannot create another Cottage Profile'
+);
+
+select throws_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id = '20000000-0000-4000-8000-000000000701'),
+    2, 'Suspended write', 'Erbil', 'Near Shaqlawa', 'Private exact address',
+    36.408333, 44.385834, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  '42501', null,
+  'a suspended owner retains private read access but cannot change a draft'
 );
 
 reset role;
