@@ -107,6 +107,75 @@ describe("preview verification command", () => {
     expect(sleep.mock.calls).toEqual([[1], [2]]);
   });
 
+  it("retries when the hosted health response contains invalid JSON", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError("invalid JSON");
+        },
+      })
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(
+        response({
+          json: {
+            ok: true,
+            deployment: { commit: "abc123def456" },
+            supabase: { connected: true },
+          },
+        }),
+      );
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+        { maxAttempts: 2, retryDelayMs: 1, sleep },
+      ),
+    ).resolves.toEqual({
+      shellUrl: "https://preview.example.com/ar",
+      healthUrl: "https://preview.example.com/api/health?check=supabase",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(sleep).toHaveBeenCalledOnce();
+  });
+
+  it("retries a rate-limited hosted response", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(response({ ok: false, status: 429 }))
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(
+        response({
+          json: {
+            ok: true,
+            deployment: { commit: "abc123def456" },
+            supabase: { connected: true },
+          },
+        }),
+      );
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+        { maxAttempts: 2, retryDelayMs: 1, sleep },
+      ),
+    ).resolves.toEqual({
+      shellUrl: "https://preview.example.com/ar",
+      healthUrl: "https://preview.example.com/api/health?check=supabase",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledOnce();
+  });
+
   it("returns the last transient error after exhausting bounded retries", async () => {
     const fetchImpl = vi
       .fn()

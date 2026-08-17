@@ -11,12 +11,15 @@ export async function GET(request: Request) {
 
   if (shouldProbe) {
     try {
-      const response = await fetch(`${environment.supabase.url}/rest/v1/`, {
-        headers: {
-          apikey: environment.supabase.secretKey,
+      const response = await fetch(
+        `${environment.supabase.url}/auth/v1/health`,
+        {
+          headers: {
+            apikey: environment.supabase.publishableKey,
+          },
+          signal: AbortSignal.timeout(5_000),
         },
-        signal: AbortSignal.timeout(5_000),
-      });
+      );
 
       if (!response.ok) {
         return NextResponse.json(

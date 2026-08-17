@@ -11,10 +11,18 @@ export function writePreviewDeploymentSecrets(target, source) {
   };
   if (
     Object.values(secrets).some(
-      (value) => typeof value !== "string" || value.length === 0,
+      (value) => typeof value !== "string" || value.trim().length === 0,
     )
   ) {
     throw new Error("A required preview deployment secret is absent");
+  }
+  if (Object.values(secrets).some((value) => value !== value.trim())) {
+    throw new Error(
+      "Preview deployment secrets must not contain surrounding whitespace",
+    );
+  }
+  if (secrets.PRIVILEGED_AUDIT_HMAC_KEY.length < 32) {
+    throw new Error("The preview audit key must be at least 32 characters");
   }
   writeFileSync(target, JSON.stringify(secrets), {
     encoding: "utf8",

@@ -24,7 +24,8 @@
     "verify": "node scripts/verify.mjs",
     "verify:access": "node scripts/verify-access.mjs",
     "verify:cloudflare-deployment": "node scripts/verify-cloudflare-deployment.mjs",
-    "verify:preview": "node scripts/verify-preview.mjs"
+    "verify:preview": "node scripts/verify-preview.mjs",
+    "verify:supabase-secret": "node scripts/verify-supabase-secret.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

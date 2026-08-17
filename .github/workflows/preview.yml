@@ -29,11 +29,13 @@ jobs:
       - run: npm run build:worker
       - name: Prepare preview deployment secrets
         env:
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           PRIVILEGED_AUDIT_HMAC_KEY: ${{ secrets.PRIVILEGED_AUDIT_HMAC_KEY }}
-        run: >-
-          node scripts/write-preview-deployment-secrets.mjs
-          "$RUNNER_TEMP/muntajaa-preview-secrets.json"
+        run: |
+          npm run verify:supabase-secret
+          node scripts/write-preview-deployment-secrets.mjs "$RUNNER_TEMP/muntajaa-preview-secrets.json"
       - id: deploy
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
         with:

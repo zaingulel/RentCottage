@@ -116,6 +116,9 @@ describe("GitHub Actions delivery checks", () => {
     expect(packageJson.scripts["verify:cloudflare-deployment"]).toBe(
       "node scripts/verify-cloudflare-deployment.mjs",
     );
+    expect(packageJson.scripts["verify:supabase-secret"]).toBe(
+      "node scripts/verify-supabase-secret.mjs",
+    );
 
     const ciSource = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
     const workflow = parse(ciSource);
@@ -281,11 +284,19 @@ describe("GitHub Actions delivery checks", () => {
     expect(prepareSecrets.env.SUPABASE_SECRET_KEY).toBe(
       "${{ secrets.SUPABASE_SECRET_KEY }}",
     );
+    expect(prepareSecrets.env.SUPABASE_PROJECT_REF).toBe(
+      "${{ vars.SUPABASE_PROJECT_REF }}",
+    );
+    expect(prepareSecrets.env.SUPABASE_URL).toBe("${{ vars.SUPABASE_URL }}");
     expect(prepareSecrets.env.PRIVILEGED_AUDIT_HMAC_KEY).toBe(
       "${{ secrets.PRIVILEGED_AUDIT_HMAC_KEY }}",
     );
-    expect(prepareSecrets.run).toBe(
+    expect(prepareSecrets.run).toContain("npm run verify:supabase-secret");
+    expect(prepareSecrets.run).toContain(
       'node scripts/write-preview-deployment-secrets.mjs "$RUNNER_TEMP/muntajaa-preview-secrets.json"',
+    );
+    expect(prepareSecrets.run.indexOf("verify:supabase-secret")).toBeLessThan(
+      prepareSecrets.run.indexOf("write-preview-deployment-secrets.mjs"),
     );
     expect(deploy.env).toBeUndefined();
     expect(deploy.with.secrets).toBeUndefined();
