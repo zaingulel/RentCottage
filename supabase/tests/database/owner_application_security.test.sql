@@ -582,7 +582,8 @@ select is_empty(
 
 reset role;
 update public.owner_applications
-set status = 'draft', submitted_at = null
+set status = 'draft', submitted_at = null, review_started_at = null,
+  review_due_at = null, review_paused_at = null
 where owner_user_id = '00000000-0000-0000-0000-000000000101';
 set local role authenticated;
 

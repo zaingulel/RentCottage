@@ -469,7 +469,9 @@ test("a Cottage Owner saves, resumes and submits a complete private application"
   }
 
   await page.getByRole("button", { name: "Submit application" }).click();
-  await expect(page.getByText("Submitted for review")).toBeVisible();
+  await expect(
+    page.locator(".owner-review-status").getByText("Submitted for review"),
+  ).toBeVisible();
   await expect(page.getByLabel("Legal name")).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Submit application" }),
@@ -666,7 +668,9 @@ test("Owner Application keeps evidence controls aligned and accessible in every 
     await tabTo(page, submit);
     if (locale === "ckb") {
       await page.keyboard.press("Enter");
-      await expect(page.getByText(copy.submittedStatus)).toBeVisible();
+      await expect(
+        page.locator(".owner-review-status").getByText(copy.submittedStatus),
+      ).toBeVisible();
       await expect(page.getByRole("button", { name: copy.submit })).toHaveCount(
         0,
       );
@@ -827,6 +831,94 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   expect(decodeURIComponent(new URL(signedUrl).pathname)).toContain(
     `/owner-verification/${documentAudit.object_path}`,
   );
+
+  await page.goto("/en/administrator/owner-applications");
+  const applicationCard = page
+    .locator("article")
+    .filter({ hasText: reviewDocumentFilename });
+  await applicationCard.getByRole("link", { name: "Open application" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Owner Application review" }),
+  ).toBeVisible();
+  await expect(page.getByText("Near the eastern orchard road")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("en-administrator-review-detail.png"),
+    fullPage: true,
+  });
+
+  await page.getByRole("button", { name: "Start review" }).click();
+  const currentAdministratorStatus = page
+    .locator(".administrator-review-detail > .application-section")
+    .first()
+    .locator(".application-status");
+  await expect(currentAdministratorStatus).toHaveText("Under review");
+  const informationRequest = page
+    .locator("form.review-action-card")
+    .filter({ hasText: "Request missing information" });
+  await informationRequest
+    .getByLabel("Reason")
+    .fill("Confirm the exact private address and replace identity evidence.");
+  await informationRequest.getByLabel("Exact private address").check();
+  await informationRequest.getByLabel("Identity evidence").check();
+  await informationRequest
+    .getByRole("button", { name: "Request missing information" })
+    .click();
+  await expect(currentAdministratorStatus).toHaveText("Needs information");
+  await page.screenshot({
+    path: testInfo.outputPath("en-administrator-review-needs-information.png"),
+    fullPage: true,
+  });
+
+  await openOwnerApplication(
+    page,
+    "en",
+    journeyPhone(testInfo.project.name, ["3", "4", "5"]),
+  );
+  await expect(
+    page
+      .locator(".owner-review-status")
+      .getByText("Needs information", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".owner-response-card")
+      .getByText(
+        "Confirm the exact private address and replace identity evidence.",
+      ),
+  ).toBeVisible();
+  const ownerResponseCard = page.locator(".owner-response-card");
+  await expect(
+    ownerResponseCard.getByLabel("Exact private address"),
+  ).toBeVisible();
+  const replacementCard = ownerResponseCard.getByRole("article", {
+    name: "Identity evidence",
+  });
+  await replacementCard.locator('input[type="file"]').setInputFiles({
+    name: "replacement-identity.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\nreplacement identity\n%%EOF"),
+  });
+  await replacementCard
+    .getByRole("button", { name: "Replace document" })
+    .click();
+  await expect(
+    replacementCard.getByText("replacement-identity.pdf"),
+  ).toBeVisible();
+  await ownerResponseCard
+    .getByLabel("Exact private address")
+    .fill("Confirmed orchard road");
+  await page.screenshot({
+    path: testInfo.outputPath("en-owner-response-request.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Send requested information" })
+    .click();
+  await expect(
+    page
+      .locator(".owner-review-status")
+      .getByText("Under review", { exact: true }),
+  ).toBeVisible();
 });
 
 test("an empty administrator password is recorded as a failed attempt", async ({

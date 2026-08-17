@@ -21,7 +21,9 @@ export function parseAccountContext(value: unknown): AccountContext {
   if (row.role === "cottage_owner") {
     if (
       row.owner_approval_state !== "prospective" &&
-      row.owner_approval_state !== "approved"
+      row.owner_approval_state !== "approved" &&
+      row.owner_approval_state !== "expired" &&
+      row.owner_approval_state !== "suspended"
     ) {
       throw new Error("Account context has an invalid owner approval state");
     }

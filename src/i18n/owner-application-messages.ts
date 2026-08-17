@@ -61,9 +61,6 @@ export const ownerApplicationMessages: Record<
     privacyNote: string;
     accessRequired: string;
     verifyPhone: string;
-    draftStatus: string;
-    submittedStatus: string;
-    submittedNote: string;
     ownerSection: string;
     cottageSection: string;
     documentsSection: string;
@@ -127,10 +124,6 @@ export const ownerApplicationMessages: Record<
     accessRequired:
       "Verify your Cottage Owner phone before opening this private application.",
     verifyPhone: "Verify Cottage Owner access",
-    draftStatus: "Draft application",
-    submittedStatus: "Submitted for review",
-    submittedNote:
-      "Your complete application is locked while RentCottage reviews it. You cannot publish a cottage or receive Booking Requests yet.",
     ownerSection: "Your details",
     cottageSection: "Your first private cottage",
     documentsSection: "Private verification documents",
@@ -219,10 +212,6 @@ export const ownerApplicationMessages: Record<
       "لا تُنشر وثائق التحقق ولا تُرسل للترجمة. تنتهي صلاحية الرابط الآمن خلال 60 ثانية ويُسجّل كل وصول.",
     accessRequired: "تحقق من هاتف مالك البيت قبل فتح هذا الطلب الخاص.",
     verifyPhone: "تحقق من دخول مالك البيت",
-    draftStatus: "طلب مسودة",
-    submittedStatus: "أُرسل للمراجعة",
-    submittedNote:
-      "طلبك الكامل مقفل أثناء المراجعة. لا يمكنك نشر بيت أو استلام طلبات حجز بعد.",
     ownerSection: "بياناتك",
     cottageSection: "بيتك الأول الخاص",
     documentsSection: "وثائق التحقق الخاصة",
@@ -339,10 +328,6 @@ export const ownerApplicationMessages: Record<
     accessRequired:
       "پێش کردنەوەی ئەم داواکارییە تایبەتە ژمارەی خاوەنی ماڵ پشتڕاست بکەرەوە.",
     verifyPhone: "دەستگەیشتنی خاوەنی ماڵ پشتڕاست بکەرەوە",
-    draftStatus: "داواکاری ڕەشنووس",
-    submittedStatus: "بۆ پێداچوونەوە نێردرا",
-    submittedNote:
-      "داواکاری تەواوت لە کاتی پێداچوونەوەدا داخراوە. هێشتا ناتوانیت ماڵ بڵاو بکەیتەوە یان داواکاری حجز وەربگریت.",
     ownerSection: "زانیارییەکانت",
     cottageSection: "یەکەم ماڵی تایبەتت",
     documentsSection: "بەڵگە تایبەتەکانی پشتڕاستکردنەوە",

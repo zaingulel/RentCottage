@@ -60,7 +60,7 @@ export default async function OwnerApplicationReviewPage({
     unstable_rethrow(error);
     console.error("Owner Application review queue failed", {
       phase: "owner_application_review_queue_load",
-      cause: error,
+      result: "unavailable",
     });
   }
 

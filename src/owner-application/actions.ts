@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 
 import { isLocale } from "@/i18n/routing";
 import { verificationDocumentMaximumBytes } from "./owner-application";
+import {
+  executeOwnerApplicationInformationResponse,
+  executeOwnerApplicationRenewalSubmission,
+  ownerApplicationReviewFailureStatus,
+} from "./owner-application-review";
+import { createRequestSupabaseClient } from "@/access/supabase-server";
 
 import { createRequestOwnerApplication } from "./request-owner-application";
 
@@ -64,6 +70,10 @@ export type OwnerDocumentAccessState =
       url: string;
       expiresInSeconds: number;
     };
+
+export type OwnerApplicationResponseState = {
+  status: "idle" | "submitted" | "invalid" | "conflict" | "unavailable";
+};
 
 function localeFrom(formData: FormData) {
   const value = formData.get("locale");
@@ -172,4 +182,62 @@ export async function createOwnerDocumentAccessAction(
 ): Promise<OwnerDocumentAccessState> {
   const application = await createRequestOwnerApplication();
   return application.createDocumentAccess(formData.get("documentId"));
+}
+
+export async function respondToOwnerApplicationAction(
+  _previous: OwnerApplicationResponseState,
+  formData: FormData,
+): Promise<OwnerApplicationResponseState> {
+  const locale = localeFrom(formData);
+  if (!locale) return { status: "invalid" };
+  const requestedFields = formData
+    .getAll("requestedField")
+    .filter((value): value is string => typeof value === "string");
+  const fieldValues: Record<string, unknown> = {};
+  for (const field of requestedFields) {
+    const values = formData
+      .getAll(field)
+      .filter((value): value is string => typeof value === "string");
+    if (field === "amenities") fieldValues[field] = values;
+    else if (["capacity", "bedrooms", "bathrooms"].includes(field)) {
+      fieldValues[field] = Number(values[0]);
+    } else fieldValues[field] = values[0] ?? "";
+  }
+  try {
+    const client = await createRequestSupabaseClient();
+    await executeOwnerApplicationInformationResponse(client, {
+      expectedVersion: Number(textFrom(formData, "expectedVersion")),
+      fieldValues,
+      confirmedDocumentKinds: formData
+        .getAll("confirmedDocumentKinds")
+        .filter((value): value is string => typeof value === "string"),
+    });
+  } catch (error) {
+    return { status: ownerApplicationReviewFailureStatus(error) };
+  }
+  revalidatePath(`/${locale}/owner/application`);
+  revalidatePath(`/${locale}/administrator/owner-applications`);
+  return { status: "submitted" };
+}
+
+export async function submitOwnerApplicationRenewalAction(
+  _previous: OwnerApplicationResponseState,
+  formData: FormData,
+): Promise<OwnerApplicationResponseState> {
+  const locale = localeFrom(formData);
+  if (!locale) return { status: "invalid" };
+  try {
+    const client = await createRequestSupabaseClient();
+    await executeOwnerApplicationRenewalSubmission(client, {
+      expectedVersion: Number(textFrom(formData, "expectedVersion")),
+      confirmedDocumentKinds: formData
+        .getAll("confirmedDocumentKinds")
+        .filter((value): value is string => typeof value === "string"),
+    });
+  } catch (error) {
+    return { status: ownerApplicationReviewFailureStatus(error) };
+  }
+  revalidatePath(`/${locale}/owner/application`);
+  revalidatePath(`/${locale}/administrator/owner-applications`);
+  return { status: "submitted" };
 }

@@ -1575,6 +1575,85 @@ a:focus-visible {
   }
 }
 
+.administrator-review-detail,
+.owner-review-status {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.review-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 0;
+}
+
+.review-detail-grid > div,
+.review-action-card,
+.owner-response-card {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+.review-detail-grid dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.review-detail-grid dd {
+  margin: 0.35rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.review-actions-section,
+.review-action-card,
+.owner-response-card,
+.owner-response-card form {
+  display: grid;
+  gap: 1rem;
+}
+
+.review-action-card fieldset {
+  display: grid;
+  gap: 0.55rem;
+  border: 0;
+  padding: 0;
+}
+
+.review-action-card fieldset label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.application-status-needs_information,
+.application-status-expired,
+.application-status-suspended,
+.application-status-rejected {
+  background: #fff0e8;
+  color: #8a3216;
+}
+
+.application-status-under_review {
+  background: #eef3ff;
+  color: #264b8c;
+}
+
+.application-status-approved {
+  background: #e7f6ec;
+  color: #176638;
+}
+
+@media (max-width: 700px) {
+  .review-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

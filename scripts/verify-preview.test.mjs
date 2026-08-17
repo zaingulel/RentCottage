@@ -1,20 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 import { main, parsePreviewUrl, verifyPreview } from "./verify-preview.mjs";
 
-function response({ ok = true, json = {} } = {}) {
+function response({ ok = true, status = ok ? 200 : 503, json = {} } = {}) {
   return {
     ok,
-    status: ok ? 200 : 503,
+    status,
     json: async () => json,
   };
 }
 
-function healthyPreviewFetch() {
+function healthyPreviewFetch(commit = "abc123def456") {
   return vi
     .fn()
     .mockResolvedValueOnce(response())
     .mockResolvedValueOnce(
-      response({ json: { ok: true, supabase: { connected: true } } }),
+      response({
+        json: {
+          ok: true,
+          deployment: { commit },
+          supabase: { connected: true },
+        },
+      }),
     );
 }
 
@@ -56,7 +62,11 @@ describe("preview verification command", () => {
     const fetchImpl = healthyPreviewFetch();
 
     await expect(
-      verifyPreview(new URL("https://preview.example.com"), fetchImpl),
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+      ),
     ).resolves.toEqual({
       shellUrl: "https://preview.example.com/ar",
       healthUrl: "https://preview.example.com/api/health?check=supabase",
@@ -64,17 +74,180 @@ describe("preview verification command", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("retries boundedly while a new Cloudflare deployment propagates", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(response({ ok: false, status: 404 }))
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(response({ ok: false }))
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(
+        response({
+          json: {
+            ok: true,
+            deployment: { commit: "abc123def456" },
+            supabase: { connected: true },
+          },
+        }),
+      );
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+        { maxAttempts: 3, retryDelayMs: 1, sleep },
+      ),
+    ).resolves.toEqual({
+      shellUrl: "https://preview.example.com/ar",
+      healthUrl: "https://preview.example.com/api/health?check=supabase",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    expect(sleep.mock.calls).toEqual([[1], [2]]);
+  });
+
+  it("retries when the hosted health response contains invalid JSON", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError("invalid JSON");
+        },
+      })
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(
+        response({
+          json: {
+            ok: true,
+            deployment: { commit: "abc123def456" },
+            supabase: { connected: true },
+          },
+        }),
+      );
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+        { maxAttempts: 2, retryDelayMs: 1, sleep },
+      ),
+    ).resolves.toEqual({
+      shellUrl: "https://preview.example.com/ar",
+      healthUrl: "https://preview.example.com/api/health?check=supabase",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(sleep).toHaveBeenCalledOnce();
+  });
+
+  it("retries a rate-limited hosted response", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(response({ ok: false, status: 429 }))
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(
+        response({
+          json: {
+            ok: true,
+            deployment: { commit: "abc123def456" },
+            supabase: { connected: true },
+          },
+        }),
+      );
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+        { maxAttempts: 2, retryDelayMs: 1, sleep },
+      ),
+    ).resolves.toEqual({
+      shellUrl: "https://preview.example.com/ar",
+      healthUrl: "https://preview.example.com/api/health?check=supabase",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledOnce();
+  });
+
+  it("returns the last transient error after exhausting bounded retries", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(response({ ok: false }))
+      .mockResolvedValueOnce(response({ ok: false }));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+        { maxAttempts: 2, retryDelayMs: 1, sleep },
+      ),
+    ).rejects.toThrow("Arabic shell returned HTTP 503");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledOnce();
+  });
+
+  it("fails immediately on a non-transient authorization response", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+    });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+        { maxAttempts: 6, retryDelayMs: 1, sleep },
+      ),
+    ).rejects.toThrow("Arabic shell returned HTTP 401");
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
   it("fails when the hosted health check cannot prove Supabase connectivity", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(response())
       .mockResolvedValueOnce(
-        response({ json: { ok: true, supabase: { connected: false } } }),
+        response({
+          json: {
+            ok: true,
+            deployment: { commit: "abc123def456" },
+            supabase: { connected: false },
+          },
+        }),
       );
 
     await expect(
-      verifyPreview(new URL("https://preview.example.com"), fetchImpl),
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "abc123def456",
+        fetchImpl,
+        { maxAttempts: 1 },
+      ),
     ).rejects.toThrow("did not prove Supabase connectivity");
+  });
+
+  it("fails when the hosted Worker is not the exact checked-out commit", async () => {
+    await expect(
+      verifyPreview(
+        new URL("https://preview.example.com"),
+        "expected-head",
+        healthyPreviewFetch("previous-head"),
+        { maxAttempts: 1 },
+      ),
+    ).rejects.toThrow("did not serve expected commit expected-head");
   });
 
   it("aborts a hosted request that does not respond", async () => {
@@ -93,7 +266,9 @@ describe("preview verification command", () => {
     try {
       const verification = verifyPreview(
         new URL("https://preview.example.com"),
+        "abc123def456",
         fetchImpl,
+        { maxAttempts: 1 },
       );
       const rejection = expect(verification).rejects.toThrow(
         "timed out after 10000ms",
@@ -110,11 +285,12 @@ describe("preview verification command", () => {
 
   it("reports the exact verified URL and commit", async () => {
     const stdout = vi.fn();
-    const fetchImpl = healthyPreviewFetch();
+    const fetchImpl = healthyPreviewFetch("abc123def456");
 
     const exitCode = await main(["https://preview.example.com"], {
       fetchImpl,
       resolveCommit: () => "abc123def456",
+      retryOptions: { maxAttempts: 1 },
       stderr: vi.fn(),
       stdout,
     });
@@ -132,6 +308,7 @@ describe("preview verification command", () => {
     const exitCode = await main(["https://preview.example.com"], {
       fetchImpl,
       resolveCommit: () => "unused",
+      retryOptions: { maxAttempts: 1 },
       stderr,
       stdout: vi.fn(),
     });

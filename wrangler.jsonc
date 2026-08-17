@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "rentcottage-development",
+  "name": "muntajaa-development",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-08-13",
   "compatibility_flags": ["nodejs_compat"],
@@ -16,7 +16,7 @@
   },
   "env": {
     "test": {
-      "name": "rentcottage-test",
+      "name": "muntajaa-test",
       "vars": {
         "APP_ENVIRONMENT": "test",
         "SUPABASE_PROJECT_REF": "local-test",
@@ -25,14 +25,13 @@
       },
     },
     "preview": {
-      "name": "rentcottage-preview",
-      "keep_vars": true,
+      "name": "muntajaa-preview",
       "vars": {
         "APP_ENVIRONMENT": "preview",
       },
     },
     "production": {
-      "name": "rentcottage-production",
+      "name": "muntajaa-production",
       "keep_vars": true,
       "vars": {
         "APP_ENVIRONMENT": "production",

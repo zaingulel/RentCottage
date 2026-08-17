@@ -4,6 +4,7 @@ import {
   verificationDocumentKinds,
   type VerificationDocumentKind,
 } from "./owner-application";
+import { isOwnerApplicationStatus } from "./owner-application-status";
 import type {
   OwnerApplicationDraft,
   OwnerApplicationRepository,
@@ -80,7 +81,10 @@ function parseDocument(value: unknown): OwnerVerificationDocument {
 export interface SubmittedOwnerApplicationReview {
   applicationId: string;
   legalName: string;
+  status: "submitted" | "under_review";
+  version: number;
   submittedAt: string;
+  reviewDueAt: string;
   documents: Array<{
     id: string;
     kind: VerificationDocumentKind;
@@ -101,6 +105,15 @@ export interface SubmittedOwnerApplicationReviewPage {
 const reviewQueuePageSize = 50;
 const reviewCursorTimestampPattern =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function reviewStatus(
+  value: unknown,
+): SubmittedOwnerApplicationReview["status"] {
+  if (value !== "submitted" && value !== "under_review") {
+    throw new Error("Owner Application review status is invalid");
+  }
+  return value;
+}
 
 export function parseSubmittedOwnerApplicationReviewCursor(
   submittedAt: unknown,
@@ -136,8 +149,8 @@ export async function loadSubmittedOwnerApplicationsForReview(
   }
   let query = client
     .from("owner_applications")
-    .select("id, legal_name, submitted_at")
-    .eq("status", "submitted")
+    .select("id, legal_name, status, version, submitted_at, review_due_at")
+    .in("status", ["submitted", "under_review"])
     .order("submitted_at")
     .order("id");
   if (validatedCursor) {
@@ -165,10 +178,19 @@ export async function loadSubmittedOwnerApplicationsForReview(
     return {
       applicationId,
       legalName: requiredString(application.legal_name, "legal name"),
+      status: reviewStatus(application.status),
+      version:
+        Number.isInteger(application.version) &&
+        (application.version as number) >= 1
+          ? (application.version as number)
+          : (() => {
+              throw new Error("Owner Application review version is invalid");
+            })(),
       submittedAt: requiredString(
         application.submitted_at,
         "submission timestamp",
       ),
+      reviewDueAt: requiredString(application.review_due_at, "review deadline"),
       documents: [] as SubmittedOwnerApplicationReview["documents"],
     };
   });
@@ -249,7 +271,7 @@ function parseSnapshot(
   if (
     !uuidPattern.test(applicationId) ||
     !uuidPattern.test(ownerUserId) ||
-    (status !== "draft" && status !== "submitted") ||
+    !isOwnerApplicationStatus(status) ||
     (applicantKind !== "individual" && applicantKind !== "company") ||
     (licensingBasis !== "licence" && licensingBasis !== "exemption") ||
     !Array.isArray(documentValues)
@@ -290,6 +312,17 @@ function parseSnapshot(
       application.submitted_at === null
         ? null
         : requiredString(application.submitted_at, "submission timestamp"),
+    version:
+      Number.isInteger(application.version) &&
+      (application.version as number) >= 1
+        ? (application.version as number)
+        : (() => {
+            throw new Error("Owner Application version is invalid");
+          })(),
+    reviewDueAt:
+      application.review_due_at === null
+        ? null
+        : requiredString(application.review_due_at, "review deadline"),
   };
 }
 
@@ -377,7 +410,7 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
     const applicationResult = await this.client
       .from("owner_applications")
       .select(
-        "id, owner_user_id, status, applicant_kind, legal_name, company_name, licensing_basis, exemption_basis, submitted_at",
+        "id, owner_user_id, status, applicant_kind, legal_name, company_name, licensing_basis, exemption_basis, submitted_at, version, review_due_at",
       )
       .eq("owner_user_id", ownerUserId)
       .limit(1)
@@ -472,9 +505,10 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
     originalFilename: string;
     mediaType: string;
     sizeBytes: number;
+    contentDigest: string;
   }): Promise<string> {
     const { data, error } = await this.privilegedClient.rpc(
-      "prepare_owner_verification_document_upload",
+      "prepare_owner_verification_document_upload_v2",
       {
         requested_owner_user_id: input.ownerUserId,
         requested_application_id: input.applicationId,
@@ -483,6 +517,7 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
         requested_original_filename: input.originalFilename,
         requested_media_type: input.mediaType,
         requested_size_bytes: input.sizeBytes,
+        requested_content_digest: input.contentDigest,
       },
     );
     assertProviderSuccess(error);
@@ -491,7 +526,7 @@ export class SupabaseOwnerApplicationRepository implements OwnerApplicationRepos
 
   async registerDocument(cleanupId: string) {
     const { data, error } = await this.privilegedClient.rpc(
-      "register_owner_verification_document",
+      "register_owner_verification_document_v2",
       { target_cleanup_id: cleanupId },
     );
     assertProviderSuccess(error);

@@ -27,23 +27,37 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npm run build:worker
-      - id: deploy
-        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
+      - name: Prepare preview deployment secrets
         env:
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           PRIVILEGED_AUDIT_HMAC_KEY: ${{ secrets.PRIVILEGED_AUDIT_HMAC_KEY }}
+        run: |
+          npm run verify:supabase-secret
+          node scripts/write-preview-deployment-secrets.mjs "$RUNNER_TEMP/muntajaa-preview-secrets.json"
+      - id: deploy
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           environment: preview
-          secrets: |
-            SUPABASE_SECRET_KEY
-            PRIVILEGED_AUDIT_HMAC_KEY
           command: >-
-            versions upload --env preview
+            deploy --env preview
+            --secrets-file ${{ runner.temp }}/muntajaa-preview-secrets.json
+            --tag ${{ github.sha }}
             --var SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}
             --var SUPABASE_URL:${{ vars.SUPABASE_URL }}
             --var SUPABASE_PUBLISHABLE_KEY:${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+            --var DEPLOYMENT_COMMIT:${{ github.sha }}
+      - name: Remove preview deployment secrets
+        if: always()
+        run: rm -f "$RUNNER_TEMP/muntajaa-preview-secrets.json"
+      - name: Verify active Cloudflare version
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run verify:cloudflare-deployment -- preview "${{ github.sha }}"
       - name: Verify Cloudflare preview
         env:
           PREVIEW_URL: ${{ steps.deploy.outputs.deployment-url }}

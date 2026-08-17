@@ -10,6 +10,9 @@ export const ownerApplicationReviewMessages: Record<
     signIn: string;
     empty: string;
     submitted: string;
+    underReview: string;
+    reviewDue: string;
+    openApplication: string;
     documents: string;
     createLink: string;
     pending: string;
@@ -31,6 +34,9 @@ export const ownerApplicationReviewMessages: Record<
     signIn: "Verify administrator access",
     empty: "There are no submitted Owner Applications to review.",
     submitted: "Submitted",
+    underReview: "Under review",
+    reviewDue: "Review target",
+    openApplication: "Open application",
     documents: "Verification documents",
     createLink: "Create secure link",
     pending: "Creating secure link.",
@@ -52,6 +58,9 @@ export const ownerApplicationReviewMessages: Record<
     signIn: "تحقق من دخول المسؤول",
     empty: "لا توجد طلبات مالك مرسلة للمراجعة.",
     submitted: "أُرسل",
+    underReview: "قيد المراجعة",
+    reviewDue: "موعد المراجعة المستهدف",
+    openApplication: "افتح الطلب",
     documents: "وثائق التحقق",
     createLink: "أنشئ رابطاً آمناً",
     pending: "يجري إنشاء الرابط الآمن.",
@@ -73,6 +82,9 @@ export const ownerApplicationReviewMessages: Record<
     signIn: "دەسەڵاتی بەڕێوەبەر پشتڕاست بکەرەوە",
     empty: "هیچ داواکارییەکی نێردراوی خاوەن بۆ پێداچوونەوە نییە.",
     submitted: "نێردراوە",
+    underReview: "لە ژێر پێداچوونەوەدایە",
+    reviewDue: "ئامانجی پێداچوونەوە",
+    openApplication: "داواکارییەکە بکەرەوە",
     documents: "بەڵگەنامەکانی پشتڕاستکردنەوە",
     createLink: "بەستەری پارێزراو دروست بکە",
     pending: "بەستەری پارێزراو دروست دەکرێت.",

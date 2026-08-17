@@ -113,6 +113,12 @@ describe("GitHub Actions delivery checks", () => {
     expect(packageJson.scripts["verify:preview"]).toBe(
       "node scripts/verify-preview.mjs",
     );
+    expect(packageJson.scripts["verify:cloudflare-deployment"]).toBe(
+      "node scripts/verify-cloudflare-deployment.mjs",
+    );
+    expect(packageJson.scripts["verify:supabase-secret"]).toBe(
+      "node scripts/verify-supabase-secret.mjs",
+    );
 
     const ciSource = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
     const workflow = parse(ciSource);
@@ -266,22 +272,44 @@ describe("GitHub Actions delivery checks", () => {
     const deploy = preview.steps.find(
       (step: { id?: string }) => step.id === "deploy",
     );
+    const prepareSecrets = preview.steps.find(
+      (step: { name?: string }) =>
+        step.name === "Prepare preview deployment secrets",
+    );
     expect(
       preview.steps.filter((step: { env?: Record<string, string> }) =>
         JSON.stringify(step.env ?? {}).includes("SUPABASE_SECRET_KEY"),
       ),
-    ).toEqual([deploy]);
-    expect(deploy.env.SUPABASE_SECRET_KEY).toBe(
+    ).toEqual([prepareSecrets]);
+    expect(prepareSecrets.env.SUPABASE_SECRET_KEY).toBe(
       "${{ secrets.SUPABASE_SECRET_KEY }}",
     );
-    expect(deploy.env.PRIVILEGED_AUDIT_HMAC_KEY).toBe(
+    expect(prepareSecrets.env.SUPABASE_PROJECT_REF).toBe(
+      "${{ vars.SUPABASE_PROJECT_REF }}",
+    );
+    expect(prepareSecrets.env.SUPABASE_URL).toBe("${{ vars.SUPABASE_URL }}");
+    expect(prepareSecrets.env.PRIVILEGED_AUDIT_HMAC_KEY).toBe(
       "${{ secrets.PRIVILEGED_AUDIT_HMAC_KEY }}",
     );
-    expect(deploy.with.secrets).toBe(
-      "SUPABASE_SECRET_KEY\nPRIVILEGED_AUDIT_HMAC_KEY\n",
+    expect(prepareSecrets.run).toContain("npm run verify:supabase-secret");
+    expect(prepareSecrets.run).toContain(
+      'node scripts/write-preview-deployment-secrets.mjs "$RUNNER_TEMP/muntajaa-preview-secrets.json"',
     );
+    expect(prepareSecrets.run.indexOf("verify:supabase-secret")).toBeLessThan(
+      prepareSecrets.run.indexOf("write-preview-deployment-secrets.mjs"),
+    );
+    expect(deploy.env).toBeUndefined();
+    expect(deploy.with.secrets).toBeUndefined();
     expect(deploy.with.environment).toBe("preview");
-    expect(deploy.with.command).toContain("versions upload --env preview");
+    expect(deploy.with.command).toContain("deploy --env preview");
+    expect(deploy.with.command).toContain(
+      "--secrets-file ${{ runner.temp }}/muntajaa-preview-secrets.json",
+    );
+    expect(deploy.with.command).toContain("--tag ${{ github.sha }}");
+    expect(deploy.with.command).toContain(
+      "DEPLOYMENT_COMMIT:${{ github.sha }}",
+    );
+    expect(deploy.with.command).not.toContain("versions upload");
     expect(deploy.with.command).toContain(
       "SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}",
     );
@@ -291,8 +319,33 @@ describe("GitHub Actions delivery checks", () => {
     expect(deploy.with.command).toContain(
       "SUPABASE_PUBLISHABLE_KEY:${{ vars.SUPABASE_PUBLISHABLE_KEY }}",
     );
-    expect(JSON.stringify(preview.steps)).toContain(
-      "versions upload --env preview",
+    expect(JSON.stringify(preview.steps)).toContain("deploy --env preview");
+    const cleanupSecrets = preview.steps.find(
+      (step: { name?: string }) =>
+        step.name === "Remove preview deployment secrets",
+    );
+    expect(cleanupSecrets.if).toBe("always()");
+    expect(cleanupSecrets.run).toBe(
+      'rm -f "$RUNNER_TEMP/muntajaa-preview-secrets.json"',
+    );
+    expect(preview.steps.indexOf(cleanupSecrets)).toBeGreaterThan(
+      preview.steps.indexOf(deploy),
+    );
+    const deploymentVerification = preview.steps.find(
+      (step: { name?: string }) =>
+        step.name === "Verify active Cloudflare version",
+    );
+    expect(deploymentVerification.env.CLOUDFLARE_API_TOKEN).toBe(
+      "${{ secrets.CLOUDFLARE_API_TOKEN }}",
+    );
+    expect(deploymentVerification.env.CLOUDFLARE_ACCOUNT_ID).toBe(
+      "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
+    );
+    expect(deploymentVerification.run).toBe(
+      'npm run verify:cloudflare-deployment -- preview "${{ github.sha }}"',
+    );
+    expect(preview.steps.indexOf(cleanupSecrets)).toBeLessThan(
+      preview.steps.indexOf(deploymentVerification),
     );
     const previewVerification = preview.steps.find(
       (step: { name?: string }) => step.name === "Verify Cloudflare preview",
@@ -303,5 +356,16 @@ describe("GitHub Actions delivery checks", () => {
     expect(previewVerification.run).toBe(
       'npm run verify:preview -- "$PREVIEW_URL"',
     );
+  });
+
+  it("keeps every Cloudflare deployment target on the owner-approved Muntajaa name", () => {
+    const wrangler = readFileSync(resolve("wrangler.jsonc"), "utf8");
+
+    expect(wrangler).toContain('"name": "muntajaa-development"');
+    expect(wrangler).toContain('"name": "muntajaa-test"');
+    expect(wrangler).toContain('"name": "muntajaa-preview"');
+    expect(wrangler).toContain('"name": "muntajaa-production"');
+    expect(wrangler).not.toMatch(/"name": "rentcottage-/);
+    expect(wrangler).not.toMatch(/"preview":\s*\{[^}]*"keep_vars"/s);
   });
 });

@@ -36,6 +36,7 @@ describe("server environment", () => {
       }),
     ).toEqual({
       name: "test",
+      deployment: { commit: null },
       privilegedAuditHmacKey: "local-audit-hmac-key-with-32-characters",
       supabase: {
         projectRef: "local-test",
@@ -44,6 +45,26 @@ describe("server environment", () => {
         secretKey: "local-secret",
       },
     });
+  });
+
+  it("requires a validated deployment commit in hosted environments", () => {
+    const hosted = {
+      APP_ENVIRONMENT: "preview",
+      SUPABASE_PROJECT_REF: "preview-ref",
+      SUPABASE_URL: "https://preview-ref.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "publishable",
+      SUPABASE_SECRET_KEY: "secret",
+      PRIVILEGED_AUDIT_HMAC_KEY: "audit-hmac-key-with-at-least-32-characters",
+    } as const;
+
+    expect(() => readServerEnvironment(hosted)).toThrow(/DEPLOYMENT_COMMIT/);
+    expect(() =>
+      readServerEnvironment({ ...hosted, DEPLOYMENT_COMMIT: "not-a-sha" }),
+    ).toThrow(/DEPLOYMENT_COMMIT/);
+    expect(
+      readServerEnvironment({ ...hosted, DEPLOYMENT_COMMIT: "a".repeat(40) })
+        .deployment,
+    ).toEqual({ commit: "a".repeat(40) });
   });
 
   it("rejects browser-prefixed server credentials", () => {

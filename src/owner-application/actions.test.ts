@@ -1,24 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { application, revalidatePath } = vi.hoisted(() => ({
-  application: {
-    saveDraft: vi.fn(),
-    uploadDocument: vi.fn(),
-    submit: vi.fn(),
-    createDocumentAccess: vi.fn(),
-  },
-  revalidatePath: vi.fn(),
-}));
+const { application, createRequestClient, revalidatePath, rpc } = vi.hoisted(
+  () => ({
+    application: {
+      saveDraft: vi.fn(),
+      uploadDocument: vi.fn(),
+      submit: vi.fn(),
+      createDocumentAccess: vi.fn(),
+    },
+    createRequestClient: vi.fn(),
+    revalidatePath: vi.fn(),
+    rpc: vi.fn(),
+  }),
+);
 
 vi.mock("./request-owner-application", () => ({
   createRequestOwnerApplication: vi.fn().mockResolvedValue(application),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("@/access/supabase-server", () => ({
+  createRequestSupabaseClient: createRequestClient,
+}));
 
 import {
   createOwnerDocumentAccessAction,
+  respondToOwnerApplicationAction,
   saveOwnerApplicationAction,
+  submitOwnerApplicationRenewalAction,
   submitOwnerApplicationAction,
   uploadOwnerDocumentAction,
 } from "./actions";
@@ -46,7 +55,10 @@ function completeForm() {
 }
 
 describe("Owner Application server actions", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createRequestClient.mockResolvedValue({ rpc });
+  });
 
   it("saves the visible draft fields and refreshes the owner page", async () => {
     application.saveDraft.mockResolvedValue({ status: "saved" });
@@ -223,5 +235,61 @@ describe("Owner Application server actions", () => {
       url: "https://storage.test/signed-document",
       expiresInSeconds: 60,
     });
+  });
+
+  it.each([undefined, "", "3.5"])(
+    "maps requested capacity %# to invalid without calling the provider",
+    async (capacity) => {
+      const form = new FormData();
+      form.set("locale", "en");
+      form.set("expectedVersion", "3");
+      form.set("requestedField", "capacity");
+      if (capacity !== undefined) form.set("capacity", capacity);
+
+      await expect(
+        respondToOwnerApplicationAction({ status: "idle" }, form),
+      ).resolves.toEqual({ status: "invalid" });
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it("preserves a stale information response as a conflict", async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: "RC409" } });
+    const form = new FormData();
+    form.set("locale", "en");
+    form.set("expectedVersion", "3");
+    form.set("requestedField", "exact_address");
+    form.set("exact_address", "Renewed private road");
+
+    await expect(
+      respondToOwnerApplicationAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "conflict" });
+  });
+
+  it("keeps an information-response provider outage private and unavailable", async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: "XX000", message: "private provider detail" },
+    });
+    const form = new FormData();
+    form.set("locale", "en");
+    form.set("expectedVersion", "3");
+    form.set("requestedField", "exact_address");
+    form.set("exact_address", "Renewed private road");
+
+    await expect(
+      respondToOwnerApplicationAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "unavailable" });
+  });
+
+  it("maps an empty renewal scope to invalid without calling the provider", async () => {
+    const form = new FormData();
+    form.set("locale", "en");
+    form.set("expectedVersion", "8");
+
+    await expect(
+      submitOwnerApplicationRenewalAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

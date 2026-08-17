@@ -57,7 +57,10 @@ describe("Supabase Owner Application adapter", () => {
       {
         id: "20000000-0000-4000-8000-000000000001",
         legal_name: "Zana Kareem",
+        status: "submitted",
+        version: 2,
         submitted_at: "2026-08-14T10:00:00.000Z",
+        review_due_at: "2026-08-17T10:00:00.000Z",
       },
     ]);
     const documents = result([
@@ -72,7 +75,7 @@ describe("Supabase Owner Application adapter", () => {
       if (table === "owner_applications") {
         return {
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
+            in: vi.fn().mockReturnValue({
               order: vi.fn().mockReturnValue({
                 order: vi.fn().mockReturnValue({
                   limit: vi.fn().mockReturnValue(applications),
@@ -102,7 +105,10 @@ describe("Supabase Owner Application adapter", () => {
         {
           applicationId: "20000000-0000-4000-8000-000000000001",
           legalName: "Zana Kareem",
+          status: "submitted",
+          version: 2,
           submittedAt: "2026-08-14T10:00:00.000Z",
+          reviewDueAt: "2026-08-17T10:00:00.000Z",
           documents: [
             {
               id: "40000000-0000-4000-8000-000000000001",
@@ -120,7 +126,10 @@ describe("Supabase Owner Application adapter", () => {
     const applicationRows = Array.from({ length: 51 }, (_, index) => ({
       id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
       legal_name: `Owner ${index + 1}`,
+      status: "submitted",
+      version: 2,
       submitted_at: "2026-08-14T10:00:00.000Z",
+      review_due_at: "2026-08-17T10:00:00.000Z",
     }));
     const documentBatches: string[][] = [];
     const limit = vi
@@ -132,7 +141,7 @@ describe("Supabase Owner Application adapter", () => {
       if (table === "owner_applications") {
         return {
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
+            in: vi.fn().mockReturnValue({
               order: vi.fn().mockReturnValue({
                 order: vi.fn().mockReturnValue({
                   limit,
@@ -187,6 +196,8 @@ describe("Supabase Owner Application adapter", () => {
       licensing_basis: "licence",
       exemption_basis: null,
       submitted_at: null,
+      version: 1,
+      review_due_at: null,
     });
     const profile = result({
       name: "Garden House",
@@ -255,6 +266,77 @@ describe("Supabase Owner Application adapter", () => {
       "owner_user_id",
       ownerUserId,
     );
+  });
+
+  it.each([0, -1])("rejects owner snapshot version %s", async (version) => {
+    const ownerUserId = "10000000-0000-4000-8000-000000000001";
+    const application = result({
+      id: "20000000-0000-4000-8000-000000000001",
+      owner_user_id: ownerUserId,
+      status: "draft",
+      applicant_kind: "individual",
+      legal_name: "Zana Kareem",
+      company_name: null,
+      licensing_basis: "licence",
+      exemption_basis: null,
+      submitted_at: null,
+      version,
+      review_due_at: null,
+    });
+    const profile = result({
+      name: "Garden House",
+      governorate: "Erbil",
+      approximate_location: "Shaqlawa countryside",
+      exact_address: "Near the eastern orchard road",
+      capacity: 8,
+      bedrooms: 3,
+      bathrooms: 2,
+      amenities: ["garden"],
+      description: "A quiet family cottage.",
+      house_rules: "Families only.",
+    });
+    const from = vi.fn((table: string) => {
+      if (table === "owner_applications") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              limit: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockReturnValue(application),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "owner_verification_documents") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue(result([])),
+            }),
+          }),
+        };
+      }
+      return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockReturnValue(profile),
+          }),
+        }),
+      };
+    });
+    const client = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: ownerUserId } },
+          error: null,
+        }),
+      },
+      from,
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseOwnerApplicationRepository(client, client).load(),
+    ).rejects.toThrow("Owner Application version is invalid");
   });
 
   it("sends a normalized draft through the atomic save function", async () => {
@@ -326,7 +408,7 @@ describe("Supabase Owner Application adapter", () => {
       previousCleanupId: "50000000-0000-4000-8000-000000000002",
     });
     expect(privilegedRpc).toHaveBeenCalledWith(
-      "register_owner_verification_document",
+      "register_owner_verification_document_v2",
       {
         target_cleanup_id: "50000000-0000-4000-8000-000000000001",
       },
@@ -385,10 +467,11 @@ describe("Supabase Owner Application adapter", () => {
         originalFilename: "passport.pdf",
         mediaType: "application/pdf",
         sizeBytes: 128,
+        contentDigest: "a".repeat(64),
       }),
     ).resolves.toBe("50000000-0000-4000-8000-000000000001");
     expect(privilegedRpc).toHaveBeenCalledWith(
-      "prepare_owner_verification_document_upload",
+      "prepare_owner_verification_document_upload_v2",
       expect.objectContaining({ requested_kind: "identity" }),
     );
     expect(authenticatedRpc).not.toHaveBeenCalled();
