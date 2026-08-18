@@ -66,7 +66,11 @@ function loadMalformedProviderProfile({
       }
       return {
         select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({ order: vi.fn(() => photosResult) }),
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn(() => photosResult),
+            }),
+          }),
         }),
       };
     }),
@@ -104,19 +108,21 @@ describe("Supabase Cottage Profile adapter", () => {
       }));
       const photosQuery = {
         in: vi.fn().mockReturnValue({
-          order: vi.fn(() =>
-            result(
-              profiles.map((profile, index) => ({
-                profile_id: profile.id,
-                id: `71000000-0000-4000-8000-00000000000${index + 1}`,
-                original_filename: `cottage-${index + 1}.webp`,
-                media_type: "image/webp",
-                size_bytes: 128,
-                state: "ready",
-                updated_at: "2026-08-17T09:05:00.000Z",
-              })),
+          eq: vi.fn().mockReturnValue({
+            order: vi.fn(() =>
+              result(
+                profiles.map((profile, index) => ({
+                  profile_id: profile.id,
+                  id: `71000000-0000-4000-8000-00000000000${index + 1}`,
+                  original_filename: `cottage-${index + 1}.webp`,
+                  media_type: "image/webp",
+                  size_bytes: 128,
+                  state: "ready",
+                  updated_at: "2026-08-17T09:05:00.000Z",
+                })),
+              ),
             ),
-          ),
+          }),
         }),
       };
       const sourcesQuery = {
@@ -222,13 +228,15 @@ describe("Supabase Cottage Profile adapter", () => {
       in: vi.fn((_field: string, profileIds: string[]) => {
         photoQueries.push(profileIds);
         return {
-          order: vi.fn(() =>
-            result(
-              profileIds
-                .flatMap((profileId) => photosByProfile.get(profileId) ?? [])
-                .slice(0, 1000),
+          eq: vi.fn().mockReturnValue({
+            order: vi.fn(() =>
+              result(
+                profileIds
+                  .flatMap((profileId) => photosByProfile.get(profileId) ?? [])
+                  .slice(0, 1000),
+              ),
             ),
-          ),
+          }),
         };
       }),
     };
@@ -294,7 +302,7 @@ describe("Supabase Cottage Profile adapter", () => {
     );
     const photosQuery = {
       in: vi.fn().mockReturnValue({
-        order: vi.fn(() => result([])),
+        eq: vi.fn().mockReturnValue({ order: vi.fn(() => result([])) }),
       }),
     };
     const client = {
@@ -355,7 +363,7 @@ describe("Supabase Cottage Profile adapter", () => {
       profileQuery.limit = vi.fn(() => result(profileRows));
       const photosQuery = {
         in: vi.fn().mockReturnValue({
-          order: vi.fn(() => result([])),
+          eq: vi.fn().mockReturnValue({ order: vi.fn(() => result([])) }),
         }),
       };
       const client = {
@@ -474,7 +482,9 @@ describe("Supabase Cottage Profile adapter", () => {
       if (table === "cottage_profile_photos") {
         return {
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({ order: vi.fn(() => photos) }),
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({ order: vi.fn(() => photos) }),
+            }),
           }),
         };
       }
@@ -517,6 +527,61 @@ describe("Supabase Cottage Profile adapter", () => {
       await expect(
         loadMalformedProviderProfile({ profile, photo }),
       ).rejects.toThrow(/Cottage Profile/);
+    },
+  );
+
+  it.each([
+    ["ready", false, "retain"],
+    ["deletion_pending", true, "delete"],
+  ] as const)(
+    "maps a %s photo with active=%s to the %s deletion disposition",
+    async (state, isActive, disposition) => {
+      const client = {
+        rpc: vi.fn(() =>
+          result({
+            object_path: "owner/profile/photo.webp",
+            state,
+            is_active: isActive,
+          }),
+        ),
+      } as unknown as SupabaseClient;
+
+      await expect(
+        new SupabaseCottageProfileRepository(
+          client,
+          client,
+        ).preparePhotoDeletion("71000000-0000-4000-8000-000000000001"),
+      ).resolves.toEqual({
+        objectPath: "owner/profile/photo.webp",
+        disposition,
+      });
+    },
+  );
+
+  it.each([
+    ["ready", true],
+    ["deletion_pending", false],
+    ["ready", undefined],
+    ["unknown", false],
+  ] as const)(
+    "rejects an inconsistent deletion response with state=%s and active=%s",
+    async (state, isActive) => {
+      const client = {
+        rpc: vi.fn(() =>
+          result({
+            object_path: "owner/profile/photo.webp",
+            state,
+            is_active: isActive,
+          }),
+        ),
+      } as unknown as SupabaseClient;
+
+      await expect(
+        new SupabaseCottageProfileRepository(
+          client,
+          client,
+        ).preparePhotoDeletion("71000000-0000-4000-8000-000000000001"),
+      ).rejects.toThrow("Cottage Profile photo deletion data is invalid");
     },
   );
 });

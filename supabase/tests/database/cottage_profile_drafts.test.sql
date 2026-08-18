@@ -753,8 +753,8 @@ select throws_ok(
     'Private exact address', 36.408333, 44.385834, 'Directions',
     10, 4, 3, array['wifi'], null, 'Description', 'Rules'
   )$$,
-  'RC203', null,
-  'an administrator cannot make a submitted Cottage Profile incomplete'
+  'RC208', null,
+  'an administrator cannot bypass localized review history for submitted source fields'
 );
 
 select results_eq(
@@ -769,7 +769,7 @@ select results_eq(
   'a rejected incomplete administrator edit rolls back its working copy and audit'
 );
 
-select lives_ok(
+select throws_ok(
   $$select public.update_administrator_cottage_profile(
     (select id from public.owner_application_cottage_profiles
       where application_id = '20000000-0000-4000-8000-000000000701'),
@@ -778,38 +778,35 @@ select lives_ok(
     10, 4, 3, array['garden', 'wifi'], 'en',
     'Administrator working-copy description', 'Administrator working-copy rules'
   )$$,
-  'an AAL2 Platform Administrator can edit the unpublished working copy'
+  'RC208', null,
+  'an AAL2 Platform Administrator cannot edit submitted source through the working-copy RPC'
 );
 
 select results_eq(
   $$select profiles.version, profiles.description, revisions.description,
-      audit.administrator_user_id, audit.changed_fields
+      (select count(*)::integer from public.cottage_profile_administrator_audit audit
+       where audit.profile_id = profiles.id and audit.event_kind = 'working_copy_updated')
     from public.owner_application_cottage_profiles profiles
     join public.cottage_profile_source_revisions revisions
       on revisions.id = profiles.submitted_source_revision_id
-    join public.cottage_profile_administrator_audit audit
-      on audit.profile_id = profiles.id
-      and audit.event_kind = 'working_copy_updated'
     where profiles.application_id = '20000000-0000-4000-8000-000000000701'$$,
   $$values (
-    4::bigint, 'Administrator working-copy description'::text,
+    3::bigint, 'Owner working-copy description'::text,
     'Owner working-copy description'::text,
-    '00000000-0000-0000-0000-000000000704'::uuid,
-    array['name', 'private_directions', 'amenities', 'description',
-      'house_rules']::text[]
+    0
   )$$,
-  'administrator edits are attributed without changing submitted source'
+  'a blocked source edit leaves both the working copy and audit unchanged'
 );
 
 select lives_ok(
   $$select public.update_administrator_cottage_profile(
     (select id from public.owner_application_cottage_profiles
       where application_id = '20000000-0000-4000-8000-000000000701'),
-    4, 'Administrator working copy', 'Erbil', 'Near Shaqlawa',
+    3, 'Administrator working copy', 'Erbil', 'Near Shaqlawa',
     'Private exact address', 36.408333, 44.385834,
     'Administrator directions', 10, 4, 3, array['garden', 'wifi'], 'en',
-    'Administrator working-copy description',
-    'Administrator working-copy rules'
+    'Owner working-copy description',
+    'Owner working-copy House Rules'
   )$$,
   'an administrator no-op save remains a valid optimistic-concurrency action'
 );
@@ -817,9 +814,9 @@ select lives_ok(
 select results_eq(
   $$select changed_fields
     from public.cottage_profile_administrator_audit
-    where previous_version = 4$$,
-  $$values ('{}'::text[])$$,
-  'an administrator no-op audit does not overstate changed fields'
+    where previous_version = 3$$,
+  $$values (array['name', 'private_directions', 'amenities']::text[])$$,
+  'an administrator edit audits only permitted non-source working-copy fields'
 );
 
 select set_config(
@@ -888,7 +885,7 @@ select results_eq(
       (select count(*)::integer from public.cottage_profile_photos),
       (select count(*)::integer from public.cottage_profile_source_revisions),
       (select count(*)::integer from public.cottage_profile_administrator_audit)$$,
-  $$values (1, 1, 3)$$,
+  $$values (1, 1, 2)$$,
   'an AAL2 administrator sees only the existing private photo, source, and attributed audit rows'
 );
 
@@ -903,8 +900,8 @@ select throws_ok(
   $$select public.prepare_cottage_profile_photo_deletion(
     current_setting('test.cottage_photo_id')::uuid
   )$$,
-  'RC203', null,
-  'a submitted Cottage Profile cannot lose its only ready photo'
+  'RC210', null,
+  'active review media membership cannot change during submission'
 );
 
 select lives_ok(
@@ -924,7 +921,7 @@ select results_eq(
   $$values (
     'photo_upload_prepared'::text,
     '00000000-0000-0000-0000-000000000704'::uuid,
-    5::bigint, 5::bigint, array['photos']::text[], true
+    4::bigint, 4::bigint, array['photos']::text[], true
   )$$,
   'administrator photo upload preparation appends an attributed audit event'
 );
@@ -955,34 +952,25 @@ select set_config(
   '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal2"}',
   true
 );
-select lives_ok(
+select throws_ok(
   $$select public.prepare_cottage_profile_photo_deletion(
     current_setting('test.cottage_photo_id')::uuid
   )$$,
-  'an AAL2 Platform Administrator can remove one photo when another ready photo remains'
+  'RC210', null,
+  'an AAL2 Platform Administrator cannot remove media snapshotted into a review cycle'
 );
 
-select results_eq(
-  $$select audit.event_kind, audit.administrator_user_id,
-      audit.previous_version, audit.resulting_version, audit.changed_fields,
-      audit.object_path = photos.object_path
-    from public.cottage_profile_administrator_audit audit
-    join public.cottage_profile_photos photos
-      on photos.id = current_setting('test.cottage_photo_id')::uuid
-    where audit.event_kind = 'photo_deletion_prepared'$$,
-  $$values (
-    'photo_deletion_prepared'::text,
-    '00000000-0000-0000-0000-000000000704'::uuid,
-    5::bigint, 5::bigint, array['photos']::text[], true
-  )$$,
-  'administrator photo deletion preparation appends an attributed audit event'
+select is_empty(
+  $$select id from public.cottage_profile_administrator_audit
+    where event_kind = 'photo_deletion_prepared'$$,
+  'blocked reviewed-media deletion does not append a misleading audit event'
 );
 
 select results_eq(
   $$select state::text from public.cottage_profile_photos
     where id = current_setting('test.cottage_photo_id')::uuid$$,
-  array['deletion_pending'::text],
-  'photo deletion remains durable until storage reconciliation completes'
+  array['ready'::text],
+  'blocked reviewed media remains ready'
 );
 
 reset role;
@@ -995,11 +983,12 @@ where bucket_id = public.cottage_profile_photo_bucket_name()
   );
 set local session_replication_role = origin;
 set local role service_role;
-select lives_ok(
+select throws_ok(
   $$select public.complete_cottage_profile_photo_deletion(
     current_setting('test.cottage_photo_id')::uuid
   )$$,
-  'service reconciliation completes only after the private object is absent'
+  'RC205', null,
+  'service reconciliation rejects deletion that was never prepared'
 );
 set local role authenticated;
 select set_config(
@@ -1007,18 +996,18 @@ select set_config(
   '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal2"}',
   true
 );
-select is_empty(
+select isnt_empty(
   $$select id from public.cottage_profile_photos
     where id = current_setting('test.cottage_photo_id')::uuid$$,
-  'completed photo deletion removes the reconciled metadata row'
+  'immutable review membership retains the referenced photo metadata row'
 );
 
 select results_eq(
   $$select count(*)::integer, bool_and(object_path is not null)
     from public.cottage_profile_administrator_audit
     where event_kind in ('photo_upload_prepared', 'photo_deletion_prepared')$$,
-  $$values (2, true)$$,
-  'administrator photo audit events remain immutable after photo metadata deletion'
+  $$values (1, true)$$,
+  'administrator upload audit remains immutable after blocked media deletion'
 );
 
 reset role;

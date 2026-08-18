@@ -15,6 +15,7 @@ import {
   type CottageProfileDraftValues,
   type CottageProfilePhoto,
   type CottageProfileRepository,
+  type PreparedCottageProfilePhotoDeletion,
   type CottageProfileSourceRevision,
   type CottageProfileStorage,
   type CottageProfileUpload,
@@ -296,6 +297,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
       .from("cottage_profile_photos")
       .select(photoColumns)
       .eq("profile_id", profileId)
+      .eq("is_active", true)
       .order("created_at");
     assertProviderSuccess(photosResult.error);
     if (!Array.isArray(photosResult.data)) {
@@ -358,6 +360,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
         .from("cottage_profile_photos")
         .select(photoColumns)
         .in("profile_id", profileIdChunk)
+        .eq("is_active", true)
         .order("created_at");
       assertProviderSuccess(photosResult.error);
       if (!Array.isArray(photosResult.data)) {
@@ -598,13 +601,30 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
     return requiredString(data);
   }
 
-  async preparePhotoDeletion(photoId: string): Promise<string> {
+  async preparePhotoDeletion(
+    photoId: string,
+  ): Promise<PreparedCottageProfilePhotoDeletion> {
     const { data, error } = await this.client.rpc(
       "prepare_cottage_profile_photo_deletion",
       { target_photo_id: photoId },
     );
     assertProviderSuccess(error);
-    return requiredString(record(data).object_path);
+    const photo = record(data);
+    const state = photo.state;
+    const isActive = photo.is_active;
+    if (
+      typeof isActive !== "boolean" ||
+      !(
+        (state === "ready" && !isActive) ||
+        (state === "deletion_pending" && isActive)
+      )
+    ) {
+      throw new Error("Cottage Profile photo deletion data is invalid");
+    }
+    return {
+      objectPath: requiredString(photo.object_path),
+      disposition: state === "ready" ? "retain" : "delete",
+    };
   }
 
   async completePhotoDeletion(photoId: string): Promise<void> {

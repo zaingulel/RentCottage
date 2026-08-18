@@ -76,7 +76,7 @@ export const replacementIssues = [
     "D10",
     28,
     "Browse and search approved cottages across Iraq",
-    [24, 26],
+    [24, 26, 46],
     "Customer marketplace",
   ],
   [
@@ -314,9 +314,9 @@ export const acceptanceCriteriaByIssue = new Map([
     24,
     [
       "An owner may submit description and House Rules in any one Launch Language, with the original text and source language preserved.",
-      "The replaceable AI translation contract produces draft versions in the other Launch Languages without sending verification documents.",
+      "The replaceable AI translation contract accepts only the source text and minimum language context, preserves retry-safe per-language attempts and provider-returned provenance, and keeps production-generated drafts disabled until #46 supplies the approved adapter.",
       "An administrator can compare the source and generated versions, correct each version and record an approval or rejection reason.",
-      "A new cottage becomes public only when the owner is approved and all three language versions are approved together.",
+      "The atomic publication mechanism requires an approved owner and all three approved language versions; production public activation remains disabled until #46 supplies the approved adapter.",
       "A later Content Change remains private while the last approved public version stays live.",
       "An approved Content Change publishes all three versions atomically and preserves version and decision history.",
     ],
@@ -566,7 +566,7 @@ export const acceptanceCriteriaByIssue = new Map([
   [
     46,
     [
-      "The translation adapter uses `gpt-5.6-luna` at the lowest supported reasoning effort by default, with model and prompt choices held in replaceable configuration.",
+      "The translation adapter starts evaluation with `gpt-5.6-luna` at high reasoning effort, compares high, xhigh and max on representative Arabic and Sorani Kurdish content, and selects the cheapest setting that meets the approved quality threshold; model, effort and prompt choices remain replaceable configuration.",
       "Reported, administrator-flagged or safety-sensitive results can be reprocessed with `gpt-5.6-terra` or routed for human review.",
       "Native Arabic and Sorani Kurdish reviewers approve representative samples across cottage descriptions, House Rules, informal messages, reviews, place names, prices, dates and Cottage Shifts.",
       "Generated text is labelled, originals and source language are retained, failures display the original and users can report poor or inappropriate results.",

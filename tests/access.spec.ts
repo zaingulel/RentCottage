@@ -219,6 +219,46 @@ const auditClient = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
 
+async function prepareWorkerTranslations(reviewCycleId: string) {
+  const { error: enableError } = await auditClient
+    .from("cottage_translation_runtime_control")
+    .update({ production_ready: true })
+    .eq("singleton", true);
+  if (enableError) throw enableError;
+  try {
+    for (const targetLanguage of ["ar", "ckb"] as const) {
+      const { data: attempt, error: beginError } = await auditClient.rpc(
+        "begin_cottage_profile_translation",
+        {
+          target_review_cycle_id: reviewCycleId,
+          target_language: targetLanguage,
+        },
+      );
+      if (beginError) throw beginError;
+      const { data: completed, error: completionError } = await auditClient.rpc(
+        "complete_cottage_profile_translation",
+        {
+          target_attempt_id: attempt.id,
+          translated_description: `${targetLanguage} reviewed description`,
+          translated_house_rules: `${targetLanguage} reviewed House Rules`,
+          returned_provider: "worker-access-fixture",
+          returned_model: "deterministic-fixture",
+          returned_effort: "test",
+          returned_prompt_version: "worker-access-v1",
+        },
+      );
+      if (completionError) throw completionError;
+      expect(completed).toBe(true);
+    }
+  } finally {
+    const { error: disableError } = await auditClient
+      .from("cottage_translation_runtime_control")
+      .update({ production_ready: false })
+      .eq("singleton", true);
+    if (disableError) throw disableError;
+  }
+}
+
 function expectedEmailDigest(email: string) {
   return createHmac("sha256", process.env.PRIVILEGED_AUDIT_HMAC_KEY ?? "")
     .update(email.trim().toLowerCase())
@@ -961,6 +1001,45 @@ test("an approved owner continues the first Cottage Profile and submits a privat
       "A warm stone and wood cottage beside a private orchard.",
     ),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Language review" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Production translation and publication are disabled until the approved adapter is available.",
+    ),
+  ).toBeVisible();
+  for (const [locale, title, status, disabled] of [
+    [
+      "en",
+      "Language review",
+      "In review",
+      "Production translation and publication are disabled until the approved adapter is available.",
+    ],
+    [
+      "ar",
+      "مراجعة اللغات",
+      "قيد المراجعة",
+      "الترجمة والنشر للإنتاج معطّلان حتى يتوفر المحول المعتمد.",
+    ],
+    [
+      "ckb",
+      "پێداچوونەوەی زمان",
+      "لە پێداچوونەوەدایە",
+      "وەرگێڕان و بڵاوکردنەوەی بەرهەم تا بەردەستبوونی پەیوەندیکەری پەسەندکراو ناچالاکە.",
+    ],
+  ] as const) {
+    await page.goto(`/${locale}${profilePath}`);
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByText(status, { exact: true })).toBeVisible();
+    await expect(page.getByText(disabled)).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `${locale}-owner-cottage-profile-submitted-review.png`,
+      ),
+      fullPage: true,
+    });
+  }
 });
 
 test("a Platform Administrator reaches access only after authenticator MFA", async ({
@@ -1020,23 +1099,125 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     .getByRole("article")
     .filter({ hasText: "Submitted for content approval" })
     .last();
-  await submittedProfile
+  const cottageHref = await submittedProfile
     .getByRole("link", { name: "Open Cottage Profile" })
-    .click();
-  await page.getByRole("button", { name: "Delete photo" }).click();
-  await expect(
-    page.getByRole("alert").filter({
-      hasText:
-        "Complete every required field and make sure 1–12 photos are ready before submitting.",
-    }),
-  ).toBeVisible();
-  await expect(page.getByText("shaqlawa-orchard-cottage.png")).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath(
-      "en-administrator-submitted-photo-protection.png",
-    ),
-    fullPage: true,
-  });
+    .getAttribute("href");
+  if (!cottageHref)
+    throw new Error("Submitted Cottage Profile link is missing");
+  const cottagePath = new URL(cottageHref, page.url()).pathname.replace(
+    /^\/en/,
+    "",
+  );
+  for (const [locale, title, status, publish] of [
+    ["en", "Language review", "In review", "Publish all three languages"],
+    ["ar", "مراجعة اللغات", "قيد المراجعة", "نشر اللغات الثلاث"],
+    [
+      "ckb",
+      "پێداچوونەوەی زمان",
+      "لە پێداچوونەوەدایە",
+      "بڵاوکردنەوەی هەرسێ زمان",
+    ],
+  ] as const) {
+    await page.goto(`/${locale}${cottagePath}`);
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByText(status, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: publish })).toBeDisabled();
+    await expect(page.getByText("shaqlawa-orchard-cottage.png")).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `${locale}-administrator-submitted-cottage-review.png`,
+      ),
+      fullPage: true,
+    });
+  }
+  await page.goto(`/en${cottagePath}`);
+  await expect(page.getByLabel("Source description")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Delete photo" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByLabel("Choose cottage photo")).toHaveCount(0);
+  if (testInfo.project.name === "worker") {
+    const profileId = cottagePath.split("/").at(-1);
+    if (!profileId) throw new Error("Worker Cottage Profile id is missing");
+    const reviewCycleId = await page
+      .locator('input[name="reviewCycleId"]')
+      .first()
+      .inputValue();
+    await prepareWorkerTranslations(reviewCycleId);
+    await page.reload();
+    for (const language of ["English", "العربية", "کوردی سۆرانی"]) {
+      const languageCard = page
+        .getByRole("article")
+        .filter({ has: page.getByRole("heading", { name: language }) });
+      const approve = languageCard.getByRole("button", {
+        name: "Approve language",
+      });
+      const decisionForm = approve.locator("xpath=ancestor::form");
+      await decisionForm
+        .getByLabel("Decision reason")
+        .fill("Worker review approved.");
+      const actionResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === new URL(page.url()).pathname,
+      );
+      await approve.click();
+      expect((await actionResponse).ok()).toBe(true);
+      await page.reload();
+    }
+    const { error: enableError } = await auditClient
+      .from("cottage_translation_runtime_control")
+      .update({ production_ready: true })
+      .eq("singleton", true);
+    if (enableError) throw enableError;
+    try {
+      await page.reload();
+      const publish = page.getByRole("button", {
+        name: "Publish all three languages",
+      });
+      const publicationForm = publish.locator("xpath=ancestor::form");
+      await publicationForm
+        .getByLabel("Decision reason")
+        .fill("Worker publication approved.");
+      await expect(publish).toBeEnabled();
+      const actionResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === new URL(page.url()).pathname,
+      );
+      await publish.click();
+      expect((await actionResponse).ok()).toBe(true);
+      await expect(page.getByText("Published", { exact: true })).toBeVisible();
+    } finally {
+      const { error: disableError } = await auditClient
+        .from("cottage_translation_runtime_control")
+        .update({ production_ready: false })
+        .eq("singleton", true);
+      if (disableError) throw disableError;
+    }
+    const { data: publication, error: publicationError } = await auditClient
+      .from("cottage_publication_snapshots")
+      .select("id")
+      .eq("profile_id", profileId)
+      .single();
+    if (publicationError) throw publicationError;
+    const { data: publicationMedia, error: mediaError } = await auditClient
+      .from("cottage_publication_media")
+      .select("opaque_id")
+      .eq("publication_id", publication.id)
+      .single();
+    if (mediaError) throw mediaError;
+    const opaqueId = publicationMedia.opaque_id;
+    const media = await page.request.get(`/api/cottage-media/${opaqueId}`);
+    expect(media.status()).toBe(200);
+    expect(media.headers()["content-type"]).toContain("image/png");
+    expect(media.headers()["cache-control"]).toContain("private");
+    expect(media.headers()["cache-control"]).toContain("no-store");
+    expect(media.headers().location).toBeUndefined();
+    expect((await media.body()).subarray(0, 8)).toEqual(
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    );
+  }
   await page.getByRole("link", { name: "Back to cottages" }).click();
   await expect(
     page.getByRole("heading", { name: "Private Cottage Profiles" }),
