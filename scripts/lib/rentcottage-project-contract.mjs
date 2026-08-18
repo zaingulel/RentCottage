@@ -328,8 +328,8 @@ export const acceptanceCriteriaByIssue = new Map([
       "A shift may cross midnight and is consistently assigned to the Service Day on which it starts.",
       "The owner may leave any turnaround gap needed between shifts; RentCottage does not impose an invented minimum gap.",
       "The Full-Day Bundle identifies all component shifts and represents continuous access for the agreed full-day period.",
-      "Changes to shift times apply only to future uncommitted inventory and cannot rewrite held or confirmed records.",
-      "Every shift of a newly published cottage starts closed until the owner deliberately opens it.",
+      "Saving a Shift Schedule creates a new immutable revision and never changes a prior schedule revision or Cottage Shift identity.",
+      "A cottage cannot be newly published without a current valid Shift Schedule.",
     ],
   ],
   [
@@ -342,6 +342,7 @@ export const acceptanceCriteriaByIssue = new Map([
       "A Full-Day Bundle cannot be open when a component shift is unavailable, and component shifts cannot be sold separately once the bundle is committed.",
       "Price and availability changes affect only future uncommitted inventory and are visible in the next customer quote.",
       "A Private Block stores no off-platform customer's name, contact details or other identity.",
+      "Every shift of a newly published cottage starts closed and becomes available only after the owner deliberately opens it.",
     ],
   ],
   [

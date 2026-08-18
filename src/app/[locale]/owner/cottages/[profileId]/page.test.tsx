@@ -1,13 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createClient, createCottageProfile, resolveContext } = vi.hoisted(
-  () => ({
-    createClient: vi.fn(),
-    createCottageProfile: vi.fn(),
-    resolveContext: vi.fn(),
-  }),
-);
+const {
+  createClient,
+  createCottageProfile,
+  createCottagePublication,
+  createCottageShiftSchedule,
+  resolveContext,
+} = vi.hoisted(() => ({
+  createClient: vi.fn(),
+  createCottageProfile: vi.fn(),
+  createCottagePublication: vi.fn(),
+  createCottageShiftSchedule: vi.fn(),
+  resolveContext: vi.fn(),
+}));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/access/supabase-server", () => ({
@@ -22,6 +28,12 @@ vi.mock("@/access/supabase-account-access", () => ({
 }));
 vi.mock("@/cottage-profile/request-cottage-profile", () => ({
   createRequestCottageProfile: createCottageProfile,
+}));
+vi.mock("@/cottage-publication/request-cottage-publication", () => ({
+  createRequestCottagePublication: createCottagePublication,
+}));
+vi.mock("@/cottage-shift-schedule/request-cottage-shift-schedule", () => ({
+  createRequestCottageShiftSchedule: createCottageShiftSchedule,
 }));
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
@@ -73,5 +85,61 @@ describe("Cottage Profile owner detail page", () => {
     expect(
       screen.queryByRole("link", { name: "Open Owner Application" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("loads the current Shift Schedule into a separate owner editor", async () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    resolveContext.mockResolvedValue({
+      role: "cottage_owner",
+      approvalState: "approved",
+    });
+    createCottageProfile.mockResolvedValue({
+      load: vi.fn().mockResolvedValue({
+        id: profileId,
+        ownerUserId: "10000000-0000-4000-8000-000000000701",
+        applicationId: null,
+        status: "draft",
+        version: 1,
+        name: "Cottage",
+        governorate: "Erbil",
+        approximateLocation: "Shaqlawa",
+        exactAddress: "Private",
+        exactLatitude: null,
+        exactLongitude: null,
+        privateDirections: "",
+        capacity: 8,
+        bedrooms: 3,
+        bathrooms: 2,
+        amenities: ["garden"],
+        sourceLanguage: "en",
+        description: "Description",
+        houseRules: "Rules",
+        photos: [],
+        submittedSourceRevision: null,
+        updatedAt: "2026-08-18T10:00:00.000Z",
+      }),
+    });
+    createCottagePublication.mockResolvedValue({
+      loadCurrentReview: vi.fn().mockResolvedValue(null),
+    });
+    const loadCurrent = vi.fn().mockResolvedValue({
+      status: "loaded",
+      schedule: null,
+    });
+    createCottageShiftSchedule.mockResolvedValue({ loadCurrent });
+
+    render(
+      await OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    );
+
+    expect(loadCurrent).toHaveBeenCalledWith(profileId);
+    expect(
+      screen.getByRole("heading", { name: "Daily Shift Schedule" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Save Shift Schedule" }),
+    ).toBeEnabled();
   });
 });

@@ -57,6 +57,14 @@ values (
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002401","role":"authenticated","aal":"aal1"}', true);
+do $$
+begin
+  perform public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002401', 0,
+    '[{"name":"Day","startTime":"08:00","endTime":"14:00"},{"name":"Evening","startTime":"18:00","endTime":"23:00"}]'
+  );
+end;
+$$;
 select lives_ok(
   $$select public.submit_cottage_profile_for_content_approval(
     '30000000-0000-4000-8000-000000002401', 1
