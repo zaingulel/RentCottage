@@ -23,9 +23,11 @@ The RentCottage MVP will use:
 - Vitest for unit and service-level tests;
 - Playwright for browser journeys;
 - GitHub Actions for continuous integration at launch;
-- CodeRabbit for automated pull-request review.
+- Graphite as the pull-request interface and source of additional automated-review evidence.
 
 Blacksmith is not part of the initial baseline. It may replace GitHub-hosted runners later if measured continuous-integration demand justifies it.
+
+Graphite, GitHub Actions, and GitHub repository rules remain separate authorities. A Graphite Agent `Completed` state means processing finished only; the coordinator reconciles every current-head finding before explicitly dispatching exact-head `quality` from trusted `main`. Every push invalidates the earlier review and Continuous Integration evidence. GitHub Actions performs executable verification. The hosted GitHub repository ruleset must require `quality` from the observed GitHub Actions source, application or integration, not the `quality` check name alone, and must enforce conversation resolution; changing that hosted ruleset remains an explicit owner-gated action.
 
 Payment, AI translation, and notification suppliers will sit behind narrow application interfaces. Qi Card is the first payment candidate to validate, but no payment provider is selected until it demonstrates the complete required flow in a sandbox and contract. Automatic Translation uses `gpt-5.6-luna` as the cost-efficient default, with `gpt-5.6-terra` or human review as the escalation path; model names and prompts remain replaceable configuration. The translation adapter sends only the text and minimum language context required, and production use requires approval of the provider's user-content processing, retention and deletion terms.
 

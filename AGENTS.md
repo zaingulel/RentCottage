@@ -90,7 +90,7 @@ There are two routine owner decisions:
 1. **Work selection:** approve the ticket outcome and acceptance criteria before implementation starts. For high blast-radius work, include the concrete plan required by the change gate below in this decision.
 2. **Delivery approval:** review the finished evidence packet before any commit or outward action such as a push, pull request, deployment or merge. The approval must state the exact actions it covers.
 
-The delivery packet contains the acceptance-criteria mapping, diff summary, tests run, review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. CodeRabbit or another external reviewer may add evidence but never replaces the independent review or executable checks.
+The delivery packet contains the acceptance-criteria mapping, diff summary, tests run, review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. Graphite Agent or another external reviewer may add evidence but never replaces the independent review or executable checks. A Graphite `Completed` state means processing finished only; the coordinator still reconciles every current-head finding.
 
 ### Adding workflow machinery
 
