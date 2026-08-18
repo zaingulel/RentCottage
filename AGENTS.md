@@ -72,9 +72,7 @@ Reviewers report concrete, evidence-backed findings against the approved issue a
 
 Plan review does not replace test-driven implementation, independent review of the finished change, executable verification or existing owner approval gates.
 
-Adoption evidence: issue #55 had entered implementation before ordinary review exposed plan-level policy gaps, and a subsequent independent plan audit found additional authority, write-safety, workflow-trust and provider-completeness defects that required another replan. Implementation tests and final review remain necessary, but they cannot prevent rework caused by an unsound starting plan.
-
-Maintenance cost is one independent reviewer call for each substantial plan, plus additional model usage and latency when the coordinator chooses specialist lenses and consolidation. For the next five substantial planned tickets, the coordinator records in each delivery packet whether plan review caused a revision or owner decision and the added review/consolidation latency and token usage. After five tickets, the owner decides whether to retain, simplify or remove the gate. A removable result is zero material findings requiring plan revision or owner decision, or evidence that a lower-cost control found every material issue with less latency and model usage.
+Evaluation is complete and the gate is retained; issue #93 holds the history, evidence and decision. Routine maintenance cost is one independent review for each substantial plan, plus extra latency and model usage only when the coordinator chooses specialist fan-out and consolidation. Reconsider the gate only if later evidence shows a cheaper control catches every material plan defect or owner ambiguity with less latency and model usage. This is outcome-based, not another scheduled trial.
 
 ### Isolation and parallel work
 
