@@ -130,11 +130,15 @@ export function CottageProfileEditor({
   profile,
   actor,
   editable,
+  sourceEditable = true,
+  photoEditable = editable,
 }: {
   locale: Locale;
   profile: CottageProfile;
   actor: "owner" | "administrator";
   editable: boolean;
+  sourceEditable?: boolean;
+  photoEditable?: boolean;
 }) {
   const copy = cottageProfileMessages[locale];
   const saveAction =
@@ -298,7 +302,7 @@ export function CottageProfileEditor({
 
         <fieldset
           aria-labelledby="cottage-profile-source-content-heading"
-          disabled={!editable}
+          disabled={!editable || !sourceEditable}
         >
           <h2
             className="cottage-profile-section-title"
@@ -341,11 +345,11 @@ export function CottageProfileEditor({
               locale={locale}
               profileId={profile.id}
               photo={photo}
-              editable={editable}
+              editable={photoEditable}
             />
           ))}
         </ul>
-        {editable ? (
+        {photoEditable ? (
           <form action={submitUpload} className="cottage-photo-upload-form">
             <input type="hidden" name="locale" value={locale} />
             <input type="hidden" name="profileId" value={profile.id} />

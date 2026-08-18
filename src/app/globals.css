@@ -1659,7 +1659,8 @@ a:focus-visible {
 }
 
 .cottage-profile-overview,
-.cottage-profile-editor {
+.cottage-profile-editor,
+.cottage-publication-review {
   display: grid;
   width: min(100% - 2rem, 70rem);
   margin-inline: auto;
@@ -1682,6 +1683,88 @@ a:focus-visible {
   background: var(--card);
   padding: clamp(1rem, 3vw, 1.5rem);
   box-shadow: 0 0.8rem 2.5rem rgb(38 50 44 / 7%);
+}
+
+.cottage-publication-review {
+  display: grid;
+  gap: 1rem;
+  padding-block-start: 0;
+}
+
+.cottage-publication-review > h2 {
+  font-family: var(--display);
+  font-size: clamp(1.35rem, 3vw, 1.8rem);
+}
+
+.cottage-localization-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem;
+}
+
+.cottage-localization-grid article,
+.cottage-publication-review > form {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background: var(--card);
+  padding: clamp(1rem, 3vw, 1.5rem);
+  box-shadow: 0 0.8rem 2.5rem rgb(38 50 44 / 7%);
+}
+
+.cottage-localization-grid form,
+.cottage-localization-grid label,
+.cottage-publication-review > form,
+.cottage-publication-review > form label {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.cottage-localization-grid form + form {
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 0.85rem;
+}
+
+.cottage-localization-grid input,
+.cottage-localization-grid textarea,
+.cottage-publication-review > form input {
+  inline-size: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  font: inherit;
+}
+
+.cottage-localization-grid textarea {
+  min-block-size: 7rem;
+  resize: vertical;
+}
+
+.cottage-publication-review button {
+  min-block-size: 2.75rem;
+  border: 1px solid var(--green);
+  border-radius: 0.75rem;
+  background: var(--green);
+  color: #fff;
+  padding: 0.65rem 1rem;
+  font: inherit;
+  font-weight: 700;
+}
+
+.cottage-publication-review button:disabled {
+  opacity: 0.55;
+}
+
+.cottage-localization-grid dl,
+.cottage-localization-grid dl > div {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.cottage-localization-grid dd {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .cottage-profile-card {

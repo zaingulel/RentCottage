@@ -113,6 +113,36 @@ describe("Cottage Profile editor", () => {
     expect(screen.getByText("Submitted owner rules")).toBeVisible();
   });
 
+  it("does not offer photo deletion while reviewed media is retained", () => {
+    render(
+      <CottageProfileEditor
+        locale="en"
+        actor="administrator"
+        editable
+        photoEditable={false}
+        profile={{
+          ...profile,
+          status: "submitted_for_content_approval",
+          photos: [
+            {
+              id: "71000000-0000-4000-8000-000000000001",
+              originalFilename: "reviewed.webp",
+              mediaType: "image/webp",
+              sizeBytes: 128,
+              state: "ready",
+              updatedAt: "2026-08-17T09:05:00.000Z",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Delete photo" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Choose cottage photo")).toBeNull();
+  });
+
   it.each([
     [
       "submitted",

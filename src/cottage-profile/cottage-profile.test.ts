@@ -132,7 +132,10 @@ function setup() {
       });
     },
     preparePhotoPreview: async () => preparedPhoto.objectPath,
-    preparePhotoDeletion: async () => preparedPhoto.objectPath,
+    preparePhotoDeletion: async () => ({
+      objectPath: preparedPhoto.objectPath,
+      disposition: "delete",
+    }),
     completePhotoDeletion: async () => undefined,
   };
   const storage: CottageProfileStorage = {
@@ -417,6 +420,22 @@ describe("Cottage Profile", () => {
     expect(removedObjects).toEqual([
       `${ownerUserId}/${profileId}/72000000-0000-4000-8000-000000000001.webp`,
     ]);
+  });
+
+  it("removes retained historical media from the working copy without deleting storage", async () => {
+    const { cottageProfile, repository, removedObjects } = setup();
+    const completeDeletion = vi.spyOn(repository, "completePhotoDeletion");
+    vi.spyOn(repository, "preparePhotoDeletion").mockResolvedValueOnce({
+      objectPath: `${ownerUserId}/${profileId}/retained.webp`,
+      disposition: "retain",
+    });
+
+    await expect(
+      cottageProfile.deletePhoto("71000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({ status: "deleted" });
+
+    expect(removedObjects).toEqual([]);
+    expect(completeDeletion).not.toHaveBeenCalled();
   });
 
   it.each(["storage removal", "metadata completion"] as const)(

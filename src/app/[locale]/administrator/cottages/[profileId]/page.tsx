@@ -3,8 +3,10 @@ import { notFound, unstable_rethrow } from "next/navigation";
 
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
+import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
 import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
+import { CottagePublicationReview } from "@/components/cottage-publication-review";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
 
@@ -21,9 +23,15 @@ async function loadAdministratorCottage(profileId: string) {
   if (authorization.data !== true)
     return { status: "access_required" as const };
   const cottageProfile = await createRequestCottageProfile();
+  const publication = await createRequestCottagePublication();
+  const [profile, review] = await Promise.all([
+    cottageProfile.load(profileId),
+    publication.loadCurrentReview(profileId),
+  ]);
   return {
     status: "ready" as const,
-    profile: await cottageProfile.load(profileId),
+    profile,
+    review,
   };
 }
 
@@ -75,7 +83,16 @@ export default async function AdministratorCottageProfilePage({
         profile={page.profile}
         actor="administrator"
         editable
+        sourceEditable={page.review?.state !== "in_review"}
+        photoEditable={page.review?.state !== "in_review"}
       />
+      {page.review ? (
+        <CottagePublicationReview
+          locale={locale}
+          review={page.review}
+          actor="administrator"
+        />
+      ) : null}
     </main>
   );
 }

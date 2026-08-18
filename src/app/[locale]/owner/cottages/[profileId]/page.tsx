@@ -2,16 +2,22 @@ import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
 import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
+import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
+import { CottagePublicationReview } from "@/components/cottage-publication-review";
 import { OwnerCottageAccessFallback } from "@/components/owner-cottage-access-fallback";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
 
 async function loadOwnerCottage(profileId: string) {
-  return loadOwnerCottageAccess(async (cottageProfile, approvalState) => ({
-    profile: await cottageProfile.load(profileId),
-    editable: approvalState === "approved",
-  }));
+  return loadOwnerCottageAccess(async (cottageProfile, approvalState) => {
+    const publication = await createRequestCottagePublication();
+    const [profile, review] = await Promise.all([
+      cottageProfile.load(profileId),
+      publication.loadCurrentReview(profileId),
+    ]);
+    return { profile, review, editable: approvalState === "approved" };
+  });
 }
 
 export default async function OwnerCottageProfilePage({
@@ -72,6 +78,13 @@ export default async function OwnerCottageProfilePage({
         actor="owner"
         editable={page.value.editable && page.value.profile.status === "draft"}
       />
+      {page.value.review ? (
+        <CottagePublicationReview
+          locale={locale}
+          review={page.value.review}
+          actor="owner"
+        />
+      ) : null}
     </main>
   );
 }

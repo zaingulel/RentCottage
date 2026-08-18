@@ -104,6 +104,11 @@ export interface PreparedCottageProfilePhoto {
   objectPath: string;
 }
 
+export interface PreparedCottageProfilePhotoDeletion {
+  objectPath: string;
+  disposition: "delete" | "retain";
+}
+
 export interface CottageProfileAdministratorCursor {
   updatedAt: string;
   profileId: string;
@@ -140,7 +145,9 @@ export interface CottageProfileRepository {
   }): Promise<PreparedCottageProfilePhoto>;
   registerPhoto(photoId: string): Promise<void>;
   preparePhotoPreview(photoId: string): Promise<string>;
-  preparePhotoDeletion(photoId: string): Promise<string>;
+  preparePhotoDeletion(
+    photoId: string,
+  ): Promise<PreparedCottageProfilePhotoDeletion>;
   completePhotoDeletion(photoId: string): Promise<void>;
 }
 
@@ -505,9 +512,9 @@ export function createCottageProfile({
 
     async deletePhoto(photoId: string) {
       if (!uuidPattern.test(photoId)) return { status: "denied" as const };
-      let objectPath: string;
+      let prepared: PreparedCottageProfilePhotoDeletion;
       try {
-        objectPath = await repository.preparePhotoDeletion(photoId);
+        prepared = await repository.preparePhotoDeletion(photoId);
       } catch (error) {
         if (providerErrorCode(error) === "RC203") {
           return { status: "incomplete" as const };
@@ -519,8 +526,11 @@ export function createCottageProfile({
               : ("unavailable" as const),
         };
       }
+      if (prepared.disposition === "retain") {
+        return { status: "deleted" as const };
+      }
       try {
-        await storage.remove([objectPath]);
+        await storage.remove([prepared.objectPath]);
         await repository.completePhotoDeletion(photoId);
       } catch {
         return { status: "deletion_reconciliation_required" as const };
