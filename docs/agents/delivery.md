@@ -61,8 +61,6 @@ The delivery packet retains the universal fields in `AGENTS.md` and additionally
 - any residue remaining after the task; and
 - for each of the first five completed deliveries, the release outcome and cleanup observations listed above.
 
-Separately, when a delivery is one of the next five substantial planned tickets in the `AGENTS.md` plan-review experiment, record that experiment's revision or owner-decision outcome, latency and token usage. The two five-item populations do not have to be the same tickets.
-
 Recurring cost is one bounded GitHub read, one verified remote refresh and local Git checks per delivered pull request, plus maintenance of this authority, one command and one behavioural test surface.
 
 After five completed deliveries, the owner reviews automatic invocations, successful releases, verified no-ops, refusals, false stops and residue. Remove the mechanism if Codex or an existing repository control provides equivalent exact identity, merged-state, ownership, cleanliness, race and post-removal guarantees. Simplify it when a lower-cost control preserves every material guarantee.
