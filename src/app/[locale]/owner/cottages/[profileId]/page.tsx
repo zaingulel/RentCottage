@@ -5,18 +5,30 @@ import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-
 import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
 import { CottagePublicationReview } from "@/components/cottage-publication-review";
+import { CottageShiftScheduleEditor } from "@/components/cottage-shift-schedule-editor";
 import { OwnerCottageAccessFallback } from "@/components/owner-cottage-access-fallback";
+import { createRequestCottageShiftSchedule } from "@/cottage-shift-schedule/request-cottage-shift-schedule";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
 
 async function loadOwnerCottage(profileId: string) {
   return loadOwnerCottageAccess(async (cottageProfile, approvalState) => {
     const publication = await createRequestCottagePublication();
-    const [profile, review] = await Promise.all([
+    const shiftSchedule = await createRequestCottageShiftSchedule();
+    const [profile, review, scheduleResult] = await Promise.all([
       cottageProfile.load(profileId),
       publication.loadCurrentReview(profileId),
+      shiftSchedule.loadCurrent(profileId),
     ]);
-    return { profile, review, editable: approvalState === "approved" };
+    if (scheduleResult.status !== "loaded") {
+      throw new Error("Owner Cottage Shift Schedule load failed");
+    }
+    return {
+      profile,
+      review,
+      schedule: scheduleResult.schedule,
+      editable: approvalState === "approved",
+    };
   });
 }
 
@@ -76,6 +88,12 @@ export default async function OwnerCottageProfilePage({
         locale={locale}
         profile={page.value.profile}
         actor="owner"
+        editable={page.value.editable && page.value.profile.status === "draft"}
+      />
+      <CottageShiftScheduleEditor
+        locale={locale}
+        profileId={page.value.profile.id}
+        schedule={page.value.schedule}
         editable={page.value.editable && page.value.profile.status === "draft"}
       />
       {page.value.review ? (

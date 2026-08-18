@@ -17,6 +17,16 @@
   box-sizing: border-box;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 html {
   background: var(--background);
   color: var(--ink);
@@ -1660,7 +1670,8 @@ a:focus-visible {
 
 .cottage-profile-overview,
 .cottage-profile-editor,
-.cottage-publication-review {
+.cottage-publication-review,
+.cottage-shift-schedule-editor {
   display: grid;
   width: min(100% - 2rem, 70rem);
   margin-inline: auto;
@@ -1677,7 +1688,8 @@ a:focus-visible {
 .cottage-profile-card,
 .cottage-profile-form > fieldset,
 .cottage-profile-photos,
-.cottage-profile-source-revision {
+.cottage-profile-source-revision,
+.cottage-shift-schedule-editor {
   border: 1px solid var(--line);
   border-radius: 1.25rem;
   background: var(--card);
@@ -1891,6 +1903,81 @@ a:focus-visible {
   opacity: 0.74;
 }
 
+.cottage-shift-schedule-editor {
+  margin-block-end: clamp(2rem, 5vw, 4rem);
+}
+
+.cottage-shift-schedule-form,
+.cottage-shift-schedule-form > fieldset,
+.cottage-shift-row {
+  display: grid;
+  gap: 1rem;
+}
+
+.cottage-shift-schedule-form > fieldset,
+.cottage-shift-row {
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.cottage-shift-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.cottage-shift-row {
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #fffef9;
+  padding: 1rem;
+}
+
+.cottage-shift-row legend,
+.cottage-full-day-summary strong {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.cottage-shift-row label {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.cottage-shift-row input {
+  inline-size: 100%;
+  min-block-size: 2.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.7rem;
+}
+
+.cottage-shift-guidance {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.cottage-full-day-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-inline-start: 0.3rem solid var(--gold);
+  background: #fff7e8;
+  padding: 0.9rem 1rem;
+}
+
+.cottage-shift-schedule-form > button {
+  justify-self: end;
+}
+
 .cottage-profile-number-grid,
 .cottage-profile-coordinate-grid {
   display: grid;
@@ -1980,6 +2067,15 @@ a:focus-visible {
   .cottage-photo-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .cottage-shift-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cottage-shift-schedule-form > button {
+    inline-size: 100%;
+    justify-self: stretch;
   }
 }
 

@@ -898,6 +898,34 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page.getByRole("button", { name: "Save private draft" }).click();
   await expect(page.getByRole("status")).toContainText("Private draft saved.");
 
+  await page.getByLabel("Shift 1 name").fill("Morning");
+  await page.getByLabel("Shift 1 start time").fill("08:00");
+  await page.getByLabel("Shift 1 end time").fill("13:00");
+  await page.getByLabel("Shift 2 name").fill("Afternoon");
+  await page.getByLabel("Shift 2 start time").fill("12:00");
+  await page.getByLabel("Shift 2 end time").fill("16:00");
+  await page.getByRole("button", { name: "Save Shift Schedule" }).click();
+  await expect(
+    page.getByText(
+      "These recurring shifts overlap. Touching endpoints are allowed.",
+    ),
+  ).toBeVisible();
+
+  await page.getByLabel("Shift 1 name").fill("Evening");
+  await page.getByLabel("Shift 1 start time").fill("18:00");
+  await page.getByLabel("Shift 1 end time").fill("02:00");
+  await page.getByLabel("Shift 2 name").fill("Morning");
+  await page.getByLabel("Shift 2 start time").fill("08:00");
+  await page.getByLabel("Shift 2 end time").fill("12:00");
+  await page.getByRole("button", { name: "Save Shift Schedule" }).click();
+  await expect(
+    page.getByText("Shift Schedule saved as a new revision."),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Shift 1 name")).toHaveValue("Morning");
+  await expect(page.getByLabel("Shift 2 name")).toHaveValue("Evening");
+  await expect(page.getByText("08:00 → 02:00 (next day)")).toBeVisible();
+
   const privatePng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
     "base64",
@@ -972,6 +1000,12 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     await page.goto(`/${locale}${profilePath}`);
     await expect(page.locator("html")).toHaveAttribute("dir", direction);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name:
+          locale === "ar" ? "جدول المناوبات اليومية" : "خشتەی شیفتە ڕۆژانەکان",
+      }),
+    ).toBeVisible();
     await expectCottageProfileSectionTitlesAligned(page, sectionNames);
     await expectCottageProfileActionHierarchy(
       page,
@@ -990,6 +1024,10 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     .click();
   await expect(page.getByText("Submitted for content approval")).toBeVisible();
   await expect(page.getByLabel("Cottage name")).toBeDisabled();
+  await expect(page.getByLabel("Shift 1 name")).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Save Shift Schedule" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Preserved submitted owner source" }),
   ).toBeVisible();

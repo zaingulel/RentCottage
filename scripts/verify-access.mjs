@@ -137,6 +137,14 @@ export function main(
       stdio: "inherit",
     });
     if (prepared.status !== 0) return prepared.status;
+    const scheduleConcurrencyEnvironment = { ...accessEnvironment };
+    delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
+    const scheduleConcurrency = execute(
+      "node",
+      ["scripts/verify-cottage-shift-schedule-concurrency.mjs"],
+      { env: scheduleConcurrencyEnvironment, stdio: "inherit" },
+    );
+    if (scheduleConcurrency.status !== 0) return scheduleConcurrency.status;
     const rerun = execute("node", ["scripts/prepare-access-test.mjs"], {
       env: {
         ...accessEnvironment,
