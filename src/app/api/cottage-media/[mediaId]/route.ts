@@ -24,7 +24,7 @@ export async function GET(
   if (!uuidPattern.test(mediaId)) return unavailable("resolve");
   try {
     const media = await createRequestCottagePublicationMedia().load(mediaId);
-    return new NextResponse(new Uint8Array(media.bytes).buffer, {
+    return new NextResponse(media.bytes.buffer, {
       status: 200,
       headers: {
         "Cache-Control": "private, no-store",

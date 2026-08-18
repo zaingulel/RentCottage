@@ -22,7 +22,7 @@ export interface CottagePublicationMediaAdapter {
 }
 
 export interface CottagePublicationMedia {
-  bytes: Uint8Array;
+  bytes: Uint8Array<ArrayBuffer>;
   contentType: string;
 }
 
