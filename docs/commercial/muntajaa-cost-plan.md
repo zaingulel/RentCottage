@@ -3,21 +3,21 @@
 ## Build and Phase 2 Budget
 
 **Status:** Draft for budget review
-**Updated:** 2 August 2026
+**Updated:** 18 August 2026
 **Decision owner:** Yasir
 **Product:** Muntajaa, working name
 
 > **Purpose.** This document explains the current cost assumptions for building and launching Muntajaa. It separates expected costs, optional choices, usage-based charges and items still requiring quotations. It is a planning document, not a fixed-price supplier quote.
 >
-> **How to read the totals.** The £4,000 monthly figure is development and project management. The software-stack total is separate. Pound, dollar and Iraqi dinar amounts are kept separate rather than converted using a temporary exchange rate.
+> **How to read the totals.** The £4,000 monthly figure is development and project management. The software-stack total is separate and includes Graphite at its current cost of $0. Pound, dollar and Iraqi dinar amounts are kept separate rather than converted using a temporary exchange rate.
 
 ## 1. Cost plan at a glance
 
 | Budget area | Current working allowance | Treatment |
 |---|---:|---|
 | Development and project management | **£4,000 per month** | Continues while active development is required |
-| Phase 1 software stack | **$294/month** | Cloudflare Workers, Supabase Pro, Codex, CodeRabbit Pro+ and one GitHub Team seat |
-| Phase 1 software stack using GitHub Free | **$290/month** | Valid if no paid GitHub Team feature is required |
+| Phase 1 software stack | **$234/month** | Cloudflare Workers, Supabase Pro, Codex, Graphite at $0 and one GitHub Team seat |
+| Phase 1 software stack using GitHub Free | **$230/month** | Valid if no paid GitHub Team feature is required |
 | Optional second GitHub Team seat | **+$4 per month** | Add only if Yasir needs a paid development seat |
 | Trademark protection | **2,100,000 IQD one time, approximately £1,200** | Provisional allowance for federal Iraq and the Kurdistan Region |
 | Booking payment processing | **TBC** | Obtain written provider pricing. A 1.5% scenario may be used for modelling only |
@@ -34,7 +34,7 @@
 |---|---:|---|---|
 | Development and project management | **£4,000/month** | Confirmed | Product management, engineering, testing, delivery and AI-assisted execution |
 | Codex | **$200/month** | Confirmed | Primary AI development tool |
-| CodeRabbit Pro+ | **$60/month** | Confirmed | Pro+ billed month-to-month for the initial trial |
+| Graphite Team trial, then Hobby/free | **$0 currently** | Confirmed current state | Billing shows Team, Trial, one billable user and "Select a plan"; no paid plan is selected. The trial ends 17 September 2026; continue on Hobby/free afterwards |
 | Cloudflare Workers paid plan | **$5/month** | Approved baseline | Hosting and server-side execution, subject to usage allowances |
 | Supabase Pro | **$25/month** | Approved baseline | PostgreSQL database, authentication, storage and managed platform services |
 | GitHub Team | **$4/month** | Optional baseline allowance | One organisation seat. GitHub Free remains suitable until a paid feature is needed |
@@ -70,7 +70,7 @@ Safety caps and alerts are controls, not expected monthly bills. They are exclud
 |---|---:|---|---|
 | `muntajaa.com` domain | **$10 to $28** | Annual | Working domain and provisional registrar price |
 | Business email | **$36** | Annual | One Porkbun mailbox plus up to 20 free forwarding addresses |
-| CodeRabbit Pro+ | **$60/month** | Month-to-month | Selected for the initial trial; $720 if retained for 12 months |
+| Graphite | **$0 current annual cost** | Current | The Team trial is free and the intended post-trial plan is Hobby/free. Any paid upgrade is deferred/TBC and requires explicit owner approval |
 | Muntajaa word-mark protection | **2,100,000 IQD, approximately £1,200** | One time | Provisional federal Iraq and Kurdistan Region allowance |
 | One-off contingency | **10%** | One time | Applied to confirmed one-off setup costs after TBC quotations are received |
 
@@ -154,13 +154,14 @@ The known incremental cost for the first app year is therefore **$124 plus £4,0
 ## 5. Decisions required before spending
 
 1. Confirm whether a paid GitHub Team seat is required or GitHub Free is sufficient.
-2. Approve the final `muntajaa.com` purchase price within the $10 to $28 range.
-3. Select the Iraqi company registry after local legal and accounting advice.
-4. Validate Qi Card first and compare its written offer with ZainCash and AsiaPay.
-5. Obtain legal approval of the owner-document checklist and retention schedule before storage goes live.
-6. Quality-test `gpt-5.6-luna` with Arabic and Sorani reviewers, validate the `gpt-5.6-terra` or human escalation path, then cost measured production usage.
-7. Obtain the remaining TBC quotations and then calculate the 10% one-off contingency.
-8. Approve Phase 2 timing before opening app-store organisation accounts.
+2. Use the current Graphite Team trial until 17 September 2026, then continue on Hobby/free. Any paid upgrade is deferred/TBC and requires explicit owner approval.
+3. Approve the final `muntajaa.com` purchase price within the $10 to $28 range.
+4. Select the Iraqi company registry after local legal and accounting advice.
+5. Validate Qi Card first and compare its written offer with ZainCash and AsiaPay.
+6. Obtain legal approval of the owner-document checklist and retention schedule before storage goes live.
+7. Quality-test `gpt-5.6-luna` with Arabic and Sorani reviewers, validate the `gpt-5.6-terra` or human escalation path, then cost measured production usage.
+8. Obtain the remaining TBC quotations and then calculate the 10% one-off contingency.
+9. Approve Phase 2 timing before opening app-store organisation accounts.
 
 ## 6. Budget acknowledgement
 
@@ -182,10 +183,10 @@ By approving this document, the client confirms that:
 
 ## 7. Pricing and research basis
 
-Public prices and provider evidence were checked during the July and 2 August 2026 research sessions. Supplier prices can change and final invoices may include tax, currency conversion or card charges.
+Public prices and provider evidence were checked during the July, 2 August and 18 August 2026 research sessions. The Graphite cost uses the live Billing UI state observed on 18 August 2026: Team, Trial, one billable user, "Select a plan", trial ending 17 September 2026 and no paid plan selected. Supplier prices can change and final invoices may include tax, currency conversion or card charges.
 
 - [GitHub pricing](https://github.com/pricing)
-- [CodeRabbit plans](https://docs.coderabbit.ai/management/plans)
+- [Graphite pricing](https://graphite.com/pricing)
 - [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
 - [Supabase pricing](https://supabase.com/pricing)
 - [Blacksmith pricing](https://www.blacksmith.sh/pricing)

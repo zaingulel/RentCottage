@@ -48,4 +48,4 @@ For representative runtime validation, report child identities, observed latency
 
 For each representative sensitive delivery, also record whether Security found a material issue that Standards did not. Using the issue authority's evaluation condition, recommend simplifying or removing the Security lane if it adds no unique material findings across the representative deliveries, or if an equivalent independently evidenced review replaces it.
 
-This review supplements executable tests, CodeRabbit, and owner approval; it replaces none of them.
+This review supplements executable tests, Graphite Agent's current-head findings, and owner approval; it replaces none of them. A Graphite `Completed` state proves only that processing finished, so the coordinator must reconcile the findings before explicitly dispatching exact-head `quality` from trusted `main`. Every new push invalidates both review and Continuous Integration evidence; GitHub Actions verifies the head and GitHub repository rules enforce it.
