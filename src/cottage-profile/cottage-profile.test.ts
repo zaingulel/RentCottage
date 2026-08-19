@@ -14,6 +14,7 @@ const draft: CottageProfile = {
   id: profileId,
   ownerUserId,
   applicationId: "20000000-0000-4000-8000-000000000701",
+  currentPublicationId: null,
   status: "draft",
   version: 1,
   name: "Application Cottage",
