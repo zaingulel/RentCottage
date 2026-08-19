@@ -30,7 +30,7 @@ const photoProfileChunkSize = Math.floor(
 const administratorCursorTimestampPattern =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 const profileColumns =
-  "id, owner_user_id, application_id, status, version, name, governorate, approximate_location, exact_address, exact_latitude, exact_longitude, private_directions, capacity, bedrooms, bathrooms, amenities, source_language, description, house_rules, submitted_source_revision_id, updated_at";
+  "id, owner_user_id, application_id, current_publication_id, status, version, name, governorate, approximate_location, exact_address, exact_latitude, exact_longitude, private_directions, capacity, bedrooms, bathrooms, amenities, source_language, description, house_rules, submitted_source_revision_id, updated_at";
 const photoColumns =
   "id, profile_id, original_filename, media_type, size_bytes, state, updated_at";
 const sourceColumns =
@@ -169,6 +169,11 @@ function parseProfile(
   const id = requiredString(profile.id);
   const ownerUserId = requiredString(profile.owner_user_id);
   const applicationId = profile.application_id;
+  const currentPublicationId = profile.current_publication_id;
+  const hasCurrentPublicationId = Object.prototype.hasOwnProperty.call(
+    profile,
+    "current_publication_id",
+  );
   const status = profile.status;
   const sourceLanguage = profile.source_language;
   const version = optionalInteger(profile.version);
@@ -193,6 +198,10 @@ function parseProfile(
     (applicationId !== null &&
       (typeof applicationId !== "string" ||
         !uuidPattern.test(applicationId))) ||
+    !hasCurrentPublicationId ||
+    (currentPublicationId !== null &&
+      (typeof currentPublicationId !== "string" ||
+        !uuidPattern.test(currentPublicationId))) ||
     !["draft", "submitted_for_content_approval"].includes(String(status)) ||
     version === null ||
     version < 1 ||
@@ -239,6 +248,7 @@ function parseProfile(
     id,
     ownerUserId,
     applicationId: applicationId as string | null,
+    currentPublicationId: currentPublicationId as string | null,
     status: status as CottageProfile["status"],
     version,
     name: textFields.name,

@@ -9,6 +9,7 @@ export interface CottageShift {
 
 export interface CottageShiftSchedule {
   profileId: string;
+  scheduleRevisionId?: string;
   revision: number;
   fullDayBundleId: string;
   fullDayShiftIds: string[];
@@ -20,6 +21,7 @@ export interface CottageShiftSchedule {
 
 interface StoredCottageShiftSchedule {
   profileId: string;
+  scheduleRevisionId?: string;
   revision: number;
   fullDayBundleId: string;
   shifts: CottageShift[];

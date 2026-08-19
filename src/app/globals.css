@@ -1671,7 +1671,8 @@ a:focus-visible {
 .cottage-profile-overview,
 .cottage-profile-editor,
 .cottage-publication-review,
-.cottage-shift-schedule-editor {
+.cottage-shift-schedule-editor,
+.cottage-pricing-availability-editor {
   display: grid;
   width: min(100% - 2rem, 70rem);
   margin-inline: auto;
@@ -1689,7 +1690,8 @@ a:focus-visible {
 .cottage-profile-form > fieldset,
 .cottage-profile-photos,
 .cottage-profile-source-revision,
-.cottage-shift-schedule-editor {
+.cottage-shift-schedule-editor,
+.cottage-pricing-availability-editor {
   border: 1px solid var(--line);
   border-radius: 1.25rem;
   background: var(--card);
@@ -1978,6 +1980,147 @@ a:focus-visible {
   justify-self: end;
 }
 
+.cottage-pricing-availability-editor {
+  margin-block-end: clamp(2rem, 5vw, 4rem);
+}
+
+.cottage-inventory-form,
+.cottage-inventory-form > fieldset,
+.cottage-inventory-unit,
+.cottage-inventory-service-day,
+.cottage-inventory-state {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.cottage-inventory-form > fieldset,
+.cottage-inventory-unit {
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.cottage-inventory-form > .cottage-inventory-pricing-group,
+.cottage-inventory-form > .cottage-inventory-availability-group {
+  gap: 1.25rem;
+}
+
+.cottage-inventory-group-title,
+.cottage-inventory-unit-title {
+  inline-size: 100%;
+  margin: 0;
+  color: var(--green);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: start;
+}
+
+.cottage-inventory-unit-grid,
+.cottage-inventory-availability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 0.85rem;
+}
+
+.cottage-inventory-unit {
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #fffef9;
+  padding: 1rem;
+}
+
+.cottage-inventory-unit-title {
+  margin-block-end: 0.2rem;
+  font-size: 1rem;
+}
+
+.cottage-inventory-unit label,
+.cottage-inventory-service-day,
+.cottage-inventory-state {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: start;
+}
+
+.cottage-inventory-unit input,
+.cottage-inventory-unit select,
+.cottage-inventory-service-day input,
+.cottage-inventory-state select {
+  inline-size: 100%;
+  min-block-size: 2.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.7rem;
+}
+
+.cottage-inventory-override {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(6rem, 0.75fr);
+  gap: 0.45rem;
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 0.75rem;
+}
+
+.cottage-inventory-override strong {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.cottage-inventory-add-override {
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 0.75rem;
+}
+
+.cottage-inventory-add-override > summary {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: start;
+}
+
+.cottage-inventory-add-override[open] > summary {
+  margin-block-end: 0.75rem;
+}
+
+.cottage-inventory-add-override > .cottage-inventory-override {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
+.cottage-inventory-override label {
+  display: block;
+}
+
+.cottage-inventory-service-day {
+  max-inline-size: 20rem;
+}
+
+.cottage-inventory-form > button {
+  justify-self: end;
+  margin-block-start: 1rem;
+}
+
+.cottage-pricing-availability-notice {
+  margin: 0;
+  border-inline-start: 0.3rem solid var(--gold);
+  background: #fff7e8;
+  padding: 0.9rem 1rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.cottage-inventory-form + .cottage-inventory-form {
+  margin-block-start: 1.5rem;
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 1.5rem;
+}
+
 .cottage-profile-number-grid,
 .cottage-profile-coordinate-grid {
   display: grid;
@@ -2076,6 +2219,15 @@ a:focus-visible {
   .cottage-shift-schedule-form > button {
     inline-size: 100%;
     justify-self: stretch;
+  }
+
+  .cottage-inventory-form > button {
+    inline-size: 100%;
+    justify-self: stretch;
+  }
+
+  .cottage-inventory-override {
+    grid-template-columns: 1fr;
   }
 }
 

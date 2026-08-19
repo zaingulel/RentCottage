@@ -117,6 +117,7 @@ describe("Supabase Cottage Shift Schedule adapter", () => {
       new SupabaseCottageShiftScheduleRepository(client).loadCurrent(profileId),
     ).resolves.toMatchObject({
       profileId,
+      scheduleRevisionId: revisionId,
       revision: 3,
       shifts: [
         {

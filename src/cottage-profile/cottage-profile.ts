@@ -61,6 +61,7 @@ export interface CottageProfile {
   id: string;
   ownerUserId: string;
   applicationId: string | null;
+  currentPublicationId: string | null;
   status: CottageProfileStatus;
   version: number;
   name: string;

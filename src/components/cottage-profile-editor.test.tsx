@@ -22,6 +22,7 @@ const profile: CottageProfile = {
   id: "70000000-0000-4000-8000-000000000001",
   ownerUserId: "10000000-0000-4000-8000-000000000701",
   applicationId: "20000000-0000-4000-8000-000000000701",
+  currentPublicationId: null,
   status: "draft",
   version: 2,
   name: "Continued Application Cottage",

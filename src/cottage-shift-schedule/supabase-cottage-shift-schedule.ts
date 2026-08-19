@@ -32,12 +32,16 @@ function minutes(time: string): number {
 function parseSchedule(value: unknown, expectedProfileId: string) {
   const schedule = record(value);
   const profileId = schedule.profileId;
+  const scheduleRevisionId = schedule.scheduleRevisionId;
   const fullDayBundleId = schedule.fullDayBundleId;
   const revision = schedule.revision;
   if (
     typeof profileId !== "string" ||
     !uuidPattern.test(profileId) ||
     profileId !== expectedProfileId ||
+    (scheduleRevisionId !== undefined &&
+      (typeof scheduleRevisionId !== "string" ||
+        !uuidPattern.test(scheduleRevisionId))) ||
     typeof fullDayBundleId !== "string" ||
     !uuidPattern.test(fullDayBundleId) ||
     !Number.isInteger(revision) ||
@@ -103,6 +107,7 @@ function parseSchedule(value: unknown, expectedProfileId: string) {
   }
   return {
     profileId,
+    ...(typeof scheduleRevisionId === "string" ? { scheduleRevisionId } : {}),
     revision: revision as number,
     fullDayBundleId,
     shifts,
@@ -151,6 +156,7 @@ export class SupabaseCottageShiftScheduleRepository implements CottageShiftSched
     return parseSchedule(
       {
         profileId: revision.profile_id,
+        scheduleRevisionId: revision.id,
         revision: revision.revision,
         fullDayBundleId: revision.full_day_bundle_id,
         shifts: (shiftsResult.data ?? []).map((shift) => {
