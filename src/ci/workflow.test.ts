@@ -351,6 +351,55 @@ describe("GitHub Actions delivery checks", () => {
     );
   });
 
+  it("retains semantic owner approval through its authorized delivery sequence", () => {
+    const agents = readFileSync(resolve("AGENTS.md"), "utf8");
+    const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
+    const approval = sectionUnder(
+      delivery,
+      "### Approval scope and persistence",
+    );
+    const ownerDecisions = sectionUnder(
+      agents,
+      "### Owner decisions and evidence",
+    );
+
+    for (const contract of [
+      "semantic, contextual, cumulative, and persistent",
+      "no prescribed phrase",
+      "clear contextual directive or request authorises the outward actions it names",
+      "clear affirmative response authorises the exact coordinator-proposed action list",
+      "Incidental, hypothetical, or capability-only mentions do not authorise outward action",
+      "latest clear owner instruction supersedes earlier narrower coordinator wording",
+      "without asking the owner to repeat or restate approval",
+      "Time passing and progress between delivery stages do not make approval stale",
+      "must not add an exclusion such as `No merge` unless the owner requested it",
+      "tracker reconciliation and guarded terminal release continue automatically under the same approval",
+    ]) {
+      expect(approval).toContain(contract);
+    }
+
+    const staleConditions = [
+      "the exact approved head changes or the approved scope changes materially;",
+      "a new unresolved finding appears;",
+      "a required safety, ownership, review, or Continuous Integration gate fails;",
+      "the owner withdraws or narrows approval.",
+    ];
+    for (const condition of staleConditions) {
+      expect(approval).toContain(`- ${condition}`);
+    }
+    expect(approval.match(/^- /gm)).toHaveLength(staleConditions.length);
+
+    expect(ownerDecisions).toContain(
+      "Delivery approval must explicitly authorise outward action",
+    );
+    expect(ownerDecisions).toContain(
+      "semantic and persistent approval scope and staleness",
+    );
+    expect(ownerDecisions).toContain("docs/agents/delivery.md");
+    expect(ownerDecisions).not.toContain("capability-only");
+    expect(ownerDecisions).not.toContain("exact approved head changes");
+  });
+
   it("declares a trusted-main exact-head dispatch contract", () => {
     const packageJson = JSON.parse(
       readFileSync(resolve("package.json"), "utf8"),

@@ -86,7 +86,7 @@ Evaluation is complete and the gate is retained; issue #93 holds the history, ev
 There are two routine owner decisions:
 
 1. **Work selection:** approve the ticket outcome and acceptance criteria before implementation starts. For high blast-radius work, include the concrete plan required by the change gate below in this decision.
-2. **Delivery approval:** review the finished evidence packet before any commit or outward action such as a push, pull request, deployment or merge. The approval must state the exact actions it covers.
+2. **Delivery approval:** review the finished evidence packet before any commit or outward action such as a push, pull request, deployment or merge. Delivery approval must explicitly authorise outward action; [`docs/agents/delivery.md`](docs/agents/delivery.md) defines semantic and persistent approval scope and staleness.
 
 ### External-review route
 

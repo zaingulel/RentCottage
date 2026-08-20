@@ -13,7 +13,24 @@ Do not load this document during selection-only resume, planning or ordinary con
 
 ## Owner-approved delivery
 
-The coordinator presents the finished evidence packet before any outward action. Delivery approval names the exact commit, push, pull request, merge and deployment actions it covers. If merge is approved, it must also state this automatic consequence: after the exact approved pull-request head is verified merged, release the exact clean secondary worktree and its unchanged local topic branch. That consequence uses the same approval; it does not create a separate cleanup prompt.
+The coordinator presents the finished evidence packet before any outward action.
+
+### Approval scope and persistence
+
+Delivery approval is semantic, contextual, cumulative, and persistent; it requires no prescribed phrase. A clear contextual directive or request authorises the outward actions it names, and a clear affirmative response authorises the exact coordinator-proposed action list. Incidental, hypothetical, or capability-only mentions do not authorise outward action.
+
+The latest clear owner instruction supersedes earlier narrower coordinator wording. The coordinator must not add an exclusion such as `No merge` unless the owner requested it. While approval remains current, perform every authorised action without asking the owner to repeat or restate approval. Time passing and progress between delivery stages do not make approval stale.
+
+Approval becomes stale only when:
+
+- the exact approved head changes or the approved scope changes materially;
+- a new unresolved finding appears;
+- a required safety, ownership, review, or Continuous Integration gate fails;
+- the owner withdraws or narrows approval.
+
+If merge is authorised, after the exact approved pull-request head is verified merged, tracker reconciliation and guarded terminal release continue automatically under the same approval. Release the exact clean secondary worktree and its unchanged local topic branch without a separate cleanup prompt.
+
+### Ownership continuity
 
 Keep one writer for the ticket. The coordinator makes two live ownership observations: once before beginning outward delivery and again immediately before terminal release. Both must establish that the writer has stopped. The coordinator also confirms that no replacement writer or overlapping task has acquired the target, and preserves that exclusivity until the release command returns a terminal result. Git cleanliness or absent lock files are not ownership evidence. `active` and `unknown` ownership stop release.
 
