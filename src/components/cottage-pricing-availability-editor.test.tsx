@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CottageShiftSchedule } from "@/cottage-shift-schedule/cottage-shift-schedule";
 import type { CottageInventoryOwnerEditorState } from "@/cottage-inventory/cottage-inventory";
+import { cottagePricingAvailabilityMessages } from "@/i18n/cottage-pricing-availability-messages";
 
 vi.mock("server-only", () => ({}));
 const { loadAvailability, saveAvailability, savePricing } = vi.hoisted(() => ({
@@ -137,6 +138,151 @@ describe("Cottage Pricing and Availability editor", () => {
     expect(screen.getByRole("button", { name: "تحميل التوافر" })).toBeEnabled();
   });
 
+  it.each([
+    { locale: "ar", editable: true },
+    { locale: "ar", editable: false },
+    { locale: "ckb", editable: true },
+    { locale: "ckb", editable: false },
+    { locale: "en", editable: true },
+  ] as const)(
+    "isolates and keeps a loaded Service Day together in $locale when editable is $editable",
+    async ({ locale, editable }) => {
+      const copy = cottagePricingAvailabilityMessages[locale];
+      const serviceDayLabel = copy.serviceDay as string;
+      const loadAvailabilityLabel = copy.loadAvailability as string;
+      const availabilityLabel = copy.availability as string;
+      loadAvailability.mockResolvedValue({
+        status: "loaded",
+        serviceDay: "2099-08-20",
+        units: [
+          {
+            id: schedule.shifts[0]!.id,
+            kind: "shift",
+            calendarState: "open",
+            commitmentReference: null,
+            editable: true,
+          },
+          {
+            id: schedule.shifts[1]!.id,
+            kind: "shift",
+            calendarState: "open",
+            commitmentReference: null,
+            editable: true,
+          },
+          {
+            id: schedule.fullDayBundleId,
+            kind: "full_day_bundle",
+            calendarState: "open",
+            commitmentReference: null,
+            editable: true,
+          },
+        ],
+      });
+      const user = userEvent.setup();
+      render(
+        <CottagePricingAvailabilityEditor
+          locale={locale}
+          profileId={schedule.profileId}
+          schedule={schedule}
+          pricing={pricing}
+          editable={editable}
+          canOpen
+        />,
+      );
+
+      await user.type(
+        screen.getByLabelText(new RegExp(serviceDayLabel), {
+          selector: "input",
+        }),
+        "2099-08-20",
+      );
+      await user.click(
+        screen.getByRole("button", { name: loadAvailabilityLabel }),
+      );
+
+      const heading = await screen.findByRole("heading", {
+        name: `${availabilityLabel}: 2099-08-20`,
+      });
+      const serviceDay = heading.querySelector("bdi");
+      expect(serviceDay).toHaveAttribute("dir", "ltr");
+      expect(serviceDay).toHaveStyle({ whiteSpace: "nowrap" });
+      expect(serviceDay).toHaveTextContent("2099-08-20");
+    },
+  );
+
+  it.each([
+    { locale: "ar", editable: true },
+    { locale: "ar", editable: false },
+    { locale: "ckb", editable: true },
+    { locale: "ckb", editable: false },
+  ] as const)(
+    "isolates a mixed-direction reference in $locale when editable is $editable",
+    async ({ locale, editable }) => {
+      const copy = cottagePricingAvailabilityMessages[locale];
+      const serviceDayLabel = copy.serviceDay as string;
+      const loadAvailabilityLabel = copy.loadAvailability as string;
+      const bookingReferenceLabel = copy.bookingReference as string;
+      const commitmentReference = "REQ-2099-0820-A";
+      loadAvailability.mockResolvedValue({
+        status: "loaded",
+        serviceDay: "2099-08-20",
+        units: [
+          {
+            id: schedule.shifts[0]!.id,
+            kind: "shift",
+            calendarState: "pending_hold",
+            commitmentReference,
+            editable: false,
+          },
+          {
+            id: schedule.shifts[1]!.id,
+            kind: "shift",
+            calendarState: "open",
+            commitmentReference: null,
+            editable: true,
+          },
+          {
+            id: schedule.fullDayBundleId,
+            kind: "full_day_bundle",
+            calendarState: "component_unavailable",
+            commitmentReference: null,
+            editable: false,
+          },
+        ],
+      });
+      const user = userEvent.setup();
+      render(
+        <CottagePricingAvailabilityEditor
+          locale={locale}
+          profileId={schedule.profileId}
+          schedule={schedule}
+          pricing={pricing}
+          editable={editable}
+          canOpen
+        />,
+      );
+
+      await user.type(
+        screen.getByLabelText(new RegExp(serviceDayLabel), {
+          selector: "input",
+        }),
+        "2099-08-20",
+      );
+      await user.click(
+        screen.getByRole("button", { name: loadAvailabilityLabel }),
+      );
+
+      const reference = await screen.findByText(commitmentReference, {
+        selector: "bdi",
+      });
+      expect(reference).toHaveAttribute("dir", "auto");
+      expect(reference).not.toHaveStyle({ whiteSpace: "nowrap" });
+      expect(reference.closest("span")).toHaveTextContent(
+        `${bookingReferenceLabel}: ${commitmentReference}`,
+      );
+    },
+  );
+
   it("names the pricing section and each pricing card once", () => {
     render(
       <CottagePricingAvailabilityEditor
@@ -220,23 +366,23 @@ describe("Cottage Pricing and Availability editor", () => {
         {
           id: schedule.shifts[0]!.id,
           kind: "shift",
-          ownerState: "private_blocked",
-          committed: false,
-          commitmentReference: null,
+          calendarState: "pending_hold",
+          commitmentReference: "RC-REQUEST-2601",
+          editable: false,
         },
         {
           id: schedule.shifts[1]!.id,
           kind: "shift",
-          ownerState: "open",
-          committed: true,
+          calendarState: "confirmed_booking",
           commitmentReference: "RC-BOOKING-2601",
+          editable: false,
         },
         {
           id: schedule.fullDayBundleId,
           kind: "full_day_bundle",
-          ownerState: "closed",
-          committed: false,
+          calendarState: "component_unavailable",
           commitmentReference: null,
+          editable: false,
         },
       ],
     });
@@ -261,11 +407,19 @@ describe("Cottage Pricing and Availability editor", () => {
 
     expect(
       await screen.findByLabelText("Shift 1 operational state"),
-    ).toHaveTextContent("Private block");
+    ).toHaveTextContent("Pending hold");
     expect(
       screen.getByLabelText("Shift 2 operational state"),
-    ).toHaveTextContent("Open");
-    expect(screen.getByText("Committed: RC-BOOKING-2601")).toBeVisible();
+    ).toHaveTextContent("Confirmed booking");
+    expect(
+      screen.getByText("RC-REQUEST-2601", { selector: "bdi" }).closest("span"),
+    ).toHaveTextContent("Booking reference: RC-REQUEST-2601");
+    expect(
+      screen.getByText("RC-BOOKING-2601", { selector: "bdi" }).closest("span"),
+    ).toHaveTextContent("Booking reference: RC-BOOKING-2601");
+    expect(
+      screen.getByLabelText("Full-Day Bundle operational state"),
+    ).toHaveTextContent("Unavailable because a component Shift is committed");
     expect(screen.getByLabelText("Shift 1 operational state")).not.toHaveRole(
       "combobox",
     );
@@ -420,23 +574,23 @@ describe("Cottage Pricing and Availability editor", () => {
         {
           id: schedule.shifts[0]!.id,
           kind: "shift",
-          ownerState: "private_blocked",
-          committed: false,
+          calendarState: "private_blocked",
           commitmentReference: null,
+          editable: true,
         },
         {
           id: schedule.shifts[1]!.id,
           kind: "shift",
-          ownerState: "open",
-          committed: false,
+          calendarState: "open",
           commitmentReference: null,
+          editable: true,
         },
         {
           id: schedule.fullDayBundleId,
           kind: "full_day_bundle",
-          ownerState: "closed",
-          committed: false,
+          calendarState: "closed",
           commitmentReference: null,
+          editable: true,
         },
       ],
     });

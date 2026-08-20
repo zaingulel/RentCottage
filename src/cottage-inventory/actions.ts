@@ -19,9 +19,15 @@ export type CottageInventoryAvailabilityLoadActionState =
       units: Array<{
         id: string;
         kind: "shift" | "full_day_bundle";
-        ownerState: "open" | "closed" | "private_blocked";
-        committed: boolean;
+        calendarState:
+          | "open"
+          | "closed"
+          | "private_blocked"
+          | "pending_hold"
+          | "confirmed_booking"
+          | "component_unavailable";
         commitmentReference: string | null;
+        editable: boolean;
       }>;
     };
 
@@ -149,32 +155,24 @@ export async function loadCottageInventoryAvailabilityAction(
 ): Promise<CottageInventoryAvailabilityLoadActionState> {
   const serviceDay = text(formData, "serviceDay");
   const inventory = await createRequestCottageInventory();
-  const result = await inventory.resolve(
+  const result = await inventory.resolveOwnerCalendar(
     text(formData, "profileId"),
     text(formData, "scheduleRevisionId"),
     serviceDay,
   );
   if (result.status !== "resolved") return result;
-  if (
-    result.resolution.serviceDay !== serviceDay ||
-    result.resolution.units.some(
-      (unit) =>
-        unit.ownerState === undefined ||
-        unit.committed === undefined ||
-        unit.commitmentReference === undefined,
-    )
-  ) {
+  if (result.calendar.serviceDay !== serviceDay) {
     return { status: "unavailable" };
   }
   return {
     status: "loaded",
     serviceDay,
-    units: result.resolution.units.map((unit) => ({
+    units: result.calendar.units.map((unit) => ({
       id: unit.id,
       kind: unit.kind,
-      ownerState: unit.ownerState!,
-      committed: unit.committed!,
-      commitmentReference: unit.commitmentReference!,
+      calendarState: unit.calendarState,
+      commitmentReference: unit.commitmentReference,
+      editable: unit.editable,
     })),
   };
 }

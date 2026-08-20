@@ -19,7 +19,13 @@ function repository(): CottageInventoryRepository {
     })),
     savePricing: vi.fn(async (input) => input),
     setAvailability: vi.fn(async (input) => input),
-    resolve: vi.fn(async () => ({
+    resolvePublicAvailability: vi.fn(async () => ({
+      profileId,
+      scheduleRevisionId: revisionId,
+      serviceDay: "2099-08-20",
+      units: [],
+    })),
+    resolveOwnerCalendar: vi.fn(async () => ({
       profileId,
       scheduleRevisionId: revisionId,
       serviceDay: "2099-08-20",
@@ -93,7 +99,7 @@ describe("Cottage Inventory", () => {
     const inventory = createCottageInventory(store);
 
     await expect(
-      inventory.resolve(profileId, revisionId, "2026-02-31"),
+      inventory.resolvePublicAvailability(profileId, revisionId, "2026-02-31"),
     ).resolves.toEqual({ status: "invalid", fields: ["resolution"] });
     await expect(
       inventory.setAvailability(profileId, revisionId, "2026-02-31", {
@@ -115,13 +121,12 @@ describe("Cottage Inventory", () => {
       status: "invalid",
       fields: ["units.0.dateOverrides.0"],
     });
-    expect(store.resolve).not.toHaveBeenCalled();
+    expect(store.resolvePublicAvailability).not.toHaveBeenCalled();
     expect(store.setAvailability).not.toHaveBeenCalled();
     expect(store.savePricing).not.toHaveBeenCalled();
   });
 
-  it("resolves fresh state after an owner pricing change", async () => {
-    let priceIqd = 100000;
+  it("keeps the public result limited to availability identity", async () => {
     const store: CottageInventoryRepository = {
       loadOwnerEditorState: vi.fn(async () => ({
         profileId,
@@ -131,7 +136,7 @@ describe("Cottage Inventory", () => {
       })),
       savePricing: vi.fn(async (input) => input),
       setAvailability: vi.fn(async (input) => input),
-      resolve: vi.fn(async () => ({
+      resolvePublicAvailability: vi.fn(async () => ({
         profileId,
         scheduleRevisionId: revisionId,
         serviceDay: "2099-08-20",
@@ -139,28 +144,31 @@ describe("Cottage Inventory", () => {
           {
             id: shiftId,
             kind: "shift" as const,
-            priceIqd,
             available: true,
-            committed: false,
           },
         ],
+      })),
+      resolveOwnerCalendar: vi.fn(async () => ({
+        profileId,
+        scheduleRevisionId: revisionId,
+        serviceDay: "2099-08-20",
+        units: [],
       })),
     };
     const inventory = createCottageInventory(store);
 
-    const first = await inventory.resolve(profileId, revisionId, "2099-08-20");
-    priceIqd = 200000;
-    const second = await inventory.resolve(profileId, revisionId, "2099-08-20");
-
-    expect(first).toMatchObject({
+    await expect(
+      inventory.resolvePublicAvailability(profileId, revisionId, "2099-08-20"),
+    ).resolves.toEqual({
       status: "resolved",
-      resolution: { units: [{ priceIqd: 100000 }] },
+      resolution: {
+        profileId,
+        scheduleRevisionId: revisionId,
+        serviceDay: "2099-08-20",
+        units: [{ id: shiftId, kind: "shift", available: true }],
+      },
     });
-    expect(second).toMatchObject({
-      status: "resolved",
-      resolution: { units: [{ priceIqd: 200000 }] },
-    });
-    expect(store.resolve).toHaveBeenCalledTimes(2);
+    expect(store.resolvePublicAvailability).toHaveBeenCalledTimes(1);
   });
 
   it("keeps weekday and specific-date overrides in the pricing write", async () => {

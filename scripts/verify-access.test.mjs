@@ -54,6 +54,7 @@ describe("access verification command", () => {
       ["npx", ["supabase", "status", "-o", "json"]],
       ["node", ["scripts/prepare-access-test.mjs"]],
       ["node", ["scripts/verify-cottage-shift-schedule-concurrency.mjs"]],
+      ["node", ["scripts/verify-cottage-inventory-concurrency.mjs"]],
       ["node", ["scripts/prepare-access-test.mjs"]],
       [
         "npx",
@@ -87,7 +88,7 @@ describe("access verification command", () => {
       SUPABASE_TELEMETRY_DISABLED: "1",
       DO_NOT_TRACK: "1",
     });
-    expect(run.mock.calls[6][2].env).toMatchObject({
+    expect(run.mock.calls[7][2].env).toMatchObject({
       ACCESS_FIXTURE_VALIDATE_EXISTING: "1",
     });
     expect(run.mock.calls[5][2].env).toMatchObject({
@@ -95,12 +96,17 @@ describe("access verification command", () => {
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
     });
     expect(run.mock.calls[5][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[7][2].env).toMatchObject({
+    expect(run.mock.calls[6][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    });
+    expect(run.mock.calls[6][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[8][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       NEXTJS_ENV: "test",
       SUPABASE_PROJECT_REF: "local-test",
     });
-    expect(run.mock.calls[8][2].env).toMatchObject({
+    expect(run.mock.calls[9][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
