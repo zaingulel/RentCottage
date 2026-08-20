@@ -168,11 +168,14 @@ describe("GitHub Actions delivery checks", () => {
     ]);
     expect(routeTable.rows).toEqual([
       ["R1", "UNKNOWN", "ANY", "ANY", "STOP"],
-      ["R2", "ANY_YES", "ANY", "ANY", "Graphite + Greptile"],
-      ["R3", "ALL_NO_OR_NOT_RUN", "YES", "ANY", "Graphite + Greptile"],
-      ["R4", "ALL_NO_OR_NOT_RUN", "NO", "YES", "Graphite + Greptile"],
+      ["R2", "ANY_YES", "ANY", "ANY", "Greptile only"],
+      ["R3", "ALL_NO_OR_NOT_RUN", "YES", "ANY", "Greptile only"],
+      ["R4", "ALL_NO_OR_NOT_RUN", "NO", "YES", "Greptile only"],
       ["R5", "ALL_NO_OR_NOT_RUN", "NO", "NO", "Graphite only"],
     ]);
+    expect(new Set(routeTable.rows.map((row) => row[4]))).toEqual(
+      new Set(["Greptile only", "Graphite only", "STOP"]),
+    );
 
     const routeSection = sectionUnder(agents, "### External-review route");
     expect(routeSection).toContain("evaluated top-to-bottom");
@@ -231,73 +234,87 @@ describe("GitHub Actions delivery checks", () => {
     expect(delivery).not.toContain("| Security input |");
   });
 
-  it("orders routed external review before exact-head quality", () => {
+  it("publishes with one immutable route label before selected review and exact-head quality", () => {
     const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
     const sequence = parseNumberedSequence(
       delivery,
       "## External review and exact-head quality",
     );
-    const evidenceTable = parseMarkdownTable(delivery, "### Greptile evidence");
+    const evidenceTable = parseMarkdownTable(
+      delivery,
+      "### Selected-provider evidence",
+    );
 
     expect(sequence.map(({ number, label }) => ({ number, label }))).toEqual([
-      { number: 1, label: "Submit" },
-      { number: 2, label: "Graphite" },
-      { number: 3, label: "Required Greptile" },
-      { number: 4, label: "Exact-head quality" },
+      { number: 1, label: "Create draft" },
+      { number: 2, label: "Select route" },
+      { number: 3, label: "Publish" },
+      { number: 4, label: "Selected external review" },
+      { number: 5, label: "Exact-head quality" },
     ]);
-    expect(sequence[1].text).toContain("`head=CURRENT_PR_HEAD`");
-    expect(sequence[2].text).toContain(
-      "`applies=Graphite + Greptile`; `head=CURRENT_PR_HEAD`",
+    expect(sequence[0].text).toContain("Graphite stack management");
+    expect(sequence[0].text).toContain("draft");
+    expect(sequence[1].text).toContain(
+      "`Greptile only` uses `independent-review`; `Graphite only` uses `graphite-review`",
     );
-    expect(sequence[3].text).toContain(
-      "`after=Graphite,Required Greptile`; `head=CURRENT_PR_HEAD`",
+    expect(sequence[1].text).toContain("exactly one route label");
+    expect(sequence[2].text).toContain("freshly read");
+    expect(sequence[2].text).toContain(
+      "exact label set, draft state, and head",
+    );
+    expect(sequence[2].text).toContain("Immediately before");
+    expect(sequence[2].text).toContain("ready for review");
+    expect(sequence[2].text).toContain(
+      "The selected route label is immutable after publication",
+    );
+    expect(sequence[3].text).toContain("`head=CURRENT_PR_HEAD`");
+    expect(sequence[3].text).toContain("completion, coverage, and findings");
+    expect(sequence[4].text).toContain(
+      "`after=Selected external review`; `head=CURRENT_PR_HEAD`",
     );
 
     expect(delivery).toContain(
       "resolved external-review route and matched rule",
-    );
-    expect(sequence[0].text).toContain(
-      "for a `Graphite + Greptile` route, ensure the `independent-review` label is present",
-    );
-    expect(sequence[2].text).toContain(
-      "if complete current-head Greptile evidence is absent and no Greptile review is active, trigger `@greptileai`",
     );
     expect(evidenceTable).toEqual({
       headers: ["Packet fields", "Complete evidence"],
       rows: [
         [
           "`provider`, `source`, `artifact`",
-          "`Greptile`; the installed Greptile Apps GitHub App; its GitHub artifact URL.",
+          "The selected provider only; its installed GitHub App; its GitHub artifact URL.",
         ],
         [
-          "`route`, `matched-rule`, `trigger`",
-          "`Graphite + Greptile`; the resolved `AGENTS.md` rule; `independent-review` when the label is added or `@greptileai` when complete current-head evidence is absent and no Greptile review is active.",
+          "`route`, `matched-rule`, `label`",
+          "The exclusive route and resolved `AGENTS.md` rule; exactly `independent-review` for `Greptile only` or `graphite-review` for `Graphite only`.",
         ],
         [
           "`completion`, `head`",
-          "`OBSERVED` only when both the review footer and the app's completion reaction or status are present, and the footer's last-reviewed-commit link resolves to `CURRENT_PR_HEAD`.",
+          "`OBSERVED` only when the selected provider's completion artifact identifies `CURRENT_PR_HEAD`.",
         ],
         [
-          "`changed-files`, `reviewed-files`, `file-change-limit`, `coverage`",
-          "The GitHub changed-file count is at or below the dashboard's current `fileChangeLimit`; Greptile's count or file summary accounts for every changed file; coverage is `COMPLETE`.",
+          "`changed-files`, `reviewed-files`, `coverage`",
+          "The selected provider's count or file summary accounts for every GitHub changed file; coverage is `COMPLETE`.",
         ],
         ["`findings`", "Every finding has an evidence-based disposition."],
       ],
     });
     expect(delivery).toContain(
-      "Each push advances `CURRENT_PR_HEAD`, invalidates Graphite, Greptile, and Continuous Integration evidence, and restarts the sequence",
+      "Each push advances `CURRENT_PR_HEAD`, invalidates the selected provider and Continuous Integration evidence, and restarts the selected review sequence",
     );
     expect(delivery).toContain(
-      "Silence, a missing row, provider drift that makes a row unobservable, or `SKIPPED`, `FAILED`, `STALE`, or `PARTIAL` evidence makes the Greptile review incomplete and stops delivery",
+      "Zero route labels, both route labels, a changed head, a route-label change after publication, unselected-provider activity, missing or stale selected-provider evidence, and provider filtering that is unavailable or disagrees with this authority stop pull-request publication or delivery",
     );
     expect(delivery).toContain(
-      "Keep Greptile human-observed: repository workflows parse no Greptile comments, hidden markers, or status prose and define no Greptile credential or token, provider trigger, or merge gate",
+      "Graphite stack management is distinct from Graphite AI review",
+    );
+    expect(delivery).toContain("No paid provider plan is authorised");
+    expect(delivery).toContain("The trial ends on 17 September 2026");
+    expect(delivery).toContain("including after a Graphite Hobby downgrade");
+    expect(delivery).toContain(
+      "Graphite enables both repositories, includes only `graphite-review`, and keeps draft AI reviews off; Greptile includes only `independent-review`, keeps draft reviews off, and keeps automatic new-commit reviews off",
     );
     expect(delivery).toContain(
-      "Recurring maintenance is one explicit routing decision per delivery",
-    );
-    expect(delivery).toContain(
-      "Reassess or remove this routing layer if Greptile's recurring free allowance ends",
+      "manually request Greptile's exact-head re-review after every later push",
     );
 
     const executableSources = [
@@ -307,6 +324,24 @@ describe("GitHub Actions delivery checks", () => {
       readFileSync(resolve("package.json"), "utf8"),
     ].join("\n");
     expect(executableSources.toLowerCase()).not.toContain("greptile");
+  });
+
+  it("gates the shared Graphite cutover and Hobby transition on both repositories", () => {
+    const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
+    const providerEvidence = sectionUnder(
+      delivery,
+      "### Selected-provider evidence",
+    );
+
+    expect(providerEvidence).toContain(
+      "Do not change the shared Graphite workspace until both Flow Metrics issue #993 and RentCottage issue #104 repository controls are ready",
+    );
+    expect(providerEvidence).toContain(
+      "Before 17 September 2026, recheck and record whether Graphite Hobby preserves the saved `graphite-review` include filter",
+    );
+    expect(providerEvidence).toContain(
+      "An unavailable or unverified Hobby result produces `STOP`; reconcile both repositories before changing the shared workspace or continuing delivery",
+    );
   });
 
   it("keeps terminal delivery release progressively registered from the document map", () => {
@@ -517,7 +552,7 @@ describe("GitHub Actions delivery checks", () => {
     ).toBe(true);
   });
 
-  it("documents Graphite submission before review and source-bound quality enforcement", () => {
+  it("documents Graphite stack submission before selected review and source-bound quality enforcement", () => {
     const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
     const architecture = readFileSync(
       resolve("docs/adr/0001-cloudflare-workers-supabase-stack.md"),
@@ -526,7 +561,7 @@ describe("GitHub Actions delivery checks", () => {
 
     expect(delivery).toContain("`gt submit`");
     expect(delivery.indexOf("`gt submit`")).toBeLessThan(
-      delivery.indexOf("wait for Graphite Agent"),
+      delivery.indexOf("**Selected external review:**"),
     );
     for (const authority of [delivery, architecture]) {
       expect(authority).toContain("observed GitHub Actions source");
