@@ -1729,10 +1729,19 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     .eq("schedule_revision_id", fixture!.scheduleId)
     .order("position");
   if (shiftsError) throw shiftsError;
+  const { data: schedule, error: scheduleError } = await fixtureOwner
+    .from("cottage_shift_schedule_revisions")
+    .select("full_day_bundle_id")
+    .eq("id", fixture!.scheduleId)
+    .single();
+  if (scheduleError) throw scheduleError;
   const firstShift = shifts[0];
   const secondShift = shifts[1];
+  const lastShift = shifts.at(-1);
   expect(firstShift).toBeDefined();
   expect(secondShift).toBeDefined();
+  expect(lastShift).toBeDefined();
+  expect(schedule.full_day_bundle_id).toBeTruthy();
   const serviceDay = (offset: number) => {
     const parts = new Intl.DateTimeFormat("en-GB", {
       timeZone: "Asia/Baghdad",
@@ -1746,6 +1755,19 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   };
   const firstDay = serviceDay(1);
   const secondDay = serviceDay(2);
+  const fullDayEndDay =
+    lastShift!.end_time < firstShift.start_time ? serviceDay(3) : secondDay;
+  const formatEnglishIraqDateTime = (value: string) =>
+    new Intl.DateTimeFormat("en-IQ", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Asia/Baghdad",
+    }).format(new Date(value));
+  const expectedFullDayAccessRange = `${formatEnglishIraqDateTime(
+    `${firstDay}T${firstShift.start_time}+03:00`,
+  )} – ${formatEnglishIraqDateTime(
+    `${fullDayEndDay}T${lastShift!.end_time}+03:00`,
+  )}`;
   const { error: priceError } = await fixtureOwner.rpc(
     "save_cottage_inventory_pricing",
     {
@@ -1753,15 +1775,16 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       target_schedule_revision_id: fixture!.scheduleId,
       requested_prices: {
         units: [
-          {
-            unitId: firstShift.id,
+          ...shifts.map((shift) => ({
+            unitId: shift.id,
             unitKind: "shift",
-            standardPriceIqd: 180000,
-          },
+            standardPriceIqd: 170000 + shift.position * 10000,
+          })),
           {
-            unitId: secondShift.id,
-            unitKind: "shift",
-            standardPriceIqd: 190000,
+            unitId: schedule.full_day_bundle_id,
+            unitKind: "full_day_bundle",
+            standardPriceIqd: 250000,
+            dateOverrides: [{ serviceDay: secondDay, priceIqd: 260000 }],
           },
         ],
       },
@@ -1772,11 +1795,33 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     [
       firstDay,
       [
-        { unitId: firstShift.id, unitKind: "shift", state: "open" },
-        { unitId: secondShift.id, unitKind: "shift", state: "open" },
+        ...shifts.map((shift) => ({
+          unitId: shift.id,
+          unitKind: "shift",
+          state: "open",
+        })),
+        {
+          unitId: schedule.full_day_bundle_id,
+          unitKind: "full_day_bundle",
+          state: "open",
+        },
       ],
     ],
-    [secondDay, [{ unitId: firstShift.id, unitKind: "shift", state: "open" }]],
+    [
+      secondDay,
+      [
+        ...shifts.map((shift) => ({
+          unitId: shift.id,
+          unitKind: "shift",
+          state: "open",
+        })),
+        {
+          unitId: schedule.full_day_bundle_id,
+          unitKind: "full_day_bundle",
+          state: "open",
+        },
+      ],
+    ],
   ] as const) {
     const { error: availabilityError } = await fixtureOwner.rpc(
       "set_cottage_inventory_availability",
@@ -1849,6 +1894,107 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   expect(english.searchParams.getAll("selection")).toHaveLength(3);
   expect(english.searchParams.get("from")).toBe(firstDay);
   expect(english.searchParams.get("to")).toBe(secondDay);
+  await page.getByRole("link", { name: "Get exact quote" }).click();
+  await expect(page).toHaveURL(/\/en\/request\/[^/?]+\?/);
+  await expect(
+    page.getByRole("heading", { name: "Your exact Booking Quote" }),
+  ).toBeVisible();
+  await expect(page.getByText("IQD 550,000", { exact: true })).toBeVisible();
+  await expect(page.getByText("IQD 5,000", { exact: true })).toBeVisible();
+  await expect(page.getByText("IQD 555,000", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Marketplace Commission/i)).toHaveCount(0);
+  await expect(page.getByText(/does not reserve/)).toBeVisible();
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+  await expect(page.getByRole("button")).toHaveCount(0);
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("en-public-booking-quote.png"),
+    fullPage: true,
+  });
+  const quoteUrl = page.url();
+  await page.getByRole("link", { name: "کوردی" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "ckb");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(
+    page.getByRole("heading", { name: "پێشنیاری نرخی وردی حجزکردن" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(`شەفتی ${firstShift.position}`).first(),
+  ).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("ckb-public-booking-quote.png"),
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "العربية" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(
+    page.getByRole("heading", { name: "عرض سعر الحجز الدقيق" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(`الوردية ${firstShift.position}`).first(),
+  ).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("ar-public-booking-quote.png"),
+    fullPage: true,
+  });
+
+  await page.goto("/en");
+  await page.getByLabel("From Service Day").fill(firstDay);
+  await page.getByLabel("To Service Day").fill(secondDay);
+  for (const day of [firstDay, secondDay]) {
+    await page
+      .getByRole("group", { name: day })
+      .getByRole("checkbox", { name: "Full-day bundle" })
+      .check();
+  }
+  await page.getByRole("button", { name: "Search available cottages" }).click();
+  const fullDayResult = page.locator("article").filter({
+    has: page.locator(`a[href^="/en/cottages/${fixture!.slug}?"]`),
+  });
+  await expect(
+    fullDayResult.getByRole("heading", { name: fixture!.name }),
+  ).toBeVisible();
+  await expect(
+    fullDayResult.getByText("IQD 510,000", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    fullDayResult.getByText("Full-day bundle", { exact: false }),
+  ).toHaveCount(2);
+  await fullDayResult.getByRole("link", { name: "View cottage" }).click();
+  await expect(page.getByText("Total price: IQD 510,000")).toBeVisible();
+  await page.getByRole("link", { name: "Get exact quote" }).click();
+  const fullDayItems = page.getByRole("listitem", {
+    name: /Full-Day Bundle/,
+  });
+  await expect(fullDayItems).toHaveCount(2);
+  await expect(fullDayItems.nth(0)).toContainText("IQD 250,000");
+  await expect(fullDayItems.nth(1)).toContainText("IQD 260,000");
+  await expect(page.getByText("IQD 510,000", { exact: true })).toBeVisible();
+  await expect(page.getByText("IQD 5,000", { exact: true })).toBeVisible();
+  await expect(page.getByText("IQD 515,000", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Continuous full-day access" }),
+  ).toBeVisible();
+  await expect(page.locator(".quote-access li")).toHaveCount(1);
+  await expect(page.locator(".quote-access li")).toHaveText(
+    expectedFullDayAccessRange,
+  );
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("en-consecutive-full-day-booking-quote.png"),
+    fullPage: true,
+  });
+
+  await page.goto(english.toString());
   await page.getByRole("link", { name: "کوردی" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ckb")}\\?`),
@@ -1902,13 +2048,32 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     [
       firstDay,
       [
-        { unitId: firstShift.id, unitKind: "shift", state: "closed" },
-        { unitId: secondShift.id, unitKind: "shift", state: "closed" },
+        ...shifts.map((shift) => ({
+          unitId: shift.id,
+          unitKind: "shift",
+          state: "closed",
+        })),
+        {
+          unitId: schedule.full_day_bundle_id,
+          unitKind: "full_day_bundle",
+          state: "closed",
+        },
       ],
     ],
     [
       secondDay,
-      [{ unitId: firstShift.id, unitKind: "shift", state: "closed" }],
+      [
+        ...shifts.map((shift) => ({
+          unitId: shift.id,
+          unitKind: "shift",
+          state: "closed",
+        })),
+        {
+          unitId: schedule.full_day_bundle_id,
+          unitKind: "full_day_bundle",
+          state: "closed",
+        },
+      ],
     ],
   ] as const) {
     const { error: closeError } = await fixtureOwner.rpc(
@@ -1929,6 +2094,12 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(
     page.getByText("Unavailable", { exact: false }).first(),
   ).toBeVisible();
+  await expectPrivateValuesAbsent();
+  await page.goto(quoteUrl);
+  await expect(
+    page.getByRole("alert").filter({ hasText: "no longer available" }),
+  ).toBeVisible();
+  await expect(page.getByText(/IQD/)).toHaveCount(0);
   await expectPrivateValuesAbsent();
   await waitForFonts();
   await page.screenshot({

@@ -2300,3 +2300,114 @@ a:focus-visible {
     transition: none !important;
   }
 }
+
+.quote-page {
+  min-block-size: 100vh;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.quote-heading {
+  max-inline-size: 72rem;
+  margin: 2.5rem auto 1.5rem;
+}
+
+.quote-heading p,
+.quote-heading h1 {
+  margin-block: 0.25rem;
+}
+
+.quote-heading p,
+.quote-heading small {
+  color: var(--muted);
+}
+
+.quote-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(17rem, 0.75fr);
+  gap: 1rem;
+  max-inline-size: 72rem;
+  margin-inline: auto;
+}
+
+.quote-card {
+  margin-block-end: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #fffef9;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.quote-card h2,
+.quote-card h3 {
+  margin-block-start: 0;
+}
+
+.quote-items {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  list-style-position: inside;
+}
+
+.quote-items > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 0.75rem;
+}
+
+.quote-items > li > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.quote-items span,
+.quote-access,
+.quote-totals p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.quote-rules {
+  white-space: pre-wrap;
+}
+
+.quote-totals dl,
+.quote-totals dl > div {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.quote-totals dl > div {
+  grid-template-columns: 1fr auto;
+  border-block-end: 1px solid var(--line);
+  padding-block-end: 0.65rem;
+}
+
+.quote-totals dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.quote-totals .quote-total {
+  font-size: 1.08rem;
+}
+
+.quote-notice {
+  border-inline-start: 0.3rem solid var(--gold);
+  background: #fff7e8;
+  padding: 0.85rem 1rem;
+}
+
+@media (max-width: 760px) {
+  .quote-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-items > li {
+    align-items: start;
+    flex-direction: column;
+  }
+}
