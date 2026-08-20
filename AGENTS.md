@@ -100,7 +100,7 @@ Resolve the external-review route from this table, evaluated top-to-bottom. `ANY
 | R4 | ALL_NO_OR_NOT_RUN | NO | YES | Graphite + Greptile |
 | R5 | ALL_NO_OR_NOT_RUN | NO | NO | Graphite only |
 
-Security input uses the `security-code-review` aggregate. Map `ALL_NO` to `ALL_NO_OR_NOT_RUN`; use `NOT_RUN` only below the skill's substantive invocation threshold, with concise evidence, and map it likewise.
+`NOT_RUN` requires direct scope evidence that none of `security-code-review`'s eight groups is touched; any possible touch is `UNKNOWN` until the skill runs. Map only `ALL_NO` and evidenced `NOT_RUN` to `ALL_NO_OR_NOT_RUN`.
 
 Delivery integrity covers Continuous Integration workflows, review skills and agent authorities, delivery rules, hosted merge assumptions, tracker verification and reconciliation, guarded release machinery, and tests specifically verifying those surfaces. It is `YES` when the change touches any of these surfaces. Ordinary product, domain, user-interface, application, database, and browser tests alone are not delivery integrity. Otherwise delivery integrity is `NO`.
 

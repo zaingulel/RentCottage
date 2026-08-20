@@ -21,9 +21,9 @@ Keep one writer for the ticket. The coordinator makes two live ownership observa
 
 Follow this bounded sequence:
 
-1. **Submit:** Create or update the pull request with `gt submit`; for a `Graphite + Greptile` route, add the `independent-review` label immediately after pull-request creation.
+1. **Submit:** Create or update the pull request with `gt submit`; for a `Graphite + Greptile` route, ensure the `independent-review` label is present.
 2. **Graphite:** `head=CURRENT_PR_HEAD`; wait for Graphite Agent to finish processing that exact pull-request head and reconcile every genuine finding for it. Graphite applies to every pull request.
-3. **Required Greptile:** `applies=Graphite + Greptile`; `head=CURRENT_PR_HEAD`; require complete Greptile evidence and finding reconciliation for that exact pull-request head.
+3. **Required Greptile:** `applies=Graphite + Greptile`; `head=CURRENT_PR_HEAD`; if complete current-head Greptile evidence is absent and no Greptile review is active, trigger `@greptileai`; require complete evidence and finding reconciliation for that exact pull-request head.
 4. **Exact-head quality:** `after=Graphite,Required Greptile`; `head=CURRENT_PR_HEAD`; after every applicable external review is complete, explicitly dispatch `quality` from trusted `main` with `gh workflow run ci.yml --ref main -f pull_request_number=<PR> -f expected_head_oid=<CURRENT_PR_HEAD>`.
 
 A Graphite `Completed` state means processing finished, not that the change is correct or approved. Independent review of the finished change and every applicable executable verification must also be complete before merge; external reviewers supplement this evidence and never replace it.
@@ -35,7 +35,7 @@ The Greptile dashboard is the configuration home. Each push advances `CURRENT_PR
 | Packet fields | Complete evidence |
 | --- | --- |
 | `provider`, `source`, `artifact` | `Greptile`; the installed Greptile Apps GitHub App; its GitHub artifact URL. |
-| `route`, `matched-rule`, `trigger` | `Graphite + Greptile`; the resolved `AGENTS.md` rule; `independent-review` for the first head or `@greptileai` after each later push. |
+| `route`, `matched-rule`, `trigger` | `Graphite + Greptile`; the resolved `AGENTS.md` rule; `independent-review` when the label is added or `@greptileai` when complete current-head evidence is absent and no Greptile review is active. |
 | `completion`, `head` | `OBSERVED` only when both the review footer and the app's completion reaction or status are present, and the footer's last-reviewed-commit link resolves to `CURRENT_PR_HEAD`. |
 | `changed-files`, `reviewed-files`, `file-change-limit`, `coverage` | The GitHub changed-file count is at or below the dashboard's current `fileChangeLimit`; Greptile's count or file summary accounts for every changed file; coverage is `COMPLETE`. |
 | `findings` | Every finding has an evidence-based disposition. |

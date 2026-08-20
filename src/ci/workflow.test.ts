@@ -177,7 +177,7 @@ describe("GitHub Actions delivery checks", () => {
     const routeSection = sectionUnder(agents, "### External-review route");
     expect(routeSection).toContain("evaluated top-to-bottom");
     expect(routeSection).toContain(
-      "Security input uses the `security-code-review` aggregate. Map `ALL_NO` to `ALL_NO_OR_NOT_RUN`; use `NOT_RUN` only below the skill's substantive invocation threshold, with concise evidence, and map it likewise",
+      "`NOT_RUN` requires direct scope evidence that none of `security-code-review`'s eight groups is touched; any possible touch is `UNKNOWN` until the skill runs. Map only `ALL_NO` and evidenced `NOT_RUN` to `ALL_NO_OR_NOT_RUN`",
     );
     expect(routeSection).toContain(
       "Continuous Integration workflows, review skills and agent authorities, delivery rules, hosted merge assumptions, tracker verification and reconciliation, guarded release machinery, and tests specifically verifying those surfaces",
@@ -256,8 +256,11 @@ describe("GitHub Actions delivery checks", () => {
     expect(delivery).toContain(
       "resolved external-review route and matched rule",
     );
-    expect(delivery).toContain(
-      "add the `independent-review` label immediately after pull-request creation",
+    expect(sequence[0].text).toContain(
+      "for a `Graphite + Greptile` route, ensure the `independent-review` label is present",
+    );
+    expect(sequence[2].text).toContain(
+      "if complete current-head Greptile evidence is absent and no Greptile review is active, trigger `@greptileai`",
     );
     expect(evidenceTable).toEqual({
       headers: ["Packet fields", "Complete evidence"],
@@ -268,7 +271,7 @@ describe("GitHub Actions delivery checks", () => {
         ],
         [
           "`route`, `matched-rule`, `trigger`",
-          "`Graphite + Greptile`; the resolved `AGENTS.md` rule; `independent-review` for the first head or `@greptileai` after each later push.",
+          "`Graphite + Greptile`; the resolved `AGENTS.md` rule; `independent-review` when the label is added or `@greptileai` when complete current-head evidence is absent and no Greptile review is active.",
         ],
         [
           "`completion`, `head`",
