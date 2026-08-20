@@ -31,6 +31,8 @@ Record `YES`, `NO`, or `UNKNOWN` with concise, non-empty evidence for each group
 
 `NO` requires affirmative evidence that the change does not touch the group. Use `UNKNOWN` when evidence is missing, ambiguous, unavailable, or conflicting, and state exactly what evidence is needed.
 
+After classification, report the aggregate `UNKNOWN`, `ANY_YES`, or `ALL_NO` to the coordinator: `UNKNOWN` when any classification is unknown, `ANY_YES` when none is unknown and at least one is yes, and `ALL_NO` when every classification is no. The coordinator resolves the external-review route from the table in `AGENTS.md`.
+
 ## Route
 
 - If any classification is `UNKNOWN`, stop before spawning any reviewer. Gather the missing evidence and classify again; if it remains unavailable, report the gap to the coordinator without guessing.
@@ -49,3 +51,5 @@ For representative runtime validation, report child identities, observed latency
 For each representative sensitive delivery, also record whether Security found a material issue that Standards did not. Using the issue authority's evaluation condition, recommend simplifying or removing the Security lane if it adds no unique material findings across the representative deliveries, or if an equivalent independently evidenced review replaces it.
 
 This review supplements executable tests, Graphite Agent's current-head findings, and owner approval; it replaces none of them. A Graphite `Completed` state proves only that processing finished, so the coordinator must reconcile the findings before explicitly dispatching exact-head `quality` from trusted `main`. Every new push invalidates both review and Continuous Integration evidence; GitHub Actions verifies the head and GitHub repository rules enforce it.
+
+This skill does not operate Graphite or Greptile, change provider configuration, or broaden the managed review. The coordinator applies the external-review route table in `AGENTS.md`; delivery follows `docs/agents/delivery.md`.
