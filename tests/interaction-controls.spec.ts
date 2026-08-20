@@ -1,83 +1,71 @@
 import { expect, test } from "@playwright/test";
 
 const localeFixtures = [
-  { locale: "en", search: "Find your retreat", direction: "ltr" },
-  { locale: "ar", search: "ابحث عن ملاذك", direction: "rtl" },
-  { locale: "ckb", search: "پەناگەکەت بدۆزەوە", direction: "rtl" },
+  {
+    locale: "en",
+    language: "Language",
+    unavailable: "Search choices could not be loaded right now.",
+    direction: "ltr",
+  },
+  {
+    locale: "ar",
+    language: "اللغة",
+    unavailable: "تعذر تحميل خيارات البحث الآن.",
+    direction: "rtl",
+  },
+  {
+    locale: "ckb",
+    language: "زمان",
+    unavailable: "ئێستا ناتوانرێت هەڵبژاردەکانی گەڕان باربکرێن.",
+    direction: "rtl",
+  },
 ] as const;
 
-test("shared actions expose native semantics and visible interaction states", async ({
+test("locale actions expose native semantics and visible interaction states", async ({
   page,
 }) => {
   await page.goto("/en");
 
-  const search = page.getByRole("button", { name: "Find your retreat" });
-  const searchBox = await search.boundingBox();
-  expect(searchBox?.height).toBeGreaterThanOrEqual(44);
-
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
-  const focused = page.getByRole("button", { name: "العربية" });
+  const arabic = page.getByRole("button", { name: "العربية" });
+  await expect(arabic).toHaveAttribute("aria-pressed", "false");
+  await arabic.focus();
+  const focused = arabic;
   await expect(focused).toBeFocused();
   expect(
     await focused.evaluate((element) => getComputedStyle(element).outlineStyle),
   ).not.toBe("none");
 
-  const pool = page.getByRole("button", { name: "Pool" });
-  await expect(pool).toHaveAttribute("aria-pressed", "false");
-  await pool.click();
-  await expect(pool).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    page.getByRole("button", { name: "Increase Guests" }),
-  ).not.toHaveAttribute("aria-pressed");
+  await arabic.click();
+  await expect(arabic).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/\/ar$/);
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
 });
 
-test("booking controls share native field styling and legible disabled treatment", async ({
-  page,
-}) => {
-  await page.goto("/en/request/garden-house");
+test("access controls retain native field styling", async ({ page }) => {
+  await page.goto("/en/owner/access");
 
-  const fullName = page.getByLabel("Full name");
-  const note = page.getByLabel("Note to the owner");
-  await expect(fullName).toHaveAttribute("type", "text");
+  const phone = page.getByLabel("Iraqi phone number");
+  await expect(phone).toHaveAttribute("type", "tel");
+  await phone.focus();
   expect(
-    await fullName.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    ),
-  ).toBe(
-    await note.evaluate((element) => getComputedStyle(element).backgroundColor),
-  );
-  expect(
-    await fullName.evaluate(
-      (element) => getComputedStyle(element).borderRadius,
-    ),
-  ).toBe(
-    await note.evaluate((element) => getComputedStyle(element).borderRadius),
-  );
-
-  const submit = page.getByRole("button", { name: "Send booking request" });
-  await expect(submit).toBeDisabled();
-  expect(
-    await submit.evaluate((element) =>
-      Number(getComputedStyle(element).opacity),
-    ),
-  ).toBeGreaterThanOrEqual(0.7);
-  expect(
-    await submit.evaluate((element) => getComputedStyle(element).borderStyle),
+    await phone.evaluate((element) => getComputedStyle(element).outlineStyle),
   ).not.toBe("none");
+  const submit = page.getByRole("button", { name: "Send verification code" });
+  const submitBox = await submit.boundingBox();
+  expect(submitBox?.height).toBeGreaterThanOrEqual(44);
 });
 
 test("internal action links preserve client-side navigation", async ({
   page,
 }) => {
-  await page.goto("/en/results?period=full-day&guests=4");
+  await page.goto("/en/owner/access");
   await page.evaluate(() => {
     Reflect.set(window, "rentcottageClientNavigation", true);
   });
 
-  await page.getByRole("link", { name: "View cottage" }).first().click();
+  await page.getByRole("link", { name: "RentCottage" }).click();
 
-  await expect(page).toHaveURL(/\/en\/cottages\/garden-house$/);
+  await expect(page).toHaveURL(/\/en$/);
   expect(
     await page.evaluate(() =>
       Reflect.get(window, "rentcottageClientNavigation"),
@@ -86,7 +74,7 @@ test("internal action links preserve client-side navigation", async ({
 });
 
 for (const fixture of localeFixtures) {
-  test(`${fixture.locale} keeps direction, public navigation and current control pixels`, async ({
+  test(`${fixture.locale} keeps direction, resilient discovery and current control pixels`, async ({
     page,
   }, testInfo) => {
     await page.goto(`/${fixture.locale}`);
@@ -95,66 +83,59 @@ for (const fixture of localeFixtures) {
       fixture.direction,
     );
 
-    const search = page.getByRole("button", { name: fixture.search });
-    await search.hover();
+    await expect(
+      page.getByRole("navigation", { name: fixture.language }),
+    ).toBeVisible();
+    await expect(page.locator("p[role='alert']")).toHaveText(
+      fixture.unavailable,
+    );
+    const english = page.getByRole("button", { name: "English" });
+    await english.hover();
     await page.screenshot({
       path: testInfo.outputPath(`${fixture.locale}-marketplace-hover.png`),
       fullPage: true,
     });
 
-    await search.focus();
+    await english.focus();
     await page.screenshot({
       path: testInfo.outputPath(`${fixture.locale}-marketplace-focus.png`),
       fullPage: true,
     });
-
-    await search.click();
-    await expect(page).toHaveURL(new RegExp(`/${fixture.locale}/results`));
   });
 }
 
-test("desktop CKB results actions have current pixel evidence", async ({
+test("desktop CKB invalid-search actions have current pixel evidence", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/ckb/results?period=full-day&guests=4");
-  await page.getByRole("link", { name: "گەڕانەوە بۆ گەڕان" }).focus();
+  await page.getByRole("link", { name: "گەڕانێکی نوێ دەست پێ بکە" }).focus();
   await page.screenshot({
     path: testInfo.outputPath("ckb-results-actions.png"),
     fullPage: true,
   });
 });
 
-test("mobile EN cottage booking action has current pixel evidence", async ({
+test("mobile EN resilient discovery has current pixel evidence", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
-  await page.goto("/en/cottages/garden-house");
-  await page
-    .getByRole("link", { name: "Request booking" })
-    .scrollIntoViewIfNeeded();
+  await page.goto("/en");
+  await expect(page.locator("p[role='alert']")).toHaveText(
+    "Search choices could not be loaded right now.",
+  );
   await page.screenshot({
-    path: testInfo.outputPath("en-cottage-booking-action.png"),
+    path: testInfo.outputPath("en-resilient-discovery.png"),
     fullPage: true,
   });
 });
 
-test("mobile CKB booking request fields and disabled action have current pixel evidence", async ({
+test("mobile CKB fictional booking request stays disconnected", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
-  await page.goto("/ckb/request/garden-house");
-  await page.getByLabel("ناوی تەواو").fill("ئارام محەمەد");
-  await page
-    .getByLabel("تێبینی بۆ خاوەنەکە")
-    .fill("تکایە کاتی گەیشتن پشتڕاست بکەرەوە.");
-  await expect(
-    page.getByRole("button", { name: "داواکاری حجز بنێرە" }),
-  ).toBeDisabled();
-  await page.screenshot({
-    path: testInfo.outputPath("ckb-booking-request-controls.png"),
-    fullPage: true,
-  });
+  const response = await page.goto("/ckb/request/garden-house");
+  expect(response?.status()).toBe(404);
 });
 
 test("desktop AR owner access focus has current pixel evidence", async ({

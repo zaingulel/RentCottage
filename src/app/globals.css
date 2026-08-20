@@ -1061,6 +1061,17 @@ a {
   font-size: 1.55rem;
 }
 
+html[lang="ckb"] .profile-page {
+  line-height: 1.6;
+}
+
+html[lang="ckb"] .profile-heading h1,
+html[lang="ckb"] .profile-section h2,
+html[lang="ckb"] .booking-summary h2,
+html[lang="ckb"] .booking-summary strong {
+  line-height: 1.4;
+}
+
 .booking-summary > span,
 .booking-summary > small,
 .request-cottage > small {
@@ -1266,12 +1277,49 @@ a {
 
 .search-fields label > span,
 .counter-field > span,
-.amenity-filter legend {
+.amenity-filter legend,
+.booking-period-filter > legend,
+.search-fields label {
   display: block;
   margin-block-end: 0.38rem;
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.search-fields input,
+.search-fields select {
+  width: 100%;
+  min-height: 3.25rem;
+  margin-block-start: 0.38rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--background);
+  padding-inline: 0.75rem;
+  color: inherit;
+}
+
+.booking-period-filter {
+  margin-block-start: 1rem;
+  padding: 0;
+  border: 0;
+}
+
+.booking-period-filter > fieldset {
+  margin-block-start: 0.65rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+
+.booking-period-filter label,
+.amenity-filter label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .counter-field > div {

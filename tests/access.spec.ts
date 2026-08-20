@@ -219,6 +219,19 @@ const auditClient = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
 
+function assertIsolatedLocalAccessDatabase() {
+  const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
+  if (
+    process.env.APP_ENVIRONMENT !== "test" ||
+    target.protocol !== "http:" ||
+    target.hostname !== "127.0.0.1"
+  ) {
+    throw new Error(
+      "Discovery fixture mutation requires the isolated local access database",
+    );
+  }
+}
+
 async function setWorkerTranslationRuntimeReady(productionReady: boolean) {
   const { error } = await auditClient
     .from("cottage_translation_runtime_control")
@@ -547,25 +560,11 @@ function documentActionFor(card: Locator, copy: BrowserApplicationFixture) {
 
 test.describe.configure({ mode: "serial" });
 
-test("a Customer verifies an Iraqi phone without losing the booking draft", async ({
+test("the fictional booking-request back door is unavailable", async ({
   page,
 }) => {
-  await page.goto("/en/request/garden-house");
-  await expect(
-    page.getByText("Phone verification is available."),
-  ).toBeVisible();
-  await page
-    .getByLabel("Note to the owner")
-    .fill("Ground-floor access, please");
-  await page.getByLabel("Iraqi phone number").fill("+9647500000000");
-  await page.getByRole("button", { name: "Send verification code" }).click();
-  await page.getByLabel("Verification code").fill("123456");
-  await page.getByRole("button", { name: "Verify" }).click();
-
-  await expect(page.getByText("You have Customer access only")).toBeVisible();
-  await expect(page.getByLabel("Note to the owner")).toHaveValue(
-    "Ground-floor access, please",
-  );
+  const response = await page.goto("/en/request/garden-house");
+  expect(response?.status()).toBe(404);
 });
 
 test("a prospective Cottage Owner receives no approved-owner claim", async ({
@@ -1200,7 +1199,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     0,
   );
   await expect(page.getByLabel("Choose cottage photo")).toHaveCount(0);
-  if (testInfo.project.name === "worker") {
+  {
     const profileId = cottagePath.split("/").at(-1);
     if (!profileId) throw new Error("Worker Cottage Profile id is missing");
     const reviewCycleId = await page
@@ -1324,11 +1323,14 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     expect(
       await ownerClient
         .from("owner_application_cottage_profiles")
-        .select("current_publication_id")
+        .select("current_publication_id,current_shift_schedule_id")
         .eq("id", profileId)
         .single(),
     ).toMatchObject({
-      data: { current_publication_id: publication.id },
+      data: {
+        current_publication_id: publication.id,
+        current_shift_schedule_id: expect.any(String),
+      },
       error: null,
     });
     await expect(page.getByText(`Owner report: ${reportReason}`)).toBeVisible();
@@ -1592,4 +1594,345 @@ test("failed administrator sign-in gives no privileged access", async ({
   expect(new Date(audit.attempted_at).getTime()).toBeGreaterThanOrEqual(
     new Date(attemptedAfter).getTime(),
   );
+});
+
+test("anonymous discovery uses live approved inventory and preserves its query", async ({
+  page,
+}, testInfo) => {
+  assertIsolatedLocalAccessDatabase();
+  const ownerPhoneByProject: Record<string, string> = {
+    mobile: "+9647510000000",
+    desktop: "+9647510000001",
+    worker: "+9647510000002",
+  };
+  const ownerPhone = ownerPhoneByProject[testInfo.project.name];
+  if (!ownerPhone) throw new Error("Discovery owner fixture is unmapped");
+  const fixtureOwner = createClient(
+    process.env.SUPABASE_URL ?? "",
+    process.env.SUPABASE_PUBLISHABLE_KEY ?? "",
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+  const { error: fixtureSignInError } =
+    await fixtureOwner.auth.signInWithPassword({
+      phone: ownerPhone,
+      password: "Local-test-password-2026",
+    });
+  if (fixtureSignInError) throw fixtureSignInError;
+  const { data: profiles, error: profilesError } = await fixtureOwner
+    .from("owner_application_cottage_profiles")
+    .select(
+      "id,current_publication_id,current_shift_schedule_id,exact_address,private_directions",
+    )
+    .not("current_publication_id", "is", null)
+    .order("updated_at", { ascending: false });
+  if (profilesError) throw profilesError;
+  let fixture;
+  const fixtureDiagnostics = [];
+  for (const profile of profiles) {
+    if (!profile.current_shift_schedule_id || !profile.current_publication_id) {
+      fixtureDiagnostics.push({
+        publicationId: profile.current_publication_id,
+        profileId: profile.id,
+        reason: !profile?.current_shift_schedule_id
+          ? "missing current Shift Schedule"
+          : "publication is not current",
+      });
+      continue;
+    }
+    const { data: publication, error: publicationError } = await auditClient
+      .from("cottage_publication_snapshots")
+      .select("id,profile_id,name,approximate_location")
+      .eq("id", profile.current_publication_id)
+      .eq("profile_id", profile.id)
+      .maybeSingle();
+    if (publicationError) throw publicationError;
+    if (!publication) {
+      fixtureDiagnostics.push({
+        publicationId: profile.current_publication_id,
+        profileId: profile.id,
+        reason: "current publication snapshot is missing",
+      });
+      continue;
+    }
+    const { data: englishLocalization, error: englishLocalizationError } =
+      await auditClient
+        .from("cottage_publication_localizations")
+        .select("publication_id")
+        .eq("publication_id", publication.id)
+        .eq("locale", "en")
+        .maybeSingle();
+    if (englishLocalizationError) throw englishLocalizationError;
+    if (!englishLocalization) {
+      fixtureDiagnostics.push({
+        publicationId: publication.id,
+        profileId: publication.profile_id,
+        reason: "missing English localization",
+      });
+      continue;
+    }
+    const { data: arabicLocalization, error: arabicLocalizationError } =
+      await auditClient
+        .from("cottage_publication_localizations")
+        .select("description")
+        .eq("publication_id", publication.id)
+        .eq("locale", "ar")
+        .single();
+    if (arabicLocalizationError) throw arabicLocalizationError;
+    const { data: soraniLocalization, error: soraniLocalizationError } =
+      await auditClient
+        .from("cottage_publication_localizations")
+        .select("description")
+        .eq("publication_id", publication.id)
+        .eq("locale", "ckb")
+        .single();
+    if (soraniLocalizationError) throw soraniLocalizationError;
+    fixture = {
+      name: publication.name,
+      approximateLocation: publication.approximate_location,
+      arabicDescription: arabicLocalization.description,
+      soraniDescription: soraniLocalization.description,
+      slug: `cottage-${profile.id.replaceAll("-", "")}`,
+      profileId: profile.id,
+      exactAddress: profile.exact_address,
+      privateDirections: profile.private_directions,
+      scheduleId: profile.current_shift_schedule_id,
+    };
+    break;
+  }
+  expect(fixture, JSON.stringify(fixtureDiagnostics)).toBeDefined();
+  if (
+    typeof fixture!.exactAddress !== "string" ||
+    fixture!.exactAddress.trim() === "" ||
+    typeof fixture!.privateDirections !== "string" ||
+    fixture!.privateDirections.trim() === ""
+  ) {
+    throw new Error(
+      "Published Cottage Profile fixture needs private address and directions",
+    );
+  }
+  const exactAddress = fixture!.exactAddress;
+  const privateDirections = fixture!.privateDirections;
+  const expectPrivateValuesAbsent = async () => {
+    await expect(page.locator("body")).not.toContainText(exactAddress);
+    await expect(page.locator("body")).not.toContainText(privateDirections);
+    const serializedPage = await page.content();
+    expect(serializedPage).not.toContain(exactAddress);
+    expect(serializedPage).not.toContain(privateDirections);
+  };
+  const waitForFonts = () =>
+    page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+  const { data: shifts, error: shiftsError } = await fixtureOwner
+    .from("cottage_shifts")
+    .select("id,position,name,start_time,end_time")
+    .eq("schedule_revision_id", fixture!.scheduleId)
+    .order("position");
+  if (shiftsError) throw shiftsError;
+  const firstShift = shifts[0];
+  const secondShift = shifts[1];
+  expect(firstShift).toBeDefined();
+  expect(secondShift).toBeDefined();
+  const serviceDay = (offset: number) => {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Baghdad",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(Date.now() + offset * 86_400_000));
+    const value = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((part) => part.type === type)?.value ?? "";
+    return `${value("year")}-${value("month")}-${value("day")}`;
+  };
+  const firstDay = serviceDay(1);
+  const secondDay = serviceDay(2);
+  const { error: priceError } = await fixtureOwner.rpc(
+    "save_cottage_inventory_pricing",
+    {
+      target_profile_id: fixture!.profileId,
+      target_schedule_revision_id: fixture!.scheduleId,
+      requested_prices: {
+        units: [
+          {
+            unitId: firstShift.id,
+            unitKind: "shift",
+            standardPriceIqd: 180000,
+          },
+          {
+            unitId: secondShift.id,
+            unitKind: "shift",
+            standardPriceIqd: 190000,
+          },
+        ],
+      },
+    },
+  );
+  if (priceError) throw priceError;
+  for (const [requestedDay, requestedStates] of [
+    [
+      firstDay,
+      [
+        { unitId: firstShift.id, unitKind: "shift", state: "open" },
+        { unitId: secondShift.id, unitKind: "shift", state: "open" },
+      ],
+    ],
+    [secondDay, [{ unitId: firstShift.id, unitKind: "shift", state: "open" }]],
+  ] as const) {
+    const { error: availabilityError } = await fixtureOwner.rpc(
+      "set_cottage_inventory_availability",
+      {
+        target_profile_id: fixture!.profileId,
+        target_schedule_revision_id: fixture!.scheduleId,
+        target_service_day: requestedDay,
+        requested_states: requestedStates,
+      },
+    );
+    if (availabilityError) throw availabilityError;
+  }
+
+  await page.goto("/en");
+  await page.getByLabel("From Service Day").fill(firstDay);
+  await page.getByLabel("To Service Day").fill(secondDay);
+  await page
+    .getByRole("group", { name: firstDay })
+    .getByRole("checkbox", { name: `Shift ${firstShift.position}` })
+    .check();
+  await page
+    .getByRole("group", { name: firstDay })
+    .getByRole("checkbox", { name: `Shift ${secondShift.position}` })
+    .check();
+  await page
+    .getByRole("group", { name: secondDay })
+    .getByRole("checkbox", { name: `Shift ${firstShift.position}` })
+    .check();
+  await page.getByRole("button", { name: "Search available cottages" }).click();
+  const resultCard = page.locator("article").filter({
+    has: page.locator(`a[href^="/en/cottages/${fixture!.slug}?"]`),
+  });
+  await expect(
+    resultCard.getByRole("heading", { name: fixture!.name }),
+  ).toBeVisible();
+  await expect(
+    resultCard.getByText(`${fixture!.approximateLocation},`, { exact: false }),
+  ).toBeVisible();
+  await expect(
+    resultCard.getByText("IQD 550,000", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByText(
+        new RegExp(
+          `${firstShift.name}.*${firstShift.start_time.slice(0, 5)}.*${firstShift.end_time.slice(0, 5)}`,
+        ),
+      )
+      .first(),
+  ).toBeVisible();
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("public-cottage-results.png"),
+    fullPage: true,
+  });
+  await resultCard.getByRole("link", { name: "View cottage" }).click();
+  await expect(page).toHaveURL(/\/en\/cottages\/[^/?]+\?/);
+  await expect(
+    page.getByRole("heading", { name: fixture!.name }),
+  ).toBeVisible();
+  await expect(page.getByText("Total price: IQD 550,000")).toBeVisible();
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("en-public-cottage-profile.png"),
+    fullPage: true,
+  });
+  const english = new URL(page.url());
+  expect(english.searchParams.getAll("selection")).toHaveLength(3);
+  expect(english.searchParams.get("from")).toBe(firstDay);
+  expect(english.searchParams.get("to")).toBe(secondDay);
+  await page.getByRole("link", { name: "کوردی" }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`${english.pathname.replace(/^\/en/, "/ckb")}\\?`),
+  );
+  const sorani = new URL(page.url());
+  expect(sorani.pathname).toBe(english.pathname.replace(/^\/en/, "/ckb"));
+  expect(sorani.search).toBe(english.search);
+  await expect(page.locator("html")).toHaveAttribute("lang", "ckb");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.getByText(fixture!.soraniDescription)).toBeVisible();
+  const soraniLineMetrics = await page
+    .locator(
+      ".profile-heading h1, .profile-section h2, .profile-section p, .booking-summary h2, .booking-summary li, .booking-summary strong",
+    )
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          fontSize: Number.parseFloat(style.fontSize),
+          lineHeight: Number.parseFloat(style.lineHeight),
+        };
+      }),
+    );
+  expect(soraniLineMetrics.length).toBeGreaterThan(0);
+  for (const metric of soraniLineMetrics) {
+    expect(metric.lineHeight).toBeGreaterThanOrEqual(metric.fontSize * 1.35);
+  }
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("ckb-public-cottage-profile.png"),
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "العربية" }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`${english.pathname.replace(/^\/en/, "/ar")}\\?`),
+  );
+  const arabic = new URL(page.url());
+  expect(arabic.pathname).toBe(english.pathname.replace(/^\/en/, "/ar"));
+  expect(arabic.search).toBe(english.search);
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.getByText(fixture!.arabicDescription)).toBeVisible();
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("ar-public-cottage-profile.png"),
+    fullPage: true,
+  });
+
+  for (const [requestedDay, requestedStates] of [
+    [
+      firstDay,
+      [
+        { unitId: firstShift.id, unitKind: "shift", state: "closed" },
+        { unitId: secondShift.id, unitKind: "shift", state: "closed" },
+      ],
+    ],
+    [
+      secondDay,
+      [{ unitId: firstShift.id, unitKind: "shift", state: "closed" }],
+    ],
+  ] as const) {
+    const { error: closeError } = await fixtureOwner.rpc(
+      "set_cottage_inventory_availability",
+      {
+        target_profile_id: fixture!.profileId,
+        target_schedule_revision_id: fixture!.scheduleId,
+        target_service_day: requestedDay,
+        requested_states: requestedStates,
+      },
+    );
+    if (closeError) throw closeError;
+  }
+  await page.goto(english.pathname);
+  await expect(
+    page.getByRole("heading", { name: fixture!.name }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Unavailable", { exact: false }).first(),
+  ).toBeVisible();
+  await expectPrivateValuesAbsent();
+  await waitForFonts();
+  await page.screenshot({
+    path: testInfo.outputPath("public-cottage-profile-unavailable.png"),
+    fullPage: true,
+  });
 });

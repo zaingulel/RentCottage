@@ -13,7 +13,7 @@ export function LocaleButtons({
   className: string;
 }) {
   return (
-    <nav className={className} aria-label="Language">
+    <nav className={className} aria-label={messages[locale].languageLabel}>
       {locales.map((option) => (
         <ActionButton
           key={option}

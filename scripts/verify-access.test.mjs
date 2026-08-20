@@ -65,6 +65,7 @@ describe("access verification command", () => {
           "--project=mobile",
           "--project=desktop",
           "--workers=1",
+          "--output=playwright-report/access-next",
         ],
       ],
       [
@@ -75,6 +76,7 @@ describe("access verification command", () => {
           "tests/access.spec.ts",
           "--project=worker",
           "--workers=1",
+          "--output=playwright-report/access-worker",
         ],
       ],
       ["npx", ["supabase", "stop", "--no-backup"]],

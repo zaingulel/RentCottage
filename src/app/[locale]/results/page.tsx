@@ -1,21 +1,14 @@
 import { notFound } from "next/navigation";
 
-import { MarketplaceResults } from "@/components/marketplace-results";
+import { PublicCottageResults } from "@/components/public-cottage-results";
+import { InvalidCottageSearch } from "@/components/invalid-cottage-search";
 import {
-  isAmenityKey,
-  isAreaKey,
-  isBookingPeriodOption,
-} from "@/domain/discovery";
+  parseCottageDiscoveryQuery,
+  preserveRawCottageDiscoveryQuery,
+  serializeCottageDiscoveryQuery,
+} from "@/cottage-discovery/discovery-query";
+import { searchPublicCottages } from "@/cottage-discovery/request-cottage-discovery";
 import { isLocale } from "@/i18n/routing";
-
-function positiveInteger(
-  value: string | string[] | undefined,
-  fallback: string,
-) {
-  if (typeof value !== "string") return fallback;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? String(parsed) : fallback;
-}
 
 export default async function ResultsPage({
   params,
@@ -27,29 +20,22 @@ export default async function ResultsPage({
   const { locale } = await params;
   const query = await searchParams;
   if (!isLocale(locale)) notFound();
-
+  const parsed = parseCottageDiscoveryQuery(query);
+  if (parsed.status === "invalid") {
+    return (
+      <InvalidCottageSearch
+        locale={locale}
+        path="/results"
+        queryString={preserveRawCottageDiscoveryQuery(query)}
+      />
+    );
+  }
+  const result = await searchPublicCottages(locale, parsed.query);
   return (
-    <MarketplaceResults
-      initialLocale={locale}
-      search={{
-        area:
-          typeof query.area === "string" && isAreaKey(query.area)
-            ? query.area
-            : "all",
-        arrival: typeof query.arrival === "string" ? query.arrival : "",
-        period:
-          typeof query.period === "string" &&
-          isBookingPeriodOption(query.period)
-            ? query.period
-            : "full-day",
-        guests: positiveInteger(query.guests, "4"),
-        amenities: (Array.isArray(query.amenity)
-          ? query.amenity
-          : query.amenity
-            ? [query.amenity]
-            : []
-        ).filter(isAmenityKey),
-      }}
+    <PublicCottageResults
+      locale={locale}
+      result={result}
+      queryString={serializeCottageDiscoveryQuery(parsed.query)}
     />
   );
 }

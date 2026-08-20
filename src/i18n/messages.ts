@@ -7,6 +7,7 @@ import type {
 
 export interface MarketplaceMessages {
   languageName: string;
+  languageLabel: string;
   brand: string;
   tagline: string;
   heroTitle: string;
@@ -42,6 +43,7 @@ export interface MarketplaceMessages {
 export const messages: Record<Locale, MarketplaceMessages> = {
   ar: {
     languageName: "العربية",
+    languageLabel: "اللغة",
     brand: "ريف كوتج",
     tagline: "بيوت الريف العراقي",
     heroTitle: "بيتٌ في الريف، لكم وحدكم",
@@ -98,6 +100,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
   },
   ckb: {
     languageName: "کوردی",
+    languageLabel: "زمان",
     brand: "ڕێنت کۆتاج",
     tagline: "ماڵە گوندییەکانی عێراق",
     heroTitle: "ماڵێک لە گوند، تەنها بۆ ئێوە",
@@ -155,6 +158,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
   },
   en: {
     languageName: "English",
+    languageLabel: "Language",
     brand: "RentCottage",
     tagline: "Countryside homes of Iraq",
     heroTitle: "A house in the countryside, all yours",
