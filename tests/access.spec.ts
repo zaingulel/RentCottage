@@ -219,26 +219,56 @@ const auditClient = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
 
-async function prepareWorkerTranslations(reviewCycleId: string) {
-  const { error: enableError } = await auditClient
+async function setWorkerTranslationRuntimeReady(productionReady: boolean) {
+  const { error } = await auditClient
     .from("cottage_translation_runtime_control")
-    .update({ production_ready: true })
+    .update(
+      productionReady
+        ? {
+            production_ready: true,
+            approved_evaluation_artifact_digest: "a".repeat(64),
+            production_approval_digest: "b".repeat(64),
+            provider_terms_approval_reference: "worker-access-fixture",
+            native_review_approval_reference: "worker-access-fixture",
+            quality_threshold_approval_reference: "worker-access-fixture",
+            ordinary_model: "deterministic-fixture",
+            ordinary_effort: "none",
+            ordinary_prompt_version: "worker-access-v1",
+            stronger_model: "deterministic-fixture",
+            stronger_effort: "none",
+            stronger_prompt_version: "worker-access-v1",
+            judge_model: "deterministic-fixture",
+            judge_effort: "none",
+            judge_prompt_version: "worker-access-v1",
+            monthly_request_limit: 100,
+            monthly_token_limit: 100_000,
+            monthly_spend_microusd_limit: 1_000_000,
+          }
+        : { production_ready: false },
+    )
     .eq("singleton", true);
-  if (enableError) throw enableError;
+  if (error) throw error;
+}
+
+async function prepareWorkerTranslations(reviewCycleId: string) {
+  await setWorkerTranslationRuntimeReady(true);
   try {
     for (const targetLanguage of ["ar", "ckb"] as const) {
       const { data: attempt, error: beginError } = await auditClient.rpc(
-        "begin_cottage_profile_translation",
+        "begin_cottage_profile_translation_execution",
         {
           target_review_cycle_id: reviewCycleId,
           target_language: targetLanguage,
+          target_route: "ordinary",
+          target_lease_milliseconds: 50_000,
         },
       );
       if (beginError) throw beginError;
       const { data: completed, error: completionError } = await auditClient.rpc(
-        "complete_cottage_profile_translation",
+        "complete_cottage_profile_translation_execution",
         {
           target_attempt_id: attempt.id,
+          target_lease_token: attempt.lease_token,
           translated_description: `${targetLanguage} reviewed description`,
           translated_house_rules: `${targetLanguage} reviewed House Rules`,
           returned_provider: "worker-access-fixture",
@@ -251,11 +281,7 @@ async function prepareWorkerTranslations(reviewCycleId: string) {
       expect(completed).toBe(true);
     }
   } finally {
-    const { error: disableError } = await auditClient
-      .from("cottage_translation_runtime_control")
-      .update({ production_ready: false })
-      .eq("singleton", true);
-    if (disableError) throw disableError;
+    await setWorkerTranslationRuntimeReady(false);
   }
 }
 
@@ -1203,11 +1229,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       expect((await actionResponse).ok()).toBe(true);
       await page.reload();
     }
-    const { error: enableError } = await auditClient
-      .from("cottage_translation_runtime_control")
-      .update({ production_ready: true })
-      .eq("singleton", true);
-    if (enableError) throw enableError;
+    await setWorkerTranslationRuntimeReady(true);
     try {
       await page.reload();
       const publish = page.getByRole("button", {
@@ -1227,15 +1249,11 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       expect((await actionResponse).ok()).toBe(true);
       await expect(page.getByText("Published", { exact: true })).toBeVisible();
     } finally {
-      const { error: disableError } = await auditClient
-        .from("cottage_translation_runtime_control")
-        .update({ production_ready: false })
-        .eq("singleton", true);
-      if (disableError) throw disableError;
+      await setWorkerTranslationRuntimeReady(false);
     }
     const { data: publication, error: publicationError } = await auditClient
       .from("cottage_publication_snapshots")
-      .select("id")
+      .select("id,review_cycle_id")
       .eq("profile_id", profileId)
       .single();
     if (publicationError) throw publicationError;
@@ -1255,6 +1273,78 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     expect((await media.body()).subarray(0, 8)).toEqual(
       Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     );
+
+    const { data: publishedArabic, error: publishedArabicError } =
+      await auditClient
+        .from("cottage_publication_localizations")
+        .select("localized_revision_id")
+        .eq("publication_id", publication.id)
+        .eq("locale", "ar")
+        .single();
+    if (publishedArabicError) throw publishedArabicError;
+    const ownerClient = createClient(
+      process.env.SUPABASE_URL ?? "",
+      process.env.SUPABASE_PUBLISHABLE_KEY ?? "",
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const { data: publishedCycle, error: publishedCycleError } =
+      await auditClient
+        .from("cottage_profile_review_cycles")
+        .select("owner_user_id")
+        .eq("id", publication.review_cycle_id)
+        .single();
+    if (publishedCycleError) throw publishedCycleError;
+    const { data: fixtureUsers, error: fixtureUsersError } =
+      await auditClient.auth.admin.listUsers();
+    if (fixtureUsersError) throw fixtureUsersError;
+    const selectedOwner = fixtureUsers.users.find(
+      (user) => user.id === publishedCycle.owner_user_id,
+    );
+    if (!selectedOwner?.phone) {
+      throw new Error("Selected Cottage Profile owner fixture is unavailable");
+    }
+    const { error: ownerSignInError } =
+      await ownerClient.auth.signInWithPassword({
+        phone: selectedOwner.phone,
+        password: "Local-test-password-2026",
+      });
+    if (ownerSignInError) throw ownerSignInError;
+    const reportReason = "The published Arabic meaning is incorrect";
+    const { error: reportError } = await ownerClient.rpc(
+      "report_current_cottage_translation",
+      {
+        target_review_cycle_id: publication.review_cycle_id,
+        target_localized_revision_id: publishedArabic.localized_revision_id,
+        target_reason: reportReason,
+      },
+    );
+    if (reportError) throw reportError;
+
+    await page.reload();
+    expect(
+      await ownerClient
+        .from("owner_application_cottage_profiles")
+        .select("current_publication_id")
+        .eq("id", profileId)
+        .single(),
+    ).toMatchObject({
+      data: { current_publication_id: publication.id },
+      error: null,
+    });
+    await expect(page.getByText(`Owner report: ${reportReason}`)).toBeVisible();
+    const affectedLocalization = page
+      .getByRole("article")
+      .filter({ hasText: reportReason });
+    await expect(
+      affectedLocalization.getByRole("button", {
+        name: "Reprocess with Terra العربية",
+      }),
+    ).toBeVisible();
+    await expect(
+      affectedLocalization.getByRole("button", {
+        name: "Route to human review",
+      }),
+    ).toBeVisible();
   }
   await page.getByRole("link", { name: "Back to cottages" }).click();
   await expect(

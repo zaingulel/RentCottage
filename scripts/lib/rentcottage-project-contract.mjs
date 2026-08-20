@@ -567,7 +567,7 @@ export const acceptanceCriteriaByIssue = new Map([
   [
     46,
     [
-      "The translation adapter starts evaluation with `gpt-5.6-luna` at high reasoning effort, compares high, xhigh and max on representative Arabic and Sorani Kurdish content, and selects the cheapest setting that meets the approved quality threshold; model, effort and prompt choices remain replaceable configuration.",
+      "The translation adapter starts evaluation with `gpt-5.6-luna` at its lowest supported reasoning effort, increases effort only when representative Arabic and Sorani Kurdish quality requires it, and selects the cheapest model-and-effort setting that meets the approved quality threshold; `gpt-5.6-sol` acts as the automated evaluation judge, while model, effort, prompt and judge choices remain replaceable configuration.",
       "Reported, administrator-flagged or safety-sensitive results can be reprocessed with `gpt-5.6-terra` or routed for human review.",
       "Native Arabic and Sorani Kurdish reviewers approve representative samples across cottage descriptions, House Rules, informal messages, reviews, place names, prices, dates and Cottage Shifts.",
       "Generated text is labelled, originals and source language are retained, failures display the original and users can report poor or inappropriate results.",

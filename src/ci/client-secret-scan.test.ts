@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,5 +28,30 @@ describe("client secret scan", () => {
     expect(() => assertNoClientSecret("server-secret", [root])).toThrow(
       /app\.js/,
     );
+  });
+
+  it("fails the executable scan when OPENAI_API_KEY reaches a client asset", () => {
+    const root = mkdtempSync(join(tmpdir(), "rentcottage-openai-scan-"));
+    temporaryDirectories.push(root);
+    writeFileSync(join(root, "app.js"), "window.key='openai-server-key'");
+
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "src/ci/client-secret-scan.ts", root],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          SUPABASE_SECRET_KEY: "supabase-server-key",
+          PRIVILEGED_AUDIT_HMAC_KEY: "audit-server-key",
+          OPENAI_API_KEY: "openai-server-key",
+        },
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/Server credential found in client asset/);
+    expect(result.stderr).toContain("app.js");
   });
 });

@@ -3,6 +3,24 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(93);
 
+create function pg_temp.configure_translation_runtime(target_ready boolean)
+returns void language sql as $$
+  update public.cottage_translation_runtime_control
+  set production_ready = target_ready,
+      approved_evaluation_artifact_digest = repeat('a', 64),
+      production_approval_digest = repeat('b', 64),
+      provider_terms_approval_reference = 'test-provider-terms',
+      native_review_approval_reference = 'test-native-review',
+      quality_threshold_approval_reference = 'test-quality-threshold',
+      ordinary_model = 'test-luna', ordinary_effort = 'none', ordinary_prompt_version = 'v1',
+      stronger_model = 'test-terra', stronger_effort = 'none', stronger_prompt_version = 'v1',
+      judge_model = 'test-sol', judge_effort = 'medium', judge_prompt_version = 'judge-v1',
+      monthly_request_limit = 100, monthly_token_limit = 100000,
+      monthly_spend_microusd_limit = 1000000,
+      updated_at = now()
+  where singleton;
+$$;
+
 insert into auth.users (id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at)
 values
   ('00000000-0000-0000-0000-000000002401', 'authenticated', 'authenticated', '+9647500002401', now(), null, null),
@@ -97,33 +115,34 @@ select throws_ok(
 set local role service_role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"service_role","aal":"aal2"}', true);
 select throws_ok(
-  $$select public.begin_cottage_profile_translation(
-    (select id from public.cottage_profile_review_cycles), 'ar'
+  $$select public.begin_cottage_profile_translation_execution(
+    (select id from public.cottage_profile_review_cycles), 'ar', 'ordinary', 50000
   )$$,
   'RC246', null, 'translation attempts fail closed while production is disabled'
 );
 select is((select count(*) from public.cottage_profile_translation_attempts), 0::bigint,
   'a disabled translation begin makes no durable change');
-update public.cottage_translation_runtime_control set production_ready = true;
+select pg_temp.configure_translation_runtime(true);
 select lives_ok(
-  $$select public.begin_cottage_profile_translation(
-    (select id from public.cottage_profile_review_cycles), 'ar'
+  $$select public.begin_cottage_profile_translation_execution(
+    (select id from public.cottage_profile_review_cycles), 'ar', 'ordinary', 50000
   )$$,
   'the service boundary starts an Arabic attempt'
 );
 select is((select count(*) from public.cottage_profile_translation_attempts), 1::bigint,
   'the attempt has one durable identifier');
-select lives_ok(
-  $$select public.begin_cottage_profile_translation(
-    (select id from public.cottage_profile_review_cycles), 'ar'
+select throws_ok(
+  $$select public.begin_cottage_profile_translation_execution(
+    (select id from public.cottage_profile_review_cycles), 'ar', 'ordinary', 50000
   )$$,
-  'retrying an active target is idempotent'
+  'RC409', null, 'a second claimant cannot share the active provider lease'
 );
 select is((select count(*) from public.cottage_profile_translation_attempts), 1::bigint,
   'idempotency does not create a second active attempt');
 select lives_ok(
-  $$select public.complete_cottage_profile_translation(
+  $$select public.complete_cottage_profile_translation_execution(
     (select id from public.cottage_profile_translation_attempts where target_language = 'ar'),
+    (select lease_token from public.cottage_profile_translation_attempts where target_language = 'ar'),
     'كوخ هادئ', 'ممنوع التدخين', 'provider', 'returned-model',
     'returned-effort', 'returned-prompt'
   )$$,
@@ -135,8 +154,8 @@ select results_eq(
   $$values ('provider'::text, 'returned-model'::text, 'returned-effort'::text, 'returned-prompt'::text)$$,
   'only returned translation provenance is persisted');
 select lives_ok(
-  $$select public.begin_cottage_profile_translation(
-    (select id from public.cottage_profile_review_cycles), 'ckb'
+  $$select public.begin_cottage_profile_translation_execution(
+    (select id from public.cottage_profile_review_cycles), 'ckb', 'ordinary', 50000
   )$$,
   'the service starts a Sorani attempt against an absent localized head');
 
@@ -175,10 +194,11 @@ select is((select count(*) from public.cottage_profile_localized_revisions where
   'the generated Arabic revision remains in history');
 set local role service_role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"service_role","aal":"aal2"}', true);
-update public.cottage_translation_runtime_control set production_ready = false;
+select pg_temp.configure_translation_runtime(false);
 select throws_ok(
-  $$select public.complete_cottage_profile_translation(
+  $$select public.complete_cottage_profile_translation_execution(
     (select id from public.cottage_profile_translation_attempts where target_language = 'ckb'),
+    (select lease_token from public.cottage_profile_translation_attempts where target_language = 'ckb'),
     'کۆتێجی سەرەتایی', 'یاسای سەرەتایی', 'provider', 'model', 'high', 'v1'
   )$$,
   'RC246', null, 'translation completion fails closed when runtime becomes disabled');
@@ -190,16 +210,17 @@ select results_eq(
   'a disabled completion leaves both attempt and localized head unchanged');
 set local role service_role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"service_role","aal":"aal2"}', true);
-update public.cottage_translation_runtime_control set production_ready = true;
+select pg_temp.configure_translation_runtime(true);
 select results_eq(
-  $$select public.complete_cottage_profile_translation(
+  $$select public.complete_cottage_profile_translation_execution(
     (select id from public.cottage_profile_translation_attempts where target_language = 'ckb'),
+    (select lease_token from public.cottage_profile_translation_attempts where target_language = 'ckb'),
     'کۆتێجی سەرەتایی', 'یاسای سەرەتایی', 'provider', 'model', 'high', 'v1'
   )$$,
   array[true], 'the enabled provider completion creates the initial Sorani head');
 select lives_ok(
-  $$select public.begin_cottage_profile_translation(
-    (select id from public.cottage_profile_review_cycles), 'ckb'
+  $$select public.begin_cottage_profile_translation_execution(
+    (select id from public.cottage_profile_review_cycles), 'ckb', 'ordinary', 50000
   )$$,
   'a later Sorani attempt records the generated head it expects');
 set local role authenticated;
@@ -213,14 +234,16 @@ select lives_ok(
 set local role service_role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"service_role","aal":"aal2"}', true);
 select results_eq(
-  $$select public.complete_cottage_profile_translation(
+  $$select public.complete_cottage_profile_translation_execution(
     (select id from public.cottage_profile_translation_attempts
+      where target_language = 'ckb' and state = 'pending'),
+    (select lease_token from public.cottage_profile_translation_attempts
       where target_language = 'ckb' and state = 'pending'),
     'کۆتێجی کۆن', 'یاسای کۆن', 'provider', 'late-model', 'high', 'v1'
   )$$,
   array[false],
   'a provider completion loses compare-and-swap after an administrator advances the head');
-update public.cottage_translation_runtime_control set production_ready = false;
+select pg_temp.configure_translation_runtime(false);
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
 select results_eq(
@@ -244,7 +267,7 @@ select throws_ok(
   $$select public.approve_cottage_profile_publication(
     (select id from public.cottage_profile_review_cycles), 'Ready'
   )$$,
-  'RC246', null, 'production publication fails loudly until issue #46 enables the adapter');
+  'RC246', null, 'production publication fails loudly while the adapter runtime is disabled');
 
 reset role;
 delete from public.cottage_translation_runtime_control;
@@ -262,7 +285,7 @@ values (true, false);
 
 set local role service_role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"service_role","aal":"aal2"}', true);
-update public.cottage_translation_runtime_control set production_ready = true;
+select pg_temp.configure_translation_runtime(true);
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
 select lives_ok(
@@ -317,13 +340,19 @@ select results_eq(
       ('service_role', 'begin', has_function_privilege('service_role', 'public.begin_cottage_profile_translation(uuid,public.cottage_profile_source_language)', 'execute')),
       ('service_role', 'complete', has_function_privilege('service_role', 'public.complete_cottage_profile_translation(uuid,text,text,text,text,text,text)', 'execute')),
       ('service_role', 'fail', has_function_privilege('service_role', 'public.fail_cottage_profile_translation(uuid,text)', 'execute')),
+      ('service_role', 'begin_execution', has_function_privilege('service_role', 'public.begin_cottage_profile_translation_execution(uuid,public.cottage_profile_source_language,text,integer)', 'execute')),
+      ('service_role', 'complete_execution', has_function_privilege('service_role', 'public.complete_cottage_profile_translation_execution(uuid,uuid,text,text,text,text,text,text)', 'execute')),
+      ('service_role', 'fail_execution', has_function_privilege('service_role', 'public.fail_cottage_profile_translation_execution(uuid,uuid,text)', 'execute')),
       ('service_role', 'resolve', has_function_privilege('service_role', 'public.resolve_current_cottage_publication_media(uuid)', 'execute'))
   ) grants(role_name, function_name, allowed) order by role_name, function_name$$,
   $$values
     ('anon'::text, 'begin'::text, false), ('anon', 'complete', false), ('anon', 'fail', false), ('anon', 'resolve', false),
     ('authenticated', 'begin', false), ('authenticated', 'complete', false), ('authenticated', 'fail', false), ('authenticated', 'resolve', false),
-    ('service_role', 'begin', true), ('service_role', 'complete', true), ('service_role', 'fail', true), ('service_role', 'resolve', true)$$,
-  'translation and media RPC grants belong only to service_role');
+    ('service_role', 'begin', false), ('service_role', 'begin_execution', true),
+    ('service_role', 'complete', false), ('service_role', 'complete_execution', true),
+    ('service_role', 'fail', false), ('service_role', 'fail_execution', true),
+    ('service_role', 'resolve', true)$$,
+  'only lease-guarded translation execution and media RPCs belong to service_role');
 
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
@@ -553,28 +582,34 @@ select results_eq(
 
 set local role service_role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"service_role","aal":"aal2"}', true);
-update public.cottage_translation_runtime_control set production_ready = true;
+select pg_temp.configure_translation_runtime(true);
 select lives_ok(
-  $$select public.begin_cottage_profile_translation(
-    (select id from public.cottage_profile_review_cycles where cycle_number = 2), 'ar'
-  ), public.begin_cottage_profile_translation(
-    (select id from public.cottage_profile_review_cycles where cycle_number = 2), 'ckb'
+  $$select public.begin_cottage_profile_translation_execution(
+    (select id from public.cottage_profile_review_cycles where cycle_number = 2), 'ar', 'ordinary', 50000
+  ), public.begin_cottage_profile_translation_execution(
+    (select id from public.cottage_profile_review_cycles where cycle_number = 2), 'ckb', 'ordinary', 50000
   )$$,
   'the provider starts both non-source translations for the later cycle');
 select lives_ok(
-  $$select public.complete_cottage_profile_translation(
+  $$select public.complete_cottage_profile_translation_execution(
     (select attempts.id from public.cottage_profile_translation_attempts attempts
       join public.cottage_profile_review_cycles cycles on cycles.id = attempts.review_cycle_id
       where cycles.cycle_number = 2 and attempts.target_language = 'ar'),
+    (select attempts.lease_token from public.cottage_profile_translation_attempts attempts
+      join public.cottage_profile_review_cycles cycles on cycles.id = attempts.review_cycle_id
+      where cycles.cycle_number = 2 and attempts.target_language = 'ar'),
     'تغيير خاص آلي', 'قواعد آلية', 'provider', 'model', 'high', 'v2'
-  ), public.complete_cottage_profile_translation(
+  ), public.complete_cottage_profile_translation_execution(
     (select attempts.id from public.cottage_profile_translation_attempts attempts
+      join public.cottage_profile_review_cycles cycles on cycles.id = attempts.review_cycle_id
+      where cycles.cycle_number = 2 and attempts.target_language = 'ckb'),
+    (select attempts.lease_token from public.cottage_profile_translation_attempts attempts
       join public.cottage_profile_review_cycles cycles on cycles.id = attempts.review_cycle_id
       where cycles.cycle_number = 2 and attempts.target_language = 'ckb'),
     'گۆڕانکاری دروستکراو', 'یاسای دروستکراو', 'provider', 'model', 'high', 'v2'
   )$$,
   'both later non-source heads originate in completed provider attempts');
-update public.cottage_translation_runtime_control set production_ready = false;
+select pg_temp.configure_translation_runtime(false);
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
 select lives_ok(
@@ -630,7 +665,7 @@ update public.account_contexts set owner_approval_state = 'approved'
 where user_id = '00000000-0000-0000-0000-000000002401';
 set local role service_role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"service_role","aal":"aal2"}', true);
-update public.cottage_translation_runtime_control set production_ready = true;
+select pg_temp.configure_translation_runtime(true);
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
 select lives_ok(

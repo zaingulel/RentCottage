@@ -30,4 +30,7 @@ if (
   const roots = process.argv.slice(2);
   assertNoClientSecret(process.env.SUPABASE_SECRET_KEY ?? "", roots);
   assertNoClientSecret(process.env.PRIVILEGED_AUDIT_HMAC_KEY ?? "", roots);
+  if (process.env.OPENAI_API_KEY) {
+    assertNoClientSecret(process.env.OPENAI_API_KEY, roots);
+  }
 }

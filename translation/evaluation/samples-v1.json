@@ -1,0 +1,115 @@
+[
+  {
+    "id": "ar-cottage-description",
+    "sourceLanguage": "en",
+    "targetLanguage": "ar",
+    "provenance": "synthetic",
+    "segments": [
+      {
+        "key": "description",
+        "kind": "cottage_description",
+        "text": "A quiet family cottage near Shaqlawa with a private garden."
+      }
+    ],
+    "reference": [
+      {
+        "key": "description",
+        "text": "كوخ عائلي هادئ قرب شقلاوة مع حديقة خاصة."
+      }
+    ]
+  },
+  {
+    "id": "ckb-house-rules",
+    "sourceLanguage": "en",
+    "targetLanguage": "ckb",
+    "provenance": "synthetic",
+    "segments": [
+      {
+        "key": "houseRules",
+        "kind": "house_rules",
+        "text": "No smoking and no parties after 10:00 PM."
+      }
+    ],
+    "reference": [
+      {
+        "key": "houseRules",
+        "text": "جگەرەکێشان قەدەغەیە و دوای کاتژمێر 10:00ی شەو ئاھەنگ ڕێگەپێنەدراوە."
+      }
+    ]
+  },
+  {
+    "id": "ar-informal-message",
+    "sourceLanguage": "en",
+    "targetLanguage": "ar",
+    "provenance": "synthetic",
+    "segments": [
+      {
+        "key": "message",
+        "kind": "message",
+        "text": "Hi, is the pool ready for the children tomorrow?"
+      }
+    ],
+    "reference": [
+      {
+        "key": "message",
+        "text": "مرحباً، هل المسبح جاهز للأطفال غداً؟"
+      }
+    ]
+  },
+  {
+    "id": "ckb-review",
+    "sourceLanguage": "en",
+    "targetLanguage": "ckb",
+    "provenance": "synthetic",
+    "segments": [
+      {
+        "key": "review",
+        "kind": "review",
+        "text": "The cottage was clean and the owner answered quickly."
+      }
+    ],
+    "reference": [
+      {
+        "key": "review",
+        "text": "کۆتێجەکە پاک بوو و خاوەنەکە بەخێرایی وەڵامی دایەوە."
+      }
+    ]
+  },
+  {
+    "id": "ar-place-name",
+    "sourceLanguage": "en",
+    "targetLanguage": "ar",
+    "provenance": "synthetic",
+    "segments": [
+      {
+        "key": "place",
+        "kind": "place_name",
+        "text": "Shaqlawa, Erbil"
+      }
+    ],
+    "reference": [{ "key": "place", "text": "شقلاوة، أربيل" }]
+  },
+  {
+    "id": "ckb-price-date-shift",
+    "sourceLanguage": "en",
+    "targetLanguage": "ckb",
+    "provenance": "synthetic",
+    "segments": [
+      { "key": "price", "kind": "price", "text": "IQD 180,000" },
+      { "key": "date", "kind": "date", "text": "21 August 2026" },
+      {
+        "key": "shift",
+        "kind": "cottage_shift",
+        "text": "Evening Shift, 6:00 PM–11:00 PM"
+      }
+    ],
+    "reference": [
+      { "key": "price", "text": "180,000 دیناری عێراقی" },
+      { "key": "date", "text": "21ی ئابی 2026" },
+      {
+        "key": "shift",
+        "text": "شەفتی ئێوارە، 6:00ی ئێوارە تا 11:00ی شەو"
+      }
+    ]
+  }
+]
