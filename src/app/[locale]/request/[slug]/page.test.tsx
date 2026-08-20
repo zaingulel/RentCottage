@@ -1,0 +1,81 @@
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { loadQuote, notFound } = vi.hoisted(() => ({
+  loadQuote: vi.fn(),
+  notFound: vi.fn(),
+}));
+
+vi.mock("server-only", () => ({}));
+vi.mock("next/navigation", () => ({ notFound }));
+vi.mock("@/booking-quote/request-booking-quote", () => ({
+  loadPublicBookingQuote: loadQuote,
+}));
+
+import RequestPage from "./page";
+
+describe("public Booking Quote page", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("awaits the route values and loads the canonical discovery selection", async () => {
+    loadQuote.mockResolvedValue({ status: "selection-unavailable" });
+    render(
+      await RequestPage({
+        params: Promise.resolve({
+          locale: "en",
+          slug: "cottage-00000000000040008000000000000029",
+        }),
+        searchParams: Promise.resolve({
+          to: "2026-08-22",
+          from: "2026-08-21",
+          selection: ["2026-08-22:shift:1", "2026-08-21:shift:2"],
+          guests: "4",
+        }),
+      }),
+    );
+    expect(loadQuote).toHaveBeenCalledWith(
+      "en",
+      "cottage-00000000000040008000000000000029",
+      {
+        from: "2026-08-21",
+        to: "2026-08-22",
+        selections: [
+          { serviceDay: "2026-08-21", kind: "shift", position: 2 },
+          { serviceDay: "2026-08-22", kind: "shift", position: 1 },
+        ],
+        guests: 4,
+        amenities: [],
+      },
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("no longer available");
+  });
+
+  it.each([
+    "garden-house",
+    "cottage-000000000000400080000000000000290",
+    "cottage-ABCDEF00000000000000000000000000",
+  ])(
+    "returns not found for an invalid slug without provider work",
+    async (slug) => {
+      await RequestPage({
+        params: Promise.resolve({ locale: "en", slug }),
+        searchParams: Promise.resolve({
+          from: "2026-08-21",
+          selection: "2026-08-21:shift:1",
+          guests: "4",
+        }),
+      });
+      expect(notFound).toHaveBeenCalled();
+      expect(loadQuote).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a fictional request route disconnected when no selection is supplied", async () => {
+    await RequestPage({
+      params: Promise.resolve({ locale: "en", slug: "garden-house" }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(notFound).toHaveBeenCalled();
+    expect(loadQuote).not.toHaveBeenCalled();
+  });
+});

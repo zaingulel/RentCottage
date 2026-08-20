@@ -22,6 +22,7 @@ const copy = {
     fullDay: "اليوم الكامل",
     closed: "غير متاح",
     noPrice: "السعر غير متاح",
+    quote: "عرض السعر الدقيق",
   },
   ckb: {
     back: "گەڕانەوە بۆ ئەنجامەکان",
@@ -37,6 +38,7 @@ const copy = {
     fullDay: "هەموو ڕۆژ",
     closed: "بەردەست نییە",
     noPrice: "نرخ بەردەست نییە",
+    quote: "پێشنیاری نرخی ورد",
   },
   en: {
     back: "Back to results",
@@ -52,6 +54,7 @@ const copy = {
     fullDay: "Full-day bundle",
     closed: "Unavailable",
     noPrice: "Price unavailable",
+    quote: "Get exact quote",
   },
 } as const;
 
@@ -175,6 +178,12 @@ export function PublicCottageProfileView({
               ? messages.noPrice
               : formatIqd(cottage.totalPriceIqd, locale)}
           </strong>
+          <Link
+            className="action-link action-primary action-full"
+            href={`/${locale}/request/${cottage.slug}?${queryString}`}
+          >
+            {messages.quote}
+          </Link>
         </aside>
       </div>
     </main>
