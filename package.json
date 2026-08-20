@@ -17,6 +17,7 @@
     "test:browser": "PLAYWRIGHT_SERVER=next playwright test tests/marketplace-shell.spec.ts tests/interaction-controls.spec.ts --project=mobile --project=desktop",
     "smoke:preview": "PLAYWRIGHT_SERVER=worker playwright test tests/worker-smoke.spec.ts --project=worker",
     "scan:client-secrets": "node --experimental-strip-types src/ci/client-secret-scan.ts .next/static .open-next/assets",
+    "evaluate:translation": "node --experimental-strip-types src/translation/evaluation-cli.ts",
     "cf-typegen": "wrangler types cloudflare-env.d.ts",
     "verify:board": "node scripts/verify-rentcottage-project.mjs",
     "reconcile:board": "node scripts/reconcile-rentcottage-project.mjs",

@@ -1,19 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createRequestCottagePublication, revalidatePath } = vi.hoisted(() => ({
+const {
+  createRequestCottagePublication,
+  createRequestCottageTranslation,
+  revalidatePath,
+} = vi.hoisted(() => ({
   createRequestCottagePublication: vi.fn(),
+  createRequestCottageTranslation: vi.fn(),
   revalidatePath: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("./request-cottage-publication", () => ({
   createRequestCottagePublication,
+  createRequestCottageTranslation,
 }));
 
 import {
   correctCottageLocalizationAction,
   decideCottageLocalizationAction,
   decideCottagePublicationAction,
+  generateCottageTranslationAction,
+  reportCottageTranslationAction,
+  routeCottageTranslationToHumanReviewAction,
 } from "./actions";
 
 const cycleId = "20000000-0000-4000-8000-000000000024";
@@ -109,6 +118,92 @@ describe("Cottage publication actions", () => {
     form.set("approved", "1");
 
     await expect(decideCottagePublicationAction(form)).rejects.toThrow(
+      "Cottage publication action input is invalid",
+    );
+    expect(createRequestCottagePublication).not.toHaveBeenCalled();
+  });
+
+  it("routes the selected current localization to human review", async () => {
+    const routeHumanReview = vi.fn().mockResolvedValue(undefined);
+    createRequestCottagePublication.mockResolvedValue({ routeHumanReview });
+    const form = baseForm();
+
+    await routeCottageTranslationToHumanReviewAction(form);
+
+    expect(routeHumanReview).toHaveBeenCalledWith(
+      cycleId,
+      "ar",
+      "Reviewed carefully",
+    );
+    expect(revalidatePath).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ordinary", "ordinary"],
+    ["stronger_model", "stronger_model"],
+  ] as const)(
+    "re-resolves administrator authority before %s translation",
+    async (route, expectedRoute) => {
+      const assertTranslationAdministrator = vi
+        .fn()
+        .mockResolvedValue(undefined);
+      const generateTranslation = vi
+        .fn()
+        .mockResolvedValue({ status: "completed" });
+      createRequestCottageTranslation.mockResolvedValue({
+        assertTranslationAdministrator,
+        generateTranslation,
+      });
+      const form = baseForm();
+      form.set("route", route);
+
+      await generateCottageTranslationAction(form);
+
+      expect(assertTranslationAdministrator).toHaveBeenCalledOnce();
+      expect(generateTranslation).toHaveBeenCalledWith(
+        cycleId,
+        "ar",
+        expectedRoute,
+      );
+      expect(revalidatePath).toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an unapproved translation route before runtime composition", async () => {
+    const form = baseForm();
+    form.set("route", "free-form-model");
+
+    await expect(generateCottageTranslationAction(form)).rejects.toThrow(
+      "Cottage publication action input is invalid",
+    );
+    expect(createRequestCottageTranslation).not.toHaveBeenCalled();
+  });
+
+  it("lets the owner report only a concrete immutable localized revision", async () => {
+    const reportTranslation = vi.fn().mockResolvedValue(undefined);
+    createRequestCottagePublication.mockResolvedValue({ reportTranslation });
+    const form = baseForm();
+    form.set("localizedRevisionId", "30000000-0000-4000-8000-000000000024");
+
+    await reportCottageTranslationAction(form);
+
+    expect(reportTranslation).toHaveBeenCalledWith(
+      cycleId,
+      "30000000-0000-4000-8000-000000000024",
+      "Reviewed carefully",
+    );
+  });
+
+  it.each([
+    ["targetLocale", "fr"],
+    ["localizedRevisionId", "stale"],
+    ["reason", ""],
+  ])("rejects malformed translation control input (%s)", async (key, value) => {
+    const form = baseForm();
+    form.set("localizedRevisionId", "30000000-0000-4000-8000-000000000024");
+    form.set(key, value);
+
+    await expect(reportCottageTranslationAction(form)).rejects.toThrow(
       "Cottage publication action input is invalid",
     );
     expect(createRequestCottagePublication).not.toHaveBeenCalled();

@@ -24,14 +24,16 @@ async function loadAdministratorCottage(profileId: string) {
     return { status: "access_required" as const };
   const cottageProfile = await createRequestCottageProfile();
   const publication = await createRequestCottagePublication();
-  const [profile, review] = await Promise.all([
+  const [profile, review, administration] = await Promise.all([
     cottageProfile.load(profileId),
     publication.loadCurrentReview(profileId),
+    publication.loadTranslationAdministration(),
   ]);
   return {
     status: "ready" as const,
     profile,
     review,
+    administration,
   };
 }
 
@@ -91,6 +93,7 @@ export default async function AdministratorCottageProfilePage({
           locale={locale}
           review={page.review}
           actor="administrator"
+          administration={page.administration}
         />
       ) : null}
     </main>

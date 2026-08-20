@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 
 import { isLocale } from "@/i18n/routing";
-import { createRequestCottagePublication } from "./request-cottage-publication";
+import {
+  createRequestCottagePublication,
+  createRequestCottageTranslation,
+} from "./request-cottage-publication";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -104,4 +107,47 @@ export async function decideCottagePublicationAction(formData: FormData) {
     await createRequestCottagePublication()
   ).decidePublication(reviewCycleId, approved, reason);
   refresh(locale);
+}
+
+export async function routeCottageTranslationToHumanReviewAction(
+  formData: FormData,
+) {
+  const values = input(formData);
+  const reason = text(formData, "reason");
+  if (!values || !validText(reason, 1000)) invalid();
+  await (
+    await createRequestCottagePublication()
+  ).routeHumanReview(values.reviewCycleId, values.targetLocale, reason);
+  refresh(values.locale);
+}
+
+export async function generateCottageTranslationAction(formData: FormData) {
+  const values = input(formData);
+  const route = text(formData, "route");
+  if (!values || (route !== "ordinary" && route !== "stronger_model"))
+    invalid();
+  const translation = await createRequestCottageTranslation();
+  await translation.assertTranslationAdministrator();
+  await translation.generateTranslation(
+    values.reviewCycleId,
+    values.targetLocale,
+    route,
+  );
+  refresh(values.locale);
+}
+
+export async function reportCottageTranslationAction(formData: FormData) {
+  const values = input(formData);
+  const localizedRevisionId = text(formData, "localizedRevisionId");
+  const reason = text(formData, "reason");
+  if (
+    !values ||
+    !uuidPattern.test(localizedRevisionId) ||
+    !validText(reason, 1000)
+  )
+    invalid();
+  await (
+    await createRequestCottagePublication()
+  ).reportTranslation(values.reviewCycleId, localizedRevisionId, reason);
+  refresh(values.locale);
 }
