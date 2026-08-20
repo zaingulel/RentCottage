@@ -88,7 +88,25 @@ There are two routine owner decisions:
 1. **Work selection:** approve the ticket outcome and acceptance criteria before implementation starts. For high blast-radius work, include the concrete plan required by the change gate below in this decision.
 2. **Delivery approval:** review the finished evidence packet before any commit or outward action such as a push, pull request, deployment or merge. The approval must state the exact actions it covers.
 
-The delivery packet contains the acceptance-criteria mapping, diff summary, tests run, review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. Graphite Agent or another external reviewer may add evidence but never replaces the independent review or executable checks. A Graphite `Completed` state means processing finished only; the coordinator still reconciles every current-head finding.
+### External-review route
+
+Resolve the external-review route from this table, evaluated top-to-bottom. `ANY` matches either value for that input.
+
+| Rule | Security input | Delivery integrity | Risk escalation | Result |
+| --- | --- | --- | --- | --- |
+| R1 | UNKNOWN | ANY | ANY | STOP |
+| R2 | ANY_YES | ANY | ANY | Graphite + Greptile |
+| R3 | ALL_NO_OR_NOT_RUN | YES | ANY | Graphite + Greptile |
+| R4 | ALL_NO_OR_NOT_RUN | NO | YES | Graphite + Greptile |
+| R5 | ALL_NO_OR_NOT_RUN | NO | NO | Graphite only |
+
+Security input uses the `security-code-review` aggregate. Map `ALL_NO` to `ALL_NO_OR_NOT_RUN`; use `NOT_RUN` only below the skill's substantive invocation threshold, with concise evidence, and map it likewise.
+
+Delivery integrity covers Continuous Integration workflows, review skills and agent authorities, delivery rules, hosted merge assumptions, tracker verification and reconciliation, guarded release machinery, and tests specifically verifying those surfaces. It is `YES` when the change touches any of these surfaces. Ordinary product, domain, user-interface, application, database, and browser tests alone are not delivery integrity. Otherwise delivery integrity is `NO`.
+
+Risk escalation is `YES` when the approved issue or owner requires Greptile, or the coordinator cites material uncertainty, blast radius, or reviewer-diversity value; otherwise it is `NO`. `STOP` produces no approvable pull-request route. Every pull-request-bound change resolves a route or `STOP` before pull-request approval.
+
+The delivery packet contains the acceptance-criteria mapping, diff summary, tests run, review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, any known gap, and the external-review route, matched rule, and concise supporting evidence. Graphite Agent or another external reviewer may add evidence but never replaces the independent review or executable checks. A Graphite `Completed` state means processing finished only; the coordinator still reconciles every current-head finding.
 
 ### Adding workflow machinery
 

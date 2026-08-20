@@ -31,6 +31,64 @@ function loadWorkflow(path = ".github/workflows/ci.yml") {
   return { source, workflow: parse(source) };
 }
 
+function sectionUnder(source: string, heading: string) {
+  const startMarker = `${heading}\n`;
+  const start = source.indexOf(startMarker);
+  if (start === -1) {
+    throw new Error(`Missing Markdown heading: ${heading}`);
+  }
+
+  const contentStart = start + startMarker.length;
+  const remaining = source.slice(contentStart);
+  const nextHeading = remaining.search(/^#{1,6} /m);
+  return nextHeading === -1 ? remaining : remaining.slice(0, nextHeading);
+}
+
+function parseMarkdownTable(source: string, heading: string) {
+  const section = sectionUnder(source, heading);
+  const lines = section.split("\n");
+  const tableStart = lines.findIndex((line) => line.trim().startsWith("|"));
+  if (tableStart === -1) {
+    throw new Error(`Missing Markdown table under: ${heading}`);
+  }
+
+  const tableEnd = lines.findIndex(
+    (line, index) => index > tableStart && !line.trim().startsWith("|"),
+  );
+  const tableLines = lines.slice(
+    tableStart,
+    tableEnd === -1 ? undefined : tableEnd,
+  );
+  const cells = tableLines.map((line) =>
+    line
+      .trim()
+      .slice(1, -1)
+      .split("|")
+      .map((cell) => cell.trim()),
+  );
+  if (
+    cells.length < 3 ||
+    cells[1].some((cell) => !/^:?-{3,}:?$/.test(cell)) ||
+    cells.some((row) => row.length !== cells[0].length)
+  ) {
+    throw new Error(`Malformed Markdown table under: ${heading}`);
+  }
+
+  return { headers: cells[0], rows: cells.slice(2) };
+}
+
+function parseNumberedSequence(source: string, heading: string) {
+  return sectionUnder(source, heading)
+    .split("\n")
+    .map((line) => line.match(/^(\d+)\. \*\*([^*]+):\*\* (.+)$/))
+    .filter((match): match is RegExpMatchArray => match !== null)
+    .map((match) => ({
+      number: Number(match[1]),
+      label: match[2],
+      text: match[3],
+    }));
+}
+
 function runWorkflowShell(
   script: string,
   environment: Record<string, string>,
@@ -97,6 +155,157 @@ fi
 }
 
 describe("GitHub Actions delivery checks", () => {
+  it("defines the complete external-review route matrix in one authority", () => {
+    const agents = readFileSync(resolve("AGENTS.md"), "utf8");
+    const routeTable = parseMarkdownTable(agents, "### External-review route");
+
+    expect(routeTable.headers).toEqual([
+      "Rule",
+      "Security input",
+      "Delivery integrity",
+      "Risk escalation",
+      "Result",
+    ]);
+    expect(routeTable.rows).toEqual([
+      ["R1", "UNKNOWN", "ANY", "ANY", "STOP"],
+      ["R2", "ANY_YES", "ANY", "ANY", "Graphite + Greptile"],
+      ["R3", "ALL_NO_OR_NOT_RUN", "YES", "ANY", "Graphite + Greptile"],
+      ["R4", "ALL_NO_OR_NOT_RUN", "NO", "YES", "Graphite + Greptile"],
+      ["R5", "ALL_NO_OR_NOT_RUN", "NO", "NO", "Graphite only"],
+    ]);
+
+    const routeSection = sectionUnder(agents, "### External-review route");
+    expect(routeSection).toContain("evaluated top-to-bottom");
+    expect(routeSection).toContain(
+      "Security input uses the `security-code-review` aggregate. Map `ALL_NO` to `ALL_NO_OR_NOT_RUN`; use `NOT_RUN` only below the skill's substantive invocation threshold, with concise evidence, and map it likewise",
+    );
+    expect(routeSection).toContain(
+      "Continuous Integration workflows, review skills and agent authorities, delivery rules, hosted merge assumptions, tracker verification and reconciliation, guarded release machinery, and tests specifically verifying those surfaces",
+    );
+    expect(routeSection).toContain(
+      "Ordinary product, domain, user-interface, application, database, and browser tests alone are not delivery integrity",
+    );
+    expect(routeSection).toContain(
+      "Risk escalation is `YES` when the approved issue or owner requires Greptile, or the coordinator cites material uncertainty, blast radius, or reviewer-diversity value; otherwise it is `NO`",
+    );
+    expect(routeSection).toContain(
+      "`STOP` produces no approvable pull-request route",
+    );
+    expect(routeSection).toContain(
+      "Every pull-request-bound change resolves a route or `STOP` before pull-request approval",
+    );
+    expect(agents).toContain(
+      "external-review route, matched rule, and concise supporting evidence",
+    );
+  });
+
+  it("keeps security review scoped to classification and managed review", () => {
+    const agents = readFileSync(resolve("AGENTS.md"), "utf8");
+    const securityReview = readFileSync(
+      resolve(".agents/skills/security-code-review/SKILL.md"),
+      "utf8",
+    );
+    const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
+
+    expect(securityReview).toContain("substantive finished RentCottage change");
+    expect(securityReview).toContain(
+      "report the aggregate `UNKNOWN`, `ANY_YES`, or `ALL_NO` to the coordinator",
+    );
+    expect(securityReview).toContain(
+      "external-review route table in `AGENTS.md`",
+    );
+    expect(securityReview).toContain(
+      "does not operate Graphite or Greptile, change provider configuration, or broaden the managed review",
+    );
+    expect(securityReview).toContain(
+      "If every classification is `NO`, invoke those managed Standards and Spec contracts unchanged",
+    );
+    expect(securityReview).toContain(
+      "If any classification is `YES`, spawn the managed Standards and Spec reviewers together with the configured `security_reviewer`",
+    );
+
+    expect(
+      parseMarkdownTable(agents, "### External-review route").rows,
+    ).toHaveLength(5);
+    expect(securityReview).not.toContain("| Security input |");
+    expect(delivery).not.toContain("| Security input |");
+  });
+
+  it("orders routed external review before exact-head quality", () => {
+    const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
+    const sequence = parseNumberedSequence(
+      delivery,
+      "## External review and exact-head quality",
+    );
+    const evidenceTable = parseMarkdownTable(delivery, "### Greptile evidence");
+
+    expect(sequence.map(({ number, label }) => ({ number, label }))).toEqual([
+      { number: 1, label: "Submit" },
+      { number: 2, label: "Graphite" },
+      { number: 3, label: "Required Greptile" },
+      { number: 4, label: "Exact-head quality" },
+    ]);
+    expect(sequence[1].text).toContain("`head=CURRENT_PR_HEAD`");
+    expect(sequence[2].text).toContain(
+      "`applies=Graphite + Greptile`; `head=CURRENT_PR_HEAD`",
+    );
+    expect(sequence[3].text).toContain(
+      "`after=Graphite,Required Greptile`; `head=CURRENT_PR_HEAD`",
+    );
+
+    expect(delivery).toContain(
+      "resolved external-review route and matched rule",
+    );
+    expect(delivery).toContain(
+      "add the `independent-review` label immediately after pull-request creation",
+    );
+    expect(evidenceTable).toEqual({
+      headers: ["Packet fields", "Complete evidence"],
+      rows: [
+        [
+          "`provider`, `source`, `artifact`",
+          "`Greptile`; the installed Greptile Apps GitHub App; its GitHub artifact URL.",
+        ],
+        [
+          "`route`, `matched-rule`, `trigger`",
+          "`Graphite + Greptile`; the resolved `AGENTS.md` rule; `independent-review` for the first head or `@greptileai` after each later push.",
+        ],
+        [
+          "`completion`, `head`",
+          "`OBSERVED` only when both the review footer and the app's completion reaction or status are present, and the footer's last-reviewed-commit link resolves to `CURRENT_PR_HEAD`.",
+        ],
+        [
+          "`changed-files`, `reviewed-files`, `file-change-limit`, `coverage`",
+          "The GitHub changed-file count is at or below the dashboard's current `fileChangeLimit`; Greptile's count or file summary accounts for every changed file; coverage is `COMPLETE`.",
+        ],
+        ["`findings`", "Every finding has an evidence-based disposition."],
+      ],
+    });
+    expect(delivery).toContain(
+      "Each push advances `CURRENT_PR_HEAD`, invalidates Graphite, Greptile, and Continuous Integration evidence, and restarts the sequence",
+    );
+    expect(delivery).toContain(
+      "Silence, a missing row, provider drift that makes a row unobservable, or `SKIPPED`, `FAILED`, `STALE`, or `PARTIAL` evidence makes the Greptile review incomplete and stops delivery",
+    );
+    expect(delivery).toContain(
+      "Keep Greptile human-observed: repository workflows parse no Greptile comments, hidden markers, or status prose and define no Greptile credential or token, provider trigger, or merge gate",
+    );
+    expect(delivery).toContain(
+      "Recurring maintenance is one explicit routing decision per delivery",
+    );
+    expect(delivery).toContain(
+      "Reassess or remove this routing layer if Greptile's recurring free allowance ends",
+    );
+
+    const executableSources = [
+      readFileSync(resolve(".github/workflows/ci.yml"), "utf8"),
+      readFileSync(resolve(".github/workflows/preview.yml"), "utf8"),
+      readFileSync(resolve("scripts/release-delivery.mjs"), "utf8"),
+      readFileSync(resolve("package.json"), "utf8"),
+    ].join("\n");
+    expect(executableSources.toLowerCase()).not.toContain("greptile");
+  });
+
   it("keeps terminal delivery release progressively registered from the document map", () => {
     const agents = readFileSync(resolve("AGENTS.md"), "utf8");
     const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
