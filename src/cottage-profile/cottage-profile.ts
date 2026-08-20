@@ -6,6 +6,7 @@ export const cottageProfileAmenities = [
   "wifi",
   "outdoor_seating",
 ] as const;
+export type CottageProfileAmenity = (typeof cottageProfileAmenities)[number];
 
 export const cottageProfileSourceLanguages = ["ar", "ckb", "en"] as const;
 export const cottageProfilePhotoMediaTypes = [

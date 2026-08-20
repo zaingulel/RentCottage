@@ -1256,18 +1256,14 @@ select throws_ok(
   '42501', null,
   'a prospective Cottage Owner cannot resolve the privileged Owner Calendar'
 );
-select ok(
-  not exists (
-    select 1
-    from jsonb_array_elements(public.resolve_cottage_inventory_public_availability(
+select throws_ok(
+  $$select public.resolve_cottage_inventory_public_availability(
       '30000000-0000-4000-8000-000000002601',
       (select revision_id from pricing_revision_before_replace),
       '2099-08-20'
-    ) -> 'units') item
-    where (select array_agg(key order by key) from jsonb_object_keys(item) key)
-      <> array['available', 'id', 'kind']::text[]
-  ),
-  'a prospective Cottage Owner receives only narrow public availability'
+    )$$,
+  'RC204', null,
+  'a prospective Cottage Owner cannot expose public availability'
 );
 
 reset role;

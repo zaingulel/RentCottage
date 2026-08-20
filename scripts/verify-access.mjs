@@ -181,6 +181,7 @@ export function main(
         "--project=mobile",
         "--project=desktop",
         "--workers=1",
+        "--output=playwright-report/access-next",
       ],
       { env: browserEnvironment, stdio: "inherit" },
     );
@@ -194,6 +195,7 @@ export function main(
         "tests/access.spec.ts",
         "--project=worker",
         "--workers=1",
+        "--output=playwright-report/access-worker",
       ],
       {
         env: { ...browserEnvironment, PLAYWRIGHT_SERVER: "worker" },
