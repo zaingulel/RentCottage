@@ -145,6 +145,17 @@ export function main(
       { env: scheduleConcurrencyEnvironment, stdio: "inherit" },
     );
     if (scheduleConcurrency.status !== 0) return scheduleConcurrency.status;
+    const inventoryConcurrencyEnvironment = {
+      ...scheduleConcurrencyEnvironment,
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    };
+    const inventoryConcurrency = execute(
+      "node",
+      ["scripts/verify-cottage-inventory-concurrency.mjs"],
+      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+    );
+    if (inventoryConcurrency.status !== 0) return inventoryConcurrency.status;
     const rerun = execute("node", ["scripts/prepare-access-test.mjs"], {
       env: {
         ...accessEnvironment,

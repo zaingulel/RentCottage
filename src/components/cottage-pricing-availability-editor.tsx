@@ -11,6 +11,7 @@ import {
 } from "@/cottage-inventory/actions";
 import type {
   CottageInventoryOwnerEditorState,
+  CottageInventoryOwnerCalendarState,
   CottageInventoryUnitKind,
 } from "@/cottage-inventory/cottage-inventory";
 import type { CottageShiftSchedule } from "@/cottage-shift-schedule/cottage-shift-schedule";
@@ -21,6 +22,10 @@ const idle: CottageInventoryActionState = { status: "idle" };
 const availabilityLoadIdle: CottageInventoryAvailabilityLoadActionState = {
   status: "idle",
 };
+
+function unreachableCalendarState(value: never): never {
+  throw new Error(`Unsupported Cottage Inventory calendar state: ${value}`);
+}
 
 type InventoryUnit = {
   id: string;
@@ -124,6 +129,24 @@ export function CottagePricingAvailabilityEditor({
     availabilityByUnit.size === units.length &&
     units.every((unit) => availabilityByUnit.has(`${unit.kind}:${unit.id}`)),
   );
+  const stateLabel = (state: CottageInventoryOwnerCalendarState) => {
+    switch (state) {
+      case "closed":
+        return copy.closed;
+      case "open":
+        return copy.open;
+      case "private_blocked":
+        return copy.privateBlocked;
+      case "pending_hold":
+        return copy.pendingHold;
+      case "confirmed_booking":
+        return copy.confirmedBooking;
+      case "component_unavailable":
+        return copy.componentUnavailable;
+      default:
+        return unreachableCalendarState(state);
+    }
+  };
 
   return (
     <section
@@ -501,45 +524,70 @@ export function CottagePricingAvailabilityEditor({
                     className="cottage-inventory-group-title"
                     id="cottage-inventory-loaded-availability-title"
                   >
-                    {copy.availability}: {availabilityLoadState.serviceDay}
+                    {copy.availability}:{" "}
+                    <bdi dir="ltr" style={{ whiteSpace: "nowrap" }}>
+                      {availabilityLoadState.serviceDay}
+                    </bdi>
                   </h3>
                   <div className="cottage-inventory-availability-grid">
-                    {units.map((unit) => (
-                      <div
-                        className="cottage-inventory-state"
-                        key={`${unit.kind}:${unit.id}`}
-                      >
-                        <span>
-                          {unit.label} {copy.state}
-                        </span>
-                        <input
-                          type="hidden"
-                          name="availabilityUnitId"
-                          value={unit.id}
-                        />
-                        <input
-                          type="hidden"
-                          name="availabilityUnitKind"
-                          value={unit.kind}
-                        />
-                        <select
-                          name="availabilityState"
-                          defaultValue={
-                            availabilityByUnit!.get(`${unit.kind}:${unit.id}`)!
-                              .ownerState
-                          }
-                          aria-label={`${unit.label} ${copy.state}`}
+                    {units.map((unit) => {
+                      const state = availabilityByUnit!.get(
+                        `${unit.kind}:${unit.id}`,
+                      )!;
+                      return (
+                        <div
+                          className="cottage-inventory-state"
+                          key={`${unit.kind}:${unit.id}`}
                         >
-                          <option value="closed">{copy.closed}</option>
-                          <option value="open" disabled={!canOpen}>
-                            {copy.open}
-                          </option>
-                          <option value="private_blocked">
-                            {copy.privateBlocked}
-                          </option>
-                        </select>
-                      </div>
-                    ))}
+                          <span>
+                            {unit.label} {copy.state}
+                          </span>
+                          {state.editable ? (
+                            <>
+                              <input
+                                type="hidden"
+                                name="availabilityUnitId"
+                                value={unit.id}
+                              />
+                              <input
+                                type="hidden"
+                                name="availabilityUnitKind"
+                                value={unit.kind}
+                              />
+                              <select
+                                name="availabilityState"
+                                defaultValue={state.calendarState}
+                                aria-label={`${unit.label} ${copy.state}`}
+                              >
+                                <option value="closed">{copy.closed}</option>
+                                <option value="open" disabled={!canOpen}>
+                                  {copy.open}
+                                </option>
+                                <option value="private_blocked">
+                                  {copy.privateBlocked}
+                                </option>
+                              </select>
+                            </>
+                          ) : (
+                            <>
+                              <output
+                                aria-label={`${unit.label} ${copy.state}`}
+                              >
+                                {stateLabel(state.calendarState)}
+                              </output>
+                              {state.commitmentReference ? (
+                                <span>
+                                  {copy.bookingReference}:{" "}
+                                  <bdi dir="auto">
+                                    {state.commitmentReference}
+                                  </bdi>
+                                </span>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </fieldset>
                 <button className="action action-primary" type="submit">
@@ -558,7 +606,10 @@ export function CottagePricingAvailabilityEditor({
             ) : (
               <section className="cottage-inventory-form">
                 <h3>
-                  {copy.availability}: {availabilityLoadState.serviceDay}
+                  {copy.availability}:{" "}
+                  <bdi dir="ltr" style={{ whiteSpace: "nowrap" }}>
+                    {availabilityLoadState.serviceDay}
+                  </bdi>
                 </h3>
                 <div className="cottage-inventory-availability-grid">
                   {units.map((unit) => {
@@ -574,15 +625,12 @@ export function CottagePricingAvailabilityEditor({
                           {unit.label} {copy.state}
                         </span>
                         <output aria-label={`${unit.label} ${copy.state}`}>
-                          {state.ownerState === "open"
-                            ? copy.open
-                            : state.ownerState === "private_blocked"
-                              ? copy.privateBlocked
-                              : copy.closed}
+                          {stateLabel(state.calendarState)}
                         </output>
-                        {state.committed ? (
+                        {state.commitmentReference ? (
                           <span>
-                            {copy.committed}: {state.commitmentReference}
+                            {copy.bookingReference}:{" "}
+                            <bdi dir="auto">{state.commitmentReference}</bdi>
                           </span>
                         ) : null}
                       </div>

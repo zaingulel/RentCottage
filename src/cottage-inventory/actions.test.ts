@@ -20,9 +20,9 @@ describe("Cottage Inventory actions", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("loads authoritative dated owner state before availability can be edited", async () => {
-    const resolve = vi.fn().mockResolvedValue({
+    const resolveOwnerCalendar = vi.fn().mockResolvedValue({
       status: "resolved",
-      resolution: {
+      calendar: {
         profileId: "70000000-0000-4000-8000-000000000001",
         scheduleRevisionId: "71000000-0000-4000-8000-000000000001",
         serviceDay: "2099-08-20",
@@ -30,17 +30,16 @@ describe("Cottage Inventory actions", () => {
           {
             id: "72000000-0000-4000-8000-000000000001",
             kind: "shift",
-            standardPriceIqd: 120000,
-            weekdayOverrides: [],
-            dateOverrides: [],
-            ownerState: "private_blocked",
-            committed: true,
+            priceIqd: 120000,
+            available: false,
+            calendarState: "confirmed_booking",
             commitmentReference: "RC-BOOKING-2601",
+            editable: false,
           },
         ],
       },
     });
-    createRequestCottageInventory.mockResolvedValue({ resolve });
+    createRequestCottageInventory.mockResolvedValue({ resolveOwnerCalendar });
     const form = new FormData();
     form.set("profileId", "70000000-0000-4000-8000-000000000001");
     form.set("scheduleRevisionId", "71000000-0000-4000-8000-000000000001");
@@ -53,13 +52,13 @@ describe("Cottage Inventory actions", () => {
       serviceDay: "2099-08-20",
       units: [
         {
-          ownerState: "private_blocked",
-          committed: true,
+          calendarState: "confirmed_booking",
           commitmentReference: "RC-BOOKING-2601",
+          editable: false,
         },
       ],
     });
-    expect(resolve).toHaveBeenCalledWith(
+    expect(resolveOwnerCalendar).toHaveBeenCalledWith(
       "70000000-0000-4000-8000-000000000001",
       "71000000-0000-4000-8000-000000000001",
       "2099-08-20",

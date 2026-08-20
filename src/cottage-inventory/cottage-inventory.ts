@@ -37,21 +37,40 @@ export interface CottageInventoryAvailabilityInput {
   units: CottageInventoryAvailabilityUnitInput[];
 }
 
-export interface CottageInventoryResolvedUnit {
+export interface CottageInventoryPublicAvailabilityUnit {
+  id: string;
+  kind: CottageInventoryUnitKind;
+  available: boolean;
+}
+
+export interface CottageInventoryPublicAvailability {
+  profileId: string;
+  scheduleRevisionId: string;
+  serviceDay: string;
+  units: CottageInventoryPublicAvailabilityUnit[];
+}
+
+export type CottageInventoryOwnerCalendarState =
+  | CottageInventoryAvailabilityState
+  | "pending_hold"
+  | "confirmed_booking"
+  | "component_unavailable";
+
+export interface CottageInventoryOwnerCalendarUnit {
   id: string;
   kind: CottageInventoryUnitKind;
   priceIqd: number | null;
   available: boolean;
-  committed?: boolean;
-  ownerState?: CottageInventoryAvailabilityState;
-  commitmentReference?: string | null;
+  calendarState: CottageInventoryOwnerCalendarState;
+  commitmentReference: string | null;
+  editable: boolean;
 }
 
-export interface CottageInventoryResolution {
+export interface CottageInventoryOwnerCalendar {
   profileId: string;
   scheduleRevisionId: string;
   serviceDay: string;
-  units: CottageInventoryResolvedUnit[];
+  units: CottageInventoryOwnerCalendarUnit[];
 }
 
 export interface CottageInventoryOwnerEditorUnit {
@@ -87,11 +106,16 @@ export interface CottageInventoryRepository {
     serviceDay: string;
     availability: CottageInventoryAvailabilityInput;
   }): Promise<unknown>;
-  resolve(input: {
+  resolvePublicAvailability(input: {
     profileId: string;
     scheduleRevisionId: string;
     serviceDay: string;
-  }): Promise<CottageInventoryResolution>;
+  }): Promise<CottageInventoryPublicAvailability>;
+  resolveOwnerCalendar(input: {
+    profileId: string;
+    scheduleRevisionId: string;
+    serviceDay: string;
+  }): Promise<CottageInventoryOwnerCalendar>;
 }
 
 export type CottageInventoryPricingSaveResult =
@@ -99,8 +123,13 @@ export type CottageInventoryPricingSaveResult =
   | { status: "invalid"; fields: string[] }
   | { status: "conflict" | "denied" | "unavailable" };
 
-export type CottageInventoryResolutionResult =
-  | { status: "resolved"; resolution: CottageInventoryResolution }
+export type CottageInventoryPublicAvailabilityResult =
+  | { status: "resolved"; resolution: CottageInventoryPublicAvailability }
+  | { status: "invalid"; fields: string[] }
+  | { status: "conflict" | "denied" | "unavailable" };
+
+export type CottageInventoryOwnerCalendarResult =
+  | { status: "resolved"; calendar: CottageInventoryOwnerCalendar }
   | { status: "invalid"; fields: string[] }
   | { status: "conflict" | "denied" | "unavailable" };
 
@@ -372,11 +401,11 @@ export function createCottageInventory(repository: CottageInventoryRepository) {
       }
     },
 
-    async resolve(
+    async resolvePublicAvailability(
       profileId: string,
       scheduleRevisionId: string,
       serviceDay: string,
-    ): Promise<CottageInventoryResolutionResult> {
+    ): Promise<CottageInventoryPublicAvailabilityResult> {
       if (
         !uuidPattern.test(profileId) ||
         !uuidPattern.test(scheduleRevisionId) ||
@@ -387,7 +416,33 @@ export function createCottageInventory(repository: CottageInventoryRepository) {
       try {
         return {
           status: "resolved",
-          resolution: await repository.resolve({
+          resolution: await repository.resolvePublicAvailability({
+            profileId,
+            scheduleRevisionId,
+            serviceDay,
+          }),
+        };
+      } catch (error) {
+        return { status: mapFailure(error) };
+      }
+    },
+
+    async resolveOwnerCalendar(
+      profileId: string,
+      scheduleRevisionId: string,
+      serviceDay: string,
+    ): Promise<CottageInventoryOwnerCalendarResult> {
+      if (
+        !uuidPattern.test(profileId) ||
+        !uuidPattern.test(scheduleRevisionId) ||
+        !isValidServiceDay(serviceDay)
+      ) {
+        return { status: "invalid", fields: ["calendar"] };
+      }
+      try {
+        return {
+          status: "resolved",
+          calendar: await repository.resolveOwnerCalendar({
             profileId,
             scheduleRevisionId,
             serviceDay,
