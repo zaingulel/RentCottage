@@ -38,28 +38,35 @@ Keep one writer for the ticket. The coordinator makes two live ownership observa
 
 Follow this bounded sequence:
 
-1. **Submit:** Create or update the pull request with `gt submit`; for a `Graphite + Greptile` route, ensure the `independent-review` label is present.
-2. **Graphite:** `head=CURRENT_PR_HEAD`; wait for Graphite Agent to finish processing that exact pull-request head and reconcile every genuine finding for it. Graphite applies to every pull request.
-3. **Required Greptile:** `applies=Graphite + Greptile`; `head=CURRENT_PR_HEAD`; if complete current-head Greptile evidence is absent and no Greptile review is active, trigger `@greptileai`; require complete evidence and finding reconciliation for that exact pull-request head.
-4. **Exact-head quality:** `after=Graphite,Required Greptile`; `head=CURRENT_PR_HEAD`; after every applicable external review is complete, explicitly dispatch `quality` from trusted `main` with `gh workflow run ci.yml --ref main -f pull_request_number=<PR> -f expected_head_oid=<CURRENT_PR_HEAD>`.
+1. **Create draft:** Use Graphite stack management, including `gt submit`, as needed to create or update a draft pull request. Graphite stack management is distinct from Graphite AI review and does not select the external reviewer.
+2. **Select route:** Resolve the `AGENTS.md` table before publication and apply exactly one route label: `Greptile only` uses `independent-review`; `Graphite only` uses `graphite-review`.
+3. **Publish:** Immediately before marking the pull request ready for review, use GitHub to freshly read its exact label set, draft state, and head. Publish only when it is still a draft, `CURRENT_PR_HEAD` is the intended head, and exactly the selected route label is present. The selected route label is immutable after publication; a change stops delivery instead of switching providers.
+4. **Selected external review:** `head=CURRENT_PR_HEAD`; require the selected provider only to finish its exact-head completion, coverage, and findings reconciliation. For Greptile, manually request Greptile's exact-head re-review after every later push; do not rely on automatic new-commit reviews.
+5. **Exact-head quality:** `after=Selected external review`; `head=CURRENT_PR_HEAD`; only after the selected external review is complete, explicitly dispatch `quality` from trusted `main` with `gh workflow run ci.yml --ref main -f pull_request_number=<PR> -f expected_head_oid=<CURRENT_PR_HEAD>`.
 
-A Graphite `Completed` state means processing finished, not that the change is correct or approved. Independent review of the finished change and every applicable executable verification must also be complete before merge; external reviewers supplement this evidence and never replace it.
+A provider's completed state proves processing finished, not that the change is correct or approved. Independent review of the finished change and every applicable executable verification must also be complete before merge; external reviewers supplement this evidence and never replace it.
 
-### Greptile evidence
+### Selected-provider evidence
 
-The Greptile dashboard is the configuration home. Each push advances `CURRENT_PR_HEAD`, invalidates Graphite, Greptile, and Continuous Integration evidence, and restarts the sequence. Record every row for each required review:
+Each push advances `CURRENT_PR_HEAD`, invalidates the selected provider and Continuous Integration evidence, and restarts the selected review sequence. Record every row for the selected review:
 
 | Packet fields | Complete evidence |
 | --- | --- |
-| `provider`, `source`, `artifact` | `Greptile`; the installed Greptile Apps GitHub App; its GitHub artifact URL. |
-| `route`, `matched-rule`, `trigger` | `Graphite + Greptile`; the resolved `AGENTS.md` rule; `independent-review` when the label is added or `@greptileai` when complete current-head evidence is absent and no Greptile review is active. |
-| `completion`, `head` | `OBSERVED` only when both the review footer and the app's completion reaction or status are present, and the footer's last-reviewed-commit link resolves to `CURRENT_PR_HEAD`. |
-| `changed-files`, `reviewed-files`, `file-change-limit`, `coverage` | The GitHub changed-file count is at or below the dashboard's current `fileChangeLimit`; Greptile's count or file summary accounts for every changed file; coverage is `COMPLETE`. |
+| `provider`, `source`, `artifact` | The selected provider only; its installed GitHub App; its GitHub artifact URL. |
+| `route`, `matched-rule`, `label` | The exclusive route and resolved `AGENTS.md` rule; exactly `independent-review` for `Greptile only` or `graphite-review` for `Graphite only`. |
+| `completion`, `head` | `OBSERVED` only when the selected provider's completion artifact identifies `CURRENT_PR_HEAD`. |
+| `changed-files`, `reviewed-files`, `coverage` | The selected provider's count or file summary accounts for every GitHub changed file; coverage is `COMPLETE`. |
 | `findings` | Every finding has an evidence-based disposition. |
 
-Every required row must be present. Silence, a missing row, provider drift that makes a row unobservable, or `SKIPPED`, `FAILED`, `STALE`, or `PARTIAL` evidence makes the Greptile review incomplete and stops delivery. Split the pull request or obtain an explicit owner decision changing the route before continuing.
+Every required row must be present. `SKIPPED`, `FAILED`, `STALE`, or `PARTIAL` evidence is incomplete. Zero route labels, both route labels, a changed head, a route-label change after publication, unselected-provider activity, missing or stale selected-provider evidence, and provider filtering that is unavailable or disagrees with this authority stop pull-request publication or delivery. Reconcile repository policy and provider settings before continuing; do not switch routes on a published pull request.
 
-Interpret the table against Greptile's current [review anatomy](https://www.greptile.com/docs/code-review/first-pr-review), [GitHub App integration](https://www.greptile.com/docs/integrations/github-gitlab-integration), and [`fileChangeLimit` contract](https://www.greptile.com/docs/code-review/greptile-json-reference). Keep Greptile human-observed: repository workflows parse no Greptile comments, hidden markers, or status prose and define no Greptile credential or token, provider trigger, or merge gate.
+The required dashboard state during the free Graphite Team trial is: Graphite enables both repositories, includes only `graphite-review`, and keeps draft AI reviews off; Greptile includes only `independent-review`, keeps draft reviews off, and keeps automatic new-commit reviews off. The trial ends on 17 September 2026. No paid provider plan is authorised. If the trial ends or either provider cannot preserve these filters, including after a Graphite Hobby downgrade, delivery stops until the owner approves a reconciled repository and provider policy.
+
+Do not change the shared Graphite workspace until both Flow Metrics issue #993 and RentCottage issue #104 repository controls are ready. This both-repositories-first gate keeps the shared provider state from contradicting either repository while the cutover is incomplete.
+
+Before 17 September 2026, recheck and record whether Graphite Hobby preserves the saved `graphite-review` include filter. An unavailable or unverified Hobby result produces `STOP`; reconcile both repositories before changing the shared workspace or continuing delivery.
+
+Interpret Greptile evidence against its current [review anatomy](https://www.greptile.com/docs/code-review/first-pr-review), [GitHub App integration](https://www.greptile.com/docs/integrations/github-gitlab-integration), and [`fileChangeLimit` contract](https://www.greptile.com/docs/code-review/greptile-json-reference). Keep both providers human-observed: repository workflows parse no provider comments, hidden markers, or status prose and define no provider credential, trigger, or merge gate.
 
 Only after the sequence and all other approved evidence are complete may the coordinator perform an authorised merge. GitHub Actions verifies the exact head; the hosted GitHub repository ruleset must require `quality` from the observed GitHub Actions source, application or integration, not the `quality` check name alone, and must also enforce conversation resolution. Changing that hosted ruleset remains an explicit owner-gated action. Reconcile the issue and Project after the merged state is authoritative, then run `npm run verify:board`; unavailable or failing board evidence stops delivery. GitHub's merged-branch setting owns remote topic-branch deletion; this release authority does not add another remote deletion path.
 
@@ -107,8 +114,8 @@ The delivery packet retains the universal fields in `AGENTS.md` and additionally
 
 Recurring cost is one bounded GitHub read, one verified remote refresh and local Git checks per delivered pull request, plus maintenance of this authority, one command and one behavioural test surface.
 
-Recurring maintenance is one explicit routing decision per delivery, one Greptile credit plus finding reconciliation on each selected pull request, and a manual re-trigger after every later push. Graphite and all existing internal review and verification costs remain unchanged.
+Recurring maintenance is one explicit routing decision, one selected-provider review plus finding reconciliation, a fresh pre-publication state read, and a manual Greptile re-trigger after each later push on the Greptile route. Existing internal review and verification costs remain unchanged.
 
-Reassess or remove this routing layer if Greptile's recurring free allowance ends, the label filter no longer works reliably, mandatory reviews repeatedly return partial coverage, or representative reviews show no unique material findings beyond Graphite and the managed reviewers. Replace it only with an independently evidenced control that preserves reviewer diversity at lower cost or higher reliability.
+Reassess or remove this routing layer if the free Graphite Team trial or Greptile allowance ends, either label filter no longer works reliably, selected reviews repeatedly return partial coverage, or representative reviews show no unique material findings beyond the managed reviewers. Replace it only with an independently evidenced control that preserves reviewer diversity at lower cost or higher reliability.
 
 After five completed deliveries, the owner reviews automatic invocations, successful releases, verified no-ops, refusals, false stops and residue. Remove the mechanism if Codex or an existing repository control provides equivalent exact identity, merged-state, ownership, cleanliness, race and post-removal guarantees. Simplify it when a lower-cost control preserves every material guarantee.

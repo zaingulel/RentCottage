@@ -95,9 +95,9 @@ Resolve the external-review route from this table, evaluated top-to-bottom. `ANY
 | Rule | Security input | Delivery integrity | Risk escalation | Result |
 | --- | --- | --- | --- | --- |
 | R1 | UNKNOWN | ANY | ANY | STOP |
-| R2 | ANY_YES | ANY | ANY | Graphite + Greptile |
-| R3 | ALL_NO_OR_NOT_RUN | YES | ANY | Graphite + Greptile |
-| R4 | ALL_NO_OR_NOT_RUN | NO | YES | Graphite + Greptile |
+| R2 | ANY_YES | ANY | ANY | Greptile only |
+| R3 | ALL_NO_OR_NOT_RUN | YES | ANY | Greptile only |
+| R4 | ALL_NO_OR_NOT_RUN | NO | YES | Greptile only |
 | R5 | ALL_NO_OR_NOT_RUN | NO | NO | Graphite only |
 
 `NOT_RUN` requires direct scope evidence that none of `security-code-review`'s eight groups is touched; any possible touch is `UNKNOWN` until the skill runs. Map only `ALL_NO` and evidenced `NOT_RUN` to `ALL_NO_OR_NOT_RUN`.
@@ -106,7 +106,9 @@ Delivery integrity covers Continuous Integration workflows, review skills and ag
 
 Risk escalation is `YES` when the approved issue or owner requires Greptile, or the coordinator cites material uncertainty, blast radius, or reviewer-diversity value; otherwise it is `NO`. `STOP` produces no approvable pull-request route. Every pull-request-bound change resolves a route or `STOP` before pull-request approval.
 
-The delivery packet contains the acceptance-criteria mapping, diff summary, tests run, review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, any known gap, and the external-review route, matched rule, and concise supporting evidence. Graphite Agent or another external reviewer may add evidence but never replaces the independent review or executable checks. A Graphite `Completed` state means processing finished only; the coordinator still reconciles every current-head finding.
+The two provider routes are mutually exclusive. Delivery follows the selected provider only; it never combines Graphite AI review with Greptile review. Provider filtering that is unavailable or disagrees with this table produces `STOP` until repository policy and provider settings are reconciled.
+
+The delivery packet contains the acceptance-criteria mapping, diff summary, tests run, review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, any known gap, and the external-review route, matched rule, and concise supporting evidence. The selected external reviewer supplements the independent review and executable checks; it replaces neither.
 
 ### Adding workflow machinery
 
