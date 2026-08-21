@@ -104,6 +104,22 @@ export function main(
     result = execute("npx", ["supabase", "test", "db"]);
     if (result.status !== 0) return result.status;
 
+    const databaseConcurrencyEnvironment = {
+      ...supabaseEnvironment,
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    };
+    delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
+    result = execute(
+      "node",
+      [
+        "scripts/verify-booking-period-hold-concurrency.mjs",
+        "--verify-migration-preflight",
+      ],
+      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+    );
+    if (result.status !== 0) return result.status;
+
     const status = execute("npx", ["supabase", "status", "-o", "json"], {
       encoding: "utf8",
       stdio: "pipe",
@@ -147,8 +163,7 @@ export function main(
     if (scheduleConcurrency.status !== 0) return scheduleConcurrency.status;
     const inventoryConcurrencyEnvironment = {
       ...scheduleConcurrencyEnvironment,
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      ...databaseConcurrencyEnvironment,
     };
     const inventoryConcurrency = execute(
       "node",
@@ -156,6 +171,14 @@ export function main(
       { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
     );
     if (inventoryConcurrency.status !== 0) return inventoryConcurrency.status;
+    const bookingPeriodHoldConcurrency = execute(
+      "node",
+      ["scripts/verify-booking-period-hold-concurrency.mjs"],
+      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+    );
+    if (bookingPeriodHoldConcurrency.status !== 0) {
+      return bookingPeriodHoldConcurrency.status;
+    }
     const rerun = execute("node", ["scripts/prepare-access-test.mjs"], {
       env: {
         ...accessEnvironment,

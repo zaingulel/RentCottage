@@ -4,7 +4,7 @@ create extension if not exists pgtap with schema extensions;
 select plan(121);
 
 select col_type_is(
-  'public', 'cottage_inventory_commitments', 'status',
+  'public', 'cottage_booking_period_commitments', 'status',
   'cottage_inventory_commitment_status',
   'system commitments classify Pending Holds separately from Confirmed Bookings'
 );
@@ -30,12 +30,19 @@ select has_function(
 );
 
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
-values (
+values
+(
   '00000000-0000-0000-0000-000000002601', 'authenticated', 'authenticated',
   '+9647500002601', now()
+),
+(
+  '00000000-0000-0000-0000-000000002699', 'authenticated', 'authenticated',
+  '+9647500002699', now()
 );
 insert into public.account_contexts (user_id, role, owner_approval_state)
-values ('00000000-0000-0000-0000-000000002601', 'cottage_owner', 'approved');
+values
+  ('00000000-0000-0000-0000-000000002601', 'cottage_owner', 'approved'),
+  ('00000000-0000-0000-0000-000000002699', 'customer', null);
 insert into public.owner_application_cottage_profiles (
   id, owner_user_id, name, governorate, approximate_location, exact_address,
   capacity, bedrooms, bathrooms, amenities, source_language, description,
@@ -143,6 +150,157 @@ select results_eq(
   'the standard price applies when no override matches'
 );
 reset role;
+create function pg_temp.create_test_inventory_commitment(
+  target_schedule_revision_id uuid,
+  target_unit_kind public.cottage_inventory_unit_kind,
+  target_unit_id uuid,
+  target_service_day date,
+  target_reference text,
+  expected_price_iqd bigint,
+  target_status public.cottage_inventory_commitment_status
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare target_profile_id uuid;
+declare target_position smallint;
+declare requested_selection jsonb;
+declare result jsonb;
+declare period_id uuid;
+declare actual_price_iqd bigint;
+begin
+  select revisions.profile_id into target_profile_id
+  from public.cottage_shift_schedule_revisions revisions
+  where revisions.id = target_schedule_revision_id;
+  if target_unit_kind = 'shift'::public.cottage_inventory_unit_kind then
+    select shifts.position into target_position
+    from public.cottage_shifts shifts
+    where shifts.schedule_revision_id = target_schedule_revision_id
+      and shifts.id = target_unit_id;
+    requested_selection := jsonb_build_object(
+      'serviceDay', target_service_day,
+      'kind', 'shift',
+      'position', target_position
+    );
+  else
+    requested_selection := jsonb_build_object(
+      'serviceDay', target_service_day,
+      'kind', 'full-day'
+    );
+  end if;
+  result := public.create_pending_booking_period_hold(
+    '00000000-0000-0000-0000-000000002699',
+    target_profile_id,
+    target_reference,
+    jsonb_build_object(
+      'from', target_service_day,
+      'to', target_service_day,
+      'guests', 1,
+      'selections', jsonb_build_array(requested_selection)
+    )
+  );
+  period_id := (result ->> 'bookingPeriodCommitmentId')::uuid;
+  select selected.committed_price_iqd into actual_price_iqd
+  from public.cottage_inventory_commitments selected
+  where selected.booking_period_commitment_id = period_id;
+  if actual_price_iqd is distinct from expected_price_iqd then
+    raise exception 'A Cottage Inventory commitment must snapshot its exact effective price'
+      using errcode = 'RC204';
+  end if;
+  if target_status = 'confirmed_booking'::public.cottage_inventory_commitment_status then
+    update public.cottage_booking_period_commitments
+    set status = target_status
+    where id = period_id;
+  end if;
+  return period_id;
+end;
+$$;
+
+create function pg_temp.insert_test_inventory_snapshot_unchecked(
+  target_schedule_revision_id uuid,
+  target_unit_kind public.cottage_inventory_unit_kind,
+  target_unit_id uuid,
+  target_service_day date,
+  target_reference text,
+  target_price_iqd bigint,
+  target_status public.cottage_inventory_commitment_status
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare target_profile_id uuid;
+declare target_start_time time without time zone;
+declare target_end_time time without time zone;
+declare period_id uuid := gen_random_uuid();
+begin
+  select revisions.profile_id into target_profile_id
+  from public.cottage_shift_schedule_revisions revisions
+  where revisions.id = target_schedule_revision_id;
+  if target_unit_kind = 'shift'::public.cottage_inventory_unit_kind then
+    select shifts.start_time, shifts.end_time
+      into target_start_time, target_end_time
+    from public.cottage_shifts shifts
+    where shifts.schedule_revision_id = target_schedule_revision_id
+      and shifts.id = target_unit_id;
+  else
+    select
+      (select shifts.start_time from public.cottage_shifts shifts
+        where shifts.schedule_revision_id = target_schedule_revision_id
+        order by shifts.position limit 1),
+      (select shifts.end_time from public.cottage_shifts shifts
+        where shifts.schedule_revision_id = target_schedule_revision_id
+        order by shifts.position desc limit 1)
+      into target_start_time, target_end_time;
+  end if;
+  insert into public.cottage_booking_period_commitments (
+    id, customer_user_id, profile_id, schedule_revision_id,
+    commitment_reference, status, access_ranges
+  ) values (
+    period_id,
+    '00000000-0000-0000-0000-000000002699',
+    target_profile_id,
+    target_schedule_revision_id,
+    target_reference,
+    target_status,
+    tstzmultirange(tstzrange(
+      (target_service_day + target_start_time) at time zone 'Asia/Baghdad',
+      (
+        target_service_day + target_end_time
+        + case when target_end_time < target_start_time
+          then interval '1 day' else interval '0 days' end
+      ) at time zone 'Asia/Baghdad',
+      '[)'
+    ))
+  );
+  insert into public.cottage_inventory_commitments (
+    booking_period_commitment_id, unit_kind, unit_id,
+    service_day, committed_price_iqd
+  ) values (
+    period_id, target_unit_kind, target_unit_id,
+    target_service_day, target_price_iqd
+  );
+  if target_unit_kind = 'shift'::public.cottage_inventory_unit_kind then
+    insert into public.cottage_booking_period_occupancies (
+      booking_period_commitment_id, schedule_revision_id, shift_id, service_day
+    ) values (
+      period_id, target_schedule_revision_id, target_unit_id, target_service_day
+    );
+  else
+    insert into public.cottage_booking_period_occupancies (
+      booking_period_commitment_id, schedule_revision_id, shift_id, service_day
+    )
+    select period_id, target_schedule_revision_id, shifts.id, target_service_day
+    from public.cottage_shifts shifts
+    where shifts.schedule_revision_id = target_schedule_revision_id;
+  end if;
+  return period_id;
+end;
+$$;
+
 insert into public.cottage_inventory_date_price_overrides (
   schedule_revision_id, unit_kind, unit_id, service_day, price_iqd
 ) values (
@@ -610,27 +768,21 @@ insert into public.cottage_inventory_date_price_overrides (
   '2099-08-20', 175000
 );
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select id from public.cottage_shifts order by position limit 1),
     '2099-08-20', 'RC-BOOKING-2601', 125000, 'confirmed_booking'
   )$$,
-  'RC204', null,
+  'RC409', null,
   'a system commitment cannot claim privately blocked inventory'
 );
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select shift_id from pricing_revision_before_replace),
     '2099-08-21', 'RC-CLOSED-2601', 125000, 'pending_hold'
   )$$,
-  'RC204', null,
+  'RC409', null,
   'a system commitment cannot claim closed inventory'
 );
 delete from public.cottage_inventory_standard_prices
@@ -638,15 +790,12 @@ where schedule_revision_id = (select revision_id from pricing_revision_before_re
   and unit_kind = 'shift'
   and unit_id = (select id from public.cottage_shifts order by position offset 1 limit 1);
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select id from public.cottage_shifts order by position offset 1 limit 1),
     '2099-08-20', 'RC-UNPRICED-2601', 125000, 'pending_hold'
   )$$,
-  'RC204', null,
+  'RC409', null,
   'a system commitment cannot claim unpriced inventory'
 );
 insert into public.cottage_inventory_standard_prices (
@@ -663,10 +812,7 @@ insert into public.cottage_inventory_weekday_price_overrides (
   extract(dow from date '2099-08-20')::smallint, 165000
 );
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select id from public.cottage_shifts order by position offset 1 limit 1),
     '2099-08-20', 'RC-WRONG-WEEKDAY-2601', 115000, 'pending_hold'
@@ -675,17 +821,14 @@ select throws_ok(
   'a system commitment cannot snapshot the Standard price over an effective weekday price'
 );
 select lives_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select id from public.cottage_shifts order by position offset 1 limit 1),
     '2099-08-20', 'RC-WEEKDAY-2601', 165000, 'pending_hold'
   )$$,
   'the effective weekday price can be snapshotted exactly'
 );
-delete from public.cottage_inventory_commitments
+delete from public.cottage_booking_period_commitments
 where commitment_reference = 'RC-WEEKDAY-2601';
 delete from public.cottage_inventory_weekday_price_overrides
 where schedule_revision_id = (select revision_id from pricing_revision_before_replace)
@@ -711,10 +854,7 @@ select lives_ok(
 );
 reset role;
 select lives_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select id from public.cottage_shifts order by position offset 1 limit 1),
     '2099-08-22', 'RC-LIFECYCLE-HOLD-2601', 115000, 'pending_hold'
@@ -722,19 +862,23 @@ select lives_ok(
   'a Pending Hold snapshots the exact effective Standard price'
 );
 select throws_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_inventory_commitments selected
     set unit_id = (select id from public.cottage_shifts order by position limit 1),
       service_day = '2099-08-23',
       committed_price_iqd = 125000
-    where commitment_reference = 'RC-LIFECYCLE-HOLD-2601'$$,
+    from public.cottage_booking_period_commitments periods
+    where periods.id = selected.booking_period_commitment_id
+      and periods.commitment_reference = 'RC-LIFECYCLE-HOLD-2601'$$,
   'RC204', null,
   'a Pending Hold cannot move to another open, future, exactly priced Shift'
 );
 select results_eq(
-  $$select schedule_revision_id, unit_kind::text, unit_id,
-      service_day, committed_price_iqd
-    from public.cottage_inventory_commitments
-    where commitment_reference = 'RC-LIFECYCLE-HOLD-2601'$$,
+  $$select periods.schedule_revision_id, selected.unit_kind::text, selected.unit_id,
+      selected.service_day, selected.committed_price_iqd
+    from public.cottage_inventory_commitments selected
+    join public.cottage_booking_period_commitments periods
+      on periods.id = selected.booking_period_commitment_id
+    where periods.commitment_reference = 'RC-LIFECYCLE-HOLD-2601'$$,
   $$select revision_id, 'shift'::text,
       (select id from public.cottage_shifts order by position offset 1 limit 1),
       date '2099-08-22', 115000::bigint
@@ -743,31 +887,36 @@ select results_eq(
 );
 do $$
 begin
-  update public.cottage_inventory_commitments
+  update public.cottage_inventory_commitments selected
   set unit_id = (select id from public.cottage_shifts order by position offset 1 limit 1),
     service_day = '2099-08-22',
     committed_price_iqd = 115000
-  where commitment_reference = 'RC-LIFECYCLE-HOLD-2601'
-    and service_day = '2099-08-23';
+  from public.cottage_booking_period_commitments periods
+  where periods.id = selected.booking_period_commitment_id
+    and periods.commitment_reference = 'RC-LIFECYCLE-HOLD-2601'
+    and selected.service_day = '2099-08-23';
 end;
 $$;
 select throws_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_booking_period_commitments
     set commitment_reference = 'RC-LIFECYCLE-RENAMED-HOLD-2601'
     where commitment_reference = 'RC-LIFECYCLE-HOLD-2601'$$,
   'RC204', null,
   'a Pending Hold reference cannot change without confirmation'
 );
 select results_eq(
-  $$select status::text, commitment_reference, committed_price_iqd
-    from public.cottage_inventory_commitments
-    where service_day = '2099-08-22'$$,
+  $$select periods.status::text, periods.commitment_reference,
+      selected.committed_price_iqd
+    from public.cottage_booking_period_commitments periods
+    join public.cottage_inventory_commitments selected
+      on selected.booking_period_commitment_id = periods.id
+    where selected.service_day = '2099-08-22'$$,
   $$values ('pending_hold'::text, 'RC-LIFECYCLE-HOLD-2601'::text, 115000::bigint)$$,
   'a rejected Pending Hold reference change preserves the row'
 );
 do $$
 begin
-  update public.cottage_inventory_commitments
+  update public.cottage_booking_period_commitments
   set commitment_reference = 'RC-LIFECYCLE-HOLD-2601'
   where commitment_reference = 'RC-LIFECYCLE-RENAMED-HOLD-2601';
 end;
@@ -810,9 +959,11 @@ select results_eq(
        where prices.schedule_revision_id = fixture.revision_id
          and prices.unit_kind = 'shift'
          and prices.unit_id = (select id from public.cottage_shifts order by position offset 1 limit 1)),
-      (select commitments.committed_price_iqd
-       from public.cottage_inventory_commitments commitments
-       where commitments.commitment_reference = 'RC-LIFECYCLE-HOLD-2601'),
+      (select selected.committed_price_iqd
+       from public.cottage_inventory_commitments selected
+       join public.cottage_booking_period_commitments periods
+         on periods.id = selected.booking_period_commitment_id
+       where periods.commitment_reference = 'RC-LIFECYCLE-HOLD-2601'),
       (select prices.price_iqd
        from public.cottage_inventory_standard_prices prices
        where prices.schedule_revision_id = fixture.revision_id
@@ -873,18 +1024,11 @@ select results_eq(
   $$values (130000::bigint, 115000::bigint, 250000::bigint)$$,
   'the unrelated edit persists without changing direct or overlapping protected prices'
 );
-alter table public.cottage_inventory_commitments
-  disable trigger lock_cottage_inventory_commitment_profile;
-insert into public.cottage_inventory_commitments (
-  schedule_revision_id, unit_kind, unit_id, service_day,
-  commitment_reference, committed_price_iqd, status
-) values (
+select pg_temp.insert_test_inventory_snapshot_unchecked(
   (select revision_id from pricing_revision_before_replace),
   'shift', (select shift_id from pricing_revision_before_replace),
   '2000-01-01', 'RC-HISTORICAL-PRICE-2601', 99000, 'confirmed_booking'
 );
-alter table public.cottage_inventory_commitments
-  enable trigger lock_cottage_inventory_commitment_profile;
 set local role authenticated;
 select lives_ok(
   $$select public.save_cottage_inventory_pricing(
@@ -924,9 +1068,11 @@ select results_eq(
          and prices.unit_kind = 'shift'
          and prices.unit_id = fixture.shift_id
          and prices.service_day = '2000-01-01'),
-      (select commitments.committed_price_iqd
-       from public.cottage_inventory_commitments commitments
-       where commitments.commitment_reference = 'RC-HISTORICAL-PRICE-2601'),
+      (select selected.committed_price_iqd
+       from public.cottage_inventory_commitments selected
+       join public.cottage_booking_period_commitments periods
+         on periods.id = selected.booking_period_commitment_id
+       where periods.commitment_reference = 'RC-HISTORICAL-PRICE-2601'),
       (select prices.price_iqd
        from public.cottage_inventory_standard_prices prices
        where prices.schedule_revision_id = fixture.revision_id
@@ -968,81 +1114,94 @@ select lives_ok(
 );
 reset role;
 select lives_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_booking_period_commitments
     set status = 'confirmed_booking',
       commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'
     where commitment_reference = 'RC-LIFECYCLE-HOLD-2601'$$,
   'a lifecycle-only confirmation preserves the admitted price snapshot'
 );
 select results_eq(
-  $$select status::text, commitment_reference, committed_price_iqd
-    from public.cottage_inventory_commitments
-    where service_day = '2099-08-22'$$,
+  $$select periods.status::text, periods.commitment_reference,
+      selected.committed_price_iqd
+    from public.cottage_booking_period_commitments periods
+    join public.cottage_inventory_commitments selected
+      on selected.booking_period_commitment_id = periods.id
+    where selected.service_day = '2099-08-22'$$,
   $$values ('confirmed_booking'::text, 'RC-LIFECYCLE-CONFIRMED-2601'::text, 115000::bigint)$$,
   'confirmation retains the original Pending Hold price after prospective repricing'
 );
 select lives_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_booking_period_commitments
     set status = 'confirmed_booking',
       commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'
     where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'$$,
   'an idempotent same-state and same-reference update remains allowed'
 );
 select throws_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_booking_period_commitments
     set commitment_reference = 'RC-LIFECYCLE-RENAMED-CONFIRMED-2601'
     where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'$$,
   'RC204', null,
   'a Confirmed Booking reference cannot change in the same state'
 );
 select results_eq(
-  $$select status::text, commitment_reference, committed_price_iqd
-    from public.cottage_inventory_commitments
-    where service_day = '2099-08-22'$$,
+  $$select periods.status::text, periods.commitment_reference,
+      selected.committed_price_iqd
+    from public.cottage_booking_period_commitments periods
+    join public.cottage_inventory_commitments selected
+      on selected.booking_period_commitment_id = periods.id
+    where selected.service_day = '2099-08-22'$$,
   $$values ('confirmed_booking'::text, 'RC-LIFECYCLE-CONFIRMED-2601'::text, 115000::bigint)$$,
   'a rejected Confirmed Booking reference change preserves the row'
 );
 do $$
 begin
-  update public.cottage_inventory_commitments
+  update public.cottage_booking_period_commitments
   set commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'
   where commitment_reference = 'RC-LIFECYCLE-RENAMED-CONFIRMED-2601';
 end;
 $$;
 select throws_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_booking_period_commitments
     set status = 'pending_hold'
     where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'$$,
   'RC204', null,
   'a Confirmed Booking cannot return to Pending Hold'
 );
 select results_eq(
-  $$select status::text, commitment_reference, committed_price_iqd
-    from public.cottage_inventory_commitments
+  $$select periods.status::text, periods.commitment_reference,
+      selected.committed_price_iqd
+    from public.cottage_booking_period_commitments periods
+    join public.cottage_inventory_commitments selected
+      on selected.booking_period_commitment_id = periods.id
     where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'$$,
   $$values ('confirmed_booking'::text, 'RC-LIFECYCLE-CONFIRMED-2601'::text, 115000::bigint)$$,
   'a rejected status downgrade preserves the Confirmed Booking row'
 );
 do $$
 begin
-  update public.cottage_inventory_commitments
+  update public.cottage_booking_period_commitments
   set status = 'confirmed_booking'
   where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'
     and status = 'pending_hold';
 end;
 $$;
 select throws_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_inventory_commitments selected
     set committed_price_iqd = 145000
-    where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'$$,
+    from public.cottage_booking_period_commitments periods
+    where periods.id = selected.booking_period_commitment_id
+      and periods.commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'$$,
   'RC204', null,
   'a Confirmed Booking cannot replace its snapshot with the newly effective exact price'
 );
 select results_eq(
-  $$select schedule_revision_id, unit_kind::text, unit_id,
-      service_day, committed_price_iqd
-    from public.cottage_inventory_commitments
-    where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'$$,
+  $$select periods.schedule_revision_id, selected.unit_kind::text, selected.unit_id,
+      selected.service_day, selected.committed_price_iqd
+    from public.cottage_inventory_commitments selected
+    join public.cottage_booking_period_commitments periods
+      on periods.id = selected.booking_period_commitment_id
+    where periods.commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'$$,
   $$select revision_id, 'shift'::text,
       (select id from public.cottage_shifts order by position offset 1 limit 1),
       date '2099-08-22', 115000::bigint
@@ -1051,13 +1210,15 @@ select results_eq(
 );
 do $$
 begin
-  update public.cottage_inventory_commitments
+  update public.cottage_inventory_commitments selected
   set committed_price_iqd = 115000
-  where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'
-    and committed_price_iqd = 145000;
+  from public.cottage_booking_period_commitments periods
+  where periods.id = selected.booking_period_commitment_id
+    and periods.commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601'
+    and selected.committed_price_iqd = 145000;
 end;
 $$;
-delete from public.cottage_inventory_commitments
+delete from public.cottage_booking_period_commitments
 where commitment_reference = 'RC-LIFECYCLE-CONFIRMED-2601';
 update public.cottage_inventory_standard_prices
 set price_iqd = 115000
@@ -1068,25 +1229,22 @@ update public.owner_application_cottage_profiles
 set current_publication_id = null
 where id = '30000000-0000-4000-8000-000000002601';
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select id from public.cottage_shifts order by position offset 1 limit 1),
     '2099-08-22', 'RC-UNPUBLISHED-2601', 115000, 'pending_hold'
   )$$,
-  'RC204', null,
+  'RC409', null,
   'a Pending Hold cannot be admitted after the Cottage is unpublished'
 );
 select results_eq(
   $$select count(*)::integer
-    from public.cottage_inventory_commitments
+    from public.cottage_booking_period_commitments
     where commitment_reference = 'RC-UNPUBLISHED-2601'$$,
   $$values (0::integer)$$,
   'unpublish-first admission leaves no Cottage Inventory commitment'
 );
-delete from public.cottage_inventory_commitments
+delete from public.cottage_booking_period_commitments
 where commitment_reference = 'RC-UNPUBLISHED-2601';
 update public.owner_application_cottage_profiles
 set current_publication_id = '60000000-0000-4000-8000-000000002601'
@@ -1111,10 +1269,7 @@ select lives_ok(
 );
 reset role;
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select shift_id from pricing_revision_before_replace),
     '2099-08-20', 'RC-WRONG-PRICE-2601', 125000, 'confirmed_booking'
@@ -1123,10 +1278,7 @@ select throws_ok(
   'a system commitment must snapshot the effective specific-date price'
 );
 select lives_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select shift_id from pricing_revision_before_replace),
     '2099-08-20', 'RC-BOOKING-2601', 175000, 'confirmed_booking'
@@ -1134,9 +1286,11 @@ select lives_ok(
   'open priced current inventory accepts a system commitment'
 );
 select throws_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_inventory_commitments selected
     set committed_price_iqd = 125000
-    where commitment_reference = 'RC-BOOKING-2601'$$,
+    from public.cottage_booking_period_commitments periods
+    where periods.id = selected.booking_period_commitment_id
+      and periods.commitment_reference = 'RC-BOOKING-2601'$$,
   'RC204', null,
   'a system commitment update cannot replace its effective price snapshot with a mismatch'
 );
@@ -1347,14 +1501,15 @@ select results_eq(
   'a rejected component-blocked bundle edit leaves unrelated inventory unchanged'
 );
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
+  $$insert into public.cottage_booking_period_commitments (
+    customer_user_id, profile_id, schedule_revision_id,
+    commitment_reference, status, access_ranges
   ) values (
-    (select current_shift_schedule_id from public.owner_application_cottage_profiles
-      where id = '30000000-0000-4000-8000-000000002601'),
-    'shift', (select id from public.cottage_shifts order by position offset 1 limit 1),
-    '2099-08-20', 'RC-BOOKING-2602', 125000, 'pending_hold'
+    '00000000-0000-0000-0000-000000002602',
+    '30000000-0000-4000-8000-000000002601',
+    (select revision_id from pricing_revision_before_replace),
+    'RC-BOOKING-2602', 'pending_hold',
+    '{["2099-08-20 15:00:00+00","2099-08-20 19:00:00+00")}'::tstzmultirange
   )$$,
   '42501', null,
   'an authenticated owner cannot create a system commitment marker directly'
@@ -1388,26 +1543,20 @@ set state = 'open'
 where schedule_revision_id = (select revision_id from pricing_revision_before_replace)
   and service_day = '2099-08-20';
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'full_day_bundle',
     (select full_day_bundle_id from public.cottage_shift_schedule_revisions
      where id = (select revision_id from pricing_revision_before_replace)),
     '2099-08-20', 'RC-OVERLAP-2601', 250000, 'pending_hold'
   )$$,
-  'RC204', null,
+  'RC409', null,
   'a Full-Day Bundle commitment cannot overlap a component commitment'
 );
-delete from public.cottage_inventory_commitments
+delete from public.cottage_booking_period_commitments
 where schedule_revision_id = (select revision_id from pricing_revision_before_replace);
 select lives_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'full_day_bundle',
     (select full_day_bundle_id from public.cottage_shift_schedule_revisions
@@ -1417,15 +1566,12 @@ select lives_ok(
   'open priced components accept a direct Full-Day Bundle Pending Hold'
 );
 select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select shift_id from pricing_revision_before_replace),
     '2099-08-20', 'RC-OVERLAP-2602', 175000, 'pending_hold'
   )$$,
-  'RC204', null,
+  'RC409', null,
   'a component Shift commitment cannot overlap a direct Full-Day Bundle commitment'
 );
 set local role authenticated;
@@ -1485,7 +1631,7 @@ select results_eq(
 );
 reset role;
 select lives_ok(
-  $$update public.cottage_inventory_commitments
+  $$update public.cottage_booking_period_commitments
     set status = 'confirmed_booking', commitment_reference = 'RC-BUNDLE-2601-C'
     where schedule_revision_id = (select revision_id from pricing_revision_before_replace)$$,
   'a direct Full-Day Bundle commitment can become confirmed'
@@ -1509,13 +1655,10 @@ select results_eq(
   'a direct confirmed bundle propagates its state and reference to every Shift'
 );
 reset role;
-delete from public.cottage_inventory_commitments
+delete from public.cottage_booking_period_commitments
 where schedule_revision_id = (select revision_id from pricing_revision_before_replace);
 select lives_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
+  $$select pg_temp.create_test_inventory_commitment(
     (select revision_id from pricing_revision_before_replace),
     'shift', (select shift_id from pricing_revision_before_replace),
     '2099-08-20', 'RC-BOOKING-2601', 175000, 'confirmed_booking'
@@ -1625,8 +1768,8 @@ select results_eq(
   $$select profiles.current_shift_schedule_id = fixture.revision_id,
       (select count(*)::integer from public.cottage_shift_schedule_revisions revisions
        where revisions.profile_id = profiles.id),
-      (select count(*)::integer from public.cottage_inventory_commitments commitments
-       where commitments.schedule_revision_id = fixture.revision_id)
+      (select count(*)::integer from public.cottage_booking_period_commitments periods
+       where periods.schedule_revision_id = fixture.revision_id)
     from public.owner_application_cottage_profiles profiles
     cross join pricing_revision_before_replace fixture
     where profiles.id = '30000000-0000-4000-8000-000000002601'$$,
@@ -1671,18 +1814,106 @@ select lives_ok(
   'an uncommitted draft Cottage can replace its Shift Schedule'
 );
 reset role;
-select throws_ok(
-  $$insert into public.cottage_inventory_commitments (
-    schedule_revision_id, unit_kind, unit_id, service_day,
-    commitment_reference, committed_price_iqd, status
-  ) values (
-    (select revision_id from stale_schedule_fixture), 'shift',
-    (select shift_id from stale_schedule_fixture), '2099-08-20',
-    'RC-STALE-2602', 100000, 'pending_hold'
-  )$$,
-  'RC204', null,
-  'a system commitment cannot target a stale Shift Schedule revision'
+create temporary table replacement_schedule_fixture as
+select profiles.current_shift_schedule_id as revision_id,
+  revisions.full_day_bundle_id,
+  (select id from public.cottage_shifts shifts
+   where shifts.schedule_revision_id = profiles.current_shift_schedule_id
+   order by position limit 1) as shift_id
+from public.owner_application_cottage_profiles profiles
+join public.cottage_shift_schedule_revisions revisions
+  on revisions.id = profiles.current_shift_schedule_id
+where profiles.id = '30000000-0000-4000-8000-000000002602';
+insert into public.cottage_profile_source_revisions (
+  id, profile_id, owner_user_id, source_language, description, house_rules, revision
+) values (
+  '68000000-0000-4000-8000-000000002602',
+  '30000000-0000-4000-8000-000000002602',
+  '00000000-0000-0000-0000-000000002601',
+  'en', 'Description', 'Rules', 1
 );
+insert into public.cottage_profile_review_cycles (
+  id, profile_id, owner_user_id, source_revision_id, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities,
+  cycle_number, state, decided_at
+) values (
+  '68100000-0000-4000-8000-000000002602',
+  '30000000-0000-4000-8000-000000002602',
+  '00000000-0000-0000-0000-000000002601',
+  '68000000-0000-4000-8000-000000002602',
+  'Other Cottage', 'Erbil', 'Elsewhere', 4, 2, 1, array['garden'],
+  1, 'approved', now()
+);
+insert into public.cottage_profile_localized_revisions (
+  id, review_cycle_id, locale, revision, origin, description, house_rules
+) values (
+  '68200000-0000-4000-8000-000000002602',
+  '68100000-0000-4000-8000-000000002602',
+  'en', 1, 'owner_source', 'Description', 'Rules'
+);
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+) values (
+  '68300000-0000-4000-8000-000000002602',
+  '30000000-0000-4000-8000-000000002602',
+  '68100000-0000-4000-8000-000000002602',
+  1, 'Other Cottage', 'Erbil', 'Elsewhere', 4, 2, 1, array['garden']
+);
+insert into public.cottage_publication_localizations (
+  publication_id, locale, localized_revision_id, description, house_rules
+) values (
+  '68300000-0000-4000-8000-000000002602',
+  'en', '68200000-0000-4000-8000-000000002602', 'Description', 'Rules'
+);
+update public.owner_application_cottage_profiles
+set current_publication_id = '68300000-0000-4000-8000-000000002602'
+where id = '30000000-0000-4000-8000-000000002602';
+insert into public.cottage_inventory_standard_prices (
+  schedule_revision_id, unit_kind, unit_id, price_iqd
+)
+select fixture.revision_id, units.unit_kind, units.unit_id, units.price_iqd
+from replacement_schedule_fixture fixture
+cross join lateral (
+  select 'shift'::public.cottage_inventory_unit_kind, shifts.id, 100000::bigint
+  from public.cottage_shifts shifts
+  where shifts.schedule_revision_id = fixture.revision_id
+  union all
+  select 'full_day_bundle'::public.cottage_inventory_unit_kind,
+    fixture.full_day_bundle_id, 170000::bigint
+) units(unit_kind, unit_id, price_iqd);
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select prices.schedule_revision_id, prices.unit_kind, prices.unit_id,
+  '2099-08-22', 'open'
+from public.cottage_inventory_standard_prices prices
+join replacement_schedule_fixture fixture on fixture.revision_id = prices.schedule_revision_id;
+set local role service_role;
+create temporary table stale_boundary_hold as
+select public.create_pending_booking_period_hold(
+  '00000000-0000-0000-0000-000000002699',
+  '30000000-0000-4000-8000-000000002602',
+  'RC-CURRENT-SCHEDULE-2602',
+  '{"from":"2099-08-22","to":"2099-08-22","guests":1,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":1}]}'::jsonb
+) as result;
+reset role;
+select results_eq(
+  $$select periods.schedule_revision_id = current_fixture.revision_id,
+      periods.schedule_revision_id <> stale_fixture.revision_id,
+      selected.unit_id = current_fixture.shift_id,
+      selected.unit_id <> stale_fixture.shift_id
+    from public.cottage_booking_period_commitments periods
+    join public.cottage_inventory_commitments selected
+      on selected.booking_period_commitment_id = periods.id
+    cross join replacement_schedule_fixture current_fixture
+    cross join stale_schedule_fixture stale_fixture
+    where periods.commitment_reference = 'RC-CURRENT-SCHEDULE-2602'$$,
+  $$values (true, true, true, true)$$,
+  'the profile-only Pending Hold boundary persists only the current replacement Schedule'
+);
+delete from public.cottage_booking_period_commitments
+where commitment_reference = 'RC-CURRENT-SCHEDULE-2602';
 create temporary table historical_schedule_fixture as
 select profiles.current_shift_schedule_id as revision_id,
   revisions.revision,
@@ -1693,18 +1924,16 @@ from public.owner_application_cottage_profiles profiles
 join public.cottage_shift_schedule_revisions revisions
   on revisions.id = profiles.current_shift_schedule_id
 where profiles.id = '30000000-0000-4000-8000-000000002602';
-alter table public.cottage_inventory_commitments
-  disable trigger lock_cottage_inventory_commitment_profile;
-insert into public.cottage_inventory_commitments (
-  schedule_revision_id, unit_kind, unit_id, service_day,
-  commitment_reference, committed_price_iqd, status
-)
-select revision_id, 'shift', shift_id,
+select pg_temp.insert_test_inventory_snapshot_unchecked(
+  revision_id,
+  'shift',
+  shift_id,
   (now() at time zone 'Asia/Baghdad')::date - 1,
-  'RC-HISTORICAL-2602', 100000, 'confirmed_booking'
+  'RC-HISTORICAL-2602',
+  100000,
+  'confirmed_booking'
+)
 from historical_schedule_fixture;
-alter table public.cottage_inventory_commitments
-  enable trigger lock_cottage_inventory_commitment_profile;
 grant select on historical_schedule_fixture to authenticated;
 set local role authenticated;
 select set_config(
@@ -1723,9 +1952,9 @@ select lives_ok(
 reset role;
 select results_eq(
   $$select profiles.current_shift_schedule_id <> fixture.revision_id,
-      (select count(*)::integer from public.cottage_inventory_commitments commitments
-       where commitments.schedule_revision_id = fixture.revision_id
-         and commitments.commitment_reference = 'RC-HISTORICAL-2602')
+      (select count(*)::integer from public.cottage_booking_period_commitments periods
+       where periods.schedule_revision_id = fixture.revision_id
+         and periods.commitment_reference = 'RC-HISTORICAL-2602')
     from public.owner_application_cottage_profiles profiles
     cross join historical_schedule_fixture fixture
     where profiles.id = '30000000-0000-4000-8000-000000002602'$$,
@@ -1821,18 +2050,16 @@ from public.owner_application_cottage_profiles profiles
 join public.cottage_shift_schedule_revisions revisions
   on revisions.id = profiles.current_shift_schedule_id
 where profiles.id = '30000000-0000-4000-8000-000000002602';
-alter table public.cottage_inventory_commitments
-  disable trigger lock_cottage_inventory_commitment_profile;
-insert into public.cottage_inventory_commitments (
-  schedule_revision_id, unit_kind, unit_id, service_day,
-  commitment_reference, committed_price_iqd, status
-)
-select revision_id, 'shift', shift_id,
+select pg_temp.insert_test_inventory_snapshot_unchecked(
+  revision_id,
+  'shift',
+  shift_id,
   (now() at time zone 'Asia/Baghdad')::date + 1,
-  'RC-FUTURE-2602', 100000, 'confirmed_booking'
+  'RC-FUTURE-2602',
+  100000,
+  'confirmed_booking'
+)
 from current_schedule_fixture;
-alter table public.cottage_inventory_commitments
-  enable trigger lock_cottage_inventory_commitment_profile;
 grant select on current_schedule_fixture to authenticated;
 set local role authenticated;
 select set_config(
@@ -1852,9 +2079,9 @@ select throws_ok(
 reset role;
 select results_eq(
   $$select profiles.current_shift_schedule_id = fixture.revision_id,
-      (select count(*)::integer from public.cottage_inventory_commitments commitments
-       where commitments.schedule_revision_id = fixture.revision_id
-         and commitments.commitment_reference = 'RC-FUTURE-2602')
+      (select count(*)::integer from public.cottage_booking_period_commitments periods
+       where periods.schedule_revision_id = fixture.revision_id
+         and periods.commitment_reference = 'RC-FUTURE-2602')
     from public.owner_application_cottage_profiles profiles
     cross join current_schedule_fixture fixture
     where profiles.id = '30000000-0000-4000-8000-000000002602'$$,
@@ -1885,7 +2112,7 @@ select throws_ok(
 );
 
 reset role;
-delete from public.cottage_inventory_commitments
+delete from public.cottage_booking_period_commitments
 where schedule_revision_id = (select revision_id from pricing_revision_before_replace);
 create temporary table pricing_equality_fixture on commit drop as
 select gen_random_uuid() as revision_id,
@@ -1992,19 +2219,12 @@ insert into public.cottage_inventory_date_price_overrides (
     'full_day_bundle', current_setting('rentcottage.equality_bundle_id')::uuid,
     current_setting('rentcottage.equality_service_day')::date, 260000
   );
-alter table public.cottage_inventory_commitments
-  disable trigger lock_cottage_inventory_commitment_profile;
-insert into public.cottage_inventory_commitments (
-  schedule_revision_id, unit_kind, unit_id, service_day,
-  commitment_reference, committed_price_iqd, status
-) values (
+select pg_temp.insert_test_inventory_snapshot_unchecked(
   current_setting('rentcottage.equality_revision_id')::uuid,
   'shift', current_setting('rentcottage.equality_shift_id')::uuid,
   current_setting('rentcottage.equality_service_day')::date,
   'RC-ACTIVE-PRICE-2601', 180000, 'confirmed_booking'
 );
-alter table public.cottage_inventory_commitments
-  enable trigger lock_cottage_inventory_commitment_profile;
 set local role authenticated;
 select throws_ok(
   $$select public.save_cottage_inventory_pricing(
@@ -2054,9 +2274,11 @@ select results_eq(
          and prices.unit_kind = 'shift'
          and prices.unit_id = fixture.shift_id
          and prices.service_day = fixture.service_day),
-      (select commitments.committed_price_iqd
-       from public.cottage_inventory_commitments commitments
-       where commitments.commitment_reference = 'RC-ACTIVE-PRICE-2601'),
+      (select selected.committed_price_iqd
+       from public.cottage_inventory_commitments selected
+       join public.cottage_booking_period_commitments periods
+         on periods.id = selected.booking_period_commitment_id
+       where periods.commitment_reference = 'RC-ACTIVE-PRICE-2601'),
       (select prices.price_iqd
        from public.cottage_inventory_date_price_overrides prices
        where prices.schedule_revision_id = fixture.revision_id
