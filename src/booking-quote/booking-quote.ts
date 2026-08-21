@@ -23,6 +23,7 @@ export type BookingQuoteItem = BookingQuoteItemBase &
 
 export interface PublicBookingQuote {
   slug: string;
+  quoteFingerprint: string;
   cottageName: string;
   contentVersion: number;
   houseRules: string;
@@ -54,6 +55,10 @@ const publicCottageSlugPattern = /^cottage-[0-9a-f]{32}$/;
 
 export function isPublicCottageSlug(value: string): boolean {
   return publicCottageSlugPattern.test(value);
+}
+
+export function isBookingQuoteFingerprint(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
 function nextServiceDay(value: string): string {

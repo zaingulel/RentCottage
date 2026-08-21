@@ -194,6 +194,7 @@ describe("access verification command", () => {
           "playwright",
           "test",
           "tests/access.spec.ts",
+          "tests/booking-request-access.spec.ts",
           "--project=mobile",
           "--project=desktop",
           "--workers=1",
@@ -206,11 +207,13 @@ describe("access verification command", () => {
           "playwright",
           "test",
           "tests/access.spec.ts",
+          "tests/booking-request-access.spec.ts",
           "--project=worker",
           "--workers=1",
           "--output=playwright-report/access-worker",
         ],
       ],
+      ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
       ["npx", ["supabase", "stop", "--no-backup"]],
     ]);
     expect(run.mock.calls[5][2].env).toMatchObject({
@@ -245,6 +248,11 @@ describe("access verification command", () => {
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
     expect(run.mock.calls[8][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[12][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    });
+    expect(run.mock.calls[12][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[10][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       NEXTJS_ENV: "test",

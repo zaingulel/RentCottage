@@ -17,7 +17,7 @@ export const bookingQuoteMessages = {
     houseRules: "قواعد البيت",
     termsVersion: "نسخة شروط الحجز",
     notice:
-      "عرض السعر هذا لا يحجز الفترة ولا ينشئ حجزاً. ستُعاد مراجعة التوفر والسعر عند إرسال طلب الحجز مستقبلاً.",
+      "عرض السعر هذا لا يحجز الفترة. ستُراجع التوفر والسعر مرة أخرى قبل حجز المبلغ وإرسال طلب الحجز.",
   },
   ckb: {
     title: "پێشنیاری نرخی وردی حجزکردن",
@@ -38,7 +38,7 @@ export const bookingQuoteMessages = {
     houseRules: "یاساکانی کۆتێج",
     termsVersion: "وەشانی مەرجەکانی حجزکردن",
     notice:
-      "ئەم پێشنیاری نرخە ماوەکە ناپارێزێت و حجز دروست ناکات. لە داهاتوودا لە کاتی ناردنی داواکاری حجز، بەردەستبوون و نرخ دووبارە پشکنین دەکرێن.",
+      "ئەم پێشنیاری نرخە ماوەکە ناگرێت. پێش ڕێگەپێدانی پارە و ناردنی داواکاری، بەردەستبوون و نرخ دووبارە پشکنین دەکرێن.",
   },
   en: {
     title: "Your exact Booking Quote",
@@ -59,6 +59,6 @@ export const bookingQuoteMessages = {
     houseRules: "House Rules",
     termsVersion: "Booking terms version",
     notice:
-      "This quote does not reserve the period or create a booking. Availability and price will be checked again when Booking Request submission is introduced.",
+      "This quote does not reserve the period. Availability and price are checked again before payment authorisation and Booking Request submission.",
   },
 } as const;

@@ -26,6 +26,11 @@ if (!url || !secretKey || !publishableKey) {
     { profile: "desktop", phone: "+9647510000001" },
     { profile: "worker", phone: "+9647510000002" },
   ];
+  const bookingCustomerFixtures = [
+    { profile: "mobile", phone: "+9647520000000" },
+    { profile: "desktop", phone: "+9647520000001" },
+    { profile: "worker", phone: "+9647520000002" },
+  ];
   const requiredDocumentKinds = [
     "identity",
     "authority_to_rent",
@@ -130,6 +135,32 @@ if (!url || !secretKey || !publishableKey) {
         );
       }
       await assertApprovedOwnerFixture(fixture, signedIn.user.id, fixtureOwner);
+    }
+    for (const fixture of bookingCustomerFixtures) {
+      const fixtureCustomer = createClient(url, publishableKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const { data: signedIn, error: signInError } =
+        await fixtureCustomer.auth.signInWithPassword({
+          phone: fixture.phone,
+          password,
+        });
+      if (signInError || !signedIn.user) {
+        throw new Error(
+          `${fixture.profile} Booking Customer fixture identity is missing`,
+          { cause: signInError },
+        );
+      }
+      const { data: context, error: contextError } = await fixtureCustomer
+        .from("account_contexts")
+        .select("role")
+        .single();
+      if (contextError || context.role !== "customer") {
+        throw new Error(
+          `${fixture.profile} Booking Customer fixture role is missing`,
+          { cause: contextError },
+        );
+      }
     }
     console.log(
       "Verified complete approved Cottage Profile fixtures for every browser project.",
@@ -324,6 +355,53 @@ if (!url || !secretKey || !publishableKey) {
     throw new Error(
       "Concurrent document registration did not preserve every displaced object for cleanup",
     );
+  }
+
+  for (const fixture of bookingCustomerFixtures) {
+    const existingFixtureIdentity = findAccessFixtureUser(users, fixture.phone);
+    let fixtureIdentity = existingFixtureIdentity;
+    if (!fixtureIdentity) {
+      const { data, error } = await client.auth.admin.createUser({
+        phone: fixture.phone,
+        password,
+        phone_confirm: true,
+      });
+      if (error) throw error;
+      fixtureIdentity = data.user;
+    } else {
+      const { error } = await client.auth.admin.updateUserById(
+        fixtureIdentity.id,
+        { password },
+      );
+      if (error) throw error;
+    }
+    const fixtureCustomer = createClient(url, publishableKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: signedIn, error: signInError } =
+      await fixtureCustomer.auth.signInWithPassword({
+        phone: fixture.phone,
+        password,
+      });
+    if (signInError || signedIn.user?.id !== fixtureIdentity.id) {
+      throw new Error("Booking Customer fixture was not created", {
+        cause: signInError,
+      });
+    }
+    const { data: context, error: contextError } = await fixtureCustomer
+      .from("account_contexts")
+      .select("role")
+      .maybeSingle();
+    if (contextError) throw contextError;
+    if (!context) {
+      const { error: claimError } = await fixtureCustomer.rpc(
+        "claim_marketplace_role",
+        { requested_role: "customer" },
+      );
+      if (claimError) throw claimError;
+    } else if (context.role !== "customer") {
+      throw new Error("Booking Customer fixture belongs to another role");
+    }
   }
 
   for (const fixture of cottageOwnerFixtures) {

@@ -201,6 +201,7 @@ export function main(
         "playwright",
         "test",
         "tests/access.spec.ts",
+        "tests/booking-request-access.spec.ts",
         "--project=mobile",
         "--project=desktop",
         "--workers=1",
@@ -216,6 +217,7 @@ export function main(
         "playwright",
         "test",
         "tests/access.spec.ts",
+        "tests/booking-request-access.spec.ts",
         "--project=worker",
         "--workers=1",
         "--output=playwright-report/access-worker",
@@ -225,7 +227,13 @@ export function main(
         stdio: "inherit",
       },
     );
-    return workerBrowser.status;
+    if (workerBrowser.status !== 0) return workerBrowser.status;
+    const bookingRequestConcurrency = execute(
+      "node",
+      ["scripts/verify-booking-request-concurrency.mjs"],
+      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+    );
+    return bookingRequestConcurrency.status;
   };
 
   try {

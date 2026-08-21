@@ -35,6 +35,7 @@ const response = {
   bookingPriceIqd: 100_003,
   serviceFeeIqd: 5_000,
   customerTotalIqd: 105_003,
+  quoteFingerprint: "a".repeat(64),
 };
 
 function clientReturning(data: unknown, error: unknown = null) {
@@ -54,16 +55,20 @@ describe("Supabase Booking Quote", () => {
       status: "quoted",
       quote: expect.objectContaining({
         slug,
+        quoteFingerprint: "a".repeat(64),
         bookingPriceIqd: 100_003,
         serviceFeeIqd: 5_000,
         customerTotalIqd: 105_003,
       }),
     });
-    expect(client.rpc).toHaveBeenCalledWith("get_public_booking_quote", {
-      target_locale: "en",
-      target_slug: slug,
-      requested_search: query,
-    });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "get_public_booking_quote_with_fingerprint",
+      {
+        target_locale: "en",
+        target_slug: slug,
+        requested_search: query,
+      },
+    );
   });
 
   it.each([

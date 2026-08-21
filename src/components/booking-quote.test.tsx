@@ -1,7 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/booking-request/actions", () => ({
+  submitBookingRequest: vi.fn(),
+}));
 
 import { BookingQuoteView } from "./booking-quote";
+import { bookingRequestAcceptanceEvidence } from "@/booking-request/booking-request-policy";
 
 const result = {
   status: "quoted" as const,
@@ -13,12 +18,12 @@ const result = {
     termsVersion: "rentcottage-mvp-2026-08-04" as const,
     items: [
       {
-        serviceDay: "2026-08-21",
+        serviceDay: "2099-08-21",
         kind: "shift" as const,
         position: 2 as const,
         displayName: "Night",
-        startsAt: "2026-08-21T20:00:00+03:00",
-        endsAt: "2026-08-22T02:00:00+03:00",
+        startsAt: "2099-08-21T20:00:00+03:00",
+        endsAt: "2099-08-22T02:00:00+03:00",
         crossesMidnight: true,
         priceIqd: 100_003,
       },
@@ -26,7 +31,33 @@ const result = {
     bookingPriceIqd: 100_003,
     serviceFeeIqd: 5_000 as const,
     customerTotalIqd: 105_003,
+    quoteFingerprint: "a".repeat(64),
   },
+};
+
+const discoveryQuery = {
+  from: "2099-08-21",
+  to: "2099-08-21",
+  selections: [
+    { serviceDay: "2099-08-21", kind: "shift" as const, position: 2 as const },
+  ],
+  guests: 4,
+  amenities: [],
+};
+
+const bookingRequestProps = {
+  discoveryQuery,
+  idempotencyKey: "11111111-1111-4111-8111-111111111111",
+  customerReady: true,
+  bookingRequestUiPolicy: {
+    insideCutoff: false,
+    requiresInside48HourNoRefundAcceptance: true,
+  },
+  bookingRequestAcceptanceEvidence: bookingRequestAcceptanceEvidence({
+    locale: "en",
+    termsVersion: result.quote.termsVersion,
+    requiresInside48HourNoRefundAcceptance: true,
+  }),
 };
 
 describe("Booking Quote view", () => {
@@ -34,9 +65,10 @@ describe("Booking Quote view", () => {
     render(
       <BookingQuoteView
         locale="en"
-        queryString="from=2026-08-21&selection=2026-08-21%3Ashift%3A2&guests=4"
+        queryString="from=2099-08-21&selection=2099-08-21%3Ashift%3A2&guests=4"
         result={result}
         slug={result.quote.slug}
+        {...bookingRequestProps}
       />,
     );
     expect(
@@ -53,17 +85,22 @@ describe("Booking Quote view", () => {
       screen.getByRole("heading", { name: "House Rules" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/does not reserve/)).toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Send your Booking Request" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Send Booking Request" }),
+    ).toBeInTheDocument();
   });
 
   it("renders localized right-to-left quote content and canonical locale links", () => {
     const { container } = render(
       <BookingQuoteView
         locale="ar"
-        queryString="from=2026-08-21&selection=2026-08-21%3Ashift%3A2&guests=4"
+        queryString="from=2099-08-21&selection=2099-08-21%3Ashift%3A2&guests=4"
         result={result}
         slug={result.quote.slug}
+        {...bookingRequestProps}
       />,
     );
     expect(container.querySelector("main")).toHaveAttribute("dir", "rtl");
@@ -79,7 +116,7 @@ describe("Booking Quote view", () => {
     ).toHaveAttribute(
       "href",
       expect.stringContaining(
-        `/en/request/${result.quote.slug}?from=2026-08-21`,
+        `/en/request/${result.quote.slug}?from=2099-08-21`,
       ),
     );
   });
@@ -88,9 +125,10 @@ describe("Booking Quote view", () => {
     render(
       <BookingQuoteView
         locale="ckb"
-        queryString="from=2026-08-21&selection=2026-08-21%3Ashift%3A2&guests=4"
+        queryString="from=2099-08-21&selection=2099-08-21%3Ashift%3A2&guests=4"
         result={result}
         slug={result.quote.slug}
+        {...bookingRequestProps}
       />,
     );
     const item = screen.getByRole("listitem", { name: /شەفتی 2/ });
@@ -105,20 +143,20 @@ describe("Booking Quote view", () => {
         ...result.quote,
         items: [
           {
-            serviceDay: "2026-08-21",
+            serviceDay: "2099-08-21",
             kind: "full-day" as const,
             displayName: "Owner full-day name",
-            startsAt: "2026-08-21T08:00:00+03:00",
-            endsAt: "2026-08-21T23:00:00+03:00",
+            startsAt: "2099-08-21T08:00:00+03:00",
+            endsAt: "2099-08-21T23:00:00+03:00",
             crossesMidnight: false,
             priceIqd: 250_000,
           },
           {
-            serviceDay: "2026-08-22",
+            serviceDay: "2099-08-22",
             kind: "full-day" as const,
             displayName: "Owner full-day name",
-            startsAt: "2026-08-22T08:00:00+03:00",
-            endsAt: "2026-08-22T23:00:00+03:00",
+            startsAt: "2099-08-22T08:00:00+03:00",
+            endsAt: "2099-08-22T23:00:00+03:00",
             crossesMidnight: false,
             priceIqd: 260_000,
           },
@@ -130,9 +168,23 @@ describe("Booking Quote view", () => {
     render(
       <BookingQuoteView
         locale="en"
-        queryString="from=2026-08-21&to=2026-08-22"
+        queryString="from=2099-08-21&to=2099-08-22"
         result={fullDayResult}
         slug={result.quote.slug}
+        discoveryQuery={{
+          ...discoveryQuery,
+          to: "2099-08-22",
+          selections: [
+            { serviceDay: "2099-08-21", kind: "full-day" },
+            { serviceDay: "2099-08-22", kind: "full-day" },
+          ],
+        }}
+        idempotencyKey={bookingRequestProps.idempotencyKey}
+        customerReady
+        bookingRequestUiPolicy={bookingRequestProps.bookingRequestUiPolicy}
+        bookingRequestAcceptanceEvidence={
+          bookingRequestProps.bookingRequestAcceptanceEvidence
+        }
       />,
     );
 
@@ -148,7 +200,7 @@ describe("Booking Quote view", () => {
       screen.getByRole("heading", { name: "Continuous full-day access" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Aug 21, 2026, 8:00 AM.*Aug 22, 2026, 11:00 PM/),
+      screen.getByText(/Aug 21, 2099, 8:00 AM.*Aug 22, 2099, 11:00 PM/),
     ).toBeInTheDocument();
   });
 
@@ -159,6 +211,7 @@ describe("Booking Quote view", () => {
         queryString="from=2026-08-21"
         result={{ status: "selection-unavailable" }}
         slug={result.quote.slug}
+        {...bookingRequestProps}
       />,
     );
     expect(screen.getByRole("alert")).toHaveTextContent("بەردەست نییە");

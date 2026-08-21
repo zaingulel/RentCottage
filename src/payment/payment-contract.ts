@@ -11,6 +11,13 @@ export type PaymentOperationStatus = "pending" | "succeeded" | "failed";
 
 export type ProviderOutcome = "succeeded" | "failed" | "indeterminate";
 
+export interface ProviderExecutionPermit {
+  readonly claimId: string;
+  readonly generation: number;
+  readonly idempotencyKey: string;
+  readonly notAfter: string;
+}
+
 export interface ProviderOperationRequest {
   readonly kind: PaymentOperationKind;
   readonly paymentLifecycleId: string;
@@ -18,9 +25,13 @@ export interface ProviderOperationRequest {
   readonly attemptId: string;
   readonly amountFils: Fils;
   readonly currency: "IQD";
+  readonly executionPermit: ProviderExecutionPermit | null;
 }
 
 export type ProviderOperationResult =
+  | {
+      readonly outcome: "not-executed";
+    }
   | {
       readonly outcome: "succeeded";
       readonly providerRequestId: string;

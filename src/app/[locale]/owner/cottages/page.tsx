@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
 import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
+import { loadOwnerBookingRequestNotifications } from "@/booking-request/request-owner-booking-request-notifications";
 import { CottageProfileOverview } from "@/components/cottage-profile-overview";
 import { OwnerCottageAccessFallback } from "@/components/owner-cottage-access-fallback";
+import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
 
@@ -11,6 +13,10 @@ async function loadOwnerCottages() {
   return loadOwnerCottageAccess(async (cottageProfile, approvalState) => ({
     profiles: await cottageProfile.listOwner(),
     canCreate: approvalState === "approved",
+    notifications:
+      approvalState === "approved"
+        ? await loadOwnerBookingRequestNotifications()
+        : [],
   }));
 }
 
@@ -71,6 +77,10 @@ export default async function OwnerCottagesPage({
         actor="owner"
         profiles={page.value.profiles}
         canCreate={page.value.canCreate}
+      />
+      <OwnerBookingRequestNotifications
+        locale={locale}
+        notifications={page.value.notifications}
       />
     </main>
   );

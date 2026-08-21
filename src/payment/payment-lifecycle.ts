@@ -8,6 +8,7 @@ import type {
   PaymentOperationKind,
   PaymentOperationSnapshot,
   PaymentProviderAdapter,
+  ProviderExecutionPermit,
   ProviderEventApplication,
   ProviderOperationResult,
   RefundAllocation,
@@ -24,6 +25,265 @@ interface PaymentLifecycleInput {
 
 interface ClockedPaymentProviderAdapter extends PaymentProviderAdapter {
   now?(): string;
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
+  return (
+    Object.keys(value).length === keys.length &&
+    Object.keys(value).every((key) => keys.includes(key))
+  );
+}
+
+const operationKeys = [
+  "paymentLifecycleId",
+  "kind",
+  "logicalOperationId",
+  "attemptId",
+  "status",
+  "amountFils",
+  "providerRequestId",
+  "providerReference",
+  "movementReference",
+  "reconciliationRequired",
+  "retrySafe",
+] as const;
+
+function validAuthorizationPhaseOperation(
+  value: unknown,
+  lifecycleId: string,
+  kind: "authorization" | "release",
+  totalFils: number,
+) {
+  const operation = record(value);
+  if (!operation || !exactKeys(operation, operationKeys)) return false;
+  const logicalOperationId = `${lifecycleId}:${kind}`;
+  const status = operation.status;
+  const requestId = operation.providerRequestId;
+  const providerReference = operation.providerReference;
+  const movementReference = operation.movementReference;
+  if (
+    operation.paymentLifecycleId !== lifecycleId ||
+    operation.kind !== kind ||
+    operation.logicalOperationId !== logicalOperationId ||
+    typeof operation.attemptId !== "string" ||
+    !new RegExp(`^${logicalOperationId}:attempt-[1-9][0-9]*$`).test(
+      operation.attemptId,
+    ) ||
+    operation.amountFils !== totalFils ||
+    !["pending", "succeeded", "failed"].includes(status as string) ||
+    typeof operation.reconciliationRequired !== "boolean" ||
+    typeof operation.retrySafe !== "boolean"
+  ) {
+    return false;
+  }
+  if (status === "succeeded") {
+    return (
+      typeof requestId === "string" &&
+      requestId.length > 0 &&
+      typeof providerReference === "string" &&
+      providerReference.length > 0 &&
+      typeof movementReference === "string" &&
+      movementReference.length > 0 &&
+      operation.reconciliationRequired === false &&
+      operation.retrySafe === false
+    );
+  }
+  if (status === "failed") {
+    return (
+      typeof requestId === "string" &&
+      requestId.length > 0 &&
+      typeof providerReference === "string" &&
+      providerReference.length > 0 &&
+      movementReference === null &&
+      operation.reconciliationRequired === false
+    );
+  }
+  const untouched =
+    requestId === null &&
+    providerReference === null &&
+    movementReference === null;
+  const indeterminate =
+    typeof requestId === "string" &&
+    requestId.length > 0 &&
+    typeof providerReference === "string" &&
+    providerReference.length > 0 &&
+    typeof movementReference === "string" &&
+    movementReference.length > 0;
+  return (
+    (untouched || indeterminate) &&
+    operation.retrySafe === false &&
+    operation.reconciliationRequired === indeterminate
+  );
+}
+
+export function isAuthorizationPhasePaymentSnapshot(
+  value: unknown,
+  expected: {
+    paymentLifecycleId: string;
+    bookingPriceFils: number;
+    bookingServiceFeeFils: number;
+  },
+): value is PaymentLifecycleSnapshot {
+  const snapshot = record(value);
+  if (
+    !snapshot ||
+    !exactKeys(snapshot, [
+      "paymentLifecycleId",
+      "currency",
+      "bookingPriceFils",
+      "bookingServiceFeeFils",
+      "customerTotalFils",
+      "authorization",
+      "capture",
+      "release",
+      "refunds",
+      "financials",
+      "payout",
+      "holds",
+      "dispute",
+      "audits",
+      "movements",
+    ])
+  )
+    return false;
+  const total = expected.bookingPriceFils + expected.bookingServiceFeeFils;
+  const commission = expected.bookingPriceFils / 10;
+  const financials = record(snapshot.financials);
+  const payout = record(snapshot.payout);
+  const holds = record(snapshot.holds);
+  const movements = Array.isArray(snapshot.movements)
+    ? snapshot.movements
+    : undefined;
+  if (
+    !Number.isSafeInteger(total) ||
+    !Number.isSafeInteger(commission) ||
+    snapshot.paymentLifecycleId !== expected.paymentLifecycleId ||
+    snapshot.currency !== "IQD" ||
+    snapshot.bookingPriceFils !== expected.bookingPriceFils ||
+    snapshot.bookingServiceFeeFils !== expected.bookingServiceFeeFils ||
+    snapshot.customerTotalFils !== total ||
+    snapshot.capture !== null ||
+    snapshot.dispute !== null ||
+    !Array.isArray(snapshot.refunds) ||
+    snapshot.refunds.length !== 0 ||
+    !Array.isArray(snapshot.audits) ||
+    snapshot.audits.length !== 0 ||
+    !financials ||
+    !exactKeys(financials, [
+      "refundedBookingPriceFils",
+      "refundedBookingServiceFeeFils",
+      "remainingBookingPriceFils",
+      "remainingBookingServiceFeeFils",
+      "marketplaceCommissionFils",
+      "ownerEntitlementFils",
+    ]) ||
+    financials.refundedBookingPriceFils !== 0 ||
+    financials.refundedBookingServiceFeeFils !== 0 ||
+    financials.remainingBookingPriceFils !== expected.bookingPriceFils ||
+    financials.remainingBookingServiceFeeFils !==
+      expected.bookingServiceFeeFils ||
+    financials.marketplaceCommissionFils !== commission ||
+    financials.ownerEntitlementFils !==
+      expected.bookingPriceFils - commission ||
+    !payout ||
+    !exactKeys(payout, [
+      "status",
+      "eligibleFils",
+      "paidFils",
+      "providerFeeFils",
+      "providerReserveFils",
+      "recoveryExposureFils",
+      "recoveryBalanceFils",
+      "automaticOwnerDebitFils",
+      "paidWhileBlocked",
+      "settlement",
+    ]) ||
+    payout.status !== "not_eligible" ||
+    payout.eligibleFils !== expected.bookingPriceFils - commission ||
+    payout.paidFils !== 0 ||
+    payout.providerFeeFils !== 0 ||
+    payout.providerReserveFils !== 0 ||
+    payout.recoveryExposureFils !== 0 ||
+    payout.recoveryBalanceFils !== 0 ||
+    payout.automaticOwnerDebitFils !== 0 ||
+    payout.paidWhileBlocked !== false ||
+    payout.settlement !== null ||
+    !holds ||
+    !exactKeys(holds, ["administrator", "dispute"]) ||
+    holds.administrator !== false ||
+    holds.dispute !== false ||
+    !movements
+  )
+    return false;
+  if (
+    !validAuthorizationPhaseOperation(
+      snapshot.authorization,
+      expected.paymentLifecycleId,
+      "authorization",
+      total,
+    )
+  )
+    return false;
+  if (
+    snapshot.release !== null &&
+    !validAuthorizationPhaseOperation(
+      snapshot.release,
+      expected.paymentLifecycleId,
+      "release",
+      total,
+    )
+  )
+    return false;
+  const operations = [snapshot.authorization, snapshot.release].filter(
+    Boolean,
+  ) as PaymentOperationSnapshot[];
+  const succeeded = operations.filter(
+    (operation) => operation.status === "succeeded",
+  );
+  if (movements.length !== succeeded.length) return false;
+  return succeeded.every((operation) => {
+    const movement = movements.find(
+      (candidate: unknown) =>
+        record(candidate)?.movementReference === operation.movementReference,
+    );
+    const movementRecord = record(movement);
+    return (
+      !!movementRecord &&
+      exactKeys(movementRecord, [
+        "kind",
+        "logicalOperationId",
+        "attemptId",
+        "amountFils",
+        "movementReference",
+        "recordedAt",
+      ]) &&
+      movementRecord.kind === operation.kind &&
+      movementRecord.logicalOperationId === operation.logicalOperationId &&
+      movementRecord.attemptId === operation.attemptId &&
+      movementRecord.amountFils === total &&
+      typeof movementRecord.recordedAt === "string" &&
+      !Number.isNaN(Date.parse(movementRecord.recordedAt))
+    );
+  });
+}
+
+export interface PaymentLifecyclePersistence {
+  save(
+    snapshot: PaymentLifecycleSnapshot,
+  ): Promise<ProviderExecutionPermit | void>;
+}
+
+export class ProviderExecutionNotStartedError extends Error {
+  constructor() {
+    super("provider_execution_not_started");
+    this.name = "ProviderExecutionNotStartedError";
+  }
 }
 
 export interface PaymentLifecycle {
@@ -49,6 +309,7 @@ export interface PaymentLifecycle {
 class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
   readonly #input: PaymentLifecycleInput;
   readonly #provider: ClockedPaymentProviderAdapter;
+  readonly #persistence?: PaymentLifecyclePersistence;
   readonly #operations = new Map<
     PaymentOperationKind,
     PaymentOperationSnapshot
@@ -74,6 +335,8 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
   constructor(
     input: PaymentLifecycleInput,
     provider: ClockedPaymentProviderAdapter,
+    persistence?: PaymentLifecyclePersistence,
+    restoredSnapshot?: PaymentLifecycleSnapshot,
   ) {
     this.#assertNonNegativeMoney(input.bookingPriceFils, "Booking Price");
     this.#exactCommission(input.bookingPriceFils);
@@ -88,6 +351,55 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
     );
     this.#input = Object.freeze({ ...input });
     this.#provider = provider;
+    this.#persistence = persistence;
+    if (restoredSnapshot) this.#restoreAuthorizationPhase(restoredSnapshot);
+  }
+
+  #restoreAuthorizationPhase(snapshot: PaymentLifecycleSnapshot): void {
+    if (!isAuthorizationPhasePaymentSnapshot(snapshot, this.#input)) {
+      throw new Error(
+        "Stored Payment Lifecycle is not an authorization phase.",
+      );
+    }
+    for (const operation of [snapshot.authorization, snapshot.release]) {
+      if (!operation) continue;
+      if (
+        operation.paymentLifecycleId !== this.#input.paymentLifecycleId ||
+        operation.amountFils !== this.#customerTotalFils() ||
+        (operation.kind !== "authorization" && operation.kind !== "release")
+      ) {
+        throw new Error("Stored Payment Lifecycle operation is inconsistent.");
+      }
+      const restored = Object.freeze({
+        ...operation,
+        reconciliationRequired:
+          operation.status === "pending"
+            ? true
+            : operation.reconciliationRequired,
+      });
+      this.#operations.set(operation.kind, restored);
+      this.#operationsByLogicalId.set(operation.logicalOperationId, restored);
+      if (operation.providerRequestId) {
+        this.#providerRequestOwners.set(
+          operation.providerRequestId,
+          operation.attemptId,
+        );
+      }
+      if (operation.movementReference) {
+        this.#movementOwners.set(
+          operation.movementReference,
+          operation.attemptId,
+        );
+      }
+      const sequence = operation.attemptId.match(/:attempt-(\d+)$/)?.[1];
+      this.#operationSequence = Math.max(
+        this.#operationSequence,
+        sequence ? Number(sequence) : 0,
+      );
+    }
+    this.#movements.push(
+      ...snapshot.movements.map((movement) => Object.freeze({ ...movement })),
+    );
   }
 
   async authorize(): Promise<PaymentOperationSnapshot> {
@@ -183,10 +495,16 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       attemptId: operation.attemptId,
       amountFils: operation.amountFils,
       currency: "IQD",
+      executionPermit: null,
       providerRequestId: operation.providerRequestId,
       providerReference: operation.providerReference,
     });
-    return this.#applyResult(operation, result);
+    if (result.outcome === "not-executed") {
+      throw new Error("invalid_provider_reconciliation_result");
+    }
+    const settled = this.#applyResult(operation, result);
+    await this.#persist();
+    return settled;
   }
 
   async retry(logicalOperationId: string): Promise<PaymentOperationSnapshot> {
@@ -545,6 +863,8 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       this.#refunds.push(Object.freeze({ ...pending }));
     }
 
+    const executionPermit = await this.#persist();
+
     let result: ProviderOperationResult;
     try {
       result = await this.#provider.execute({
@@ -554,6 +874,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
         attemptId,
         amountFils,
         currency: "IQD",
+        executionPermit: executionPermit ?? null,
       });
     } catch {
       const indeterminate = Object.freeze({
@@ -568,14 +889,38 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
         );
         if (refundIndex >= 0) this.#refunds[refundIndex] = indeterminate;
       }
+      await this.#persist();
       return indeterminate;
     }
-    return this.#applyResult(pending, result);
+    if (result.outcome === "not-executed") {
+      const notExecuted = Object.freeze({
+        ...pending,
+        status: "failed" as const,
+      });
+      this.#operations.set(kind, notExecuted);
+      this.#operationsByLogicalId.set(logicalOperationId, notExecuted);
+      if (kind === "refund") {
+        const refundIndex = this.#refunds.findIndex(
+          (refund) => refund.logicalOperationId === logicalOperationId,
+        );
+        if (refundIndex >= 0) this.#refunds[refundIndex] = notExecuted;
+      }
+      await this.#persist();
+      throw new ProviderExecutionNotStartedError();
+    }
+    const settled = this.#applyResult(pending, result);
+    await this.#persist();
+    return settled;
+  }
+
+  async #persist(): Promise<ProviderExecutionPermit | undefined> {
+    const result = await this.#persistence?.save(this.snapshot());
+    return result ?? undefined;
   }
 
   #applyResult(
     operation: PaymentOperationSnapshot,
-    result: ProviderOperationResult,
+    result: Exclude<ProviderOperationResult, { outcome: "not-executed" }>,
   ): PaymentOperationSnapshot {
     const providerRequestOwner = this.#providerRequestOwners.get(
       result.providerRequestId,
@@ -919,8 +1264,23 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
 export function createPaymentLifecycle(
   input: PaymentLifecycleInput,
   provider: ClockedPaymentProviderAdapter,
+  persistence?: PaymentLifecyclePersistence,
 ): PaymentLifecycle {
-  return new ProviderNeutralPaymentLifecycle(input, provider);
+  return new ProviderNeutralPaymentLifecycle(input, provider, persistence);
+}
+
+export function rehydratePaymentAuthorizationLifecycle(
+  input: PaymentLifecycleInput,
+  provider: ClockedPaymentProviderAdapter,
+  snapshot: PaymentLifecycleSnapshot,
+  persistence?: PaymentLifecyclePersistence,
+): PaymentLifecycle {
+  return new ProviderNeutralPaymentLifecycle(
+    input,
+    provider,
+    persistence,
+    snapshot,
+  );
 }
 
 function isSignedProviderEvent(event: unknown): event is SignedProviderEvent {

@@ -7,6 +7,7 @@ import {
   BOOKING_SERVICE_FEE_IQD,
   BOOKING_TERMS_VERSION,
   bookingQuoteTotals,
+  isBookingQuoteFingerprint,
   isPublicCottageSlug,
   type BookingQuoteItem,
   type BookingQuotePort,
@@ -17,6 +18,7 @@ import {
 const quoteKeys = new Set([
   "status",
   "slug",
+  "quoteFingerprint",
   "cottageName",
   "contentVersion",
   "houseRules",
@@ -95,11 +97,14 @@ export class SupabaseBookingQuote implements BookingQuotePort {
     discoveryQuery: CottageDiscoveryQuery,
   ): Promise<PublicBookingQuoteResult> {
     if (!isPublicCottageSlug(publicSlug)) return { status: "not-found" };
-    const { data, error } = await this.client.rpc("get_public_booking_quote", {
-      target_locale: locale,
-      target_slug: publicSlug,
-      requested_search: discoveryQuery,
-    });
+    const { data, error } = await this.client.rpc(
+      "get_public_booking_quote_with_fingerprint",
+      {
+        target_locale: locale,
+        target_slug: publicSlug,
+        requested_search: discoveryQuery,
+      },
+    );
     if (error) return unavailable("provider-error");
     if (exactObject(data, stateKeys)) {
       return data.status === "not-found" ||
@@ -128,6 +133,7 @@ export class SupabaseBookingQuote implements BookingQuotePort {
       typeof data.slug !== "string" ||
       data.slug !== publicSlug ||
       !isPublicCottageSlug(data.slug) ||
+      !isBookingQuoteFingerprint(data.quoteFingerprint) ||
       typeof data.cottageName !== "string" ||
       !data.cottageName.trim() ||
       !Number.isSafeInteger(data.contentVersion) ||
@@ -148,6 +154,7 @@ export class SupabaseBookingQuote implements BookingQuotePort {
       status: "quoted",
       quote: {
         slug: data.slug,
+        quoteFingerprint: data.quoteFingerprint,
         cottageName: data.cottageName,
         contentVersion: data.contentVersion as number,
         houseRules: data.houseRules,

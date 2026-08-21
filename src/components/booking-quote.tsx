@@ -4,22 +4,40 @@ import {
   continuousFullDayAccess,
   type PublicBookingQuoteResult,
 } from "@/booking-quote/booking-quote";
+import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
+import type {
+  BookingRequestAcceptanceEvidence,
+  BookingRequestUiPolicy,
+} from "@/booking-request/booking-request-policy";
 import { bookingQuoteMessages } from "@/i18n/booking-quote-messages";
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import { directionFor, type Locale } from "@/i18n/routing";
 
 import { LocaleLinks } from "./locale-links";
+import { BookingRequestForm } from "./booking-request-form";
 
 export function BookingQuoteView({
   locale,
   slug,
   queryString,
   result,
+  discoveryQuery,
+  idempotencyKey,
+  customerReady,
+  customerAccessUnavailable = false,
+  bookingRequestUiPolicy,
+  bookingRequestAcceptanceEvidence,
 }: {
   locale: Locale;
   slug: string;
   queryString: string;
   result: PublicBookingQuoteResult;
+  discoveryQuery: CottageDiscoveryQuery;
+  idempotencyKey: string;
+  customerReady: boolean;
+  customerAccessUnavailable?: boolean;
+  bookingRequestUiPolicy: BookingRequestUiPolicy | null;
+  bookingRequestAcceptanceEvidence: BookingRequestAcceptanceEvidence | null;
 }) {
   const copy = bookingQuoteMessages[locale];
   const cottageHref = `/${locale}/cottages/${slug}${queryString ? `?${queryString}` : ""}`;
@@ -43,6 +61,9 @@ export function BookingQuoteView({
     );
   }
   const { quote } = result;
+  if (!bookingRequestUiPolicy || !bookingRequestAcceptanceEvidence) {
+    throw new Error("Quoted Booking Request requires policy evidence");
+  }
   const accessRanges = continuousFullDayAccess(quote.items);
   return (
     <main className="quote-page" dir={directionFor(locale)}>
@@ -112,6 +133,16 @@ export function BookingQuoteView({
             <h2>{copy.houseRules}</h2>
             <p className="quote-rules">{quote.houseRules}</p>
           </section>
+          <BookingRequestForm
+            locale={locale}
+            quote={quote}
+            discoveryQuery={discoveryQuery}
+            idempotencyKey={idempotencyKey}
+            customerReady={customerReady}
+            customerAccessUnavailable={customerAccessUnavailable}
+            uiPolicy={bookingRequestUiPolicy}
+            acceptanceEvidence={bookingRequestAcceptanceEvidence}
+          />
         </div>
         <aside className="quote-card quote-totals">
           <dl>
@@ -131,7 +162,6 @@ export function BookingQuoteView({
           <p>
             <strong>{copy.termsVersion}:</strong> {quote.termsVersion}
           </p>
-          <p className="quote-notice">{copy.notice}</p>
         </aside>
       </div>
     </main>
