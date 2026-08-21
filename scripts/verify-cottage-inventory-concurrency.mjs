@@ -1,9 +1,7 @@
-import { spawn, spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
-const container = process.env.SUPABASE_DB_CONTAINER;
-const project = process.env.SUPABASE_LOCAL_PROJECT;
 const ownerUserId = "99000000-0000-4000-8000-000000000027";
+const customerUserId = "99000000-0000-4000-8000-000000000028";
 const profileId = "99000000-0000-4000-8000-000000000127";
 const revisionId = "99000000-0000-4000-8000-000000000227";
 const firstShiftId = "99000000-0000-4000-8000-000000000327";
@@ -13,162 +11,54 @@ const sourceRevisionId = "99000000-0000-4000-8000-000000000527";
 const reviewCycleId = "99000000-0000-4000-8000-000000000627";
 const publicationId = "99000000-0000-4000-8000-000000000727";
 const serviceDay = "2099-08-20";
-const waitLimitMilliseconds = 15_000;
 
 function fail(message, cause) {
   throw new Error(message, cause ? { cause } : undefined);
 }
 
-function runDocker(args, input) {
-  const result = spawnSync("docker", args, {
-    encoding: "utf8",
-    input,
-    maxBuffer: 1024 * 1024,
-  });
-  if (result.error) fail("Unable to execute local Docker.", result.error);
-  return result;
-}
-
-function guardDisposableLocalDatabase() {
-  if (
-    project !== "rentcottage" ||
-    container !== `supabase_db_${project}` ||
-    !/^supabase_db_[a-z0-9_-]+$/.test(container)
-  ) {
-    fail(
+const {
+  finishSession,
+  guardDisposableLocalDatabase,
+  runSql,
+  startSession,
+  waitForLock: waitForDatabaseLock,
+  waitForMarker,
+} = createLocalSupabaseConcurrencyHarness({
+  messages: {
+    invalidGuard:
       "The Cottage Inventory concurrency test requires the guarded local Supabase database.",
-    );
-  }
-  const inspected = runDocker([
-    "inspect",
-    container,
-    "--format",
-    '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
-  ]);
-  if (inspected.status !== 0) {
-    fail("The guarded local Supabase database container is unavailable.");
-  }
-  const [labelProject, labelWorkdir] = inspected.stdout.trim().split("|");
-  if (
-    labelProject !== project ||
-    resolve(labelWorkdir) !== resolve(process.cwd())
-  ) {
-    fail(
+    unavailable:
+      "The guarded local Supabase database container is unavailable.",
+    wrongOwner:
       "The Supabase database container does not belong to this disposable local checkout.",
-    );
-  }
-}
-
-function psqlArguments() {
-  return [
-    "exec",
-    "-i",
-    container,
-    "psql",
-    "-X",
-    "-qAt",
-    "-v",
-    "ON_ERROR_STOP=1",
-    "-U",
-    "postgres",
-    "-d",
-    "postgres",
-  ];
-}
-
-function runSql(sql) {
-  const result = runDocker(psqlArguments(), `${sql}\n`);
-  if (result.status !== 0) {
-    fail(`Local PostgreSQL verification failed: ${result.stderr.trim()}`);
-  }
-  return result.stdout.trim();
-}
-
-function startSession(sql, closeInput = false) {
-  const child = spawn("docker", psqlArguments(), {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  const session = {
-    child,
-    stdout: "",
-    stderr: "",
-    exit: undefined,
-    exited: undefined,
-  };
-  session.exited = new Promise((resolveExit) => {
-    child.on("close", (code, signal) => {
-      session.exit = { code, signal };
-      resolveExit(session.exit);
-    });
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    session.stdout += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    session.stderr += chunk;
-  });
-  child.on("error", (error) => {
-    session.stderr += error.message;
-  });
-  if (closeInput) child.stdin.end(`\\set VERBOSITY verbose\n${sql}\n`);
-  else child.stdin.write(`\\set VERBOSITY verbose\n${sql}\n`);
-  return session;
-}
-
-async function waitForMarker(session, marker) {
-  const started = Date.now();
-  while (!session.stdout.includes(marker)) {
-    if (session.exit) {
-      fail(
-        `PostgreSQL session exited before ${marker}: ${session.stderr.trim()}`,
-      );
-    }
-    if (Date.now() - started > waitLimitMilliseconds) {
-      fail(`PostgreSQL session did not reach ${marker}.`);
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-  }
-}
-
-async function waitForDatabaseLock(applicationName, session) {
-  const started = Date.now();
-  while (true) {
-    const waiting = runSql(`
-      select count(*)::integer
-      from pg_catalog.pg_stat_activity
-      where application_name = '${applicationName}'
-        and wait_event_type = 'Lock';
-    `);
-    if (waiting === "1") return;
-    if (session.exit) {
-      fail(
-        `The contender did not wait on the shared lock: ${session.stderr.trim()}`,
-      );
-    }
-    if (Date.now() - started > waitLimitMilliseconds) {
-      fail("The contender never reached the shared Cottage Profile lock.");
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-  }
-}
+    sessionExitedBeforeMarker: (marker, stderr) =>
+      `PostgreSQL session exited before ${marker}: ${stderr}`,
+    markerTimeout: (marker) => `PostgreSQL session did not reach ${marker}.`,
+    contenderExitedBeforeLock: (_applicationName, stderr) =>
+      `The contender did not wait on the shared lock: ${stderr}`,
+    lockTimeout: () =>
+      "The contender never reached the shared Cottage Profile lock.",
+  },
+});
 
 async function releaseSuccessfulSession(session) {
-  session.child.stdin.end("commit;\n");
-  const result = await session.exited;
-  if (result.code !== 0) {
-    fail(`The lock-owning transaction failed: ${session.stderr.trim()}`);
-  }
+  return finishSession(session, {
+    action: "commit",
+    unexpectedSessionFailure: (stderr) =>
+      `The lock-owning transaction failed: ${stderr}`,
+  });
 }
 
-async function expectRc204(session) {
-  const result = await session.exited;
-  if (result.code === 0 || !session.stderr.includes("RC204")) {
-    fail(
-      `The losing transaction did not fail with RC204: ${session.stderr.trim()}`,
-    );
-  }
+async function expectSqlState(session, sqlState) {
+  return finishSession(session, {
+    expectedState: sqlState,
+    expectedStateFailure: (expectedState, stderr) =>
+      `The losing transaction did not fail with ${expectedState}: ${stderr}`,
+  });
+}
+
+async function expectSuccessfulSession(session) {
+  return finishSession(session);
 }
 
 function terminateTestSessions() {
@@ -182,10 +72,8 @@ function terminateTestSessions() {
 
 const cleanupSql = `
   begin;
-  delete from public.cottage_inventory_commitments
-    where schedule_revision_id in (
-      select id from public.cottage_shift_schedule_revisions where profile_id = '${profileId}'
-    );
+  delete from public.cottage_booking_period_commitments
+    where profile_id = '${profileId}';
   delete from public.cottage_inventory_availability
     where schedule_revision_id in (
       select id from public.cottage_shift_schedule_revisions where profile_id = '${profileId}'
@@ -232,16 +120,22 @@ const cleanupSql = `
     enable trigger reject_cottage_profile_source_delete;
   delete from public.owner_application_cottage_profiles where id = '${profileId}';
   delete from public.account_contexts where user_id = '${ownerUserId}';
+  delete from public.account_contexts where user_id = '${customerUserId}';
   delete from auth.users where id = '${ownerUserId}';
+  delete from auth.users where id = '${customerUserId}';
   commit;
 `;
 
 const setupSql = `
   begin;
   insert into auth.users (id, aud, role, phone, phone_confirmed_at)
-  values ('${ownerUserId}', 'authenticated', 'authenticated', '+9647500099027', now());
+  values
+    ('${ownerUserId}', 'authenticated', 'authenticated', '+9647500099027', now()),
+    ('${customerUserId}', 'authenticated', 'authenticated', '+9647500099028', now());
   insert into public.account_contexts (user_id, role, owner_approval_state)
-  values ('${ownerUserId}', 'cottage_owner', 'approved');
+  values
+    ('${ownerUserId}', 'cottage_owner', 'approved'),
+    ('${customerUserId}', 'customer', null);
   insert into public.owner_application_cottage_profiles (
     id, owner_user_id, name, governorate, approximate_location, exact_address,
     capacity, bedrooms, bathrooms, amenities, source_language, description,
@@ -375,12 +269,10 @@ function commitmentMutation(
   holdLock = false,
 ) {
   const insert = `
-    insert into public.cottage_inventory_commitments (
-      schedule_revision_id, unit_kind, unit_id, service_day,
-      commitment_reference, committed_price_iqd, status
-    ) values (
-      '${revisionId}', 'shift', '${firstShiftId}', '${serviceDay}',
-      '${reference}', 175000, 'pending_hold'
+    set local role service_role;
+    select public.create_pending_booking_period_hold(
+      '${customerUserId}', '${profileId}', '${reference}',
+      '{"from":"${serviceDay}","to":"${serviceDay}","guests":1,"selections":[{"serviceDay":"${serviceDay}","kind":"shift","position":1}]}'::jsonb
     );
   `;
   return `
@@ -408,7 +300,7 @@ async function verifyOwnerFirst() {
   await waitForMarker(commitment, "OWNER_FIRST_CONTENDER");
   await waitForDatabaseLock(contenderName, commitment);
   await releaseSuccessfulSession(owner);
-  await expectRc204(commitment);
+  await expectSqlState(commitment, "RC409");
   runSql(`
     do $$
     begin
@@ -418,9 +310,8 @@ async function verifyOwnerFirst() {
           and unit_kind = 'shift' and unit_id = '${firstShiftId}'
           and service_day = '${serviceDay}' and state = 'private_blocked'
       ) or exists (
-        select 1 from public.cottage_inventory_commitments
+        select 1 from public.cottage_booking_period_commitments
         where schedule_revision_id = '${revisionId}'
-          and service_day = '${serviceDay}'
       ) then
         raise exception 'Owner-first persisted outcome is invalid';
       end if;
@@ -464,7 +355,7 @@ async function verifyCommitmentFirst() {
   await waitForMarker(owner, "COMMITMENT_FIRST_CONTENDER");
   await waitForDatabaseLock(contenderName, owner);
   await releaseSuccessfulSession(commitment);
-  await expectRc204(owner);
+  await expectSqlState(owner, "RC204");
   runSql(`
     do $$
     begin
@@ -474,9 +365,8 @@ async function verifyCommitmentFirst() {
           and unit_kind = 'shift' and unit_id = '${firstShiftId}'
           and service_day = '${serviceDay}' and state = 'open'
       ) or not exists (
-        select 1 from public.cottage_inventory_commitments
+        select 1 from public.cottage_booking_period_commitments
         where schedule_revision_id = '${revisionId}'
-          and service_day = '${serviceDay}'
           and commitment_reference = 'RC-COMMITMENT-FIRST-27'
       ) then
         raise exception 'Commitment-first persisted outcome is invalid';
@@ -503,7 +393,7 @@ async function verifyPriceOwnerFirst() {
   await waitForMarker(commitment, "PRICE_OWNER_FIRST_CONTENDER");
   await waitForDatabaseLock(contenderName, commitment);
   await releaseSuccessfulSession(owner);
-  await expectRc204(commitment);
+  await expectSuccessfulSession(commitment);
   runSql(`
     do $$
     begin
@@ -512,15 +402,24 @@ async function verifyPriceOwnerFirst() {
         where schedule_revision_id = '${revisionId}'
           and unit_kind = 'shift' and unit_id = '${firstShiftId}'
           and service_day = '${serviceDay}' and price_iqd = 185000
-      ) or exists (
-        select 1 from public.cottage_inventory_commitments
-        where schedule_revision_id = '${revisionId}'
-          and service_day = '${serviceDay}'
+      ) or not exists (
+        select 1
+        from public.cottage_inventory_commitments selected
+        join public.cottage_booking_period_commitments periods
+          on periods.id = selected.booking_period_commitment_id
+        where periods.schedule_revision_id = '${revisionId}'
+          and selected.service_day = '${serviceDay}'
+          and periods.commitment_reference = 'RC-PRICE-OWNER-FIRST-27'
+          and selected.committed_price_iqd = 185000
       ) then
         raise exception 'Price owner-first persisted outcome is invalid';
       end if;
     end
     $$;
+  `);
+  runSql(`
+    delete from public.cottage_booking_period_commitments
+    where commitment_reference = 'RC-PRICE-OWNER-FIRST-27';
   `);
 }
 
@@ -548,7 +447,7 @@ async function verifyPriceCommitmentFirst() {
   await waitForMarker(owner, "PRICE_COMMITMENT_FIRST_CONTENDER");
   await waitForDatabaseLock(contenderName, owner);
   await releaseSuccessfulSession(commitment);
-  await expectRc204(owner);
+  await expectSqlState(owner, "RC204");
   runSql(`
     do $$
     begin
@@ -558,12 +457,15 @@ async function verifyPriceCommitmentFirst() {
           and unit_kind = 'shift' and unit_id = '${firstShiftId}'
           and service_day = '${serviceDay}'
       ) or not exists (
-        select 1 from public.cottage_inventory_commitments
-        where schedule_revision_id = '${revisionId}'
-          and unit_kind = 'shift' and unit_id = '${firstShiftId}'
-          and service_day = '${serviceDay}'
-          and commitment_reference = 'RC-PRICE-COMMITMENT-FIRST-27'
-          and committed_price_iqd = 175000
+        select 1
+        from public.cottage_inventory_commitments selected
+        join public.cottage_booking_period_commitments periods
+          on periods.id = selected.booking_period_commitment_id
+        where periods.schedule_revision_id = '${revisionId}'
+          and selected.unit_kind = 'shift' and selected.unit_id = '${firstShiftId}'
+          and selected.service_day = '${serviceDay}'
+          and periods.commitment_reference = 'RC-PRICE-COMMITMENT-FIRST-27'
+          and selected.committed_price_iqd = 175000
       ) then
         raise exception 'Price commitment-first persisted outcome is invalid';
       end if;
@@ -592,7 +494,7 @@ async function verifyScheduleOwnerFirst() {
   await waitForMarker(commitment, "SCHEDULE_OWNER_FIRST_CONTENDER");
   await waitForDatabaseLock(contenderName, commitment);
   await releaseSuccessfulSession(owner);
-  await expectRc204(commitment);
+  await expectSqlState(commitment, "RC409");
   runSql(`
     do $$
     begin
@@ -601,9 +503,8 @@ async function verifyScheduleOwnerFirst() {
         or (select count(*) from public.cottage_shift_schedule_revisions
           where profile_id = '${profileId}') <> 2
         or exists (
-          select 1 from public.cottage_inventory_commitments
+          select 1 from public.cottage_booking_period_commitments
           where schedule_revision_id = '${revisionId}'
-            and service_day = '${serviceDay}'
         ) then
         raise exception 'Schedule owner-first persisted outcome is invalid';
       end if;
@@ -630,7 +531,7 @@ async function verifyScheduleCommitmentFirst() {
   await waitForMarker(owner, "SCHEDULE_COMMITMENT_FIRST_CONTENDER");
   await waitForDatabaseLock(contenderName, owner);
   await releaseSuccessfulSession(commitment);
-  await expectRc204(owner);
+  await expectSqlState(owner, "RC204");
   runSql(`
     do $$
     begin
@@ -639,11 +540,13 @@ async function verifyScheduleCommitmentFirst() {
         or (select count(*) from public.cottage_shift_schedule_revisions
           where profile_id = '${profileId}') <> 1
         or not exists (
-          select 1 from public.cottage_inventory_commitments
-          where schedule_revision_id = '${revisionId}'
-            and service_day = '${serviceDay}'
-            and commitment_reference = 'RC-SCHEDULE-COMMITMENT-FIRST-27'
-            and committed_price_iqd = 175000
+          select 1 from public.cottage_inventory_commitments selected
+          join public.cottage_booking_period_commitments periods
+            on periods.id = selected.booking_period_commitment_id
+          where periods.schedule_revision_id = '${revisionId}'
+            and selected.service_day = '${serviceDay}'
+            and periods.commitment_reference = 'RC-SCHEDULE-COMMITMENT-FIRST-27'
+            and selected.committed_price_iqd = 175000
         ) then
         raise exception 'Schedule commitment-first persisted outcome is invalid';
       end if;
@@ -669,16 +572,15 @@ async function verifyUnpublishFirst() {
   await waitForMarker(commitment, "UNPUBLISH_FIRST_CONTENDER");
   await waitForDatabaseLock(contenderName, commitment);
   await releaseSuccessfulSession(unpublish);
-  await expectRc204(commitment);
+  await expectSqlState(commitment, "RC409");
   runSql(`
     do $$
     begin
       if (select current_publication_id is not null
           from public.owner_application_cottage_profiles where id = '${profileId}')
         or exists (
-          select 1 from public.cottage_inventory_commitments
+          select 1 from public.cottage_booking_period_commitments
           where schedule_revision_id = '${revisionId}'
-            and service_day = '${serviceDay}'
         ) then
         raise exception 'Unpublish-first persisted outcome is invalid';
       end if;
@@ -717,11 +619,13 @@ async function verifyCommitmentBeforeUnpublish() {
       if (select current_publication_id is not null
           from public.owner_application_cottage_profiles where id = '${profileId}')
         or not exists (
-          select 1 from public.cottage_inventory_commitments
-          where schedule_revision_id = '${revisionId}'
-            and service_day = '${serviceDay}'
-            and commitment_reference = 'RC-COMMITMENT-BEFORE-UNPUBLISH-27'
-            and committed_price_iqd = 175000
+          select 1 from public.cottage_inventory_commitments selected
+          join public.cottage_booking_period_commitments periods
+            on periods.id = selected.booking_period_commitment_id
+          where periods.schedule_revision_id = '${revisionId}'
+            and selected.service_day = '${serviceDay}'
+            and periods.commitment_reference = 'RC-COMMITMENT-BEFORE-UNPUBLISH-27'
+            and selected.committed_price_iqd = 175000
         ) then
         raise exception 'Commitment-before-unpublish persisted outcome is invalid';
       end if;

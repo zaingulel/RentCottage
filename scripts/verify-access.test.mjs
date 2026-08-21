@@ -1,11 +1,135 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { main } from "./verify-access.mjs";
+import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const localCredentials = JSON.stringify({
   API_URL: "http://127.0.0.1:54331",
   PUBLISHABLE_KEY: "local-publishable",
   SECRET_KEY: "local-secret",
+});
+
+describe("local Supabase concurrency harness", () => {
+  it("fails closed before Docker when the local project identity is invalid", () => {
+    const spawnSyncProcess = vi.fn();
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_elsewhere",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+      },
+      spawnSyncProcess,
+      workingDirectory: "/tmp/rentcottage-worktree",
+    });
+
+    expect(() => harness.guardDisposableLocalDatabase()).toThrow(
+      "The guarded local Supabase database identity is invalid.",
+    );
+    expect(spawnSyncProcess).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the guarded database container is unavailable", () => {
+    const spawnSyncProcess = vi.fn().mockReturnValue({
+      status: 1,
+      stdout: "",
+      stderr: "container unavailable",
+    });
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+      },
+      spawnSyncProcess,
+      workingDirectory: "/tmp/rentcottage-worktree",
+    });
+
+    expect(() => harness.guardDisposableLocalDatabase()).toThrow(
+      "The guarded local Supabase database container is unavailable.",
+    );
+    expect(spawnSyncProcess).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when Docker reports a different Supabase project", () => {
+    const spawnSyncProcess = vi.fn().mockReturnValue({
+      status: 0,
+      stdout: "foreign-project|/tmp/rentcottage-worktree\n",
+      stderr: "",
+    });
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+      },
+      spawnSyncProcess,
+      workingDirectory: "/tmp/rentcottage-worktree",
+    });
+
+    expect(() => harness.guardDisposableLocalDatabase()).toThrow(
+      "The Supabase database container does not belong to this disposable local checkout.",
+    );
+    expect(spawnSyncProcess).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when Docker reports a different Supabase worktree", () => {
+    const spawnSyncProcess = vi.fn().mockReturnValue({
+      status: 0,
+      stdout: "rentcottage|/tmp/foreign-worktree\n",
+      stderr: "",
+    });
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+      },
+      spawnSyncProcess,
+      workingDirectory: "/tmp/rentcottage-worktree",
+    });
+
+    expect(() => harness.guardDisposableLocalDatabase()).toThrow(
+      "The Supabase database container does not belong to this disposable local checkout.",
+    );
+    expect(spawnSyncProcess).toHaveBeenCalledTimes(1);
+  });
+
+  it("guards the project and worktree before running exact local psql", () => {
+    const spawnSyncProcess = vi
+      .fn()
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "rentcottage|/tmp/rentcottage-worktree\n",
+        stderr: "",
+      })
+      .mockReturnValueOnce({ status: 0, stdout: "1\n", stderr: "" });
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+      },
+      spawnSyncProcess,
+      workingDirectory: "/tmp/rentcottage-worktree",
+    });
+
+    harness.guardDisposableLocalDatabase();
+    expect(harness.runSql("select 1;")).toBe("1");
+    expect(spawnSyncProcess).toHaveBeenNthCalledWith(
+      2,
+      "docker",
+      [
+        "exec",
+        "-i",
+        "supabase_db_rentcottage",
+        "psql",
+        "-X",
+        "-qAt",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "postgres",
+        "-d",
+        "postgres",
+      ],
+      expect.objectContaining({ encoding: "utf8", input: "select 1;\n" }),
+    );
+  });
 });
 
 describe("access verification command", () => {
@@ -51,10 +175,18 @@ describe("access verification command", () => {
       ],
       ["npx", ["supabase", "db", "reset", "--local"]],
       ["npx", ["supabase", "test", "db"]],
+      [
+        "node",
+        [
+          "scripts/verify-booking-period-hold-concurrency.mjs",
+          "--verify-migration-preflight",
+        ],
+      ],
       ["npx", ["supabase", "status", "-o", "json"]],
       ["node", ["scripts/prepare-access-test.mjs"]],
       ["node", ["scripts/verify-cottage-shift-schedule-concurrency.mjs"]],
       ["node", ["scripts/verify-cottage-inventory-concurrency.mjs"]],
+      ["node", ["scripts/verify-booking-period-hold-concurrency.mjs"]],
       ["node", ["scripts/prepare-access-test.mjs"]],
       [
         "npx",
@@ -81,7 +213,7 @@ describe("access verification command", () => {
       ],
       ["npx", ["supabase", "stop", "--no-backup"]],
     ]);
-    expect(run.mock.calls[4][2].env).toMatchObject({
+    expect(run.mock.calls[5][2].env).toMatchObject({
       EXISTING: "kept",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
@@ -90,25 +222,35 @@ describe("access verification command", () => {
       SUPABASE_TELEMETRY_DISABLED: "1",
       DO_NOT_TRACK: "1",
     });
-    expect(run.mock.calls[7][2].env).toMatchObject({
+    expect(run.mock.calls[9][2].env).toMatchObject({
       ACCESS_FIXTURE_VALIDATE_EXISTING: "1",
     });
-    expect(run.mock.calls[5][2].env).toMatchObject({
+    expect(run.mock.calls[6][2].env).toMatchObject({
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
     });
-    expect(run.mock.calls[5][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[6][2].env).toMatchObject({
+    expect(run.mock.calls[6][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[3][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[6][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[3][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[7][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    });
+    expect(run.mock.calls[7][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[8][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    });
+    expect(run.mock.calls[8][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[10][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       NEXTJS_ENV: "test",
       SUPABASE_PROJECT_REF: "local-test",
     });
-    expect(run.mock.calls[9][2].env).toMatchObject({
+    expect(run.mock.calls[11][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
