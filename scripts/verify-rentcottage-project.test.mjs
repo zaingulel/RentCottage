@@ -1,3 +1,7 @@
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import {
   acceptanceCriteriaByIssue,
@@ -16,7 +20,11 @@ import {
   parsePaginatedPages,
   parseUniqueRepositoryIssuePages,
 } from "./lib/github-pagination.mjs";
-import { runRentCottageProjectVerifier } from "./lib/rentcottage-verifier.mjs";
+import {
+  parseRentCottageVerifierArgs,
+  runRentCottageProjectVerifier,
+  runRentCottageProjectVerifierCommand,
+} from "./lib/rentcottage-verifier.mjs";
 
 const statusOptions = ["Backlog", "Ready", "In progress", "In review", "Done"];
 const areaOptions = [
@@ -183,6 +191,7 @@ function addCurrentProjectIssue(
     nativeBlockers = [],
     includeNativeEvidence = true,
     labels = ["ready-for-agent"],
+    assignees = [],
   } = {},
 ) {
   state.issues.push({
@@ -191,7 +200,7 @@ function addCurrentProjectIssue(
     state: "OPEN",
     body,
     labels: labels.map((name) => ({ name })),
-    assignees: [],
+    assignees,
   });
   if (includeNativeEvidence)
     state.nativeBlockersByIssue[number] = nativeBlockers;
@@ -208,6 +217,7 @@ function addCurrentProjectIssue(
   item.content.title = "Add a new delivery ticket";
   item.content.body = body;
   item.content.labels.nodes = labels.map((name) => ({ name }));
+  item.content.assignees.nodes = assignees;
   item.fieldValues.nodes.find(({ field }) => field.name === "Area").name = area;
   item.fieldValues.nodes.find(({ field }) => field.name === "Status").name =
     status;
@@ -360,6 +370,48 @@ describe("RentCottage Project contract", () => {
     expect(result.summary.dependencyFrontier).toContain(63);
   });
 
+  it("exhaustively partitions every evidenced unblocked unassigned issue by its readiness gate", () => {
+    const state = fakeState();
+    addCurrentProjectIssue(state, { number: 63 });
+    addCurrentProjectIssue(state, {
+      number: 64,
+      labels: ["ready-for-agent", "owner-gated"],
+    });
+    addCurrentProjectIssue(state, {
+      number: 65,
+      labels: ["ready-for-human"],
+    });
+    addCurrentProjectIssue(state, { number: 66, labels: ["needs-triage"] });
+    addCurrentProjectIssue(state, { number: 67, labels: ["needs-info"] });
+    addCurrentProjectIssue(state, { number: 68, labels: ["wontfix"] });
+    addCurrentProjectIssue(state, {
+      number: 69,
+      assignees: [{ login: "active-writer" }],
+    });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toEqual([]);
+    expect(result.summary).toMatchObject({
+      dependencyFrontier: [19, 63],
+      ownerGated: [1, 18, 59, 64],
+      readyForHuman: [65],
+      needsTriage: [66],
+      needsInfo: [67],
+      wontfix: [68],
+    });
+    const partition = [
+      result.summary.dependencyFrontier,
+      result.summary.ownerGated,
+      result.summary.readyForHuman,
+      result.summary.needsTriage,
+      result.summary.needsInfo,
+      result.summary.wontfix,
+    ].flat();
+    expect(partition).toEqual([19, 63, 1, 18, 59, 64, 65, 66, 67, 68]);
+    expect(new Set(partition).size).toBe(partition.length);
+  });
+
   it.each(["ordinary", "protected"])(
     "uses the real canonical blocker section for %s verification",
     (issueType) => {
@@ -470,6 +522,34 @@ describe("RentCottage Project contract", () => {
       const result = verifyRentCottageProject(state);
 
       expect(result.summary.dependencyFrontier).not.toContain(63);
+    },
+  );
+
+  it.each([
+    ["unknown", "UNKNOWN"],
+    ["malformed", null],
+  ])(
+    "fails closed when dependency evidence has an %s state",
+    (_name, stateValue) => {
+      const state = fakeState();
+      addCurrentProjectIssue(state, {
+        number: 63,
+        body: "## Blocked by\n\n- #52\n",
+        nativeBlockers: [{ number: 52, state: stateValue }],
+      });
+
+      const result = verifyRentCottageProject(state);
+
+      expect(result.failures).toContainEqual({
+        code: "issues.native_state",
+        message: `#63 native dependency #52 has unknown state ${String(stateValue)}`,
+      });
+      expect(result.summary.dependencyFrontier).not.toContain(63);
+      expect(result.summary.ownerGated).not.toContain(63);
+      expect(result.summary.readyForHuman).not.toContain(63);
+      expect(result.summary.needsTriage).not.toContain(63);
+      expect(result.summary.needsInfo).not.toContain(63);
+      expect(result.summary.wontfix).not.toContain(63);
     },
   );
 
@@ -597,6 +677,50 @@ describe("RentCottage Project contract", () => {
       }),
     );
     expect(result.summary.dependencyFrontier).not.toContain(63);
+  });
+
+  it("accepts an optional owner gate on a protected issue and classifies it before its triage role", () => {
+    const state = fakeState({
+      closedIssues: [19],
+      statusByNumber: { 19: "Done" },
+    });
+    const completedIssue = state.issues.find(({ number }) => number === 19);
+    completedIssue.body = completedIssue.body.replaceAll("- [ ] ", "- [x] ");
+    const issue = state.issues.find(({ number }) => number === 52);
+    issue.labels.push({ name: "owner-gated" });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toEqual([]);
+    expect(result.summary.ownerGated).toContain(52);
+    expect(result.summary.dependencyFrontier).not.toContain(52);
+  });
+
+  it("rejects an unknown protected label and excludes the issue from every readiness category", () => {
+    const state = fakeState({
+      closedIssues: [19],
+      statusByNumber: { 19: "Done" },
+    });
+    const completedIssue = state.issues.find(({ number }) => number === 19);
+    completedIssue.body = completedIssue.body.replaceAll("- [ ] ", "- [x] ");
+    const issue = state.issues.find(({ number }) => number === 52);
+    issue.labels.push({ name: "unknown-role" });
+
+    const result = verifyRentCottageProject(state);
+
+    expect(result.failures).toContainEqual({
+      code: "issues.special.labels",
+      message: "Special issue #52 labels do not match the contract",
+    });
+    const partition = [
+      result.summary.dependencyFrontier,
+      result.summary.ownerGated,
+      result.summary.readyForHuman,
+      result.summary.needsTriage,
+      result.summary.needsInfo,
+      result.summary.wontfix,
+    ].flat();
+    expect(partition).not.toContain(52);
   });
 
   it("reports one Status defect for a closed issue presented as active", () => {
@@ -773,6 +897,224 @@ describe("RentCottage Project contract", () => {
 });
 
 describe("GitHub pagination boundary", () => {
+  it("forwards JSON and invalid arguments through the executable entrypoint", () => {
+    const directory = mkdtempSync(join(tmpdir(), "rentcottage-verifier-cli-"));
+    const fixturePath = join(directory, "fixture.json");
+    const markerPath = join(directory, "provider-called");
+    const ghPath = join(directory, "gh");
+    const state = fakeState();
+    const fixture = {
+      project: state.project,
+      issues: state.issues.map((issue, index) => ({
+        ...issue,
+        id: index + 1,
+        node_id: `issue-node-${issue.number}`,
+        state: issue.state.toLowerCase(),
+      })),
+      nativeBlockersByIssue: Object.fromEntries(
+        Object.entries(state.nativeBlockersByIssue).map(
+          ([issueNumber, blockers]) => [
+            issueNumber,
+            blockers.map((blocker) => ({
+              ...blocker,
+              id: Number(issueNumber) * 1_000 + blocker.number,
+            })),
+          ],
+        ),
+      ),
+    };
+    writeFileSync(fixturePath, JSON.stringify(fixture));
+    writeFileSync(
+      ghPath,
+      `#!/usr/bin/env node
+const { appendFileSync, readFileSync } = require("node:fs");
+appendFileSync(process.env.RENTCOTTAGE_GH_MARKER, "called\\n");
+const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("gh version 2.48.0");
+  process.exit(0);
+}
+const fixture = JSON.parse(readFileSync(process.env.RENTCOTTAGE_GH_FIXTURE, "utf8"));
+if (args.includes("graphql")) {
+  console.log(JSON.stringify({ data: { user: { projectV2: fixture.project } } }));
+  process.exit(0);
+}
+const endpoint = args.at(-1);
+if (endpoint.includes("?state=all")) {
+  console.log(JSON.stringify([fixture.issues]));
+  process.exit(0);
+}
+const match = endpoint.match(/issues\\/(\\d+)\\/dependencies/);
+if (match) {
+  console.log(JSON.stringify([fixture.nativeBlockersByIssue[match[1]] ?? []]));
+  process.exit(0);
+}
+process.exit(1);
+`,
+      { mode: 0o755 },
+    );
+    const options = {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${directory}${delimiter}${process.env.PATH}`,
+        RENTCOTTAGE_GH_FIXTURE: fixturePath,
+        RENTCOTTAGE_GH_MARKER: markerPath,
+      },
+    };
+
+    try {
+      const jsonResult = spawnSync(
+        process.execPath,
+        ["scripts/verify-rentcottage-project.mjs", "--json"],
+        options,
+      );
+
+      expect(jsonResult.status).toBe(0);
+      expect(jsonResult.stderr).toBe("");
+      expect(JSON.parse(jsonResult.stdout)).toEqual({
+        schemaVersion: 1,
+        dependencyFrontier: [19],
+        ownerGated: [1, 18, 59],
+        readyForHuman: [],
+        needsTriage: [],
+        needsInfo: [],
+        wontfix: [],
+      });
+      expect(existsSync(markerPath)).toBe(true);
+      rmSync(markerPath);
+
+      const invalidResult = spawnSync(
+        process.execPath,
+        ["scripts/verify-rentcottage-project.mjs", "--invalid"],
+        options,
+      );
+
+      expect(invalidResult.status).toBe(2);
+      expect(invalidResult.stdout).toBe("");
+      expect(invalidResult.stderr).toBe(
+        "Usage: npm run verify:board -- [--json]\n",
+      );
+      expect(existsSync(markerPath)).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts only the optional JSON command flag before provider access", () => {
+    expect(parseRentCottageVerifierArgs([])).toEqual({ json: false });
+    expect(parseRentCottageVerifierArgs(["--json"])).toEqual({ json: true });
+
+    const stderr = vi.fn();
+    const run = vi.fn();
+    const result = runRentCottageProjectVerifierCommand(["--unknown"], {
+      run,
+      stderr,
+    });
+
+    expect(result.status).toBe(2);
+    expect(run).not.toHaveBeenCalled();
+    expect(stderr).toHaveBeenCalledWith(
+      "Usage: npm run verify:board -- [--json]",
+    );
+  });
+
+  it("emits a schema-versioned bounded JSON readiness inventory on success", () => {
+    const run = vi.fn((args) => {
+      if (args[0] === "--version") return "gh version 2.48.0";
+      if (args.includes("graphql")) {
+        return JSON.stringify({
+          data: {
+            user: {
+              projectV2: { items: { totalCount: 0, nodes: [] } },
+            },
+          },
+        });
+      }
+      return "[[]]";
+    });
+    const summary = {
+      dependencyFrontier: [19],
+      ownerGated: [1, 18],
+      readyForHuman: [63],
+      needsTriage: [64],
+      needsInfo: [65],
+      wontfix: [66],
+      readyItems: [19],
+      itemCount: 7,
+    };
+    const stdout = vi.fn();
+
+    const result = runRentCottageProjectVerifier({
+      run,
+      verify: vi.fn(() => ({ failures: [], summary })),
+      json: true,
+      stdout,
+      stderr: vi.fn(),
+    });
+
+    expect(result.status).toBe(0);
+    expect(stdout).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(stdout.mock.calls[0][0])).toEqual({
+      schemaVersion: 1,
+      dependencyFrontier: [19],
+      ownerGated: [1, 18],
+      readyForHuman: [63],
+      needsTriage: [64],
+      needsInfo: [65],
+      wontfix: [66],
+    });
+  });
+
+  it("keeps human output concise while reporting every unblocked category", () => {
+    const run = vi.fn((args) => {
+      if (args[0] === "--version") return "gh version 2.48.0";
+      if (args.includes("graphql")) {
+        return JSON.stringify({
+          data: {
+            user: {
+              projectV2: { items: { totalCount: 0, nodes: [] } },
+            },
+          },
+        });
+      }
+      return "[[]]";
+    });
+    const stdout = vi.fn();
+
+    const result = runRentCottageProjectVerifier({
+      run,
+      verify: vi.fn(() => ({
+        failures: [],
+        summary: {
+          itemCount: 6,
+          dependencyFrontier: [19],
+          ownerGated: [1],
+          readyForHuman: [63],
+          needsTriage: [64],
+          needsInfo: [65],
+          wontfix: [66],
+          readyItems: [],
+        },
+      })),
+      stdout,
+      stderr: vi.fn(),
+    });
+
+    expect(result.status).toBe(0);
+    expect(stdout.mock.calls.map(([line]) => line)).toEqual([
+      expect.stringContaining("Verified Project 4: 6 current items"),
+      "Current dependency frontier: #19.",
+      "Current unblocked owner-gated items: #1.",
+      "Current unblocked ready-for-human items: #63.",
+      "Current unblocked needs-triage items: #64.",
+      "Current unblocked needs-info items: #65.",
+      "Current unblocked wontfix items: #66.",
+      "Current Project Ready items: none.",
+    ]);
+  });
+
   it.each(["issue", "dependency"])(
     "fails closed on duplicate %s pages before contract normalization",
     (duplicateType) => {

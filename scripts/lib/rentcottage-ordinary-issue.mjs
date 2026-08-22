@@ -2,6 +2,7 @@ import {
   canonicalBlockedByNumbers,
   canonicalBlockedBySectionCount,
 } from "./rentcottage-issue-body.mjs";
+import { dependencyIsClosed } from "./rentcottage-board-dependencies.mjs";
 
 const TRIAGE_LABELS = new Set([
   "needs-triage",
@@ -10,6 +11,11 @@ const TRIAGE_LABELS = new Set([
   "ready-for-human",
   "wontfix",
 ]);
+
+export function ordinaryIssueTriageRole(labels) {
+  const roles = labels.filter((label) => TRIAGE_LABELS.has(label));
+  return roles.length === 1 ? roles[0] : null;
+}
 
 export function ordinaryIssueShape(body, labels) {
   const normalizedBody = String(body ?? "").replaceAll("\r\n", "\n");
@@ -37,7 +43,14 @@ function sameNumbers(actual, expected) {
   );
 }
 
-export function ordinaryIssueFrontierEligible({
+export function ordinaryIssueFrontierEligible(evidence) {
+  return (
+    ordinaryIssueReadinessRole(evidence) === "ready-for-agent" &&
+    evidence.nativeBlockers.every(dependencyIsClosed)
+  );
+}
+
+export function ordinaryIssueReadinessRole({
   body,
   labels,
   area,
@@ -47,16 +60,17 @@ export function ordinaryIssueFrontierEligible({
   nativeBlockers,
 }) {
   const shape = ordinaryIssueShape(body, labels);
-  return (
-    shape.valid &&
-    labels.includes("ready-for-agent") &&
-    knownAreas.has(area) &&
-    knownStatuses.has(status) &&
-    Array.isArray(nativeBlockers) &&
-    sameNumbers(
+  if (
+    !shape.valid ||
+    !knownAreas.has(area) ||
+    !knownStatuses.has(status) ||
+    !Array.isArray(nativeBlockers) ||
+    !sameNumbers(
       ordinaryIssueBlockerNumbers(body),
       nativeBlockers.map(({ number }) => number),
-    ) &&
-    nativeBlockers.every(({ state }) => state.toLowerCase() !== "open")
-  );
+    )
+  ) {
+    return null;
+  }
+  return ordinaryIssueTriageRole(labels);
 }

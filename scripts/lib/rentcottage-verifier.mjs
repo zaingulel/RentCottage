@@ -59,10 +59,47 @@ query($login: String!, $number: Int!) {
   }
 }`;
 
+function issueList(numbers) {
+  return numbers.map((number) => `#${number}`).join(", ") || "none";
+}
+
+function jsonReadiness(summary) {
+  return {
+    schemaVersion: 1,
+    dependencyFrontier: summary.dependencyFrontier,
+    ownerGated: summary.ownerGated,
+    readyForHuman: summary.readyForHuman,
+    needsTriage: summary.needsTriage,
+    needsInfo: summary.needsInfo,
+    wontfix: summary.wontfix,
+  };
+}
+
+export function parseRentCottageVerifierArgs(args) {
+  if (args.length === 0) return { json: false };
+  if (args.length === 1 && args[0] === "--json") return { json: true };
+  throw new Error("Usage: npm run verify:board -- [--json]");
+}
+
+export function runRentCottageProjectVerifierCommand(
+  args,
+  { stderr = console.error, ...options } = {},
+) {
+  let command;
+  try {
+    command = parseRentCottageVerifierArgs(args);
+  } catch (error) {
+    stderr(error.message);
+    return { status: 2, error };
+  }
+  return runRentCottageProjectVerifier({ ...options, ...command, stderr });
+}
+
 export function runRentCottageProjectVerifier({
   run,
   execute,
   verify = verifyRentCottageProject,
+  json = false,
   stdout = console.log,
   stderr = console.error,
 }) {
@@ -141,14 +178,34 @@ export function runRentCottageProjectVerifier({
       return { status: 1, result };
     }
 
+    if (json) {
+      stdout(JSON.stringify(jsonReadiness(result.summary)));
+      return { status: 0, result };
+    }
+
     stdout(
       `Verified Project 4: ${result.summary.itemCount} current items, all required contract items, 33 unique D tickets, Project fields, issue integrity, native dependencies, and durable Status invariants.`,
     );
     stdout(
-      `Current dependency frontier: ${result.summary.dependencyFrontier.map((number) => `#${number}`).join(", ") || "none"}.`,
+      `Current dependency frontier: ${issueList(result.summary.dependencyFrontier)}.`,
     );
     stdout(
-      `Current Project Ready items: ${result.summary.readyItems.map((number) => `#${number}`).join(", ") || "none"}.`,
+      `Current unblocked owner-gated items: ${issueList(result.summary.ownerGated)}.`,
+    );
+    stdout(
+      `Current unblocked ready-for-human items: ${issueList(result.summary.readyForHuman)}.`,
+    );
+    stdout(
+      `Current unblocked needs-triage items: ${issueList(result.summary.needsTriage)}.`,
+    );
+    stdout(
+      `Current unblocked needs-info items: ${issueList(result.summary.needsInfo)}.`,
+    );
+    stdout(
+      `Current unblocked wontfix items: ${issueList(result.summary.wontfix)}.`,
+    );
+    stdout(
+      `Current Project Ready items: ${issueList(result.summary.readyItems)}.`,
     );
     return { status: 0, result };
   } catch (error) {

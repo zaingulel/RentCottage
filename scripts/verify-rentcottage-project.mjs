@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { runRentCottageProjectVerifier } from "./lib/rentcottage-verifier.mjs";
+import { runRentCottageProjectVerifierCommand } from "./lib/rentcottage-verifier.mjs";
 
-const { status } = runRentCottageProjectVerifier({});
+const { status } = runRentCottageProjectVerifierCommand(process.argv.slice(2));
 process.exitCode = status;

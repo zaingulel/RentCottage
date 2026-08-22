@@ -1731,6 +1731,95 @@ describe("RentCottage reconciliation planner", () => {
     });
   });
 
+  it("fails closed on an unknown dependency state and excludes it from the frontier", () => {
+    const observed = observedState();
+    observed.project.items = [
+      {
+        id: "item-55",
+        issueNumber: 55,
+        area: "Foundation & quality",
+        status: "Backlog",
+      },
+    ];
+    addOrdinaryProjectIssue(observed, {
+      number: 63,
+      body: "## Blocked by\n\n- #52\n",
+      blockers: [{ number: 52, state: "UNKNOWN" }],
+    });
+
+    const result = planRentCottageReconciliation({
+      intent: { type: "audit" },
+      observed,
+      policy: policy(),
+    });
+
+    expect(result).toMatchObject({
+      outcome: "blocked",
+      operations: [],
+      discrepancies: [
+        {
+          code: "issue.blocker_state",
+          message: "#63 native dependency #52 has unknown state UNKNOWN",
+        },
+      ],
+      dependencyFrontier: [55],
+    });
+  });
+
+  it("preserves an optional owner gate on a protected issue", () => {
+    const observed = observedState();
+    observed.issues[0].labels.push("owner-gated");
+    observed.project.items = [
+      {
+        id: "item-55",
+        issueNumber: 55,
+        area: "Foundation & quality",
+        status: "Backlog",
+      },
+    ];
+
+    const result = planRentCottageReconciliation({
+      intent: { type: "audit" },
+      observed,
+      policy: policy(),
+    });
+
+    expect(result).toMatchObject({
+      outcome: "noop",
+      operations: [],
+      discrepancies: [],
+      dependencyFrontier: [],
+    });
+  });
+
+  it("rejects an unknown protected label without removing the optional owner gate", () => {
+    const observed = observedState();
+    observed.issues[0].labels.push("owner-gated", "unknown-role");
+    observed.project.items = [
+      {
+        id: "item-55",
+        issueNumber: 55,
+        area: "Foundation & quality",
+        status: "Backlog",
+      },
+    ];
+
+    const result = planRentCottageReconciliation({
+      intent: { type: "audit" },
+      observed,
+      policy: policy(),
+    });
+
+    expect(result.outcome).toBe("plan");
+    expect(result.operations).toContainEqual({
+      type: "set-issue-labels",
+      issueNumber: 55,
+      labels: ["ready-for-agent", "owner-gated"],
+      reason: "#55 labels must match the approved tracker policy",
+    });
+    expect(result.dependencyFrontier).not.toContain(55);
+  });
+
   it("audits every approved issue and plans missing Project membership", () => {
     const result = planRentCottageReconciliation({
       intent: { type: "audit" },

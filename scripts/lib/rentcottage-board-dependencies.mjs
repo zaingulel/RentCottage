@@ -15,3 +15,13 @@ export function dependencyIssueNumbers({
   }
   return [...issueNumbers].sort((left, right) => left - right);
 }
+
+export function normalizedDependencyState(state) {
+  if (typeof state !== "string") return null;
+  const normalized = state.toUpperCase();
+  return normalized === "OPEN" || normalized === "CLOSED" ? normalized : null;
+}
+
+export function dependencyIsClosed({ state }) {
+  return normalizedDependencyState(state) === "CLOSED";
+}

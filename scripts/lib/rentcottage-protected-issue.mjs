@@ -8,6 +8,21 @@ function normalizeBody(body) {
   return String(body ?? "").replaceAll("\r\n", "\n");
 }
 
+export function protectedIssueLabelsAreValid(labels, policy) {
+  return sameValues(labels, protectedIssueDesiredLabels(labels, policy));
+}
+
+export function protectedIssueDesiredLabels(labels, policy) {
+  return [
+    ...policy.labels,
+    ...(labels.includes("owner-gated") ? ["owner-gated"] : []),
+  ];
+}
+
+export function protectedIssueIsOwnerGated(labels, policy) {
+  return Boolean(policy.ownerGated || labels.includes("owner-gated"));
+}
+
 export function protectedAcceptanceCriteria(body) {
   const section =
     normalizeBody(body)
@@ -26,7 +41,7 @@ export function protectedIssuePolicyDifferences(
 ) {
   const differences = [];
   if (title !== policy.title) differences.push("title");
-  if (!sameValues(labels, policy.labels)) differences.push("labels");
+  if (!protectedIssueLabelsAreValid(labels, policy)) differences.push("labels");
   if (canonicalBlockedBySectionCount(body) !== 1)
     differences.push("blockerSection");
   if (!sameValues(protectedBlockerNumbers(body), policy.blockers))
