@@ -1969,12 +1969,35 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(page.getByText("IQD 555,000", { exact: true })).toBeVisible();
   await expect(page.getByText(/Marketplace Commission/i)).toHaveCount(0);
   await expect(page.getByText(/does not reserve/)).toBeVisible();
-  await expect(page.getByRole("textbox")).toHaveCount(0);
-  await expect(page.getByRole("button")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Verify your phone to continue" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send Booking Request" }),
+  ).toHaveCount(0);
+  const customerPhone = journeyPhone(testInfo.project.name, ["0", "9", "9"]);
+  await page.getByLabel("Iraqi phone number").fill(customerPhone);
+  await page.getByRole("button", { name: "Send verification code" }).click();
+  await page.getByLabel("Verification code").fill("123456");
+  await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Send your Booking Request" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Customer name")).toBeVisible();
+  await expect(page.getByLabel("Party size")).toHaveValue("4");
+  await expect(
+    page.getByLabel(/accept the preserved House Rules/i),
+  ).toHaveAttribute("required");
+  await expect(
+    page.getByLabel(/inside-48-hours no-refund rule/i),
+  ).toHaveAttribute("required");
+  await expect(
+    page.getByRole("button", { name: "Send Booking Request" }),
+  ).toBeVisible();
   await expectPrivateValuesAbsent();
   await waitForFonts();
   await page.screenshot({
-    path: testInfo.outputPath("en-public-booking-quote.png"),
+    path: testInfo.outputPath("en-booking-request-form.png"),
     fullPage: true,
   });
   const quoteUrl = page.url();
@@ -1986,6 +2009,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(
     page.getByText(`شەفتی ${firstShift.position}`).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "داواکاری حجز بنێرە" }),
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
   await expectPrivateValuesAbsent();
@@ -2002,6 +2028,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(
     page.getByText(`الوردية ${firstShift.position}`).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "أرسل طلب الحجز" }),
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
   await expectPrivateValuesAbsent();
@@ -2109,49 +2138,30 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     fullPage: true,
   });
 
-  for (const [requestedDay, requestedStates] of [
-    [
-      firstDay,
-      [
-        ...shifts.map((shift) => ({
-          unitId: shift.id,
-          unitKind: "shift",
-          state: "closed",
-        })),
-        {
-          unitId: schedule.full_day_bundle_id,
-          unitKind: "full_day_bundle",
-          state: "closed",
-        },
-      ],
-    ],
-    [
-      secondDay,
-      [
-        ...shifts.map((shift) => ({
-          unitId: shift.id,
-          unitKind: "shift",
-          state: "closed",
-        })),
-        {
-          unitId: schedule.full_day_bundle_id,
-          unitKind: "full_day_bundle",
-          state: "closed",
-        },
-      ],
-    ],
-  ] as const) {
+  for (const requestedDay of [firstDay, secondDay]) {
     const { error: closeError } = await fixtureOwner.rpc(
       "set_cottage_inventory_availability",
       {
         target_profile_id: fixture!.profileId,
         target_schedule_revision_id: fixture!.scheduleId,
         target_service_day: requestedDay,
-        requested_states: requestedStates,
+        requested_states: [
+          ...shifts.map((shift) => ({
+            unitId: shift.id,
+            unitKind: "shift",
+            state: "closed",
+          })),
+          {
+            unitId: schedule.full_day_bundle_id,
+            unitKind: "full_day_bundle",
+            state: "closed",
+          },
+        ],
       },
     );
     if (closeError) throw closeError;
   }
+
   await page.goto(english.pathname);
   await expect(
     page.getByRole("heading", { name: fixture!.name }),

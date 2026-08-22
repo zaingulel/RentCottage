@@ -54,11 +54,16 @@ const {
 });
 
 function runSupabase(args) {
-  const result = spawnSync("npx", ["supabase", ...args], {
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
+  const result = spawnSync(
+    "npx",
+    ["supabase", ...args, ...(workdir ? ["--workdir", workdir] : [])],
+    {
+      encoding: "utf8",
+      env: process.env,
+      maxBuffer: 10 * 1024 * 1024,
+    },
+  );
   if (result.error)
     fail("Unable to execute the local Supabase CLI.", result.error);
   return result;

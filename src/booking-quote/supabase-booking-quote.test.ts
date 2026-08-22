@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SupabaseBookingQuote } from "./supabase-booking-quote";
+import { bookingTermsFixture } from "@/booking-request/booking-terms-fixture";
 
 const query = {
   from: "2026-08-21",
@@ -19,7 +20,8 @@ const response = {
   cottageName: "Quiet Garden",
   contentVersion: 2,
   houseRules: "No smoking",
-  termsVersion: "rentcottage-mvp-2026-08-04",
+  termsVersion: "fictional-local-test-2026-08-22-v1",
+  marketplaceTerms: bookingTermsFixture("en"),
   items: [
     {
       serviceDay: "2026-08-21",
@@ -35,6 +37,7 @@ const response = {
   bookingPriceIqd: 100_003,
   serviceFeeIqd: 5_000,
   customerTotalIqd: 105_003,
+  quoteFingerprint: "a".repeat(64),
 };
 
 function clientReturning(data: unknown, error: unknown = null) {
@@ -54,16 +57,20 @@ describe("Supabase Booking Quote", () => {
       status: "quoted",
       quote: expect.objectContaining({
         slug,
+        quoteFingerprint: "a".repeat(64),
         bookingPriceIqd: 100_003,
         serviceFeeIqd: 5_000,
         customerTotalIqd: 105_003,
       }),
     });
-    expect(client.rpc).toHaveBeenCalledWith("get_public_booking_quote", {
-      target_locale: "en",
-      target_slug: slug,
-      requested_search: query,
-    });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "get_public_booking_quote_with_fingerprint",
+      {
+        target_locale: "en",
+        target_slug: slug,
+        requested_search: query,
+      },
+    );
   });
 
   it.each([
