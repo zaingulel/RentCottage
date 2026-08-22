@@ -1,13 +1,19 @@
 import {
-  ordinaryIssueFrontierEligible,
+  ordinaryIssueReadinessRole,
   ordinaryIssueShape,
 } from "./rentcottage-ordinary-issue.mjs";
 import {
   protectedAcceptanceCriteria,
   protectedBlockerNumbers,
+  protectedIssueIsOwnerGated,
+  protectedIssueLabelsAreValid,
   protectedIssuePublicationIsComplete,
 } from "./rentcottage-protected-issue.mjs";
 import { canonicalBlockedBySectionCount } from "./rentcottage-issue-body.mjs";
+import {
+  dependencyIsClosed,
+  normalizedDependencyState,
+} from "./rentcottage-board-dependencies.mjs";
 import { obsoleteProjectIssueNumbers } from "./rentcottage-tracker-constants.mjs";
 
 export const repository = "zaingulel/RentCottage";
@@ -765,7 +771,18 @@ export function verifyRentCottageProject({
       "project.identity",
       "Project identity or open state does not match RentCottage Project 4",
     );
-    return { failures, summary: { dependencyFrontier: [], readyItems: [] } };
+    return {
+      failures,
+      summary: {
+        dependencyFrontier: [],
+        ownerGated: [],
+        readyForHuman: [],
+        needsTriage: [],
+        needsInfo: [],
+        wontfix: [],
+        readyItems: [],
+      },
+    };
   }
   if (project.fields.totalCount > project.fields.nodes.length)
     fail("project.fields.pagination", "Project fields are truncated");
@@ -875,7 +892,9 @@ export function verifyRentCottageProject({
         `#${expected.number} title does not match ${expected.ticketId}`,
       );
     const labels = issue.labels.map(({ name }) => name);
-    if (!sameMembers(labels, ["ready-for-agent"]))
+    if (
+      !protectedIssueLabelsAreValid(labels, issueContract.get(expected.number))
+    )
       fail(
         "issues.labels",
         `#${expected.number} labels do not match the contract`,
@@ -942,7 +961,7 @@ export function verifyRentCottageProject({
         "issues.special.title",
         `Special issue #${number} title does not match the manifest`,
       );
-    if (!sameMembers(labels, policy.labels))
+    if (!protectedIssueLabelsAreValid(labels, issueContract.get(number)))
       fail(
         "issues.special.labels",
         `Special issue #${number} labels do not match the contract`,
@@ -1024,14 +1043,23 @@ export function verifyRentCottageProject({
           issue.labels.map(({ name }) => name),
         )
       : null;
-    const ownerGated =
-      contract?.ownerGated ||
-      (!contract && issue.labels.some(({ name }) => name === "owner-gated"));
+    const issueLabels = issue.labels.map(({ name }) => name);
+    const ownerGated = contract
+      ? protectedIssueIsOwnerGated(issueLabels, contract)
+      : issueLabels.includes("owner-gated");
     if (nativeEvidence === null)
       fail(
         "issues.native_evidence_missing",
         `#${number} native dependency evidence is missing`,
       );
+    for (const blocker of nativeEvidence ?? []) {
+      if (normalizedDependencyState(blocker.state) === null) {
+        fail(
+          "issues.native_state",
+          `#${number} native dependency #${blocker.number} has unknown state ${String(blocker.state)}`,
+        );
+      }
+    }
     if (!contract && ordinaryShape.blockerSectionCount !== 1) {
       fail(
         "issues.blocker_text",
@@ -1063,7 +1091,7 @@ export function verifyRentCottageProject({
       );
     if (nativeEvidence !== null && activeStatuses.has(status)) {
       const openBlockers = nativeEvidence.filter(
-        ({ state }) => state.toLowerCase() === "open",
+        ({ state }) => normalizedDependencyState(state) === "OPEN",
       );
       if (openBlockers.length > 0)
         fail(
@@ -1086,51 +1114,74 @@ export function verifyRentCottageProject({
     }
   }
 
-  const dependencyFrontier = issueItems
-    .filter((item) => {
-      const number = item.content.number;
-      const issue = byNumber.get(number);
-      const contract = issueContract.get(number);
-      const nativeEvidence = nativeFor(nativeBlockersByIssue, number);
-      const ownerGated =
-        contract?.ownerGated ||
-        (!contract && issue?.labels.some(({ name }) => name === "owner-gated"));
-      const ordinaryEligible =
-        issue && !contract
-          ? ordinaryIssueFrontierEligible({
-              body: normalizeIssueBody(issue.body),
-              labels: issue.labels.map(({ name }) => name),
-              area: fieldValue(item, "Area"),
-              status: fieldValue(item, "Status"),
-              knownAreas,
-              knownStatuses,
-              nativeBlockers: nativeEvidence,
-            })
-          : false;
-      const protectedEligible =
-        issue && contract
-          ? protectedIssuePublicationIsComplete({
-              title: issue.title,
-              body: issue.body,
-              labels: issue.labels.map(({ name }) => name),
-              nativeBlockers: nativeEvidence,
-              area: fieldValue(item, "Area"),
-              status: fieldValue(item, "Status"),
-              knownStatuses,
-              policy: contract,
-            })
-          : false;
-      return (
-        issue?.state === "OPEN" &&
-        (protectedEligible || ordinaryEligible) &&
-        !ownerGated &&
-        issue.assignees.length === 0 &&
-        nativeEvidence !== null &&
-        nativeEvidence.every(({ state }) => state.toLowerCase() !== "open")
-      );
-    })
-    .map((item) => item.content.number)
-    .sort((left, right) => left - right);
+  const readiness = {
+    dependencyFrontier: [],
+    ownerGated: [],
+    readyForHuman: [],
+    needsTriage: [],
+    needsInfo: [],
+    wontfix: [],
+  };
+  const summaryKeyByRole = new Map([
+    ["ready-for-agent", "dependencyFrontier"],
+    ["ready-for-human", "readyForHuman"],
+    ["needs-triage", "needsTriage"],
+    ["needs-info", "needsInfo"],
+    ["wontfix", "wontfix"],
+  ]);
+  for (const item of issueItems) {
+    const number = item.content.number;
+    const issue = byNumber.get(number);
+    const contract = issueContract.get(number);
+    const nativeEvidence = nativeFor(nativeBlockersByIssue, number);
+    const issueLabels = issue?.labels.map(({ name }) => name) ?? [];
+    const ownerGated = contract
+      ? protectedIssueIsOwnerGated(issueLabels, contract)
+      : issueLabels.includes("owner-gated");
+    const ordinaryRole =
+      issue && !contract
+        ? ordinaryIssueReadinessRole({
+            body: normalizeIssueBody(issue.body),
+            labels: issue.labels.map(({ name }) => name),
+            area: fieldValue(item, "Area"),
+            status: fieldValue(item, "Status"),
+            knownAreas,
+            knownStatuses,
+            nativeBlockers: nativeEvidence,
+          })
+        : null;
+    const protectedEligible =
+      issue && contract
+        ? protectedIssuePublicationIsComplete({
+            title: issue.title,
+            body: issue.body,
+            labels: issue.labels.map(({ name }) => name),
+            nativeBlockers: nativeEvidence,
+            area: fieldValue(item, "Area"),
+            status: fieldValue(item, "Status"),
+            knownStatuses,
+            policy: contract,
+          })
+        : false;
+    if (
+      issue?.state !== "OPEN" ||
+      (!protectedEligible && ordinaryRole === null) ||
+      issue.assignees.length !== 0 ||
+      nativeEvidence === null ||
+      !nativeEvidence.every(dependencyIsClosed)
+    ) {
+      continue;
+    }
+    if (ownerGated) {
+      readiness.ownerGated.push(number);
+      continue;
+    }
+    const role = contract?.labels[0] ?? ordinaryRole;
+    const summaryKey = summaryKeyByRole.get(role);
+    if (summaryKey) readiness[summaryKey].push(number);
+  }
+  for (const numbers of Object.values(readiness))
+    numbers.sort((left, right) => left - right);
   const readyItems = issueItems
     .filter((item) => fieldValue(item, "Status") === "Ready")
     .map((item) => item.content.number);
@@ -1153,6 +1204,6 @@ export function verifyRentCottageProject({
 
   return {
     failures,
-    summary: { dependencyFrontier, readyItems, itemCount: items.length },
+    summary: { ...readiness, readyItems, itemCount: items.length },
   };
 }

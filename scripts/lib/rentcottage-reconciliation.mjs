@@ -4,7 +4,13 @@ import {
   ordinaryIssueShape,
 } from "./rentcottage-ordinary-issue.mjs";
 import {
+  dependencyIsClosed,
+  normalizedDependencyState,
+} from "./rentcottage-board-dependencies.mjs";
+import {
   protectedAcceptanceCriteria,
+  protectedIssueDesiredLabels,
+  protectedIssueIsOwnerGated,
   protectedIssuePublicationIsComplete,
 } from "./rentcottage-protected-issue.mjs";
 import {
@@ -128,11 +134,12 @@ function bodyWithBlockers(body, blockers) {
 
 function issueMetadataOperations(issue, issuePolicy, observed) {
   const operations = [];
-  if (!sameValues(issue.labels, issuePolicy.labels)) {
+  const desiredLabels = protectedIssueDesiredLabels(issue.labels, issuePolicy);
+  if (!sameValues(issue.labels, desiredLabels)) {
     operations.push({
       type: "set-issue-labels",
       issueNumber: issue.number,
-      labels: issuePolicy.labels,
+      labels: desiredLabels,
       reason: `#${issue.number} labels must match the approved tracker policy`,
     });
   }
@@ -468,8 +475,16 @@ export function planRentCottageReconciliation({ intent, observed, policy }) {
         });
       }
       const openProjectBlockers = projectIssue?.blockers.filter(
-        ({ state }) => state.toUpperCase() === "OPEN",
+        ({ state }) => normalizedDependencyState(state) === "OPEN",
       );
+      for (const blocker of projectIssue?.blockers ?? []) {
+        if (normalizedDependencyState(blocker.state) === null) {
+          discrepancies.push({
+            code: "issue.blocker_state",
+            message: `#${projectItem.issueNumber} native dependency #${blocker.number} has unknown state ${String(blocker.state)}`,
+          });
+        }
+      }
       if (
         openProjectBlockers?.length > 0 &&
         activeStatuses.has(projectItem.status)
@@ -481,9 +496,9 @@ export function planRentCottageReconciliation({ intent, observed, policy }) {
       }
       if (
         projectIssue?.state === "OPEN" &&
-        (projectIssuePolicy?.ownerGated ||
-          (!projectIssuePolicy &&
-            projectIssue.labels.includes("owner-gated"))) &&
+        (projectIssuePolicy
+          ? protectedIssueIsOwnerGated(projectIssue.labels, projectIssuePolicy)
+          : projectIssue.labels.includes("owner-gated")) &&
         projectIssue.assignees.length === 0 &&
         activeStatuses.has(projectItem.status)
       ) {
@@ -610,7 +625,7 @@ export function planRentCottageReconciliation({ intent, observed, policy }) {
   }
 
   const openBlockers = issue?.blockers.filter(
-    ({ state }) => state.toUpperCase() === "OPEN",
+    ({ state }) => normalizedDependencyState(state) === "OPEN",
   );
   if (intent.type === "claim" && openBlockers?.length > 0) {
     discrepancies.push({
@@ -777,10 +792,11 @@ export function planRentCottageReconciliation({ intent, observed, policy }) {
       return (
         candidate?.state === "OPEN" &&
         (protectedEligible || ordinaryEligible) &&
-        !candidatePolicy?.ownerGated &&
-        !(!candidatePolicy && candidate.labels.includes("owner-gated")) &&
+        !(candidatePolicy
+          ? protectedIssueIsOwnerGated(candidate.labels, candidatePolicy)
+          : candidate.labels.includes("owner-gated")) &&
         candidate.assignees.length === 0 &&
-        candidate.blockers.every(({ state }) => state.toUpperCase() !== "OPEN")
+        candidate.blockers.every(dependencyIsClosed)
       );
     })
     .sort((left, right) => left - right);

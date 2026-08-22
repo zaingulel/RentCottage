@@ -50,13 +50,17 @@ Do not describe work as "published and verified" if any step is missing, unavail
 
 ## Board verification
 
-Run `npm run verify:board` before selecting work and after ticket publication, dependency changes, Project reconciliation, or field changes. Project 4 is authoritative for current membership: adding a repository issue does not require updating a checked-in list. The verifier checks that required foundation items remain present and validates every current item for Area, Status, issue state, native blockers, duplicates, drafts, foreign content, missing data, and pagination. It also preserves the detailed D01 through D33 title, label, acceptance-criteria, blocker, and Area contract.
+Run `npm run verify:board` before selecting work and after ticket publication, dependency changes, Project reconciliation, or field changes. During `/resume`, use `npm run verify:board -- --json` so the readiness inventory is consumed through its schema-versioned interface. Project 4 is authoritative for current membership: adding a repository issue does not require updating a checked-in list. The verifier checks that required foundation items remain present and validates every current item for Area, Status, issue state, native blockers, duplicates, drafts, foreign content, missing data, and pagination. It also preserves the detailed D01 through D33 title, label, acceptance-criteria, blocker, and Area contract.
 
 Historical issues #2 through #17 are the retired pre-map issue range: they must remain closed and excluded from Project 4, but are not required current membership.
 
 The verifier requires GitHub CLI 2.48.0 or newer and checks this before querying GitHub.
 
-The script is intentionally read-only. An unavailable API, unknown field, missing required item, malformed item, duplicate, foreign item, or truncated response exits non-zero. Update the detailed contract only when a protected foundation ticket or the D01 through D33 delivery graph changes; ordinary new Project issues need no repository edit. Remove the verifier only when Project 4 is formally retired as an authoritative selection surface or an equivalent deterministic guard replaces it.
+The script is intentionally read-only. On success, `--json` returns `schemaVersion` plus issue-number arrays that exhaustively and disjointly classify every open, unassigned, fully evidenced, unblocked Project issue. Owner-gated work takes precedence; the remaining categories are `dependencyFrontier` for `ready-for-agent`, `readyForHuman`, `needsTriage`, `needsInfo`, and `wontfix`. Human output reports the same unblocked categories concisely. An unavailable API, unknown field, missing required item, malformed item, duplicate, foreign item, or truncated response exits non-zero.
+
+The verifier does not parse issue prose beyond the existing canonical tracker sections, inspect active Codex task ownership, choose priority, or prove that two tickets are safe to run in parallel. The coordinator must still reconcile those separate facts before selection.
+
+Maintenance is one readiness classifier and serializer plus their focused tests, with no additional GitHub calls. Update the detailed contract only when a protected foundation ticket or the D01 through D33 delivery graph changes; ordinary new Project issues need no repository edit. Remove the classifier and serializer when Project 4 is retired as an authoritative selection surface or a replacement intake provides an authoritative complete readiness inventory. Remove the verifier only when Project 4 is formally retired or an equivalent deterministic guard replaces it.
 
 ## Tracker reconciliation
 
