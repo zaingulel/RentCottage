@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { parseAccountContext } from "@/access/supabase-account-access";
+
 import {
   cottageProfileAmenities,
   cottageProfileMaximumLengths,
@@ -84,6 +86,18 @@ function assertProviderSuccess(error: unknown): void {
     throw new Error("Cottage Profile provider is unavailable", {
       cause: error,
     });
+  }
+}
+
+function parseAdministratorLifecycleEligibility(value: unknown): boolean {
+  const profile = record(value);
+  try {
+    const context = parseAccountContext(profile.owner_context);
+    return (
+      context.role === "cottage_owner" && context.approvalState === "approved"
+    );
+  } catch {
+    throw new Error("Cottage Profile lifecycle eligibility is invalid");
   }
 }
 
@@ -202,7 +216,9 @@ function parseProfile(
     (currentPublicationId !== null &&
       (typeof currentPublicationId !== "string" ||
         !uuidPattern.test(currentPublicationId))) ||
-    !["draft", "submitted_for_content_approval"].includes(String(status)) ||
+    !["draft", "submitted_for_content_approval", "abandoned"].includes(
+      String(status),
+    ) ||
     version === null ||
     version < 1 ||
     (sourceLanguage !== null &&
@@ -238,7 +254,8 @@ function parseProfile(
     throw new Error("Cottage Profile provider data is invalid");
   }
   if (
-    (status === "draft" && submittedSourceRevision !== null) ||
+    ((status === "draft" || status === "abandoned") &&
+      submittedSourceRevision !== null) ||
     (status === "submitted_for_content_approval" &&
       submittedSourceRevision === null)
   ) {
@@ -500,6 +517,18 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
     };
   }
 
+  async canAdministratorManageLifecycle(profileId: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from("owner_application_cottage_profiles")
+      .select(
+        "owner_context:account_contexts!owner_application_cottage_profiles_owner_user_id_fkey(user_id, role, owner_approval_state)",
+      )
+      .eq("id", profileId)
+      .maybeSingle();
+    assertProviderSuccess(error);
+    return data ? parseAdministratorLifecycleEligibility(data) : false;
+  }
+
   async load(profileId: string): Promise<CottageProfile | null> {
     const { data, error } = await this.client
       .from("owner_application_cottage_profiles")
@@ -513,6 +542,55 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   async createDraft(): Promise<CottageProfile> {
     const { data, error } = await this.client.rpc(
       "create_owner_cottage_profile_draft",
+    );
+    assertProviderSuccess(error);
+    return this.hydrate(data);
+  }
+
+  async abandonOwner(input: {
+    profileId: string;
+    expectedVersion: number;
+  }): Promise<CottageProfile> {
+    const { data, error } = await this.client.rpc(
+      "abandon_owner_cottage_profile_draft",
+      {
+        target_profile_id: input.profileId,
+        target_expected_version: input.expectedVersion,
+      },
+    );
+    assertProviderSuccess(error);
+    return this.hydrate(data);
+  }
+
+  async abandonAdministrator(input: {
+    profileId: string;
+    expectedVersion: number;
+    reason: string;
+  }): Promise<CottageProfile> {
+    const { data, error } = await this.client.rpc(
+      "abandon_administrator_cottage_profile_draft",
+      {
+        target_profile_id: input.profileId,
+        target_expected_version: input.expectedVersion,
+        requested_reason: input.reason,
+      },
+    );
+    assertProviderSuccess(error);
+    return this.hydrate(data);
+  }
+
+  async restoreAdministrator(input: {
+    profileId: string;
+    expectedVersion: number;
+    reason: string;
+  }): Promise<CottageProfile> {
+    const { data, error } = await this.client.rpc(
+      "restore_administrator_cottage_profile_draft",
+      {
+        target_profile_id: input.profileId,
+        target_expected_version: input.expectedVersion,
+        requested_reason: input.reason,
+      },
     );
     assertProviderSuccess(error);
     return this.hydrate(data);

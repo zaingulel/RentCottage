@@ -6,6 +6,7 @@ import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
 import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
+import { CottageProfileLifecycleControls } from "@/components/cottage-profile-lifecycle-controls";
 import { CottagePublicationReview } from "@/components/cottage-publication-review";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
@@ -24,16 +25,20 @@ async function loadAdministratorCottage(profileId: string) {
     return { status: "access_required" as const };
   const cottageProfile = await createRequestCottageProfile();
   const publication = await createRequestCottagePublication();
-  const [profile, review, administration] = await Promise.all([
-    cottageProfile.load(profileId),
+  const profile = await cottageProfile.load(profileId);
+  const [review, administration, lifecycleEligible] = await Promise.all([
     publication.loadCurrentReview(profileId),
     publication.loadTranslationAdministration(),
+    profile
+      ? cottageProfile.canAdministratorManageLifecycle(profileId)
+      : Promise.resolve(false),
   ]);
   return {
     status: "ready" as const,
     profile,
     review,
     administration,
+    lifecycleEligible,
   };
 }
 
@@ -84,9 +89,18 @@ export default async function AdministratorCottageProfilePage({
         locale={locale}
         profile={page.profile}
         actor="administrator"
-        editable
+        editable={page.profile.status !== "abandoned"}
         sourceEditable={page.review?.state !== "in_review"}
-        photoEditable={page.review?.state !== "in_review"}
+        photoEditable={
+          page.profile.status !== "abandoned" &&
+          page.review?.state !== "in_review"
+        }
+      />
+      <CottageProfileLifecycleControls
+        locale={locale}
+        actor="administrator"
+        profile={page.profile}
+        eligible={page.lifecycleEligible}
       />
       {page.review ? (
         <CottagePublicationReview

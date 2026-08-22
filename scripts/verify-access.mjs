@@ -113,6 +113,15 @@ export function main(
     result = execute(
       "node",
       [
+        "scripts/verify-cottage-profile-draft-concurrency.mjs",
+        "--verify-migration-preflight",
+      ],
+      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+    );
+    if (result.status !== 0) return result.status;
+    result = execute(
+      "node",
+      [
         "scripts/verify-booking-period-hold-concurrency.mjs",
         "--verify-migration-preflight",
       ],
@@ -155,6 +164,18 @@ export function main(
     if (prepared.status !== 0) return prepared.status;
     const scheduleConcurrencyEnvironment = { ...accessEnvironment };
     delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
+    const draftConcurrency = execute(
+      "node",
+      ["scripts/verify-cottage-profile-draft-concurrency.mjs"],
+      {
+        env: {
+          ...scheduleConcurrencyEnvironment,
+          ...databaseConcurrencyEnvironment,
+        },
+        stdio: "inherit",
+      },
+    );
+    if (draftConcurrency.status !== 0) return draftConcurrency.status;
     const scheduleConcurrency = execute(
       "node",
       ["scripts/verify-cottage-shift-schedule-concurrency.mjs"],

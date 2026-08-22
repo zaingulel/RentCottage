@@ -5,6 +5,7 @@ import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-
 import { createRequestCottageInventory } from "@/cottage-inventory/request-cottage-inventory";
 import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
+import { CottageProfileLifecycleControls } from "@/components/cottage-profile-lifecycle-controls";
 import { CottagePricingAvailabilityEditor } from "@/components/cottage-pricing-availability-editor";
 import { CottagePublicationReview } from "@/components/cottage-publication-review";
 import { CottageShiftScheduleEditor } from "@/components/cottage-shift-schedule-editor";
@@ -119,6 +120,12 @@ export default async function OwnerCottageProfilePage({
         actor="owner"
         editable={page.value.editable && page.value.profile.status === "draft"}
       />
+      <CottageProfileLifecycleControls
+        locale={locale}
+        actor="owner"
+        profile={page.value.profile}
+        eligible={page.value.editable}
+      />
       <CottageShiftScheduleEditor
         locale={locale}
         profileId={page.value.profile.id}
@@ -130,8 +137,13 @@ export default async function OwnerCottageProfilePage({
         profileId={page.value.profile.id}
         schedule={page.value.schedule}
         pricing={page.value.pricing}
-        editable={page.value.editable}
-        canOpen={Boolean(page.value.profile.currentPublicationId)}
+        editable={
+          page.value.editable && page.value.profile.status !== "abandoned"
+        }
+        canOpen={
+          page.value.profile.status !== "abandoned" &&
+          Boolean(page.value.profile.currentPublicationId)
+        }
       />
       {page.value.review ? (
         <CottagePublicationReview

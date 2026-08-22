@@ -892,6 +892,40 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     page.getByRole("link", { name: "Open Cottage Profile" }),
   ).toHaveCount(2);
 
+  const additionalProfile = page
+    .getByRole("article")
+    .filter({ hasNotText: "Started in Owner Application" });
+  await additionalProfile
+    .getByRole("link", { name: "Open Cottage Profile" })
+    .click();
+  await page.getByRole("button", { name: "Abandon draft" }).click();
+  await expect(page.getByText("Abandoned", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "This private Cottage Profile is abandoned and remains available as a read-only record.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByLabel("Cottage name")).toBeDisabled();
+  await page.screenshot({
+    path: testInfo.outputPath("en-owner-additional-abandoned.png"),
+    fullPage: true,
+  });
+  const additionalPath = new URL(page.url()).pathname.replace(/^\/en/, "");
+  await page.goto(`/ar${additionalPath}`);
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.getByText("متروك", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("ملف الكوخ الخاص هذا متروك ويبقى متاحاً كسجل للقراءة فقط."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "استعادة المسودة" }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("ar-owner-additional-abandoned.png"),
+    fullPage: true,
+  });
+  await page.goto("/en/owner/cottages");
+
   const applicationProfile = page
     .getByRole("article")
     .filter({ hasText: "Started in Owner Application" });
@@ -1158,6 +1192,37 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(
     page.getByRole("heading", { name: "Private Cottage Profiles" }),
   ).toBeVisible();
+  const abandonedProfile = page
+    .getByRole("article")
+    .filter({ hasText: "Abandoned" });
+  await abandonedProfile
+    .getByRole("link", { name: "Open Cottage Profile" })
+    .click();
+  const restore = page.getByRole("button", { name: "Restore draft" });
+  const reason = page.getByLabel("Administrator reason");
+  await expect(reason).toHaveAttribute("required", "");
+  await restore.click();
+  expect(
+    await reason.evaluate(
+      (field) => !(field as HTMLTextAreaElement).checkValidity(),
+    ),
+  ).toBe(true);
+  await expect(reason).toBeFocused();
+  await expect(page.getByText("Abandoned", { exact: true })).toBeVisible();
+  await reason.fill("Browser lifecycle restoration proof");
+  await restore.click();
+  await expect(page.getByRole("status")).toContainText(
+    "Cottage Profile restored.",
+  );
+  await expect(page.getByText("Private draft", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Abandon draft" }),
+  ).toBeEnabled();
+  await page.screenshot({
+    path: testInfo.outputPath("en-administrator-additional-restored.png"),
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "Back to cottages" }).click();
   const submittedProfile = page
     .getByRole("article")
     .filter({ hasText: "Submitted for content approval" })

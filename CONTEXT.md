@@ -280,6 +280,10 @@ _Avoid_: Customer service fee, payment-processing surcharge, percentage of Custo
 The structured facts about a cottage: guest capacity, bedrooms, bathrooms, key amenities, photos and approximate location. A prospective owner prepares a private first profile during the Owner Application; approved owners may create more. A profile becomes customer-visible only after publication approval.
 _Avoid_: Free-text listing, owner note
 
+**Abandoned Cottage Profile**:
+An additional unpublished Cottage Profile draft that an approved cottage owner, or an authenticator-verified Platform Administrator with a recorded reason, has removed from active work without deleting its private content, ready photos or Shift Schedule history. It remains private and read-only, releases open-profile capacity, and may be restored only by an authenticator-verified Platform Administrator while the owner is approved and capacity is available. The application-linked first profile, submitted profiles and published profiles cannot enter this state. This lifecycle rollout is forward-only: existing rows, including owners already above the limit, are preserved; rollback must use a new forward migration and must not remove the enum value, timestamp, audit history or retained profile data.
+_Avoid_: Deleted profile, hidden published cottage, reusable first application profile
+
 **Localized Cottage Content**:
 The approved Arabic, Sorani Kurdish and English versions of a cottage's customer-visible description and House Rules. An owner may submit source content in any Launch Language. Automatic Translation produces the other versions, and an administrator approves the complete set before publication.
 _Avoid_: Single-language listing, unreviewed machine translation

@@ -5,12 +5,14 @@ const {
   createClient,
   createCottageProfile,
   createCottagePublication,
+  canManageLifecycle,
   resolveContext,
   unstableRethrow,
 } = vi.hoisted(() => ({
   createClient: vi.fn(),
   createCottageProfile: vi.fn(),
   createCottagePublication: vi.fn(),
+  canManageLifecycle: vi.fn(),
   resolveContext: vi.fn(),
   unstableRethrow: vi.fn(),
 }));
@@ -34,6 +36,11 @@ vi.mock("@/cottage-publication/request-cottage-publication", () => ({
 }));
 vi.mock("@/components/cottage-profile-editor", () => ({
   CottageProfileEditor: () => <div>profile editor</div>,
+}));
+vi.mock("@/components/cottage-profile-lifecycle-controls", () => ({
+  CottageProfileLifecycleControls: ({ eligible }: { eligible: boolean }) => (
+    <div>lifecycle eligible {String(eligible)}</div>
+  ),
 }));
 vi.mock("@/components/cottage-publication-review", () => ({
   CottagePublicationReview: ({
@@ -86,8 +93,14 @@ it("passes the AAL2 translation administration overview to the review surface", 
   createClient.mockResolvedValue({
     rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
   });
+  canManageLifecycle.mockResolvedValue(true);
   createCottageProfile.mockResolvedValue({
-    load: vi.fn().mockResolvedValue({ id: "profile", status: "draft" }),
+    canAdministratorManageLifecycle: canManageLifecycle,
+    load: vi.fn().mockResolvedValue({
+      id: "profile",
+      ownerUserId: "owner",
+      status: "draft",
+    }),
   });
   const loadCurrentReview = vi.fn().mockResolvedValue({
     id: "cycle",
@@ -111,5 +124,7 @@ it("passes the AAL2 translation administration overview to the review surface", 
 
   expect(loadCurrentReview).toHaveBeenCalledWith("profile");
   expect(loadTranslationAdministration).toHaveBeenCalledOnce();
+  expect(canManageLifecycle).toHaveBeenCalledWith("profile");
+  expect(screen.getByText("lifecycle eligible true")).toBeVisible();
   expect(screen.getByText("actual spend 1200")).toBeVisible();
 });

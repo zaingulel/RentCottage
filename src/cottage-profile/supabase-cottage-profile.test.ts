@@ -595,4 +595,143 @@ describe("Supabase Cottage Profile adapter", () => {
       ).rejects.toThrow("Cottage Profile photo deletion data is invalid");
     },
   );
+
+  it.each([
+    {
+      contextName: "approved owner",
+      ownerContext: {
+        user_id: "10000000-0000-4000-8000-000000000701",
+        role: "cottage_owner",
+        owner_approval_state: "approved",
+      },
+      eligible: true,
+    },
+    {
+      contextName: "expired owner",
+      ownerContext: {
+        user_id: "10000000-0000-4000-8000-000000000701",
+        role: "cottage_owner",
+        owner_approval_state: "expired",
+      },
+      eligible: false,
+    },
+    {
+      contextName: "non-owner",
+      ownerContext: {
+        user_id: "10000000-0000-4000-8000-000000000701",
+        role: "customer",
+        owner_approval_state: null,
+      },
+      eligible: false,
+    },
+  ] as const)(
+    "maps a $contextName context to lifecycle eligibility=$eligible",
+    async ({ ownerContext, eligible }) => {
+      const client = {
+        from: vi.fn(() => ({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn(() => result({ owner_context: ownerContext })),
+            }),
+          }),
+        })),
+      } as unknown as SupabaseClient;
+
+      await expect(
+        new SupabaseCottageProfileRepository(
+          client,
+          client,
+        ).canAdministratorManageLifecycle(
+          "70000000-0000-4000-8000-000000000001",
+        ),
+      ).resolves.toBe(eligible);
+    },
+  );
+
+  it("treats a missing Cottage Profile as ineligible", async () => {
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn(() => result(null)),
+          }),
+        }),
+      })),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseCottageProfileRepository(
+        client,
+        client,
+      ).canAdministratorManageLifecycle("70000000-0000-4000-8000-000000000001"),
+    ).resolves.toBe(false);
+  });
+
+  it("fails closed when lifecycle eligibility provider data is unavailable or malformed", async () => {
+    const unavailableClient = {
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn(() => result(null, new Error("unavailable"))),
+          }),
+        }),
+      })),
+    } as unknown as SupabaseClient;
+    const malformedClient = {
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn(() =>
+              result({
+                owner_context: {
+                  user_id: "10000000-0000-4000-8000-000000000701",
+                  role: "cottage_owner",
+                  owner_approval_state: "unknown",
+                },
+              }),
+            ),
+          }),
+        }),
+      })),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseCottageProfileRepository(
+        unavailableClient,
+        unavailableClient,
+      ).canAdministratorManageLifecycle("70000000-0000-4000-8000-000000000001"),
+    ).rejects.toThrow("Cottage Profile provider is unavailable");
+    await expect(
+      new SupabaseCottageProfileRepository(
+        malformedClient,
+        malformedClient,
+      ).canAdministratorManageLifecycle("70000000-0000-4000-8000-000000000001"),
+    ).rejects.toThrow("Cottage Profile lifecycle eligibility is invalid");
+  });
+
+  it("requires the canonical Account Context identity shape for lifecycle eligibility", async () => {
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn(() =>
+              result({
+                owner_context: {
+                  role: "cottage_owner",
+                  owner_approval_state: "approved",
+                },
+              }),
+            ),
+          }),
+        }),
+      })),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      new SupabaseCottageProfileRepository(
+        client,
+        client,
+      ).canAdministratorManageLifecycle("70000000-0000-4000-8000-000000000001"),
+    ).rejects.toThrow("Cottage Profile lifecycle eligibility is invalid");
+  });
 });

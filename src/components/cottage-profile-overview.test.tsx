@@ -84,6 +84,70 @@ describe("Cottage Profile overview", () => {
     );
   });
 
+  it.each([
+    [
+      "capacity_limit",
+      "You can have up to 20 open unpublished Cottage Profiles.",
+    ],
+    [
+      "rate_limit",
+      "You can create up to 20 additional Cottage Profiles in 24 hours.",
+    ],
+  ] as const)("announces the distinct %s outcome", async (status, message) => {
+    vi.mocked(createCottageProfileDraftAction).mockResolvedValue({ status });
+    render(
+      <CottageProfileOverview
+        locale="en"
+        actor="owner"
+        profiles={[profile]}
+        canCreate
+      />,
+    );
+
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Create another cottage draft" })
+        .closest("form")!,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(message),
+    );
+  });
+
+  it("keeps lifecycle controls out of the overview where owner eligibility is unavailable", () => {
+    render(
+      <CottageProfileOverview
+        locale="en"
+        actor="owner"
+        profiles={[
+          profile,
+          {
+            ...profile,
+            id: "70000000-0000-4000-8000-000000000002",
+            applicationId: null,
+          },
+        ]}
+        canCreate
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Abandon draft" })).toBeNull();
+  });
+
+  it("labels an abandoned administrator profile without offering an ungrounded lifecycle control", () => {
+    render(
+      <CottageProfileOverview
+        locale="ckb"
+        actor="administrator"
+        profiles={[{ ...profile, applicationId: null, status: "abandoned" }]}
+      />,
+    );
+
+    expect(screen.getByText("وازهێنراو")).toBeVisible();
+    expect(screen.queryByLabelText("هۆکاری بەڕێوەبەر")).toBeNull();
+  });
+
   it("shows a localized administrator continuation link", () => {
     render(
       <CottageProfileOverview
