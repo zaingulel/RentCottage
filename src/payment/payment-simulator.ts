@@ -4,6 +4,7 @@ import type {
   PaymentOperationSnapshot,
   PaymentProviderIdentity,
   PaymentProviderAdapter,
+  ProviderOperationBinding,
   ProviderOperationRequest,
   ProviderOperationResult,
   ProviderOutcome,
@@ -35,6 +36,10 @@ export class PaymentSimulator implements PaymentProviderAdapter {
   readonly #failureRetrySafety: boolean[];
   readonly #providerRequestIds: string[];
   readonly #movementReferences: string[];
+  readonly #idempotentExecutions = new Map<
+    string,
+    { readonly request: string; readonly result: ProviderOperationResult }
+  >();
 
   constructor(options: PaymentSimulatorOptions) {
     this.#now = options.now;
@@ -64,6 +69,31 @@ export class PaymentSimulator implements PaymentProviderAdapter {
   async execute(
     request: ProviderOperationRequest,
   ): Promise<ProviderOperationResult> {
+    if (
+      request.executionPermit &&
+      Date.parse(this.#now()) >= Date.parse(request.executionPermit.notAfter)
+    ) {
+      return { outcome: "not-executed" };
+    }
+    const idempotencyKey = request.executionPermit?.idempotencyKey;
+    if (idempotencyKey) {
+      const requestFingerprint = JSON.stringify(request);
+      const existing = this.#idempotentExecutions.get(idempotencyKey);
+      if (existing) {
+        if (existing.request !== requestFingerprint) {
+          throw new Error("provider_idempotency_binding_mismatch");
+        }
+        return existing.result;
+      }
+      this.#requests.push(Object.freeze({ ...request }));
+      const outcome = this.#outcomes.shift() ?? "indeterminate";
+      const result = this.#resultFor(request, outcome);
+      this.#idempotentExecutions.set(idempotencyKey, {
+        request: requestFingerprint,
+        result,
+      });
+      return result;
+    }
     this.#requests.push(Object.freeze({ ...request }));
     const outcome = this.#outcomes.shift() ?? "indeterminate";
     return this.#resultFor(request, outcome);
@@ -124,7 +154,7 @@ export class PaymentSimulator implements PaymentProviderAdapter {
   }
 
   #resultFor(
-    request: ProviderOperationRequest,
+    request: ProviderOperationBinding,
     outcome: ProviderOutcome,
   ): ProviderOperationResult {
     const providerRequestId =

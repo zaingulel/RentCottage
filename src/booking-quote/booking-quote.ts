@@ -1,10 +1,15 @@
 import type { Locale } from "@/i18n/routing";
+import {
+  BOOKING_TERMS_VERSION,
+  type BookingTermsFixture,
+} from "@/booking-request/booking-terms-fixture";
+
+export { BOOKING_TERMS_VERSION } from "@/booking-request/booking-terms-fixture";
 
 import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 
 export const BOOKING_SERVICE_FEE_IQD = 5_000;
 export const MARKETPLACE_COMMISSION_BASIS_POINTS = 1_000;
-export const BOOKING_TERMS_VERSION = "rentcottage-mvp-2026-08-04";
 
 interface BookingQuoteItemBase {
   serviceDay: string;
@@ -23,10 +28,12 @@ export type BookingQuoteItem = BookingQuoteItemBase &
 
 export interface PublicBookingQuote {
   slug: string;
+  quoteFingerprint: string;
   cottageName: string;
   contentVersion: number;
   houseRules: string;
   termsVersion: typeof BOOKING_TERMS_VERSION;
+  marketplaceTerms: BookingTermsFixture;
   items: BookingQuoteItem[];
   bookingPriceIqd: number;
   serviceFeeIqd: typeof BOOKING_SERVICE_FEE_IQD;
@@ -54,6 +61,10 @@ const publicCottageSlugPattern = /^cottage-[0-9a-f]{32}$/;
 
 export function isPublicCottageSlug(value: string): boolean {
   return publicCottageSlugPattern.test(value);
+}
+
+export function isBookingQuoteFingerprint(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
 function nextServiceDay(value: string): string {

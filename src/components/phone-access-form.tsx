@@ -21,11 +21,13 @@ export function PhoneAccessForm({
   role,
   applicationHref,
   cottageProfilesHref,
+  onVerified,
 }: {
   locale: Locale;
   role: MarketplaceRole;
   applicationHref?: string;
   cottageProfilesHref?: string;
+  onVerified?: () => void;
 }) {
   const copy = accessMessages[locale];
   const cottageProfileCopy = cottageProfileMessages[locale];
@@ -76,6 +78,7 @@ export function PhoneAccessForm({
               ? cottageProfileCopy.readOnly
               : copy.verifiedOwner,
       );
+      onVerified?.();
     } else {
       setMessage(
         result.status === "role_conflict"

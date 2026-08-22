@@ -15,9 +15,13 @@ export const bookingQuoteMessages = {
     serviceFee: "رسوم خدمة الحجز",
     customerTotal: "إجمالي العميل",
     houseRules: "قواعد البيت",
+    marketplaceTerms: "شروط المنصة الخيالية",
+    termsBody: "النص الكامل للشروط الخيالية",
+    termsLocale: "لغة الشروط",
+    termsHash: "بصمة SHA-256 للشروط",
     termsVersion: "نسخة شروط الحجز",
     notice:
-      "عرض السعر هذا لا يحجز الفترة ولا ينشئ حجزاً. ستُعاد مراجعة التوفر والسعر عند إرسال طلب الحجز مستقبلاً.",
+      "عرض السعر هذا لا يحجز الفترة. ستُراجع التوفر والسعر مرة أخرى قبل حجز المبلغ وإرسال طلب الحجز.",
   },
   ckb: {
     title: "پێشنیاری نرخی وردی حجزکردن",
@@ -36,9 +40,13 @@ export const bookingQuoteMessages = {
     serviceFee: "کرێی خزمەتگوزاری حجزکردن",
     customerTotal: "کۆی گشتی کڕیار",
     houseRules: "یاساکانی کۆتێج",
+    marketplaceTerms: "مەرجە خەیاڵییەکانی پلاتفۆرم",
+    termsBody: "دەقی تەواوی مەرجە خەیاڵییەکان",
+    termsLocale: "زمانی مەرجەکان",
+    termsHash: "پەنجەمۆری SHA-256ی مەرجەکان",
     termsVersion: "وەشانی مەرجەکانی حجزکردن",
     notice:
-      "ئەم پێشنیاری نرخە ماوەکە ناپارێزێت و حجز دروست ناکات. لە داهاتوودا لە کاتی ناردنی داواکاری حجز، بەردەستبوون و نرخ دووبارە پشکنین دەکرێن.",
+      "ئەم پێشنیاری نرخە ماوەکە ناگرێت. پێش ڕێگەپێدانی پارە و ناردنی داواکاری، بەردەستبوون و نرخ دووبارە پشکنین دەکرێن.",
   },
   en: {
     title: "Your exact Booking Quote",
@@ -57,8 +65,12 @@ export const bookingQuoteMessages = {
     serviceFee: "Booking Service Fee",
     customerTotal: "Customer Total",
     houseRules: "House Rules",
+    marketplaceTerms: "Fictional marketplace terms",
+    termsBody: "Complete fictional terms content",
+    termsLocale: "Terms locale",
+    termsHash: "Terms SHA-256",
     termsVersion: "Booking terms version",
     notice:
-      "This quote does not reserve the period or create a booking. Availability and price will be checked again when Booking Request submission is introduced.",
+      "This quote does not reserve the period. Availability and price are checked again before payment authorisation and Booking Request submission.",
   },
 } as const;

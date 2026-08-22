@@ -2,11 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import type { Locale } from "@/i18n/routing";
+import { bookingTermsFixture } from "@/booking-request/booking-terms-fixture";
 
 import {
   BOOKING_SERVICE_FEE_IQD,
   BOOKING_TERMS_VERSION,
   bookingQuoteTotals,
+  isBookingQuoteFingerprint,
   isPublicCottageSlug,
   type BookingQuoteItem,
   type BookingQuotePort,
@@ -17,10 +19,12 @@ import {
 const quoteKeys = new Set([
   "status",
   "slug",
+  "quoteFingerprint",
   "cottageName",
   "contentVersion",
   "houseRules",
   "termsVersion",
+  "marketplaceTerms",
   "items",
   "bookingPriceIqd",
   "serviceFeeIqd",
@@ -48,6 +52,27 @@ function exactObject(
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const actual = Object.keys(value);
   return actual.length === keys.size && actual.every((key) => keys.has(key));
+}
+
+function sameMarketplaceTerms(
+  value: unknown,
+  expected: ReturnType<typeof bookingTermsFixture>,
+) {
+  if (
+    !exactObject(
+      value,
+      new Set(["version", "locale", "body", "sha256", "operative"]),
+    )
+  ) {
+    return false;
+  }
+  return (
+    value.version === expected.version &&
+    value.locale === expected.locale &&
+    value.body === expected.body &&
+    value.sha256 === expected.sha256 &&
+    value.operative === false
+  );
 }
 
 function itemFrom(value: unknown): BookingQuoteItem | undefined {
@@ -95,11 +120,14 @@ export class SupabaseBookingQuote implements BookingQuotePort {
     discoveryQuery: CottageDiscoveryQuery,
   ): Promise<PublicBookingQuoteResult> {
     if (!isPublicCottageSlug(publicSlug)) return { status: "not-found" };
-    const { data, error } = await this.client.rpc("get_public_booking_quote", {
-      target_locale: locale,
-      target_slug: publicSlug,
-      requested_search: discoveryQuery,
-    });
+    const { data, error } = await this.client.rpc(
+      "get_public_booking_quote_with_fingerprint",
+      {
+        target_locale: locale,
+        target_slug: publicSlug,
+        requested_search: discoveryQuery,
+      },
+    );
     if (error) return unavailable("provider-error");
     if (exactObject(data, stateKeys)) {
       return data.status === "not-found" ||
@@ -124,10 +152,12 @@ export class SupabaseBookingQuote implements BookingQuotePort {
     }
     const requested = discoveryQuery.selections.map(requestedIdentity);
     const returned = quotedItems.map(itemIdentity);
+    const expectedTerms = bookingTermsFixture(locale);
     if (
       typeof data.slug !== "string" ||
       data.slug !== publicSlug ||
       !isPublicCottageSlug(data.slug) ||
+      !isBookingQuoteFingerprint(data.quoteFingerprint) ||
       typeof data.cottageName !== "string" ||
       !data.cottageName.trim() ||
       !Number.isSafeInteger(data.contentVersion) ||
@@ -135,6 +165,7 @@ export class SupabaseBookingQuote implements BookingQuotePort {
       typeof data.houseRules !== "string" ||
       !data.houseRules.trim() ||
       data.termsVersion !== BOOKING_TERMS_VERSION ||
+      !sameMarketplaceTerms(data.marketplaceTerms, expectedTerms) ||
       !validateQuotedItems(quotedItems) ||
       returned.length !== requested.length ||
       returned.some((identity, index) => identity !== requested[index]) ||
@@ -148,10 +179,12 @@ export class SupabaseBookingQuote implements BookingQuotePort {
       status: "quoted",
       quote: {
         slug: data.slug,
+        quoteFingerprint: data.quoteFingerprint,
         cottageName: data.cottageName,
         contentVersion: data.contentVersion as number,
         houseRules: data.houseRules,
         termsVersion: BOOKING_TERMS_VERSION,
+        marketplaceTerms: expectedTerms,
         items: quotedItems,
         bookingPriceIqd: totals.bookingPriceIqd,
         serviceFeeIqd: totals.serviceFeeIqd,

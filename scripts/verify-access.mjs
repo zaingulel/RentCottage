@@ -1,10 +1,19 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const USAGE = "Usage: npm run verify:access";
+const LOCAL_PROJECT_PATTERN = /^rentcottage(?:-[a-z0-9]+)*$/;
 const EXCLUDED_SERVICES =
   "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
 
@@ -14,6 +23,41 @@ function runStep(command, args, options) {
 
 function defaultRemoveTemp(path) {
   rmSync(path, { recursive: true, force: true });
+}
+
+export function prepareIsolatedSupabaseWorkdir({
+  localProject,
+  stateRoot,
+  workingDirectory,
+}) {
+  if (localProject === "rentcottage") return workingDirectory;
+
+  const workdir = join(stateRoot, "project");
+  const source = join(workingDirectory, "supabase");
+  const target = join(workdir, "supabase");
+  mkdirSync(target, { recursive: true });
+  let config = readFileSync(join(source, "config.toml"), "utf8");
+  const replacements = [
+    ['project_id = "rentcottage"', `project_id = "${localProject}"`],
+    ["port = 54331", "port = 55331"],
+    ["port = 54332", "port = 55332"],
+    ["shadow_port = 54330", "shadow_port = 55330"],
+    ["port = 54339", "port = 55339"],
+    ["port = 54333", "port = 55333"],
+    ["port = 54334", "port = 55334"],
+    ["inspector_port = 8083", "inspector_port = 8183"],
+    ["port = 54337", "port = 55337"],
+  ];
+  for (const [current, replacement] of replacements) {
+    if (!config.includes(current)) {
+      throw new Error(`Local Supabase config is missing ${current}.`);
+    }
+    config = config.replace(current, replacement);
+  }
+  writeFileSync(join(target, "config.toml"), config);
+  symlinkSync(join(source, "migrations"), join(target, "migrations"), "dir");
+  symlinkSync(join(source, "tests"), join(target, "tests"), "dir");
+  return realpathSync(workdir);
 }
 
 function localCredentials(value) {
@@ -49,9 +93,11 @@ export function main(
   {
     environment = process.env,
     makeTemp = () => mkdtempSync(join(tmpdir(), "rentcottage-docker-config-")),
+    prepareProject = prepareIsolatedSupabaseWorkdir,
     removeTemp = defaultRemoveTemp,
     run = runStep,
     stderr = console.error,
+    workingDirectory = process.cwd(),
   } = {},
 ) {
   if (args.length !== 0) {
@@ -59,7 +105,32 @@ export function main(
     return 2;
   }
 
+  const localProject = environment.SUPABASE_LOCAL_PROJECT ?? "rentcottage";
+  if (!LOCAL_PROJECT_PATTERN.test(localProject)) {
+    stderr(
+      "SUPABASE_LOCAL_PROJECT must name a disposable RentCottage local project.",
+    );
+    return 2;
+  }
+
   const dockerConfig = makeTemp();
+  let localWorkdir;
+  try {
+    localWorkdir = prepareProject({
+      localProject,
+      stateRoot: dockerConfig,
+      workingDirectory: resolve(workingDirectory),
+    });
+  } catch (error) {
+    removeTemp(dockerConfig);
+    stderr(
+      `Unable to prepare the disposable local Supabase project: ${error.message}`,
+    );
+    return 1;
+  }
+  const isolatedProject = localProject !== "rentcottage";
+  const supabaseArguments = (commandArgs) =>
+    isolatedProject ? [...commandArgs, "--workdir", localWorkdir] : commandArgs;
   const supabaseEnvironment = {
     ...environment,
     DOCKER_CONFIG: dockerConfig,
@@ -92,23 +163,31 @@ export function main(
   const verify = () => {
     let result = execute(
       "npx",
-      ["supabase", "start", "-x", EXCLUDED_SERVICES],
+      supabaseArguments(["supabase", "start", "-x", EXCLUDED_SERVICES]),
       { encoding: "utf8", stdio: "pipe" },
     );
     if (result.status !== 0) return result.status;
     started = true;
 
-    result = execute("npx", ["supabase", "db", "reset", "--local"]);
+    result = execute(
+      "npx",
+      supabaseArguments(["supabase", "db", "reset", "--local"]),
+    );
     if (result.status !== 0) return result.status;
 
-    result = execute("npx", ["supabase", "test", "db"]);
+    result = execute("npx", supabaseArguments(["supabase", "test", "db"]));
     if (result.status !== 0) return result.status;
 
     const databaseConcurrencyEnvironment = {
       ...supabaseEnvironment,
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_DB_CONTAINER: `supabase_db_${localProject}`,
+      SUPABASE_LOCAL_PROJECT: localProject,
     };
+    if (isolatedProject) {
+      databaseConcurrencyEnvironment.SUPABASE_LOCAL_WORKDIR = localWorkdir;
+    }
+    delete databaseConcurrencyEnvironment.SUPABASE_URL;
+    delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
     delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
     result = execute(
       "node",
@@ -129,10 +208,14 @@ export function main(
     );
     if (result.status !== 0) return result.status;
 
-    const status = execute("npx", ["supabase", "status", "-o", "json"], {
-      encoding: "utf8",
-      stdio: "pipe",
-    });
+    const status = execute(
+      "npx",
+      supabaseArguments(["supabase", "status", "-o", "json"]),
+      {
+        encoding: "utf8",
+        stdio: "pipe",
+      },
+    );
     if (status.status !== 0) return status.status;
 
     let parsedCredentials;
@@ -222,6 +305,7 @@ export function main(
         "playwright",
         "test",
         "tests/access.spec.ts",
+        "tests/booking-request-access.spec.ts",
         "--project=mobile",
         "--project=desktop",
         "--workers=1",
@@ -237,6 +321,7 @@ export function main(
         "playwright",
         "test",
         "tests/access.spec.ts",
+        "tests/booking-request-access.spec.ts",
         "--project=worker",
         "--workers=1",
         "--output=playwright-report/access-worker",
@@ -246,17 +331,32 @@ export function main(
         stdio: "inherit",
       },
     );
-    return workerBrowser.status;
+    if (workerBrowser.status !== 0) return workerBrowser.status;
+    const bookingRequestConcurrency = execute(
+      "node",
+      ["scripts/verify-booking-request-concurrency.mjs"],
+      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+    );
+    return bookingRequestConcurrency.status;
   };
 
   try {
     exitCode = verify();
   } finally {
     if (started) {
-      const stopped = execute("npx", ["supabase", "stop", "--no-backup"], {
-        encoding: "utf8",
-        stdio: "pipe",
-      });
+      const stopped = execute(
+        "npx",
+        supabaseArguments([
+          "supabase",
+          "stop",
+          "--no-backup",
+          ...(isolatedProject ? ["--project-id", localProject] : []),
+        ]),
+        {
+          encoding: "utf8",
+          stdio: "pipe",
+        },
+      );
       if (exitCode === 0 && stopped.status !== 0) {
         stderr("Local Supabase cleanup failed.");
         exitCode = stopped.status;

@@ -29,7 +29,7 @@ export function createLocalSupabaseConcurrencyHarness({
   spawnProcess = spawn,
   spawnSyncProcess = spawnSync,
   waitLimitMilliseconds = 15_000,
-  workingDirectory = process.cwd(),
+  workingDirectory = environment.SUPABASE_LOCAL_WORKDIR ?? process.cwd(),
 } = {}) {
   const container = environment.SUPABASE_DB_CONTAINER;
   const project = environment.SUPABASE_LOCAL_PROJECT;
@@ -72,7 +72,7 @@ export function createLocalSupabaseConcurrencyHarness({
 
   function guardDisposableLocalDatabase() {
     if (
-      project !== "rentcottage" ||
+      !/^rentcottage(?:-[a-z0-9]+)*$/.test(project ?? "") ||
       container !== `supabase_db_${project}` ||
       !/^supabase_db_[a-z0-9_-]+$/.test(container)
     ) {

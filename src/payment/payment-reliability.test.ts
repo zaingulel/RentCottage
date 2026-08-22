@@ -1,10 +1,90 @@
 import { describe, expect, it } from "vitest";
 
-import type { PaymentProviderAdapter } from "./payment-contract";
+import type {
+  PaymentLifecycleSnapshot,
+  PaymentProviderAdapter,
+  ProviderExecutionPermit,
+} from "./payment-contract";
 import { createPaymentLifecycle } from "./payment-lifecycle";
 import { PaymentSimulator } from "./payment-simulator";
 
 describe("payment lifecycle reliability", () => {
+  it("does not start a physical provider request at the persisted not-after boundary", async () => {
+    const permit: ProviderExecutionPermit = {
+      claimId: "97000000-0000-4000-8000-000000000032",
+      generation: 1,
+      idempotencyKey: "booking-request:97000000-0000-4000-8000-000000000032:1",
+      notAfter: "2026-08-21T18:00:00.000Z",
+    };
+    const saved: PaymentLifecycleSnapshot[] = [];
+    const simulator = new PaymentSimulator({
+      now: () => "2026-08-21T18:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const payment = createPaymentLifecycle(
+      {
+        paymentLifecycleId: "pay-provider-not-after",
+        bookingPriceFils: 90_000_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      simulator,
+      {
+        save: async (snapshot) => {
+          saved.push(snapshot);
+          return snapshot.authorization?.status === "pending"
+            ? permit
+            : undefined;
+        },
+      },
+    );
+
+    await expect(payment.authorize()).rejects.toThrow(
+      "provider_execution_not_started",
+    );
+
+    expect(simulator.requests).toHaveLength(0);
+    expect(saved.at(-1)?.authorization).toMatchObject({
+      status: "failed",
+      providerRequestId: null,
+      providerReference: null,
+      movementReference: null,
+      reconciliationRequired: false,
+      retrySafe: false,
+    });
+  });
+
+  it("uses one physical provider request for a retried durable execution permit", async () => {
+    const permit: ProviderExecutionPermit = {
+      claimId: "97000000-0000-4000-8000-000000000032",
+      generation: 1,
+      idempotencyKey: "booking-request:97000000-0000-4000-8000-000000000032:1",
+      notAfter: "2026-08-21T18:01:00.000Z",
+    };
+    const simulator = new PaymentSimulator({
+      now: () => "2026-08-21T18:00:00.000Z",
+      outcomes: ["succeeded", "failed"],
+    });
+    const create = () =>
+      createPaymentLifecycle(
+        {
+          paymentLifecycleId: "pay-provider-idempotency",
+          bookingPriceFils: 90_000_000,
+          bookingServiceFeeFils: 5_000_000,
+        },
+        simulator,
+        {
+          save: async (snapshot) =>
+            snapshot.authorization?.status === "pending" ? permit : undefined,
+        },
+      );
+
+    const first = await create().authorize();
+    const retry = await create().authorize();
+
+    expect(first).toEqual(retry);
+    expect(simulator.requests).toHaveLength(1);
+  });
+
   it.each([
     new DOMException("The operation was aborted.", "AbortError"),
     new TypeError("network unavailable"),
@@ -62,6 +142,7 @@ describe("payment lifecycle reliability", () => {
         providerRequestId: null,
         providerReference: null,
       });
+      expect(simulator.queries[0]).not.toHaveProperty("executionPermit");
       expect(
         payment
           .snapshot()
@@ -738,6 +819,39 @@ describe("payment lifecycle reliability", () => {
       "not proven this operation safe to retry",
     );
     expect(simulator.requests).toHaveLength(2);
+  });
+
+  it("retries an adapter-proven failed release before allowing capture", async () => {
+    const simulator = new PaymentSimulator({
+      now: () => "2026-08-16T10:51:00.000Z",
+      outcomes: ["succeeded", "failed", "succeeded"],
+      failureRetrySafety: [true],
+    });
+    const payment = createPaymentLifecycle(
+      {
+        paymentLifecycleId: "pay-safe-release-retry",
+        bookingPriceFils: 50_000_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      simulator,
+    );
+    await payment.authorize();
+    const failed = await payment.release(55_000_000);
+
+    expect(failed).toMatchObject({ status: "failed", retrySafe: true });
+    await expect(payment.capture(55_000_000)).rejects.toThrow(
+      "must be retried",
+    );
+    const retried = await payment.retry(failed.logicalOperationId);
+    expect(retried).toMatchObject({
+      status: "succeeded",
+      attemptId: "pay-safe-release-retry:release:attempt-3",
+    });
+    expect(simulator.requests.map((request) => request.kind)).toEqual([
+      "authorization",
+      "release",
+      "release",
+    ]);
   });
 
   it("fails closed when the simulator has no configured operation outcome", async () => {

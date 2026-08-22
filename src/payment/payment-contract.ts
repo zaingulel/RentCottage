@@ -11,7 +11,14 @@ export type PaymentOperationStatus = "pending" | "succeeded" | "failed";
 
 export type ProviderOutcome = "succeeded" | "failed" | "indeterminate";
 
-export interface ProviderOperationRequest {
+export interface ProviderExecutionPermit {
+  readonly claimId: string;
+  readonly generation: number;
+  readonly idempotencyKey: string;
+  readonly notAfter: string;
+}
+
+export interface ProviderOperationBinding {
   readonly kind: PaymentOperationKind;
   readonly paymentLifecycleId: string;
   readonly logicalOperationId: string;
@@ -20,7 +27,14 @@ export interface ProviderOperationRequest {
   readonly currency: "IQD";
 }
 
+export interface ProviderOperationRequest extends ProviderOperationBinding {
+  readonly executionPermit: ProviderExecutionPermit | null;
+}
+
 export type ProviderOperationResult =
+  | {
+      readonly outcome: "not-executed";
+    }
   | {
       readonly outcome: "succeeded";
       readonly providerRequestId: string;
@@ -75,7 +89,7 @@ export interface PaymentProviderAdapter {
   verifySignedEvent(event: SignedProviderEvent): boolean;
 }
 
-export interface ProviderReconciliationQuery extends ProviderOperationRequest {
+export interface ProviderReconciliationQuery extends ProviderOperationBinding {
   readonly providerRequestId: string | null;
   readonly providerReference: string | null;
 }

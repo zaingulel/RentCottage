@@ -1,9 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { main } from "./verify-access.mjs";
+import { main, prepareIsolatedSupabaseWorkdir } from "./verify-access.mjs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const localCredentials = JSON.stringify({
@@ -133,9 +141,107 @@ describe("local Supabase concurrency harness", () => {
       expect.objectContaining({ encoding: "utf8", input: "select 1;\n" }),
     );
   });
+
+  it("guards an isolated RentCottage project against its exact container and worktree", () => {
+    const spawnSyncProcess = vi.fn().mockReturnValue({
+      status: 0,
+      stdout: "rentcottage-issue-32-v3|/tmp/rentcottage-issue-32-worktree\n",
+      stderr: "",
+    });
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-issue-32-v3",
+        SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
+      },
+      spawnSyncProcess,
+      workingDirectory: "/tmp/rentcottage-issue-32-worktree",
+    });
+
+    expect(() => harness.guardDisposableLocalDatabase()).not.toThrow();
+    expect(spawnSyncProcess).toHaveBeenCalledWith(
+      "docker",
+      [
+        "inspect",
+        "supabase_db_rentcottage-issue-32-v3",
+        "--format",
+        '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+      ],
+      expect.objectContaining({ encoding: "utf8" }),
+    );
+  });
 });
 
 describe("access verification command", () => {
+  it("constructs and cleans the real isolated Supabase workdir on success and failure", () => {
+    const workingDirectory = process.cwd();
+    const sourceConfigPath = join(workingDirectory, "supabase", "config.toml");
+    const sourceConfig = readFileSync(sourceConfigPath, "utf8");
+    const directState = mkdtempSync(
+      join(tmpdir(), "rentcottage-access-workdir-direct-"),
+    );
+    try {
+      const workdir = prepareIsolatedSupabaseWorkdir({
+        localProject: "rentcottage-issue-32-constructor",
+        stateRoot: directState,
+        workingDirectory,
+      });
+      const generatedConfig = readFileSync(
+        join(workdir, "supabase", "config.toml"),
+        "utf8",
+      );
+
+      expect(generatedConfig).toContain(
+        'project_id = "rentcottage-issue-32-constructor"',
+      );
+      for (const value of [
+        "port = 55331",
+        "port = 55332",
+        "shadow_port = 55330",
+        "port = 55339",
+        "port = 55333",
+        "port = 55334",
+        "inspector_port = 8183",
+        "port = 55337",
+      ]) {
+        expect(generatedConfig).toContain(value);
+      }
+      expect(readlinkSync(join(workdir, "supabase", "migrations"))).toBe(
+        join(workingDirectory, "supabase", "migrations"),
+      );
+      expect(readlinkSync(join(workdir, "supabase", "tests"))).toBe(
+        join(workingDirectory, "supabase", "tests"),
+      );
+      expect(readFileSync(sourceConfigPath, "utf8")).toBe(sourceConfig);
+    } finally {
+      rmSync(directState, { recursive: true, force: true });
+    }
+
+    for (const startStatus of [0, 7]) {
+      const stateRoot = mkdtempSync(
+        join(tmpdir(), `rentcottage-access-workdir-${startStatus}-`),
+      );
+      const run = vi.fn((command, args) => ({
+        status: command === "npx" && args[1] === "start" ? startStatus : 0,
+        stdout:
+          command === "npx" && args.includes("status") ? localCredentials : "",
+      }));
+
+      expect(
+        main([], {
+          environment: {
+            SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-constructor",
+          },
+          makeTemp: () => stateRoot,
+          prepareProject: prepareIsolatedSupabaseWorkdir,
+          run,
+          workingDirectory,
+        }),
+      ).toBe(startStatus);
+      expect(existsSync(stateRoot)).toBe(false);
+      expect(readFileSync(sourceConfigPath, "utf8")).toBe(sourceConfig);
+    }
+  });
+
   it("rejects Cottage Profile verifier arguments before authentication or database access", () => {
     const verifier = resolve(
       process.cwd(),
@@ -162,6 +268,31 @@ describe("access verification command", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it("rejects a malformed local project before creating temp state or starting a subprocess", () => {
+    const makeTemp = vi.fn();
+    const prepareProject = vi.fn();
+    const run = vi.fn();
+    const stderr = vi.fn();
+
+    expect(
+      main([], {
+        environment: {
+          SUPABASE_LOCAL_PROJECT: "rentcottage;docker-rm",
+        },
+        makeTemp,
+        prepareProject,
+        run,
+        stderr,
+      }),
+    ).toBe(2);
+    expect(stderr).toHaveBeenCalledWith(
+      "SUPABASE_LOCAL_PROJECT must name a disposable RentCottage local project.",
+    );
+    expect(makeTemp).not.toHaveBeenCalled();
+    expect(prepareProject).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("runs database and browser evidence with local credentials then stops", () => {
     const run = vi.fn((command, args) => ({
       status: 0,
@@ -176,6 +307,8 @@ describe("access verification command", () => {
       main([], {
         environment: {
           EXISTING: "kept",
+          SUPABASE_URL: "http://127.0.0.1:59999",
+          SUPABASE_PUBLISHABLE_KEY: "stale-publishable",
           SUPABASE_SECRET_KEY: "inherited-secret",
         },
         makeTemp: () => "/tmp/access-docker",
@@ -223,6 +356,7 @@ describe("access verification command", () => {
           "playwright",
           "test",
           "tests/access.spec.ts",
+          "tests/booking-request-access.spec.ts",
           "--project=mobile",
           "--project=desktop",
           "--workers=1",
@@ -235,11 +369,13 @@ describe("access verification command", () => {
           "playwright",
           "test",
           "tests/access.spec.ts",
+          "tests/booking-request-access.spec.ts",
           "--project=worker",
           "--workers=1",
           "--output=playwright-report/access-worker",
         ],
       ],
+      ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
       ["npx", ["supabase", "stop", "--no-backup"]],
     ]);
     expect(run.mock.calls[6][2].env).toMatchObject({
@@ -293,7 +429,54 @@ describe("access verification command", () => {
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
+    expect(run.mock.calls[14][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    });
+    expect(run.mock.calls[14][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+  });
+
+  it("derives the guarded database container from an isolated local project override", () => {
+    const isolatedWorkdir = "/tmp/access-state/project";
+    const prepareProject = vi.fn(() => isolatedWorkdir);
+    const removeTemp = vi.fn();
+    const run = vi.fn((command, args) => ({
+      status: 0,
+      stdout:
+        command === "npx" && args[0] === "supabase" && args.includes("status")
+          ? localCredentials
+          : "",
+    }));
+
+    expect(
+      main([], {
+        environment: {
+          SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
+        },
+        makeTemp: () => "/tmp/access-state",
+        prepareProject,
+        removeTemp,
+        run,
+      }),
+    ).toBe(0);
+
+    const supabaseCalls = run.mock.calls.filter(
+      ([command, args]) => command === "npx" && args[0] === "supabase",
+    );
+    expect(supabaseCalls.length).toBeGreaterThan(0);
+    expect(supabaseCalls.every(([, args]) => args.includes("--workdir"))).toBe(
+      true,
+    );
+    expect(
+      supabaseCalls.every(([, args]) => args.includes(isolatedWorkdir)),
+    ).toBe(true);
+    expect(run.mock.calls[3][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-issue-32-v3",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
+      SUPABASE_LOCAL_WORKDIR: isolatedWorkdir,
+    });
+    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-state");
   });
 
   it("stops and cleans up after a failed verification step", () => {
@@ -306,6 +489,7 @@ describe("access verification command", () => {
 
     expect(
       main([], {
+        environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
         run,
@@ -328,6 +512,7 @@ describe("access verification command", () => {
 
     expect(
       main([], {
+        environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp: vi.fn(),
         run,
@@ -352,7 +537,7 @@ describe("access verification command", () => {
     }));
     const stderr = vi.fn();
 
-    expect(main([], { run, stderr })).toBe(1);
+    expect(main([], { environment: {}, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase did not return valid local test credentials.",
     );
@@ -377,7 +562,7 @@ describe("access verification command", () => {
     }));
     const stderr = vi.fn();
 
-    expect(main([], { run, stderr })).toBe(1);
+    expect(main([], { environment: {}, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase returned unreadable local test credentials.",
     );
@@ -400,7 +585,7 @@ describe("access verification command", () => {
     }));
     const stderr = vi.fn();
 
-    expect(main([], { run, stderr })).toBe(1);
+    expect(main([], { environment: {}, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase did not return valid local test credentials.",
     );
@@ -428,7 +613,7 @@ describe("access verification command", () => {
     }));
     const stderr = vi.fn();
 
-    expect(main([], { run, stderr })).toBe(6);
+    expect(main([], { environment: {}, run, stderr })).toBe(6);
     expect(stderr).toHaveBeenCalledWith("Local Supabase cleanup failed.");
   });
 });
