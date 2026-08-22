@@ -11,6 +11,10 @@ export type CottageProfileActionState = {
     | "idle"
     | "saved"
     | "created"
+    | "abandoned"
+    | "restored"
+    | "capacity_limit"
+    | "rate_limit"
     | "uploaded"
     | "deleted"
     | "submitted"
@@ -128,6 +132,63 @@ export async function createCottageProfileDraftAction(
     return { status: "created", profileId: result.profile.id };
   }
   return result;
+}
+
+export async function abandonOwnerCottageProfileAction(
+  _previous: CottageProfileActionState,
+  formData: FormData,
+): Promise<CottageProfileActionState> {
+  const requestedLocale = locale(formData);
+  const profileId = text(formData, "profileId");
+  if (!requestedLocale) return { status: "invalid" };
+  const cottageProfile = await createRequestCottageProfile();
+  const result = await cottageProfile.abandonOwner(
+    profileId,
+    Number(text(formData, "expectedVersion")),
+  );
+  if (result.status === "abandoned") {
+    revalidateOwnerPaths(requestedLocale, profileId);
+    revalidateAdministratorPaths(requestedLocale, profileId);
+    return { status: "abandoned" };
+  }
+  return result;
+}
+
+async function administratorLifecycleAction(
+  operation: "abandon" | "restore",
+  formData: FormData,
+): Promise<CottageProfileActionState> {
+  const requestedLocale = locale(formData);
+  const profileId = text(formData, "profileId");
+  if (!requestedLocale) return { status: "invalid" };
+  const cottageProfile = await createRequestCottageProfile();
+  const result = await cottageProfile[
+    operation === "abandon" ? "abandonAdministrator" : "restoreAdministrator"
+  ](
+    profileId,
+    Number(text(formData, "expectedVersion")),
+    text(formData, "reason"),
+  );
+  if (result.status === "abandoned" || result.status === "restored") {
+    revalidateOwnerPaths(requestedLocale, profileId);
+    revalidateAdministratorPaths(requestedLocale, profileId);
+    return { status: result.status };
+  }
+  return result;
+}
+
+export async function abandonAdministratorCottageProfileAction(
+  _previous: CottageProfileActionState,
+  formData: FormData,
+): Promise<CottageProfileActionState> {
+  return administratorLifecycleAction("abandon", formData);
+}
+
+export async function restoreAdministratorCottageProfileAction(
+  _previous: CottageProfileActionState,
+  formData: FormData,
+): Promise<CottageProfileActionState> {
+  return administratorLifecycleAction("restore", formData);
 }
 
 export async function uploadCottageProfilePhotoAction(

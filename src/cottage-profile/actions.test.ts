@@ -9,6 +9,9 @@ vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("./request-cottage-profile", () => ({ createRequestCottageProfile }));
 
 import {
+  abandonAdministratorCottageProfileAction,
+  abandonOwnerCottageProfileAction,
+  restoreAdministratorCottageProfileAction,
   saveOwnerCottageProfileAction,
   uploadCottageProfilePhotoAction,
 } from "./actions";
@@ -108,4 +111,58 @@ describe("Cottage Profile actions", () => {
       expect.objectContaining({ size: 5_242_880 }),
     );
   });
+
+  it("routes owner abandonment through the authorized lifecycle seam", async () => {
+    const abandonOwner = vi.fn().mockResolvedValue({ status: "abandoned" });
+    createRequestCottageProfile.mockResolvedValue({ abandonOwner });
+    const form = new FormData();
+    form.set("locale", "ar");
+    form.set("profileId", "70000000-0000-4000-8000-000000000001");
+    form.set("expectedVersion", "4");
+
+    await expect(
+      abandonOwnerCottageProfileAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "abandoned" });
+    expect(abandonOwner).toHaveBeenCalledWith(
+      "70000000-0000-4000-8000-000000000001",
+      4,
+    );
+    expect(revalidatePath).toHaveBeenCalledWith("/ar/owner/cottages");
+    expect(revalidatePath).toHaveBeenCalledWith(
+      "/ar/administrator/cottages/70000000-0000-4000-8000-000000000001",
+    );
+  });
+
+  it.each([
+    [
+      abandonAdministratorCottageProfileAction,
+      "abandonAdministrator",
+      "abandoned",
+    ],
+    [
+      restoreAdministratorCottageProfileAction,
+      "restoreAdministrator",
+      "restored",
+    ],
+  ] as const)(
+    "requires the administrator %s action to pass the recorded reason",
+    async (action, method, status) => {
+      const lifecycle = vi.fn().mockResolvedValue({ status });
+      createRequestCottageProfile.mockResolvedValue({ [method]: lifecycle });
+      const form = new FormData();
+      form.set("locale", "ckb");
+      form.set("profileId", "70000000-0000-4000-8000-000000000001");
+      form.set("expectedVersion", "5");
+      form.set("reason", "Verified duplicate");
+
+      await expect(action({ status: "idle" }, form)).resolves.toEqual({
+        status,
+      });
+      expect(lifecycle).toHaveBeenCalledWith(
+        "70000000-0000-4000-8000-000000000001",
+        5,
+        "Verified duplicate",
+      );
+    },
+  );
 });

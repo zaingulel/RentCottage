@@ -1,4 +1,5 @@
 import type { Locale } from "./routing";
+import type { CottageProfileStatus } from "@/cottage-profile/cottage-profile";
 
 const en = {
   eyebrow: "Owner Backoffice",
@@ -16,6 +17,9 @@ const en = {
   applicationProfile: "Started in Owner Application",
   draft: "Private draft",
   submitted: "Submitted for content approval",
+  abandoned: "Abandoned",
+  abandonedReadOnly:
+    "This private Cottage Profile is abandoned and remains available as a read-only record.",
   readOnly:
     "Your private profile remains available, but changes are unavailable while this owner account is expired or suspended.",
   prospective:
@@ -79,6 +83,13 @@ const en = {
     "The private photo preview is temporarily unavailable. Please try again.",
   deletePhoto: "Delete photo",
   createDenied: "This owner account cannot create another cottage draft.",
+  capacityLimit: "You can have up to 20 open unpublished Cottage Profiles.",
+  rateLimit: "You can create up to 20 additional Cottage Profiles in 24 hours.",
+  abandon: "Abandon draft",
+  restore: "Restore draft",
+  lifecycleReason: "Administrator reason",
+  abandonedSuccess: "Cottage Profile abandoned.",
+  restoredSuccess: "Cottage Profile restored.",
   submit: "Submit for content approval",
   submittedSuccess: "Cottage Profile submitted.",
   incomplete:
@@ -105,6 +116,8 @@ const ar: Copy = {
   applicationProfile: "بدأ في طلب المالك",
   draft: "مسودة خاصة",
   submitted: "مُرسل للموافقة على المحتوى",
+  abandoned: "متروك",
+  abandonedReadOnly: "ملف الكوخ الخاص هذا متروك ويبقى متاحاً كسجل للقراءة فقط.",
   readOnly:
     "يبقى ملفك الخاص متاحاً، لكن التغييرات غير متاحة أثناء انتهاء أو تعليق حساب المالك.",
   prospective:
@@ -165,6 +178,13 @@ const ar: Copy = {
   previewUnavailable: "معاينة الصورة الخاصة غير متاحة مؤقتاً. حاول مرة أخرى.",
   deletePhoto: "حذف الصورة",
   createDenied: "لا يمكن لحساب المالك هذا إنشاء مسودة كوخ أخرى.",
+  capacityLimit: "يمكن أن يكون لديك حتى 20 ملف كوخ مفتوحاً وغير منشور.",
+  rateLimit: "يمكنك إنشاء حتى 20 ملف كوخ إضافياً خلال 24 ساعة.",
+  abandon: "ترك المسودة",
+  restore: "استعادة المسودة",
+  lifecycleReason: "سبب المسؤول",
+  abandonedSuccess: "تم ترك ملف الكوخ.",
+  restoredSuccess: "تمت استعادة ملف الكوخ.",
   submit: "الإرسال للموافقة على المحتوى",
   submittedSuccess: "تم إرسال ملف الكوخ.",
   incomplete:
@@ -190,6 +210,9 @@ const ckb: Copy = {
   applicationProfile: "لە داواکاری خاوەن دەستی پێکردووە",
   draft: "ڕەشنووسی تایبەت",
   submitted: "نێردراوە بۆ پەسەندکردنی ناوەڕۆک",
+  abandoned: "وازهێنراو",
+  abandonedReadOnly:
+    "ئەم پرۆفایلە تایبەتەی کۆتێج وازهێنراوە و وەک تۆمارێکی تەنها خوێندنەوە بەردەست دەمێنێتەوە.",
   readOnly:
     "پرۆفایلە تایبەتەکەت بەردەست دەمێنێتەوە، بەڵام لە کاتی بەسەرچوون یان هەڵپەساردنی هەژماردا گۆڕانکاری بەردەست نییە.",
   prospective:
@@ -252,6 +275,14 @@ const ckb: Copy = {
     "پێشبینینی وێنە تایبەتەکە کاتێک بەردەست نییە. دووبارە هەوڵ بدە.",
   deletePhoto: "سڕینەوەی وێنە",
   createDenied: "ئەم هەژماری خاوەنە ناتوانێت ڕەشنووسێکی کۆتێجی تر دروست بکات.",
+  capacityLimit: "دەتوانیت تا 20 پرۆفایلی کراوە و بڵاونەکراوەی کۆتێجت هەبێت.",
+  rateLimit:
+    "دەتوانیت لە ماوەی 24 کاتژمێردا تا 20 پرۆفایلی زیادەی کۆتێج دروست بکەیت.",
+  abandon: "وازهێنان لە ڕەشنووس",
+  restore: "گەڕاندنەوەی ڕەشنووس",
+  lifecycleReason: "هۆکاری بەڕێوەبەر",
+  abandonedSuccess: "لە پرۆفایلی کۆتێج وازهێنرا.",
+  restoredSuccess: "پرۆفایلی کۆتێج گەڕێندرایەوە.",
   submit: "ناردن بۆ پەسەندکردنی ناوەڕۆک",
   submittedSuccess: "پرۆفایلی کۆتێج نێردرا.",
   incomplete: "هەموو خانە پێویستەکان پڕ بکەوە و دڵنیابە 1 تا 12 وێنە ئامادەن.",
@@ -261,3 +292,18 @@ const ckb: Copy = {
 };
 
 export const cottageProfileMessages: Record<Locale, Copy> = { en, ar, ckb };
+
+const cottageProfileStatusMessageKeys = {
+  draft: "draft",
+  submitted_for_content_approval: "submitted",
+  abandoned: "abandoned",
+} as const satisfies Record<CottageProfileStatus, keyof Copy>;
+
+export function cottageProfileStatusLabel(
+  locale: Locale,
+  status: CottageProfileStatus,
+): string {
+  return cottageProfileMessages[locale][
+    cottageProfileStatusMessageKeys[status]
+  ];
+}

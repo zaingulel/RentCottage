@@ -64,6 +64,7 @@ function setup() {
   const repository: CottageProfileRepository = {
     listOwner: async () => profiles,
     listAdministrator: async () => ({ profiles, nextCursor: null }),
+    canAdministratorManageLifecycle: async () => true,
     load: async (requestedProfileId) =>
       profiles.find(({ id }) => id === requestedProfileId) ?? null,
     createDraft: async () => {
@@ -76,6 +77,24 @@ function setup() {
       profiles = [...profiles, created];
       return created;
     },
+    abandonOwner: async ({ profileId: requestedProfileId }) =>
+      replaceProfile({
+        ...findProfile(requestedProfileId),
+        status: "abandoned",
+        version: findProfile(requestedProfileId).version + 1,
+      }),
+    abandonAdministrator: async ({ profileId: requestedProfileId }) =>
+      replaceProfile({
+        ...findProfile(requestedProfileId),
+        status: "abandoned",
+        version: findProfile(requestedProfileId).version + 1,
+      }),
+    restoreAdministrator: async ({ profileId: requestedProfileId }) =>
+      replaceProfile({
+        ...findProfile(requestedProfileId),
+        status: "draft",
+        version: findProfile(requestedProfileId).version + 1,
+      }),
     updateOwner: async (input) => {
       const current = findProfile(input.profileId);
       return replaceProfile({
@@ -158,6 +177,75 @@ function setup() {
 }
 
 describe("Cottage Profile", () => {
+  it("validates administrator lifecycle eligibility through the repository seam", async () => {
+    const { cottageProfile, repository } = setup();
+    const eligibility = vi
+      .spyOn(repository, "canAdministratorManageLifecycle")
+      .mockResolvedValue(false);
+
+    await expect(
+      cottageProfile.canAdministratorManageLifecycle(profileId),
+    ).resolves.toBe(false);
+    await expect(
+      cottageProfile.canAdministratorManageLifecycle("not-a-profile-id"),
+    ).resolves.toBe(false);
+    expect(eligibility).toHaveBeenCalledOnce();
+    expect(eligibility).toHaveBeenCalledWith(profileId);
+
+    eligibility.mockRejectedValueOnce(new Error("provider unavailable"));
+    await expect(
+      cottageProfile.canAdministratorManageLifecycle(profileId),
+    ).rejects.toThrow("provider unavailable");
+  });
+
+  it.each([
+    ["RC420", "capacity_limit"],
+    ["RC429", "rate_limit"],
+  ] as const)(
+    "returns the stable %s draft-creation refusal as %s",
+    async (code, status) => {
+      const { cottageProfile, repository } = setup();
+      vi.spyOn(repository, "createDraft").mockRejectedValue({ code });
+
+      await expect(cottageProfile.createDraft()).resolves.toEqual({ status });
+    },
+  );
+
+  it("abandons an eligible additional draft through the lifecycle seam", async () => {
+    const { cottageProfile } = setup();
+    const created = await cottageProfile.createDraft();
+    if (created.status !== "created") throw new Error("Draft creation failed");
+
+    await expect(
+      cottageProfile.abandonOwner(created.profile.id, 1),
+    ).resolves.toMatchObject({
+      status: "abandoned",
+      profile: { status: "abandoned", version: 2 },
+    });
+  });
+
+  it("validates and trims an administrator lifecycle reason", async () => {
+    const { cottageProfile, repository } = setup();
+    const created = await cottageProfile.createDraft();
+    if (created.status !== "created") throw new Error("Draft creation failed");
+    const abandon = vi.spyOn(repository, "abandonAdministrator");
+
+    await cottageProfile.abandonAdministrator(
+      created.profile.id,
+      1,
+      "  Duplicate profile confirmed  ",
+    );
+
+    expect(abandon).toHaveBeenCalledWith({
+      profileId: created.profile.id,
+      expectedVersion: 1,
+      reason: "Duplicate profile confirmed",
+    });
+    await expect(
+      cottageProfile.restoreAdministrator(created.profile.id, 2, "   "),
+    ).resolves.toEqual({ status: "invalid", fields: ["reason"] });
+  });
+
   it("continues the application-linked first profile through the public use-case seam", async () => {
     const { cottageProfile } = setup();
 

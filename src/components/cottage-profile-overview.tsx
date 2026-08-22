@@ -8,7 +8,10 @@ import {
   type CottageProfileActionState,
 } from "@/cottage-profile/actions";
 import type { CottageProfile } from "@/cottage-profile/cottage-profile";
-import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
+import {
+  cottageProfileMessages,
+  cottageProfileStatusLabel,
+} from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 
 const idle: CottageProfileActionState = { status: "idle" };
@@ -49,9 +52,7 @@ export function CottageProfileOverview({
         {profiles.map((profile) => (
           <article className="cottage-profile-card" key={profile.id}>
             <div>
-              <span>
-                {profile.status === "draft" ? copy.draft : copy.submitted}
-              </span>
+              <span>{cottageProfileStatusLabel(locale, profile.status)}</span>
               {profile.applicationId ? (
                 <span>{copy.applicationProfile}</span>
               ) : null}
@@ -84,6 +85,12 @@ export function CottageProfileOverview({
           ) : null}
           {createState.status === "denied" ? (
             <p role="alert">{copy.createDenied}</p>
+          ) : null}
+          {createState.status === "capacity_limit" ? (
+            <p role="alert">{copy.capacityLimit}</p>
+          ) : null}
+          {createState.status === "rate_limit" ? (
+            <p role="alert">{copy.rateLimit}</p>
           ) : null}
         </form>
       ) : null}

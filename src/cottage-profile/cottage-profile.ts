@@ -35,7 +35,10 @@ export const cottageProfileNumberRanges = {
   bathrooms: { minimum: 1, maximum: 50 },
 } as const;
 
-export type CottageProfileStatus = "draft" | "submitted_for_content_approval";
+export type CottageProfileStatus =
+  | "draft"
+  | "submitted_for_content_approval"
+  | "abandoned";
 export type CottageProfileSourceLanguage =
   (typeof cottageProfileSourceLanguages)[number];
 export type CottageProfilePhotoState = "pending" | "ready" | "deletion_pending";
@@ -126,8 +129,23 @@ export interface CottageProfileRepository {
   listAdministrator(
     cursor?: CottageProfileAdministratorCursor,
   ): Promise<CottageProfileAdministratorPage>;
+  canAdministratorManageLifecycle(profileId: string): Promise<boolean>;
   load(profileId: string): Promise<CottageProfile | null>;
   createDraft(): Promise<CottageProfile>;
+  abandonOwner(input: {
+    profileId: string;
+    expectedVersion: number;
+  }): Promise<CottageProfile>;
+  abandonAdministrator(input: {
+    profileId: string;
+    expectedVersion: number;
+    reason: string;
+  }): Promise<CottageProfile>;
+  restoreAdministrator(input: {
+    profileId: string;
+    expectedVersion: number;
+    reason: string;
+  }): Promise<CottageProfile>;
   updateOwner(input: {
     profileId: string;
     expectedVersion: number;
@@ -342,6 +360,48 @@ function providerErrorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+async function administratorLifecycle(
+  lifecycle: (input: {
+    profileId: string;
+    expectedVersion: number;
+    reason: string;
+  }) => Promise<CottageProfile>,
+  expectedStatus: "draft" | "abandoned",
+  profileId: string,
+  expectedVersion: number,
+  reasonValue: unknown,
+) {
+  const reason = text(reasonValue);
+  if (
+    !uuidPattern.test(profileId) ||
+    !Number.isInteger(expectedVersion) ||
+    expectedVersion < 1 ||
+    reason.length < 1 ||
+    reason.length > 1000
+  ) {
+    return { status: "invalid" as const, fields: ["reason"] };
+  }
+  try {
+    const profile = await lifecycle({ profileId, expectedVersion, reason });
+    return profile.status === expectedStatus
+      ? {
+          status:
+            expectedStatus === "abandoned"
+              ? ("abandoned" as const)
+              : ("restored" as const),
+          profile,
+        }
+      : { status: "unavailable" as const };
+  } catch (error) {
+    const code = providerErrorCode(error);
+    if (code === "RC420") return { status: "capacity_limit" as const };
+    if (code === "RC409") return { status: "conflict" as const };
+    if (code === "RC202" || code === "42501")
+      return { status: "denied" as const };
+    return { status: "unavailable" as const };
+  }
+}
+
 export function createCottageProfile({
   repository,
   storage,
@@ -353,6 +413,10 @@ export function createCottageProfile({
     listOwner: () => repository.listOwner(),
     listAdministrator: (cursor?: CottageProfileAdministratorCursor) =>
       repository.listAdministrator(cursor),
+    canAdministratorManageLifecycle(profileId: string) {
+      if (!uuidPattern.test(profileId)) return Promise.resolve(false);
+      return repository.canAdministratorManageLifecycle(profileId);
+    },
 
     load(profileId: string) {
       if (!uuidPattern.test(profileId)) return Promise.resolve(null);
@@ -433,13 +497,71 @@ export function createCottageProfile({
         const profile = await repository.createDraft();
         return { status: "created" as const, profile };
       } catch (error) {
+        const code = providerErrorCode(error);
         return {
           status:
-            providerErrorCode(error) === "42501"
-              ? ("denied" as const)
-              : ("unavailable" as const),
+            code === "RC420"
+              ? ("capacity_limit" as const)
+              : code === "RC429"
+                ? ("rate_limit" as const)
+                : code === "42501"
+                  ? ("denied" as const)
+                  : ("unavailable" as const),
         };
       }
+    },
+
+    async abandonOwner(profileId: string, expectedVersion: number) {
+      if (
+        !uuidPattern.test(profileId) ||
+        !Number.isInteger(expectedVersion) ||
+        expectedVersion < 1
+      ) {
+        return { status: "invalid" as const };
+      }
+      try {
+        const profile = await repository.abandonOwner({
+          profileId,
+          expectedVersion,
+        });
+        return profile.status === "abandoned"
+          ? { status: "abandoned" as const, profile }
+          : { status: "unavailable" as const };
+      } catch (error) {
+        const code = providerErrorCode(error);
+        if (code === "RC409") return { status: "conflict" as const };
+        if (code === "RC202" || code === "42501")
+          return { status: "denied" as const };
+        return { status: "unavailable" as const };
+      }
+    },
+
+    async abandonAdministrator(
+      profileId: string,
+      expectedVersion: number,
+      reasonValue: unknown,
+    ) {
+      return administratorLifecycle(
+        repository.abandonAdministrator.bind(repository),
+        "abandoned",
+        profileId,
+        expectedVersion,
+        reasonValue,
+      );
+    },
+
+    async restoreAdministrator(
+      profileId: string,
+      expectedVersion: number,
+      reasonValue: unknown,
+    ) {
+      return administratorLifecycle(
+        repository.restoreAdministrator.bind(repository),
+        "draft",
+        profileId,
+        expectedVersion,
+        reasonValue,
+      );
     },
 
     async uploadPhoto(profileId: string, file: CottageProfileUpload) {

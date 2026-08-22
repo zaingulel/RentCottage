@@ -17,7 +17,10 @@ import {
   type CottageProfile,
   type CottageProfilePhoto,
 } from "@/cottage-profile/cottage-profile";
-import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
+import {
+  cottageProfileMessages,
+  cottageProfileStatusLabel,
+} from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 
 const idle: CottageProfileActionState = { status: "idle" };
@@ -167,9 +170,13 @@ export function CottageProfileEditor({
         </div>
       </div>
       <p className={`cottage-profile-status ${profile.status}`}>
-        {profile.status === "draft" ? copy.draft : copy.submitted}
+        {cottageProfileStatusLabel(locale, profile.status)}
       </p>
-      {!editable && profile.status === "draft" ? (
+      {profile.status === "abandoned" ? (
+        <p className="private-location-warning" role="status">
+          {copy.abandonedReadOnly}
+        </p>
+      ) : !editable && profile.status === "draft" ? (
         <p className="private-location-warning" role="status">
           {copy.readOnly}
         </p>
