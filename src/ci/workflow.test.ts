@@ -333,10 +333,21 @@ describe("GitHub Actions delivery checks", () => {
       "### Selected-provider evidence",
     );
 
-    expect(providerEvidence).not.toContain("Flow Metrics");
-    expect(providerEvidence).not.toContain("#993");
-    expect(providerEvidence).not.toContain("both repositories");
-    expect(providerEvidence).not.toContain("reconcile both repositories");
+    const independenceInvariant =
+      "**Cross-repository prerequisite:** None. RentCottage delivery stands or stops only on its own repository authority and provider settings.";
+    const retiredCrossRepositoryPrerequisites = [
+      /flow[\s-]?metrics(?:[\s-]?dashboard)?/i,
+      /#993\b/,
+      /\bboth-repositories-first\b/i,
+      /\bshared Graphite workspace\b/i,
+      /\breconcile both repositories\b/i,
+    ];
+
+    expect(delivery.split(independenceInvariant)).toHaveLength(2);
+    expect(providerEvidence).toContain(independenceInvariant);
+    for (const retiredPrerequisite of retiredCrossRepositoryPrerequisites) {
+      expect(delivery).not.toMatch(retiredPrerequisite);
+    }
     expect(providerEvidence).toContain(
       "Before 17 September 2026, recheck and record whether Graphite Hobby preserves the saved `graphite-review` include filter",
     );

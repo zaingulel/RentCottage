@@ -48,6 +48,8 @@ A provider's completed state proves processing finished, not that the change is 
 
 ### Selected-provider evidence
 
+**Cross-repository prerequisite:** None. RentCottage delivery stands or stops only on its own repository authority and provider settings.
+
 Each push advances `CURRENT_PR_HEAD`, invalidates the selected provider and Continuous Integration evidence, and restarts the selected review sequence. Record every row for the selected review:
 
 | Packet fields | Complete evidence |
