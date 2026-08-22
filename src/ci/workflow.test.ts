@@ -311,7 +311,7 @@ describe("GitHub Actions delivery checks", () => {
     expect(delivery).toContain("The trial ends on 17 September 2026");
     expect(delivery).toContain("including after a Graphite Hobby downgrade");
     expect(delivery).toContain(
-      "Graphite enables both repositories, includes only `graphite-review`, and keeps draft AI reviews off; Greptile includes only `independent-review`, keeps draft reviews off, and keeps automatic new-commit reviews off",
+      "Graphite enables RentCottage, includes only `graphite-review`, and keeps draft AI reviews off; Greptile enables RentCottage, includes only `independent-review`, keeps draft reviews off, and keeps automatic new-commit reviews off",
     );
     expect(delivery).toContain(
       "manually request Greptile's exact-head re-review after every later push",
@@ -326,21 +326,33 @@ describe("GitHub Actions delivery checks", () => {
     expect(executableSources.toLowerCase()).not.toContain("greptile");
   });
 
-  it("gates the shared Graphite cutover and Hobby transition on both repositories", () => {
+  it("keeps RentCottage provider readiness independent and the Hobby transition fail-closed", () => {
     const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
     const providerEvidence = sectionUnder(
       delivery,
       "### Selected-provider evidence",
     );
 
-    expect(providerEvidence).toContain(
-      "Do not change the shared Graphite workspace until both Flow Metrics issue #993 and RentCottage issue #104 repository controls are ready",
-    );
+    const independenceInvariant =
+      "**Cross-repository prerequisite:** None. RentCottage delivery stands or stops only on its own repository authority and provider settings.";
+    const retiredCrossRepositoryPrerequisites = [
+      /flow[\s-]?metrics(?:[\s-]?dashboard)?/i,
+      /#993\b/,
+      /\bboth-repositories-first\b/i,
+      /\bshared Graphite workspace\b/i,
+      /\breconcile both repositories\b/i,
+    ];
+
+    expect(delivery.split(independenceInvariant)).toHaveLength(2);
+    expect(providerEvidence).toContain(independenceInvariant);
+    for (const retiredPrerequisite of retiredCrossRepositoryPrerequisites) {
+      expect(delivery).not.toMatch(retiredPrerequisite);
+    }
     expect(providerEvidence).toContain(
       "Before 17 September 2026, recheck and record whether Graphite Hobby preserves the saved `graphite-review` include filter",
     );
     expect(providerEvidence).toContain(
-      "An unavailable or unverified Hobby result produces `STOP`; reconcile both repositories before changing the shared workspace or continuing delivery",
+      "An unavailable or unverified Hobby result produces `STOP`; reconcile the RentCottage repository authority and RentCottage provider settings before continuing RentCottage delivery",
     );
   });
 
