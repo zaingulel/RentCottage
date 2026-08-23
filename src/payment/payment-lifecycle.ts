@@ -95,12 +95,19 @@ function validAuthorizationPhaseOperation(
     );
   }
   if (status === "failed") {
-    return (
+    const providerFailure =
       typeof requestId === "string" &&
       requestId.length > 0 &&
       typeof providerReference === "string" &&
       providerReference.length > 0 &&
+      movementReference === null;
+    const executionNotStarted =
+      requestId === null &&
+      providerReference === null &&
       movementReference === null &&
+      operation.retrySafe === true;
+    return (
+      (providerFailure || executionNotStarted) &&
       operation.reconciliationRequired === false
     );
   }
@@ -118,7 +125,8 @@ function validAuthorizationPhaseOperation(
   return (
     (untouched || indeterminate) &&
     operation.retrySafe === false &&
-    operation.reconciliationRequired === indeterminate
+    (operation.reconciliationRequired === indeterminate ||
+      (untouched && operation.reconciliationRequired === true))
   );
 }
 
@@ -507,7 +515,22 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       providerReference: operation.providerReference,
     });
     if (result.outcome === "not-executed") {
-      throw new Error("invalid_provider_reconciliation_result");
+      if (operation.kind !== "release") {
+        throw new Error("invalid_provider_reconciliation_result");
+      }
+      const notExecuted = Object.freeze({
+        ...operation,
+        status: "failed" as const,
+        reconciliationRequired: false,
+        retrySafe: true,
+      });
+      this.#operations.set(operation.kind, notExecuted);
+      this.#operationsByLogicalId.set(
+        operation.logicalOperationId,
+        notExecuted,
+      );
+      await this.#persist();
+      return notExecuted;
     }
     const settled = this.#applyResult(operation, result);
     await this.#persist();
@@ -903,6 +926,10 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       const notExecuted = Object.freeze({
         ...pending,
         status: "failed" as const,
+        retrySafe:
+          kind === "release" &&
+          (executionPermit?.purpose === "booking-request-release" ||
+            executionPermit?.purpose === "booking-request-submission-cleanup"),
       });
       this.#operations.set(kind, notExecuted);
       this.#operationsByLogicalId.set(logicalOperationId, notExecuted);

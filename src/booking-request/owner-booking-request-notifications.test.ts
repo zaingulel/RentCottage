@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { listOwnerBookingRequestNotifications } from "./owner-booking-request-notifications";
 
 const notification = {
+  id: "00000000-0000-4000-8000-000000000033",
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
   status: "pending",
   customerName: "Ava Hassan",
@@ -22,6 +23,13 @@ const notification = {
       priceIqd: 100_003,
     },
   ],
+  bookingPriceIqd: 100_003,
+  marketplaceCommissionFils: 10_000_300,
+  ownerNetFils: 90_002_700,
+  houseRules: "No smoking",
+  bookingTermsVersion: "rentcottage-mvp-2026-08-04",
+  cancellationPolicyVersion: "rentcottage-cancellation-2026-08-04",
+  statusNotifications: [],
   responseDeadline: "2099-08-21T21:00:00.000Z",
   createdAt: "2099-08-21T17:00:00.000Z",
 };
@@ -56,6 +64,78 @@ describe("Owner Booking Request notifications", () => {
   });
 
   it.each([
+    { id: "not-a-uuid" },
+    {
+      statusNotifications: [
+        {
+          id: "not-a-uuid",
+          status: "accepted",
+          createdAt: "2099-08-21T18:00:00.000Z",
+        },
+      ],
+    },
+  ])("fails closed on malformed owner projection UUIDs %#", async (invalid) => {
+    await expect(
+      listOwnerBookingRequestNotifications(
+        clientReturning([{ ...notification, ...invalid }]),
+      ),
+    ).rejects.toThrow("data is invalid");
+  });
+
+  it("allocates exact booking item and receipt projections", async () => {
+    const raw = {
+      ...notification,
+      bookingPeriod: [
+        { ...notification.bookingPeriod[0], privateUnitId: "private-unit" },
+      ],
+      statusNotifications: [
+        {
+          id: "00000000-0000-4000-8000-000000000034",
+          status: "accepted",
+          createdAt: "2099-08-21T18:00:00.000Z",
+          recipientUserId: "private-recipient",
+          paymentProviderReference: "private-provider-reference",
+        },
+      ],
+    };
+    const expected = {
+      ...notification,
+      statusNotifications: [
+        {
+          id: "00000000-0000-4000-8000-000000000034",
+          status: "accepted",
+          createdAt: "2099-08-21T18:00:00.000Z",
+        },
+      ],
+    };
+
+    const result = await listOwnerBookingRequestNotifications(
+      clientReturning([raw]),
+    );
+
+    expect(result).toEqual([expected]);
+    expect(result[0]).not.toBe(raw);
+    expect(result[0].bookingPeriod[0]).not.toBe(raw.bookingPeriod[0]);
+    expect(result[0].statusNotifications[0]).not.toBe(
+      raw.statusNotifications[0],
+    );
+  });
+
+  it.each([
+    { bookingPriceIqd: 0 },
+    { marketplaceCommissionFils: -1 },
+    { ownerNetFils: -1 },
+    { marketplaceCommissionFils: 10_000_299 },
+    { ownerNetFils: 90_002_699 },
+  ])("fails closed on invalid owner money %#", async (invalidMoney) => {
+    await expect(
+      listOwnerBookingRequestNotifications(
+        clientReturning([{ ...notification, ...invalidMoney }]),
+      ),
+    ).rejects.toThrow("data is invalid");
+  });
+
+  it.each([
     { customerName: "name @ example . com" },
     { customerName: "name @ example . uk" },
     { bookingNote: "Email name at example dot uk" },
@@ -77,4 +157,28 @@ describe("Owner Booking Request notifications", () => {
       ).rejects.toThrow("data is invalid");
     },
   );
+
+  it.each([
+    { customerName: " " },
+    { customerName: " Ava Hassan" },
+    { customerName: "Ava Hassan " },
+    { customerName: "x".repeat(121) },
+    { bookingNote: "" },
+    { bookingNote: "   " },
+    { bookingNote: " Garden seating, please." },
+    { bookingNote: "Garden seating, please. " },
+    { bookingNote: "x".repeat(501) },
+  ])("fails closed on malformed owner text %#", async (malformed) => {
+    await expect(
+      listOwnerBookingRequestNotifications(
+        clientReturning([{ ...notification, ...malformed }]),
+      ),
+    ).rejects.toThrow("data is invalid");
+  });
 });
+
+function clientReturning(data: unknown) {
+  return {
+    rpc: vi.fn().mockResolvedValue({ data, error: null }),
+  } as unknown as SupabaseClient;
+}

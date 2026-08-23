@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
 import { submitBookingRequest } from "@/booking-request/actions";
@@ -62,14 +63,16 @@ export function BookingRequestForm({
   const [result, setResult] = useState<SubmissionResult>();
   const { pending, run } = useExclusiveAction();
 
-  if (result?.status === "pending") {
+  if (result && "bookingRequestReference" in result) {
     return (
       <section
         className="booking-request-receipt"
         aria-labelledby="booking-request-pending-heading"
         aria-live="polite"
       >
-        <h2 id="booking-request-pending-heading">{copy.pendingTitle}</h2>
+        <h2 id="booking-request-pending-heading">
+          {result.status === "pending" ? copy.pendingTitle : copy.existingTitle}
+        </h2>
         <dl>
           <div>
             <dt>{copy.reference}</dt>
@@ -80,7 +83,16 @@ export function BookingRequestForm({
             <dd>{formatIraqDateTime(result.responseDeadline, locale)}</dd>
           </div>
         </dl>
-        <p>{copy.pendingExplanation}</p>
+        <p>
+          {result.status === "pending"
+            ? copy.pendingExplanation
+            : copy.existingExplanation}
+        </p>
+        <Link
+          href={`/${locale}/booking-requests/${result.bookingRequestReference}`}
+        >
+          {copy.viewStatus}
+        </Link>
       </section>
     );
   }

@@ -310,7 +310,10 @@ function prepareBoundaryAttempt({
           'merchantId', claims.merchant_id,
           'terminalId', claims.terminal_id
         ),
+        'permitPurpose', 'booking-request-authorization',
         'idempotencyKey', claims.provider_idempotency_key,
+        'notAfter', to_char(claims.not_after at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
         'requestFingerprint', repeat('b', 64),
         'paymentLifecycleId', claims.payment_lifecycle_id,
         'logicalOperationId', claims.logical_operation_id,
@@ -319,7 +322,14 @@ function prepareBoundaryAttempt({
         'amountFils', claims.amount_fils,
         'currency', claims.currency,
         'claimId', claims.id,
-        'claimGeneration', claims.generation
+        'claimGeneration', claims.generation,
+        'stateRevision', null,
+        'cleanupAttemptId', null,
+        'workId', null,
+        'leaseGeneration', null,
+        'leaseToken', null,
+        'operationId', null,
+        'operationGeneration', null
       ) as operation
     from public.booking_request_authorization_claims claims
     join public.test_booking_request_time_boundary_fixture fixture
@@ -1037,7 +1047,10 @@ async function main() {
         'merchantId', claims.merchant_id,
         'terminalId', claims.terminal_id
       ),
+      'permitPurpose', 'booking-request-authorization',
       'idempotencyKey', claims.provider_idempotency_key,
+      'notAfter', to_char(claims.not_after at time zone 'UTC',
+        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
       'requestFingerprint', repeat('d', 64),
       'paymentLifecycleId', claims.payment_lifecycle_id,
       'logicalOperationId', claims.logical_operation_id,
@@ -1046,7 +1059,14 @@ async function main() {
       'amountFils', claims.amount_fils,
       'currency', claims.currency,
       'claimId', claims.id,
-      'claimGeneration', claims.generation
+      'claimGeneration', claims.generation,
+      'stateRevision', null,
+      'cleanupAttemptId', null,
+      'workId', null,
+      'leaseGeneration', null,
+      'leaseToken', null,
+      'operationId', null,
+      'operationGeneration', null
     ) as operation
     from public.booking_request_authorization_claims claims
     where claims.attempt_id = (
@@ -1234,7 +1254,27 @@ async function main() {
     create table public.test_booking_request_failed_release_result (
       result jsonb not null
     );
-    create table public.test_booking_request_failed_release_operation as
+    create table public.test_booking_request_cleanup_release_permit (
+      result jsonb not null
+    );
+    create table public.test_booking_request_failed_release_operation (
+      operation jsonb not null
+    );
+    grant select, insert on public.test_booking_request_failed_release_result
+      to service_role;
+    grant select, insert on public.test_booking_request_cleanup_release_permit
+      to service_role;
+    grant select, insert on public.test_booking_request_failed_release_operation
+      to service_role;
+    set role service_role;
+    insert into public.test_booking_request_cleanup_release_permit
+    select public.begin_booking_request_submission_cleanup_release(
+      fixture.attempt_id, fixture.pending_snapshot,
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    )
+    from public.test_booking_request_release_retry_fixture fixture;
+    reset role;
+    insert into public.test_booking_request_failed_release_operation
     select jsonb_build_object(
       'providerIdentity', jsonb_build_object(
         'provider', claims.provider,
@@ -1242,29 +1282,31 @@ async function main() {
         'merchantId', claims.merchant_id,
         'terminalId', claims.terminal_id
       ),
-      'idempotencyKey', null,
-      'requestFingerprint', repeat('d', 64),
+      'permitPurpose', permit.result -> 'executionPermit' ->> 'purpose',
+      'idempotencyKey', permit.result -> 'executionPermit' ->> 'idempotencyKey',
+      'notAfter', permit.result -> 'executionPermit' ->> 'notAfter',
+      'requestFingerprint', permit.result -> 'executionPermit' ->> 'requestFingerprint',
       'paymentLifecycleId', claims.payment_lifecycle_id,
       'logicalOperationId', fixture.pending_snapshot -> 'release' ->> 'logicalOperationId',
       'physicalAttemptId', fixture.pending_snapshot -> 'release' ->> 'attemptId',
       'operationKind', 'release',
       'amountFils', claims.amount_fils,
       'currency', claims.currency,
-      'claimId', null,
-      'claimGeneration', null
+      'claimId', permit.result -> 'executionPermit' ->> 'claimId',
+      'claimGeneration', (permit.result -> 'executionPermit' ->> 'generation')::integer,
+      'stateRevision', (permit.result -> 'executionPermit' ->> 'stateRevision')::bigint,
+      'cleanupAttemptId', permit.result -> 'executionPermit' ->> 'attemptId',
+      'workId', null,
+      'leaseGeneration', null,
+      'leaseToken', null,
+      'operationId', null,
+      'operationGeneration', null
     ) as operation
     from public.booking_request_authorization_claims claims
     join public.test_booking_request_release_retry_fixture fixture
-      on fixture.attempt_id = claims.attempt_id;
-    grant select, insert on public.test_booking_request_failed_release_result
-      to service_role;
-    grant select on public.test_booking_request_failed_release_operation
-      to service_role;
+      on fixture.attempt_id = claims.attempt_id
+    cross join public.test_booking_request_cleanup_release_permit permit;
     set role service_role;
-    select public.save_booking_request_payment_snapshot(
-      attempt_id, pending_snapshot,
-      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-    ) from public.test_booking_request_release_retry_fixture;
     insert into public.test_booking_request_failed_release_result
     select public.execute_simulated_payment_provider_operation(
       operation, 'failed'

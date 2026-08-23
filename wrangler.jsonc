@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "muntajaa-development",
-  "main": ".open-next/worker.js",
+  "main": "custom-worker.ts",
   "compatibility_date": "2026-08-13",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
@@ -17,6 +17,9 @@
   "env": {
     "test": {
       "name": "muntajaa-test",
+      "triggers": {
+        "crons": ["* * * * *"],
+      },
       "vars": {
         "APP_ENVIRONMENT": "test",
         "SUPABASE_PROJECT_REF": "local-test",
