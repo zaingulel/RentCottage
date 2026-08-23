@@ -32,4 +32,14 @@ describe("owner Booking Request notification boundary", () => {
     expect(createClient).not.toHaveBeenCalled();
     expect(listNotifications).not.toHaveBeenCalled();
   });
+
+  it("projects the request-scoped Owner surface without privileged cross-account due effects", async () => {
+    vi.stubEnv("APP_ENVIRONMENT", "test");
+    vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
+    vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
+    createClient.mockResolvedValue({ authenticated: true });
+    listNotifications.mockResolvedValue([]);
+    await loadOwnerBookingRequestNotifications();
+    expect(listNotifications).toHaveBeenCalledWith({ authenticated: true });
+  });
 });

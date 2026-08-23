@@ -207,6 +207,12 @@ export function main(
       { env: databaseConcurrencyEnvironment, stdio: "inherit" },
     );
     if (result.status !== 0) return result.status;
+    result = execute(
+      "node",
+      ["scripts/verify-booking-request-lifecycle-upgrade.mjs"],
+      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+    );
+    if (result.status !== 0) return result.status;
 
     const status = execute(
       "npx",
@@ -332,12 +338,56 @@ export function main(
       },
     );
     if (workerBrowser.status !== 0) return workerBrowser.status;
+    const scheduledExpirySeed = execute(
+      "node",
+      ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
+      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+    );
+    if (scheduledExpirySeed.status !== 0) return scheduledExpirySeed.status;
+    const scheduledExpiry = execute(
+      "npx",
+      [
+        "playwright",
+        "test",
+        "tests/worker-scheduled-expiry.spec.ts",
+        "--project=worker",
+        "--workers=1",
+        "--output=playwright-report/scheduled-expiry-worker",
+      ],
+      {
+        env: { ...browserEnvironment, PLAYWRIGHT_SERVER: "worker" },
+        stdio: "inherit",
+      },
+    );
+    if (scheduledExpiry.status !== 0) return scheduledExpiry.status;
+    const scheduledExpiryVerify = execute(
+      "node",
+      ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
+      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+    );
+    if (scheduledExpiryVerify.status !== 0) {
+      return scheduledExpiryVerify.status;
+    }
     const bookingRequestConcurrency = execute(
       "node",
       ["scripts/verify-booking-request-concurrency.mjs"],
       { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
     );
-    return bookingRequestConcurrency.status;
+    if (bookingRequestConcurrency.status !== 0) {
+      return bookingRequestConcurrency.status;
+    }
+    const bookingRequestLifecycleConcurrency = execute(
+      "node",
+      ["scripts/verify-booking-request-lifecycle-concurrency.mjs"],
+      {
+        env: {
+          ...inventoryConcurrencyEnvironment,
+          SUPABASE_SECRET_KEY: secretKey,
+        },
+        stdio: "inherit",
+      },
+    );
+    return bookingRequestLifecycleConcurrency.status;
   };
 
   try {

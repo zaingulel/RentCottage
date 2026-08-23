@@ -11,12 +11,41 @@ export type PaymentOperationStatus = "pending" | "succeeded" | "failed";
 
 export type ProviderOutcome = "succeeded" | "failed" | "indeterminate";
 
-export interface ProviderExecutionPermit {
+export interface AuthorizationExecutionPermit {
+  readonly purpose: "booking-request-authorization";
   readonly claimId: string;
   readonly generation: number;
   readonly idempotencyKey: string;
   readonly notAfter: string;
 }
+
+export interface BookingRequestReleaseExecutionPermit {
+  readonly purpose: "booking-request-release";
+  readonly workId: string;
+  readonly leaseGeneration: number;
+  readonly leaseToken: string;
+  readonly operationId: string;
+  readonly operationGeneration: number;
+  readonly idempotencyKey: string;
+  readonly requestFingerprint: string;
+  readonly notAfter: string;
+}
+
+export interface BookingRequestSubmissionCleanupExecutionPermit {
+  readonly purpose: "booking-request-submission-cleanup";
+  readonly attemptId: string;
+  readonly claimId: string;
+  readonly generation: number;
+  readonly stateRevision: number;
+  readonly idempotencyKey: string;
+  readonly requestFingerprint: string;
+  readonly notAfter: string;
+}
+
+export type ProviderExecutionPermit =
+  | AuthorizationExecutionPermit
+  | BookingRequestSubmissionCleanupExecutionPermit
+  | BookingRequestReleaseExecutionPermit;
 
 export interface ProviderOperationBinding {
   readonly kind: PaymentOperationKind;

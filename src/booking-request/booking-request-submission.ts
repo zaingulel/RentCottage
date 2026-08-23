@@ -18,6 +18,7 @@ import {
   bookingRequestAcceptanceEvidence,
   type BookingRequestAcceptanceEvidence,
 } from "./booking-request-policy";
+import type { BookingRequestStatus } from "./booking-request-status";
 
 export const CANCELLATION_POLICY_VERSION = "rentcottage-mvp-2026-08-04";
 
@@ -63,12 +64,14 @@ export type SubmissionFailureStatus =
   | "reconciliation-required"
   | "unavailable";
 
+export type ExistingBookingRequestResult = {
+  readonly status: BookingRequestStatus;
+  readonly bookingRequestReference: string;
+  readonly responseDeadline: string;
+};
+
 export type SubmissionResult =
-  | {
-      readonly status: "pending";
-      readonly bookingRequestReference: string;
-      readonly responseDeadline: string;
-    }
+  | ExistingBookingRequestResult
   | {
       readonly status: SubmissionFailureStatus;
     };
@@ -76,10 +79,10 @@ export type SubmissionResult =
 export type PrepareSubmissionResult =
   | { readonly status: "ready"; readonly attempt: SubmissionAttempt }
   | { readonly status: SubmissionFailureStatus }
-  | Extract<SubmissionResult, { status: "pending" }>;
+  | ExistingBookingRequestResult;
 
 export type SubmissionLookupResult =
-  | Extract<SubmissionResult, { status: "pending" }>
+  | (ExistingBookingRequestResult & { readonly status: "pending" })
   | { readonly status: "absent" }
   | { readonly status: "unknown" };
 
@@ -93,7 +96,7 @@ export interface BookingRequestSubmissionRepository {
   finalize(
     attemptId: string,
     snapshot: PaymentLifecycleSnapshot,
-  ): Promise<Extract<SubmissionResult, { status: "pending" }>>;
+  ): Promise<ExistingBookingRequestResult & { readonly status: "pending" }>;
   lookup(attemptId: string): Promise<SubmissionLookupResult>;
   markReconciliationRequired(attemptId: string): Promise<void>;
 }

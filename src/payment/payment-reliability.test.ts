@@ -5,12 +5,16 @@ import type {
   PaymentProviderAdapter,
   ProviderExecutionPermit,
 } from "./payment-contract";
-import { createPaymentLifecycle } from "./payment-lifecycle";
+import {
+  createPaymentLifecycle,
+  rehydratePaymentAuthorizationLifecycle,
+} from "./payment-lifecycle";
 import { PaymentSimulator } from "./payment-simulator";
 
 describe("payment lifecycle reliability", () => {
   it("does not start a physical provider request at the persisted not-after boundary", async () => {
     const permit: ProviderExecutionPermit = {
+      purpose: "booking-request-authorization",
       claimId: "97000000-0000-4000-8000-000000000032",
       generation: 1,
       idempotencyKey: "booking-request:97000000-0000-4000-8000-000000000032:1",
@@ -55,6 +59,7 @@ describe("payment lifecycle reliability", () => {
 
   it("uses one physical provider request for a retried durable execution permit", async () => {
     const permit: ProviderExecutionPermit = {
+      purpose: "booking-request-authorization",
       claimId: "97000000-0000-4000-8000-000000000032",
       generation: 1,
       idempotencyKey: "booking-request:97000000-0000-4000-8000-000000000032:1",
@@ -83,6 +88,111 @@ describe("payment lifecycle reliability", () => {
 
     expect(first).toEqual(retry);
     expect(simulator.requests).toHaveLength(1);
+  });
+
+  it("marks a release as retry-safe only when its fenced release permit proves execution was not admitted", async () => {
+    const lifecycleId = "97000000-0000-4000-8000-000000000033";
+    const authorizer = new PaymentSimulator({
+      now: () => "2026-08-21T18:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const authorized = createPaymentLifecycle(
+      {
+        paymentLifecycleId: lifecycleId,
+        bookingPriceFils: 90_000_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      authorizer,
+    );
+    await authorized.authorize();
+    const saved: PaymentLifecycleSnapshot[] = [];
+    const provider: PaymentProviderAdapter = {
+      identity: authorizer.identity,
+      execute: async () => ({ outcome: "not-executed" }),
+      query: async () => ({ outcome: "not-executed" }),
+      verifySignedEvent: () => false,
+    };
+    const payment = rehydratePaymentAuthorizationLifecycle(
+      {
+        paymentLifecycleId: lifecycleId,
+        bookingPriceFils: 90_000_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      provider,
+      authorized.snapshot(),
+      {
+        save: async (snapshot) => {
+          saved.push(snapshot);
+          if (snapshot.release?.status !== "pending") return;
+          return {
+            purpose: "booking-request-release",
+            workId: "97000000-0000-4000-8000-000000000034",
+            leaseGeneration: 1,
+            leaseToken: "97000000-0000-4000-8000-000000000035",
+            operationId: "97000000-0000-4000-8000-000000000036",
+            operationGeneration: 1,
+            idempotencyKey:
+              "booking-request-release:97000000-0000-4000-8000-000000000034:1",
+            requestFingerprint:
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            notAfter: "2026-08-21T18:01:00.000Z",
+          };
+        },
+      },
+    );
+
+    await expect(payment.release(95_000_000)).rejects.toThrow(
+      "provider_execution_not_started",
+    );
+    expect(saved.at(-1)?.release).toMatchObject({
+      status: "failed",
+      providerRequestId: null,
+      providerReference: null,
+      movementReference: null,
+      reconciliationRequired: false,
+      retrySafe: true,
+    });
+  });
+
+  it("does not make authorization retryable from a null-identity not-executed query", async () => {
+    const lifecycleId = "pay-authorization-query-absence";
+    const starter = new PaymentSimulator({
+      now: () => "2026-08-21T18:00:00.000Z",
+      outcomes: ["indeterminate"],
+    });
+    const started = createPaymentLifecycle(
+      {
+        paymentLifecycleId: lifecycleId,
+        bookingPriceFils: 90_000_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      starter,
+    );
+    const authorization = await started.authorize();
+    const provider: PaymentProviderAdapter = {
+      identity: starter.identity,
+      execute: async () => ({ outcome: "not-executed" }),
+      query: async () => ({ outcome: "not-executed" }),
+      verifySignedEvent: () => false,
+    };
+    const payment = rehydratePaymentAuthorizationLifecycle(
+      {
+        paymentLifecycleId: lifecycleId,
+        bookingPriceFils: 90_000_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      provider,
+      started.snapshot(),
+    );
+
+    await expect(
+      payment.reconcile(authorization.logicalOperationId),
+    ).rejects.toThrow("invalid_provider_reconciliation_result");
+    expect(payment.snapshot().authorization).toMatchObject({
+      status: "pending",
+      reconciliationRequired: true,
+      retrySafe: false,
+    });
   });
 
   it.each([

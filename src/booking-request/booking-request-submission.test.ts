@@ -69,6 +69,7 @@ function repositoryReturning(
       savedSnapshots.push(snapshot);
       return snapshot.authorization?.status === "pending" && !snapshot.release
         ? {
+            purpose: "booking-request-authorization" as const,
             claimId: "44444444-4444-4444-8444-444444444444",
             generation: 1,
             idempotencyKey:

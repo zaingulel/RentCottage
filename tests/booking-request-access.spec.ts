@@ -202,9 +202,158 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(ownerNotice).toBeVisible();
   await expect(ownerNotice).toContainText("Browser Customer");
   await expect(ownerNotice).not.toContainText(/provider|payment|phone|@/i);
+  await expect(ownerNotice).toContainText("Marketplace commission");
+  await expect(ownerNotice).toContainText("Expected net amount");
+  await expect(ownerNotice).toContainText("House Rules");
+  await expect(ownerNotice).toContainText("Marketplace terms version");
+  await expect(ownerNotice).toContainText("(Cottage Shift)");
   await ownerPage.screenshot({
     path: testInfo.outputPath("en-owner-booking-request-notice.png"),
     fullPage: true,
   });
+
+  async function submitAnotherRequest(locale: "en" | "ckb") {
+    await page.goto(`/${locale}/request/${slug}?${query.toString()}`);
+    const form = page.locator("form.booking-request-form");
+    await form.getByRole("textbox").first().fill("Browser Customer");
+    const checkboxes = form.getByRole("checkbox");
+    for (let index = 0; index < (await checkboxes.count()); index += 1) {
+      await checkboxes.nth(index).check();
+    }
+    await form.evaluate((node) => (node as HTMLFormElement).requestSubmit());
+    const reference = page.getByText(/^RC-REQ-[A-F0-9]{16}$/);
+    await expect(reference).toBeVisible();
+    return reference.innerText();
+  }
+
+  if (testInfo.project.name === "mobile") {
+    await ownerPage.goto("/ar/owner/cottages");
+    const arabicNotice = ownerPage.getByRole("article", {
+      name: requestReference,
+    });
+    await arabicNotice
+      .getByLabel("سبب الرفض")
+      .selectOption("cottage_unavailable");
+    await arabicNotice
+      .getByLabel("ملاحظة اختيارية للعميل")
+      .fill("صيانة مجدولة للمسبح.");
+    await arabicNotice
+      .getByRole("button", { name: "رفض الطلب كاملاً" })
+      .click();
+    await expect(
+      arabicNotice.getByText("مرفوض", { exact: true }),
+    ).toBeVisible();
+    await ownerPage.reload();
+    await expect(
+      ownerPage.getByText("إشعار الحالة", { exact: true }),
+    ).toBeVisible();
+    await ownerPage.screenshot({
+      path: testInfo.outputPath("ar-owner-booking-request-declined.png"),
+      fullPage: true,
+    });
+    await page.goto(`/ar/booking-requests/${requestReference}`);
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expect(
+      page.getByText("البيت غير متاح", { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("ar-customer-booking-request-declined.png"),
+      fullPage: true,
+    });
+    const secondReference = await submitAnotherRequest("ckb");
+    await page.goto(`/ckb/booking-requests/${secondReference}`);
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expect(page.getByText("چاوەڕێ", { exact: true })).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("ckb-customer-booking-request-pending.png"),
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", { name: "کشاندنەوەی داواکاری چاوەڕێ" })
+      .click();
+    await expect(page.getByText("کشێنراوەتەوە", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByText("ئاگادارکردنەوەی دۆخ", { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("ckb-customer-booking-request-withdrawn.png"),
+      fullPage: true,
+    });
+  } else if (testInfo.project.name === "desktop") {
+    await ownerNotice
+      .getByLabel("Decline reason")
+      .selectOption("cannot_accommodate_request");
+    await ownerNotice
+      .getByLabel("Optional note to the Customer")
+      .fill("The requested party cannot be accommodated safely.");
+    await ownerNotice
+      .getByRole("button", { name: "Decline complete request" })
+      .click();
+    await expect(
+      ownerNotice.getByText("Declined", { exact: true }),
+    ).toBeVisible();
+    await ownerPage.reload();
+    await expect(
+      ownerPage.getByText("Status notification", { exact: true }),
+    ).toBeVisible();
+    await ownerPage.screenshot({
+      path: testInfo.outputPath("en-owner-booking-request-declined.png"),
+      fullPage: true,
+    });
+    await page.goto(`/en/booking-requests/${requestReference}`);
+    await expect(
+      page.getByText("Cannot accommodate this request", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("The requested party cannot be accommodated safely.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("en-customer-booking-request-declined.png"),
+      fullPage: true,
+    });
+
+    const processingReference = await submitAnotherRequest("en");
+    await page.goto(`/en/booking-requests/${processingReference}`);
+    await page.route(page.url(), async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const response = await route.fetch();
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await route.fulfill({ response });
+    });
+    await page
+      .getByRole("button", { name: "Withdraw pending request" })
+      .click();
+    await expect(page.getByText("Processing", { exact: true })).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("en-customer-booking-request-processing.png"),
+      fullPage: true,
+    });
+    await expect(page.getByText("Withdrawn", { exact: true })).toBeVisible();
+    const scheduledExpiryReference = await submitAnotherRequest("en");
+    await page.goto(`/en/booking-requests/${scheduledExpiryReference}`);
+    await expect(page.getByText("Pending", { exact: true })).toBeVisible();
+  } else {
+    await ownerNotice
+      .getByRole("button", { name: "Accept complete request" })
+      .click();
+    await expect(
+      ownerNotice.getByText("Accepted", { exact: true }),
+    ).toBeVisible();
+    await ownerPage.reload();
+    await expect(
+      ownerPage.getByText("Status notification", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("link", { name: "View and manage this request" })
+      .click();
+    await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("en-customer-booking-request-accepted.png"),
+      fullPage: true,
+    });
+  }
   await ownerContext.close();
 });

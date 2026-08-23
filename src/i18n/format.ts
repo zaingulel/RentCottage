@@ -14,6 +14,14 @@ export function formatIqd(amount: number, locale: Locale): string {
   return `IQD ${formatted}`;
 }
 
+export function formatFilsAsIqd(amountFils: number, locale: Locale): string {
+  const formatted = new Intl.NumberFormat(iraqIntlLocales[locale], {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  }).format(amountFils / 1000);
+  return `IQD ${formatted}`;
+}
+
 export function formatIraqDateTime(value: string, locale: Locale): string {
   return new Intl.DateTimeFormat(iraqIntlLocales[locale], {
     dateStyle: "medium",

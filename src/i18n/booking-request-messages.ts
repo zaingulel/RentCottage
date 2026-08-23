@@ -25,9 +25,12 @@ export const bookingRequestMessages: Record<
     submit: string;
     pendingAction: string;
     pendingTitle: string;
+    existingTitle: string;
     reference: string;
     responseDeadline: string;
     pendingExplanation: string;
+    existingExplanation: string;
+    viewStatus: string;
     errors: Record<SubmissionFailureStatus, string>;
   }
 > = {
@@ -59,10 +62,13 @@ export const bookingRequestMessages: Record<
     submit: "Send Booking Request",
     pendingAction: "Authorising…",
     pendingTitle: "Booking Request pending",
+    existingTitle: "Booking Request already updated",
     reference: "Request reference",
     responseDeadline: "Owner response deadline",
     pendingExplanation:
       "Your period is held while the Cottage Owner responds. Payment has been authorised, not collected.",
+    existingExplanation: "Open the request to see its current status.",
+    viewStatus: "View and manage this request",
     errors: {
       invalid: "Check every field and required acceptance, then try again.",
       "access-required": "Verify your Customer phone number before continuing.",
@@ -104,10 +110,13 @@ export const bookingRequestMessages: Record<
     submit: "أرسل طلب الحجز",
     pendingAction: "جارٍ حجز المبلغ…",
     pendingTitle: "طلب الحجز قيد الانتظار",
+    existingTitle: "تم تحديث طلب الحجز بالفعل",
     reference: "مرجع الطلب",
     responseDeadline: "موعد رد المالك",
     pendingExplanation:
       "الفترة محجوزة مؤقتاً حتى يرد المالك. تم حجز المبلغ ولم يتم تحصيله.",
+    existingExplanation: "افتح الطلب للاطلاع على حالته الحالية.",
+    viewStatus: "عرض هذا الطلب وإدارته",
     errors: {
       invalid: "راجع الحقول والموافقات المطلوبة ثم حاول مرة أخرى.",
       "access-required": "تحقق من رقم هاتف العميل قبل المتابعة.",
@@ -149,10 +158,13 @@ export const bookingRequestMessages: Record<
     submit: "داواکاری حجز بنێرە",
     pendingAction: "ڕێگەپێدان…",
     pendingTitle: "داواکاری حجز چاوەڕێیە",
+    existingTitle: "داواکاری حجز پێشتر نوێ کراوەتەوە",
     reference: "ژمارەی داواکاری",
     responseDeadline: "کاتی کۆتایی وەڵامی خاوەن",
     pendingExplanation:
       "ماوەکە تا وەڵامی خاوەن گیراوە. پارەکە ڕێگەپێدراوە، بەڵام وەرنەگیراوە.",
+    existingExplanation: "داواکارییەکە بکەرەوە بۆ بینینی دۆخی ئێستای.",
+    viewStatus: "بینین و بەڕێوەبردنی ئەم داواکارییە",
     errors: {
       invalid: "خانەکان و قبوڵکردنە پێویستەکان بپشکنە و دووبارە هەوڵ بدە.",
       "access-required":

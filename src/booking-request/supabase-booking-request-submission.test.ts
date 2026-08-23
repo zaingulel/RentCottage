@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
-import { createPaymentLifecycle } from "@/payment/payment-lifecycle";
+import {
+  createPaymentLifecycle,
+  rehydratePaymentAuthorizationLifecycle,
+} from "@/payment/payment-lifecycle";
 import { PaymentSimulator } from "@/payment/payment-simulator";
 import type { PaymentLifecycleSnapshot } from "@/payment/payment-contract";
 
@@ -87,6 +90,7 @@ describe("Supabase Booking Request submission repository", () => {
     const data = {
       status: "ready",
       executionPermit: {
+        purpose: "booking-request-authorization",
         claimId: "44444444-4444-4444-8444-444444444444",
         generation: 1,
         idempotencyKey:
@@ -163,6 +167,67 @@ describe("Supabase Booking Request submission repository", () => {
     expect(provider.requests).toHaveLength(0);
   });
 
+  it("atomically persists a pending cleanup release and returns its exact cleanup permit", async () => {
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const input = {
+      paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+      bookingPriceFils: 100_003_000,
+      bookingServiceFeeFils: 5_000_000,
+    };
+    const authorized = createPaymentLifecycle(input, provider);
+    await authorized.authorize();
+    let pendingSnapshot: PaymentLifecycleSnapshot | undefined;
+    const cleanup = rehydratePaymentAuthorizationLifecycle(
+      input,
+      provider,
+      authorized.snapshot(),
+      {
+        save: async (snapshot) => {
+          pendingSnapshot = snapshot;
+          throw new Error("captured-before-provider");
+        },
+      },
+    );
+    await expect(cleanup.release(105_003_000)).rejects.toThrow(
+      "captured-before-provider",
+    );
+    const permit = {
+      purpose: "booking-request-submission-cleanup",
+      attemptId: "22222222-2222-4222-8222-222222222222",
+      claimId: "44444444-4444-4444-8444-444444444444",
+      generation: 1,
+      stateRevision: 4,
+      idempotencyKey:
+        "booking-request-submission-cleanup:22222222-2222-4222-8222-222222222222:4",
+      requestFingerprint: "b".repeat(64),
+      notAfter: "2099-08-21T17:00:30.000Z",
+    };
+    const client = clientWith({
+      data: { status: "ready", executionPermit: permit },
+      error: null,
+    });
+    const repository = new SupabaseBookingRequestSubmissionRepository(client);
+
+    await expect(
+      repository.savePaymentSnapshot(
+        permit.attemptId,
+        pendingSnapshot!,
+        provider.identity,
+      ),
+    ).resolves.toEqual(permit);
+    expect(client.rpc).toHaveBeenCalledWith(
+      "begin_booking_request_submission_cleanup_release",
+      expect.objectContaining({
+        target_attempt_id: permit.attemptId,
+        target_payment_snapshot: pendingSnapshot,
+        target_provider_identity: provider.identity,
+      }),
+    );
+  });
+
   it("claims a customer-scoped attempt with separate quote and intent bindings", async () => {
     const client = clientWith({
       data: {
@@ -217,6 +282,25 @@ describe("Supabase Booking Request submission repository", () => {
     await expect(repository.prepare(input)).rejects.toThrow(
       /invalid Booking Request submission result/i,
     );
+  });
+
+  it("projects the real status for an idempotent retry of an existing request", async () => {
+    const repository = new SupabaseBookingRequestSubmissionRepository(
+      clientWith({
+        data: {
+          status: "declined",
+          bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
+          responseDeadline: "2099-08-21T21:00:00.000Z",
+        },
+        error: null,
+      }),
+    );
+
+    await expect(repository.prepare(input)).resolves.toEqual({
+      status: "declined",
+      bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
+      responseDeadline: "2099-08-21T21:00:00.000Z",
+    });
   });
 
   it("returns the pinned provider identity with a recovered payment snapshot", async () => {

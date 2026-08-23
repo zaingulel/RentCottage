@@ -12,16 +12,20 @@ import {
   BookingRequestAuthorizationClaimNotPersisted,
   BookingRequestPreAuthorizationRejected,
   type BookingRequestSubmissionRepository,
+  type SubmissionFailureStatus,
   type PrepareSubmissionResult,
   type SubmissionInput,
   type SubmissionLookupResult,
-  type SubmissionResult,
 } from "./booking-request-submission";
+import {
+  isBookingRequestStatus,
+  type BookingRequestStatus,
+} from "./booking-request-status";
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const bookingRequestReference = /^RC-REQ-[A-F0-9]{16}$/;
-const stateStatuses = new Set<Exclude<SubmissionResult["status"], "pending">>([
+const stateStatuses = new Set<SubmissionFailureStatus>([
   "invalid",
   "access-required",
   "quote-stale",
@@ -96,11 +100,13 @@ function executionPermitFrom(value: unknown): ProviderExecutionPermit {
     result.status !== "ready" ||
     !permit ||
     !hasExactKeys(permit, [
+      "purpose",
       "claimId",
       "generation",
       "idempotencyKey",
       "notAfter",
     ]) ||
+    permit.purpose !== "booking-request-authorization" ||
     typeof permit.claimId !== "string" ||
     !uuid.test(permit.claimId) ||
     !Number.isSafeInteger(permit.generation) ||
@@ -115,14 +121,53 @@ function executionPermitFrom(value: unknown): ProviderExecutionPermit {
   return permit as unknown as ProviderExecutionPermit;
 }
 
-function pendingResultFrom(value: Record<string, unknown>) {
+function cleanupExecutionPermitFrom(value: unknown): ProviderExecutionPermit {
+  const result = record(value);
+  const permit = record(result?.executionPermit);
+  if (
+    !result ||
+    !hasExactKeys(result, ["status", "executionPermit"]) ||
+    result.status !== "ready" ||
+    !permit ||
+    !hasExactKeys(permit, [
+      "purpose",
+      "attemptId",
+      "claimId",
+      "generation",
+      "stateRevision",
+      "idempotencyKey",
+      "requestFingerprint",
+      "notAfter",
+    ]) ||
+    permit.purpose !== "booking-request-submission-cleanup" ||
+    typeof permit.attemptId !== "string" ||
+    !uuid.test(permit.attemptId) ||
+    typeof permit.claimId !== "string" ||
+    !uuid.test(permit.claimId) ||
+    !Number.isSafeInteger(permit.generation) ||
+    (permit.generation as number) < 1 ||
+    !Number.isSafeInteger(permit.stateRevision) ||
+    (permit.stateRevision as number) < 1 ||
+    typeof permit.idempotencyKey !== "string" ||
+    permit.idempotencyKey.length < 16 ||
+    typeof permit.requestFingerprint !== "string" ||
+    !/^[0-9a-f]{64}$/.test(permit.requestFingerprint) ||
+    typeof permit.notAfter !== "string" ||
+    Number.isNaN(Date.parse(permit.notAfter))
+  ) {
+    throw new Error("Database returned an invalid cleanup execution permit");
+  }
+  return permit as unknown as ProviderExecutionPermit;
+}
+
+function existingRequestResultFrom(value: Record<string, unknown>) {
   if (
     !hasExactKeys(value, [
       "status",
       "bookingRequestReference",
       "responseDeadline",
     ]) ||
-    value.status !== "pending" ||
+    !isBookingRequestStatus(value.status) ||
     typeof value.bookingRequestReference !== "string" ||
     !bookingRequestReference.test(value.bookingRequestReference) ||
     typeof value.responseDeadline !== "string" ||
@@ -131,7 +176,7 @@ function pendingResultFrom(value: Record<string, unknown>) {
     return undefined;
   }
   return {
-    status: "pending" as const,
+    status: value.status as BookingRequestStatus,
     bookingRequestReference: value.bookingRequestReference,
     responseDeadline: value.responseDeadline,
   };
@@ -192,16 +237,14 @@ function preparationFrom(
       },
     };
   }
-  const pending = pendingResultFrom(result);
-  if (pending) return pending;
+  const existingRequest = existingRequestResultFrom(result);
+  if (existingRequest) return existingRequest;
   if (
     hasExactKeys(result, ["status"]) &&
-    stateStatuses.has(
-      result.status as Exclude<SubmissionResult["status"], "pending">,
-    )
+    stateStatuses.has(result.status as SubmissionFailureStatus)
   ) {
     return {
-      status: result.status as Exclude<SubmissionResult["status"], "pending">,
+      status: result.status as SubmissionFailureStatus,
     };
   }
   throw new Error(
@@ -263,10 +306,21 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
       authorization.providerReference === null &&
       authorization.movementReference === null &&
       snapshot.release === null;
+    const startsCleanupRelease =
+      authorization?.status === "succeeded" &&
+      snapshot.capture === null &&
+      snapshot.release?.status === "pending" &&
+      snapshot.release.providerRequestId === null &&
+      snapshot.release.providerReference === null &&
+      snapshot.release.movementReference === null &&
+      snapshot.release.reconciliationRequired === false &&
+      snapshot.release.retrySafe === false;
     const { data, error } = await this.client.rpc(
       startsAuthorization
         ? "begin_booking_request_authorization_claim"
-        : "save_booking_request_payment_snapshot",
+        : startsCleanupRelease
+          ? "begin_booking_request_submission_cleanup_release"
+          : "save_booking_request_payment_snapshot",
       {
         target_attempt_id: attemptId,
         target_payment_snapshot: snapshot,
@@ -291,6 +345,7 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
       }
       throw new Error("Payment evidence could not be persisted");
     }
+    if (startsCleanupRelease) return cleanupExecutionPermitFrom(data);
     if (!startsAuthorization) return;
     const result = record(data);
     if (
@@ -317,11 +372,11 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
     );
     if (error) throw new Error("Booking Request finalization is unavailable");
     const result = record(data);
-    const pending = result ? pendingResultFrom(result) : undefined;
-    if (!pending) {
+    const pending = result ? existingRequestResultFrom(result) : undefined;
+    if (!pending || pending.status !== "pending") {
       throw new Error("Database returned an invalid Booking Request result");
     }
-    return pending;
+    return { ...pending, status: "pending" as const };
   }
 
   async lookup(attemptId: string): Promise<SubmissionLookupResult> {
@@ -331,8 +386,10 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
     );
     if (error) throw new Error("Booking Request lookup is unavailable");
     const result = record(data);
-    const pending = result ? pendingResultFrom(result) : undefined;
-    if (pending) return pending;
+    const pending = result ? existingRequestResultFrom(result) : undefined;
+    if (pending?.status === "pending") {
+      return { ...pending, status: "pending" as const };
+    }
     if (
       result &&
       hasExactKeys(result, ["status"]) &&

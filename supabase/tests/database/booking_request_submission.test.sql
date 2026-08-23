@@ -1,10 +1,103 @@
 begin;
 
-select plan(141);
+select plan(277);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
   'Booking Request submission claims one durable attempt before payment'
+);
+select ok(
+  has_function_privilege('service_role',
+    'public.claim_booking_request_action(uuid,uuid,text,text,text)', 'execute')
+  and not has_function_privilege('anon',
+    'public.claim_booking_request_action(uuid,uuid,text,text,text)', 'execute')
+  and not has_function_privilege('authenticated',
+    'public.claim_booking_request_action(uuid,uuid,text,text,text)', 'execute'),
+  'only the service role can claim an actor-authorized lifecycle action'
+);
+select ok(
+  has_function_privilege('service_role',
+    'public.claim_booking_request_expiry(uuid)', 'execute')
+  and not has_function_privilege('anon',
+    'public.claim_booking_request_expiry(uuid)', 'execute')
+  and not has_function_privilege('authenticated',
+    'public.claim_booking_request_expiry(uuid)', 'execute'),
+  'only the service role can claim an internal Booking Request expiry'
+);
+select ok(
+  has_function_privilege('service_role',
+    'public.claim_due_booking_request_releases(integer)', 'execute')
+  and not has_function_privilege('anon',
+    'public.claim_due_booking_request_releases(integer)', 'execute')
+  and not has_function_privilege('authenticated',
+    'public.claim_due_booking_request_releases(integer)', 'execute'),
+  'only the service role can run the bounded lifecycle drain'
+);
+select ok(
+  has_function_privilege('service_role',
+    'public.save_booking_request_release_snapshot(uuid,bigint,uuid,jsonb,jsonb)', 'execute')
+  and not has_function_privilege('anon',
+    'public.save_booking_request_release_snapshot(uuid,bigint,uuid,jsonb,jsonb)', 'execute')
+  and not has_function_privilege('authenticated',
+    'public.save_booking_request_release_snapshot(uuid,bigint,uuid,jsonb,jsonb)', 'execute'),
+  'only the service role can save lifecycle payment-release evidence'
+);
+select ok(
+  has_function_privilege('service_role',
+    'public.finalize_booking_request_release(uuid,bigint,uuid)', 'execute')
+  and not has_function_privilege('anon',
+    'public.finalize_booking_request_release(uuid,bigint,uuid)', 'execute')
+  and not has_function_privilege('authenticated',
+    'public.finalize_booking_request_release(uuid,bigint,uuid)', 'execute'),
+  'only the service role can finalize a Booking Request release'
+);
+select has_column(
+  'public', 'booking_request_submission_attempts', 'intent_dedupe_active',
+  'only active Booking Request intents participate in submission deduplication'
+);
+select ok(
+  (select relrowsecurity from pg_class
+    where oid = 'public.booking_request_release_operations'::regclass),
+  'the release operation ledger has row-level security enabled'
+);
+select ok(
+  not has_table_privilege(
+    'anon', 'public.booking_request_release_operations', 'select'
+  )
+  and not has_table_privilege(
+    'anon', 'public.booking_request_release_operations', 'insert'
+  )
+  and not has_table_privilege(
+    'anon', 'public.booking_request_release_operations', 'update'
+  )
+  and not has_table_privilege(
+    'anon', 'public.booking_request_release_operations', 'delete'
+  )
+  and not has_table_privilege(
+    'authenticated', 'public.booking_request_release_operations', 'select'
+  )
+  and not has_table_privilege(
+    'authenticated', 'public.booking_request_release_operations', 'insert'
+  )
+  and not has_table_privilege(
+    'authenticated', 'public.booking_request_release_operations', 'update'
+  )
+  and not has_table_privilege(
+    'authenticated', 'public.booking_request_release_operations', 'delete'
+  )
+  and not has_table_privilege('service_role',
+    'public.booking_request_release_operations', 'select')
+  and not has_table_privilege('service_role',
+    'public.booking_request_release_operations', 'insert'),
+  'no application role has direct release-ledger access'
+);
+select is(
+  (select count(*)::integer from pg_constraint
+    where conrelid = 'public.booking_request_release_operations'::regclass
+      and contype = 'f'
+      and array_length(conkey, 1) = 2),
+  2,
+  'the release ledger is composite-linked to its work, attempt, and lifecycle'
 );
 select has_function(
   'public', 'execute_simulated_payment_provider_operation',
@@ -135,10 +228,13 @@ select is(
       'public.simulated_payment_provider_operations'::regclass,
       'public.booking_snapshots'::regclass,
       'public.booking_requests'::regclass,
-      'public.owner_request_notifications'::regclass
+      'public.owner_request_notifications'::regclass,
+      'public.booking_request_release_work'::regclass,
+      'public.booking_request_release_operations'::regclass,
+      'public.booking_request_status_notifications'::regclass
     ) and relations.relrowsecurity
   ),
-  10::bigint,
+  13::bigint,
   'all private Booking Request tables have Row Level Security enabled'
 );
 select ok(
@@ -155,7 +251,10 @@ select ok(
       ('public.simulated_payment_provider_operations'),
       ('public.booking_snapshots'),
       ('public.booking_requests'),
-      ('public.owner_request_notifications')
+      ('public.owner_request_notifications'),
+      ('public.booking_request_release_work'),
+      ('public.booking_request_release_operations'),
+      ('public.booking_request_status_notifications')
     ) relations(table_name)
     cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')) privileges(privilege_name)
     where has_table_privilege(roles.role_name, relations.table_name, privileges.privilege_name)
@@ -685,6 +784,112 @@ select snapshot
 from authorized_payment;
 grant select on pending_authorization_payment to service_role;
 
+savepoint authorization_null_input_audit;
+create temporary table authorization_null_baseline as
+select to_jsonb(attempts) as attempt_record,
+  (select count(*)::integer from public.booking_request_authorization_claims)
+    as claim_count,
+  (select count(*)::integer
+    from public.booking_request_authorization_reconciliation_outbox) as outbox_count,
+  (select count(*)::integer from public.simulated_payment_provider_operations)
+    as provider_count
+from public.booking_request_submission_attempts attempts
+where attempts.id = (
+  select (result ->> 'attemptId')::uuid from prepared_submission
+);
+grant select on authorization_null_baseline to service_role;
+create temporary table authorization_null_results (
+  case_name text,
+  status text
+);
+grant select, insert on authorization_null_results to service_role;
+set local role service_role;
+insert into authorization_null_results
+select required_key,
+  public.begin_booking_request_authorization_claim(
+    (select (result ->> 'attemptId')::uuid from prepared_submission),
+    jsonb_set(snapshot, array['authorization', required_key], 'null'::jsonb),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  ) ->> 'status'
+from pending_authorization_payment
+cross join (values
+  ('paymentLifecycleId'), ('kind'), ('logicalOperationId'), ('attemptId'),
+  ('status'), ('amountFils'), ('reconciliationRequired'), ('retrySafe')
+) required(required_key);
+select results_eq(
+  $$select count(*)::integer, bool_and(status = 'invalid')
+    from authorization_null_results$$,
+  $$values (8::integer, true)$$,
+  'the authorization issuer rejects every required pending-operation binding when JSON null'
+);
+reset role;
+truncate authorization_null_results;
+set local role service_role;
+insert into authorization_null_results values
+  ('sql-null-snapshot', public.begin_booking_request_authorization_claim(
+    (select (result ->> 'attemptId')::uuid from prepared_submission),
+    null,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  ) ->> 'status'),
+  ('json-null-snapshot', public.begin_booking_request_authorization_claim(
+    (select (result ->> 'attemptId')::uuid from prepared_submission),
+    'null'::jsonb,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  ) ->> 'status'),
+  ('json-null-authorization', public.begin_booking_request_authorization_claim(
+    (select (result ->> 'attemptId')::uuid from prepared_submission),
+    jsonb_set((select snapshot from pending_authorization_payment),
+      '{authorization}', 'null'::jsonb),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  ) ->> 'status'),
+  ('json-null-provider', public.begin_booking_request_authorization_claim(
+    (select (result ->> 'attemptId')::uuid from prepared_submission),
+    (select snapshot from pending_authorization_payment), 'null'::jsonb
+  ) ->> 'status'),
+  ('json-null-provider-environment',
+    public.begin_booking_request_authorization_claim(
+      (select (result ->> 'attemptId')::uuid from prepared_submission),
+      (select snapshot from pending_authorization_payment),
+      '{"provider":"fictional-payments","environment":null,"merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    ) ->> 'status');
+select results_eq(
+  $$select count(*)::integer, bool_and(status = 'invalid')
+    from authorization_null_results$$,
+  $$values (5::integer, true)$$,
+  'the authorization issuer rejects null or non-object snapshot and provider inputs'
+);
+reset role;
+select results_eq(
+  $$select to_jsonb(attempts) = baseline.attempt_record,
+      (select count(*)::integer from public.booking_request_authorization_claims)
+        = baseline.claim_count,
+      (select count(*)::integer
+        from public.booking_request_authorization_reconciliation_outbox)
+        = baseline.outbox_count,
+      (select count(*)::integer from public.simulated_payment_provider_operations)
+        = baseline.provider_count
+    from authorization_null_baseline baseline
+    join public.booking_request_submission_attempts attempts
+      on attempts.id = (select (result ->> 'attemptId')::uuid from prepared_submission)$$,
+  $$values (true, true, true, true)$$,
+  'invalid authorization inputs create no claim, outbox, provider row, or attempt mutation'
+);
+set local role service_role;
+create temporary table authorization_after_null_audit as
+select public.begin_booking_request_authorization_claim(
+  (select (result ->> 'attemptId')::uuid from prepared_submission),
+  (select snapshot from pending_authorization_payment),
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+) as result;
+select is(
+  (select result -> 'executionPermit' ->> 'purpose'
+    from authorization_after_null_audit),
+  'booking-request-authorization',
+  'authorization-purpose issuance remains available after fail-closed null attempts'
+);
+reset role;
+rollback to savepoint authorization_null_input_audit;
+
 set local role service_role;
 select is(
   public.classify_booking_request_authorization_claim_persistence(
@@ -842,7 +1047,10 @@ select jsonb_build_object(
     'merchantId', claims.merchant_id,
     'terminalId', claims.terminal_id
   ),
+  'permitPurpose', 'booking-request-authorization',
   'idempotencyKey', claims.provider_idempotency_key,
+  'notAfter', to_char(claims.not_after at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   'requestFingerprint', repeat('a', 64),
   'paymentLifecycleId', claims.payment_lifecycle_id,
   'logicalOperationId', claims.logical_operation_id,
@@ -851,10 +1059,129 @@ select jsonb_build_object(
   'amountFils', claims.amount_fils,
   'currency', claims.currency,
   'claimId', claims.id,
-  'claimGeneration', claims.generation
+  'claimGeneration', claims.generation,
+  'stateRevision', null,
+  'cleanupAttemptId', null,
+  'workId', null,
+  'leaseGeneration', null,
+  'leaseToken', null,
+  'operationId', null,
+  'operationGeneration', null
 ) as operation
 from public.booking_request_authorization_claims claims;
 grant select on simulated_authorization_operation to service_role;
+
+savepoint provider_query_null_input_audit;
+create temporary table provider_query_null_baseline as
+select to_jsonb(claims) as claim_record,
+  (select count(*)::integer from public.simulated_payment_provider_operations)
+    as provider_count
+from public.booking_request_authorization_claims claims;
+create function pg_temp.assert_null_query_bindings_rejected(target_operation jsonb)
+returns void
+language plpgsql
+as $$
+declare required_key text;
+declare invalid_operation jsonb;
+begin
+  foreach required_key in array array[
+    'provider', 'environment', 'merchantId', 'terminalId'
+  ] loop
+    invalid_operation := jsonb_set(
+      target_operation, array['providerIdentity', required_key], 'null'::jsonb
+    );
+    begin
+      perform public.query_simulated_payment_provider_operation(
+        invalid_operation, null, null, 'succeeded'
+      );
+      raise exception 'provider query accepted null binding %', required_key
+        using errcode = 'P0001';
+    exception when sqlstate '22023' or sqlstate 'RC409' then null;
+    end;
+  end loop;
+  foreach required_key in array array[
+    'requestFingerprint', 'paymentLifecycleId', 'logicalOperationId',
+    'physicalAttemptId', 'operationKind', 'amountFils', 'currency'
+  ] loop
+    invalid_operation := jsonb_set(
+      target_operation, array[required_key], 'null'::jsonb
+    );
+    begin
+      perform public.query_simulated_payment_provider_operation(
+        invalid_operation, null, null, 'succeeded'
+      );
+      raise exception 'provider query accepted null binding %', required_key
+        using errcode = 'P0001';
+    exception when sqlstate '22023' or sqlstate 'RC409' then null;
+    end;
+  end loop;
+end;
+$$;
+create function pg_temp.assert_query_objects_rejected(target_operation jsonb)
+returns void
+language plpgsql
+as $$
+begin
+  begin
+    perform public.query_simulated_payment_provider_operation(
+      null, null, null, 'succeeded'
+    );
+    raise exception 'provider query accepted SQL null operation' using errcode='P0001';
+  exception when sqlstate '22023' then null;
+  end;
+  begin
+    perform public.query_simulated_payment_provider_operation(
+      'null'::jsonb, null, null, 'succeeded'
+    );
+    raise exception 'provider query accepted JSON null operation' using errcode='P0001';
+  exception when sqlstate '22023' then null;
+  end;
+  begin
+    perform public.query_simulated_payment_provider_operation(
+      jsonb_set(target_operation, '{providerIdentity}', 'null'::jsonb),
+      null, null, 'succeeded'
+    );
+    raise exception 'provider query accepted JSON null provider' using errcode='P0001';
+  exception when sqlstate '22023' then null;
+  end;
+  begin
+    perform public.query_simulated_payment_provider_operation(
+      target_operation, null, null, null
+    );
+    raise exception 'provider query accepted null outcome' using errcode='P0001';
+  exception when sqlstate '22023' then null;
+  end;
+end;
+$$;
+grant select on provider_query_null_baseline to service_role;
+set local role service_role;
+select lives_ok(
+  format(
+    'select pg_temp.assert_null_query_bindings_rejected(%L::jsonb)',
+    (select operation::text from simulated_authorization_operation)
+  ),
+  'provider query rejects every required authorization binding when JSON null'
+);
+select lives_ok(
+  format(
+    'select pg_temp.assert_query_objects_rejected(%L::jsonb)',
+    (select operation::text from simulated_authorization_operation)
+  ),
+  'provider query rejects null operation, provider object, and outcome inputs'
+);
+reset role;
+select results_eq(
+  $$select to_jsonb(claims) = baseline.claim_record,
+      (select count(*)::integer from public.simulated_payment_provider_operations)
+        = baseline.provider_count
+    from provider_query_null_baseline baseline
+    join public.booking_request_authorization_claims claims
+      on claims.id = (baseline.claim_record ->> 'id')::uuid$$,
+  $$values (true, true)$$,
+  'invalid provider queries mutate neither authorization state nor provider ledger'
+);
+rollback to savepoint provider_query_null_input_audit;
+
 create temporary table simulated_authorization_results (result jsonb);
 grant select, insert on simulated_authorization_results to service_role;
 set local role service_role;
@@ -902,6 +1229,19 @@ select is(
   ) ->> 'outcome',
   'succeeded',
   'reconciliation discovers the immutable operation when a crash lost provider identifiers'
+);
+select is(
+  public.query_simulated_payment_provider_operation(
+    jsonb_set(
+      (select operation from simulated_authorization_operation),
+      '{requestFingerprint}', to_jsonb(repeat('c', 64))
+    ),
+    null,
+    null,
+    'succeeded'
+  ) ->> 'outcome',
+  'not-executed',
+  'reconciliation reports authoritative ledger absence without inventing provider identity'
 );
 select throws_ok(
   format(
@@ -1290,15 +1630,176 @@ select snapshot || jsonb_build_object(
 ) as snapshot
 from authorized_payment;
 grant select on pending_release_payment to service_role;
+
+savepoint cleanup_issuer_null_input_audit;
+create temporary table cleanup_issuer_null_baseline as
+select to_jsonb(attempts) as attempt_record, to_jsonb(claims) as claim_record,
+  (select count(*)::integer
+    from public.booking_request_authorization_reconciliation_outbox) as outbox_count,
+  (select count(*)::integer from public.simulated_payment_provider_operations)
+    as provider_count,
+  (select count(*)::integer from public.booking_request_release_work) as work_count
+from public.booking_request_submission_attempts attempts
+join public.booking_request_authorization_claims claims
+  on claims.attempt_id = attempts.id
+where attempts.id = (
+  select (result ->> 'attemptId')::uuid from prepared_submission
+);
+create function pg_temp.assert_null_cleanup_bindings_rejected(
+  target_attempt_id uuid,
+  target_snapshot jsonb,
+  target_provider jsonb
+)
+returns void
+language plpgsql
+as $$
+declare required_key text;
+declare invalid_snapshot jsonb;
+declare invalid_provider jsonb;
+begin
+  foreach required_key in array array[
+    'paymentLifecycleId', 'kind', 'logicalOperationId', 'attemptId',
+    'status', 'amountFils', 'reconciliationRequired', 'retrySafe'
+  ] loop
+    invalid_snapshot := jsonb_set(
+      target_snapshot, array['release', required_key], 'null'::jsonb
+    );
+    begin
+      perform public.begin_booking_request_submission_cleanup_release(
+        target_attempt_id, invalid_snapshot, target_provider
+      );
+      raise exception 'cleanup issuer accepted null binding %', required_key
+        using errcode = 'P0001';
+    exception when sqlstate 'RC409' then null;
+    end;
+  end loop;
+  foreach required_key in array array[
+    'provider', 'environment', 'merchantId', 'terminalId'
+  ] loop
+    invalid_provider := jsonb_set(
+      target_provider, array[required_key], 'null'::jsonb
+    );
+    begin
+      perform public.begin_booking_request_submission_cleanup_release(
+        target_attempt_id, target_snapshot, invalid_provider
+      );
+      raise exception 'cleanup issuer accepted null provider %', required_key
+        using errcode = 'P0001';
+    exception when sqlstate 'RC409' then null;
+    end;
+  end loop;
+end;
+$$;
+create function pg_temp.assert_cleanup_objects_rejected(
+  target_attempt_id uuid,
+  target_snapshot jsonb,
+  target_provider jsonb
+)
+returns void
+language plpgsql
+as $$
+begin
+  begin
+    perform public.begin_booking_request_submission_cleanup_release(
+      null, target_snapshot, target_provider
+    );
+    raise exception 'cleanup issuer accepted null attempt' using errcode='P0001';
+  exception when sqlstate 'RC409' then null;
+  end;
+  begin
+    perform public.begin_booking_request_submission_cleanup_release(
+      target_attempt_id, 'null'::jsonb, target_provider
+    );
+    raise exception 'cleanup issuer accepted JSON null snapshot' using errcode='P0001';
+  exception when sqlstate 'RC409' then null;
+  end;
+  begin
+    perform public.begin_booking_request_submission_cleanup_release(
+      target_attempt_id,
+      jsonb_set(target_snapshot, '{release}', 'null'::jsonb), target_provider
+    );
+    raise exception 'cleanup issuer accepted JSON null release' using errcode='P0001';
+  exception when sqlstate 'RC409' then null;
+  end;
+  begin
+    perform public.begin_booking_request_submission_cleanup_release(
+      target_attempt_id,
+      jsonb_set(target_snapshot, '{authorization}', 'null'::jsonb), target_provider
+    );
+    raise exception 'cleanup issuer accepted JSON null authorization' using errcode='P0001';
+  exception when sqlstate 'RC409' then null;
+  end;
+  begin
+    perform public.begin_booking_request_submission_cleanup_release(
+      target_attempt_id, target_snapshot, 'null'::jsonb
+    );
+    raise exception 'cleanup issuer accepted JSON null provider' using errcode='P0001';
+  exception when sqlstate 'RC409' then null;
+  end;
+end;
+$$;
+grant select on cleanup_issuer_null_baseline to service_role;
 set local role service_role;
 select lives_ok(
   format(
-    'select public.save_booking_request_payment_snapshot(%L::uuid, %L::jsonb, %L::jsonb)',
+    'select pg_temp.assert_null_cleanup_bindings_rejected(%L::uuid,%L::jsonb,%L::jsonb)',
     (select result ->> 'attemptId' from prepared_submission),
     (select snapshot::text from pending_release_payment),
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
   ),
-  'a release that is about to execute is durably persisted before its provider call'
+  'cleanup issuer rejects every required release and provider binding when JSON null'
+);
+select lives_ok(
+  format(
+    'select pg_temp.assert_cleanup_objects_rejected(%L::uuid,%L::jsonb,%L::jsonb)',
+    (select result ->> 'attemptId' from prepared_submission),
+    (select snapshot::text from pending_release_payment),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ),
+  'cleanup issuer rejects null attempt, snapshot, payment operation, and provider objects'
+);
+reset role;
+select results_eq(
+  $$select to_jsonb(attempts) = baseline.attempt_record,
+      to_jsonb(claims) = baseline.claim_record,
+      (select count(*)::integer
+        from public.booking_request_authorization_reconciliation_outbox)
+        = baseline.outbox_count,
+      (select count(*)::integer from public.simulated_payment_provider_operations)
+        = baseline.provider_count,
+      (select count(*)::integer from public.booking_request_release_work)
+        = baseline.work_count
+    from cleanup_issuer_null_baseline baseline
+    join public.booking_request_submission_attempts attempts
+      on attempts.id = (baseline.attempt_record ->> 'id')::uuid
+    join public.booking_request_authorization_claims claims
+      on claims.id = (baseline.claim_record ->> 'id')::uuid$$,
+  $$values (true, true, true, true, true)$$,
+  'invalid cleanup inputs mutate no attempt, claim, outbox, provider, or release work'
+);
+set local role service_role;
+create temporary table cleanup_release_permit as
+select public.begin_booking_request_submission_cleanup_release(
+  ((select result ->> 'attemptId' from prepared_submission))::uuid,
+  (select snapshot from pending_release_payment),
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+) as result;
+grant select on cleanup_release_permit to service_role;
+select is(
+  (select result -> 'executionPermit' ->> 'purpose' from cleanup_release_permit),
+  'booking-request-submission-cleanup',
+  'a release that is about to execute is durably persisted with its cleanup permit'
+);
+create temporary table reissued_cleanup_release_permit as
+select public.begin_booking_request_submission_cleanup_release(
+  ((select result ->> 'attemptId' from prepared_submission))::uuid,
+  (select snapshot from pending_release_payment),
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+) as result;
+select is(
+  (select result -> 'executionPermit' from reissued_cleanup_release_permit),
+  (select result -> 'executionPermit' from cleanup_release_permit),
+  'reissuing the same pending cleanup returns the byte-equivalent permit window'
 );
 reset role;
 savepoint absent_release_evidence_expiry;
@@ -1337,19 +1838,26 @@ select jsonb_build_object(
     'merchantId', claims.merchant_id,
     'terminalId', claims.terminal_id
   ),
-  'idempotencyKey', null,
-  'requestFingerprint', repeat('d', 64),
+  'permitPurpose', permit.result -> 'executionPermit' ->> 'purpose',
+  'idempotencyKey', permit.result -> 'executionPermit' ->> 'idempotencyKey',
+  'requestFingerprint', permit.result -> 'executionPermit' ->> 'requestFingerprint',
+  'notAfter', permit.result -> 'executionPermit' ->> 'notAfter',
   'paymentLifecycleId', claims.payment_lifecycle_id,
   'logicalOperationId', payments.snapshot -> 'release' ->> 'logicalOperationId',
   'physicalAttemptId', payments.snapshot -> 'release' ->> 'attemptId',
   'operationKind', 'release',
   'amountFils', claims.amount_fils,
   'currency', claims.currency,
-  'claimId', null,
-  'claimGeneration', null
+  'claimId', permit.result -> 'executionPermit' ->> 'claimId',
+  'claimGeneration', (permit.result -> 'executionPermit' ->> 'generation')::integer,
+  'stateRevision', (permit.result -> 'executionPermit' ->> 'stateRevision')::bigint,
+  'cleanupAttemptId', permit.result -> 'executionPermit' ->> 'attemptId',
+  'workId', null, 'leaseGeneration', null, 'leaseToken', null,
+  'operationId', null, 'operationGeneration', null
 ) as operation
 from public.booking_request_authorization_claims claims
-cross join pending_release_payment payments;
+cross join pending_release_payment payments
+cross join cleanup_release_permit permit;
 grant select on failed_release_operation to service_role;
 create temporary table failed_release_result (result jsonb);
 grant select, insert on failed_release_result to service_role;
@@ -1439,23 +1947,50 @@ select results_eq(
   $$values ((select result ->> 'physicalAttemptId' from first_release_retry_work), true)$$,
   'a crashed retry worker receives a new lease for the same persisted physical attempt'
 );
+create temporary table retry_cleanup_release_permit as
+select public.begin_booking_request_submission_cleanup_release(
+  ((select result ->> 'attemptId' from prepared_submission))::uuid,
+  recovered.result -> 'paymentSnapshot',
+  recovered.result -> 'providerIdentity'
+) as result
+from recovered_release_retry_work recovered;
+select results_eq(
+  $$select retry.result -> 'executionPermit' ->> 'purpose',
+      retry.result -> 'executionPermit' ->> 'stateRevision'
+        <> first.result -> 'executionPermit' ->> 'stateRevision',
+      retry.result -> 'executionPermit' ->> 'idempotencyKey'
+        <> first.result -> 'executionPermit' ->> 'idempotencyKey'
+    from retry_cleanup_release_permit retry
+    cross join cleanup_release_permit first$$,
+  $$values ('booking-request-submission-cleanup'::text, true, true)$$,
+  'a distinct cleanup retry receives a new revision-bound provider identity'
+);
 create temporary table successful_release_retry_result as
 select public.execute_simulated_payment_provider_operation(
   jsonb_build_object(
     'providerIdentity', recovered.result -> 'providerIdentity',
-    'idempotencyKey', null,
-    'requestFingerprint', repeat('e', 64),
+    'permitPurpose', permit.result -> 'executionPermit' ->> 'purpose',
+    'idempotencyKey', permit.result -> 'executionPermit' ->> 'idempotencyKey',
+    'requestFingerprint', permit.result -> 'executionPermit' ->> 'requestFingerprint',
+    'notAfter', permit.result -> 'executionPermit' ->> 'notAfter',
     'paymentLifecycleId', recovered.result ->> 'paymentLifecycleId',
     'logicalOperationId', recovered.result ->> 'logicalOperationId',
     'physicalAttemptId', recovered.result ->> 'physicalAttemptId',
     'operationKind', 'release',
     'amountFils', (recovered.result ->> 'amountFils')::bigint,
     'currency', recovered.result ->> 'currency',
-    'claimId', null,
-    'claimGeneration', null
+    'claimId', permit.result -> 'executionPermit' ->> 'claimId',
+    'claimGeneration',
+      (permit.result -> 'executionPermit' ->> 'generation')::integer,
+    'stateRevision',
+      (permit.result -> 'executionPermit' ->> 'stateRevision')::bigint,
+    'cleanupAttemptId', permit.result -> 'executionPermit' ->> 'attemptId',
+    'workId', null, 'leaseGeneration', null, 'leaseToken', null,
+    'operationId', null, 'operationGeneration', null
   ), 'succeeded'
 ) as result
-from recovered_release_retry_work recovered;
+from recovered_release_retry_work recovered
+cross join retry_cleanup_release_permit permit;
 select is(
   public.complete_booking_request_authorization_reconciliation(
     ((select result ->> 'claimId' from first_release_retry_work))::uuid,
@@ -1528,19 +2063,28 @@ select jsonb_build_object(
     'merchantId', claims.merchant_id,
     'terminalId', claims.terminal_id
   ),
-  'idempotencyKey', null,
-  'requestFingerprint', repeat('c', 64),
+  'permitPurpose', permit.result -> 'executionPermit' ->> 'purpose',
+  'idempotencyKey', permit.result -> 'executionPermit' ->> 'idempotencyKey',
+  'requestFingerprint', permit.result -> 'executionPermit' ->> 'requestFingerprint',
+  'notAfter', permit.result -> 'executionPermit' ->> 'notAfter',
   'paymentLifecycleId', claims.payment_lifecycle_id,
   'logicalOperationId', payments.snapshot -> 'release' ->> 'logicalOperationId',
   'physicalAttemptId', payments.snapshot -> 'release' ->> 'attemptId',
   'operationKind', 'release',
   'amountFils', claims.amount_fils,
   'currency', claims.currency,
-  'claimId', null,
-  'claimGeneration', null
+  'claimId', permit.result -> 'executionPermit' ->> 'claimId',
+  'claimGeneration',
+    (permit.result -> 'executionPermit' ->> 'generation')::integer,
+  'stateRevision',
+    (permit.result -> 'executionPermit' ->> 'stateRevision')::bigint,
+  'cleanupAttemptId', permit.result -> 'executionPermit' ->> 'attemptId',
+  'workId', null, 'leaseGeneration', null, 'leaseToken', null,
+  'operationId', null, 'operationGeneration', null
 ) as operation
 from public.booking_request_authorization_claims claims
-cross join pending_release_payment payments;
+cross join pending_release_payment payments
+cross join cleanup_release_permit permit;
 grant select on simulated_release_operation to service_role;
 set local role service_role;
 select lives_ok(
@@ -1590,19 +2134,28 @@ select jsonb_build_object(
     'merchantId', claims.merchant_id,
     'terminalId', claims.terminal_id
   ),
-  'idempotencyKey', null,
-  'requestFingerprint', repeat('f', 64),
+  'permitPurpose', permit.result -> 'executionPermit' ->> 'purpose',
+  'idempotencyKey', permit.result -> 'executionPermit' ->> 'idempotencyKey',
+  'requestFingerprint', permit.result -> 'executionPermit' ->> 'requestFingerprint',
+  'notAfter', permit.result -> 'executionPermit' ->> 'notAfter',
   'paymentLifecycleId', claims.payment_lifecycle_id,
   'logicalOperationId', payments.snapshot -> 'release' ->> 'logicalOperationId',
   'physicalAttemptId', payments.snapshot -> 'release' ->> 'attemptId',
   'operationKind', 'release',
   'amountFils', claims.amount_fils,
   'currency', claims.currency,
-  'claimId', null,
-  'claimGeneration', null
+  'claimId', permit.result -> 'executionPermit' ->> 'claimId',
+  'claimGeneration',
+    (permit.result -> 'executionPermit' ->> 'generation')::integer,
+  'stateRevision',
+    (permit.result -> 'executionPermit' ->> 'stateRevision')::bigint,
+  'cleanupAttemptId', permit.result -> 'executionPermit' ->> 'attemptId',
+  'workId', null, 'leaseGeneration', null, 'leaseToken', null,
+  'operationId', null, 'operationGeneration', null
 ) as operation
 from public.booking_request_authorization_claims claims
-cross join pending_release_payment payments;
+cross join pending_release_payment payments
+cross join cleanup_release_permit permit;
 grant select on lost_release_operation to service_role;
 create temporary table lost_release_result (result jsonb);
 grant select, insert on lost_release_result to service_role;
@@ -2006,6 +2559,2068 @@ select results_eq(
   $$values (1000::smallint, 11000000::bigint)$$,
   'the immutable Booking Snapshot preserves the exact ten-percent commission'
 );
+
+create temporary table booking_request_lifecycle_target as
+select id, owner_user_id, customer_user_id, booking_request_reference
+from public.booking_requests limit 1;
+grant select on booking_request_lifecycle_target to service_role, authenticated;
+
+savepoint booking_request_null_withdraw_actor;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    null, (select id from booking_request_lifecycle_target),
+    'withdraw', null, null
+  ) ->> 'status',
+  'access-required',
+  'a null actor cannot withdraw a Booking Request'
+);
+reset role;
+rollback to savepoint booking_request_null_withdraw_actor;
+
+savepoint booking_request_null_accept_actor;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    null, (select id from booking_request_lifecycle_target),
+    'accept', null, null
+  ) ->> 'status',
+  'access-required',
+  'a null actor cannot accept a Booking Request'
+);
+reset role;
+rollback to savepoint booking_request_null_accept_actor;
+
+savepoint booking_request_null_decline_actor;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    null, (select id from booking_request_lifecycle_target),
+    'decline', 'other', null
+  ) ->> 'status',
+  'access-required',
+  'a null actor cannot decline a Booking Request'
+);
+reset role;
+rollback to savepoint booking_request_null_decline_actor;
+
+savepoint booking_request_null_action;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    (select customer_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target), null, null, null
+  ) ->> 'status',
+  'access-required',
+  'a null action cannot mutate a Booking Request'
+);
+reset role;
+rollback to savepoint booking_request_null_action;
+
+select results_eq(
+  $$select requests.status,
+      claims.state,
+      count(distinct work.id)::integer,
+      count(distinct provider.id)::integer,
+      count(distinct notifications.id)::integer
+    from public.booking_requests requests
+    join public.booking_request_submission_attempts attempts
+      on attempts.booking_request_id = requests.id
+    join public.booking_request_authorization_claims claims
+      on claims.attempt_id = attempts.id
+    left join public.booking_request_release_work work
+      on work.attempt_id = attempts.id
+    left join public.booking_request_release_operations operations
+      on operations.work_id = work.id
+    left join public.simulated_payment_provider_operations provider
+      on provider.provider_idempotency_key = operations.provider_idempotency_key
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    where requests.id = (select id from booking_request_lifecycle_target)
+    group by requests.status, claims.state$$,
+  $$values ('pending'::text, 'converted'::public.booking_request_authorization_claim_state,
+      0::integer, 0::integer, 0::integer)$$,
+  'null action inputs create no release work, provider operation, hold change, or notification'
+);
+
+savepoint booking_request_premature_expiry;
+set local role service_role;
+select is(
+  public.claim_booking_request_expiry(
+    (select id from booking_request_lifecycle_target)
+  ) ->> 'status',
+  'not-due',
+  'the internal expiry claim independently rejects a pre-deadline request'
+);
+reset role;
+select results_eq(
+  $$select requests.status, count(notifications.id)::integer
+    from public.booking_requests requests
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    where requests.id = (select id from booking_request_lifecycle_target)
+    group by requests.status$$,
+  $$values ('pending'::text, 0::integer)$$,
+  'a premature expiry claim cannot accept the request or notify either party'
+);
+rollback to savepoint booking_request_premature_expiry;
+
+savepoint booking_request_cross_party_authorization;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    '00000000-0000-0000-0000-000000003204',
+    (select id from booking_request_lifecycle_target), 'accept', null, null
+  ) ->> 'status', 'access-required',
+  'a different Cottage Owner cannot inspect or act on a pending Booking Request'
+);
+select is(
+  public.claim_booking_request_action(
+    '00000000-0000-0000-0000-000000003203',
+    (select id from booking_request_lifecycle_target), 'withdraw', null, null
+  ) ->> 'status', 'access-required',
+  'a different Customer cannot inspect or withdraw a pending Booking Request'
+);
+reset role;
+update public.booking_requests set status = 'processing';
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    '00000000-0000-0000-0000-000000003204',
+    (select id from booking_request_lifecycle_target), 'decline', 'other', null
+  ) ->> 'status', 'access-required',
+  'a different Cottage Owner cannot inspect processing release work'
+);
+select is(
+  public.claim_booking_request_action(
+    '00000000-0000-0000-0000-000000003203',
+    (select id from booking_request_lifecycle_target), 'withdraw', null, null
+  ) ->> 'status', 'access-required',
+  'a different Customer cannot inspect processing release work'
+);
+reset role;
+update public.booking_requests set status = 'declined';
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    '00000000-0000-0000-0000-000000003204',
+    (select id from booking_request_lifecycle_target), 'accept', null, null
+  ) ->> 'status', 'access-required',
+  'a different Cottage Owner cannot inspect a terminal Booking Request'
+);
+select is(
+  public.claim_booking_request_action(
+    '00000000-0000-0000-0000-000000003203',
+    (select id from booking_request_lifecycle_target), 'withdraw', null, null
+  ) ->> 'status', 'access-required',
+  'a different Customer cannot inspect a terminal Booking Request'
+);
+reset role;
+rollback to savepoint booking_request_cross_party_authorization;
+
+savepoint booking_request_current_owner_authorization;
+create temporary table current_owner_authorization_results (
+  category text,
+  action text,
+  status text
+);
+grant select, insert on current_owner_authorization_results to service_role;
+set local role service_role;
+insert into current_owner_authorization_results values
+  ('wrong', 'accept', public.claim_booking_request_action(
+    '00000000-0000-0000-0000-000000003204',
+    (select id from booking_request_lifecycle_target), 'accept', null, null
+  ) ->> 'status'),
+  ('wrong', 'decline', public.claim_booking_request_action(
+    '00000000-0000-0000-0000-000000003204',
+    (select id from booking_request_lifecycle_target), 'decline', 'other', null
+  ) ->> 'status');
+reset role;
+update public.account_contexts set owner_approval_state = 'suspended'
+where user_id = (select owner_user_id from booking_request_lifecycle_target);
+set local role service_role;
+insert into current_owner_authorization_results values
+  ('suspended', 'accept', public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target), 'accept', null, null
+  ) ->> 'status'),
+  ('suspended', 'decline', public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target), 'decline', 'other', null
+  ) ->> 'status');
+reset role;
+update public.account_contexts set owner_approval_state = 'expired'
+where user_id = (select owner_user_id from booking_request_lifecycle_target);
+set local role service_role;
+insert into current_owner_authorization_results values
+  ('expired', 'accept', public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target), 'accept', null, null
+  ) ->> 'status'),
+  ('expired', 'decline', public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target), 'decline', 'other', null
+  ) ->> 'status');
+reset role;
+update public.account_contexts set owner_approval_state = 'prospective'
+where user_id = (select owner_user_id from booking_request_lifecycle_target);
+set local role service_role;
+insert into current_owner_authorization_results values
+  ('revoked', 'accept', public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target), 'accept', null, null
+  ) ->> 'status'),
+  ('revoked', 'decline', public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target), 'decline', 'other', null
+  ) ->> 'status');
+reset role;
+select results_eq(
+  $$select category, action, status
+    from current_owner_authorization_results order by category, action$$,
+  $$values
+    ('expired'::text, 'accept'::text, 'access-required'::text),
+    ('expired', 'decline', 'access-required'),
+    ('revoked', 'accept', 'access-required'),
+    ('revoked', 'decline', 'access-required'),
+    ('suspended', 'accept', 'access-required'),
+    ('suspended', 'decline', 'access-required'),
+    ('wrong', 'accept', 'access-required'),
+    ('wrong', 'decline', 'access-required')$$,
+  'only the currently approved owning Cottage Owner can accept or decline'
+);
+select results_eq(
+  $$select requests.status, commitments.status::text,
+      bool_and(occupancies.active),
+      count(distinct work.id)::integer,
+      count(distinct notifications.id)::integer
+    from public.booking_requests requests
+    join public.cottage_booking_period_commitments commitments
+      on commitments.id = requests.booking_period_commitment_id
+    join public.cottage_booking_period_occupancies occupancies
+      on occupancies.booking_period_commitment_id = commitments.id
+    left join public.booking_request_release_work work
+      on work.booking_request_id = requests.id
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    where requests.id = (select id from booking_request_lifecycle_target)
+    group by requests.status, commitments.status$$,
+  $$values ('pending'::text, 'pending_hold'::text, true, 0::integer, 0::integer)$$,
+  'unauthorised Owner decisions cause zero lifecycle, inventory, or notification mutation'
+);
+rollback to savepoint booking_request_current_owner_authorization;
+
+savepoint booking_request_expiry_ignores_owner_approval;
+update public.account_contexts set owner_approval_state = 'prospective'
+where user_id = (select owner_user_id from booking_request_lifecycle_target);
+update public.booking_requests
+set response_deadline = due.deadline,
+  created_at = due.deadline - interval '4 hours'
+from (select clock_timestamp() - interval '1 millisecond' as deadline) due;
+set local role service_role;
+select is(
+  public.claim_booking_request_expiry(
+    (select id from booking_request_lifecycle_target)
+  ) ->> 'status',
+  'release-required',
+  'direct expiry claims overdue work without an Owner action or approval state'
+);
+reset role;
+select results_eq(
+  $$select work.outcome, work.actor_user_id is null,
+      contexts.owner_approval_state::text
+    from public.booking_request_release_work work
+    join public.booking_requests requests on requests.id = work.booking_request_id
+    join public.account_contexts contexts
+      on contexts.user_id = requests.owner_user_id$$,
+  $$values ('expired'::text, true, 'prospective'::text)$$,
+  'expiry records a system-owned outcome while leaving Owner approval untouched'
+);
+rollback to savepoint booking_request_expiry_ignores_owner_approval;
+
+savepoint booking_request_owner_acceptance;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target),
+    'accept', null, null
+  ) ->> 'status',
+  'accepted',
+  'the authorised Cottage Owner accepts the complete request atomically'
+);
+reset role;
+select results_eq(
+  $$select requests.status, commitments.status::text,
+      bool_and(occupancies.active), count(notifications.id)::integer
+    from public.booking_requests requests
+    join public.cottage_booking_period_commitments commitments
+      on commitments.id = requests.booking_period_commitment_id
+    join public.cottage_booking_period_occupancies occupancies
+      on occupancies.booking_period_commitment_id = commitments.id
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    group by requests.status, commitments.status$$,
+  $$values ('accepted'::text, 'pending_hold'::text, true, 2::integer)$$,
+  'acceptance retains the Payment Authorisation and active Pending Hold while notifying both parties once'
+);
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select is(
+  jsonb_array_length(public.list_owner_booking_request_notifications() -> 0
+    -> 'statusNotifications')::text || ':' ||
+    (public.list_owner_booking_request_notifications() -> 0
+      -> 'statusNotifications' -> 0 ->> 'status'),
+  '1:accepted',
+  'the owning Cottage Owner reads exactly one scoped acceptance notification receipt'
+);
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003202"}', true);
+select is(
+  jsonb_array_length(public.get_customer_booking_request(
+    (select booking_request_reference from booking_request_lifecycle_target)
+  ) -> 'statusNotifications')::text || ':' ||
+    (public.get_customer_booking_request(
+      (select booking_request_reference from booking_request_lifecycle_target)
+    ) -> 'statusNotifications' -> 0 ->> 'status'),
+  '1:accepted',
+  'the owning Customer reads exactly one scoped acceptance notification receipt'
+);
+reset role;
+rollback to savepoint booking_request_owner_acceptance;
+
+savepoint booking_request_malformed_decline_reason;
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.claim_booking_request_action(%L::uuid, %L::uuid, %L, %L, null)',
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target),
+    'decline',
+    'invented_reason'
+  ),
+  '22023', null,
+  'an unknown decline reason fails loudly at the database boundary'
+);
+reset role;
+rollback to savepoint booking_request_malformed_decline_reason;
+
+savepoint booking_request_decline_claim;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target),
+    'decline', 'cottage_unavailable', 'Fictional maintenance is required.'
+  ) ->> 'status',
+  'release-required',
+  'decline freezes unsuccessful intent and returns authoritative release work'
+);
+reset role;
+select results_eq(
+  $$select requests.status, work.outcome, work.decline_reason,
+      work.decline_note, work.outcome_fingerprint = requests.outcome_fingerprint
+    from public.booking_requests requests
+    join public.booking_request_release_work work
+      on work.booking_request_id = requests.id$$,
+  $$values (
+    'processing'::text, 'declined'::text, 'cottage_unavailable'::text,
+    'Fictional maintenance is required.'::text, true
+  )$$,
+  'the immutable decline reason, normalized note and fingerprint are frozen before provider execution'
+);
+select results_eq(
+  $$select commitments.status::text, bool_and(occupancies.active),
+      count(notifications.id)::integer
+    from public.booking_requests requests
+    join public.cottage_booking_period_commitments commitments
+      on commitments.id = requests.booking_period_commitment_id
+    join public.cottage_booking_period_occupancies occupancies
+      on occupancies.booking_period_commitment_id = commitments.id
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    group by commitments.status$$,
+  $$values ('pending_hold'::text, true, 0::integer)$$,
+  'inventory stays held and no terminal status notification is sent before release succeeds'
+);
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    (select customer_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target),
+    'withdraw', null, null
+  ) ->> 'status',
+  'processing',
+  'a competing withdrawal cannot replace or reclaim the live decline lease'
+);
+reset role;
+rollback to savepoint booking_request_decline_claim;
+
+savepoint booking_request_withdrawal_release;
+set local role service_role;
+select public.claim_booking_request_action(
+  (select customer_user_id from booking_request_lifecycle_target),
+  (select id from booking_request_lifecycle_target),
+  'withdraw', null, null
+);
+reset role;
+create temporary table withdrawal_release_snapshots as
+select attempts.id as attempt_id, work.id as work_id,
+  work.lease_generation, work.lease_token,
+  jsonb_set(
+    attempts.payment_snapshot,
+    '{release}',
+    jsonb_build_object(
+      'paymentLifecycleId', attempts.payment_lifecycle_id,
+      'kind', 'release',
+      'logicalOperationId', attempts.payment_lifecycle_id::text || ':release',
+      'attemptId', attempts.payment_lifecycle_id::text || ':release:attempt-2',
+      'status', 'pending',
+      'amountFils', (attempts.quote_payload ->> 'customerTotalIqd')::bigint * 1000,
+      'providerRequestId', null,
+      'providerReference', null,
+      'movementReference', null,
+      'reconciliationRequired', false,
+      'retrySafe', false
+    )
+  ) as pending_snapshot
+from public.booking_request_submission_attempts attempts
+join public.booking_request_release_work work on work.attempt_id = attempts.id;
+alter table withdrawal_release_snapshots add column succeeded_snapshot jsonb;
+update withdrawal_release_snapshots snapshots
+set succeeded_snapshot = jsonb_set(
+  jsonb_set(
+    jsonb_set(
+      jsonb_set(
+        snapshots.pending_snapshot,
+        '{release,status}', '"succeeded"'::jsonb
+      ),
+      '{release,providerRequestId}', '"lifecycle-withdraw-request"'::jsonb
+    ),
+    '{release,providerReference}', '"lifecycle-withdraw-reference"'::jsonb
+  ),
+  '{release,movementReference}', '"lifecycle-withdraw-movement"'::jsonb
+);
+update withdrawal_release_snapshots snapshots
+set succeeded_snapshot = jsonb_set(
+  snapshots.succeeded_snapshot,
+  '{movements}',
+  (snapshots.succeeded_snapshot -> 'movements') || jsonb_build_array(
+    jsonb_build_object(
+      'kind', 'release',
+      'logicalOperationId', snapshots.succeeded_snapshot -> 'release' ->> 'logicalOperationId',
+      'attemptId', snapshots.succeeded_snapshot -> 'release' ->> 'attemptId',
+      'amountFils', (snapshots.succeeded_snapshot -> 'release' ->> 'amountFils')::bigint,
+      'movementReference', 'lifecycle-withdraw-movement',
+      'recordedAt', '2099-08-21T17:00:00.000Z'
+    )
+  )
+);
+grant select, update on withdrawal_release_snapshots to service_role;
+set local role service_role;
+create temporary table withdrawal_release_permit as
+select public.save_booking_request_release_snapshot(
+  work_id, lease_generation, lease_token, pending_snapshot,
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+) as permit from withdrawal_release_snapshots;
+grant select on withdrawal_release_permit to service_role;
+create temporary table withdrawal_provider_result as
+select public.execute_simulated_payment_provider_operation(
+    jsonb_build_object(
+      'providerIdentity', jsonb_build_object(
+        'provider', 'fictional-payments', 'environment', 'local-test',
+        'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
+      ),
+      'permitPurpose', permit ->> 'purpose',
+      'idempotencyKey', permit ->> 'idempotencyKey',
+      'requestFingerprint', permit ->> 'requestFingerprint',
+      'notAfter', permit ->> 'notAfter',
+      'paymentLifecycleId', pending_snapshot ->> 'paymentLifecycleId',
+      'logicalOperationId', pending_snapshot -> 'release' ->> 'logicalOperationId',
+      'physicalAttemptId', pending_snapshot -> 'release' ->> 'attemptId',
+      'operationKind', 'release',
+      'amountFils', (pending_snapshot -> 'release' ->> 'amountFils')::bigint,
+      'currency', 'IQD', 'claimId', null, 'claimGeneration', null,
+      'stateRevision', null, 'cleanupAttemptId', null,
+      'workId', permit ->> 'workId',
+      'leaseGeneration', (permit ->> 'leaseGeneration')::bigint,
+      'leaseToken', permit ->> 'leaseToken',
+      'operationId', permit ->> 'operationId',
+      'operationGeneration', (permit ->> 'operationGeneration')::integer
+    ),
+    'succeeded'
+  ) as result
+from withdrawal_release_snapshots, withdrawal_release_permit;
+select is(
+  (select result ->> 'outcome' from withdrawal_provider_result),
+  'succeeded',
+  'a converted authorization claim remains authoritative for terminal release execution'
+) ;
+update withdrawal_release_snapshots snapshots
+set succeeded_snapshot = jsonb_set(jsonb_set(jsonb_set(
+  succeeded_snapshot,
+  '{release,providerRequestId}', to_jsonb(results.result ->> 'providerRequestId')
+), '{release,providerReference}', to_jsonb(results.result ->> 'providerReference')),
+'{release,movementReference}', to_jsonb(results.result ->> 'movementReference'))
+from withdrawal_provider_result results;
+update withdrawal_release_snapshots snapshots
+set succeeded_snapshot = jsonb_set(
+  succeeded_snapshot, '{movements,1,movementReference}',
+  to_jsonb(results.result ->> 'movementReference')
+) from withdrawal_provider_result results;
+select public.save_booking_request_release_snapshot(
+  work_id, lease_generation, lease_token, succeeded_snapshot,
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+) from withdrawal_release_snapshots;
+create temporary table withdrawal_release_result as
+select public.finalize_booking_request_release(
+  work_id, lease_generation, lease_token
+) as result
+from withdrawal_release_snapshots;
+reset role;
+select results_eq(
+  $$select result ->> 'status' from withdrawal_release_result$$,
+  $$values ('withdrawn'::text)$$,
+  'authoritative release persistence moves a processing withdrawal to withdrawn'
+);
+rollback to savepoint booking_request_withdrawal_release;
+
+savepoint booking_request_postexpiry_admission_rejected;
+set local role service_role;
+select public.claim_booking_request_action(
+  (select customer_user_id from booking_request_lifecycle_target),
+  (select id from booking_request_lifecycle_target),
+  'withdraw', null, null
+);
+reset role;
+create temporary table postexpiry_release_snapshot as
+select work.id as work_id, work.lease_generation, work.lease_token,
+  jsonb_set(attempts.payment_snapshot, '{release}', jsonb_build_object(
+    'paymentLifecycleId', attempts.payment_lifecycle_id,
+    'kind', 'release',
+    'logicalOperationId', attempts.payment_lifecycle_id::text || ':release',
+    'attemptId', attempts.payment_lifecycle_id::text || ':release:attempt-2',
+    'status', 'pending', 'amountFils', claims.amount_fils,
+    'providerRequestId', null, 'providerReference', null,
+    'movementReference', null, 'reconciliationRequired', false,
+    'retrySafe', false
+  )) as pending_snapshot
+from public.booking_request_submission_attempts attempts
+join public.booking_request_authorization_claims claims
+  on claims.attempt_id = attempts.id
+join public.booking_request_release_work work on work.attempt_id = attempts.id
+where attempts.booking_request_id = (select id from booking_request_lifecycle_target);
+grant select on postexpiry_release_snapshot to service_role;
+set local role service_role;
+create temporary table postexpiry_release_permit as
+select public.save_booking_request_release_snapshot(
+  work_id, lease_generation, lease_token, pending_snapshot,
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+) as permit
+from postexpiry_release_snapshot;
+reset role;
+create temporary table postexpiry_provider_operation as
+select jsonb_build_object(
+  'providerIdentity', jsonb_build_object(
+    'provider', 'fictional-payments', 'environment', 'local-test',
+    'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
+  ),
+  'permitPurpose', permit ->> 'purpose',
+  'idempotencyKey', permit ->> 'idempotencyKey',
+  'requestFingerprint', permit ->> 'requestFingerprint',
+  'notAfter', permit ->> 'notAfter',
+  'paymentLifecycleId', pending_snapshot ->> 'paymentLifecycleId',
+  'logicalOperationId', pending_snapshot -> 'release' ->> 'logicalOperationId',
+  'physicalAttemptId', pending_snapshot -> 'release' ->> 'attemptId',
+  'operationKind', 'release',
+  'amountFils', (pending_snapshot -> 'release' ->> 'amountFils')::bigint,
+  'currency', 'IQD', 'claimId', null, 'claimGeneration', null,
+  'stateRevision', null, 'cleanupAttemptId', null,
+  'workId', permit ->> 'workId',
+  'leaseGeneration', (permit ->> 'leaseGeneration')::bigint,
+  'leaseToken', permit ->> 'leaseToken',
+  'operationId', permit ->> 'operationId',
+  'operationGeneration', (permit ->> 'operationGeneration')::integer
+) as operation
+from postexpiry_release_snapshot, postexpiry_release_permit;
+grant select on postexpiry_provider_operation to service_role;
+update public.booking_request_release_work
+set lease_expires_at = clock_timestamp() - interval '1 millisecond'
+where id = (select work_id from postexpiry_release_snapshot);
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.execute_simulated_payment_provider_operation(%L::jsonb,%L)',
+    (select operation::text from postexpiry_provider_operation), 'succeeded'
+  ),
+  'RC409', null,
+  'a generation-one provider call first presented after lease expiry is rejected'
+);
+reset role;
+select results_eq(
+  $$select operations.state,
+      count(provider.id)::integer
+    from public.booking_request_release_operations operations
+    left join public.simulated_payment_provider_operations provider
+      on provider.provider_idempotency_key = operations.provider_idempotency_key
+    group by operations.state$$,
+  $$values ('executing'::text, 0::integer)$$,
+  'post-expiry rejection records no fictional provider execution'
+);
+set local role service_role;
+create temporary table postexpiry_reclaimed_work as
+select public.claim_booking_request_action(
+  (select customer_user_id from booking_request_lifecycle_target),
+  (select id from booking_request_lifecycle_target),
+  'withdraw', null, null
+) as result;
+reset role;
+select results_eq(
+  $$select (reclaimed.result ->> 'leaseGeneration')::bigint,
+      reclaimed.result ->> 'leaseToken' <> original.lease_token::text,
+      operations.state
+    from postexpiry_reclaimed_work reclaimed
+    cross join postexpiry_release_snapshot original
+    cross join public.booking_request_release_operations operations$$,
+  $$select lease_generation + 1, true, 'reconcile_required'::text
+    from postexpiry_release_snapshot$$,
+  'reclaim rotates generation and requires reconciliation of N before any retry'
+);
+set local role service_role;
+create temporary table postexpiry_absence_result as
+select public.query_simulated_payment_provider_operation(
+  jsonb_build_object(
+    'providerIdentity', jsonb_build_object(
+      'provider', 'fictional-payments', 'environment', 'local-test',
+      'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
+    ),
+    'requestFingerprint', null,
+    'paymentLifecycleId', pending_snapshot ->> 'paymentLifecycleId',
+    'logicalOperationId', pending_snapshot -> 'release' ->> 'logicalOperationId',
+    'physicalAttemptId', pending_snapshot -> 'release' ->> 'attemptId',
+    'operationKind', 'release',
+    'amountFils', (pending_snapshot -> 'release' ->> 'amountFils')::bigint,
+    'currency', 'IQD'
+  ), null, null, 'succeeded'
+) as result
+from postexpiry_release_snapshot;
+select is(
+  (select result ->> 'outcome' from postexpiry_absence_result),
+  'not-executed',
+  'reconciliation proves the expired operation was never admitted'
+);
+reset role;
+select results_eq(
+  $$select state, provider_outcome, retry_safe,
+      provider_request_id is null, provider_reference is null,
+      movement_reference is null
+    from public.booking_request_release_operations$$,
+  $$values ('retryable'::text, 'not_executed'::text, true, true, true, true)$$,
+  'provider absence becomes durable release-only retry permission'
+);
+rollback to savepoint booking_request_postexpiry_admission_rejected;
+
+savepoint booking_request_preexpiry_admission_reconcile;
+set local role service_role;
+create temporary table preexpiry_release_claim as
+select public.claim_booking_request_action(
+  (select customer_user_id from booking_request_lifecycle_target),
+  (select id from booking_request_lifecycle_target),
+  'withdraw', null, null
+) as result;
+reset role;
+create temporary table preexpiry_release_snapshot as
+select attempts.id as attempt_id, work.id as work_id,
+  work.lease_generation, work.lease_token,
+  jsonb_set(attempts.payment_snapshot, '{release}', jsonb_build_object(
+    'paymentLifecycleId', attempts.payment_lifecycle_id,
+    'kind', 'release',
+    'logicalOperationId', attempts.payment_lifecycle_id::text || ':release',
+    'attemptId', attempts.payment_lifecycle_id::text || ':release:attempt-2',
+    'status', 'pending', 'amountFils', claims.amount_fils,
+    'providerRequestId', null, 'providerReference', null,
+    'movementReference', null, 'reconciliationRequired', false,
+    'retrySafe', false
+  )) as pending_snapshot
+from public.booking_request_submission_attempts attempts
+join public.booking_request_authorization_claims claims
+  on claims.attempt_id = attempts.id
+join public.booking_request_release_work work on work.attempt_id = attempts.id
+where attempts.booking_request_id = (select id from booking_request_lifecycle_target);
+grant select on preexpiry_release_snapshot to service_role;
+
+savepoint booking_request_release_save_null_generation;
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.save_booking_request_release_snapshot(%L::uuid,null,%L::uuid,%L::jsonb,%L::jsonb)',
+    (select work_id from preexpiry_release_snapshot),
+    (select lease_token from preexpiry_release_snapshot),
+    (select pending_snapshot::text from preexpiry_release_snapshot),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ),
+  'RC409', null,
+  'release snapshot save rejects a null lease generation'
+);
+reset role;
+rollback to savepoint booking_request_release_save_null_generation;
+
+savepoint booking_request_release_save_null_token;
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,null,%L::jsonb,%L::jsonb)',
+    (select work_id from preexpiry_release_snapshot),
+    (select lease_generation from preexpiry_release_snapshot),
+    (select pending_snapshot::text from preexpiry_release_snapshot),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ),
+  'RC409', null,
+  'release snapshot save rejects a null lease token'
+);
+reset role;
+rollback to savepoint booking_request_release_save_null_token;
+
+savepoint booking_request_release_save_null_lease;
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.save_booking_request_release_snapshot(%L::uuid,null,null,%L::jsonb,%L::jsonb)',
+    (select work_id from preexpiry_release_snapshot),
+    (select pending_snapshot::text from preexpiry_release_snapshot),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ),
+  'RC409', null,
+  'release snapshot save rejects a null lease generation and token'
+);
+reset role;
+rollback to savepoint booking_request_release_save_null_lease;
+
+select results_eq(
+  $$select attempts.state, requests.status, claims.state,
+      count(distinct operations.id)::integer,
+      count(distinct provider.id)::integer,
+      count(distinct notifications.id)::integer
+    from public.booking_requests requests
+    join public.booking_request_submission_attempts attempts
+      on attempts.booking_request_id = requests.id
+    join public.booking_request_authorization_claims claims
+      on claims.attempt_id = attempts.id
+    left join public.booking_request_release_work work
+      on work.attempt_id = attempts.id
+    left join public.booking_request_release_operations operations
+      on operations.work_id = work.id
+    left join public.simulated_payment_provider_operations provider
+      on provider.provider_idempotency_key = operations.provider_idempotency_key
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    where requests.id = (select id from booking_request_lifecycle_target)
+    group by attempts.state, requests.status, claims.state$$,
+  $$values ('finalized'::text,
+      'processing'::text, 'converted'::public.booking_request_authorization_claim_state,
+      0::integer, 0::integer, 0::integer)$$,
+  'null release-save lease inputs issue no permit and mutate no operation, provider, or product state'
+);
+
+savepoint booking_request_pending_release_movement_invention;
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    (select work_id from preexpiry_release_snapshot),
+    (select lease_generation from preexpiry_release_snapshot),
+    (select lease_token from preexpiry_release_snapshot),
+    (select jsonb_set(
+      pending_snapshot,
+      '{movements}',
+      (pending_snapshot -> 'movements') || jsonb_build_array(jsonb_build_object(
+        'kind', 'release',
+        'logicalOperationId', 'invented-release',
+        'attemptId', 'invented-attempt',
+        'amountFils', 1,
+        'movementReference', 'invented-movement',
+        'recordedAt', '2099-08-21T18:00:00.000Z'
+      ))
+    )::text from preexpiry_release_snapshot),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ),
+  '22023', null,
+  'a pending release cannot invent movement evidence'
+);
+reset role;
+rollback to savepoint booking_request_pending_release_movement_invention;
+
+set local role service_role;
+create temporary table preexpiry_release_permit as
+select public.save_booking_request_release_snapshot(
+  work_id, lease_generation, lease_token, pending_snapshot,
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+) as permit
+from preexpiry_release_snapshot;
+select is(
+  (select permit ->> 'purpose' from preexpiry_release_permit),
+  'booking-request-release',
+  'generation one durably binds the release before provider admission'
+);
+create temporary table preexpiry_provider_operation as
+select jsonb_build_object(
+  'providerIdentity', jsonb_build_object(
+    'provider', 'fictional-payments', 'environment', 'local-test',
+    'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
+  ),
+  'permitPurpose', permit ->> 'purpose',
+  'idempotencyKey', permit ->> 'idempotencyKey',
+  'requestFingerprint', permit ->> 'requestFingerprint',
+  'notAfter', permit ->> 'notAfter',
+  'paymentLifecycleId', pending_snapshot ->> 'paymentLifecycleId',
+  'logicalOperationId', pending_snapshot -> 'release' ->> 'logicalOperationId',
+  'physicalAttemptId', pending_snapshot -> 'release' ->> 'attemptId',
+  'operationKind', 'release',
+  'amountFils', (pending_snapshot -> 'release' ->> 'amountFils')::bigint,
+  'currency', 'IQD', 'claimId', null, 'claimGeneration', null,
+  'stateRevision', null, 'cleanupAttemptId', null,
+  'workId', permit ->> 'workId',
+  'leaseGeneration', (permit ->> 'leaseGeneration')::bigint,
+  'leaseToken', permit ->> 'leaseToken',
+  'operationId', permit ->> 'operationId',
+  'operationGeneration', (permit ->> 'operationGeneration')::integer
+) as operation
+from preexpiry_release_snapshot, preexpiry_release_permit;
+grant select on preexpiry_provider_operation to service_role;
+
+create function pg_temp.assert_null_release_bindings_rejected(target_operation jsonb)
+returns void
+language plpgsql
+as $$
+declare required_path text[];
+declare required_key text;
+declare invalid_operation jsonb;
+begin
+  foreach required_key in array array[
+    'provider', 'environment', 'merchantId', 'terminalId'
+  ] loop
+    required_path := array['providerIdentity', required_key];
+    invalid_operation := jsonb_set(target_operation, required_path, 'null'::jsonb);
+    begin
+      perform public.execute_simulated_payment_provider_operation(
+        invalid_operation, 'succeeded'
+      );
+      raise exception 'provider accepted null required binding at %', required_path
+        using errcode = 'P0001';
+    exception
+      when sqlstate '22023' or sqlstate 'RC409' then null;
+    end;
+  end loop;
+  foreach required_key in array array[
+    'requestFingerprint', 'paymentLifecycleId', 'logicalOperationId',
+    'physicalAttemptId', 'operationKind', 'amountFils', 'currency',
+    'permitPurpose', 'idempotencyKey', 'notAfter', 'workId', 'operationId',
+    'operationGeneration'
+  ] loop
+    required_path := array[required_key];
+    invalid_operation := jsonb_set(target_operation, required_path, 'null'::jsonb);
+    begin
+      perform public.execute_simulated_payment_provider_operation(
+        invalid_operation, 'succeeded'
+      );
+      raise exception 'provider accepted null required binding at %', required_path
+        using errcode = 'P0001';
+    exception
+      when sqlstate '22023' or sqlstate 'RC409' then null;
+    end;
+  end loop;
+end;
+$$;
+
+savepoint booking_request_provider_null_generation;
+select throws_ok(
+  format(
+    'select public.execute_simulated_payment_provider_operation(%L::jsonb,%L)',
+    (select jsonb_set(operation, '{leaseGeneration}', 'null'::jsonb)::text
+      from preexpiry_provider_operation),
+    'succeeded'
+  ),
+  '22023', null,
+  'provider admission rejects a JSON null lease generation before casting'
+);
+rollback to savepoint booking_request_provider_null_generation;
+
+savepoint booking_request_provider_null_token;
+select throws_ok(
+  format(
+    'select public.execute_simulated_payment_provider_operation(%L::jsonb,%L)',
+    (select jsonb_set(operation, '{leaseToken}', 'null'::jsonb)::text
+      from preexpiry_provider_operation),
+    'succeeded'
+  ),
+  '22023', null,
+  'provider admission rejects a JSON null lease token before casting'
+);
+rollback to savepoint booking_request_provider_null_token;
+
+savepoint booking_request_provider_null_lease;
+select throws_ok(
+  format(
+    'select public.execute_simulated_payment_provider_operation(%L::jsonb,%L)',
+    (select jsonb_set(
+      jsonb_set(operation, '{leaseGeneration}', 'null'::jsonb),
+      '{leaseToken}', 'null'::jsonb
+    )::text from preexpiry_provider_operation),
+    'succeeded'
+  ),
+  '22023', null,
+  'provider admission rejects JSON null lease generation and token before casting'
+);
+rollback to savepoint booking_request_provider_null_lease;
+
+select lives_ok(
+  format(
+    'select pg_temp.assert_null_release_bindings_rejected(%L::jsonb)',
+    (select operation::text from preexpiry_provider_operation)
+  ),
+  'provider admission rejects every required lifecycle release binding when JSON null'
+);
+select throws_ok(
+  format(
+    'select public.execute_simulated_payment_provider_operation(%L::jsonb,null)',
+    (select operation::text from preexpiry_provider_operation)
+  ),
+  '22023', null,
+  'provider admission rejects a null requested outcome'
+);
+reset role;
+select is(
+  (select count(*)::integer from public.simulated_payment_provider_operations),
+  1,
+  'null lifecycle release bindings persist no provider execution'
+);
+
+savepoint booking_request_reconcile_movement_invention;
+set local role service_role;
+create temporary table preexpiry_indeterminate_provider_result as
+select public.execute_simulated_payment_provider_operation(
+  operation, 'indeterminate'
+) as result
+from preexpiry_provider_operation;
+create temporary table preexpiry_invalid_reconcile_snapshot as
+select snapshots.pending_snapshot || jsonb_build_object(
+  'release', (snapshots.pending_snapshot -> 'release') || jsonb_build_object(
+    'providerRequestId', provider.result ->> 'providerRequestId',
+    'providerReference', provider.result ->> 'providerReference',
+    'movementReference', provider.result ->> 'movementReference',
+    'reconciliationRequired', true
+  ),
+  'movements', (snapshots.pending_snapshot -> 'movements') ||
+    jsonb_build_array(jsonb_build_object(
+      'kind', 'release', 'logicalOperationId', 'invented-release',
+      'attemptId', 'invented-attempt', 'amountFils', 1,
+      'movementReference', 'invented-movement',
+      'recordedAt', '2099-08-21T18:00:00.000Z'
+    ))
+) as invalid_snapshot
+from preexpiry_release_snapshot snapshots
+cross join preexpiry_indeterminate_provider_result provider;
+select throws_ok(
+  format(
+    'select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    (select work_id from preexpiry_release_snapshot),
+    (select lease_generation from preexpiry_release_snapshot),
+    (select lease_token from preexpiry_release_snapshot),
+    (select invalid_snapshot::text from preexpiry_invalid_reconcile_snapshot),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ),
+  '22023', null,
+  'a reconciliation-required release preserves the existing movement array exactly'
+);
+rollback to savepoint booking_request_reconcile_movement_invention;
+
+set local role service_role;
+create temporary table preexpiry_provider_result as
+select public.execute_simulated_payment_provider_operation(
+  operation, 'succeeded'
+) as result
+from preexpiry_provider_operation;
+select is(
+  (select result ->> 'outcome' from preexpiry_provider_result),
+  'succeeded',
+  'the provider admits generation one before its database lease expires'
+);
+reset role;
+create temporary table preexpiry_release_success as
+select snapshots.pending_snapshot || jsonb_build_object(
+  'release', (snapshots.pending_snapshot -> 'release') || jsonb_build_object(
+    'status', 'succeeded',
+    'providerRequestId', provider.result ->> 'providerRequestId',
+    'providerReference', provider.result ->> 'providerReference',
+    'movementReference', provider.result ->> 'movementReference',
+    'reconciliationRequired', false, 'retrySafe', false
+  ),
+  'movements', (snapshots.pending_snapshot -> 'movements') ||
+    jsonb_build_array(jsonb_build_object(
+      'kind', 'release',
+      'logicalOperationId', snapshots.pending_snapshot -> 'release' ->> 'logicalOperationId',
+      'attemptId', snapshots.pending_snapshot -> 'release' ->> 'attemptId',
+      'amountFils', (snapshots.pending_snapshot -> 'release' ->> 'amountFils')::bigint,
+      'movementReference', provider.result ->> 'movementReference',
+      'recordedAt', '2099-08-21T18:00:00.000Z'
+    ))
+) as succeeded_snapshot
+from preexpiry_release_snapshot snapshots
+cross join preexpiry_provider_result provider;
+grant select on preexpiry_release_success to service_role;
+
+create temporary table preexpiry_release_state_before_invalid_evidence as
+select
+  (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts
+    where attempts.id = snapshots.attempt_id) as attempt_row,
+  (select to_jsonb(work) from public.booking_request_release_work work
+    where work.id = snapshots.work_id) as work_row,
+  (select to_jsonb(operations) from public.booking_request_release_operations operations
+    where operations.work_id = snapshots.work_id) as operation_row,
+  (select to_jsonb(requests) from public.booking_requests requests
+    join public.booking_request_submission_attempts attempts
+      on attempts.booking_request_id = requests.id
+    where attempts.id = snapshots.attempt_id) as request_row,
+  (select to_jsonb(commitments) from public.cottage_booking_period_commitments commitments
+    join public.booking_requests requests
+      on requests.booking_period_commitment_id = commitments.id
+    join public.booking_request_submission_attempts attempts
+      on attempts.booking_request_id = requests.id
+    where attempts.id = snapshots.attempt_id) as commitment_row,
+  (select to_jsonb(provider_operations)
+    from public.simulated_payment_provider_operations provider_operations
+    join public.booking_request_release_operations operations
+      on operations.provider_idempotency_key = provider_operations.provider_idempotency_key
+    where operations.work_id = snapshots.work_id) as provider_row
+from preexpiry_release_snapshot snapshots;
+
+create temporary table preexpiry_invalid_release_movements (
+  case_name text primary key,
+  invalid_snapshot jsonb not null
+);
+insert into preexpiry_invalid_release_movements (case_name, invalid_snapshot)
+select 'omits the actual release movement',
+  jsonb_set(succeeded_snapshot, '{movements}',
+    (succeeded_snapshot -> 'movements') - 1)
+from preexpiry_release_success
+union all
+select 'appends invented movement evidence',
+  jsonb_set(succeeded_snapshot, '{movements}',
+    (succeeded_snapshot -> 'movements') || jsonb_build_array(jsonb_build_object(
+      'kind', 'release', 'logicalOperationId', 'invented-release',
+      'attemptId', 'invented-attempt', 'amountFils', 1,
+      'movementReference', 'invented-movement',
+      'recordedAt', '2099-08-21T18:00:00.000Z'
+    )))
+from preexpiry_release_success
+union all
+select 'alters the prior authorization movement',
+  jsonb_set(succeeded_snapshot, '{movements,0,amountFils}', '1'::jsonb)
+from preexpiry_release_success
+union all
+select 'changes the release movement kind',
+  jsonb_set(succeeded_snapshot, '{movements,1,kind}', '"authorization"'::jsonb)
+from preexpiry_release_success
+union all
+select 'changes the release movement amount',
+  jsonb_set(succeeded_snapshot, '{movements,1,amountFils}', '1'::jsonb)
+from preexpiry_release_success
+union all
+select 'changes the release movement logical operation',
+  jsonb_set(succeeded_snapshot, '{movements,1,logicalOperationId}', '"invented-release"'::jsonb)
+from preexpiry_release_success
+union all
+select 'changes the release movement physical attempt',
+  jsonb_set(succeeded_snapshot, '{movements,1,attemptId}', '"invented-attempt"'::jsonb)
+from preexpiry_release_success
+union all
+select 'changes the release movement provider reference',
+  jsonb_set(succeeded_snapshot, '{movements,1,movementReference}', '"invented-movement"'::jsonb)
+from preexpiry_release_success
+union all
+select 'changes the release provider request identifier',
+  jsonb_set(succeeded_snapshot, '{release,providerRequestId}', '"invented-request"'::jsonb)
+from preexpiry_release_success
+union all
+select 'changes the release provider operation reference',
+  jsonb_set(succeeded_snapshot, '{release,providerReference}', '"invented-reference"'::jsonb)
+from preexpiry_release_success;
+grant select on preexpiry_invalid_release_movements to service_role;
+
+create function pg_temp.assert_release_result_evidence_rejected(
+  target_snapshot jsonb
+) returns void
+language plpgsql
+as $$
+begin
+  begin
+    perform public.save_booking_request_release_snapshot(
+      (select work_id from preexpiry_release_snapshot),
+      (select lease_generation from preexpiry_release_snapshot),
+      (select lease_token from preexpiry_release_snapshot),
+      target_snapshot,
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    );
+    raise exception 'release save accepted invalid movement evidence'
+      using errcode = 'P0001';
+  exception
+    when sqlstate '22023' then null;
+  end;
+end;
+$$;
+
+set local role service_role;
+select lives_ok(
+  format(
+    'select pg_temp.assert_release_result_evidence_rejected(%L::jsonb)',
+    invalid_snapshot::text
+  ),
+  'successful release snapshot ' || case_name
+)
+from preexpiry_invalid_release_movements
+order by case_name;
+reset role;
+
+select results_eq(
+  $$select
+      to_jsonb(attempts), to_jsonb(work), to_jsonb(operations),
+      to_jsonb(requests), to_jsonb(commitments), to_jsonb(provider_operations)
+    from preexpiry_release_snapshot snapshots
+    join public.booking_request_submission_attempts attempts
+      on attempts.id = snapshots.attempt_id
+    join public.booking_request_release_work work on work.id = snapshots.work_id
+    join public.booking_request_release_operations operations
+      on operations.work_id = snapshots.work_id
+    join public.booking_requests requests
+      on requests.id = attempts.booking_request_id
+    join public.cottage_booking_period_commitments commitments
+      on commitments.id = requests.booking_period_commitment_id
+    join public.simulated_payment_provider_operations provider_operations
+      on provider_operations.provider_idempotency_key = operations.provider_idempotency_key$$,
+  $$select attempt_row, work_row, operation_row, request_row, commitment_row, provider_row
+    from preexpiry_release_state_before_invalid_evidence$$,
+  'invalid release movement evidence mutates no attempt, work, operation, request, hold, or provider row'
+);
+
+savepoint booking_request_finalize_null_lease_inputs;
+select public.save_booking_request_release_snapshot(
+  snapshots.work_id, snapshots.lease_generation, snapshots.lease_token,
+  succeeded.succeeded_snapshot,
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+)
+from preexpiry_release_snapshot snapshots
+cross join preexpiry_release_success succeeded;
+
+savepoint booking_request_finalize_null_generation;
+select throws_ok(
+  format(
+    'select public.finalize_booking_request_release(%L::uuid,null,%L::uuid)',
+    (select work_id from preexpiry_release_snapshot),
+    (select lease_token from preexpiry_release_snapshot)
+  ),
+  'RC409', null,
+  'release finalization rejects a null lease generation'
+);
+rollback to savepoint booking_request_finalize_null_generation;
+
+savepoint booking_request_finalize_null_token;
+select throws_ok(
+  format(
+    'select public.finalize_booking_request_release(%L::uuid,%L::bigint,null)',
+    (select work_id from preexpiry_release_snapshot),
+    (select lease_generation from preexpiry_release_snapshot)
+  ),
+  'RC409', null,
+  'release finalization rejects a null lease token'
+);
+rollback to savepoint booking_request_finalize_null_token;
+
+savepoint booking_request_finalize_null_lease;
+select throws_ok(
+  format(
+    'select public.finalize_booking_request_release(%L::uuid,null,null)',
+    (select work_id from preexpiry_release_snapshot)
+  ),
+  'RC409', null,
+  'release finalization rejects a null lease generation and token'
+);
+rollback to savepoint booking_request_finalize_null_lease;
+
+select results_eq(
+  $$select requests.status, work.state, claims.state,
+      commitments.status, bool_and(occupancies.active),
+      count(distinct notifications.id)::integer
+    from public.booking_requests requests
+    join public.booking_request_submission_attempts attempts
+      on attempts.booking_request_id = requests.id
+    join public.booking_request_authorization_claims claims
+      on claims.attempt_id = attempts.id
+    join public.booking_request_release_work work on work.attempt_id = attempts.id
+    join public.cottage_booking_period_commitments commitments
+      on commitments.id = requests.booking_period_commitment_id
+    join public.cottage_booking_period_occupancies occupancies
+      on occupancies.booking_period_commitment_id = commitments.id
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    where requests.id = (select id from booking_request_lifecycle_target)
+    group by requests.status, work.state, claims.state, commitments.status$$,
+  $$values ('processing'::text, 'processing'::text,
+      'converted'::public.booking_request_authorization_claim_state,
+      'pending_hold'::public.cottage_inventory_commitment_status,
+      true, 0::integer)$$,
+  'null finalize lease inputs change no request, release work, hold, occupancy, or notice'
+);
+rollback to savepoint booking_request_finalize_null_lease_inputs;
+
+update public.booking_request_release_work
+set lease_expires_at = clock_timestamp() - interval '1 millisecond'
+where id = (select work_id from preexpiry_release_snapshot);
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    (select work_id from preexpiry_release_snapshot),
+    (select lease_generation from preexpiry_release_snapshot),
+    (select lease_token from preexpiry_release_snapshot),
+    (select succeeded_snapshot::text from preexpiry_release_success),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ),
+  'RC409', null,
+  'an admitted generation-one result cannot save after lease expiry'
+);
+select throws_ok(
+  format(
+    'select public.finalize_booking_request_release(%L::uuid,%L::bigint,%L::uuid)',
+    (select work_id from preexpiry_release_snapshot),
+    (select lease_generation from preexpiry_release_snapshot),
+    (select lease_token from preexpiry_release_snapshot)
+  ),
+  'RC409', null,
+  'an expired generation cannot finalize product state'
+);
+create temporary table preexpiry_reclaimed_work as
+select public.claim_booking_request_action(
+  (select customer_user_id from booking_request_lifecycle_target),
+  (select id from booking_request_lifecycle_target),
+  'withdraw', null, null
+) as result;
+select results_eq(
+  $$select reclaimed.result ->> 'status',
+      (reclaimed.result ->> 'leaseGeneration')::bigint,
+      reclaimed.result ->> 'leaseToken' <> original.lease_token::text
+    from preexpiry_reclaimed_work reclaimed
+    cross join preexpiry_release_snapshot original$$,
+  $$select 'release-required'::text, lease_generation + 1, true
+    from preexpiry_release_snapshot$$,
+  'generation two receives a new token while retaining the same release work'
+);
+reset role;
+select results_eq(
+  $$select operations.state, operations.provider_outcome,
+      attempts.payment_snapshot -> 'release' ->> 'attemptId',
+      (attempts.payment_snapshot -> 'release' ->> 'reconciliationRequired')::boolean,
+      requests.status, commitments.status::text,
+      bool_and(occupancies.active), count(notifications.id)::integer
+    from public.booking_request_release_operations operations
+    join public.booking_request_release_work work on work.id = operations.work_id
+    join public.booking_request_submission_attempts attempts on attempts.id = work.attempt_id
+    join public.booking_requests requests on requests.id = work.booking_request_id
+    join public.cottage_booking_period_commitments commitments
+      on commitments.id = requests.booking_period_commitment_id
+    join public.cottage_booking_period_occupancies occupancies
+      on occupancies.booking_period_commitment_id = commitments.id
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    group by operations.state, operations.provider_outcome,
+      attempts.payment_snapshot, requests.status, commitments.status$$,
+  $$select 'reconcile_required'::text, 'unknown'::text,
+      pending_snapshot -> 'release' ->> 'attemptId', true,
+      'processing'::text, 'pending_hold'::text, true, 0::integer
+    from preexpiry_release_snapshot$$,
+  'reclaim fences stale writes without treating lease expiry as provider cancellation'
+);
+
+set local role service_role;
+create temporary table preexpiry_reconciled_result as
+select public.query_simulated_payment_provider_operation(
+  jsonb_build_object(
+    'providerIdentity', jsonb_build_object(
+      'provider', 'fictional-payments', 'environment', 'local-test',
+      'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
+    ),
+    'requestFingerprint', null,
+    'paymentLifecycleId', pending_snapshot ->> 'paymentLifecycleId',
+    'logicalOperationId', pending_snapshot -> 'release' ->> 'logicalOperationId',
+    'physicalAttemptId', pending_snapshot -> 'release' ->> 'attemptId',
+    'operationKind', 'release',
+    'amountFils', (pending_snapshot -> 'release' ->> 'amountFils')::bigint,
+    'currency', 'IQD'
+  ),
+  provider.result ->> 'providerRequestId',
+  provider.result ->> 'providerReference',
+  'succeeded'
+) as result
+from preexpiry_release_snapshot
+cross join preexpiry_provider_result provider;
+select is(
+  (select result ->> 'outcome' from preexpiry_reconciled_result),
+  'succeeded',
+  'generation two reconciles the exact admitted generation-one provider binding'
+);
+select public.save_booking_request_release_snapshot(
+  (select work_id from preexpiry_release_snapshot),
+  ((select result ->> 'leaseGeneration' from preexpiry_reclaimed_work))::bigint,
+  ((select result ->> 'leaseToken' from preexpiry_reclaimed_work))::uuid,
+  (select succeeded_snapshot from preexpiry_release_success),
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+);
+create temporary table preexpiry_finalized as
+select public.finalize_booking_request_release(
+  (select work_id from preexpiry_release_snapshot),
+  ((select result ->> 'leaseGeneration' from preexpiry_reclaimed_work))::bigint,
+  ((select result ->> 'leaseToken' from preexpiry_reclaimed_work))::uuid
+) as result;
+select is(
+  (select result ->> 'status' from preexpiry_finalized),
+  'withdrawn',
+  'only the current generation finalizes the reconciled release'
+);
+reset role;
+select results_eq(
+  $$select requests.status, work.state, commitments.status::text,
+      bool_and(not occupancies.active), count(distinct notifications.id)::integer,
+      count(distinct operations.id)::integer,
+      count(distinct provider.id)::integer,
+      jsonb_array_length(attempts.payment_snapshot -> 'movements')
+    from public.booking_requests requests
+    join public.booking_request_release_work work on work.booking_request_id = requests.id
+    join public.booking_request_submission_attempts attempts on attempts.id = work.attempt_id
+    join public.cottage_booking_period_commitments commitments
+      on commitments.id = requests.booking_period_commitment_id
+    join public.cottage_booking_period_occupancies occupancies
+      on occupancies.booking_period_commitment_id = commitments.id
+    join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    join public.booking_request_release_operations operations on operations.work_id = work.id
+    join public.simulated_payment_provider_operations provider
+      on provider.payment_lifecycle_id = attempts.payment_lifecycle_id
+      and provider.operation_kind = 'release'
+    group by requests.status, work.state, commitments.status, attempts.payment_snapshot$$,
+  $$values ('withdrawn'::text, 'complete'::text, 'released_hold'::text,
+    true, 2::integer, 1::integer, 1::integer, 2::integer)$$,
+  'reconciliation produces one release, released hold, terminal outcome, and notice pair'
+);
+
+set local role anon;
+select results_eq(
+  $$select unit ->> 'kind', (unit ->> 'available')::boolean
+    from jsonb_array_elements(public.resolve_cottage_inventory_public_availability(
+      '30000000-0000-4000-8000-000000003201',
+      '60000000-0000-4000-8000-000000003201', '2099-08-21'
+    ) -> 'units') unit
+    where unit ->> 'id' in (
+      '62000000-0000-4000-8000-000000003202',
+      '61000000-0000-4000-8000-000000003201'
+    ) order by unit ->> 'kind'$$,
+  $$values ('full_day_bundle'::text, true), ('shift'::text, true)$$,
+  'a successful Shift release restores its Shift and derived Full-Day public availability'
+);
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select results_eq(
+  $$select unit ->> 'kind', unit ->> 'calendarState',
+      unit ->> 'commitmentReference', (unit ->> 'editable')::boolean
+    from jsonb_array_elements(public.resolve_cottage_inventory_owner_calendar(
+      '30000000-0000-4000-8000-000000003201',
+      '60000000-0000-4000-8000-000000003201', '2099-08-21'
+    ) -> 'units') unit
+    where unit ->> 'id' in (
+      '62000000-0000-4000-8000-000000003202',
+      '61000000-0000-4000-8000-000000003201'
+    ) order by unit ->> 'kind'$$,
+  $$values
+    ('full_day_bundle'::text, 'open'::text, null::text, true),
+    ('shift'::text, 'open'::text, null::text, true)$$,
+  'the Owner Calendar treats released Shift history as open and editable'
+);
+select lives_ok(
+  $$select public.set_cottage_inventory_availability(
+    '30000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201', '2099-08-21',
+    '[{"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003202","state":"closed"},{"unitKind":"full_day_bundle","unitId":"61000000-0000-4000-8000-000000003201","state":"closed"}]'::jsonb
+  )$$,
+  'released occupancy history does not block changed-state Owner writes'
+);
+select throws_ok(
+  $$select public.set_cottage_inventory_availability(
+    '30000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201', '2099-08-21',
+    '[{"unitKind":"full_day_bundle","unitId":"61000000-0000-4000-8000-000000003201","state":"open"}]'::jsonb
+  )$$,
+  'RC205', null,
+  'a released occupancy cannot hide a closed component when reopening its Full-Day Bundle'
+);
+reset role;
+select results_eq(
+  $$select
+      count(*) filter (where availability.state = 'closed')::integer,
+      count(*) filter (where not occupancies.active)::integer
+    from public.cottage_inventory_availability availability
+    cross join public.cottage_booking_period_occupancies occupancies
+    where availability.schedule_revision_id = '60000000-0000-4000-8000-000000003201'
+      and availability.service_day = '2099-08-21'
+      and availability.unit_id in (
+        '62000000-0000-4000-8000-000000003202',
+        '61000000-0000-4000-8000-000000003201'
+      )
+      and occupancies.booking_period_commitment_id = (
+        select booking_period_commitment_id from public.booking_requests limit 1
+      )$$,
+  $$values (2::integer, 2::integer)$$,
+  'failed Bundle reopening mutates no availability and preserves inactive occupancy history'
+);
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select lives_ok(
+  $$select public.set_cottage_inventory_availability(
+    '30000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201', '2099-08-21',
+    '[{"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003202","state":"open"},{"unitKind":"full_day_bundle","unitId":"61000000-0000-4000-8000-000000003201","state":"open"}]'::jsonb
+  )$$,
+  'the Owner can restore a released Shift and its Full-Day Bundle together'
+);
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select lives_ok(
+  $$select public.save_cottage_inventory_pricing(
+    '30000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201',
+    '{"units":[
+      {"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003201","standardPriceIqd":100000},
+      {"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003202","standardPriceIqd":110000,"dateOverrides":[{"serviceDay":"2099-08-21","priceIqd":111000}]},
+      {"unitKind":"full_day_bundle","unitId":"61000000-0000-4000-8000-000000003201","standardPriceIqd":190000}
+    ]}'::jsonb
+  )$$,
+  'released Shift history permits a direct future specific-date price change'
+);
+reset role;
+select results_eq(
+  $$select
+      (select price_iqd from public.cottage_inventory_date_price_overrides
+        where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
+          and unit_kind = 'shift'::public.cottage_inventory_unit_kind
+          and unit_id = '62000000-0000-4000-8000-000000003202'
+          and service_day = '2099-08-21'),
+      (select committed_price_iqd from public.cottage_inventory_commitments items
+        join public.booking_requests requests
+          on requests.booking_period_commitment_id = items.booking_period_commitment_id
+        where items.unit_kind = 'shift'::public.cottage_inventory_unit_kind
+          and items.unit_id = '62000000-0000-4000-8000-000000003202'
+          and items.service_day = '2099-08-21'),
+      (select count(*)::integer from public.cottage_booking_period_occupancies occupancies
+        join public.booking_requests requests
+          on requests.booking_period_commitment_id = occupancies.booking_period_commitment_id
+        where occupancies.shift_id = '62000000-0000-4000-8000-000000003202'
+          and occupancies.service_day = '2099-08-21'
+          and not occupancies.active)$$,
+  $$values (111000::bigint, 110000::bigint, 1::integer)$$,
+  'released Shift pricing retains its committed price and inactive occupancy history'
+);
+
+insert into public.cottage_booking_period_commitments (
+  id, customer_user_id, profile_id, schedule_revision_id,
+  commitment_reference, status, access_ranges
+) values (
+  '70000000-0000-4000-8000-000000003201',
+  '00000000-0000-0000-0000-000000003203',
+  '30000000-0000-4000-8000-000000003201',
+  '60000000-0000-4000-8000-000000003201',
+  'RC-RELEASED-BUNDLE-3201', 'released_hold',
+  tstzmultirange(tstzrange('2099-08-22 05:00+00', '2099-08-22 20:00+00', '[)'))
+);
+insert into public.cottage_inventory_commitments (
+  booking_period_commitment_id, unit_kind, unit_id, service_day, committed_price_iqd
+) values (
+  '70000000-0000-4000-8000-000000003201', 'full_day_bundle',
+  '61000000-0000-4000-8000-000000003201', '2099-08-22', 190000
+);
+insert into public.cottage_booking_period_occupancies (
+  booking_period_commitment_id, schedule_revision_id, shift_id, service_day, active
+)
+select '70000000-0000-4000-8000-000000003201',
+  '60000000-0000-4000-8000-000000003201', shifts.id, '2099-08-22', false
+from public.cottage_shifts shifts
+where shifts.schedule_revision_id = '60000000-0000-4000-8000-000000003201';
+
+set local role anon;
+select results_eq(
+  $$select count(*)::integer
+    from jsonb_array_elements(public.resolve_cottage_inventory_public_availability(
+      '30000000-0000-4000-8000-000000003201',
+      '60000000-0000-4000-8000-000000003201', '2099-08-22'
+    ) -> 'units') unit
+    where (unit ->> 'available')::boolean$$,
+  $$values (3::integer)$$,
+  'released Full-Day history restores its direct Bundle and both derived Shifts publicly'
+);
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select results_eq(
+  $$select count(*)::integer
+    from jsonb_array_elements(public.resolve_cottage_inventory_owner_calendar(
+      '30000000-0000-4000-8000-000000003201',
+      '60000000-0000-4000-8000-000000003201', '2099-08-22'
+    ) -> 'units') unit
+    where unit ->> 'calendarState' = 'open'
+      and unit ->> 'commitmentReference' is null
+      and (unit ->> 'editable')::boolean$$,
+  $$values (3::integer)$$,
+  'the Owner Calendar ignores direct and bundle-derived released Full-Day history'
+);
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select lives_ok(
+  $$select public.save_cottage_inventory_pricing(
+    '30000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201',
+    '{"units":[
+      {"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003201","standardPriceIqd":100000},
+      {"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003202","standardPriceIqd":110000},
+      {"unitKind":"full_day_bundle","unitId":"61000000-0000-4000-8000-000000003201","standardPriceIqd":190000,"dateOverrides":[{"serviceDay":"2099-08-22","priceIqd":191000}]}
+    ]}'::jsonb
+  )$$,
+  'released Full-Day history permits a direct future specific-date price change'
+);
+reset role;
+select results_eq(
+  $$select
+      (select price_iqd from public.cottage_inventory_date_price_overrides
+        where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
+          and unit_kind = 'full_day_bundle'::public.cottage_inventory_unit_kind
+          and unit_id = '61000000-0000-4000-8000-000000003201'
+          and service_day = '2099-08-22'),
+      (select committed_price_iqd from public.cottage_inventory_commitments
+        where booking_period_commitment_id = '70000000-0000-4000-8000-000000003201'),
+      (select count(*) filter (where not active)::integer
+        from public.cottage_booking_period_occupancies
+        where booking_period_commitment_id = '70000000-0000-4000-8000-000000003201')$$,
+  $$values (191000::bigint, 190000::bigint, 2::integer)$$,
+  'released Full-Day pricing preserves its committed price and both inactive component occupancies'
+);
+
+insert into public.cottage_shift_schedule_revisions (
+  id, profile_id, revision, full_day_bundle_id
+) values (
+  '60000000-0000-4000-8000-000000003202',
+  '30000000-0000-4000-8000-000000003201', 2,
+  '61000000-0000-4000-8000-000000003202'
+);
+
+savepoint booking_request_active_confirmed_inventory_control;
+insert into public.cottage_booking_period_commitments (
+  id, customer_user_id, profile_id, schedule_revision_id,
+  commitment_reference, status, access_ranges
+) values (
+  '70000000-0000-4000-8000-000000003202',
+  '00000000-0000-0000-0000-000000003203',
+  '30000000-0000-4000-8000-000000003201',
+  '60000000-0000-4000-8000-000000003201',
+  'RC-ACTIVE-CONFIRMED-3201', 'confirmed_booking',
+  tstzmultirange(tstzrange('2099-08-22 05:00+00', '2099-08-22 09:00+00', '[)'))
+);
+insert into public.cottage_inventory_commitments (
+  booking_period_commitment_id, unit_kind, unit_id, service_day, committed_price_iqd
+) values (
+  '70000000-0000-4000-8000-000000003202', 'shift',
+  '62000000-0000-4000-8000-000000003201', '2099-08-22', 100000
+);
+insert into public.cottage_booking_period_occupancies (
+  booking_period_commitment_id, schedule_revision_id, shift_id, service_day
+) values (
+  '70000000-0000-4000-8000-000000003202',
+  '60000000-0000-4000-8000-000000003201',
+  '62000000-0000-4000-8000-000000003201', '2099-08-22'
+);
+set local role anon;
+select results_eq(
+  $$select unit ->> 'kind', (unit ->> 'available')::boolean
+    from jsonb_array_elements(public.resolve_cottage_inventory_public_availability(
+      '30000000-0000-4000-8000-000000003201',
+      '60000000-0000-4000-8000-000000003201', '2099-08-22'
+    ) -> 'units') unit
+    where unit ->> 'id' in (
+      '62000000-0000-4000-8000-000000003201',
+      '61000000-0000-4000-8000-000000003201'
+    ) order by unit ->> 'kind'$$,
+  $$values ('full_day_bundle'::text, false), ('shift'::text, false)$$,
+  'an active Confirmed Booking still blocks its Shift and derived Full-Day Bundle'
+);
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select throws_ok(
+  $$select public.set_cottage_inventory_availability(
+    '30000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201', '2099-08-22',
+    '[{"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003201","state":"closed"}]'::jsonb
+  )$$,
+  'RC204', null,
+  'an active Confirmed Booking still blocks changed-state Owner writes'
+);
+reset role;
+select results_eq(
+  $$select availability.state::text, occupancies.active
+    from public.cottage_inventory_availability availability
+    join public.cottage_booking_period_occupancies occupancies
+      on occupancies.schedule_revision_id = availability.schedule_revision_id
+      and occupancies.shift_id = availability.unit_id
+      and occupancies.service_day = availability.service_day
+    where occupancies.booking_period_commitment_id =
+      '70000000-0000-4000-8000-000000003202'$$,
+  $$values ('open'::text, true)$$,
+  'a blocked active-Booking write mutates neither inventory nor occupancy'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select throws_ok(
+  $$select public.save_cottage_inventory_pricing(
+    '30000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201',
+    '{"units":[
+      {"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003201","standardPriceIqd":100000,"dateOverrides":[{"serviceDay":"2099-08-22","priceIqd":101000}]},
+      {"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003202","standardPriceIqd":110000},
+      {"unitKind":"full_day_bundle","unitId":"61000000-0000-4000-8000-000000003201","standardPriceIqd":190000}
+    ]}'::jsonb
+  )$$,
+  'RC204', null,
+  'an active Confirmed Shift Booking rejects a direct specific-date price change'
+);
+reset role;
+select results_eq(
+  $$select
+      (select count(*)::integer from public.cottage_inventory_date_price_overrides
+        where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
+          and unit_kind = 'shift'::public.cottage_inventory_unit_kind
+          and unit_id = '62000000-0000-4000-8000-000000003201'
+          and service_day = '2099-08-22'),
+      (select committed_price_iqd from public.cottage_inventory_commitments
+        where booking_period_commitment_id = '70000000-0000-4000-8000-000000003202'),
+      (select active from public.cottage_booking_period_occupancies
+        where booking_period_commitment_id = '70000000-0000-4000-8000-000000003202')$$,
+  $$values (0::integer, 100000::bigint, true)$$,
+  'a rejected active Shift price change leaves pricing and committed occupancy unchanged'
+);
+
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select schedule_revision_id, unit_kind, unit_id, '2099-08-23', 'open'
+from public.cottage_inventory_standard_prices
+where schedule_revision_id = '60000000-0000-4000-8000-000000003201';
+insert into public.cottage_booking_period_commitments (
+  id, customer_user_id, profile_id, schedule_revision_id,
+  commitment_reference, status, access_ranges
+) values (
+  '70000000-0000-4000-8000-000000003203',
+  '00000000-0000-0000-0000-000000003202',
+  '30000000-0000-4000-8000-000000003201',
+  '60000000-0000-4000-8000-000000003201',
+  'RC-ACTIVE-FULL-DAY-3201', 'confirmed_booking',
+  tstzmultirange(tstzrange('2099-08-23 05:00+00', '2099-08-23 20:00+00', '[)'))
+);
+insert into public.cottage_inventory_commitments (
+  booking_period_commitment_id, unit_kind, unit_id, service_day, committed_price_iqd
+) values (
+  '70000000-0000-4000-8000-000000003203', 'full_day_bundle',
+  '61000000-0000-4000-8000-000000003201', '2099-08-23', 190000
+);
+insert into public.cottage_booking_period_occupancies (
+  booking_period_commitment_id, schedule_revision_id, shift_id, service_day
+)
+select '70000000-0000-4000-8000-000000003203',
+  '60000000-0000-4000-8000-000000003201', shifts.id, '2099-08-23'
+from public.cottage_shifts shifts
+where shifts.schedule_revision_id = '60000000-0000-4000-8000-000000003201';
+
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+select throws_ok(
+  $$select public.save_cottage_inventory_pricing(
+    '30000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201',
+    '{"units":[
+      {"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003201","standardPriceIqd":100000},
+      {"unitKind":"shift","unitId":"62000000-0000-4000-8000-000000003202","standardPriceIqd":110000},
+      {"unitKind":"full_day_bundle","unitId":"61000000-0000-4000-8000-000000003201","standardPriceIqd":190000,"dateOverrides":[{"serviceDay":"2099-08-23","priceIqd":191000}]}
+    ]}'::jsonb
+  )$$,
+  'RC204', null,
+  'an active Confirmed Full-Day Booking rejects a direct specific-date price change'
+);
+reset role;
+select results_eq(
+  $$select
+      (select count(*)::integer from public.cottage_inventory_date_price_overrides
+        where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
+          and unit_kind = 'full_day_bundle'::public.cottage_inventory_unit_kind
+          and unit_id = '61000000-0000-4000-8000-000000003201'
+          and service_day = '2099-08-23'),
+      (select committed_price_iqd from public.cottage_inventory_commitments
+        where booking_period_commitment_id = '70000000-0000-4000-8000-000000003203'),
+      (select count(*) filter (where active)::integer
+        from public.cottage_booking_period_occupancies
+        where booking_period_commitment_id = '70000000-0000-4000-8000-000000003203')$$,
+  $$values (0::integer, 190000::bigint, 2::integer)$$,
+  'a rejected active Full-Day price change leaves pricing and both committed occupancies unchanged'
+);
+
+select throws_ok(
+  $$update public.owner_application_cottage_profiles
+    set current_shift_schedule_id = '60000000-0000-4000-8000-000000003202'
+    where id = '30000000-0000-4000-8000-000000003201'$$,
+  'RC204', null,
+  'an active Booking prevents replacement of its current Shift Schedule'
+);
+select results_eq(
+  $$select
+      (select current_shift_schedule_id from public.owner_application_cottage_profiles
+        where id = '30000000-0000-4000-8000-000000003201'),
+      (select count(*)::integer from public.cottage_shift_schedule_revisions
+        where id = '60000000-0000-4000-8000-000000003201'),
+      (select count(*)::integer from public.cottage_inventory_commitments
+        where booking_period_commitment_id = '70000000-0000-4000-8000-000000003203'),
+      (select count(*) filter (where active)::integer
+        from public.cottage_booking_period_occupancies
+        where booking_period_commitment_id = '70000000-0000-4000-8000-000000003203')$$,
+  $$values ('60000000-0000-4000-8000-000000003201'::uuid, 1::integer, 1::integer, 2::integer)$$,
+  'a rejected active schedule replacement preserves its pointer, revision, commitment, and occupancy audit'
+);
+rollback to savepoint booking_request_active_confirmed_inventory_control;
+
+select lives_ok(
+  $$update public.owner_application_cottage_profiles
+    set current_shift_schedule_id = '60000000-0000-4000-8000-000000003202'
+    where id = '30000000-0000-4000-8000-000000003201'$$,
+  'released future inventory permits replacement of its current Shift Schedule'
+);
+select results_eq(
+  $$select
+      (select current_shift_schedule_id from public.owner_application_cottage_profiles
+        where id = '30000000-0000-4000-8000-000000003201'),
+      (select count(*)::integer from public.cottage_shift_schedule_revisions
+        where id = '60000000-0000-4000-8000-000000003201'),
+      (select count(*)::integer from public.cottage_booking_period_commitments periods
+        join public.booking_requests requests
+          on requests.booking_period_commitment_id = periods.id),
+      (select count(*)::integer from public.cottage_inventory_commitments items
+        join public.booking_requests requests
+          on requests.booking_period_commitment_id = items.booking_period_commitment_id),
+      (select count(*)::integer from public.cottage_booking_period_occupancies occupancies
+        join public.booking_requests requests
+          on requests.booking_period_commitment_id = occupancies.booking_period_commitment_id
+        where not occupancies.active)$$,
+  $$values ('60000000-0000-4000-8000-000000003202'::uuid, 1::integer, 1::integer, 1::integer, 1::integer)$$,
+  'released schedule replacement preserves its old revision, commitment, item, and inactive occupancy audit'
+);
+rollback to savepoint booking_request_preexpiry_admission_reconcile;
+
+savepoint booking_request_failed_release_retry;
+set local role service_role;
+select public.claim_booking_request_action(
+  (select customer_user_id from booking_request_lifecycle_target),
+  (select id from booking_request_lifecycle_target),
+  'withdraw', null, null
+);
+reset role;
+create temporary table failed_release_retry_snapshots as
+select attempts.id as attempt_id, work.id as work_id,
+  work.lease_generation, work.lease_token,
+  jsonb_set(attempts.payment_snapshot, '{release}', jsonb_build_object(
+    'paymentLifecycleId', attempts.payment_lifecycle_id,
+    'kind', 'release',
+    'logicalOperationId', attempts.payment_lifecycle_id::text || ':release',
+    'attemptId', attempts.payment_lifecycle_id::text || ':release:attempt-2',
+    'status', 'pending',
+    'amountFils', claims.amount_fils,
+    'providerRequestId', null, 'providerReference', null,
+    'movementReference', null, 'reconciliationRequired', false,
+    'retrySafe', false
+  )) as pending_one
+from public.booking_request_submission_attempts attempts
+join public.booking_request_authorization_claims claims
+  on claims.payment_lifecycle_id = attempts.payment_lifecycle_id
+join public.booking_request_release_work work on work.attempt_id = attempts.id
+where attempts.booking_request_id = (select id from booking_request_lifecycle_target);
+alter table failed_release_retry_snapshots
+  add column failed_one jsonb,
+  add column pending_two jsonb;
+grant select, update on failed_release_retry_snapshots to service_role;
+set local role service_role;
+create temporary table failed_release_retry_permit as
+select public.save_booking_request_release_snapshot(
+  work_id, lease_generation, lease_token, pending_one,
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+) as permit
+from failed_release_retry_snapshots;
+select is(
+  (select permit ->> 'purpose' from failed_release_retry_permit),
+  'booking-request-release',
+  'a first physical release attempt is durably claimed'
+);
+reset role;
+select throws_ok(
+  $$update public.booking_request_release_operations
+    set amount_fils = amount_fils + 1$$,
+  'RC204', null,
+  'release-operation amount and provider bindings are immutable'
+);
+select throws_ok(
+  $$update public.booking_request_release_operations
+    set state = 'retryable'$$,
+  'RC204', null,
+  'a release operation cannot become retryable without its required output shape'
+);
+select throws_ok(
+  $$insert into public.booking_request_release_operations (
+      id, work_id, attempt_id, operation_generation, payment_lifecycle_id,
+      logical_operation_id, physical_attempt_id, amount_fils, currency,
+      provider, environment, merchant_id, terminal_id,
+      provider_idempotency_key, request_fingerprint, state,
+      provider_outcome, execution_started_at
+    )
+    select gen_random_uuid(), work_id, attempt_id, operation_generation + 100,
+      payment_lifecycle_id, logical_operation_id, physical_attempt_id || '-invalid',
+      amount_fils, currency, provider, environment, merchant_id, terminal_id,
+      provider_idempotency_key || '-invalid', request_fingerprint,
+      'executing', 'failed', clock_timestamp()
+    from public.booking_request_release_operations$$,
+  'RC204', null,
+  'invalid release-operation output shapes fail on insertion as well as update'
+);
+set local role service_role;
+select throws_ok(
+  (select format(
+    'select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    work_id, lease_generation, lease_token,
+    jsonb_set(pending_one, '{release,attemptId}',
+      to_jsonb((pending_one ->> 'paymentLifecycleId') || ':release:attempt-3')),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ) from failed_release_retry_snapshots),
+  'RC409', null,
+  'operation N plus one cannot start before N is durably retryable'
+);
+create temporary table failed_release_retry_provider_result as
+select public.execute_simulated_payment_provider_operation(
+  jsonb_build_object(
+    'providerIdentity', jsonb_build_object(
+      'provider', 'fictional-payments', 'environment', 'local-test',
+      'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
+    ),
+    'permitPurpose', permit ->> 'purpose',
+    'idempotencyKey', permit ->> 'idempotencyKey',
+    'requestFingerprint', permit ->> 'requestFingerprint',
+    'notAfter', permit ->> 'notAfter',
+    'paymentLifecycleId', pending_one ->> 'paymentLifecycleId',
+    'logicalOperationId', pending_one -> 'release' ->> 'logicalOperationId',
+    'physicalAttemptId', pending_one -> 'release' ->> 'attemptId',
+    'operationKind', 'release',
+    'amountFils', (pending_one -> 'release' ->> 'amountFils')::bigint,
+    'currency', 'IQD', 'claimId', null, 'claimGeneration', null,
+    'stateRevision', null, 'cleanupAttemptId', null,
+    'workId', permit ->> 'workId',
+    'leaseGeneration', (permit ->> 'leaseGeneration')::bigint,
+    'leaseToken', permit ->> 'leaseToken',
+    'operationId', permit ->> 'operationId',
+    'operationGeneration', (permit ->> 'operationGeneration')::integer
+  ), 'failed'
+) as result
+from failed_release_retry_snapshots, failed_release_retry_permit;
+select is(
+  (select result ->> 'outcome' from failed_release_retry_provider_result),
+  'failed',
+  'the provider ledger proves attempt N failed before retry is allowed'
+);
+update failed_release_retry_snapshots snapshots set failed_one =
+  jsonb_set(jsonb_set(jsonb_set(jsonb_set(pending_one,
+    '{release,status}', '"failed"'::jsonb),
+    '{release,providerRequestId}', to_jsonb(results.result ->> 'providerRequestId')),
+    '{release,providerReference}', to_jsonb(results.result ->> 'providerReference')),
+    '{release,retrySafe}', 'true'::jsonb)
+from failed_release_retry_provider_result results;
+update failed_release_retry_snapshots set pending_two =
+  jsonb_set(jsonb_set(jsonb_set(jsonb_set(jsonb_set(failed_one,
+    '{release,status}', '"pending"'::jsonb),
+    '{release,attemptId}', to_jsonb((failed_one ->> 'paymentLifecycleId') || ':release:attempt-3')),
+    '{release,providerRequestId}', 'null'::jsonb),
+    '{release,providerReference}', 'null'::jsonb),
+    '{release,retrySafe}', 'false'::jsonb);
+
+savepoint booking_request_retryable_release_movement_invention;
+select throws_ok(
+  (select format(
+    'select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    work_id, lease_generation, lease_token,
+    jsonb_set(
+      failed_one,
+      '{movements}',
+      (failed_one -> 'movements') || jsonb_build_array(jsonb_build_object(
+        'kind', 'release', 'logicalOperationId', 'invented-release',
+        'attemptId', 'invented-attempt', 'amountFils', 1,
+        'movementReference', 'invented-movement',
+        'recordedAt', '2099-08-21T18:00:00.000Z'
+      ))
+    ),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ) from failed_release_retry_snapshots),
+  '22023', null,
+  'a retryable failed release preserves the existing movement array exactly'
+);
+rollback to savepoint booking_request_retryable_release_movement_invention;
+set local role service_role;
+select lives_ok(
+  (select format('select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    work_id, lease_generation, lease_token, failed_one,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')
+  from failed_release_retry_snapshots),
+  'a definitive retry-safe release failure is durably retained'
+);
+reset role;
+select throws_ok(
+  $$update public.booking_request_release_operations
+    set updated_at = clock_timestamp()$$,
+  'RC204', null,
+  'a retryable release operation is terminal and cannot be rewritten'
+);
+set local role service_role;
+select lives_ok(
+  (select format('select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    work_id, lease_generation, lease_token, pending_two,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')
+  from failed_release_retry_snapshots),
+  'the same logical release starts the next physical attempt'
+);
+reset role;
+select results_eq(
+  $$select attempts.state, attempts.payment_snapshot -> 'release' ->> 'status',
+      attempts.payment_snapshot -> 'release' ->> 'attemptId'
+    from public.booking_request_submission_attempts attempts
+    where attempts.booking_request_id = (select id from booking_request_lifecycle_target)$$,
+  $$select 'releasing'::text, 'pending'::text,
+      pending_two -> 'release' ->> 'attemptId'
+    from failed_release_retry_snapshots$$,
+  'retry recovery holds inventory while attempt N+1 awaits provider settlement'
+);
+rollback to savepoint booking_request_failed_release_retry;
+
+savepoint booking_request_deadline_equality;
+update public.booking_requests
+set created_at = timed.deadline - interval '4 hours',
+  response_deadline = timed.deadline
+from (select clock_timestamp() as deadline) timed;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target),
+    'accept', null, null
+  ) ->> 'status',
+  'release-required',
+  'deadline equality belongs to expiry even when the Owner submits acceptance'
+);
+reset role;
+select is(
+  (select outcome from public.booking_request_release_work limit 1),
+  'expired',
+  'the database clock records expiry as the winning outcome at the deadline'
+);
+rollback to savepoint booking_request_deadline_equality;
+
+savepoint booking_request_automatic_expiry;
+update public.booking_requests
+set created_at = due.deadline - interval '4 hours',
+  response_deadline = due.deadline
+from (select clock_timestamp() as deadline) due;
+set local role service_role;
+select throws_ok(
+  'select public.claim_due_booking_request_releases(null)',
+  '22023', null,
+  'the bounded internal runner rejects a null claim limit'
+);
+reset role;
+select results_eq(
+  $$select requests.status, claims.state,
+      count(distinct work.id)::integer,
+      count(distinct notifications.id)::integer
+    from public.booking_requests requests
+    join public.booking_request_submission_attempts attempts
+      on attempts.booking_request_id = requests.id
+    join public.booking_request_authorization_claims claims
+      on claims.attempt_id = attempts.id
+    left join public.booking_request_release_work work
+      on work.attempt_id = attempts.id
+    left join public.booking_request_status_notifications notifications
+      on notifications.booking_request_id = requests.id
+    where requests.id = (select id from booking_request_lifecycle_target)
+    group by requests.status, claims.state$$,
+  $$values ('pending'::text, 'converted'::public.booking_request_authorization_claim_state,
+      0::integer, 0::integer)$$,
+  'a null due-runner limit leases no release work and changes no product state'
+);
+set local role service_role;
+select is(
+  public.claim_due_booking_request_releases(20) -> 0 ->> 'status',
+  'release-required',
+  'the bounded internal runner claims an unanswered request for expiry without a user expire action'
+);
+reset role;
+rollback to savepoint booking_request_automatic_expiry;
+
+savepoint booking_request_terminal_rebooking;
+update public.booking_requests set status = 'declined';
+update public.booking_request_submission_attempts
+set intent_dedupe_active = false;
+update public.cottage_booking_period_commitments
+set status = 'released_hold';
+update public.cottage_booking_period_occupancies set active = false;
+set local role service_role;
+select is(
+  public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003202',
+    '11111111-1111-4111-8111-111111113201',
+    (select submission from valid_submission)
+  ) ->> 'status',
+  'declined',
+  'the original idempotency key projects the real terminal request status'
+);
+create temporary table terminal_rebooking as
+select public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202',
+  '11111111-1111-4111-8111-111111113299',
+  (select submission from valid_submission)
+) as result;
+reset role;
+select results_eq(
+  $$select (select result ->> 'status' from terminal_rebooking),
+      (select count(*)::integer
+        from public.booking_request_submission_attempts)$$,
+  $$values ('ready'::text, 2::integer)$$,
+  'a new idempotency key can create the same intent after unsuccessful terminal release'
+);
+rollback to savepoint booking_request_terminal_rebooking;
+
 select results_eq(
   $$select booking_terms_version, booking_terms_locale::text,
       booking_terms_sha256,
@@ -2228,6 +4843,15 @@ select ok(
   ]),
   'the owner projection excludes contact and payment-provider metadata'
 );
+select ok(
+  (select result -> 0 -> 'bookingPeriod' -> 0 ?& array['kind', 'displayName']
+    from owner_projection)
+  and (select result -> 0 ?& array[
+    'houseRules', 'bookingTermsVersion', 'cancellationPolicyVersion',
+    'marketplaceCommissionFils', 'ownerNetFils', 'statusNotifications'
+  ] from owner_projection),
+  'the Owner card receives the complete immutable Booking Snapshot and scoped notification receipt shape'
+);
 
 set local role authenticated;
 select set_config(
@@ -2239,6 +4863,49 @@ select is(
   jsonb_array_length(public.list_owner_booking_request_notifications()),
   0,
   'a second approved Cottage Owner cannot see an unrelated request'
+);
+reset role;
+
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.get_customer_booking_request(text)', 'execute'
+  )
+  and not has_function_privilege(
+    'anon', 'public.get_customer_booking_request(text)', 'execute'
+  ),
+  'only authenticated users can request a Customer Booking Request projection'
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003202"}',
+  true
+);
+create temporary table customer_projection as
+select public.get_customer_booking_request(
+  (select booking_request_reference from booking_request_lifecycle_target)
+) as result;
+reset role;
+select ok(
+  (select result ->> 'status' from customer_projection) = 'pending'
+  and not ((select result from customer_projection) ?| array[
+    'ownerUserId', 'customerName', 'bookingNote', 'phone', 'email',
+    'exactAddress', 'paymentLifecycleId', 'providerReference'
+  ]),
+  'the owning Customer receives a constrained status projection without private Owner or payment data'
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003203"}',
+  true
+);
+select is(
+  public.get_customer_booking_request(
+    (select booking_request_reference from booking_request_lifecycle_target)
+  ),
+  null::jsonb,
+  'a different Customer cannot discover another Customer Booking Request'
 );
 reset role;
 
