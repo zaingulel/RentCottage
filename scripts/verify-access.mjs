@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const USAGE = "Usage: npm run verify:access";
+const FIXTURE_CONTRACT_MODE = "--fixture-contract";
+const USAGE = `Usage: npm run verify:access [${FIXTURE_CONTRACT_MODE}]`;
 const LOCAL_PROJECT_PATTERN = /^rentcottage(?:-[a-z0-9]+)*$/;
 const EXCLUDED_SERVICES =
   "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
@@ -100,7 +101,9 @@ export function main(
     workingDirectory = process.cwd(),
   } = {},
 ) {
-  if (args.length !== 0) {
+  const focusedFixtureContract =
+    args.length === 1 && args[0] === FIXTURE_CONTRACT_MODE;
+  if (args.length !== 0 && !focusedFixtureContract) {
     stderr(USAGE);
     return 2;
   }
@@ -175,9 +178,6 @@ export function main(
     );
     if (result.status !== 0) return result.status;
 
-    result = execute("npx", supabaseArguments(["supabase", "test", "db"]));
-    if (result.status !== 0) return result.status;
-
     const databaseConcurrencyEnvironment = {
       ...supabaseEnvironment,
       SUPABASE_DB_CONTAINER: `supabase_db_${localProject}`,
@@ -189,30 +189,34 @@ export function main(
     delete databaseConcurrencyEnvironment.SUPABASE_URL;
     delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
     delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
-    result = execute(
-      "node",
-      [
-        "scripts/verify-cottage-profile-draft-concurrency.mjs",
-        "--verify-migration-preflight",
-      ],
-      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (result.status !== 0) return result.status;
-    result = execute(
-      "node",
-      [
-        "scripts/verify-booking-period-hold-concurrency.mjs",
-        "--verify-migration-preflight",
-      ],
-      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (result.status !== 0) return result.status;
-    result = execute(
-      "node",
-      ["scripts/verify-booking-request-lifecycle-upgrade.mjs"],
-      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (result.status !== 0) return result.status;
+    if (!focusedFixtureContract) {
+      result = execute("npx", supabaseArguments(["supabase", "test", "db"]));
+      if (result.status !== 0) return result.status;
+      result = execute(
+        "node",
+        [
+          "scripts/verify-cottage-profile-draft-concurrency.mjs",
+          "--verify-migration-preflight",
+        ],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
+      result = execute(
+        "node",
+        [
+          "scripts/verify-booking-period-hold-concurrency.mjs",
+          "--verify-migration-preflight",
+        ],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
+      result = execute(
+        "node",
+        ["scripts/verify-booking-request-lifecycle-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
+    }
 
     const status = execute(
       "npx",
@@ -241,16 +245,30 @@ export function main(
     const secretKey = credentials.SECRET_KEY;
     const accessEnvironment = {
       ...supabaseEnvironment,
+      APP_ENVIRONMENT: "test",
       SUPABASE_URL: supabaseUrl,
       SUPABASE_PUBLISHABLE_KEY: publishableKey,
       SUPABASE_SECRET_KEY: secretKey,
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     };
-    const prepared = execute("node", ["scripts/prepare-access-test.mjs"], {
-      env: accessEnvironment,
-      stdio: "inherit",
-    });
-    if (prepared.status !== 0) return prepared.status;
+    const fixtureContract = execute(
+      "node",
+      ["scripts/verify-access-fixture-contract.mjs"],
+      {
+        env: { ...accessEnvironment, ...databaseConcurrencyEnvironment },
+        stdio: "inherit",
+      },
+    );
+    if (fixtureContract.status !== 0) return fixtureContract.status;
+    if (focusedFixtureContract) return 0;
+    const createDraftConcurrencyFixture = execute(
+      "node",
+      ["scripts/prepare-access-test.mjs", "create", "mobile"],
+      { env: accessEnvironment, stdio: "inherit" },
+    );
+    if (createDraftConcurrencyFixture.status !== 0) {
+      return createDraftConcurrencyFixture.status;
+    }
     const scheduleConcurrencyEnvironment = { ...accessEnvironment };
     delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
     const draftConcurrency = execute(
@@ -289,15 +307,26 @@ export function main(
     if (bookingPeriodHoldConcurrency.status !== 0) {
       return bookingPeriodHoldConcurrency.status;
     }
-    const rerun = execute("node", ["scripts/prepare-access-test.mjs"], {
-      env: {
-        ...accessEnvironment,
-        ACCESS_FIXTURE_VALIDATE_EXISTING: "1",
+    const createNextFixtures = execute(
+      "node",
+      ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"],
+      {
+        env: accessEnvironment,
+        stdio: "inherit",
       },
-      stdio: "inherit",
-    });
-    if (rerun.status !== 0) return rerun.status;
-
+    );
+    if (createNextFixtures.status !== 0) return createNextFixtures.status;
+    const validateNextFixtures = execute(
+      "node",
+      ["scripts/prepare-access-test.mjs", "validate", "mobile", "desktop"],
+      {
+        env: accessEnvironment,
+        stdio: "inherit",
+      },
+    );
+    if (validateNextFixtures.status !== 0) {
+      return validateNextFixtures.status;
+    }
     const browserEnvironment = {
       ...accessEnvironment,
       APP_ENVIRONMENT: "test",
@@ -320,6 +349,23 @@ export function main(
       { env: browserEnvironment, stdio: "inherit" },
     );
     if (browser.status !== 0) return browser.status;
+
+    const createWorkerFixtures = execute(
+      "node",
+      ["scripts/prepare-access-test.mjs", "create", "worker"],
+      { env: accessEnvironment, stdio: "inherit" },
+    );
+    if (createWorkerFixtures.status !== 0) {
+      return createWorkerFixtures.status;
+    }
+    const validateWorkerFixtures = execute(
+      "node",
+      ["scripts/prepare-access-test.mjs", "validate", "worker"],
+      { env: accessEnvironment, stdio: "inherit" },
+    );
+    if (validateWorkerFixtures.status !== 0) {
+      return validateWorkerFixtures.status;
+    }
 
     const workerBrowser = execute(
       "npx",

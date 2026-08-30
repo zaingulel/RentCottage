@@ -1,12 +1,26 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHmac } from "node:crypto";
+import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
 
 type BrowserLocale = "en" | "ar" | "ckb";
 
-const reviewDocumentFilename =
-  "syntheticlongprivateidentityevidencefilenamethatmustwrapwithouttruncation.pdf";
+type AccessBrowserFixture = {
+  exactAddress: string;
+  reviewLegalName: string;
+  reviewOwnerPhone: string;
+};
+
+const {
+  accessBrowserFixture,
+  ACCESS_REVIEW_DOCUMENT_FILENAME: reviewDocumentFilename,
+} = createRequire(import.meta.url)(
+  "../scripts/lib/access-browser-fixtures.mjs",
+) as {
+  accessBrowserFixture(project: string): AccessBrowserFixture;
+  ACCESS_REVIEW_DOCUMENT_FILENAME: string;
+};
 
 type BrowserApplicationFixture = {
   privacyNote: string;
@@ -1142,6 +1156,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
 test("a Platform Administrator reaches access only after authenticator MFA", async ({
   page,
 }, testInfo) => {
+  const reviewFixture = accessBrowserFixture(testInfo.project.name);
   const email = `platform-administrator-${testInfo.project.name}@rentcottage.test`;
   const actorUserId = await administratorId(email);
   const attemptedAfter = new Date().toISOString();
@@ -1430,8 +1445,13 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     await page.goto(`/${locale}/administrator/owner-applications`);
     await expect(page.locator("html")).toHaveAttribute("dir", direction);
     await expect(page.getByRole("heading", { name: copy.title })).toBeVisible();
-    await expect(page.getByText(reviewDocumentFilename).first()).toBeVisible();
-    const identityDocument = page
+    const reviewApplication = page
+      .locator("article")
+      .filter({ hasText: reviewFixture.reviewLegalName });
+    await expect(
+      reviewApplication.getByText(reviewDocumentFilename),
+    ).toBeVisible();
+    const identityDocument = reviewApplication
       .locator("li")
       .filter({ hasText: reviewDocumentFilename })
       .first();
@@ -1497,6 +1517,8 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   }
   const finalCopy = browserFixtures.ckb.review;
   const signedUrl = await page
+    .locator("article")
+    .filter({ hasText: reviewFixture.reviewLegalName })
     .locator("li")
     .filter({ hasText: reviewDocumentFilename })
     .first()
@@ -1528,12 +1550,12 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await page.goto("/en/administrator/owner-applications");
   const applicationCard = page
     .locator("article")
-    .filter({ hasText: reviewDocumentFilename });
+    .filter({ hasText: reviewFixture.reviewLegalName });
   await applicationCard.getByRole("link", { name: "Open application" }).click();
   await expect(
     page.getByRole("heading", { name: "Owner Application review" }),
   ).toBeVisible();
-  await expect(page.getByText("Near the eastern orchard road")).toBeVisible();
+  await expect(page.getByText(reviewFixture.exactAddress)).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("en-administrator-review-detail.png"),
     fullPage: true,
@@ -1562,11 +1584,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     fullPage: true,
   });
 
-  await openOwnerApplication(
-    page,
-    "en",
-    journeyPhone(testInfo.project.name, ["3", "4", "5"]),
-  );
+  await openOwnerApplication(page, "en", reviewFixture.reviewOwnerPhone);
   await expect(
     page
       .locator(".owner-review-status")

@@ -1,11 +1,18 @@
 import { expect, test } from "@playwright/test";
+import { createRequire } from "node:module";
 import { createClient } from "@supabase/supabase-js";
 
-const ownerPhones: Record<string, string> = {
-  mobile: "+9647510000000",
-  desktop: "+9647510000001",
-  worker: "+9647510000002",
+type AccessBrowserFixture = {
+  bookingCottageName: string;
+  bookingOwnerPhone: string;
 };
+
+const { accessBrowserFixture } = createRequire(import.meta.url)(
+  "../scripts/lib/access-browser-fixtures.mjs",
+) as {
+  accessBrowserFixture(project: string): AccessBrowserFixture;
+};
+
 const customerPhones: Record<string, string> = {
   mobile: "+9647520000000",
   desktop: "+9647520000001",
@@ -37,10 +44,12 @@ test("a verified Customer double-submit creates one Pending request and one mini
   ) {
     throw new Error("Booking Request journey requires isolated local fixtures");
   }
-  const ownerPhone = ownerPhones[testInfo.project.name];
+  const bookingFixture = accessBrowserFixture(testInfo.project.name);
+  const ownerPhone = bookingFixture.bookingOwnerPhone;
+  const cottageName = bookingFixture.bookingCottageName;
   const customerPhone = customerPhones[testInfo.project.name];
   const offset = { mobile: 4, desktop: 5, worker: 6 }[testInfo.project.name];
-  if (!ownerPhone || !customerPhone || !offset) {
+  if (!customerPhone || !offset) {
     throw new Error("Booking fixture is unmapped");
   }
 
@@ -54,15 +63,14 @@ test("a verified Customer double-submit creates one Pending request and one mini
     password: "Local-test-password-2026",
   });
   if (signInError) throw signInError;
-  const { data: profiles, error: profileError } = await fixtureOwner
+  const { data: profile, error: profileError } = await fixtureOwner
     .from("owner_application_cottage_profiles")
     .select("id,current_shift_schedule_id")
+    .eq("name", cottageName)
     .not("current_publication_id", "is", null)
     .not("current_shift_schedule_id", "is", null)
-    .order("updated_at", { ascending: false })
-    .limit(1);
+    .single();
   if (profileError) throw profileError;
-  const profile = profiles[0];
   if (!profile?.current_shift_schedule_id) {
     throw new Error("Published Booking Request fixture is unavailable");
   }
