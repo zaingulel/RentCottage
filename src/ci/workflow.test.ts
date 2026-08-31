@@ -16,7 +16,9 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 const expectedHead = "0123456789abcdef0123456789abcdef01234567";
-const retiredProvider = ["code", "rabbit"].join("");
+const retiredStackProvider = ["graph", "ite"].join("");
+const retiredLegacyProvider = ["code", "rabbit"].join("");
+const retiredRouteLabel = ["graph", "ite", "-review"].join("");
 
 type ShellResult = {
   status: number | null;
@@ -107,10 +109,10 @@ if [[ "$*" == *"/pulls/"* ]]; then
   if [[ "\${FAKE_PR_EXIT:-0}" != "0" ]]; then
     exit "$FAKE_PR_EXIT"
   fi
-  if [[ "$*" == *".base.ref"* ]]; then
-    printf '%s\\n' "\${FAKE_PR_TSV:-}"
-  else
+  if [[ -n "\${CHECK_RUN_ID:-}" ]]; then
     printf '%s\\n' "\${FAKE_FINAL_PR_TSV:-}"
+  else
+    printf '%s\\n' "\${FAKE_VALIDATION_PR_TSV:-}"
   fi
 elif [[ "$*" == *"check-runs"* && "$*" == *"POST"* ]]; then
   printf '%s\\n' "\${FAKE_CHECK_ID:-9001}"
@@ -134,8 +136,8 @@ fi
       GITHUB_REF: "refs/heads/main",
       PULL_REQUEST_NUMBER: "88",
       EXPECTED_HEAD_OID: expectedHead,
-      FAKE_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\tmain`,
-      FAKE_FINAL_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage`,
+      FAKE_VALIDATION_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\tmain`,
+      FAKE_FINAL_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\tmain`,
       FAKE_CHECK_ID: "9001",
       ...environment,
     },
@@ -155,51 +157,23 @@ fi
 }
 
 describe("GitHub Actions delivery checks", () => {
-  it("defines the complete external-review route matrix in one authority", () => {
+  it("defines Greptile as the sole best-effort external reviewer", () => {
     const agents = readFileSync(resolve("AGENTS.md"), "utf8");
-    const routeTable = parseMarkdownTable(agents, "### External-review route");
+    const policy = sectionUnder(agents, "### External review");
 
-    expect(routeTable.headers).toEqual([
-      "Rule",
-      "Security input",
-      "Delivery integrity",
-      "Risk escalation",
-      "Result",
-    ]);
-    expect(routeTable.rows).toEqual([
-      ["R1", "UNKNOWN", "ANY", "ANY", "STOP"],
-      ["R2", "ANY_YES", "ANY", "ANY", "Greptile only"],
-      ["R3", "ALL_NO_OR_NOT_RUN", "YES", "ANY", "Greptile only"],
-      ["R4", "ALL_NO_OR_NOT_RUN", "NO", "YES", "Greptile only"],
-      ["R5", "ALL_NO_OR_NOT_RUN", "NO", "NO", "Graphite only"],
-    ]);
-    expect(new Set(routeTable.rows.map((row) => row[4]))).toEqual(
-      new Set(["Greptile only", "Graphite only", "STOP"]),
-    );
-
-    const routeSection = sectionUnder(agents, "### External-review route");
-    expect(routeSection).toContain("evaluated top-to-bottom");
-    expect(routeSection).toContain(
-      "`NOT_RUN` requires direct scope evidence that none of `security-code-review`'s eight groups is touched; any possible touch is `UNKNOWN` until the skill runs. Map only `ALL_NO` and evidenced `NOT_RUN` to `ALL_NO_OR_NOT_RUN`",
-    );
-    expect(routeSection).toContain(
-      "Continuous Integration workflows, review skills and agent authorities, delivery rules, hosted merge assumptions, tracker verification and reconciliation, guarded release machinery, and tests specifically verifying those surfaces",
-    );
-    expect(routeSection).toContain(
-      "Ordinary product, domain, user-interface, application, database, and browser tests alone are not delivery integrity",
-    );
-    expect(routeSection).toContain(
-      "Risk escalation is `YES` when the approved issue or owner requires Greptile, or the coordinator cites material uncertainty, blast radius, or reviewer-diversity value; otherwise it is `NO`",
-    );
-    expect(routeSection).toContain(
-      "`STOP` produces no approvable pull-request route",
-    );
-    expect(routeSection).toContain(
-      "Every pull-request-bound change resolves a route or `STOP` before pull-request approval",
+    expect(policy).toContain("Greptile is the sole external reviewer");
+    expect(policy).toContain("best-effort");
+    expect(policy).toContain("exact current pull-request head");
+    expect(policy).toContain("`COMPLETE` or `UNAVAILABLE`");
+    expect(policy).toContain("does not relax or replace");
+    expect(policy).toContain(
+      "No paid plan, billing change, purchase, or upgrade",
     );
     expect(agents).toContain(
-      "external-review route, matched rule, and concise supporting evidence",
+      "settled Greptile attempt state and concise supporting evidence",
     );
+    expect(agents).toContain("finished evidence packet");
+    expect(agents).not.toContain("two evidence stages");
   });
 
   it("keeps security review scoped to classification and managed review", () => {
@@ -215,10 +189,7 @@ describe("GitHub Actions delivery checks", () => {
       "report the aggregate `UNKNOWN`, `ANY_YES`, or `ALL_NO` to the coordinator",
     );
     expect(securityReview).toContain(
-      "external-review route table in `AGENTS.md`",
-    );
-    expect(securityReview).toContain(
-      "does not operate Graphite or Greptile, change provider configuration, or broaden the managed review",
+      "does not operate Greptile, change provider configuration, or broaden the managed review",
     );
     expect(securityReview).toContain(
       "If every classification is `NO`, invoke those managed Standards and Spec contracts unchanged",
@@ -227,133 +198,133 @@ describe("GitHub Actions delivery checks", () => {
       "If any classification is `YES`, spawn the managed Standards and Spec reviewers together with the configured `security_reviewer`",
     );
 
-    expect(
-      parseMarkdownTable(agents, "### External-review route").rows,
-    ).toHaveLength(5);
+    expect(agents).not.toContain("### External-review route");
     expect(securityReview).not.toContain("| Security input |");
     expect(delivery).not.toContain("| Security input |");
+    expect(securityReview).toContain(
+      "Greptile `UNAVAILABLE` never relaxes an internal review, executable verification, Continuous Integration, conversation, ownership, tracker, merge, or release gate",
+    );
   });
 
-  it("publishes with one immutable route label before selected review and exact-head quality", () => {
+  it("uses ordinary GitHub delivery and records one settled Greptile attempt", () => {
     const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
     const sequence = parseNumberedSequence(
       delivery,
       "## External review and exact-head quality",
     );
-    const evidenceTable = parseMarkdownTable(
+    const stateTable = parseMarkdownTable(
       delivery,
-      "### Selected-provider evidence",
+      "### Greptile attempt states",
     );
 
     expect(sequence.map(({ number, label }) => ({ number, label }))).toEqual([
       { number: 1, label: "Create draft" },
-      { number: 2, label: "Select route" },
-      { number: 3, label: "Publish" },
-      { number: 4, label: "Selected external review" },
+      { number: 2, label: "Publish" },
+      { number: 3, label: "Attempt Greptile" },
+      { number: 4, label: "Fresh exact-head internal review" },
       { number: 5, label: "Exact-head quality" },
     ]);
-    expect(sequence[0].text).toContain("Graphite stack management");
-    expect(sequence[0].text).toContain("draft");
+    expect(sequence[0].text).toContain("`git commit -m <MESSAGE>`");
+    expect(sequence[0].text).toContain(
+      "`git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`",
+    );
+    expect(sequence[0].text).toContain("exact pushed commit OID");
+    expect(sequence[0].text).toContain(
+      "`gh pr create --repo zaingulel/RentCottage --draft --base main --head zaingulel:<PR_HEAD_BRANCH> --title <TITLE> --body-file /absolute/path/to/approved-pr-body.md --label independent-review`",
+    );
+    expect(sequence[0].text).toContain("exact pushed head");
+    expect(sequence[0].text).toContain("current remote branch metadata");
+    expect(sequence[1].text).toContain("freshly read");
+    expect(sequence[1].text).toContain("same repository");
+    expect(sequence[1].text).toContain("draft");
+    expect(sequence[1].text).toContain("base `main`");
+    expect(sequence[1].text).toContain("exact head");
+    expect(sequence[1].text).toContain("exactly `independent-review`");
     expect(sequence[1].text).toContain(
-      "`Greptile only` uses `independent-review`; `Graphite only` uses `graphite-review`",
+      "`gh pr view <PR_NUMBER> --repo zaingulel/RentCottage --json",
     );
-    expect(sequence[1].text).toContain("exactly one route label");
-    expect(sequence[2].text).toContain("freshly read");
-    expect(sequence[2].text).toContain(
-      "exact label set, draft state, and head",
+    expect(sequence[1].text).toContain(
+      "`gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`",
     );
-    expect(sequence[2].text).toContain("Immediately before");
-    expect(sequence[2].text).toContain("ready for review");
-    expect(sequence[2].text).toContain(
-      "The selected route label is immutable after publication",
+    expect(sequence[2].text).toContain("`head=CURRENT_PR_HEAD`");
+    expect(sequence[2].text).toContain("`COMPLETE` or `UNAVAILABLE`");
+    expect(sequence[3].text).toContain("`after=settled Greptile attempt`");
+    expect(sequence[3].text).toContain("`security-code-review`");
+    expect(sequence[3].text).toContain("exact pushed head");
+    expect(sequence[3].text).toContain(
+      "entirely fresh Standards and Specification reviewers",
     );
-    expect(sequence[3].text).toContain("`head=CURRENT_PR_HEAD`");
-    expect(sequence[3].text).toContain("completion, coverage, and findings");
+    expect(sequence[3].text).toContain("fresh Security reviewer");
+    expect(sequence[3].text).toContain(
+      "Pre-outward review verdicts are ineligible",
+    );
     expect(sequence[4].text).toContain(
-      "`after=Selected external review`; `head=CURRENT_PR_HEAD`",
+      "`after=fresh exact-head internal review`",
+    );
+    expect(sequence[4].text).toContain("required local verification");
+    expect(sequence[4].text).toContain(
+      "`gh workflow run ci.yml --repo zaingulel/RentCottage --ref main -f pull_request_number=<PR_NUMBER> -f expected_head_oid=<CURRENT_PR_HEAD>`",
     );
 
-    expect(delivery).toContain(
-      "resolved external-review route and matched rule",
-    );
-    expect(evidenceTable).toEqual({
-      headers: ["Packet fields", "Complete evidence"],
+    expect(stateTable).toEqual({
+      headers: ["State", "Required evidence"],
       rows: [
         [
-          "`provider`, `source`, `artifact`",
-          "The selected provider only; its installed GitHub App; its GitHub artifact URL.",
+          "`COMPLETE`",
+          "An exact-current-head completion artifact that identifies Greptile's installed GitHub App as actor and source, its provider-produced GitHub artifact URL, complete changed-file coverage, and an evidence-based disposition for every finding.",
         ],
         [
-          "`route`, `matched-rule`, `label`",
-          "The exclusive route and resolved `AGENTS.md` rule; exactly `independent-review` for `Greptile only` or `graphite-review` for `Graphite only`.",
+          "`UNAVAILABLE`",
+          "Exactly one reason: `ALLOWANCE_EXHAUSTED`, `PROVIDER_UNAVAILABLE`, or `NO_EXACT_HEAD_COMPLETION`; the attempted and current head; observation time and source; artifact or exact error; and owner/coordinator notice.",
         ],
-        [
-          "`completion`, `head`",
-          "`OBSERVED` only when the selected provider's completion artifact identifies `CURRENT_PR_HEAD`.",
-        ],
-        [
-          "`changed-files`, `reviewed-files`, `coverage`",
-          "The selected provider's count or file summary accounts for every GitHub changed file; coverage is `COMPLETE`.",
-        ],
-        ["`findings`", "Every finding has an evidence-based disposition."],
       ],
     });
     expect(delivery).toContain(
-      "Each push advances `CURRENT_PR_HEAD`, invalidates the selected provider and Continuous Integration evidence, and restarts the selected review sequence",
+      "Partial or incomplete exact-head coverage is `UNAVAILABLE` with reason `NO_EXACT_HEAD_COMPLETION`",
+    );
+    expect(delivery).toContain("changed, reviewed, and missing files");
+    expect(delivery).toContain(
+      "dispositions for every finding that was emitted",
     );
     expect(delivery).toContain(
-      "Zero route labels, both route labels, a changed head, a route-label change after publication, unselected-provider activity, missing or stale selected-provider evidence, and provider filtering that is unavailable or disagrees with this authority stop pull-request publication or delivery",
+      "Missing, unknown, stale, or unattributed attempt evidence stops delivery",
     );
     expect(delivery).toContain(
-      "Graphite stack management is distinct from Graphite AI review",
-    );
-    expect(delivery).toContain("No paid provider plan is authorised");
-    expect(delivery).toContain("The trial ends on 17 September 2026");
-    expect(delivery).toContain("including after a Graphite Hobby downgrade");
-    expect(delivery).toContain(
-      "Graphite enables RentCottage, includes only `graphite-review`, and keeps draft AI reviews off; Greptile enables RentCottage, includes only `independent-review`, keeps draft reviews off, and keeps automatic new-commit reviews off",
+      "Self-authored, wrong-provider, missing, untrusted, or unattributed artifacts cannot be `COMPLETE` and stop delivery",
     );
     expect(delivery).toContain(
-      "manually request Greptile's exact-head re-review after every later push",
+      "A push invalidates Greptile, internal-review, and Continuous Integration evidence",
+    );
+    expect(delivery).toContain(
+      "A repair push receives a fresh exact-head Greptile attempt when allowance permits, or a new exact-head `UNAVAILABLE` record otherwise",
+    );
+    expect(delivery).toContain(
+      "Every repair uses an ordinary Git commit and `git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`",
+    );
+    expect(delivery).toContain(
+      "restarts the exact-head Greptile attempt, `security-code-review` classification, entirely new internal reviewers, and exact-head quality",
+    );
+    expect(delivery).toContain(
+      "No paid plan, billing change, purchase, or upgrade",
     );
 
-    const executableSources = [
-      readFileSync(resolve(".github/workflows/ci.yml"), "utf8"),
-      readFileSync(resolve(".github/workflows/preview.yml"), "utf8"),
-      readFileSync(resolve("scripts/release-delivery.mjs"), "utf8"),
-      readFileSync(resolve("package.json"), "utf8"),
-    ].join("\n");
-    expect(executableSources.toLowerCase()).not.toContain("greptile");
-  });
-
-  it("keeps RentCottage provider readiness independent and the Hobby transition fail-closed", () => {
-    const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
-    const providerEvidence = sectionUnder(
-      delivery,
-      "### Selected-provider evidence",
-    );
-
-    const independenceInvariant =
-      "**Cross-repository prerequisite:** None. RentCottage delivery stands or stops only on its own repository authority and provider settings.";
-    const retiredCrossRepositoryPrerequisites = [
-      /flow[\s-]?metrics(?:[\s-]?dashboard)?/i,
-      /#993\b/,
-      /\bboth-repositories-first\b/i,
-      /\bshared Graphite workspace\b/i,
-      /\breconcile both repositories\b/i,
-    ];
-
-    expect(delivery.split(independenceInvariant)).toHaveLength(2);
-    expect(providerEvidence).toContain(independenceInvariant);
-    for (const retiredPrerequisite of retiredCrossRepositoryPrerequisites) {
-      expect(delivery).not.toMatch(retiredPrerequisite);
+    const scopedSources = [
+      "AGENTS.md",
+      "docs/agents/delivery.md",
+      ".agents/skills/security-code-review/SKILL.md",
+      "docs/adr/0001-cloudflare-workers-supabase-stack.md",
+      ".github/workflows/ci.yml",
+      "src/ci/workflow.test.ts",
+    ].map((path) => readFileSync(resolve(path), "utf8").toLowerCase());
+    for (const source of scopedSources) {
+      for (const retiredProvider of [
+        retiredStackProvider,
+        retiredLegacyProvider,
+      ]) {
+        expect(source).not.toContain(retiredProvider);
+      }
+      expect(source).not.toContain(retiredRouteLabel);
     }
-    expect(providerEvidence).toContain(
-      "Before 17 September 2026, recheck and record whether Graphite Hobby preserves the saved `graphite-review` include filter",
-    );
-    expect(providerEvidence).toContain(
-      "An unavailable or unverified Hobby result produces `STOP`; reconcile the RentCottage repository authority and RentCottage provider settings before continuing RentCottage delivery",
-    );
   });
 
   it("keeps terminal delivery release progressively registered from the document map", () => {
@@ -382,6 +353,9 @@ describe("GitHub Actions delivery checks", () => {
     expect(delivery).toContain("Required inputs:");
     expect(delivery).toContain("Stop conditions:");
     expect(delivery).toContain("Next route:");
+    expect(delivery).toContain(
+      "settled exact-head Greptile attempt evidence; issue and pull-request identities; approved full head commit Object ID",
+    );
     expect(delivery).toContain("release:delivery");
     expect(delivery).toContain("scripts/release-delivery.mjs");
     expect(delivery).toContain("scripts/release-delivery.test.mjs");
@@ -444,7 +418,9 @@ describe("GitHub Actions delivery checks", () => {
     );
     expect(ownerDecisions).toContain("docs/agents/delivery.md");
     expect(ownerDecisions).not.toContain("capability-only");
-    expect(ownerDecisions).not.toContain("exact approved head changes");
+    expect(ownerDecisions).toContain(
+      "review the finished evidence packet before any commit or outward action",
+    );
   });
 
   it("declares a trusted-main exact-head dispatch contract", () => {
@@ -529,8 +505,8 @@ describe("GitHub Actions delivery checks", () => {
       expect(job.env).toBeUndefined();
     }
 
-    expect(ciSource.toLowerCase()).not.toContain(retiredProvider);
-    expect(ciSource).not.toMatch(/graphite.*(?:comment|status|review|bot)/i);
+    expect(ciSource.toLowerCase()).not.toContain(retiredStackProvider);
+    expect(ciSource.toLowerCase()).not.toContain(retiredLegacyProvider);
     expect(ciSource).not.toMatch(/pull_request_review|issue_comment/);
     expect(ciSource).not.toMatch(/fallback|hidden marker/i);
   });
@@ -564,17 +540,20 @@ describe("GitHub Actions delivery checks", () => {
     ).toBe(true);
   });
 
-  it("documents Graphite stack submission before selected review and source-bound quality enforcement", () => {
+  it("documents ordinary GitHub merge and source-bound quality enforcement", () => {
     const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
     const architecture = readFileSync(
       resolve("docs/adr/0001-cloudflare-workers-supabase-stack.md"),
       "utf8",
     );
 
-    expect(delivery).toContain("`gt submit`");
-    expect(delivery.indexOf("`gt submit`")).toBeLessThan(
-      delivery.indexOf("**Selected external review:**"),
+    expect(delivery).toContain(
+      "`gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --squash --match-head-commit <CURRENT_PR_HEAD>`",
     );
+    expect(delivery).toContain(
+      "`gh pr view <PR_NUMBER> --repo zaingulel/RentCottage --json",
+    );
+    expect(delivery).toContain("Do not use `--admin`");
     for (const authority of [delivery, architecture]) {
       expect(authority).toContain("observed GitHub Actions source");
       expect(authority).toContain("not the `quality` check name alone");
@@ -604,7 +583,7 @@ describe("GitHub Actions delivery checks", () => {
     }
   });
 
-  it("rejects unavailable, closed, foreign, stale, and temporary-base pull requests before creating quality", () => {
+  it("rejects unavailable, closed, foreign, stale, and every non-main base before creating quality", () => {
     const { workflow } = loadWorkflow();
     const validation = workflow.jobs.validate.steps.find(
       (step: { id?: string }) => step.id === "validate",
@@ -612,19 +591,19 @@ describe("GitHub Actions delivery checks", () => {
     const invalidEvidence: Record<string, string>[] = [
       { FAKE_PR_EXIT: "1" },
       {
-        FAKE_PR_TSV: `closed\t${expectedHead}\tzaingulel/RentCottage\tmain`,
+        FAKE_VALIDATION_PR_TSV: `closed\t${expectedHead}\tzaingulel/RentCottage\tmain`,
       },
       {
-        FAKE_PR_TSV: `open\t${expectedHead}\toutside/RentCottage\tmain`,
+        FAKE_VALIDATION_PR_TSV: `open\t${expectedHead}\toutside/RentCottage\tmain`,
       },
       {
-        FAKE_PR_TSV: `open\t${"f".repeat(40)}\tzaingulel/RentCottage\tmain`,
+        FAKE_VALIDATION_PR_TSV: `open\t${"f".repeat(40)}\tzaingulel/RentCottage\tmain`,
       },
       {
-        FAKE_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\tgraphite-base/88`,
+        FAKE_VALIDATION_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\ttopic/base`,
       },
       {
-        FAKE_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\tgt/88/graphite-base/88`,
+        FAKE_VALIDATION_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\trelease`,
       },
     ];
 
@@ -640,27 +619,21 @@ describe("GitHub Actions delivery checks", () => {
     }
   });
 
-  it("accepts ordinary and upstack pull requests and creates quality on the exact head", () => {
+  it("accepts only a main-based pull request and creates quality on the exact head", () => {
     const { workflow } = loadWorkflow();
     const validation = workflow.jobs.validate.steps.find(
       (step: { id?: string }) => step.id === "validate",
     );
 
-    for (const base of ["main", "codex/issue-87-lower-stack"]) {
-      const result = runWorkflowShell(validation.run, {
-        FAKE_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\t${base}`,
-      });
-      expect(result.status).toBe(0);
-      expect(result.outputs).toContain("check_run_id=9001");
-      expect(result.calls).toHaveLength(2);
-      expect(result.calls[0]).toContain("repos/zaingulel/RentCottage/pulls/88");
-      expect(result.calls[1]).toContain(
-        "repos/zaingulel/RentCottage/check-runs",
-      );
-      expect(result.calls[1]).toContain("name=quality");
-      expect(result.calls[1]).toContain(`head_sha=${expectedHead}`);
-      expect(result.calls[1]).toContain("status=in_progress");
-    }
+    const result = runWorkflowShell(validation.run, {});
+    expect(result.status).toBe(0);
+    expect(result.outputs).toContain("check_run_id=9001");
+    expect(result.calls).toHaveLength(2);
+    expect(result.calls[0]).toContain("repos/zaingulel/RentCottage/pulls/88");
+    expect(result.calls[1]).toContain("repos/zaingulel/RentCottage/check-runs");
+    expect(result.calls[1]).toContain("name=quality");
+    expect(result.calls[1]).toContain(`head_sha=${expectedHead}`);
+    expect(result.calls[1]).toContain("status=in_progress");
   });
 
   it("checks out the exact OID with pinned actions before stable verification", () => {
@@ -729,8 +702,8 @@ describe("GitHub Actions delivery checks", () => {
     const stale = runWorkflowShell(finalizer.run, {
       CHECK_RUN_ID: "9001",
       VERIFY_RESULT: "success",
-      FAKE_PR_TSV: `open\t${"f".repeat(40)}\tzaingulel/RentCottage\tmain`,
-      FAKE_FINAL_PR_TSV: `open\t${"f".repeat(40)}\tzaingulel/RentCottage`,
+      FAKE_VALIDATION_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\tmain`,
+      FAKE_FINAL_PR_TSV: `open\t${"f".repeat(40)}\tzaingulel/RentCottage\tmain`,
     });
     expect(stale.status).not.toBe(0);
     expect(stale.calls.at(-1)).toContain("conclusion=failure");
@@ -746,7 +719,7 @@ describe("GitHub Actions delivery checks", () => {
     const closed = runWorkflowShell(finalizer.run, {
       CHECK_RUN_ID: "9001",
       VERIFY_RESULT: "success",
-      FAKE_FINAL_PR_TSV: `closed\t${expectedHead}\tzaingulel/RentCottage`,
+      FAKE_FINAL_PR_TSV: `closed\t${expectedHead}\tzaingulel/RentCottage\tmain`,
     });
     expect(closed.status).not.toBe(0);
     expect(closed.calls.at(-1)).toContain("conclusion=failure");
@@ -754,10 +727,19 @@ describe("GitHub Actions delivery checks", () => {
     const foreign = runWorkflowShell(finalizer.run, {
       CHECK_RUN_ID: "9001",
       VERIFY_RESULT: "success",
-      FAKE_FINAL_PR_TSV: `open\t${expectedHead}\toutside/RentCottage`,
+      FAKE_FINAL_PR_TSV: `open\t${expectedHead}\toutside/RentCottage\tmain`,
     });
     expect(foreign.status).not.toBe(0);
     expect(foreign.calls.at(-1)).toContain("conclusion=failure");
+
+    const retargeted = runWorkflowShell(finalizer.run, {
+      CHECK_RUN_ID: "9001",
+      VERIFY_RESULT: "success",
+      FAKE_VALIDATION_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\tmain`,
+      FAKE_FINAL_PR_TSV: `open\t${expectedHead}\tzaingulel/RentCottage\ttopic/base`,
+    });
+    expect(retargeted.status).not.toBe(0);
+    expect(retargeted.calls.at(-1)).toContain("conclusion=failure");
 
     const abandoned = runWorkflowShell(finalizer.run, {
       CHECK_RUN_ID: "",
@@ -787,7 +769,10 @@ describe("GitHub Actions delivery checks", () => {
     const preview = previewWorkflow.jobs.preview;
     expect(preview.if).toBe("github.actor == github.repository_owner");
     expect(JSON.stringify(preview).toLowerCase()).not.toContain(
-      retiredProvider,
+      retiredStackProvider,
+    );
+    expect(JSON.stringify(preview).toLowerCase()).not.toContain(
+      retiredLegacyProvider,
     );
     expect(JSON.stringify(preview.env)).not.toContain("SUPABASE_");
     expect(JSON.stringify(preview.steps)).toContain(

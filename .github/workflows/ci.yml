@@ -53,7 +53,7 @@ jobs:
           test "$state" = "open" || exit 1
           test "$head_repository" = "$repository" || exit 1
           test "$live_head_oid" = "$expected_head_oid" || exit 1
-          [[ "$base_ref" != graphite-base/* && "$base_ref" != */graphite-base/* ]] || exit 1
+          test "$base_ref" = "main" || exit 1
 
           check_run_id="$(
             gh api "repos/$repository/check-runs" \
@@ -121,12 +121,12 @@ jobs:
 
           if ! pr_evidence="$(
             gh api "repos/$repository/pulls/$PULL_REQUEST_NUMBER" \
-              --jq '[.state, .head.sha, .head.repo.full_name] | @tsv'
+              --jq '[.state, .head.sha, .head.repo.full_name, .base.ref] | @tsv'
           )"; then
             evidence_valid=false
           else
-            IFS=$'\t' read -r state live_head_oid head_repository <<< "$pr_evidence"
-            if [[ "$state" != "open" || "$head_repository" != "$repository" || "$live_head_oid" != "$expected_head_oid" ]]; then
+            IFS=$'\t' read -r state live_head_oid head_repository base_ref <<< "$pr_evidence"
+            if [[ "$state" != "open" || "$head_repository" != "$repository" || "$live_head_oid" != "$expected_head_oid" || "$base_ref" != "main" ]]; then
               evidence_valid=false
             fi
           fi

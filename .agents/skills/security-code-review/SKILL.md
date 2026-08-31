@@ -31,12 +31,12 @@ Record `YES`, `NO`, or `UNKNOWN` with concise, non-empty evidence for each group
 
 `NO` requires affirmative evidence that the change does not touch the group. Use `UNKNOWN` when evidence is missing, ambiguous, unavailable, or conflicting, and state exactly what evidence is needed.
 
-After classification, report the aggregate `UNKNOWN`, `ANY_YES`, or `ALL_NO` to the coordinator: `UNKNOWN` when any classification is unknown, `ANY_YES` when none is unknown and at least one is yes, and `ALL_NO` when every classification is no. The coordinator resolves the external-review route from the table in `AGENTS.md`.
+After classification, report the aggregate `UNKNOWN`, `ANY_YES`, or `ALL_NO` to the coordinator: `UNKNOWN` when any classification is unknown, `ANY_YES` when none is unknown and at least one is yes, and `ALL_NO` when every classification is no.
 
 ## Route
 
 - If any classification is `UNKNOWN`, stop before spawning any reviewer. Gather the missing evidence and classify again; if it remains unavailable, report the gap to the coordinator without guessing.
-- For either review route, read the currently installed managed `code-review` skill at invocation time and use its current Standards and Spec contracts without copying them here. Its branch-only preflight must not redefine or omit the fixed worktree-inclusive bundle. Confirm the resolved baseline and non-empty bundle directly.
+- For either internal review route, read the currently installed managed `code-review` skill at invocation time and use its current Standards and Spec contracts without copying them here. Its branch-only preflight must not redefine or omit the fixed worktree-inclusive bundle. Confirm the resolved baseline and non-empty bundle directly.
 - If every classification is `NO`, invoke those managed Standards and Spec contracts unchanged against the fixed bundle.
 - If any classification is `YES`, spawn the managed Standards and Spec reviewers together with the configured `security_reviewer` in one bounded parallel review. Give all three the fixed bundle. Give Security the acceptance criteria, relevant security and testing standards, affected architecture, domain, provider, and boundary decisions, and all eight classifications with evidence.
 
@@ -50,6 +50,6 @@ For representative runtime validation, report child identities, observed latency
 
 For each representative sensitive delivery, also record whether Security found a material issue that Standards did not. Using the issue authority's evaluation condition, recommend simplifying or removing the Security lane if it adds no unique material findings across the representative deliveries, or if an equivalent independently evidenced review replaces it.
 
-This review supplements executable tests, the selected external provider's current-head findings, and owner approval; it replaces none of them. A provider's completed state proves only that processing finished, so the coordinator must reconcile the selected provider's findings before explicitly dispatching exact-head `quality` from trusted `main`. Every new push invalidates both review and Continuous Integration evidence; GitHub Actions verifies the head and GitHub repository rules enforce it.
+This review supplements executable tests, Greptile's current-head findings, and owner approval; it replaces none of them. A Greptile `COMPLETE` state proves only that processing finished, so the coordinator must reconcile every finding before explicitly dispatching exact-head `quality` from trusted `main`. Greptile `UNAVAILABLE` never relaxes an internal review, executable verification, Continuous Integration, conversation, ownership, tracker, merge, or release gate. Every new push invalidates both review and Continuous Integration evidence; GitHub Actions verifies the head and GitHub repository rules enforce it.
 
-This skill does not operate Graphite or Greptile, change provider configuration, or broaden the managed review. The coordinator applies the external-review route table in `AGENTS.md`; delivery follows `docs/agents/delivery.md`.
+This skill does not operate Greptile, change provider configuration, or broaden the managed review. Delivery follows `docs/agents/delivery.md`.
