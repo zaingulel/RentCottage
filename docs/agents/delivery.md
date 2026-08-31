@@ -5,15 +5,16 @@
 - **Load trigger:** Load this authority only when preparing or executing an owner-approved delivery.
 - **Owns:** Commit, push, pull-request, review, exact-head verification, merge, tracker reconciliation, terminal release, refusal and recovery guidance.
 - **Does not own:** Work selection, planning, construction, product acceptance criteria, provider policy or a second progress record.
-- **Required inputs:** The approved delivery packet and exact actions authorised by the owner; resolved external-review route and matched rule; issue and pull-request identities; approved full head commit Object ID (OID); absolute registered secondary-worktree path; exact local topic branch; and live writer ownership evidence.
-- **Stop conditions:** Stop on missing or stale approval, conflicting authority, unresolved review, non-exact Continuous Integration (CI), unknown ownership, incomplete provider evidence, or any release refusal/failure.
+- **Required inputs at start:** The owner-approved finished bundle and exact authorised actions; issue identity; absolute registered secondary-worktree path; exact local topic branch; and live stopped-writer ownership evidence.
+- **Acquired during delivery:** The materialized commit Object ID (OID); current pushed-head Object ID; remote branch metadata; pull-request identity and state; settled exact-head Greptile attempt; fresh exact-head internal reviews; exact-head quality; merge evidence; tracker reconciliation; and terminal release evidence.
+- **Stop conditions:** Stop on missing or stale approval, conflicting authority, unresolved internal or completed Greptile findings, non-exact Continuous Integration (CI), unknown ownership, incomplete Greptile evidence, or any release refusal/failure.
 - **Next route:** A terminal delivery returns to `$resume`; a parked or refused delivery returns to `$handoff` with the retained target and reason.
 
 Do not load this document during selection-only resume, planning or ordinary construction.
 
 ## Owner-approved delivery
 
-The coordinator presents the finished evidence packet before any outward action.
+Before any commit or outward action, the coordinator presents one delivery packet containing the finished implementation bundle and locally knowable evidence. The same packet progressively gains the evidence acquired during delivery. Completing it does not create a second record or staged manifest, and it requires no second routine owner approval while the original approval remains current.
 
 ### Approval scope and persistence
 
@@ -21,9 +22,12 @@ Delivery approval is semantic, contextual, cumulative, and persistent; it requir
 
 The latest clear owner instruction supersedes earlier narrower coordinator wording. The coordinator must not add an exclusion such as `No merge` unless the owner requested it. While approval remains current, perform every authorised action without asking the owner to repeat or restate approval. Time passing and progress between delivery stages do not make approval stale.
 
+The ordinary commit of the unchanged approved finished bundle materializes `CURRENT_PR_HEAD` and does not make approval stale. A materially altered bundle or any later head not freshly validated against the approved finished bundle makes approval stale and stops delivery.
+
 Approval becomes stale only when:
 
-- the exact approved head changes or the approved scope changes materially;
+- the approved finished bundle or scope changes materially;
+- a later head has not been freshly validated against the approved finished bundle;
 - a new unresolved finding appears;
 - a required safety, ownership, review, or Continuous Integration gate fails;
 - the owner withdraws or narrows approval.
@@ -38,37 +42,30 @@ Keep one writer for the ticket. The coordinator makes two live ownership observa
 
 Follow this bounded sequence:
 
-1. **Create draft:** Use Graphite stack management, including `gt submit`, as needed to create or update a draft pull request. Graphite stack management is distinct from Graphite AI review and does not select the external reviewer.
-2. **Select route:** Resolve the `AGENTS.md` table before publication and apply exactly one route label: `Greptile only` uses `independent-review`; `Graphite only` uses `graphite-review`.
-3. **Publish:** Immediately before marking the pull request ready for review, use GitHub to freshly read its exact label set, draft state, and head. Publish only when it is still a draft, `CURRENT_PR_HEAD` is the intended head, and exactly the selected route label is present. The selected route label is immutable after publication; a change stops delivery instead of switching providers.
-4. **Selected external review:** `head=CURRENT_PR_HEAD`; require the selected provider only to finish its exact-head completion, coverage, and findings reconciliation. For Greptile, manually request Greptile's exact-head re-review after every later push; do not rely on automatic new-commit reviews.
-5. **Exact-head quality:** `after=Selected external review`; `head=CURRENT_PR_HEAD`; only after the selected external review is complete, explicitly dispatch `quality` from trusted `main` with `gh workflow run ci.yml --ref main -f pull_request_number=<PR> -f expected_head_oid=<CURRENT_PR_HEAD>`.
+1. **Create draft:** After approval, create the authorised commit of the unchanged approved finished bundle with `git commit -m <MESSAGE>`; that ordinary commit materializes `CURRENT_PR_HEAD`. Push the topic branch with `git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>` and record the exact pushed commit OID. Then create the pull request with `gh pr create --repo zaingulel/RentCottage --draft --base main --head zaingulel:<PR_HEAD_BRANCH> --title <TITLE> --body-file /absolute/path/to/approved-pr-body.md --label independent-review`. Freshly read and record the exact pushed head and current remote branch metadata; a mismatch stops delivery.
+2. **Publish:** Immediately before publication, freshly read the pull request with `gh pr view <PR_NUMBER> --repo zaingulel/RentCottage --json state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels` and require the same repository with `isCrossRepository=false`, draft state, base `main`, exact head `CURRENT_PR_HEAD`, intended remote head branch, and exactly `independent-review` among external-review labels. Publish only with `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage` while every value remains current.
+3. **Attempt Greptile:** `head=CURRENT_PR_HEAD`; request an exact-head Greptile review and settle the attempt as `COMPLETE` or `UNAVAILABLE` using the evidence below. No paid plan, billing change, purchase, or upgrade is authorised.
+4. **Fresh exact-head internal review:** `after=settled Greptile attempt`; run `security-code-review` against the complete exact pushed head bundle. `UNKNOWN` stops. Use entirely fresh Standards and Specification reviewers, plus a fresh Security reviewer when the aggregate is `ANY_YES`; every required verdict and finding disposition must be current for `CURRENT_PR_HEAD`. Pre-outward review verdicts are ineligible for exact-head quality.
+5. **Exact-head quality:** `after=fresh exact-head internal review`; `head=CURRENT_PR_HEAD`; only after the fresh required reviews, required local verification, and every finding emitted by a completed or unavailable Greptile attempt has an evidence-based disposition, explicitly dispatch `quality` from trusted `main` with `gh workflow run ci.yml --repo zaingulel/RentCottage --ref main -f pull_request_number=<PR_NUMBER> -f expected_head_oid=<CURRENT_PR_HEAD>`.
 
-A provider's completed state proves processing finished, not that the change is correct or approved. Independent review of the finished change and every applicable executable verification must also be complete before merge; external reviewers supplement this evidence and never replace it.
+Greptile is the sole external reviewer. The `independent-review` label is its trigger and evidence label, not a route selector. Greptile supplements independent internal review and executable checks and never replaces them. A completed state proves only that processing finished, not that the change is correct or approved.
 
-### Selected-provider evidence
+### Greptile attempt states
 
-**Cross-repository prerequisite:** None. RentCottage delivery stands or stops only on its own repository authority and provider settings.
+Record exactly one settled state for the current head:
 
-Each push advances `CURRENT_PR_HEAD`, invalidates the selected provider and Continuous Integration evidence, and restarts the selected review sequence. Record every row for the selected review:
-
-| Packet fields | Complete evidence |
+| State | Required evidence |
 | --- | --- |
-| `provider`, `source`, `artifact` | The selected provider only; its installed GitHub App; its GitHub artifact URL. |
-| `route`, `matched-rule`, `label` | The exclusive route and resolved `AGENTS.md` rule; exactly `independent-review` for `Greptile only` or `graphite-review` for `Graphite only`. |
-| `completion`, `head` | `OBSERVED` only when the selected provider's completion artifact identifies `CURRENT_PR_HEAD`. |
-| `changed-files`, `reviewed-files`, `coverage` | The selected provider's count or file summary accounts for every GitHub changed file; coverage is `COMPLETE`. |
-| `findings` | Every finding has an evidence-based disposition. |
+| `COMPLETE` | An exact-current-head completion artifact that identifies Greptile's installed GitHub App as actor and source, its provider-produced GitHub artifact URL, complete changed-file coverage, and an evidence-based disposition for every finding. |
+| `UNAVAILABLE` | Exactly one reason: `ALLOWANCE_EXHAUSTED`, `PROVIDER_UNAVAILABLE`, or `NO_EXACT_HEAD_COMPLETION`; the attempted and current head; observation time and source; artifact or exact error; and owner/coordinator notice. |
 
-Every required row must be present. `SKIPPED`, `FAILED`, `STALE`, or `PARTIAL` evidence is incomplete. Zero route labels, both route labels, a changed head, a route-label change after publication, unselected-provider activity, missing or stale selected-provider evidence, and provider filtering that is unavailable or disagrees with this authority stop pull-request publication or delivery. Reconcile repository policy and provider settings before continuing; do not switch routes on a published pull request.
+Partial or incomplete exact-head coverage is `UNAVAILABLE` with reason `NO_EXACT_HEAD_COMPLETION`. Its record must name the changed, reviewed, and missing files and include dispositions for every finding that was emitted. Exhausted allowance or provider unavailability is reportable, but it is not a merge veto after all mandatory pre-merge gates are green: internal reviews, local verification, exact-head quality, conversation resolution and ownership. Post-merge tracker reconciliation, board verification, ownership and guarded release remain mandatory.
 
-The required dashboard state for RentCottage during the free Graphite Team trial is: Graphite enables RentCottage, includes only `graphite-review`, and keeps draft AI reviews off; Greptile enables RentCottage, includes only `independent-review`, keeps draft reviews off, and keeps automatic new-commit reviews off. The trial ends on 17 September 2026. No paid provider plan is authorised. If the trial ends or either provider cannot preserve these filters, including after a Graphite Hobby downgrade, delivery stops until the owner approves a reconciled RentCottage repository and provider policy.
+Missing, unknown, stale, or unattributed attempt evidence stops delivery. Self-authored, wrong-provider, missing, untrusted, or unattributed artifacts cannot be `COMPLETE` and stop delivery. A push invalidates Greptile, internal-review, and Continuous Integration evidence. Every repair uses an ordinary Git commit and `git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`. A repair push receives a fresh exact-head Greptile attempt when allowance permits, or a new exact-head `UNAVAILABLE` record otherwise. It then restarts the exact-head Greptile attempt, `security-code-review` classification, entirely new internal reviewers, and exact-head quality. Never carry any of this evidence across heads.
 
-Before 17 September 2026, recheck and record whether Graphite Hobby preserves the saved `graphite-review` include filter. An unavailable or unverified Hobby result produces `STOP`; reconcile the RentCottage repository authority and RentCottage provider settings before continuing RentCottage delivery.
+Before merge, run `gh pr view <PR_NUMBER> --repo zaingulel/RentCottage --json state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels,reviewDecision,statusCheckRollup`, freshly read conversation resolution, and require `OPEN`, ready for review, the same repository with `isCrossRepository=false`, base `main`, exact head `CURRENT_PR_HEAD`, intended remote head branch, `independent-review`, no other external-review label, all conversations resolved, and current source-bound `quality` for that head. Merge only with `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --squash --match-head-commit <CURRENT_PR_HEAD>`. Do not use `--admin`.
 
-Interpret Greptile evidence against its current [review anatomy](https://www.greptile.com/docs/code-review/first-pr-review), [GitHub App integration](https://www.greptile.com/docs/integrations/github-gitlab-integration), and [`fileChangeLimit` contract](https://www.greptile.com/docs/code-review/greptile-json-reference). Keep both providers human-observed: repository workflows parse no provider comments, hidden markers, or status prose and define no provider credential, trigger, or merge gate.
-
-Only after the sequence and all other approved evidence are complete may the coordinator perform an authorised merge. GitHub Actions verifies the exact head; the hosted GitHub repository ruleset must require `quality` from the observed GitHub Actions source, application or integration, not the `quality` check name alone, and must also enforce conversation resolution. Changing that hosted ruleset remains an explicit owner-gated action. Reconcile the issue and Project after the merged state is authoritative, then run `npm run verify:board`; unavailable or failing board evidence stops delivery. GitHub's merged-branch setting owns remote topic-branch deletion; this release authority does not add another remote deletion path.
+GitHub Actions verifies the exact head; the hosted GitHub repository ruleset must require `quality` from the observed GitHub Actions source, application or integration, not the `quality` check name alone, and must also enforce conversation resolution. Changing that hosted ruleset remains an explicit owner-gated action. Reconcile the issue and Project after the merged state is authoritative, then run `npm run verify:board`; unavailable or failing board evidence stops delivery. GitHub's merged-branch setting owns remote topic-branch deletion; this release authority does not add another remote deletion path.
 
 ## Terminal release
 
@@ -103,7 +100,7 @@ Historical residue is considered only one target at a time from a fresh complete
 
 ## Delivery packet and maintenance evidence
 
-The delivery packet retains the universal fields in `AGENTS.md` and additionally records:
+The same delivery packet is progressively completed. It retains the universal fields in `AGENTS.md` and additionally records:
 
 - terminal result: `released`, `recovered`, `already-released`, `refused`, `incomplete`, or `failed`;
 - whether automatic invocation occurred, or the exact reason it did not;
@@ -114,8 +111,6 @@ The delivery packet retains the universal fields in `AGENTS.md` and additionally
 
 Recurring cost is one bounded GitHub read, one verified remote refresh and local Git checks per delivered pull request, plus maintenance of this authority, one command and one behavioural test surface.
 
-Recurring maintenance is one explicit routing decision, one selected-provider review plus finding reconciliation, a fresh pre-publication state read, and a manual Greptile re-trigger after each later push on the Greptile route. Existing internal review and verification costs remain unchanged.
-
-Reassess or remove this routing layer if the free Graphite Team trial or Greptile allowance ends, either label filter no longer works reliably, selected reviews repeatedly return partial coverage, or representative reviews show no unique material findings beyond the managed reviewers. Replace it only with an independently evidenced control that preserves reviewer diversity at lower cost or higher reliability.
+Recurring maintenance is one best-effort exact-head Greptile attempt plus finding reconciliation and fresh pre-publication and pre-merge state reads. Existing internal review and verification costs remain unchanged.
 
 After five completed deliveries, the owner reviews automatic invocations, successful releases, verified no-ops, refusals, false stops and residue. Remove the mechanism if Codex or an existing repository control provides equivalent exact identity, merged-state, ownership, cleanliness, race and post-removal guarantees. Simplify it when a lower-cost control preserves every material guarantee.

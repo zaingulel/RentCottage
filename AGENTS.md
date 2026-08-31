@@ -101,31 +101,17 @@ Continue in-scope repair and re-planning automatically under the approved work s
 There are two routine owner decisions:
 
 1. **Work selection:** approve the ticket outcome and acceptance criteria before implementation starts. For high blast-radius work, include the concrete plan required by the change gate below in this decision.
-2. **Delivery approval:** review the finished evidence packet before any commit or outward action such as a push, pull request, deployment or merge. Delivery approval must explicitly authorise outward action; [`docs/agents/delivery.md`](docs/agents/delivery.md) defines semantic and persistent approval scope and staleness.
+2. **Delivery approval:** review the finished implementation bundle and locally knowable evidence in one delivery packet before any commit or outward action such as a push, pull request, deployment or merge. Delivery approval must explicitly authorise outward action; [`docs/agents/delivery.md`](docs/agents/delivery.md) defines semantic and persistent approval scope and staleness. The same delivery packet is progressively completed with evidence acquired during delivery. No second routine owner approval is required while the original approval remains current.
 
 Work-selection approval remains valid through in-scope repair and re-planning only as governed by the repair-only owner-interruption rule under **Review repair and re-planning**. Do not ask the owner to repeat that approval outside the rule's condition.
 
-### External-review route
+### External review
 
-Resolve the external-review route from this table, evaluated top-to-bottom. `ANY` matches either value for that input.
+Greptile is the sole external reviewer and is best-effort. Every delivery attempts Greptile against the exact current pull-request head and records the attempt as `COMPLETE` or `UNAVAILABLE` under `docs/agents/delivery.md`. No paid plan, billing change, purchase, or upgrade is authorised.
 
-| Rule | Security input | Delivery integrity | Risk escalation | Result |
-| --- | --- | --- | --- | --- |
-| R1 | UNKNOWN | ANY | ANY | STOP |
-| R2 | ANY_YES | ANY | ANY | Greptile only |
-| R3 | ALL_NO_OR_NOT_RUN | YES | ANY | Greptile only |
-| R4 | ALL_NO_OR_NOT_RUN | NO | YES | Greptile only |
-| R5 | ALL_NO_OR_NOT_RUN | NO | NO | Graphite only |
+A settled `UNAVAILABLE` attempt is reportable but is not a merge veto once every mandatory pre-merge gate is green: internal review, executable verification, exact-head Continuous Integration, conversation resolution and ownership. Post-merge tracker reconciliation, board verification, ownership and guarded release remain mandatory. This exception does not relax or replace any of those gates. A `COMPLETE` review requires complete changed-file coverage and an evidence-based disposition for every finding.
 
-`NOT_RUN` requires direct scope evidence that none of `security-code-review`'s eight groups is touched; any possible touch is `UNKNOWN` until the skill runs. Map only `ALL_NO` and evidenced `NOT_RUN` to `ALL_NO_OR_NOT_RUN`.
-
-Delivery integrity covers Continuous Integration workflows, review skills and agent authorities, delivery rules, hosted merge assumptions, tracker verification and reconciliation, guarded release machinery, and tests specifically verifying those surfaces. It is `YES` when the change touches any of these surfaces. Ordinary product, domain, user-interface, application, database, and browser tests alone are not delivery integrity. Otherwise delivery integrity is `NO`.
-
-Risk escalation is `YES` when the approved issue or owner requires Greptile, or the coordinator cites material uncertainty, blast radius, or reviewer-diversity value; otherwise it is `NO`. `STOP` produces no approvable pull-request route. Every pull-request-bound change resolves a route or `STOP` before pull-request approval.
-
-The two provider routes are mutually exclusive. Delivery follows the selected provider only; it never combines Graphite AI review with Greptile review. Provider filtering that is unavailable or disagrees with this table produces `STOP` until repository policy and provider settings are reconciled.
-
-The delivery packet contains the acceptance-criteria mapping, diff summary, tests run, review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, any known gap, and the external-review route, matched rule, and concise supporting evidence. The selected external reviewer supplements the independent review and executable checks; it replaces neither.
+Before commit or outward action, the delivery packet contains the finished implementation bundle, acceptance-criteria mapping, diff summary, tests run, pre-outward review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. The same delivery packet progressively gains the materialized commit and pull-request identity, settled Greptile attempt state and concise supporting evidence, fresh exact-head internal reviews, exact-head Continuous Integration, merge, tracker reconciliation, board verification and guarded release evidence. Progressively completing it does not create a second record or staged manifest. Greptile supplements the independent review and executable checks; it replaces neither.
 
 ### Adding workflow machinery
 
