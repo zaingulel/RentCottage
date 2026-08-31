@@ -172,7 +172,9 @@ describe("GitHub Actions delivery checks", () => {
     expect(agents).toContain(
       "settled Greptile attempt state and concise supporting evidence",
     );
-    expect(agents).toContain("finished evidence packet");
+    expect(agents).toContain(
+      "finished implementation bundle and locally knowable evidence in one delivery packet",
+    );
     expect(agents).not.toContain("two evidence stages");
   });
 
@@ -236,6 +238,7 @@ describe("GitHub Actions delivery checks", () => {
     expect(sequence[0].text).toContain("current remote branch metadata");
     expect(sequence[1].text).toContain("freshly read");
     expect(sequence[1].text).toContain("same repository");
+    expect(sequence[1].text).toContain("`isCrossRepository=false`");
     expect(sequence[1].text).toContain("draft");
     expect(sequence[1].text).toContain("base `main`");
     expect(sequence[1].text).toContain("exact head");
@@ -313,6 +316,7 @@ describe("GitHub Actions delivery checks", () => {
       "docs/agents/delivery.md",
       ".agents/skills/security-code-review/SKILL.md",
       "docs/adr/0001-cloudflare-workers-supabase-stack.md",
+      "docs/commercial/muntajaa-cost-plan.md",
       ".github/workflows/ci.yml",
       "src/ci/workflow.test.ts",
     ].map((path) => readFileSync(resolve(path), "utf8").toLowerCase());
@@ -350,12 +354,44 @@ describe("GitHub Actions delivery checks", () => {
     expect(delivery).toContain("Owns:");
     expect(delivery).toContain("terminal release");
     expect(delivery).toContain("Does not own:");
-    expect(delivery).toContain("Required inputs:");
+    expect(delivery).toContain("Required inputs at start:");
+    expect(delivery).toContain("Acquired during delivery:");
     expect(delivery).toContain("Stop conditions:");
     expect(delivery).toContain("Next route:");
-    expect(delivery).toContain(
-      "settled exact-head Greptile attempt evidence; issue and pull-request identities; approved full head commit Object ID",
+    const route = sectionUnder(delivery, "## Route");
+    const requiredInputs = route
+      .split("\n")
+      .find((line) => line.startsWith("- **Required inputs at start:**"));
+    const acquiredEvidence = route
+      .split("\n")
+      .find((line) => line.startsWith("- **Acquired during delivery:**"));
+
+    expect(requiredInputs).toContain("owner-approved finished bundle");
+    expect(requiredInputs).toContain("exact authorised actions");
+    expect(requiredInputs).toContain("issue identity");
+    expect(requiredInputs).toContain(
+      "absolute registered secondary-worktree path",
     );
+    expect(requiredInputs).toContain("exact local topic branch");
+    expect(requiredInputs).toContain("stopped-writer ownership evidence");
+    expect(requiredInputs).not.toMatch(
+      /commit Object ID|pushed head|pull-request identity|Greptile|internal review|quality|merge/i,
+    );
+
+    for (const evidence of [
+      "materialized commit Object ID",
+      "current pushed-head Object ID",
+      "remote branch metadata",
+      "pull-request identity and state",
+      "settled exact-head Greptile attempt",
+      "fresh exact-head internal reviews",
+      "exact-head quality",
+      "merge",
+      "tracker reconciliation",
+      "terminal release",
+    ]) {
+      expect(acquiredEvidence).toContain(evidence);
+    }
     expect(delivery).toContain("release:delivery");
     expect(delivery).toContain("scripts/release-delivery.mjs");
     expect(delivery).toContain("scripts/release-delivery.test.mjs");
@@ -393,6 +429,8 @@ describe("GitHub Actions delivery checks", () => {
       "latest clear owner instruction supersedes earlier narrower coordinator wording",
       "without asking the owner to repeat or restate approval",
       "Time passing and progress between delivery stages do not make approval stale",
+      "The ordinary commit of the unchanged approved finished bundle materializes `CURRENT_PR_HEAD` and does not make approval stale",
+      "A materially altered bundle or any later head not freshly validated against the approved finished bundle makes approval stale and stops delivery",
       "must not add an exclusion such as `No merge` unless the owner requested it",
       "tracker reconciliation and guarded terminal release continue automatically under the same approval",
     ]) {
@@ -400,7 +438,8 @@ describe("GitHub Actions delivery checks", () => {
     }
 
     const staleConditions = [
-      "the exact approved head changes or the approved scope changes materially;",
+      "the approved finished bundle or scope changes materially;",
+      "a later head has not been freshly validated against the approved finished bundle;",
       "a new unresolved finding appears;",
       "a required safety, ownership, review, or Continuous Integration gate fails;",
       "the owner withdraws or narrows approval.",
@@ -419,8 +458,41 @@ describe("GitHub Actions delivery checks", () => {
     expect(ownerDecisions).toContain("docs/agents/delivery.md");
     expect(ownerDecisions).not.toContain("capability-only");
     expect(ownerDecisions).toContain(
-      "review the finished evidence packet before any commit or outward action",
+      "review the finished implementation bundle and locally knowable evidence in one delivery packet before any commit or outward action",
     );
+    expect(ownerDecisions).toContain(
+      "The same delivery packet is progressively completed with evidence acquired during delivery",
+    );
+    expect(ownerDecisions).toContain(
+      "No second routine owner approval is required while the original approval remains current",
+    );
+
+    const externalReview = sectionUnder(agents, "### External review");
+    const ownerApprovedDelivery = sectionUnder(
+      delivery,
+      "## Owner-approved delivery",
+    );
+    const deliveryPacket = sectionUnder(
+      delivery,
+      "## Delivery packet and maintenance evidence",
+    );
+    for (const authority of [ownerDecisions, externalReview]) {
+      expect(authority).toContain("same delivery packet");
+    }
+    expect(ownerApprovedDelivery).toContain(
+      "one delivery packet containing the finished implementation bundle and locally knowable evidence",
+    );
+    expect(ownerApprovedDelivery).toContain(
+      "The same packet progressively gains the evidence acquired during delivery",
+    );
+    expect(deliveryPacket).toContain(
+      "The same delivery packet is progressively completed",
+    );
+    for (const authority of [agents, delivery]) {
+      expect(authority).toContain(
+        "does not create a second record or staged manifest",
+      );
+    }
   });
 
   it("declares a trusted-main exact-head dispatch contract", () => {
@@ -553,11 +625,62 @@ describe("GitHub Actions delivery checks", () => {
     expect(delivery).toContain(
       "`gh pr view <PR_NUMBER> --repo zaingulel/RentCottage --json",
     );
+    const publish = parseNumberedSequence(
+      delivery,
+      "## External review and exact-head quality",
+    )[1].text;
+    const preMerge = delivery.slice(delivery.indexOf("Before merge,"));
+    expect(publish).toContain("isCrossRepository");
+    expect(publish).toContain("`isCrossRepository=false`");
+    expect(preMerge).toContain("isCrossRepository");
+    expect(preMerge).toContain("`isCrossRepository=false`");
     expect(delivery).toContain("Do not use `--admin`");
     for (const authority of [delivery, architecture]) {
       expect(authority).toContain("observed GitHub Actions source");
       expect(authority).toContain("not the `quality` check name alone");
     }
+  });
+
+  it("keeps the commercial delivery-review allowance at the settled zero-cost policy", () => {
+    const commercial = readFileSync(
+      resolve("docs/commercial/muntajaa-cost-plan.md"),
+      "utf8",
+    );
+    const monthlyCosts = parseMarkdownTable(
+      commercial,
+      "### 2.1 Core monthly costs",
+    );
+    const annualCosts = parseMarkdownTable(
+      commercial,
+      "### 2.4 Annual and one-off costs",
+    );
+    const greptileCost = monthlyCosts.rows.find(
+      ([cost]) => cost === "Greptile external review",
+    );
+    const greptileLines = commercial
+      .split("\n")
+      .filter((line) => line.includes("Greptile"))
+      .join("\n");
+    const greptileCostRows = [...monthlyCosts.rows, ...annualCosts.rows].filter(
+      ([cost]) => cost.includes("Greptile"),
+    );
+
+    expect(commercial).toContain("**$234/month**");
+    expect(commercial).toContain("**$230/month**");
+    expect(greptileCost).toEqual([
+      "Greptile external review",
+      "**$0 working assumption**",
+      "Working assumption",
+      "Use best-effort while the free allowance is available. Exhausted or unavailable access is reported. No paid plan, overage, billing change, purchase, or upgrade without explicit owner approval",
+    ]);
+    expect(greptileCostRows).toEqual([greptileCost]);
+    expect(greptileLines).not.toMatch(
+      /trial|hobby|credit|cadence|live billing|renewal|monthly|annual/i,
+    );
+    expect(greptileLines).toContain(
+      "No paid plan, overage, billing change, purchase, or upgrade without explicit owner approval",
+    );
+    expect(commercial.toLowerCase()).not.toContain(retiredStackProvider);
   });
 
   it("rejects malformed inputs before reading GitHub", () => {

@@ -101,7 +101,7 @@ Continue in-scope repair and re-planning automatically under the approved work s
 There are two routine owner decisions:
 
 1. **Work selection:** approve the ticket outcome and acceptance criteria before implementation starts. For high blast-radius work, include the concrete plan required by the change gate below in this decision.
-2. **Delivery approval:** review the finished evidence packet before any commit or outward action such as a push, pull request, deployment or merge. Delivery approval must explicitly authorise outward action; [`docs/agents/delivery.md`](docs/agents/delivery.md) defines semantic and persistent approval scope and staleness.
+2. **Delivery approval:** review the finished implementation bundle and locally knowable evidence in one delivery packet before any commit or outward action such as a push, pull request, deployment or merge. Delivery approval must explicitly authorise outward action; [`docs/agents/delivery.md`](docs/agents/delivery.md) defines semantic and persistent approval scope and staleness. The same delivery packet is progressively completed with evidence acquired during delivery. No second routine owner approval is required while the original approval remains current.
 
 Work-selection approval remains valid through in-scope repair and re-planning only as governed by the repair-only owner-interruption rule under **Review repair and re-planning**. Do not ask the owner to repeat that approval outside the rule's condition.
 
@@ -111,7 +111,7 @@ Greptile is the sole external reviewer and is best-effort. Every delivery attemp
 
 A settled `UNAVAILABLE` attempt is reportable but is not a merge veto once every mandatory internal review, executable verification, exact-head Continuous Integration, conversation-resolution, ownership, tracker, merge and release gate is green. This exception does not relax or replace any of those gates. A `COMPLETE` review requires complete changed-file coverage and an evidence-based disposition for every finding.
 
-The delivery packet contains the acceptance-criteria mapping, diff summary, tests run, review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, any known gap, and the settled Greptile attempt state and concise supporting evidence. Greptile supplements the independent review and executable checks; it replaces neither.
+Before commit or outward action, the delivery packet contains the finished implementation bundle, acceptance-criteria mapping, diff summary, tests run, pre-outward review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. The same delivery packet progressively gains the materialized commit and pull-request identity, settled Greptile attempt state and concise supporting evidence, fresh exact-head internal reviews, exact-head Continuous Integration, merge, tracker reconciliation, board verification and guarded release evidence. Progressively completing it does not create a second record or staged manifest. Greptile supplements the independent review and executable checks; it replaces neither.
 
 ### Adding workflow machinery
 
