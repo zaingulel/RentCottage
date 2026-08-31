@@ -93,23 +93,12 @@ function operationPayload(request: ProviderOperationBinding) {
   };
 }
 
-function permitPayload(permit: ProviderOperationRequest["executionPermit"]) {
-  if (!permit) {
-    return {
-      permitPurpose: null,
-      claimId: null,
-      claimGeneration: null,
-      idempotencyKey: null,
-      notAfter: null,
-      workId: null,
-      leaseGeneration: null,
-      leaseToken: null,
-      operationId: null,
-      operationGeneration: null,
-      cleanupAttemptId: null,
-      stateRevision: null,
-    };
-  }
+type ActiveExecutionPermit = Exclude<
+  NonNullable<ProviderOperationRequest["executionPermit"]>,
+  { readonly purpose: "booking-request-capture" }
+>;
+
+function permitPayload(permit: ActiveExecutionPermit) {
   if (permit.purpose === "booking-request-authorization") {
     return {
       permitPurpose: permit.purpose,
@@ -177,15 +166,19 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
     request: ProviderOperationRequest,
   ): Promise<ProviderOperationResult> {
     const permit = request.executionPermit;
+    if (permit?.purpose === "booking-request-capture") {
+      return { outcome: "not-executed" };
+    }
+    const purposeMatchesKind =
+      (permit?.purpose === "booking-request-authorization" &&
+        request.kind === "authorization") ||
+      ((permit?.purpose === "booking-request-release" ||
+        permit?.purpose === "booking-request-submission-cleanup") &&
+        request.kind === "release");
     if (
-      (request.kind === "authorization" && !permit) ||
-      (request.kind === "authorization" &&
-        permit?.purpose !== "booking-request-authorization") ||
-      (request.kind === "release" &&
-        permit?.purpose !== "booking-request-release" &&
-        permit?.purpose !== "booking-request-submission-cleanup") ||
-      (permit && Date.parse(this.#now()) >= Date.parse(permit.notAfter)) ||
-      (request.kind !== "authorization" && request.kind !== "release")
+      !permit ||
+      Date.parse(this.#now()) >= Date.parse(permit.notAfter) ||
+      !purposeMatchesKind
     ) {
       return { outcome: "not-executed" };
     }

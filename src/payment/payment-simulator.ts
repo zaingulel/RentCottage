@@ -69,6 +69,9 @@ export class PaymentSimulator implements PaymentProviderAdapter {
   async execute(
     request: ProviderOperationRequest,
   ): Promise<ProviderOperationResult> {
+    if (request.executionPermit?.purpose === "booking-request-capture") {
+      return { outcome: "not-executed" };
+    }
     if (
       request.executionPermit &&
       Date.parse(this.#now()) >= Date.parse(request.executionPermit.notAfter)

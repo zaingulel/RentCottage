@@ -57,6 +57,41 @@ const cleanupRequest = {
   },
 };
 
+const captureRequest = {
+  ...request,
+  kind: "capture" as const,
+  logicalOperationId: `${request.paymentLifecycleId}:capture`,
+  attemptId: `${request.paymentLifecycleId}:capture:attempt-2`,
+  executionPermit: {
+    purpose: "booking-request-capture" as const,
+    bookingRequestId: "88888888-8888-4888-8888-888888888888",
+    submissionAttemptId: "99999999-9999-4999-8999-999999999999",
+    authorizationClaimId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    authorizationClaimGeneration: 1,
+    paymentLifecycleId: request.paymentLifecycleId,
+    authorizationLogicalOperationId: request.logicalOperationId,
+    authorizationPhysicalAttemptId: request.attemptId,
+    captureLogicalOperationId: `${request.paymentLifecycleId}:capture`,
+    capturePhysicalAttemptId: `${request.paymentLifecycleId}:capture:attempt-2`,
+    amountFils: request.amountFils,
+    currency: "IQD" as const,
+    providerIdentity: {
+      provider: "fictional-payments",
+      environment: "local-test",
+      merchantId: "fictional-merchant",
+      terminalId: "fictional-terminal",
+    },
+    idempotencyKey:
+      "booking-request-capture:88888888-8888-4888-8888-888888888888:1",
+    requestFingerprint:
+      "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    workId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    leaseGeneration: 2,
+    leaseToken: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    notAfter: "2099-08-22T00:00:00.000Z",
+  },
+};
+
 describe("durable simulated payment provider", () => {
   it("executes and reconciles through the service-role ledger without personal data", async () => {
     const rpc = vi
@@ -128,6 +163,63 @@ describe("durable simulated payment provider", () => {
     });
 
     await expect(provider.execute(request)).resolves.toEqual({
+      outcome: "not-executed",
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Capture permit non-operative before touching the ledger", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        outcome: "succeeded",
+        providerRequestId: "must-not-execute",
+        providerReference: "must-not-execute",
+        movementReference: "must-not-execute",
+      },
+      error: null,
+    });
+    const provider = new DurablePaymentSimulator({
+      client: { rpc } as unknown as SupabaseClient,
+      now: () => "2099-08-21T17:00:00.000Z",
+    });
+
+    await expect(provider.execute(captureRequest)).resolves.toEqual({
+      outcome: "not-executed",
+    });
+    await expect(
+      provider.execute({
+        ...captureRequest,
+        kind: "release",
+        logicalOperationId: `${request.paymentLifecycleId}:release`,
+        attemptId: `${request.paymentLifecycleId}:release:attempt-3`,
+      }),
+    ).resolves.toEqual({ outcome: "not-executed" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unsupported permit purpose without touching the ledger", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        outcome: "succeeded",
+        providerRequestId: "must-not-execute",
+        providerReference: "must-not-execute",
+        movementReference: "must-not-execute",
+      },
+      error: null,
+    });
+    const provider = new DurablePaymentSimulator({
+      client: { rpc } as unknown as SupabaseClient,
+      now: () => "2099-08-21T17:00:00.000Z",
+    });
+    const unsupportedPurposeRequest = {
+      ...releaseRequest,
+      executionPermit: {
+        ...releaseRequest.executionPermit,
+        purpose: "unsupported-runtime-purpose",
+      },
+    } as unknown as Parameters<DurablePaymentSimulator["execute"]>[0];
+
+    await expect(provider.execute(unsupportedPurposeRequest)).resolves.toEqual({
       outcome: "not-executed",
     });
     expect(rpc).not.toHaveBeenCalled();
