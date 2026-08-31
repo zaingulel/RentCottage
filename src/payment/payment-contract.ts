@@ -45,7 +45,8 @@ export interface BookingRequestSubmissionCleanupExecutionPermit {
 export type ProviderExecutionPermit =
   | AuthorizationExecutionPermit
   | BookingRequestSubmissionCleanupExecutionPermit
-  | BookingRequestReleaseExecutionPermit;
+  | BookingRequestReleaseExecutionPermit
+  | BookingRequestCaptureExecutionPermit;
 
 export interface ProviderOperationBinding {
   readonly kind: PaymentOperationKind;
@@ -151,6 +152,83 @@ export interface MoneyMovement {
   readonly movementReference: string;
   readonly recordedAt: string;
   readonly refundAllocation?: RefundAllocation;
+}
+
+export interface BookingRequestCaptureBinding {
+  readonly bookingRequestId: string;
+  readonly submissionAttemptId: string;
+  readonly authorizationClaimId: string;
+  readonly authorizationClaimGeneration: number;
+  readonly paymentLifecycleId: string;
+  readonly authorizationLogicalOperationId: string;
+  readonly authorizationPhysicalAttemptId: string;
+  readonly captureLogicalOperationId: string;
+  readonly capturePhysicalAttemptId: string;
+  readonly amountFils: Fils;
+  readonly currency: "IQD";
+  readonly providerIdentity: PaymentProviderIdentity;
+  readonly idempotencyKey: string;
+  readonly requestFingerprint: string;
+}
+
+export interface BookingRequestCaptureProviderResultIdentity {
+  readonly providerRequestId: string;
+  readonly providerReference: string;
+  readonly movementReference: string;
+}
+
+export interface BookingRequestCaptureEvidenceExpectation extends BookingRequestCaptureBinding {
+  readonly authorizationProviderResult: BookingRequestCaptureProviderResultIdentity;
+  readonly captureProviderResult: BookingRequestCaptureProviderResultIdentity;
+  readonly authorizationRecordedAt: string;
+  readonly captureRecordedAt: string;
+}
+
+export interface BookingRequestCaptureSuccessfulOperation<
+  Kind extends "authorization" | "capture",
+> {
+  readonly paymentLifecycleId: string;
+  readonly kind: Kind;
+  readonly logicalOperationId: string;
+  readonly attemptId: string;
+  readonly status: "succeeded";
+  readonly amountFils: Fils;
+  readonly providerRequestId: string;
+  readonly providerReference: string;
+  readonly movementReference: string;
+  readonly reconciliationRequired: false;
+  readonly retrySafe: false;
+}
+
+export interface BookingRequestCaptureMovement<
+  Kind extends "authorization" | "capture",
+> {
+  readonly kind: Kind;
+  readonly logicalOperationId: string;
+  readonly attemptId: string;
+  readonly amountFils: Fils;
+  readonly movementReference: string;
+  readonly recordedAt: string;
+}
+
+export interface BookingRequestCaptureSnapshot extends BookingRequestCaptureBinding {
+  readonly authorization: BookingRequestCaptureSuccessfulOperation<"authorization">;
+  readonly capture: BookingRequestCaptureSuccessfulOperation<"capture">;
+  readonly movements: readonly [
+    BookingRequestCaptureMovement<"authorization">,
+    BookingRequestCaptureMovement<"capture">,
+  ];
+}
+
+export interface BookingRequestCapturePermitExpectation extends BookingRequestCaptureBinding {
+  readonly workId: string;
+  readonly leaseGeneration: number;
+  readonly leaseToken: string;
+  readonly notAfter: string;
+}
+
+export interface BookingRequestCaptureExecutionPermit extends BookingRequestCapturePermitExpectation {
+  readonly purpose: "booking-request-capture";
 }
 
 export interface PaymentFinancials {
