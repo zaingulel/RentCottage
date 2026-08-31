@@ -160,6 +160,7 @@ describe("GitHub Actions delivery checks", () => {
   it("defines Greptile as the sole best-effort external reviewer", () => {
     const agents = readFileSync(resolve("AGENTS.md"), "utf8");
     const policy = sectionUnder(agents, "### External review");
+    const delivery = readFileSync(resolve("docs/agents/delivery.md"), "utf8");
 
     expect(policy).toContain("Greptile is the sole external reviewer");
     expect(policy).toContain("best-effort");
@@ -176,6 +177,12 @@ describe("GitHub Actions delivery checks", () => {
       "finished implementation bundle and locally knowable evidence in one delivery packet",
     );
     expect(agents).not.toContain("two evidence stages");
+    for (const authority of [policy, delivery]) {
+      expect(authority).toMatch(/mandatory pre-merge gates? (?:is|are) green/);
+      expect(authority).toContain(
+        "Post-merge tracker reconciliation, board verification, ownership and guarded release remain mandatory",
+      );
+    }
   });
 
   it("keeps security review scoped to classification and managed review", () => {
