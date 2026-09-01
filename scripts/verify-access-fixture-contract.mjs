@@ -1,11 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { createClient } from "@supabase/supabase-js";
 
 import {
   accessBrowserFixture,
   ACCESS_REVIEW_DOCUMENT_FILENAME,
+  createAccessBrowserFixtures,
+  validateAccessBrowserFixtures,
 } from "./lib/access-browser-fixtures.mjs";
 import {
   findAccessFixtureUser,
@@ -117,6 +120,19 @@ function requireNamedFailure(result, diagnostic) {
   }
 }
 
+async function requireNamedRejection(operation, diagnostic) {
+  try {
+    await operation();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes(diagnostic)) return;
+    throw new Error(
+      `Fixture validation did not reject with "${diagnostic}": ${message}`,
+    );
+  }
+  throw new Error(`Fixture validation did not reject with "${diagnostic}"`);
+}
+
 async function main() {
   if (!localTestEnvironment()) {
     console.error(
@@ -137,6 +153,30 @@ async function main() {
     runFixtureCommand("validate"),
     "Clean Worker fixture validation",
   );
+  const unusableReviewerClient = {
+    rpc() {
+      throw new Error(
+        "Repeated Worker fixture creation unexpectedly required reviewer authority",
+      );
+    },
+  };
+  const createWorkerFixtures = async () => {
+    await createAccessBrowserFixtures({
+      projects: ["worker"],
+      privilegedClient,
+      publishableKey,
+      reviewerClient: unusableReviewerClient,
+      url,
+    });
+  };
+  const validateWorkerFixtures = async () => {
+    await validateAccessBrowserFixtures({
+      projects: ["worker"],
+      privilegedClient,
+      publishableKey,
+      url,
+    });
+  };
 
   const users = await listAllAccessFixtureUsers(privilegedClient.auth.admin);
   const reviewOwner = findAccessFixtureUser(users, fixture.reviewOwnerPhone);
@@ -202,11 +242,14 @@ async function main() {
     bookingOwner.id,
     "Worker booking fixture identity",
   );
+  const { data: bookingApplication, error: bookingApplicationError } =
+    await bookingOwnerClient.from("owner_applications").select("id").single();
+  if (bookingApplicationError) throw bookingApplicationError;
   const { data: bookingProfile, error: bookingProfileError } =
     await bookingOwnerClient
       .from("owner_application_cottage_profiles")
       .select("id,current_shift_schedule_id")
-      .eq("name", fixture.bookingCottageName)
+      .eq("application_id", bookingApplication.id)
       .single();
   if (bookingProfileError) throw bookingProfileError;
   const scheduleId = bookingProfile.current_shift_schedule_id;
@@ -217,6 +260,174 @@ async function main() {
     scheduleId,
     "Worker booking schedule revision id",
   );
+  const { data: schedule, error: scheduleError } = await bookingOwnerClient
+    .from("cottage_shift_schedule_revisions")
+    .select("full_day_bundle_id")
+    .eq("id", exactScheduleId)
+    .single();
+  if (scheduleError) throw scheduleError;
+  const fullDayBundleId = requireUuid(
+    schedule.full_day_bundle_id,
+    "Worker booking full-day bundle id",
+  );
+  const { data: shifts, error: shiftsError } = await bookingOwnerClient
+    .from("cottage_shifts")
+    .select("id,position")
+    .eq("schedule_revision_id", exactScheduleId)
+    .order("position");
+  if (shiftsError) throw shiftsError;
+  const firstShift = shifts.find((shift) => shift.position === 1);
+  const secondShift = shifts.find((shift) => shift.position === 2);
+  if (!firstShift || !secondShift || shifts.length !== 2) {
+    throw new Error("Worker booking fixture shifts are incomplete");
+  }
+  const firstShiftId = requireUuid(
+    firstShift.id,
+    "Worker booking first Shift id",
+  );
+  const secondShiftId = requireUuid(
+    secondShift.id,
+    "Worker booking second Shift id",
+  );
+  const expectedPricing = [
+    {
+      id: firstShiftId,
+      kind: "shift",
+      standardPriceIqd: 180000,
+      weekdayOverrides: [],
+      dateOverrides: [],
+    },
+    {
+      id: secondShiftId,
+      kind: "shift",
+      standardPriceIqd: 190000,
+      weekdayOverrides: [],
+      dateOverrides: [],
+    },
+    {
+      id: fullDayBundleId,
+      kind: "full_day_bundle",
+      standardPriceIqd: 250000,
+      weekdayOverrides: [],
+      dateOverrides: [],
+    },
+  ];
+  const loadPricing = async () => {
+    const { data, error } = await bookingOwnerClient.rpc(
+      "load_cottage_inventory_owner_editor_state",
+      {
+        target_profile_id: profileId,
+        target_schedule_revision_id: exactScheduleId,
+        target_service_day: null,
+      },
+    );
+    if (error) throw error;
+    if (!Array.isArray(data?.units) || data.units.length !== 3) {
+      throw new Error("Worker booking fixture pricing is incomplete");
+    }
+    return structuredClone(data.units);
+  };
+  const savePricing = async (units) => {
+    const { error } = await bookingOwnerClient.rpc(
+      "save_cottage_inventory_pricing",
+      {
+        target_profile_id: profileId,
+        target_schedule_revision_id: exactScheduleId,
+        requested_prices: {
+          units: units.map((unit) => ({
+            unitId: unit.id,
+            unitKind: unit.kind,
+            standardPriceIqd: unit.standardPriceIqd,
+            weekdayOverrides: structuredClone(unit.weekdayOverrides),
+            dateOverrides: structuredClone(unit.dateOverrides),
+          })),
+        },
+      },
+    );
+    if (error) throw error;
+  };
+  const requireSamePricing = (actual, expected, description) => {
+    if (!isDeepStrictEqual(actual, expected)) throw new Error(description);
+  };
+  const requireNoAvailability = (description) => {
+    const count = databaseHarness.runSql(
+      "select count(*)::integer " +
+        "from public.cottage_inventory_availability " +
+        "where schedule_revision_id = '" +
+        exactScheduleId +
+        "'::uuid;",
+    );
+    if (count !== "0") throw new Error(description);
+  };
+
+  requireSamePricing(
+    await loadPricing(),
+    expectedPricing,
+    "Worker fixture creation did not establish deterministic standard pricing",
+  );
+  requireNoAvailability(
+    "Worker fixture creation wrote dated Cottage Inventory availability",
+  );
+
+  const seededPricing = expectedPricing.map((unit, index) => ({
+    ...unit,
+    weekdayOverrides: [
+      {
+        weekday: index + 1,
+        priceIqd: unit.standardPriceIqd + (index + 1) * 1_000,
+      },
+    ],
+    dateOverrides: [
+      {
+        serviceDay: "2099-01-" + String(index + 11).padStart(2, "0"),
+        priceIqd: unit.standardPriceIqd + (index + 1) * 2_000,
+      },
+    ],
+  }));
+  await savePricing(seededPricing);
+  await createWorkerFixtures();
+  requireSamePricing(
+    await loadPricing(),
+    seededPricing,
+    "Correct Worker fixture pricing was not a no-op",
+  );
+  requireNoAvailability(
+    "Correct Worker fixture pricing no-op wrote dated availability",
+  );
+
+  const deletedPrice = databaseHarness.runSql(
+    "delete from public.cottage_inventory_standard_prices " +
+      "where schedule_revision_id = '" +
+      exactScheduleId +
+      "'::uuid and unit_kind = 'shift' " +
+      "and unit_id = '" +
+      firstShiftId +
+      "'::uuid returning unit_id;",
+  );
+  if (deletedPrice !== firstShiftId) {
+    throw new Error("Worker fixture standard-price mutation failed");
+  }
+  await requireNamedRejection(
+    validateWorkerFixtures,
+    "expected deterministic standard pricing",
+  );
+  await createWorkerFixtures();
+  await validateWorkerFixtures();
+  requireSamePricing(
+    await loadPricing(),
+    seededPricing,
+    "Worker fixture pricing repair changed established overrides",
+  );
+  await createWorkerFixtures();
+  requireSamePricing(
+    await loadPricing(),
+    seededPricing,
+    "Repeated Worker fixture pricing repair changed persisted pricing",
+  );
+  requireNoAvailability(
+    "Worker fixture pricing repair wrote dated availability",
+  );
+
   databaseHarness.runSql(`
     begin;
     set local session_replication_role = replica;
@@ -225,8 +436,8 @@ async function main() {
     where id = '${profileId}'::uuid;
     commit;
   `);
-  requireNamedFailure(
-    runFixtureCommand("validate"),
+  await requireNamedRejection(
+    validateWorkerFixtures,
     "missing current publication or Shift Schedule",
   );
   databaseHarness.runSql(`
@@ -237,10 +448,7 @@ async function main() {
     where id = '${profileId}'::uuid;
     commit;
   `);
-  requireSuccess(
-    runFixtureCommand("validate"),
-    "Restored booking fixture validation",
-  );
+  await validateWorkerFixtures();
 
   const { data: reviewDocument, error: reviewDocumentError } =
     await reviewOwnerClient
@@ -269,7 +477,7 @@ async function main() {
     );
   }
   console.log(
-    "Verified clean Worker access fixture creation and named prerequisite failures.",
+    "Verified clean Worker access fixture creation, pricing repair, and named prerequisite failures.",
   );
   return 0;
 }
