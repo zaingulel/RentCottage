@@ -13,7 +13,9 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const FIXTURE_CONTRACT_MODE = "--fixture-contract";
-const USAGE = `Usage: npm run verify:access [${FIXTURE_CONTRACT_MODE}]`;
+const DATABASE_MODE = "--database";
+const BROWSER_MODE = "--browser";
+const USAGE = `Usage: npm run verify:access [${DATABASE_MODE}|${BROWSER_MODE}|${FIXTURE_CONTRACT_MODE}]`;
 const LOCAL_PROJECT_PATTERN = /^rentcottage(?:-[a-z0-9]+)*$/;
 const EXCLUDED_SERVICES =
   "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
@@ -101,9 +103,16 @@ export function main(
     workingDirectory = process.cwd(),
   } = {},
 ) {
-  const focusedFixtureContract =
-    args.length === 1 && args[0] === FIXTURE_CONTRACT_MODE;
-  if (args.length !== 0 && !focusedFixtureContract) {
+  const fullMode = args.length === 0;
+  const mode = args[0];
+  const focusedFixtureContract = mode === FIXTURE_CONTRACT_MODE;
+  const databaseOnly = mode === DATABASE_MODE;
+  const browserOnly = mode === BROWSER_MODE;
+  if (
+    !fullMode &&
+    (args.length !== 1 ||
+      (!focusedFixtureContract && !databaseOnly && !browserOnly))
+  ) {
     stderr(USAGE);
     return 2;
   }
@@ -164,7 +173,16 @@ export function main(
   };
 
   const verify = () => {
-    let result = execute(
+    let result;
+    if (!databaseOnly && !focusedFixtureContract) {
+      result = execute("node", ["scripts/verify-chromium-preflight.mjs"], {
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      if (result.status !== 0) return result.status;
+    }
+
+    result = execute(
       "npx",
       supabaseArguments(["supabase", "start", "-x", EXCLUDED_SERVICES]),
       { encoding: "utf8", stdio: "pipe" },
@@ -172,11 +190,13 @@ export function main(
     if (result.status !== 0) return result.status;
     started = true;
 
-    result = execute(
-      "npx",
-      supabaseArguments(["supabase", "db", "reset", "--local"]),
-    );
-    if (result.status !== 0) return result.status;
+    if (!browserOnly) {
+      result = execute(
+        "npx",
+        supabaseArguments(["supabase", "db", "reset", "--local"]),
+      );
+      if (result.status !== 0) return result.status;
+    }
 
     const databaseConcurrencyEnvironment = {
       ...supabaseEnvironment,
@@ -189,7 +209,7 @@ export function main(
     delete databaseConcurrencyEnvironment.SUPABASE_URL;
     delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
     delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
-    if (!focusedFixtureContract) {
+    if (!focusedFixtureContract && !browserOnly) {
       result = execute("npx", supabaseArguments(["supabase", "test", "db"]));
       if (result.status !== 0) return result.status;
       result = execute(
@@ -251,65 +271,84 @@ export function main(
       SUPABASE_SECRET_KEY: secretKey,
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     };
-    const fixtureContract = execute(
-      "node",
-      ["scripts/verify-access-fixture-contract.mjs"],
-      {
-        env: { ...accessEnvironment, ...databaseConcurrencyEnvironment },
-        stdio: "inherit",
-      },
-    );
-    if (fixtureContract.status !== 0) return fixtureContract.status;
-    if (focusedFixtureContract) return 0;
-    const createDraftConcurrencyFixture = execute(
-      "node",
-      ["scripts/prepare-access-test.mjs", "create", "mobile"],
-      { env: accessEnvironment, stdio: "inherit" },
-    );
-    if (createDraftConcurrencyFixture.status !== 0) {
-      return createDraftConcurrencyFixture.status;
-    }
-    const scheduleConcurrencyEnvironment = { ...accessEnvironment };
-    delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
-    const draftConcurrency = execute(
-      "node",
-      ["scripts/verify-cottage-profile-draft-concurrency.mjs"],
-      {
-        env: {
-          ...scheduleConcurrencyEnvironment,
-          ...databaseConcurrencyEnvironment,
+    if (!browserOnly) {
+      const fixtureContract = execute(
+        "node",
+        ["scripts/verify-access-fixture-contract.mjs"],
+        {
+          env: { ...accessEnvironment, ...databaseConcurrencyEnvironment },
+          stdio: "inherit",
         },
-        stdio: "inherit",
-      },
-    );
-    if (draftConcurrency.status !== 0) return draftConcurrency.status;
-    const scheduleConcurrency = execute(
-      "node",
-      ["scripts/verify-cottage-shift-schedule-concurrency.mjs"],
-      { env: scheduleConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (scheduleConcurrency.status !== 0) return scheduleConcurrency.status;
-    const inventoryConcurrencyEnvironment = {
-      ...scheduleConcurrencyEnvironment,
-      ...databaseConcurrencyEnvironment,
-    };
-    const inventoryConcurrency = execute(
-      "node",
-      ["scripts/verify-cottage-inventory-concurrency.mjs"],
-      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (inventoryConcurrency.status !== 0) return inventoryConcurrency.status;
-    const bookingPeriodHoldConcurrency = execute(
-      "node",
-      ["scripts/verify-booking-period-hold-concurrency.mjs"],
-      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (bookingPeriodHoldConcurrency.status !== 0) {
-      return bookingPeriodHoldConcurrency.status;
+      );
+      if (fixtureContract.status !== 0) return fixtureContract.status;
+      if (focusedFixtureContract) return 0;
+      const createDraftConcurrencyFixture = execute(
+        "node",
+        ["scripts/prepare-access-test.mjs", "create", "mobile"],
+        { env: accessEnvironment, stdio: "inherit" },
+      );
+      if (createDraftConcurrencyFixture.status !== 0) {
+        return createDraftConcurrencyFixture.status;
+      }
+      const scheduleConcurrencyEnvironment = { ...accessEnvironment };
+      delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
+      const inventoryConcurrencyEnvironment = {
+        ...scheduleConcurrencyEnvironment,
+        ...databaseConcurrencyEnvironment,
+      };
+      for (const [command, commandArgs, commandEnvironment] of [
+        [
+          "node",
+          ["scripts/verify-cottage-profile-draft-concurrency.mjs"],
+          inventoryConcurrencyEnvironment,
+        ],
+        [
+          "node",
+          ["scripts/verify-cottage-shift-schedule-concurrency.mjs"],
+          scheduleConcurrencyEnvironment,
+        ],
+        [
+          "node",
+          ["scripts/verify-cottage-inventory-concurrency.mjs"],
+          inventoryConcurrencyEnvironment,
+        ],
+        [
+          "node",
+          ["scripts/verify-booking-period-hold-concurrency.mjs"],
+          inventoryConcurrencyEnvironment,
+        ],
+        [
+          "node",
+          ["scripts/verify-booking-request-concurrency.mjs"],
+          inventoryConcurrencyEnvironment,
+        ],
+        [
+          "node",
+          ["scripts/verify-booking-request-lifecycle-concurrency.mjs"],
+          {
+            ...inventoryConcurrencyEnvironment,
+            SUPABASE_SECRET_KEY: secretKey,
+          },
+        ],
+      ]) {
+        result = execute(command, commandArgs, {
+          env: commandEnvironment,
+          stdio: "inherit",
+        });
+        if (result.status !== 0) return result.status;
+      }
+      if (databaseOnly) return 0;
     }
+
     const createNextFixtures = execute(
       "node",
-      ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"],
+      [
+        "scripts/prepare-access-test.mjs",
+        "create",
+        "mobile",
+        "desktop",
+        "--browser-fixtures-only",
+      ],
       {
         env: accessEnvironment,
         stdio: "inherit",
@@ -352,7 +391,12 @@ export function main(
 
     const createWorkerFixtures = execute(
       "node",
-      ["scripts/prepare-access-test.mjs", "create", "worker"],
+      [
+        "scripts/prepare-access-test.mjs",
+        "create",
+        "worker",
+        "--browser-fixtures-only",
+      ],
       { env: accessEnvironment, stdio: "inherit" },
     );
     if (createWorkerFixtures.status !== 0) {
@@ -384,6 +428,7 @@ export function main(
       },
     );
     if (workerBrowser.status !== 0) return workerBrowser.status;
+    if (browserOnly) return 0;
     const scheduledExpirySeed = execute(
       "node",
       ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
@@ -414,26 +459,7 @@ export function main(
     if (scheduledExpiryVerify.status !== 0) {
       return scheduledExpiryVerify.status;
     }
-    const bookingRequestConcurrency = execute(
-      "node",
-      ["scripts/verify-booking-request-concurrency.mjs"],
-      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (bookingRequestConcurrency.status !== 0) {
-      return bookingRequestConcurrency.status;
-    }
-    const bookingRequestLifecycleConcurrency = execute(
-      "node",
-      ["scripts/verify-booking-request-lifecycle-concurrency.mjs"],
-      {
-        env: {
-          ...inventoryConcurrencyEnvironment,
-          SUPABASE_SECRET_KEY: secretKey,
-        },
-        stdio: "inherit",
-      },
-    );
-    return bookingRequestLifecycleConcurrency.status;
+    return 0;
   };
 
   try {

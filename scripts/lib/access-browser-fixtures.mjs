@@ -49,11 +49,136 @@ const documents = [
   ["licensing_or_exemption", "licence.pdf"],
   ["payout_account", "payout.pdf"],
 ];
+const standardShiftPrices = new Map([
+  [1, 180000],
+  [2, 190000],
+]);
+const standardFullDayPrice = 250000;
 
 function requireData(result, message) {
   if (result.error) throw result.error;
   if (!result.data) throw new Error(message);
   return result.data;
+}
+
+function deterministicStandardPricing(schedule, shifts) {
+  if (!schedule.full_day_bundle_id || shifts.length !== 2) return null;
+  const units = shifts.map((shift) => {
+    const standardPriceIqd = standardShiftPrices.get(shift.position);
+    return standardPriceIqd
+      ? {
+          unitId: shift.id,
+          unitKind: "shift",
+          standardPriceIqd,
+        }
+      : null;
+  });
+  if (units.some((unit) => !unit)) return null;
+  return [
+    ...units,
+    {
+      unitId: schedule.full_day_bundle_id,
+      unitKind: "full_day_bundle",
+      standardPriceIqd: standardFullDayPrice,
+    },
+  ];
+}
+
+function hasExactStandardPricing(loadedPricing, expectedPricing) {
+  if (
+    !Array.isArray(loadedPricing?.units) ||
+    loadedPricing.units.length !== expectedPricing.length
+  ) {
+    return false;
+  }
+  return expectedPricing.every((expected) =>
+    loadedPricing.units.some(
+      (actual) =>
+        actual?.id === expected.unitId &&
+        actual.kind === expected.unitKind &&
+        actual.standardPriceIqd === expected.standardPriceIqd,
+    ),
+  );
+}
+
+async function loadBookingFixturePricing({
+  fixture,
+  ownerClient,
+  profile,
+  schedule,
+  shifts,
+}) {
+  const expectedPricing = deterministicStandardPricing(schedule, shifts);
+  if (!expectedPricing) {
+    throw new Error(
+      `${fixture.project} access booking fixture is incomplete: expected two Cottage Shifts and a full-day bundle`,
+    );
+  }
+  const loadedPricing = requireData(
+    await ownerClient.rpc("load_cottage_inventory_owner_editor_state", {
+      target_profile_id: profile.id,
+      target_schedule_revision_id: schedule.id,
+      target_service_day: null,
+    }),
+    `${fixture.project} access booking fixture pricing is unavailable`,
+  );
+  return { expectedPricing, loadedPricing };
+}
+
+async function ensureBookingFixtureStandardPricing({
+  fixture,
+  ownerClient,
+  profile,
+}) {
+  const schedule = requireData(
+    await ownerClient
+      .from("cottage_shift_schedule_revisions")
+      .select("id,full_day_bundle_id")
+      .eq("id", profile.current_shift_schedule_id)
+      .maybeSingle(),
+    `${fixture.project} access booking fixture is incomplete: missing current Shift Schedule`,
+  );
+  const shifts = await ownerClient
+    .from("cottage_shifts")
+    .select("id,position")
+    .eq("schedule_revision_id", schedule.id)
+    .order("position");
+  if (shifts.error) throw shifts.error;
+  const { expectedPricing, loadedPricing } = await loadBookingFixturePricing({
+    fixture,
+    ownerClient,
+    profile,
+    schedule,
+    shifts: shifts.data,
+  });
+  if (hasExactStandardPricing(loadedPricing, expectedPricing)) return;
+  const replacementPricing = expectedPricing.map((expected) => {
+    const loaded = loadedPricing.units?.find(
+      (unit) => unit?.id === expected.unitId && unit.kind === expected.unitKind,
+    );
+    if (
+      !loaded ||
+      !Array.isArray(loaded.weekdayOverrides) ||
+      !Array.isArray(loaded.dateOverrides)
+    ) {
+      throw new Error(
+        `${fixture.project} access booking fixture pricing is incomplete: missing complete override state`,
+      );
+    }
+    return {
+      ...expected,
+      weekdayOverrides: loaded.weekdayOverrides.map((override) => ({
+        ...override,
+      })),
+      dateOverrides: loaded.dateOverrides.map((override) => ({ ...override })),
+    };
+  });
+  const { error } = await ownerClient.rpc("save_cottage_inventory_pricing", {
+    target_profile_id: profile.id,
+    target_schedule_revision_id: schedule.id,
+    requested_prices: { units: replacementPricing },
+  });
+  if (error) throw error;
 }
 
 async function signInFixtureOwner({
@@ -460,45 +585,53 @@ async function createPublishedBookingFixture({
     .maybeSingle();
   if (existing.error) throw existing.error;
   if (existing.data) {
-    const profile = await ownerClient
-      .from("owner_application_cottage_profiles")
-      .select("current_publication_id,current_shift_schedule_id")
-      .eq("application_id", existing.data.id)
-      .maybeSingle();
-    if (profile.error) throw profile.error;
-    if (
-      existing.data.status === "approved" &&
-      profile.data?.current_publication_id &&
-      profile.data.current_shift_schedule_id
-    ) {
-      return;
+    if (existing.data.status !== "approved") {
+      throw new Error(
+        `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
+      );
     }
+  } else {
+    await ensureOwnerRole(ownerClient);
+    const application = await saveApplication(ownerClient, fixture, "booking");
+    await uploadApplicationDocuments({
+      applicationId: application.id,
+      ownerUserId: identity.id,
+      privilegedClient,
+    });
+    const { error: submitError } = await ownerClient.rpc(
+      "submit_owner_application",
+    );
+    if (submitError) throw submitError;
+    await approveApplication({
+      applicationId: application.id,
+      ownerClient,
+      reviewerClient,
+    });
+    await preparePublishedProfile({
+      fixture,
+      ownerClient,
+      privilegedClient,
+      reviewerClient,
+    });
+  }
+
+  const profile = requireData(
+    await ownerClient
+      .from("owner_application_cottage_profiles")
+      .select("id,current_publication_id,current_shift_schedule_id")
+      .eq("name", fixture.bookingCottageName)
+      .maybeSingle(),
+    `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
+  );
+  if (!profile.current_publication_id || !profile.current_shift_schedule_id) {
     throw new Error(
       `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
     );
   }
-
-  await ensureOwnerRole(ownerClient);
-  const application = await saveApplication(ownerClient, fixture, "booking");
-  await uploadApplicationDocuments({
-    applicationId: application.id,
-    ownerUserId: identity.id,
-    privilegedClient,
-  });
-  const { error: submitError } = await ownerClient.rpc(
-    "submit_owner_application",
-  );
-  if (submitError) throw submitError;
-  await approveApplication({
-    applicationId: application.id,
-    ownerClient,
-    reviewerClient,
-  });
-  await preparePublishedProfile({
+  await ensureBookingFixtureStandardPricing({
     fixture,
     ownerClient,
-    privilegedClient,
-    reviewerClient,
+    profile,
   });
 }
 
@@ -662,12 +795,25 @@ export async function validateAccessBrowserFixtures({
     );
     const shifts = await bookingOwnerClient
       .from("cottage_shifts")
-      .select("id")
-      .eq("schedule_revision_id", schedule.id);
+      .select("id,position")
+      .eq("schedule_revision_id", schedule.id)
+      .order("position");
     if (shifts.error) throw shifts.error;
     if (!schedule.full_day_bundle_id || shifts.data.length !== 2) {
       throw new Error(
         `${project} access booking fixture is incomplete: expected two Cottage Shifts and a full-day bundle`,
+      );
+    }
+    const { expectedPricing, loadedPricing } = await loadBookingFixturePricing({
+      fixture,
+      ownerClient: bookingOwnerClient,
+      profile: bookingProfile,
+      schedule,
+      shifts: shifts.data,
+    });
+    if (!hasExactStandardPricing(loadedPricing, expectedPricing)) {
+      throw new Error(
+        `${project} access booking fixture is incomplete: expected deterministic standard pricing`,
       );
     }
   }

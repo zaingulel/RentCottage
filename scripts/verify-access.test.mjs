@@ -268,6 +268,112 @@ describe("access verification command", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it("rejects explicit positional full before preparing disposable state", () => {
+    const makeTemp = vi.fn(() => "/tmp/access-explicit-full");
+    const prepareProject = vi.fn(() => "/tmp/access-explicit-full/project");
+    const removeTemp = vi.fn();
+    const run = vi.fn(() => ({ status: 1 }));
+    const stderr = vi.fn();
+
+    expect(
+      main(["full"], {
+        environment: {},
+        makeTemp,
+        prepareProject,
+        removeTemp,
+        run,
+        stderr,
+      }),
+    ).toBe(2);
+    expect(stderr).toHaveBeenCalledExactlyOnceWith(
+      "Usage: npm run verify:access [--database|--browser|--fixture-contract]",
+    );
+    expect(makeTemp).not.toHaveBeenCalled();
+    expect(prepareProject).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(removeTemp).not.toHaveBeenCalled();
+  });
+
+  it("runs only browser-backed evidence on a browser retry", () => {
+    const run = vi.fn((command, args) => ({
+      status: 0,
+      stdout:
+        command === "npx" && args.join(" ") === "supabase status -o json"
+          ? localCredentials
+          : "",
+    }));
+
+    expect(main(["--browser"], { environment: {}, run })).toBe(0);
+
+    const commands = run.mock.calls.map(([command, args]) =>
+      [command, ...args].join(" "),
+    );
+    expect(commands).toEqual([
+      "node scripts/verify-chromium-preflight.mjs",
+      `npx supabase start -x ${"realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor"}`,
+      "npx supabase status -o json",
+      "node scripts/prepare-access-test.mjs create mobile desktop --browser-fixtures-only",
+      "node scripts/prepare-access-test.mjs validate mobile desktop",
+      "npx playwright test tests/access.spec.ts tests/booking-request-access.spec.ts --project=mobile --project=desktop --workers=1 --output=playwright-report/access-next",
+      "node scripts/prepare-access-test.mjs create worker --browser-fixtures-only",
+      "node scripts/prepare-access-test.mjs validate worker",
+      "npx playwright test tests/access.spec.ts tests/booking-request-access.spec.ts --project=worker --workers=1 --output=playwright-report/access-worker",
+      "npx supabase stop --no-backup",
+    ]);
+    expect(commands.some((command) => command.includes(" db reset"))).toBe(
+      false,
+    );
+    expect(commands.some((command) => command.includes("concurrency"))).toBe(
+      false,
+    );
+    expect(
+      commands.some((command) => command.includes("scheduled-expiry")),
+    ).toBe(false);
+  });
+
+  it("does not start Supabase after Chromium preflight fails", () => {
+    const run = vi.fn((command, args) => ({
+      status:
+        command === "node" &&
+        args.join(" ") === "scripts/verify-chromium-preflight.mjs"
+          ? 17
+          : 0,
+      stdout: "",
+    }));
+
+    expect(main([], { environment: {}, run })).toBe(17);
+    expect(run.mock.calls).toHaveLength(1);
+    expect(run.mock.calls[0].slice(0, 2)).toEqual([
+      "node",
+      ["scripts/verify-chromium-preflight.mjs"],
+    ]);
+  });
+
+  it("runs database evidence without Chromium or browser-backed commands", () => {
+    const run = vi.fn((command, args) => ({
+      status: 0,
+      stdout:
+        command === "npx" && args.join(" ") === "supabase status -o json"
+          ? localCredentials
+          : "",
+    }));
+
+    expect(main(["--database"], { environment: {}, run })).toBe(0);
+
+    const commands = run.mock.calls.map(([command, args]) =>
+      [command, ...args].join(" "),
+    );
+    expect(
+      commands.some((command) => command.includes("chromium-preflight")),
+    ).toBe(false);
+    expect(commands.some((command) => command.includes("playwright"))).toBe(
+      false,
+    );
+    expect(
+      commands.some((command) => command.includes("scheduled-expiry")),
+    ).toBe(false);
+  });
+
   it("runs only the public Worker fixture contract in focused disposable mode", () => {
     const run = vi.fn((command, args) => ({
       status: 0,
@@ -361,6 +467,7 @@ describe("access verification command", () => {
     ).toBe(0);
 
     expect(run.mock.calls.map(([command, args]) => [command, args])).toEqual([
+      ["node", ["scripts/verify-chromium-preflight.mjs"]],
       [
         "npx",
         [
@@ -394,9 +501,17 @@ describe("access verification command", () => {
       ["node", ["scripts/verify-cottage-shift-schedule-concurrency.mjs"]],
       ["node", ["scripts/verify-cottage-inventory-concurrency.mjs"]],
       ["node", ["scripts/verify-booking-period-hold-concurrency.mjs"]],
+      ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
+      ["node", ["scripts/verify-booking-request-lifecycle-concurrency.mjs"]],
       [
         "node",
-        ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"],
+        [
+          "scripts/prepare-access-test.mjs",
+          "create",
+          "mobile",
+          "desktop",
+          "--browser-fixtures-only",
+        ],
       ],
       [
         "node",
@@ -415,7 +530,15 @@ describe("access verification command", () => {
           "--output=playwright-report/access-next",
         ],
       ],
-      ["node", ["scripts/prepare-access-test.mjs", "create", "worker"]],
+      [
+        "node",
+        [
+          "scripts/prepare-access-test.mjs",
+          "create",
+          "worker",
+          "--browser-fixtures-only",
+        ],
+      ],
       ["node", ["scripts/prepare-access-test.mjs", "validate", "worker"]],
       [
         "npx",
@@ -448,11 +571,16 @@ describe("access verification command", () => {
         "node",
         ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
       ],
-      ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
-      ["node", ["scripts/verify-booking-request-lifecycle-concurrency.mjs"]],
       ["npx", ["supabase", "stop", "--no-backup"]],
     ]);
-    expect(run.mock.calls[7][2].env).toMatchObject({
+    const commandCall = (command, args) =>
+      run.mock.calls.find(
+        ([calledCommand, calledArgs]) =>
+          calledCommand === command && calledArgs.join(" ") === args,
+      );
+    expect(
+      commandCall("node", "scripts/verify-access-fixture-contract.mjs")[2].env,
+    ).toMatchObject({
       EXISTING: "kept",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
@@ -463,96 +591,198 @@ describe("access verification command", () => {
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[8][2].env).toMatchObject({
+    expect(
+      commandCall("node", "scripts/prepare-access-test.mjs create mobile")[2]
+        .env,
+    ).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[9][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-cottage-profile-draft-concurrency.mjs",
+      )[2].env,
+    ).toMatchObject({
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[9][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[3][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-cottage-profile-draft-concurrency.mjs",
+      )[2].env,
+    ).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-cottage-profile-draft-concurrency.mjs --verify-migration-preflight",
+      )[2].env,
+    ).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[3][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[4][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-cottage-profile-draft-concurrency.mjs --verify-migration-preflight",
+      )[2].env,
+    ).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-booking-period-hold-concurrency.mjs --verify-migration-preflight",
+      )[2].env,
+    ).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[4][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[11][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-booking-period-hold-concurrency.mjs --verify-migration-preflight",
+      )[2].env,
+    ).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(
+      commandCall("node", "scripts/verify-cottage-inventory-concurrency.mjs")[2]
+        .env,
+    ).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[11][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[12][2].env).toMatchObject({
+    expect(
+      commandCall("node", "scripts/verify-cottage-inventory-concurrency.mjs")[2]
+        .env,
+    ).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-booking-period-hold-concurrency.mjs",
+      )[2].env,
+    ).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[12][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[13][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-booking-period-hold-concurrency.mjs",
+      )[2].env,
+    ).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(
+      commandCall(
+        "node",
+        "scripts/prepare-access-test.mjs create mobile desktop --browser-fixtures-only",
+      )[2].env,
+    ).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
-    expect(run.mock.calls[14][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/prepare-access-test.mjs validate mobile desktop",
+      )[2].env,
+    ).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
-    expect(run.mock.calls[15][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "npx",
+        "playwright test tests/access.spec.ts tests/booking-request-access.spec.ts --project=mobile --project=desktop --workers=1 --output=playwright-report/access-next",
+      )[2].env,
+    ).toMatchObject({
       APP_ENVIRONMENT: "test",
       NEXTJS_ENV: "test",
       SUPABASE_PROJECT_REF: "local-test",
     });
-    expect(run.mock.calls[16][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/prepare-access-test.mjs create worker --browser-fixtures-only",
+      )[2].env,
+    ).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
-    expect(run.mock.calls[17][2].env).toMatchObject({
+    expect(
+      commandCall("node", "scripts/prepare-access-test.mjs validate worker")[2]
+        .env,
+    ).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
-    expect(run.mock.calls[18][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "npx",
+        "playwright test tests/access.spec.ts tests/booking-request-access.spec.ts --project=worker --workers=1 --output=playwright-report/access-worker",
+      )[2].env,
+    ).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
-    expect(run.mock.calls[19][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-booking-request-scheduled-expiry.mjs --seed",
+      )[2].env,
+    ).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[19][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[20][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-booking-request-scheduled-expiry.mjs --seed",
+      )[2].env,
+    ).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(
+      commandCall(
+        "npx",
+        "playwright test tests/worker-scheduled-expiry.spec.ts --project=worker --workers=1 --output=playwright-report/scheduled-expiry-worker",
+      )[2].env,
+    ).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[21][2].env).toMatchObject({
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-booking-request-scheduled-expiry.mjs --verify",
+      )[2].env,
+    ).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[21][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(
+      commandCall(
+        "node",
+        "scripts/verify-booking-request-scheduled-expiry.mjs --verify",
+      )[2].env,
+    ).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
-  it("creates the mobile Cottage Owner identity before its concurrency proof", () => {
-    let mobileIdentityCreated = false;
+  it("creates the ordinary mobile fixture before all database concurrency evidence", () => {
+    let databaseFixturesCreated = false;
     const run = vi.fn((command, args) => {
       const invocation = [command, ...args].join(" ");
       if (invocation === "node scripts/prepare-access-test.mjs create mobile") {
-        mobileIdentityCreated = true;
+        databaseFixturesCreated = true;
       }
       return {
         status:
           invocation ===
             "node scripts/verify-cottage-profile-draft-concurrency.mjs" &&
-          !mobileIdentityCreated
+          !databaseFixturesCreated
             ? 9
             : 0,
         stdout:
@@ -561,7 +791,7 @@ describe("access verification command", () => {
     });
 
     expect(main([], { environment: {}, run })).toBe(0);
-    expect(mobileIdentityCreated).toBe(true);
+    expect(databaseFixturesCreated).toBe(true);
   });
 
   it("creates and validates project-scoped browser fixtures at each runtime boundary", () => {
@@ -582,7 +812,7 @@ describe("access verification command", () => {
       "node scripts/verify-access-fixture-contract.mjs",
     );
     const createNext = commands.indexOf(
-      "node scripts/prepare-access-test.mjs create mobile desktop",
+      "node scripts/prepare-access-test.mjs create mobile desktop --browser-fixtures-only",
     );
     const validateNext = commands.indexOf(
       "node scripts/prepare-access-test.mjs validate mobile desktop",
@@ -591,7 +821,7 @@ describe("access verification command", () => {
       "npx playwright test tests/access.spec.ts tests/booking-request-access.spec.ts --project=mobile --project=desktop --workers=1 --output=playwright-report/access-next",
     );
     const createWorker = commands.indexOf(
-      "node scripts/prepare-access-test.mjs create worker",
+      "node scripts/prepare-access-test.mjs create worker --browser-fixtures-only",
     );
     const validateWorker = commands.indexOf(
       "node scripts/prepare-access-test.mjs validate worker",
@@ -680,7 +910,13 @@ describe("access verification command", () => {
     expect(
       supabaseCalls.every(([, args]) => args.includes(isolatedWorkdir)),
     ).toBe(true);
-    expect(run.mock.calls[3][2].env).toMatchObject({
+    const draftConcurrencyCall = run.mock.calls.find(
+      ([command, args]) =>
+        command === "node" &&
+        args.join(" ") ===
+          "scripts/verify-cottage-profile-draft-concurrency.mjs --verify-migration-preflight",
+    );
+    expect(draftConcurrencyCall[2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-issue-32-v3",
       SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
       SUPABASE_LOCAL_WORKDIR: isolatedWorkdir,
@@ -691,6 +927,7 @@ describe("access verification command", () => {
   it("stops and cleans up after a failed verification step", () => {
     const run = vi
       .fn()
+      .mockReturnValueOnce({ status: 0, stdout: "" })
       .mockReturnValueOnce({ status: 0, stdout: "" })
       .mockReturnValueOnce({ status: 9, stdout: "" })
       .mockReturnValue({ status: 0, stdout: "" });
