@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Fresh read-only Standards and Specification review of a finished RentCottage change.
+description: Read-only finished-change or scoped repair review against RentCottage Standards and Specification.
 model: fable
 effort: high
 maxTurns: 90

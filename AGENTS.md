@@ -91,9 +91,9 @@ and green when restored. Run focused evidence during construction and `npm run v
 
 One fresh independent review checks the complete finished change against repository standards and the issue.
 Run `security-code-review` first to decide whether Security joins Standards and Specification. A true bounded
-finding returns to the sole writer; focused verification follows the repair, then one fresh review round checks
-the resulting tree. After two non-converging repair-and-review cycles, stop and return to the owner to split,
-rescope, or stop.
+finding returns to the sole writer. Run focused verification for the repair, then review only the repaired hunks
+and what they could break. No review follows a repair that adds no factual claim. After two non-converging
+repair-and-scoped-review cycles, stop and return to the owner to split, rescope, or stop.
 
 Greptile is the sole external reviewer and is best-effort. Use one attempt per pull-request head and re-review
 only after a genuine repair push. An unavailable attempt is reported, never presented as complete, and does not

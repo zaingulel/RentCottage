@@ -17,13 +17,13 @@ Run after an authorised merge. Use only observable Git and GitHub evidence.
    branch still tracks the exact pull-request head remote-tracking ref and both resolve to the approved head. This
    retained upstream is the non-force deletion proof after a squash merge. Run `npm run verify:board` after
    authorised tracker reconciliation.
-5. Remove the exact clean worktree with ordinary `git worktree remove <path>` and delete the exact local branch
-   with non-force `git branch -d job/<issue>`. Run `git worktree prune --dry-run --verbose`; require it to report
-   no candidate, then run `git worktree prune`. Any candidate belongs to a different retained registration, so
-   stop instead of pruning. The remote branch is deleted by the merge setting; report it if it remains. Stop if
-   the upstream evidence is absent or `git branch -d` refuses; never substitute force deletion.
-6. Re-read worktrees, branches, issue state, and board verification. Report every retained historical worktree;
-   historical cleanup is a separate owner decision.
+5. Remove the exact clean worktree with ordinary `git worktree remove <path>` and verify that exact path is absent
+   from `git worktree list --porcelain`. Delete the exact local branch with non-force `git branch -d job/<issue>`.
+   The remote branch is deleted by the merge setting; report it if it remains. Stop if the upstream evidence is
+   absent or `git branch -d` refuses; never substitute force deletion.
+6. Run `git worktree prune --dry-run --verbose` only to report unrelated stale registrations. Retain every result;
+   global pruning is a separate exact-target owner decision. Re-read worktrees, branches, issue state, and board
+   verification, then report every retained historical worktree.
 
 Stop on missing merge, unknown ownership, failed verification, or any evidence mismatch. Never clean a target to
 make it eligible.

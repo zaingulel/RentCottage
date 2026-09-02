@@ -28,7 +28,7 @@ Follow this bounded sequence after approval:
 
 1. Confirm the exact branch, worktree, clean index, stopped writer, approved diff, local verification, and completed bounded internal review. Commit only the approved finished bundle and record `HEAD` as `CURRENT_PR_HEAD`.
 2. Push with `git push --set-upstream origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`. Confirm the local branch now tracks the exact pull-request head remote ref; this retained remote-tracking ref lets closeout use non-force branch deletion after a squash merge. Create or update a draft pull request against `main` using the approved body. Re-read `state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels`; require the same repository, intended branch, draft state, base `main`, exact `CURRENT_PR_HEAD`, and no external-review label yet.
-3. Add the sole external-review label `independent-review`, then attempt Greptile once for that same current head. Record `COMPLETE` or `UNAVAILABLE` using the evidence below. Reconcile every emitted finding. No paid plan, billing change, purchase, or upgrade is authorised.
+3. Add the sole external-review label `independent-review`, then attempt Greptile once for that same current head. Record `COMPLETE` when its current-head artifact arrives or `UNAVAILABLE` when the one attempt cannot produce one. Reconcile every emitted finding. No paid plan, billing change, purchase, or upgrade is authorised.
 4. Re-read the pull request and require the same open draft and exact head, resolved conversations, completed required local evidence, settled Greptile attempt, and no unresolved finding. Mark it ready with `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`.
 5. Use the applicable merge path:
    - **Issue #161 reset pull request:** while the old hosted protection is still authoritative, run `gh workflow run ci.yml --repo zaingulel/RentCottage --ref main -f pull_request_number=<PR_NUMBER> -f expected_head_oid=<CURRENT_PR_HEAD>`, require its source-bound `quality` check to pass, then merge with `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --squash --match-head-commit <CURRENT_PR_HEAD>`.
@@ -36,7 +36,7 @@ Follow this bounded sequence after approval:
 
 Never use `--admin`.
 
-Greptile is the sole external reviewer and the final review step for each pull-request head. The `independent-review` label triggers it. A completed state proves processing finished, not correctness. A later push that changes the head invalidates review, Greptile, conversation, and CI evidence for the old head; repeat the bounded current-head sequence after a genuine repair push.
+Greptile is the sole external reviewer and the final review step for each pull-request head. The `independent-review` label triggers it. A completed state proves processing finished, not correctness. A later push invalidates Greptile, conversation, and CI evidence for the old head. After a genuine repair push, run focused verification, the scoped local repair review required by `AGENTS.md`, and one new Greptile attempt; do not repeat the complete local review.
 
 ### Greptile attempt states
 
@@ -44,10 +44,10 @@ Record exactly one settled state for the current head:
 
 | State | Required evidence |
 | --- | --- |
-| `COMPLETE` | An exact-current-head completion artifact that identifies Greptile's installed GitHub App as actor and source, its provider-produced GitHub artifact URL, complete changed-file coverage, and an evidence-based disposition for every finding. |
-| `UNAVAILABLE` | Exactly one reason: `ALLOWANCE_EXHAUSTED`, `PROVIDER_UNAVAILABLE`, or `NO_EXACT_HEAD_COMPLETION`; the attempted and current head; observation time and source; artifact or exact error; and owner/coordinator notice. |
+| `COMPLETE` | A provider-produced current-head Greptile artifact and an evidence-based disposition for every emitted finding. |
+| `UNAVAILABLE` | One attempted current head, observation time, and reason: allowance exhausted, provider unavailable, or no current-head completion. |
 
-Partial changed-file coverage is `UNAVAILABLE` with reason `NO_EXACT_HEAD_COMPLETION`; name the changed, reviewed, and missing files and disposition every emitted finding. Provider unavailability or exhausted allowance is reportable rather than a merge veto after all mandatory internal review, local verification, ready-only `test`, conversation, ownership, and tracker gates pass. Missing, unknown, stale, self-authored, wrong-provider, or unattributed attempt evidence stops delivery.
+Provider unavailability or exhausted allowance is reportable rather than a merge veto after all mandatory internal review, local verification, ready-only `test`, conversation, ownership, and tracker gates pass. Missing, stale, self-authored, wrong-provider, or unattributed attempt evidence stops delivery.
 
 ## Merge, cutover, and closeout
 
@@ -66,6 +66,6 @@ After authoritative merge evidence, reconcile only the issue and Project entries
 
 Preview or production deployment is a separate owner-approved operation under `.github/workflows/preview.yml`; ordinary code delivery does not imply deployment.
 
-Complete the original delivery packet with the pull request and merged commit, current-head review and Greptile state, source-bound `test`, conversation resolution, hosted-setting readbacks when applicable, tracker reconciliation, board verification, closeout result, every retained target, and every unavailable or skipped observation.
+Complete the original delivery packet with the pull request and merged commit, internal review and current-head Greptile state, source-bound `test`, conversation resolution, hosted-setting readbacks when applicable, tracker reconciliation, board verification, closeout result, every retained target, and every unavailable or skipped observation.
 
 Recurring maintenance is one current-head review round, one best-effort Greptile attempt, ordinary GitHub state reads, and native closeout. There is no release command, cleanup service, or additional workflow state store.
