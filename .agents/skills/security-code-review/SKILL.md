@@ -1,6 +1,6 @@
 ---
 name: security-code-review
-description: Classify security evidence for a substantive finished RentCottage change, then route to the current managed Standards and Spec review with a configured Security reviewer when required.
+description: Classify a finished RentCottage change, then route one bounded Standards and Specification review round with Security only when required.
 ---
 
 # Security code review
@@ -33,7 +33,7 @@ After classification, report the aggregate `UNKNOWN`, `ANY_YES`, or `ALL_NO` to 
 ## Route
 
 - If any classification is `UNKNOWN`, stop before spawning any reviewer. Gather the missing evidence and classify again; if it remains unavailable, report the gap to the coordinator without guessing.
-- Read the currently installed managed `code-review` skill at invocation time and use its independent Standards and Specification contracts against the complete current change. Its branch-only preflight must not omit staged, unstaged or untracked content.
+- Read the currently installed managed `code-review` skill at invocation time and use its independent Standards and Specification contracts against the complete current change, including committed, staged, unstaged, and untracked inputs.
 - If every classification is `NO`, Standards and Specification are the complete review round.
 - If any classification is `YES`, add the configured `security_reviewer` to the same bounded review round. Give Security the acceptance criteria, relevant security and testing standards, affected architecture, domain, provider, and boundary decisions, and all classifications with evidence.
 
@@ -43,6 +43,6 @@ Do not silently fall back if `code-review` or a required `security_reviewer` is 
 
 Require each routed reviewer prompt to end with its own terminal `CLEAN` or `FINDINGS` verdict. Every Security finding includes severity, file and line, violated requirement or boundary, evidence, and impact. If a required reviewer times out, crashes, or returns no valid terminal verdict, report that lane as `INCOMPLETE` or `UNAVAILABLE` and block delivery approval. Never treat an absent verdict as `CLEAN`. Do not merge or rerank verdicts. The coordinator adjudicates each finding against the repository authorities and approved scope.
 
-This internal review runs before Greptile, which is the final review step for the same head. It supplements executable tests and owner approval; it replaces neither. A completed Greptile review proves only that processing finished, and an unavailable Greptile review never relaxes a required internal review or verification gate. Do not run another internal review after Greptile unless a repair creates a new head and restarts the sequence.
+This is the one bounded internal review round for the finished change. It supplements executable tests and owner approval; it replaces neither. A bounded repair invalidates the earlier result and requires focused verification followed by one fresh round. After two non-converging repair rounds, return to the owner.
 
-This skill does not operate Greptile, change provider configuration, or broaden the managed review. Delivery follows `docs/agents/delivery.md`.
+This skill does not operate Greptile, change hosted configuration, add review lanes, or broaden scope. Delivery follows `docs/agents/delivery.md`.
