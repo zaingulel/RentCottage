@@ -10,7 +10,7 @@ This is RentCottage's evidence-selection authority. The selected issue defines t
 4. Derive expected values from the requirement, a domain decision, a hand-worked example, a provider contract, or a known-good fixture. Do not copy the implementation's calculation.
 5. Assert public contracts and persisted business outcomes, not private calls or page internals.
 
-Test count and coverage percentage are not correctness targets. Functional green does not replace TypeScript, lint, database security, accessibility, build, runtime, or visual evidence. A missing, skipped, unavailable, or unclassified required observation is not a pass.
+Test count and coverage percentage are not correctness targets. Functional green does not replace TypeScript, lint, database security, accessibility, build, runtime, or visual evidence when the change touches those evidence classes. Each change applies only the classes needed for its claims. A missing, skipped, unavailable, or unclassified required observation is not a pass.
 
 ## Evidence layers
 
@@ -26,7 +26,11 @@ Test count and coverage percentage are not correctness targets. Functional green
 
 ## Regression sensitivity
 
-Every non-trivial behaviour change needs a regression test that fails when the relevant behaviour is deliberately broken or reverted, then passes again after restoration. Prove this at the public seam selected for the behaviour. Unchanged documentation and mechanical preservation work do not invent test ceremony.
+Every distinct material behaviour change needs one regression proof that fails when that behaviour is deliberately broken or reverted, then passes again after restoration. Prove it at the public seam selected for the behaviour; do not repeat mutation ceremony for every assertion, edge case or repair. Unchanged documentation and mechanical preservation work use existing evidence and create no new test or mutation ceremony.
+
+## Construction and convergence
+
+Run focused evidence during construction and the applicable broad suite once at convergence. Another broad run needs a named reason, such as changed evidence, an invalidated environment or an investigated flake. Stop retries when they produce no new information; unavailable required evidence remains unavailable, not a pass.
 
 ## Stable commands
 

@@ -34,6 +34,8 @@ These standards apply prospectively. They do not authorize repository-wide renam
 
 ## Agent-facing commands
 
+These requirements apply only when an agent-facing command is already part of the approved work. They do not authorise adding a command, guard, script, hook, gate or workflow subsystem.
+
 - Commands must be deterministic, non-interactive, and bounded in normal output.
 - Validate arguments before network access or other external work.
 - Distinguish success, valid zero, no-op, incomplete evidence, and failure through authoritative exit status.

@@ -16,7 +16,7 @@ Single-context layout. See `docs/agents/domain.md`.
 
 ### Engineering standards
 
-`docs/engineering/coding-standards.md` governs code quality and security. `docs/engineering/testing-strategy.md` governs evidence selection and the stable verification commands. If these standards conflict with product, domain, architecture or issue decisions, stop, explain the conflict, recommend a resolution and leave the decision with the owner. Only a conflict arising during review repair or re-planning uses the repair-only owner-interruption rule under **Review repair and re-planning**.
+`docs/engineering/coding-standards.md` governs code quality and security. `docs/engineering/testing-strategy.md` governs evidence selection and the stable verification commands. If these standards conflict with product, domain, architecture or issue decisions, stop, explain the conflict, recommend a resolution and leave the decision with the owner.
 
 ## Working method
 
@@ -31,11 +31,11 @@ Use the shared selection-only `$resume` intake with these RentCottage sources:
 
 For high-blast-radius work, treat the initial choice as authorisation for read-only planning. Approval of the completed concrete plan is the formal work-pick before editing.
 
-For a substantial change, state the route before editing:
+State the route before editing:
 
-- **Inline** for a trivial, well-bounded change.
+- **Inline** with a short plan for bounded work that follows established patterns.
 - **Exploration** for read-heavy discovery; delegate only independent, bounded reading when it preserves useful main-thread context.
-- **Plan → build → review** for cross-cutting work, a change with unclear direction, data-model changes, security/privacy work, or a substantial user-facing behaviour.
+- **Plan → build → review** for genuinely high-blast-radius work or unresolved work that crosses module, service, persistence, provider, security or privacy boundaries.
 
 Use the installed skills rather than reproducing their methods: `codebase-design` / `to-spec` / `grill-with-docs` for design, `tdd` for implementation, and `diagnosing-bugs` for hard or repeated failures. Route every substantive finished change through the repository's `security-code-review` skill.
 
@@ -45,14 +45,13 @@ Keep orchestration in the active work session. The repository records the desire
 
 ### Delivery authority
 
-Load [`docs/agents/delivery.md`](docs/agents/delivery.md) only when preparing or executing an owner-approved delivery. Selection-only resume, planning and ordinary construction do not preload it. That authority owns outward delivery, reconciliation, terminal release, refusal and recovery guidance.
+Load [`docs/agents/delivery.md`](docs/agents/delivery.md) only when preparing or executing an owner-approved delivery. Selection-only resume, planning and ordinary construction do not preload it. That authority owns commits made as part of delivery, outward delivery, reconciliation, terminal release, refusal and recovery guidance; it does not own local green-slice construction commits.
 
 ### Roles
 
 - **Coordinator:** owns scope, integration, verification and owner communication. It selects the smallest useful team for the ticket.
 - **Planner:** works read-only and turns approved acceptance criteria into an evidence-based implementation plan.
 - **Plan reviewer:** works read-only and independently challenges a fixed plan through feasibility, scope, coherence and security/privacy lenses.
-- **Plan consolidator:** works read-only and, when multiple specialist reviews are used, adjudicates their findings and produces the final revised plan. It does not expand approved scope or make unresolved owner decisions.
 - **Explorer:** works read-only on bounded discovery when current code, provider documentation or prior art must be checked.
 - **Worker:** is the only writer for its active delivery ticket and returns the changed paths and verification results.
 - **Reviewer:** works read-only and independently checks both repository standards and the ticket acceptance criteria. Findings are accepted or rejected on evidence, not on the identity of the reviewer.
@@ -61,49 +60,38 @@ The current agent configuration selects models for these capabilities. Do not du
 
 ### Plan review
 
-Before the worker edits a substantial **Plan → build → review** ticket, give the fixed plan to at least one independent plan reviewer. The worker must wait until review is complete, the route's final plan has incorporated the accepted findings and the coordinator has validated the finding dispositions and revised plan. The default is one reviewer covering feasibility, scope, coherence and security/privacy. The coordinator may distribute those lenses across separate reviewers whenever independent depth is useful, provided the assigned reviewers collectively cover all four; this is a judgement call, not a risk-threshold rule.
+Use one independent plan review only for genuinely high-blast-radius or unresolved cross-boundary work. One reviewer covers feasibility, scope, coherence and security/privacy. The worker waits while the coordinator resolves findings and fixes the plan.
 
 Reviewers report concrete, evidence-backed findings against the approved issue and repository authorities. They remain read-only, do not rewrite the plan, and do not add product scope.
 
-- After one plan review, the original planner produces the final revised plan.
-- After multiple specialist reviews, an independent plan consolidator removes duplicates, rejects false or stale findings, adjudicates conflicts and produces the final revised plan. The original planner may be consulted when plan rationale or context is missing, but the plan does not automatically return to it.
-- In every path, the coordinator checks the finding dispositions and final revised plan before build.
-- A consolidator must not introduce a new source of truth, make an owner decision or silently change approved scope. If the reviews expose a choice that existing authorities do not settle, stop and ask the owner. During a `PLAN_INVALIDATING` transition, the planner, reviewers and consolidator instead return the choice to the coordinator, which applies the repair-only owner-interruption rule under **Review repair and re-planning**.
+Specialist fan-out and consolidation happen only when the owner explicitly approves them for that job. The coordinator checks every finding disposition and the final plan before build. If review exposes a choice the approved authorities do not settle, return that choice to the owner.
 
 Plan review does not replace test-driven implementation, independent review of the finished change, executable verification or existing owner approval gates.
 
-Evaluation is complete and the gate is retained; issue #93 holds the history, evidence and decision. Routine maintenance cost is one independent review for each substantial plan, plus extra latency and model usage only when the coordinator chooses specialist fan-out and consolidation. Reconsider the gate only if later evidence shows a cheaper control catches every material plan defect or owner ambiguity with less latency and model usage. This is outcome-based, not another scheduled trial.
+### Internal review and repair
 
-### Review repair and re-planning
+Run one independent internal review round on the finished change. Standards and Specification are the normal lanes; add Security only when `security-code-review` classifies the change as sensitive. All lanes in that dispatch are one review round.
 
-The coordinator assigns every accepted finished-change finding exactly one class, with concise evidence, before authorising repair. Evaluate `PLAN_INVALIDATING` first; it takes precedence:
+Return a true finding to the ticket's sole writer only when the approved plan or outcome determines one bounded correction within the approved size and surface. Run focused verification for the repair, then one fresh internal review round. A remedy that needs new executable machinery or materially exceeds the approved size or surface is an owner scope question, not an automatic fix.
 
-- **`PLAN_INVALIDATING`:** an approved plan assumption is false, the plan does not fully determine exactly one coherent correction, satisfying the finding changes a module or service boundary, transaction or concurrency ordering, persistence or provider contract, security or privacy boundary, migration or rollback design, or verification seam, or the coordinator cannot evidence every bounded condition. Stop ad hoc repair on the first such finding. Fix one active-session evidence bundle containing the current issue, approved plan, accepted finding dispositions, complete changed bundle and all verification results. Give that bundle to a fresh planner. A fresh independent plan reviewer receives the same bundle plus the planner's revised plan and challenges it. After one review, the original planner incorporates accepted findings and produces the final revised plan; after multiple specialist reviews, an independent plan consolidator produces it under **Plan review**. The coordinator validates the finding dispositions and final revised plan; then exactly one writer resumes.
-- **`BOUNDED_REPAIR`:** only when no plan-invalidating condition applies, the approved plan fully determines one correction and every listed boundary remains unchanged. Return the finding to the ticket's sole writer and run proportionate focused verification.
-
-After either repair path produces a complete repaired bundle, all previous finished-change reviewer tasks and verdicts are terminal. Invoke `security-code-review` on that bundle and use entirely new reviewer agents for the route it returns: `ALL_NO` requires new Standards and Specification reviewers, `ANY_YES` also requires a new Security reviewer, and `UNKNOWN` stops. Do not resume or reuse an earlier reviewer context or verdict.
-
-If two consecutive fresh-review rounds produce new accepted findings initially classified as bounded, the coordinator must reassess whether their combined evidence invalidates the plan before authorising another repair. Apply the same re-planning transition whenever later evidence invalidates a revised plan; do not continue architectural repair inside a stale writer context.
-
-**Repair-only owner-interruption rule:** this rule applies only after an accepted finished-change finding, while determining or executing the next in-scope repair or revised plan. During a `PLAN_INVALIDATING` transition it covers the fresh planner, every plan reviewer, any consolidator, coordinator validation and the resumed writer. Work-selection approval remains valid while the approved outcome, acceptance criteria, scope and settled decisions remain unchanged. Stop for the owner only when existing approved authorities and settled owner decisions do not determine the next repair or revised plan because they leave an unresolved product or scope choice, or a choice involving authentication, personal data, security or privacy, payments, destructive migration or rollback. The coordinator resolves other in-scope technical choices through the required planning and review route. This rule does not apply to work selection, initial planning, ordinary construction, delivery approval or unrelated authority conflicts.
-
-Continue in-scope repair and re-planning automatically under the approved work selection, subject to the repair-only owner-interruption rule.
+After two repair-and-re-review cycles that still produce new material true findings, stop and return to the owner to split, rescope or stop the job. Do not automatically begin another planning or build cycle.
 
 ### Isolation and parallel work
 
 - Start each active delivery ticket from fresh `main` on its own branch and worktree. Leave other checkouts and uncommitted work untouched.
 - Assign one writer to each active delivery ticket. Do not split one ticket across concurrent writer branches. The coordinator may integrate only after the worker has stopped writing.
 - Parallel implementation across different tickets is allowed only when domain behaviour, files, database migrations and tests are demonstrably separate. If separation is uncertain, work sequentially.
-- The GitHub issue owns ticket-specific scope, acceptance criteria, dependencies and references to settled decisions. `CONTEXT.md` supplies domain language and applicable architecture decisions supply technical context. If these sources conflict or appear incorrect, stop, explain the conflict, recommend a resolution and leave the decision with the owner. Only a conflict arising during review repair or re-planning uses the repair-only owner-interruption rule above. Do not add a second progress record.
+- The GitHub issue records ticket-specific scope, acceptance criteria, dependencies and references to settled decisions. Agent-added ticket detail may clarify the owner's approved outcome but cannot expand it. `CONTEXT.md` supplies domain language and applicable architecture decisions supply technical context. If these sources conflict or appear incorrect, stop, explain the conflict, recommend a resolution and leave the decision with the owner. Do not add a second progress record.
+- On an approved isolated job branch, the worker may commit each green slice as durable local Git state. These construction commits need no owner approval and remain local until delivery approval; commit gates in `docs/agents/delivery.md` apply only to commits made as part of delivery.
 
 ### Owner decisions and evidence
 
 There are two routine owner decisions:
 
 1. **Work selection:** approve the ticket outcome and acceptance criteria before implementation starts. For high blast-radius work, include the concrete plan required by the change gate below in this decision.
-2. **Delivery approval:** review the finished implementation bundle and locally knowable evidence in one delivery packet before any commit or outward action such as a push, pull request, deployment or merge. Delivery approval must explicitly authorise outward action; [`docs/agents/delivery.md`](docs/agents/delivery.md) defines semantic and persistent approval scope and staleness. The same delivery packet is progressively completed with evidence acquired during delivery. No second routine owner approval is required while the original approval remains current.
+2. **Delivery approval:** review the finished implementation bundle and locally knowable evidence in one delivery packet before outward action such as a push, pull request, deployment, merge or tracker mutation. Delivery approval must explicitly authorise outward action; [`docs/agents/delivery.md`](docs/agents/delivery.md) defines semantic and persistent approval scope and staleness. The same delivery packet is progressively completed with evidence acquired during delivery. No second routine owner approval is required while the original approval remains current.
 
-Work-selection approval remains valid through in-scope repair and re-planning only as governed by the repair-only owner-interruption rule under **Review repair and re-planning**. Do not ask the owner to repeat that approval outside the rule's condition.
+Work-selection approval remains valid for bounded in-scope repair. Return to the owner when the approved authorities no longer determine one bounded correction or the proposed remedy changes approved scope.
 
 ### External review
 
@@ -111,23 +99,23 @@ Greptile is the sole external reviewer and is best-effort. Every delivery attemp
 
 A settled `UNAVAILABLE` attempt is reportable but is not a merge veto once every mandatory pre-merge gate is green: internal review, executable verification, exact-head Continuous Integration, conversation resolution and ownership. Post-merge tracker reconciliation, board verification, ownership and guarded release remain mandatory. This exception does not relax or replace any of those gates. A `COMPLETE` review requires complete changed-file coverage and an evidence-based disposition for every finding.
 
-Before commit or outward action, the delivery packet contains the finished implementation bundle, acceptance-criteria mapping, diff summary, tests run, pre-outward review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. The same delivery packet progressively gains the materialized commit and pull-request identity, settled Greptile attempt state and concise supporting evidence, fresh exact-head internal reviews, exact-head Continuous Integration, merge, tracker reconciliation, board verification and guarded release evidence. Progressively completing it does not create a second record or staged manifest. Greptile supplements the independent review and executable checks; it replaces neither.
+Before a delivery commit or outward action, the delivery packet contains the finished implementation bundle, acceptance-criteria mapping, diff summary, tests run, pre-outward review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. The same delivery packet progressively gains the materialized commit and pull-request identity, fresh exact-head internal reviews, the settled final Greptile review attempt and concise supporting evidence, exact-head Continuous Integration, merge, tracker reconciliation, board verification and guarded release evidence. Progressively completing it does not create a second record or staged manifest. Greptile is the final review step on each head; exact-head Continuous Integration and merge-state checks follow it, but no internal review does.
 
 ### Adding workflow machinery
 
-Add a repository workflow tool or gate only after the same material failure recurs and a test, GitHub protection rule or clearer ticket cannot prevent it more cheaply. Before implementation, state its recurring maintenance cost and the condition for removing it.
+Determinism is a quality requirement for an already-approved command, test, artifact or invariant. It does not authorise creating a command, guard, script, hook, gate, manifest, parser, state machine, framework, transaction protocol or workflow subsystem.
+
+Use existing platform and repository capabilities first. New executable workflow machinery requires separate owner approval and either a repeated demonstrated control failure or recurring measured friction, a genuinely required runtime or provider integration, or an externally imposed security or platform change. Before approval, state its recurring maintenance cost and removal condition.
 
 ## Change gates
 
-Obtain approval of a concrete plan before editing work that is high blast-radius: authentication, payments, personal data, security/privacy boundaries, destructive or irreversible data changes, or a new user-facing behaviour whose design is not established. Plans must name the affected area, expected behaviour, verification, and any migration or rollback implications.
-
-An automatically revised high-blast-radius plan uses the repair-only owner-interruption rule under **Review repair and re-planning**. Initial high-blast-radius planning still requires owner approval of the concrete plan.
+Obtain approval of a concrete plan before editing genuinely high-blast-radius work: authentication, payments, personal data, security/privacy boundaries, destructive or irreversible data changes, or a new user-facing behaviour whose design is not established. Also plan first when unresolved work crosses a module, service, persistence or provider boundary. Plans name the affected area, expected behaviour, verification, and any migration or rollback implications.
 
 Every behaviour change needs proportionate verification. Prefer a test that would fail if the behaviour regressed; for a visible change, run the app and inspect the rendered result. Do not claim success without direct evidence.
 
 Keep changes bounded. For larger work, split implementation into independently testable slices. If a plan proves incomplete or a risk emerges, stop and report it instead of improvising.
 
-Commit, push, open or merge pull requests, and make external tracker changes only when the user explicitly asks. When a process failure reveals a recurring weakness, prefer a deterministic check or test over adding more prose; record a durable project decision only when it is genuinely reusable.
+Push, open or merge pull requests, deploy, and make external tracker changes only when the user explicitly asks. Record a durable project decision only when it is genuinely reusable.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
