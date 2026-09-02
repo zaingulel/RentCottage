@@ -3,7 +3,7 @@
 ## Route
 
 - **Load trigger:** Load this authority only when preparing or executing an owner-approved delivery.
-- **Owns:** Commit, push, pull-request, review, exact-head verification, merge, tracker reconciliation, terminal release, refusal and recovery guidance.
+- **Owns:** Commits made as part of delivery, push, pull-request, review, exact-head verification, merge, tracker reconciliation, terminal release, refusal and recovery guidance.
 - **Does not own:** Work selection, planning, construction, product acceptance criteria, provider policy or a second progress record.
 - **Required inputs at start:** The owner-approved finished bundle and exact authorised actions; issue identity; absolute registered secondary-worktree path; exact local topic branch; and live stopped-writer ownership evidence.
 - **Acquired during delivery:** The materialized commit Object ID (OID); current pushed-head Object ID; remote branch metadata; pull-request identity and state; settled exact-head Greptile attempt; fresh exact-head internal reviews; exact-head quality; merge evidence; tracker reconciliation; and terminal release evidence.
@@ -14,7 +14,7 @@ Do not load this document during selection-only resume, planning or ordinary con
 
 ## Owner-approved delivery
 
-Before any commit or outward action, the coordinator presents one delivery packet containing the finished implementation bundle and locally knowable evidence. The same packet progressively gains the evidence acquired during delivery. Completing it does not create a second record or staged manifest, and it requires no second routine owner approval while the original approval remains current.
+Before a delivery commit or outward action, the coordinator presents one delivery packet containing the finished implementation bundle and locally knowable evidence. The same packet progressively gains the evidence acquired during delivery. Completing it does not create a second record or staged manifest, and it requires no second routine owner approval while the original approval remains current.
 
 ### Approval scope and persistence
 
@@ -22,7 +22,7 @@ Delivery approval is semantic, contextual, cumulative, and persistent; it requir
 
 The latest clear owner instruction supersedes earlier narrower coordinator wording. The coordinator must not add an exclusion such as `No merge` unless the owner requested it. While approval remains current, perform every authorised action without asking the owner to repeat or restate approval. Time passing and progress between delivery stages do not make approval stale.
 
-The ordinary commit of the unchanged approved finished bundle materializes `CURRENT_PR_HEAD` and does not make approval stale. A materially altered bundle or any later head not freshly validated against the approved finished bundle makes approval stale and stops delivery.
+An ordinary commit made during delivery for the unchanged approved finished bundle does not make approval stale. The resulting committed head is `CURRENT_PR_HEAD`; a materially altered bundle or any later head not freshly validated against the approved finished bundle makes approval stale and stops delivery.
 
 Approval becomes stale only when:
 
@@ -42,7 +42,7 @@ Keep one writer for the ticket. The coordinator makes two live ownership observa
 
 Follow this bounded sequence:
 
-1. **Create draft:** After approval, create the authorised commit of the unchanged approved finished bundle with `git commit -m <MESSAGE>`; that ordinary commit materializes `CURRENT_PR_HEAD`. Push the topic branch with `git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>` and record the exact pushed commit OID. Then create the pull request with `gh pr create --repo zaingulel/RentCottage --draft --base main --head zaingulel:<PR_HEAD_BRANCH> --title <TITLE> --body-file /absolute/path/to/approved-pr-body.md --label independent-review`. Freshly read and record the exact pushed head and current remote branch metadata; a mismatch stops delivery.
+1. **Create draft:** After approval, require the exact approved finished bundle to be committed on the local topic branch. Create an ordinary commit only for approved changes that remain uncommitted, then record the resulting `HEAD` as `CURRENT_PR_HEAD`. Push with `git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>` and record the exact pushed commit OID. Then create the pull request with `gh pr create --repo zaingulel/RentCottage --draft --base main --head zaingulel:<PR_HEAD_BRANCH> --title <TITLE> --body-file /absolute/path/to/approved-pr-body.md --label independent-review`. Freshly read and record the exact pushed head and current remote branch metadata; a mismatch stops delivery.
 2. **Publish:** Immediately before publication, freshly read the pull request with `gh pr view <PR_NUMBER> --repo zaingulel/RentCottage --json state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels` and require the same repository with `isCrossRepository=false`, draft state, base `main`, exact head `CURRENT_PR_HEAD`, intended remote head branch, and exactly `independent-review` among external-review labels. Publish only with `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage` while every value remains current.
 3. **Attempt Greptile:** `head=CURRENT_PR_HEAD`; request an exact-head Greptile review and settle the attempt as `COMPLETE` or `UNAVAILABLE` using the evidence below. No paid plan, billing change, purchase, or upgrade is authorised.
 4. **Fresh exact-head internal review:** `after=settled Greptile attempt`; run `security-code-review` against the complete exact pushed head bundle. `UNKNOWN` stops. Use entirely fresh Standards and Specification reviewers, plus a fresh Security reviewer when the aggregate is `ANY_YES`; every required verdict and finding disposition must be current for `CURRENT_PR_HEAD`. Pre-outward review verdicts are ineligible for exact-head quality.
