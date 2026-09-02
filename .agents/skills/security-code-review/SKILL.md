@@ -43,6 +43,6 @@ Do not silently fall back if `code-review` or a required `security_reviewer` is 
 
 Require each routed reviewer prompt to end with its own terminal `CLEAN` or `FINDINGS` verdict. Every Security finding includes severity, file and line, violated requirement or boundary, evidence, and impact. If a required reviewer times out, crashes, or returns no valid terminal verdict, report that lane as `INCOMPLETE` or `UNAVAILABLE` and block delivery approval. Never treat an absent verdict as `CLEAN`. Do not merge or rerank verdicts. The coordinator adjudicates each finding against the repository authorities and approved scope.
 
-This review supplements executable tests, Greptile's current-head findings, and owner approval; it replaces none of them. A completed Greptile review proves only that processing finished, and an unavailable Greptile review never relaxes a required internal review or verification gate.
+This internal review runs before Greptile, which is the final review step for the same head. It supplements executable tests and owner approval; it replaces neither. A completed Greptile review proves only that processing finished, and an unavailable Greptile review never relaxes a required internal review or verification gate. Do not run another internal review after Greptile unless a repair creates a new head and restarts the sequence.
 
 This skill does not operate Greptile, change provider configuration, or broaden the managed review. Delivery follows `docs/agents/delivery.md`.

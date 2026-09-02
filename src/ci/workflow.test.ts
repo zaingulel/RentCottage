@@ -171,7 +171,7 @@ describe("GitHub Actions delivery checks", () => {
       "No paid plan, billing change, purchase, or upgrade",
     );
     expect(agents).toContain(
-      "settled Greptile attempt state and concise supporting evidence",
+      "settled final Greptile review attempt and concise supporting evidence",
     );
     expect(agents).toContain(
       "finished implementation bundle and locally knowable evidence in one delivery packet",
@@ -201,17 +201,20 @@ describe("GitHub Actions delivery checks", () => {
       "does not operate Greptile, change provider configuration, or broaden the managed review",
     );
     expect(securityReview).toContain(
-      "If every classification is `NO`, invoke those managed Standards and Spec contracts unchanged",
+      "If every classification is `NO`, Standards and Specification are the complete review round",
     );
     expect(securityReview).toContain(
-      "If any classification is `YES`, spawn the managed Standards and Spec reviewers together with the configured `security_reviewer`",
+      "If any classification is `YES`, add the configured `security_reviewer` to the same bounded review round",
     );
 
     expect(agents).not.toContain("### External-review route");
     expect(securityReview).not.toContain("| Security input |");
     expect(delivery).not.toContain("| Security input |");
     expect(securityReview).toContain(
-      "Greptile `UNAVAILABLE` never relaxes an internal review, executable verification, Continuous Integration, conversation, ownership, tracker, merge, or release gate",
+      "This internal review runs before Greptile, which is the final review step for the same head",
+    );
+    expect(securityReview).toContain(
+      "Do not run another internal review after Greptile unless a repair creates a new head and restarts the sequence",
     );
   });
 
@@ -229,11 +232,13 @@ describe("GitHub Actions delivery checks", () => {
     expect(sequence.map(({ number, label }) => ({ number, label }))).toEqual([
       { number: 1, label: "Create draft" },
       { number: 2, label: "Publish" },
-      { number: 3, label: "Attempt Greptile" },
-      { number: 4, label: "Fresh exact-head internal review" },
+      { number: 3, label: "Fresh exact-head internal review" },
+      { number: 4, label: "Attempt final Greptile review" },
       { number: 5, label: "Exact-head quality" },
     ]);
-    expect(sequence[0].text).toContain("`git commit -m <MESSAGE>`");
+    expect(sequence[0].text).toContain(
+      "Create an ordinary commit only for approved changes that remain uncommitted",
+    );
     expect(sequence[0].text).toContain(
       "`git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`",
     );
@@ -256,21 +261,24 @@ describe("GitHub Actions delivery checks", () => {
     expect(sequence[1].text).toContain(
       "`gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`",
     );
-    expect(sequence[2].text).toContain("`head=CURRENT_PR_HEAD`");
-    expect(sequence[2].text).toContain("`COMPLETE` or `UNAVAILABLE`");
-    expect(sequence[3].text).toContain("`after=settled Greptile attempt`");
-    expect(sequence[3].text).toContain("`security-code-review`");
-    expect(sequence[3].text).toContain("exact pushed head");
-    expect(sequence[3].text).toContain(
+    expect(sequence[2].text).toContain("`security-code-review`");
+    expect(sequence[2].text).toContain("exact pushed head");
+    expect(sequence[2].text).toContain(
       "entirely fresh Standards and Specification reviewers",
     );
-    expect(sequence[3].text).toContain("fresh Security reviewer");
-    expect(sequence[3].text).toContain(
+    expect(sequence[2].text).toContain("fresh Security reviewer");
+    expect(sequence[2].text).toContain(
       "Pre-outward review verdicts are ineligible",
     );
-    expect(sequence[4].text).toContain(
+    expect(sequence[3].text).toContain(
       "`after=fresh exact-head internal review`",
     );
+    expect(sequence[3].text).toContain("`head=CURRENT_PR_HEAD`");
+    expect(sequence[3].text).toContain("`COMPLETE` or `UNAVAILABLE`");
+    expect(sequence[3].text).toContain(
+      "No internal review follows a settled Greptile attempt on the same head",
+    );
+    expect(sequence[4].text).toContain("`after=settled Greptile attempt`");
     expect(sequence[4].text).toContain("required local verification");
     expect(sequence[4].text).toContain(
       "`gh workflow run ci.yml --repo zaingulel/RentCottage --ref main -f pull_request_number=<PR_NUMBER> -f expected_head_oid=<CURRENT_PR_HEAD>`",
@@ -306,13 +314,10 @@ describe("GitHub Actions delivery checks", () => {
       "A push invalidates Greptile, internal-review, and Continuous Integration evidence",
     );
     expect(delivery).toContain(
-      "A repair push receives a fresh exact-head Greptile attempt when allowance permits, or a new exact-head `UNAVAILABLE` record otherwise",
-    );
-    expect(delivery).toContain(
       "Every repair uses an ordinary Git commit and `git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`",
     );
     expect(delivery).toContain(
-      "restarts the exact-head Greptile attempt, `security-code-review` classification, entirely new internal reviewers, and exact-head quality",
+      "restarts `security-code-review` classification and entirely new internal reviewers before a fresh exact-head Greptile attempt",
     );
     expect(delivery).toContain(
       "No paid plan, billing change, purchase, or upgrade",
@@ -390,7 +395,7 @@ describe("GitHub Actions delivery checks", () => {
       "current pushed-head Object ID",
       "remote branch metadata",
       "pull-request identity and state",
-      "settled exact-head Greptile attempt",
+      "settled final exact-head Greptile attempt",
       "fresh exact-head internal reviews",
       "exact-head quality",
       "merge",
@@ -436,8 +441,9 @@ describe("GitHub Actions delivery checks", () => {
       "latest clear owner instruction supersedes earlier narrower coordinator wording",
       "without asking the owner to repeat or restate approval",
       "Time passing and progress between delivery stages do not make approval stale",
-      "The ordinary commit of the unchanged approved finished bundle materializes `CURRENT_PR_HEAD` and does not make approval stale",
-      "A materially altered bundle or any later head not freshly validated against the approved finished bundle makes approval stale and stops delivery",
+      "An ordinary commit made during delivery for the unchanged approved finished bundle does not make approval stale",
+      "The resulting committed head is `CURRENT_PR_HEAD`",
+      "a materially altered bundle or any later head not freshly validated against the approved finished bundle makes approval stale and stops delivery",
       "must not add an exclusion such as `No merge` unless the owner requested it",
       "tracker reconciliation and guarded terminal release continue automatically under the same approval",
     ]) {
@@ -465,7 +471,7 @@ describe("GitHub Actions delivery checks", () => {
     expect(ownerDecisions).toContain("docs/agents/delivery.md");
     expect(ownerDecisions).not.toContain("capability-only");
     expect(ownerDecisions).toContain(
-      "review the finished implementation bundle and locally knowable evidence in one delivery packet before any commit or outward action",
+      "review the finished implementation bundle and locally knowable evidence in one delivery packet before outward action",
     );
     expect(ownerDecisions).toContain(
       "The same delivery packet is progressively completed with evidence acquired during delivery",

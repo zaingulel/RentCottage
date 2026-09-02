@@ -68,11 +68,11 @@ Specialist fan-out and consolidation happen only when the owner explicitly appro
 
 Plan review does not replace test-driven implementation, independent review of the finished change, executable verification or existing owner approval gates.
 
-### Final review and repair
+### Internal review and repair
 
-Run one independent final review round on the finished change. Standards and Specification are the normal lanes; add Security only when `security-code-review` classifies the change as sensitive. All lanes in that dispatch are one review round.
+Run one independent internal review round on the finished change. Standards and Specification are the normal lanes; add Security only when `security-code-review` classifies the change as sensitive. All lanes in that dispatch are one review round.
 
-Return a true finding to the ticket's sole writer only when the approved plan or outcome determines one bounded correction within the approved size and surface. Run focused verification for the repair, then one fresh final review round. A remedy that needs new executable machinery or materially exceeds the approved size or surface is an owner scope question, not an automatic fix.
+Return a true finding to the ticket's sole writer only when the approved plan or outcome determines one bounded correction within the approved size and surface. Run focused verification for the repair, then one fresh internal review round. A remedy that needs new executable machinery or materially exceeds the approved size or surface is an owner scope question, not an automatic fix.
 
 After two repair-and-re-review cycles that still produce new material true findings, stop and return to the owner to split, rescope or stop the job. Do not automatically begin another planning or build cycle.
 
@@ -99,7 +99,7 @@ Greptile is the sole external reviewer and is best-effort. Every delivery attemp
 
 A settled `UNAVAILABLE` attempt is reportable but is not a merge veto once every mandatory pre-merge gate is green: internal review, executable verification, exact-head Continuous Integration, conversation resolution and ownership. Post-merge tracker reconciliation, board verification, ownership and guarded release remain mandatory. This exception does not relax or replace any of those gates. A `COMPLETE` review requires complete changed-file coverage and an evidence-based disposition for every finding.
 
-Before a delivery commit or outward action, the delivery packet contains the finished implementation bundle, acceptance-criteria mapping, diff summary, tests run, pre-outward review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. The same delivery packet progressively gains the materialized commit and pull-request identity, settled Greptile attempt state and concise supporting evidence, fresh exact-head internal reviews, exact-head Continuous Integration, merge, tracker reconciliation, board verification and guarded release evidence. Progressively completing it does not create a second record or staged manifest. Greptile supplements the independent review and executable checks; it replaces neither.
+Before a delivery commit or outward action, the delivery packet contains the finished implementation bundle, acceptance-criteria mapping, diff summary, tests run, pre-outward review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. The same delivery packet progressively gains the materialized commit and pull-request identity, fresh exact-head internal reviews, the settled final Greptile review attempt and concise supporting evidence, exact-head Continuous Integration, merge, tracker reconciliation, board verification and guarded release evidence. Progressively completing it does not create a second record or staged manifest. Greptile is the final review step on each head; exact-head Continuous Integration and merge-state checks follow it, but no internal review does.
 
 ### Adding workflow machinery
 
