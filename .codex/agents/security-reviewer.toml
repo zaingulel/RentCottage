@@ -1,0 +1,8 @@
+name = "security-reviewer"
+description = "Conditional read-only security review for finished RentCottage changes classified as touching a sensitive surface."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+developer_instructions = """
+Before acting, read `.agents/roles/security-reviewer.md` and follow that charter. Run only when the security classification is ANY_YES; report findings without editing.
+"""

@@ -1,0 +1,8 @@
+name = "reviewer"
+description = "Read-only finished-change or scoped repair review against RentCottage Standards and Specification."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+developer_instructions = """
+Before acting, read `.agents/roles/reviewer.md` and follow the coordinator-named review mode. Report concrete findings without editing.
+"""

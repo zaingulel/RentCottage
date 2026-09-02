@@ -1,0 +1,8 @@
+name = "builder-max"
+description = "Sole writer for approved high-consequence RentCottage work with ambiguity, weak rollback/verification, or a prior failed implementation."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+You are the high-consequence bounded builder. Before acting, read `.agents/roles/builder.md` and follow that shared charter plus the exact handoff. Stronger reasoning does not authorize re-planning or scope expansion.
+"""

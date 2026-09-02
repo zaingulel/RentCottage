@@ -36,6 +36,6 @@ Run focused evidence during construction and the applicable broad suite once at 
 
 - `npm run verify` is the local and continuous-integration gate. It audits production dependencies, checks formatting, lint and strict TypeScript, runs Vitest, builds and smoke-tests the Worker, scans browser assets for secrets, verifies generated Cloudflare types, and runs the current browser journeys. Docker is required because the access checks start an isolated local Supabase database and prove its policies directly.
 - `npm run verify:preview -- <https-preview-url>` checks the hosted Arabic shell and live Supabase health boundary, then records the exact Git commit and preview origin. It rejects missing or malformed arguments before network access. Loopback Hypertext Transfer Protocol is allowed only for local diagnosis.
-- `npm run verify:board` independently verifies the live tracker and is required by `docs/agents/issue-tracker.md`; it is not part of the code-quality gate because it depends on current GitHub planning state.
+- `npm run verify:board` performs the read-only live Project 4 intake required by `docs/agents/issue-tracker.md`; it is not part of the code-quality gate because it depends on current GitHub planning state.
 
 Agents report exact commands, exit codes, failures, skipped or inapplicable checks, and current screenshots for visible work. Command output is authoritative; prose is interpretation.
