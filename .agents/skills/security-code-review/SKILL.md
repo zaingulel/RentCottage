@@ -24,7 +24,7 @@ Record `YES`, `NO`, or `UNKNOWN` with concise, non-empty evidence for each group
 4. secrets, credentials or privileged service clients
 5. private storage, uploads, downloads or signed access
 6. destructive migrations
-7. cryptographic or other trust-boundary behaviour
+7. payment operations, security-relevant audit, retention or deletion controls, cryptographic or other trust-boundary behaviour
 
 `NO` requires affirmative evidence that the change does not touch the group. Use `UNKNOWN` when evidence is missing, ambiguous, unavailable, or conflicting, and state exactly what evidence is needed.
 
