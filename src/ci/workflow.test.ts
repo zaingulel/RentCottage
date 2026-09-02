@@ -64,7 +64,7 @@ describe("pull-request CI", () => {
     expect(jobs.test.name).toBe(
       "${{ github.event.pull_request.draft == false && 'test' || 'ci-control-no-test' }}",
     );
-    expect(jobs.test.if).toBe("${{ always() }}");
+    expect(jobs.test.if).toBeUndefined();
     expect(jobs.test.permissions).toEqual({ contents: "read" });
 
     const steps = jobs.test.steps ?? [];

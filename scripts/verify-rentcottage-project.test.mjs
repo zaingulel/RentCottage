@@ -1273,6 +1273,84 @@ process.exit(1);
     expect(run.mock.calls.flat().join(" ")).not.toContain("blocked_by");
   });
 
+  it("continues a Project item's field values from the exact item and cursor", () => {
+    const state = fakeState();
+    const graph = verifierGraphqlFixture(state);
+    const item = graph.project.items.nodes[0];
+    item.fieldValues.totalCount = 3;
+    item.fieldValues.pageInfo = {
+      hasNextPage: true,
+      endCursor: "field-values-page-2",
+    };
+    const continuedValue = {
+      __typename: "ProjectV2ItemFieldSingleSelectValue",
+      name: "Extra",
+      optionId: "extra-option",
+      field: { id: "field-extra", name: "Extra" },
+    };
+    const run = vi.fn((args) => {
+      if (args[0] === "--version") return "gh version 2.48.0";
+      if (args.includes("graphql")) {
+        const query = args.find((value) => value.startsWith("query="));
+        if (query.includes("query($itemId")) {
+          expect(args).toContain(`itemId=${item.id}`);
+          expect(args).toContain("cursor=field-values-page-2");
+          return JSON.stringify({
+            data: {
+              node: {
+                id: item.id,
+                fieldValues: {
+                  totalCount: 3,
+                  nodes: [continuedValue],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          });
+        }
+        return JSON.stringify({
+          data: {
+            user: { login: "zaingulel", projectV2: graph.project },
+            nodes: graph.targets,
+          },
+        });
+      }
+      if (args.at(-1).includes("?state=all"))
+        return JSON.stringify([graph.issues]);
+      throw new Error(`Unexpected verifier request ${args.at(-1)}`);
+    });
+    const verify = vi.fn(({ project }) => {
+      expect(project.items.nodes[0].fieldValues.nodes).toHaveLength(3);
+      expect(project.items.nodes[0].fieldValues.nodes.at(-1)).toEqual(
+        continuedValue,
+      );
+      return {
+        failures: [],
+        summary: {
+          itemCount: project.items.nodes.length,
+          dependencyFrontier: [],
+          ownerGated: [],
+          readyForHuman: [],
+          needsTriage: [],
+          needsInfo: [],
+          wontfix: [],
+          readyItems: [],
+        },
+      };
+    });
+
+    const result = runRentCottageProjectVerifier({
+      run,
+      verify,
+      stdout: vi.fn(),
+      stderr: vi.fn(),
+    });
+
+    expect(result.status).toBe(0);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(4);
+  });
+
   it("keeps human output concise while reporting every unblocked category", () => {
     const run = vi.fn((args) => {
       if (args[0] === "--version") return "gh version 2.48.0";

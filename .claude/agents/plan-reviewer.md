@@ -4,6 +4,7 @@ description: Independent read-only review of one fixed RentCottage plan for feas
 model: opus
 effort: high
 maxTurns: 90
+permissionMode: plan
 tools: Read, Glob, Grep
 color: pink
 initialPrompt: Read `.agents/roles/plan-reviewer.md` before acting and follow it exactly.

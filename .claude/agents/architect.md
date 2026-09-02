@@ -4,6 +4,7 @@ description: Read-only RentCottage planner for high-blast-radius or unresolved c
 model: fable
 effort: high
 maxTurns: 90
+permissionMode: plan
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 color: red
 initialPrompt: Read `.agents/roles/architect.md` before acting and follow it exactly.

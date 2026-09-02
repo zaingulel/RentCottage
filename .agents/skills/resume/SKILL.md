@@ -12,7 +12,7 @@ Git is shipped and in-flight state. GitHub Issues and Project 4 are planned stat
 Read in one bounded intake:
 
 - `git status --short --branch`, recent `origin/main` history, remotes, and `git worktree list --porcelain`;
-- `npm run verify:board`, one authoritative board snapshot and classification;
+- `npm run verify:board -- --json`, one authoritative board snapshot and classification;
 - open pull requests and their draft/ready state;
 - active task ownership supplied by the runtime.
 

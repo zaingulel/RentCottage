@@ -380,10 +380,26 @@ export function runRentCottageProjectVerifier({
         item.fieldValues,
         `Project item ${item?.id ?? "unknown"} field values`,
         (value) => value?.field?.id,
-        () => {
-          throw new Error(
-            "Project item field values require targeted continuation",
+        (cursor) => {
+          const response = readGraphql(
+            `query($itemId: ID!, $cursor: String!) {
+              node(id: $itemId) { ... on ProjectV2Item {
+                id
+                fieldValues(first: 100, after: $cursor) {
+                  totalCount nodes { ${fieldValueSelection} }
+                  pageInfo { hasNextPage endCursor }
+                }
+              } }
+            }`,
+            { itemId: item.id, cursor },
+            `Project item ${item.id} field values`,
           );
+          const parent = response.data?.node;
+          if (parent?.id !== item.id)
+            throw new Error(
+              `Project item ${item.id} identity changed during pagination`,
+            );
+          return parent.fieldValues;
         },
       );
     }

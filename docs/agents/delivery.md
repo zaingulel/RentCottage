@@ -3,10 +3,10 @@
 ## Route
 
 - **Load trigger:** Load this authority only when preparing or executing an owner-approved delivery.
-- **Owns:** Delivery commits, push, pull-request creation, current-head review, ready-only Continuous Integration (CI), auto-merge, tracker reconciliation, and closeout routing.
+- **Owns:** Delivery commits, push, pull-request creation, ready-only Continuous Integration (CI), auto-merge, tracker reconciliation, and closeout routing.
 - **Does not own:** Work selection, planning, construction, product acceptance criteria, provider policy or a second progress record.
 - **Required inputs:** The owner-approved finished bundle and exact outward actions; issue identity; absolute registered job-worktree path; exact local topic branch; and live stopped-writer ownership evidence.
-- **Acquired during delivery:** The committed and pushed Object ID (OID), remote branch and pull-request identity, one current-head internal review round, one settled current-head Greptile attempt, ready-only `test`, merge evidence, tracker reconciliation, and closeout evidence.
+- **Acquired during delivery:** The committed and pushed Object ID (OID), remote branch and pull-request identity, one settled current-head Greptile attempt, the applicable required check, merge evidence, tracker reconciliation, and closeout evidence.
 - **Stop conditions:** Stop on missing or stale approval, conflicting authority, changed scope, unresolved findings or conversations, failed or stale CI, unknown ownership, mismatched identity, or incomplete evidence.
 - **Next route:** A merged delivery proceeds to `closeout`; unfinished or refused work proceeds to `handoff` with the retained target and reason.
 
@@ -26,14 +26,17 @@ Keep one writer for the ticket. Before outward delivery and again before closeou
 
 Follow this bounded sequence after approval:
 
-1. Confirm the exact branch, worktree, clean index, stopped writer, approved diff, and local verification. Commit only the approved finished bundle and record `HEAD` as `CURRENT_PR_HEAD`.
+1. Confirm the exact branch, worktree, clean index, stopped writer, approved diff, local verification, and completed bounded internal review. Commit only the approved finished bundle and record `HEAD` as `CURRENT_PR_HEAD`.
 2. Push with `git push origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`. Create or update a draft pull request against `main` using the approved body. Re-read `state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels`; require the same repository, intended branch, draft state, base `main`, exact `CURRENT_PR_HEAD`, and no external-review label yet.
-3. Run `security-code-review` once against the complete current pushed head. Resolve every finding. A repair creates a new head and requires focused verification plus one fresh review round.
-4. Add the sole external-review label `independent-review`, then attempt Greptile once for that same current head. Record `COMPLETE` or `UNAVAILABLE` using the evidence below. Reconcile every emitted finding. No paid plan, billing change, purchase, or upgrade is authorised.
-5. Re-read the pull request and require the same open draft and exact head, resolved conversations, completed required local evidence, settled Greptile attempt, and no unresolved finding. Mark it ready with `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`.
-6. GitHub's ready pull-request workflow checks the merge result. Require the current source-bound `test` check to pass under strict current-base protection. Queue the approved squash merge with `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --auto --squash --match-head-commit <CURRENT_PR_HEAD>`. Never use `--admin`.
+3. Add the sole external-review label `independent-review`, then attempt Greptile once for that same current head. Record `COMPLETE` or `UNAVAILABLE` using the evidence below. Reconcile every emitted finding. No paid plan, billing change, purchase, or upgrade is authorised.
+4. Re-read the pull request and require the same open draft and exact head, resolved conversations, completed required local evidence, settled Greptile attempt, and no unresolved finding. Mark it ready with `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`.
+5. Use the applicable merge path:
+   - **Issue #161 reset pull request:** while the old hosted protection is still authoritative, run `gh workflow run ci.yml --repo zaingulel/RentCottage --ref main -f pull_request_number=<PR_NUMBER> -f expected_head_oid=<CURRENT_PR_HEAD>`, require its source-bound `quality` check to pass, then merge with `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --squash --match-head-commit <CURRENT_PR_HEAD>`.
+   - **Later pull requests:** GitHub's ready-only workflow checks the merge result. Require the current source-bound `test` check under strict current-base protection, then queue `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --auto --squash --match-head-commit <CURRENT_PR_HEAD>`.
 
-Greptile is the sole external reviewer and the final review step for each pull-request head. The `independent-review` label triggers it. A completed state proves processing finished, not correctness. A push invalidates review, Greptile, conversation, and CI evidence for the old head; repeat the bounded current-head sequence after a genuine repair push.
+Never use `--admin`.
+
+Greptile is the sole external reviewer and the final review step for each pull-request head. The `independent-review` label triggers it. A completed state proves processing finished, not correctness. A later push that changes the head invalidates review, Greptile, conversation, and CI evidence for the old head; repeat the bounded current-head sequence after a genuine repair push.
 
 ### Greptile attempt states
 

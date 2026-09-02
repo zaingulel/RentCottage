@@ -35,9 +35,9 @@ After classification, report the aggregate `UNKNOWN`, `ANY_YES`, or `ALL_NO` to 
 - If any classification is `UNKNOWN`, stop before spawning any reviewer. Gather the missing evidence and classify again; if it remains unavailable, report the gap to the coordinator without guessing.
 - Read the currently installed managed `code-review` skill at invocation time and use its independent Standards and Specification contracts against the complete current change, including committed, staged, unstaged, and untracked inputs.
 - If every classification is `NO`, Standards and Specification are the complete review round.
-- If any classification is `YES`, add the configured `security_reviewer` to the same bounded review round. Give Security the acceptance criteria, relevant security and testing standards, affected architecture, domain, provider, and boundary decisions, and all classifications with evidence.
+- If any classification is `YES`, add the configured `security-reviewer` to the same bounded review round. Give Security the acceptance criteria, relevant security and testing standards, affected architecture, domain, provider, and boundary decisions, and all classifications with evidence.
 
-Do not silently fall back if `code-review` or a required `security_reviewer` is unavailable. Stop and report the missing capability.
+Do not silently fall back if `code-review` or a required `security-reviewer` is unavailable. Stop and report the missing capability.
 
 ## Result
 

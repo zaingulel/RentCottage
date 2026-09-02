@@ -4,6 +4,7 @@ description: Fresh read-only Standards and Specification review of a finished Re
 model: fable
 effort: high
 maxTurns: 90
+permissionMode: plan
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 color: purple
 initialPrompt: Read `.agents/roles/reviewer.md` before acting and follow it exactly.
