@@ -1,121 +1,119 @@
-## Agent skills
+# RentCottage operating manual
 
-### Issue tracker
+The issue owns the outcome, Git owns shipped and in-flight work, and GitHub owns planning and pull-request state.
+Skills own session steps. Product code does not carry a second workflow state machine.
 
-GitHub Issues in `zaingulel/RentCottage`; external PRs are not triaged. See `docs/agents/issue-tracker.md`.
+## Runtime map
 
-GitHub Issues, native dependencies, and Project 4 are one tracker. Run `npm run verify:board` before work selection and after tracker publication or reconciliation; unavailable or failing evidence stops selection. Keep the procedure in `docs/agents/issue-tracker.md`.
+| Surface | Claude Code | Codex |
+|---|---|---|
+| Manual | `CLAUDE.md` imports this file | reads this file |
+| Skills | `.claude/skills/<name>` links to `.agents/skills/<name>` | `.agents/skills/<name>/SKILL.md` |
+| Agent seats | `.claude/agents/*.md` | `.codex/agents/*.toml` |
+| Isolated job | native Git worktree | native Git or Codex-managed worktree |
 
-### Triage labels
+Start or continue work with `resume`, park unfinished work with `handoff`, and run `closeout` after merge.
 
-Uses the five standard labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+## Sources of truth
 
-### Domain docs
+- **Planned work:** GitHub Issues, native dependencies, and Project 4. The tracker procedure is
+  [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
+- **Shipped work:** `origin/main`, Git history, and passing checks.
+- **In-flight work:** one `job/<issue>` branch, one native worktree, and its draft pull request.
+- **Product meaning:** [`CONTEXT.md`](CONTEXT.md), accepted architecture decisions, and
+  [`docs/agents/domain.md`](docs/agents/domain.md).
+- **Engineering evidence:** [`docs/engineering/coding-standards.md`](docs/engineering/coding-standards.md) and
+  [`docs/engineering/testing-strategy.md`](docs/engineering/testing-strategy.md).
 
-Single-context layout. See `docs/agents/domain.md`.
+When these authorities conflict, stop, explain the conflict, recommend a resolution, and leave the decision with
+the owner. Chat history is not durable project state.
 
-### Engineering standards
+## Product and boundary map
 
-`docs/engineering/coding-standards.md` governs code quality and security. `docs/engineering/testing-strategy.md` governs evidence selection and the stable verification commands. If these standards conflict with product, domain, architecture or issue decisions, stop, explain the conflict, recommend a resolution and leave the decision with the owner.
+RentCottage is a trilingual cottage marketplace. `src/` contains the Next.js application and product logic;
+`supabase/` owns database changes and Row Level Security; `scripts/` contains product, provider, deployment, and
+tracker verification; `.github/workflows/preview.yml` owns preview deployment.
 
-## Working method
+Authentication, authorization, payments, personal data, database migrations, security/privacy boundaries,
+destructive data changes, and new user-facing behaviour with no settled design require an approved concrete plan
+before editing. Plans name affected areas, expected behaviour, verification, migration, and rollback.
 
-Start a substantive work session with `$resume`; end or park it with `$handoff`. Treat Git and direct verification as the record of what is shipped, and the configured issue tracker as the live plan. Do not rely on chat history or a status document when they conflict with Git.
+## Owner gates
 
-### Resume intake
+1. **Work selection:** the owner approves the issue outcome and acceptance criteria. High-blast-radius work also
+   requires approval of its concrete plan.
+2. **Delivery approval:** the owner reviews one filled pull-request body containing the finished bundle and local
+   evidence. The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
+   hosted settings, and tracker mutation require that authority.
 
-Use the shared selection-only `$resume` intake with these RentCottage sources:
+Local commits on an approved job branch are green-slice construction state and need no separate approval.
+Destructive actions keep exact-target approval.
 
-- Durable state: Git status and history, `npm run verify:board`, open pull requests, worktrees, and active Codex task ownership.
-- Candidate detail: GitHub issue bodies and attributed comments.
+## Native job lifecycle
 
-For high-blast-radius work, treat the initial choice as authorisation for read-only planning. Approval of the completed concrete plan is the formal work-pick before editing.
+- Fetch `origin/main` and create `job/<issue>` directly from that ref in one native worktree. A dirty or stale
+  primary checkout is preserved; it is not synchronized, stashed, cleaned, or used as a prerequisite.
+- One writer owns the job worktree. Other agents are read-only unless the coordinator explicitly hands the sole
+  writer role to one builder and waits for it to stop.
+- Parallel tickets require demonstrably separate behaviour, files, migrations, providers/database seams, tests,
+  and verification capacity. Separate worktrees alone do not prove independence.
+- Commit every coherent green slice locally. A draft pull request is the durable handoff for unfinished work and
+  its `Not done` section names the next step. Leave its worktree in place.
+- `closeout` removes only an exact clean merged job worktree after the writer has stopped. Primary, current,
+  dirty, active, detached, foreign, or uncertain worktrees are retained and reported.
 
-State the route before editing:
+There is no allocator, synchronizer, lock service, sweeper, checkpoint, release wrapper, or worktree registry
+beyond Git's own inventory.
 
-- **Inline** with a short plan for bounded work that follows established patterns.
-- **Exploration** for read-heavy discovery; delegate only independent, bounded reading when it preserves useful main-thread context.
-- **Plan → build → review** for genuinely high-blast-radius work or unresolved work that crosses module, service, persistence, provider, security or privacy boundaries.
+## Team and routing
 
-Use the installed skills rather than reproducing their methods: `codebase-design` / `to-spec` / `grill-with-docs` for design, `tdd` for implementation, and `diagnosing-bugs` for hard or repeated failures. Route every substantive finished change through the repository's `security-code-review` skill.
+The coordinator owns scope, integration, verification, and owner communication. Use the smallest useful team:
 
-## Delivery contract
+- `explorer` locates code and evidence without judging or editing.
+- `architect` produces a concrete plan; `plan-reviewer` challenges a fixed high-risk plan once.
+- `builder-lite`, `builder`, and `builder-max` are bounded writer tiers. The coordinator chooses from issue risk,
+  residual judgment, uncertainty, rollback, and verification strength, then names the seat explicitly.
+- `reviewer` performs the fresh final Standards and Specification review.
+- `security-reviewer` joins that round only when `security-code-review` classifies a sensitive surface.
+- `oracle` is an exceptional read-only escalation for a twice-stalled diagnosis, unresolved architecture
+  tiebreak, or independent high-consequence derivation. It is not a routine rung.
 
-Keep orchestration in the active work session. The repository records the desired outcome and software evidence; it does not maintain a custom checkpoint or workflow state machine.
+Planning and review seats are technically read-only in their runtime manifests. Specialist fan-out beyond these
+seats needs owner approval for that job.
 
-### Delivery authority
+## Construction and review
 
-Load [`docs/agents/delivery.md`](docs/agents/delivery.md) only when preparing or executing an owner-approved delivery. Selection-only resume, planning and ordinary construction do not preload it. That authority owns commits made as part of delivery, outward delivery, reconciliation, terminal release, refusal and recovery guidance; it does not own local green-slice construction commits.
+Use `tdd` for non-trivial behaviour at an approved public seam and `diagnosing-bugs` for hard or repeated
+failures. Each material behaviour change carries a regression proof that goes red when the behaviour is broken
+and green when restored. Run focused evidence during construction and `npm run verify` once at convergence.
 
-### Roles
+One fresh independent review checks the complete finished change against repository standards and the issue.
+Run `security-code-review` first to decide whether Security joins Standards and Specification. A true bounded
+finding returns to the sole writer; focused verification follows the repair, then one fresh review round checks
+the resulting tree. After two non-converging repair-and-review cycles, stop and return to the owner to split,
+rescope, or stop.
 
-- **Coordinator:** owns scope, integration, verification and owner communication. It selects the smallest useful team for the ticket.
-- **Planner:** works read-only and turns approved acceptance criteria into an evidence-based implementation plan.
-- **Plan reviewer:** works read-only and independently challenges a fixed plan through feasibility, scope, coherence and security/privacy lenses.
-- **Explorer:** works read-only on bounded discovery when current code, provider documentation or prior art must be checked.
-- **Worker:** is the only writer for its active delivery ticket and returns the changed paths and verification results.
-- **Reviewer:** works read-only and independently checks both repository standards and the ticket acceptance criteria. Findings are accepted or rejected on evidence, not on the identity of the reviewer.
+Greptile is the sole external reviewer and is best-effort. Use one attempt per pull-request head and re-review
+only after a genuine repair push. An unavailable attempt is reported, never presented as complete, and does not
+replace local review, executable verification, required Continuous Integration (CI), conversation resolution,
+or ownership.
 
-The current agent configuration selects models for these capabilities. Do not duplicate model names or reasoning settings in this repository.
+## Delivery and CI
 
-### Plan review
+Load [`docs/agents/delivery.md`](docs/agents/delivery.md) only after delivery approval. Finished work opens as a
+draft pull request. Marking it ready starts GitHub's merge-result CI and exposes the single required `test` check.
+Queue the approved merge with GitHub auto-merge and squash; GitHub waits for current required checks and resolved
+conversations. Preview deployment remains a separate owner-approved operation under `.github/workflows/preview.yml`.
 
-Use one independent plan review only for genuinely high-blast-radius or unresolved cross-boundary work. One reviewer covers feasibility, scope, coherence and security/privacy. The worker waits while the coordinator resolves findings and fixes the plan.
+The hosted `main` ruleset requires the source-bound `test` check with current-base strictness and conversation
+resolution. Auto-merge is enabled. A change to either hosted setting is verified immediately after mutation.
 
-Reviewers report concrete, evidence-backed findings against the approved issue and repository authorities. They remain read-only, do not rewrite the plan, and do not add product scope.
+## Workflow machinery
 
-Specialist fan-out and consolidation happen only when the owner explicitly approves them for that job. The coordinator checks every finding disposition and the final plan before build. If review exposes a choice the approved authorities do not settle, return that choice to the owner.
-
-Plan review does not replace test-driven implementation, independent review of the finished change, executable verification or existing owner approval gates.
-
-### Internal review and repair
-
-Run one independent internal review round on the finished change. Standards and Specification are the normal lanes; add Security only when `security-code-review` classifies the change as sensitive. All lanes in that dispatch are one review round.
-
-Return a true finding to the ticket's sole writer only when the approved plan or outcome determines one bounded correction within the approved size and surface. Run focused verification for the repair, then one fresh internal review round. A remedy that needs new executable machinery or materially exceeds the approved size or surface is an owner scope question, not an automatic fix.
-
-After two repair-and-re-review cycles that still produce new material true findings, stop and return to the owner to split, rescope or stop the job. Do not automatically begin another planning or build cycle.
-
-### Isolation and parallel work
-
-- Start each active delivery ticket from fresh `main` on its own branch and worktree. Leave other checkouts and uncommitted work untouched.
-- Assign one writer to each active delivery ticket. Do not split one ticket across concurrent writer branches. The coordinator may integrate only after the worker has stopped writing.
-- Parallel implementation across different tickets is allowed only when domain behaviour, files, database migrations and tests are demonstrably separate. If separation is uncertain, work sequentially.
-- The GitHub issue records ticket-specific scope, acceptance criteria, dependencies and references to settled decisions. Agent-added ticket detail may clarify the owner's approved outcome but cannot expand it. `CONTEXT.md` supplies domain language and applicable architecture decisions supply technical context. If these sources conflict or appear incorrect, stop, explain the conflict, recommend a resolution and leave the decision with the owner. Do not add a second progress record.
-- On an approved isolated job branch, the worker may commit each green slice as durable local Git state. These construction commits need no owner approval and remain local until delivery approval; commit gates in `docs/agents/delivery.md` apply only to commits made as part of delivery.
-
-### Owner decisions and evidence
-
-There are two routine owner decisions:
-
-1. **Work selection:** approve the ticket outcome and acceptance criteria before implementation starts. For high blast-radius work, include the concrete plan required by the change gate below in this decision.
-2. **Delivery approval:** review the finished implementation bundle and locally knowable evidence in one delivery packet before outward action such as a push, pull request, deployment, merge or tracker mutation. Delivery approval must explicitly authorise outward action; [`docs/agents/delivery.md`](docs/agents/delivery.md) defines semantic and persistent approval scope and staleness. The same delivery packet is progressively completed with evidence acquired during delivery. No second routine owner approval is required while the original approval remains current.
-
-Work-selection approval remains valid for bounded in-scope repair. Return to the owner when the approved authorities no longer determine one bounded correction or the proposed remedy changes approved scope.
-
-### External review
-
-Greptile is the sole external reviewer and is best-effort. Every delivery attempts Greptile against the exact current pull-request head and records the attempt as `COMPLETE` or `UNAVAILABLE` under `docs/agents/delivery.md`. No paid plan, billing change, purchase, or upgrade is authorised.
-
-A settled `UNAVAILABLE` attempt is reportable but is not a merge veto once every mandatory pre-merge gate is green: internal review, executable verification, exact-head Continuous Integration, conversation resolution and ownership. Post-merge tracker reconciliation, board verification, ownership and guarded release remain mandatory. This exception does not relax or replace any of those gates. A `COMPLETE` review requires complete changed-file coverage and an evidence-based disposition for every finding.
-
-Before a delivery commit or outward action, the delivery packet contains the finished implementation bundle, acceptance-criteria mapping, diff summary, tests run, pre-outward review outcome, current screenshots for visible work, security and privacy impact, migration or rollback notes, and any known gap. The same delivery packet progressively gains the materialized commit and pull-request identity, fresh exact-head internal reviews, the settled final Greptile review attempt and concise supporting evidence, exact-head Continuous Integration, merge, tracker reconciliation, board verification and guarded release evidence. Progressively completing it does not create a second record or staged manifest. Greptile is the final review step on each head; exact-head Continuous Integration and merge-state checks follow it, but no internal review does.
-
-### Adding workflow machinery
-
-Determinism is a quality requirement for an already-approved command, test, artifact or invariant. It does not authorise creating a command, guard, script, hook, gate, manifest, parser, state machine, framework, transaction protocol or workflow subsystem.
-
-Use existing platform and repository capabilities first. New executable workflow machinery requires separate owner approval and either a repeated demonstrated control failure or recurring measured friction, a genuinely required runtime or provider integration, or an externally imposed security or platform change. Before approval, state its recurring maintenance cost and removal condition.
-
-## Change gates
-
-Obtain approval of a concrete plan before editing genuinely high-blast-radius work: authentication, payments, personal data, security/privacy boundaries, destructive or irreversible data changes, or a new user-facing behaviour whose design is not established. Also plan first when unresolved work crosses a module, service, persistence or provider boundary. Plans name the affected area, expected behaviour, verification, and any migration or rollback implications.
-
-Every behaviour change needs proportionate verification. Prefer a test that would fail if the behaviour regressed; for a visible change, run the app and inspect the rendered result. Do not claim success without direct evidence.
-
-Keep changes bounded. For larger work, split implementation into independently testable slices. If a plan proves incomplete or a risk emerges, stop and report it instead of improvising.
-
-Push, open or merge pull requests, deploy, and make external tracker changes only when the user explicitly asks. Record a durable project decision only when it is genuinely reusable.
+Prefer Git, GitHub, an existing test, and a precise issue over executable orchestration. New workflow machinery
+requires separate owner approval plus a repeated demonstrated control failure, recurring measured friction, a
+required provider/runtime integration, or an externally imposed security/platform change. State its maintenance
+cost and removal condition before implementation.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

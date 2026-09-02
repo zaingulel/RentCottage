@@ -1,0 +1,8 @@
+name = "reviewer"
+description = "Fresh read-only Standards and Specification review of a finished RentCottage change."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+developer_instructions = """
+Before acting, read `.agents/roles/reviewer.md` and follow that charter. Review the complete current change independently and report concrete findings without editing.
+"""
