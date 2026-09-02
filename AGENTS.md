@@ -78,8 +78,10 @@ The coordinator owns scope, integration, verification, and owner communication. 
 - `oracle` is an exceptional read-only escalation for a twice-stalled diagnosis, unresolved architecture
   tiebreak, or independent high-consequence derivation. It is not a routine rung.
 
-Planning and review seats are technically read-only in their runtime manifests. Specialist fan-out beyond these
-seats needs owner approval for that job.
+Planning and review manifests request read-only runtime defaults. A parent runtime can override those defaults,
+so the coordinator must verify the effective sandbox and ownership before accepting independent evidence. A
+write-capable lane is not independent review evidence and must be rerun in an enforced read-only runtime.
+Specialist fan-out beyond these seats needs owner approval for that job.
 
 ## Construction and review
 

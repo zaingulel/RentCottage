@@ -202,7 +202,7 @@ export function runRentCottageProjectVerifier({
       "Issue",
       repository,
     ).filter((issue) => !issue.pull_request);
-    const issues = rawIssues.map((issue) => ({
+    let issues = rawIssues.map((issue) => ({
       ...issue,
       state: issue.state.toUpperCase(),
       body: normalizeIssueBody(issue.body),
@@ -309,6 +309,8 @@ export function runRentCottageProjectVerifier({
         !isRecord(initial) ||
         typeof initial.id !== "string" ||
         !Number.isInteger(initial.number) ||
+        typeof initial.title !== "string" ||
+        (initial.body !== null && typeof initial.body !== "string") ||
         initial.repository?.nameWithOwner !== repository ||
         !["OPEN", "CLOSED"].includes(initial.state)
       )
@@ -413,11 +415,29 @@ export function runRentCottageProjectVerifier({
     )
       throw new Error("Protected target issue evidence is incomplete");
 
+    const snapshotIssuesByNumber = new Map();
     const nativeBlockersByIssue = new Map();
     for (const issue of [
       ...project.items.nodes.map(({ content }) => content).filter(Boolean),
       ...targetIssues,
     ]) {
+      const snapshotIssue = {
+        id: issue.id,
+        number: issue.number,
+        title: issue.title,
+        state: issue.state,
+        body: normalizeIssueBody(issue.body),
+        labels: issue.labels.nodes,
+        assignees: issue.assignees.nodes,
+      };
+      const priorSnapshot = snapshotIssuesByNumber.get(issue.number);
+      if (
+        priorSnapshot &&
+        JSON.stringify(priorSnapshot) !== JSON.stringify(snapshotIssue)
+      )
+        throw new Error(`#${issue.number} issue evidence conflicts`);
+      snapshotIssuesByNumber.set(issue.number, snapshotIssue);
+
       const blockers = issue.blockedBy.nodes.map(
         ({ databaseId, id, number, state }) => ({
           id: databaseId,
@@ -431,6 +451,20 @@ export function runRentCottageProjectVerifier({
         throw new Error(`#${issue.number} blocker evidence conflicts`);
       nativeBlockersByIssue.set(issue.number, blockers);
     }
+
+    const repositoryIssuesByNumber = new Map(
+      issues.map((issue) => [issue.number, issue]),
+    );
+    for (const [number, snapshotIssue] of snapshotIssuesByNumber) {
+      const repositoryIssue = repositoryIssuesByNumber.get(number);
+      if (!repositoryIssue || repositoryIssue.node_id !== snapshotIssue.id)
+        throw new Error(`#${number} repository issue identity conflicts`);
+      repositoryIssuesByNumber.set(number, {
+        ...repositoryIssue,
+        ...snapshotIssue,
+      });
+    }
+    issues = [...repositoryIssuesByNumber.values()];
 
     const result = verify({ project, issues, nativeBlockersByIssue });
     if (result.failures.length > 0) {

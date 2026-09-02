@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 type Step = {
+  env?: Record<string, string>;
+  id?: string;
   if?: string;
+  name?: string;
   run?: string;
   uses?: string;
   with?: Record<string, unknown>;
@@ -21,6 +24,8 @@ type Workflow = {
     string,
     {
       if?: string;
+      env?: Record<string, string>;
+      environment?: string;
       name?: string;
       permissions?: Record<string, unknown>;
       steps?: Step[];
@@ -28,8 +33,11 @@ type Workflow = {
   >;
 };
 
-function loadWorkflow(): { source: string; workflow: Workflow } {
-  const source = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
+function loadWorkflow(path = ".github/workflows/ci.yml"): {
+  source: string;
+  workflow: Workflow;
+} {
+  const source = readFileSync(resolve(path), "utf8");
   return { source, workflow: parse(source) as Workflow };
 }
 
@@ -79,12 +87,20 @@ describe("pull-request CI", () => {
   it("tests GitHub's merge result through the same full verification command used locally", () => {
     const { source, workflow } = loadWorkflow();
     const steps = readySteps(workflow.jobs?.test.steps ?? []);
-    const checkout = steps.find((step) =>
-      step.uses?.startsWith("actions/checkout@"),
+    const checkout = steps.find(
+      (step) =>
+        step.uses ===
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+    );
+    const setupNode = steps.find(
+      (step) =>
+        step.uses ===
+        "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
     );
 
     expect(checkout).toBeDefined();
     expect(checkout?.with).toEqual({ "persist-credentials": false });
+    expect(setupNode).toBeDefined();
     expect(steps).toContainEqual(expect.objectContaining({ run: "npm ci" }));
     expect(steps).toContainEqual(
       expect.objectContaining({
@@ -99,5 +115,105 @@ describe("pull-request CI", () => {
     expect(source).not.toContain("check-runs");
     expect(source).not.toContain("pull_request_number");
     expect(source).not.toContain("expected_head_oid");
+    expect(source).not.toContain("${{ secrets.");
+  });
+});
+
+describe("preview deployment boundary", () => {
+  it("remains manual, owner-only, pinned, and secret-isolated", () => {
+    const { source, workflow } = loadWorkflow(".github/workflows/preview.yml");
+    const preview = workflow.jobs?.preview;
+    const steps = preview?.steps ?? [];
+
+    expect(workflow.on).toEqual({ workflow_dispatch: null });
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(preview?.if).toBe("github.actor == github.repository_owner");
+    expect(preview?.environment).toBe("preview");
+    expect(preview?.permissions).toEqual({
+      contents: "read",
+      deployments: "write",
+    });
+    expect(preview?.env).toEqual({
+      APP_ENVIRONMENT: "preview",
+      NEXTJS_ENV: "preview",
+    });
+    expect(source).not.toContain("pull_request:");
+    expect(source).not.toContain("pull_request_review:");
+
+    expect(steps).toContainEqual(
+      expect.objectContaining({
+        uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        with: { "persist-credentials": false },
+      }),
+    );
+    expect(steps).toContainEqual(
+      expect.objectContaining({
+        uses: "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+        with: expect.objectContaining({ "package-manager-cache": false }),
+      }),
+    );
+    expect(steps).toContainEqual(
+      expect.objectContaining({
+        uses: "cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0",
+      }),
+    );
+
+    const prepare = steps.find(
+      (step) => step.name === "Prepare preview deployment secrets",
+    );
+    const deploy = steps.find((step) => step.id === "deploy");
+    const cleanup = steps.find(
+      (step) => step.name === "Remove preview deployment secrets",
+    );
+    const verifyDeployment = steps.find(
+      (step) => step.name === "Verify active Cloudflare version",
+    );
+    const verifyPreview = steps.find(
+      (step) => step.name === "Verify Cloudflare preview",
+    );
+
+    expect(
+      steps.filter((step) =>
+        JSON.stringify(step.env ?? {}).includes("SUPABASE_SECRET_KEY"),
+      ),
+    ).toEqual([prepare]);
+    expect(prepare?.env).toEqual({
+      SUPABASE_PROJECT_REF: "${{ vars.SUPABASE_PROJECT_REF }}",
+      SUPABASE_URL: "${{ vars.SUPABASE_URL }}",
+      SUPABASE_SECRET_KEY: "${{ secrets.SUPABASE_SECRET_KEY }}",
+      PRIVILEGED_AUDIT_HMAC_KEY: "${{ secrets.PRIVILEGED_AUDIT_HMAC_KEY }}",
+    });
+    expect(prepare?.run).toContain("npm run verify:supabase-secret");
+    expect(prepare?.run).toContain("write-preview-deployment-secrets.mjs");
+    expect(deploy?.env).toBeUndefined();
+    expect(deploy?.with?.secrets).toBeUndefined();
+    expect(deploy?.with?.environment).toBe("preview");
+    expect(deploy?.with?.command).toContain("deploy --env preview");
+    expect(deploy?.with?.command).toContain(
+      "--secrets-file ${{ runner.temp }}/muntajaa-preview-secrets.json",
+    );
+    expect(cleanup).toEqual(
+      expect.objectContaining({
+        if: "always()",
+        run: 'rm -f "$RUNNER_TEMP/muntajaa-preview-secrets.json"',
+      }),
+    );
+    expect(steps.indexOf(cleanup as Step)).toBeGreaterThan(
+      steps.indexOf(deploy as Step),
+    );
+    expect(steps.indexOf(cleanup as Step)).toBeLessThan(
+      steps.indexOf(verifyDeployment as Step),
+    );
+    expect(verifyDeployment?.env).toEqual({
+      CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}",
+      CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
+    });
+    expect(verifyDeployment?.run).toBe(
+      'npm run verify:cloudflare-deployment -- preview "${{ github.sha }}"',
+    );
+    expect(verifyPreview?.env).toEqual({
+      PREVIEW_URL: "${{ steps.deploy.outputs.deployment-url }}",
+    });
+    expect(verifyPreview?.run).toBe('npm run verify:preview -- "$PREVIEW_URL"');
   });
 });

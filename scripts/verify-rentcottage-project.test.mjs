@@ -1040,11 +1040,6 @@ if (endpoint.includes("?state=all")) {
   console.log(JSON.stringify([fixture.issues]));
   process.exit(0);
 }
-const match = endpoint.match(/issues\\/(\\d+)\\/dependencies/);
-if (match) {
-  console.log(JSON.stringify([fixture.nativeBlockersByIssue[match[1]] ?? []]));
-  process.exit(0);
-}
 process.exit(1);
 `,
       { mode: 0o755 },
@@ -1165,7 +1160,7 @@ process.exit(1);
       title: "Ticket",
       state: "open",
       body: "## Blocked by\n\n- #52\n",
-      labels: [{ name: "ready-for-agent" }],
+      labels: [{ name: "needs-info" }],
       assignees: [],
     };
     const graphIssue = {
@@ -1242,7 +1237,10 @@ process.exit(1);
       if (endpoint.includes("?state=all")) return JSON.stringify([[issue]]);
       throw new Error(`Unexpected per-card request ${endpoint}`);
     });
-    const verify = vi.fn(({ nativeBlockersByIssue }) => {
+    const verify = vi.fn(({ issues, nativeBlockersByIssue }) => {
+      expect(issues.find(({ number }) => number === 55)?.labels).toEqual([
+        { id: "label-ready", name: "ready-for-agent" },
+      ]);
       expect(nativeBlockersByIssue.get(55)).toEqual([
         { id: 520, nodeId: "issue-node-52", number: 52, state: "closed" },
       ]);
