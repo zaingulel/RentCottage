@@ -225,6 +225,116 @@ function addCurrentProjectIssue(
   state.project.items.totalCount += 1;
 }
 
+function page(nodes) {
+  return {
+    totalCount: nodes.length,
+    nodes,
+    pageInfo: { hasNextPage: false, endCursor: null },
+  };
+}
+
+function verifierGraphqlFixture(state) {
+  const project = structuredClone(state.project);
+  project.id = "project-4";
+  project.owner = { login: "zaingulel" };
+  project.fields = page(
+    project.fields.nodes.map((field, index) => ({
+      id: field.id ?? `field-${index}`,
+      ...field,
+    })),
+  );
+  const rawByNumber = new Map(
+    state.issues.map((issue, index) => [
+      issue.number,
+      {
+        ...issue,
+        id: issue.id ?? index + 1,
+        node_id: issue.node_id ?? `issue-node-${issue.number}`,
+        state: issue.state.toLowerCase(),
+      },
+    ]),
+  );
+  const graphIssue = (number) => {
+    const issue = rawByNumber.get(number);
+    const blockers =
+      state.nativeBlockersByIssue instanceof Map
+        ? (state.nativeBlockersByIssue.get(number) ?? [])
+        : (state.nativeBlockersByIssue[number] ?? []);
+    return {
+      id: issue.node_id,
+      number,
+      title: issue.title,
+      state: issue.state.toUpperCase(),
+      body: issue.body,
+      repository: { nameWithOwner: "zaingulel/RentCottage" },
+      labels: page(
+        issue.labels.map(({ name }, index) => ({
+          id: `label-${number}-${index}`,
+          name,
+        })),
+      ),
+      assignees: page(
+        issue.assignees.map(({ login }, index) => ({
+          id: `assignee-${number}-${index}`,
+          login,
+        })),
+      ),
+      blockedBy: page(
+        blockers.map((blocker) => ({
+          id: `issue-node-${blocker.number}`,
+          databaseId: blocker.id ?? blocker.number * 10,
+          number: blocker.number,
+          state: blocker.state.toUpperCase(),
+          repository: { nameWithOwner: "zaingulel/RentCottage" },
+        })),
+      ),
+    };
+  };
+  project.items = page(
+    project.items.nodes.map((item) => ({
+      ...item,
+      content: graphIssue(item.content.number),
+      fieldValues: page(
+        item.fieldValues.nodes.map((value, index) => ({
+          ...value,
+          field: {
+            id: value.field.id ?? `field-value-${value.field.name}-${index}`,
+            ...value.field,
+          },
+        })),
+      ),
+    })),
+  );
+  const targetNumbers = new Set([
+    ...replacementIssues.map(({ number }) => number),
+    ...specialIssues.keys(),
+  ]);
+  return {
+    project,
+    issues: [...rawByNumber.values()],
+    targets: [...targetNumbers].map(graphIssue),
+  };
+}
+
+function emptyVerifierProject() {
+  return {
+    data: {
+      user: {
+        login: "zaingulel",
+        projectV2: {
+          id: "project-4",
+          number: 4,
+          closed: false,
+          owner: { login: "zaingulel" },
+          fields: page([]),
+          items: page([]),
+        },
+      },
+      nodes: [],
+    },
+  };
+}
+
 describe("RentCottage Project contract", () => {
   it("names the retired pre-map issue range without requiring membership", () => {
     expect(obsoleteProjectIssueNumbers).toEqual(
@@ -903,31 +1013,17 @@ describe("GitHub pagination boundary", () => {
     const markerPath = join(directory, "provider-called");
     const ghPath = join(directory, "gh");
     const state = fakeState();
+    const graph = verifierGraphqlFixture(state);
     const fixture = {
-      project: state.project,
-      issues: state.issues.map((issue, index) => ({
-        ...issue,
-        id: index + 1,
-        node_id: `issue-node-${issue.number}`,
-        state: issue.state.toLowerCase(),
-      })),
-      nativeBlockersByIssue: Object.fromEntries(
-        Object.entries(state.nativeBlockersByIssue).map(
-          ([issueNumber, blockers]) => [
-            issueNumber,
-            blockers.map((blocker) => ({
-              ...blocker,
-              id: Number(issueNumber) * 1_000 + blocker.number,
-            })),
-          ],
-        ),
-      ),
+      project: graph.project,
+      issues: graph.issues,
+      targetIssues: graph.targets,
     };
     writeFileSync(fixturePath, JSON.stringify(fixture));
     writeFileSync(
       ghPath,
       `#!/usr/bin/env node
-const { appendFileSync, readFileSync } = require("node:fs");
+const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
 appendFileSync(process.env.RENTCOTTAGE_GH_MARKER, "called\\n");
 const args = process.argv.slice(2);
 if (args[0] === "--version") {
@@ -936,7 +1032,7 @@ if (args[0] === "--version") {
 }
 const fixture = JSON.parse(readFileSync(process.env.RENTCOTTAGE_GH_FIXTURE, "utf8"));
 if (args.includes("graphql")) {
-  console.log(JSON.stringify({ data: { user: { projectV2: fixture.project } } }));
+  writeFileSync(1, JSON.stringify({ data: { user: { login: "zaingulel", projectV2: fixture.project }, nodes: fixture.targetIssues } }));
   process.exit(0);
 }
 const endpoint = args.at(-1);
@@ -971,7 +1067,7 @@ process.exit(1);
         options,
       );
 
-      expect(jsonResult.status).toBe(0);
+      expect(jsonResult.status, jsonResult.stderr).toBe(0);
       expect(jsonResult.stderr).toBe("");
       expect(JSON.parse(jsonResult.stdout)).toEqual({
         schemaVersion: 1,
@@ -1024,13 +1120,7 @@ process.exit(1);
     const run = vi.fn((args) => {
       if (args[0] === "--version") return "gh version 2.48.0";
       if (args.includes("graphql")) {
-        return JSON.stringify({
-          data: {
-            user: {
-              projectV2: { items: { totalCount: 0, nodes: [] } },
-            },
-          },
-        });
+        return JSON.stringify(emptyVerifierProject());
       }
       return "[[]]";
     });
@@ -1067,17 +1157,127 @@ process.exit(1);
     });
   });
 
+  it("builds native blocker evidence from the shared Project page with zero per-card REST calls", () => {
+    const issue = {
+      id: 550,
+      node_id: "issue-node-55",
+      number: 55,
+      title: "Ticket",
+      state: "open",
+      body: "## Blocked by\n\n- #52\n",
+      labels: [{ name: "ready-for-agent" }],
+      assignees: [],
+    };
+    const graphIssue = {
+      id: "issue-node-55",
+      number: 55,
+      title: "Ticket",
+      state: "OPEN",
+      body: issue.body,
+      repository: { nameWithOwner: "zaingulel/RentCottage" },
+      labels: {
+        totalCount: 1,
+        nodes: [{ id: "label-ready", name: "ready-for-agent" }],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+      assignees: {
+        totalCount: 0,
+        nodes: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+      blockedBy: {
+        totalCount: 1,
+        nodes: [
+          {
+            id: "issue-node-52",
+            databaseId: 520,
+            number: 52,
+            state: "CLOSED",
+            repository: { nameWithOwner: "zaingulel/RentCottage" },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    };
+    const run = vi.fn((args) => {
+      if (args[0] === "--version") return "gh version 2.48.0";
+      if (args.includes("graphql"))
+        return JSON.stringify({
+          data: {
+            user: {
+              login: "zaingulel",
+              projectV2: {
+                id: "project-4",
+                number: 4,
+                closed: false,
+                owner: { login: "zaingulel" },
+                fields: {
+                  totalCount: 0,
+                  nodes: [],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+                items: {
+                  totalCount: 1,
+                  nodes: [
+                    {
+                      id: "item-55",
+                      type: "ISSUE",
+                      isArchived: false,
+                      content: graphIssue,
+                      fieldValues: {
+                        totalCount: 0,
+                        nodes: [],
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                      },
+                    },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+            nodes: [graphIssue],
+          },
+        });
+      const endpoint = args.at(-1);
+      if (endpoint.includes("?state=all")) return JSON.stringify([[issue]]);
+      throw new Error(`Unexpected per-card request ${endpoint}`);
+    });
+    const verify = vi.fn(({ nativeBlockersByIssue }) => {
+      expect(nativeBlockersByIssue.get(55)).toEqual([
+        { id: 520, nodeId: "issue-node-52", number: 52, state: "closed" },
+      ]);
+      return {
+        failures: [],
+        summary: {
+          itemCount: 1,
+          dependencyFrontier: [],
+          ownerGated: [],
+          readyForHuman: [],
+          needsTriage: [],
+          needsInfo: [],
+          wontfix: [],
+          readyItems: [],
+        },
+      };
+    });
+
+    const result = runRentCottageProjectVerifier({
+      run,
+      verify,
+      stdout: vi.fn(),
+      stderr: vi.fn(),
+    });
+
+    expect(result.status).toBe(0);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(run.mock.calls.flat().join(" ")).not.toContain("blocked_by");
+  });
+
   it("keeps human output concise while reporting every unblocked category", () => {
     const run = vi.fn((args) => {
       if (args[0] === "--version") return "gh version 2.48.0";
       if (args.includes("graphql")) {
-        return JSON.stringify({
-          data: {
-            user: {
-              projectV2: { items: { totalCount: 0, nodes: [] } },
-            },
-          },
-        });
+        return JSON.stringify(emptyVerifierProject());
       }
       return "[[]]";
     });
@@ -1130,23 +1330,40 @@ process.exit(1);
         [firstIssue],
         [{ ...firstIssue, id: firstIssue.id + 1, title: "Contradiction" }],
       ];
-      const duplicateDependencies = [
-        [{ id: 520, number: 52, state: "open" }],
-        [{ id: 521, number: 52, state: "closed" }],
-      ];
+      const graph = verifierGraphqlFixture(state);
+      if (duplicateType === "dependency") {
+        const issue = graph.project.items.nodes[0].content;
+        issue.blockedBy = page([
+          {
+            id: "blocker-a",
+            databaseId: 520,
+            number: 52,
+            state: "OPEN",
+            repository: { nameWithOwner: "zaingulel/RentCottage" },
+          },
+          {
+            id: "blocker-b",
+            databaseId: 521,
+            number: 52,
+            state: "CLOSED",
+            repository: { nameWithOwner: "zaingulel/RentCottage" },
+          },
+        ]);
+      }
       const run = vi.fn((args) => {
         if (args[0] === "--version") return "gh version 2.48.0";
         if (args.includes("graphql"))
           return JSON.stringify({
-            data: { user: { projectV2: state.project } },
+            data: {
+              user: { login: "zaingulel", projectV2: graph.project },
+              nodes: graph.targets,
+            },
           });
         const endpoint = args.at(-1);
         if (endpoint.includes("?state=all"))
           return JSON.stringify(
             duplicateType === "issue" ? duplicateIssues : [rawIssues],
           );
-        if (endpoint.includes("blocked_by"))
-          return JSON.stringify(duplicateDependencies);
         throw new Error(`Unexpected verifier request ${endpoint}`);
       });
       const verify = vi.fn();
@@ -1204,6 +1421,7 @@ process.exit(1);
     const codeSecret = "github_pat_abcdefghijklmnopqrstuvwxyz1234567890";
     const run = vi.fn((args) => {
       if (args[0] === "--version") return "gh version 2.48.0";
+      if (!args.includes("graphql")) return "[[]]";
       return JSON.stringify({
         errors: [
           {
@@ -1245,6 +1463,7 @@ process.exit(1);
       const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
       const run = vi.fn((args) => {
         if (args[0] === "--version") return "gh version 2.48.0";
+        if (!args.includes("graphql")) return "[[]]";
         return JSON.stringify({
           errors:
             typeof errors === "string"

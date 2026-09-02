@@ -66,6 +66,7 @@ export function runGh(
       input,
       stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       timeout: timeoutMs,
+      maxBuffer: 16 * 1024 * 1024,
     }).trim();
   } catch (error) {
     if (error.code === "ETIMEDOUT" || error.killed === true)
