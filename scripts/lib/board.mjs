@@ -128,10 +128,14 @@ function parseResponse(serialized) {
 }
 
 function fieldValue(item, name) {
-  return (
-    item.fieldValues.nodes.find((value) => value?.field?.name === name)?.name ??
-    null
+  const matches = item.fieldValues.nodes.filter(
+    (value) => value?.field?.name === name,
   );
+  if (matches.length !== 1)
+    throw new Error(
+      `#${item.content?.number} requires exactly one ${name} field value`,
+    );
+  return matches[0].name ?? null;
 }
 
 function normalizeItem(item) {

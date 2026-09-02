@@ -26,6 +26,18 @@ Commands and results:
 - Migration and rollback:
 - Known gaps:
 
+## Proposed outward actions
+
+<!-- Name the exact targets. Approval covers only the actions completed here; delete anything that is not proposed. -->
+
+- Push branch/ref:
+- Create or update pull request:
+- Merge method and pull request:
+- Reconcile issue and Project items:
+- Change hosted repository settings:
+- Deploy environment:
+- Close out branch and worktree:
+
 ## Not done
 
 <!-- For finished work, say "Nothing" only when true. For a parked draft, name what remains, the next concrete step, failing or unavailable evidence, and any owner decision still needed. -->

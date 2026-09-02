@@ -1,3 +1,15 @@
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { classifyBoard, fetchBoard, formatBoard } from "./board.mjs";
@@ -102,6 +114,42 @@ function projectPage(
       },
     },
   });
+}
+
+function runBoardCommand(args, { ghExit = 0, ghOutput = "" } = {}) {
+  const directory = mkdtempSync(resolve(tmpdir(), "rentcottage-board-test-"));
+  const ghPath = resolve(directory, "gh");
+  const callsPath = resolve(directory, "gh-calls");
+  writeFileSync(
+    ghPath,
+    `#!/usr/bin/env bash
+set -u
+printf x >> "$BOARD_GH_CALLS"
+printf '%s' "$BOARD_GH_OUTPUT"
+exit "$BOARD_GH_EXIT"
+`,
+  );
+  chmodSync(ghPath, 0o755);
+
+  const result = spawnSync(
+    process.execPath,
+    [resolve("scripts/board.mjs"), ...args],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH ?? ""}`,
+        BOARD_GH_CALLS: callsPath,
+        BOARD_GH_EXIT: String(ghExit),
+        BOARD_GH_OUTPUT: ghOutput,
+      },
+    },
+  );
+  const callCount = existsSync(callsPath)
+    ? readFileSync(callsPath, "utf8").length
+    : 0;
+  rmSync(directory, { recursive: true, force: true });
+  return { ...result, callCount };
 }
 
 describe("Project 4 board intake", () => {
@@ -231,6 +279,17 @@ describe("Project 4 board intake", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("fails loudly when an issue has duplicate routing field values", () => {
+    const item = issueItem();
+    item.fieldValues.nodes.push(fieldValue("Status", "Ready"));
+    item.fieldValues.totalCount += 1;
+    const execute = vi.fn(() => projectPage([item]));
+
+    expect(() => fetchBoard(execute)).toThrow(
+      "#147 requires exactly one Status field value",
+    );
+  });
+
   it("accepts unrelated Project field types while requiring the two routing fields", () => {
     const serialized = JSON.parse(projectPage([issueItem()]));
     serialized.data.user.projectV2.fields.nodes.push({
@@ -273,6 +332,26 @@ describe("Project 4 board intake", () => {
     );
     expect(formatBoard(classifyBoard(fetchBoard(execute)))).toContain(
       "blocked (1)\n#157 [Backlog] Record the walkthrough — open blockers: #147",
+    );
+  });
+});
+
+describe("verify:board command", () => {
+  it("rejects invalid arguments before contacting GitHub", () => {
+    const result = runBoardCommand(["--json", "unexpected"]);
+
+    expect(result.status).toBe(2);
+    expect(result.callCount).toBe(0);
+    expect(result.stderr).toContain("Usage: npm run verify:board -- [--json]");
+  });
+
+  it("returns failure when the GitHub provider fails", () => {
+    const result = runBoardCommand(["--json"], { ghExit: 17 });
+
+    expect(result.status).toBe(1);
+    expect(result.callCount).toBe(1);
+    expect(result.stderr).toContain(
+      "Board intake failed: GitHub CLI failed status=17 signal=none",
     );
   });
 });

@@ -192,6 +192,19 @@ describe("preview deployment boundary", () => {
     expect(deploy?.with?.command).toContain(
       "--secrets-file ${{ runner.temp }}/muntajaa-preview-secrets.json",
     );
+    expect(deploy?.with?.command).toContain("--tag ${{ github.sha }}");
+    expect(deploy?.with?.command).toContain(
+      "--var SUPABASE_PROJECT_REF:${{ vars.SUPABASE_PROJECT_REF }}",
+    );
+    expect(deploy?.with?.command).toContain(
+      "--var SUPABASE_URL:${{ vars.SUPABASE_URL }}",
+    );
+    expect(deploy?.with?.command).toContain(
+      "--var SUPABASE_PUBLISHABLE_KEY:${{ vars.SUPABASE_PUBLISHABLE_KEY }}",
+    );
+    expect(deploy?.with?.command).toContain(
+      "--var DEPLOYMENT_COMMIT:${{ github.sha }}",
+    );
     expect(cleanup).toEqual(
       expect.objectContaining({
         if: "always()",
@@ -215,5 +228,15 @@ describe("preview deployment boundary", () => {
       PREVIEW_URL: "${{ steps.deploy.outputs.deployment-url }}",
     });
     expect(verifyPreview?.run).toBe('npm run verify:preview -- "$PREVIEW_URL"');
+
+    const wrangler = readFileSync(resolve("wrangler.jsonc"), "utf8");
+    for (const workerName of [
+      "muntajaa-development",
+      "muntajaa-test",
+      "muntajaa-preview",
+      "muntajaa-production",
+    ]) {
+      expect(wrangler).toContain(`"name": "${workerName}"`);
+    }
   });
 });
