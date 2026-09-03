@@ -112,10 +112,19 @@ resolution. Auto-merge is enabled. A change to either hosted setting is verified
 
 ## Workflow machinery
 
-Prefer Git, GitHub, an existing test, and a precise issue over executable orchestration. New workflow machinery
-requires separate owner approval plus a repeated demonstrated control failure, recurring measured friction, a
-required provider/runtime integration, or an externally imposed security/platform change. State its maintenance
-cost and removal condition before implementation.
+When a real failure exposes a repeatable weakness, preserve the lesson at the cheapest existing layer that would
+have caught it. Product failures follow the regression-proof rule above. Process or agent failures first clarify
+the relevant instruction, skill, ticket, or durable decision; recurrence is the trigger to escalate.
+
+Add or strengthen a deterministic guard after recurrence, or immediately when the bad state would be silent,
+materially misleading, security- or privacy-sensitive, or hard to reverse. Every fail-closed guard names its
+non-destructive recovery route in the same change.
+
+Prefer Git, GitHub, an existing test, and a precise issue over executable orchestration. A deterministic test or
+guard does not justify a custom workflow framework. New workflow machinery requires separate owner approval plus
+a repeated demonstrated control failure, recurring measured friction, a required provider/runtime integration,
+or an externally imposed security/platform change. Before implementation, state its recurring maintenance cost,
+non-destructive recovery route, and removal condition.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
