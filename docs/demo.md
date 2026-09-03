@@ -39,8 +39,10 @@ node scripts/prepare-access-test.mjs validate desktop
 ```
 
 For ordinary future reuse of the preserved demo database, skip those two fixture commands. The focused walkthrough
-validates the exact required synthetic identities and cottage before recording. It prepares two future available
-dates, uses one in the recording, and leaves the other ready for a live demonstration.
+validates the exact required synthetic identities and cottage before recording. It selects two future Service Days
+that have no existing availability or active commitment, opens only those days, uses one in the recording, and
+leaves the other ready for a live demonstration. Existing requests and availability remain in place; a later run
+selects new unused days rather than rewinding them.
 
 Build and leave the application running in the first terminal:
 
@@ -55,14 +57,32 @@ In a second terminal, map the same environment variables, then record the walkth
 npx playwright test tests/demo-walkthrough.spec.ts --project=desktop --workers=1
 ```
 
-The ignored recording is written to:
+The command prints both the recorded Service Day and the reserved live-demo Service Day. For a later live Customer
+demonstration, enter the printed reserved day in both marketplace date fields, select Shift 1, and continue through
+the normal discovery and quote flow. Do not reuse the recorded day, because its accepted request is retained as
+useful demonstration history.
+
+On its first successful setup, the walkthrough creates a dedicated synthetic Platform Administrator and stores its
+reusable email, password, and Time-based One-Time Password (TOTP) enrollment secret in the local ignored file
+`.env.demo-administrator.local.json`. Its `.env*` name keeps it outside Playwright's cleaned output directory while
+remaining ignored by Git. The file is restricted to the local user and must never be committed, shared, or shown in
+a recording. For a later manual administrator demonstration, read the email and password from that file off-camera,
+add its `secret` to an authenticator app off-camera, then use the authenticator's current code on the visible login
+screen. The browser shows the password only as native dots. The walkthrough never deletes or replaces this
+administrator's Multi-Factor Authentication (MFA) factor; if the account, factor, and file do not match, it stops
+with an error for inspection.
+
+Only a fully successful journey is published to the ignored canonical recording path:
 
 ```text
 test-results/demo/rentcottage-mvp-walkthrough.webm
 ```
 
-The video is local evidence, is ignored by Git, and must not be committed. Watch the complete file before sharing
-it to confirm readable quality, continuous story flow, correct language direction, the demo disclosures, and the
+Each run records to a run-specific temporary WebM and moves it to the canonical path only after the final Customer
+Accepted state succeeds. Playwright cleans `test-results` before the test begins, so an older canonical video cannot
+remain and look current after a failed invocation. Partial files owned by a failed run are removed. These files are
+local evidence, are ignored by Git, and must not be committed. Watch the complete canonical file before sharing it
+to confirm readable quality, continuous story flow, correct language direction, the demo disclosures, and the
 absence of private or secret material. Leave the application and Supabase running when the next presentation will
 use the same environment live.
 
@@ -83,3 +103,5 @@ SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase stop --project-id rent
 - If fixture validation fails, preserve the exact error and stop to inspect the known fixture. Do not reset,
   rewind, or recreate a fixture in a reused database. Run the one-time create and validate commands only for a
   confirmed brand-new, empty database.
+- If the dedicated demo administrator credential reports a mismatch, stop and inspect that exact synthetic account,
+  its factor, and `.env.demo-administrator.local.json`. Do not delete or replace unrelated MFA factors.
