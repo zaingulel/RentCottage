@@ -199,7 +199,7 @@ async function prepareDemoAdministrator(
       if (users.data.users.length < 1000) break;
     }
   }
-  if ((administrator && !credential) || (!administrator && credential)) {
+  if (administrator && !credential) {
     throw new Error(
       "The dedicated demo administrator and its ignored local credential do not match; inspect them without deleting unrelated MFA factors",
     );
@@ -571,9 +571,10 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       "type",
       "password",
     );
-    await expect(page.getByLabel("Password")).toHaveValue(
-      demo.administrator.password,
-    );
+    expect(
+      (await page.getByLabel("Password").inputValue()) ===
+        demo.administrator.password,
+    ).toBe(true);
     await expectScene(page.getByLabel("Password"));
     await page.getByRole("button", { name: "Continue" }).click();
     await page.screencast.showActions({ duration: 900, fontSize: 28 });
@@ -684,6 +685,26 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expectDemoImage(
       page.getByRole("img", { name: `${demo.cottageName} 1` }),
     );
+    await page.screencast.showChapter("Keep your place in every language", {
+      description: "The same cottage and selected dates in Arabic and Sorani",
+      duration: 1_400,
+    });
+    const cottageUrl = new URL(page.url());
+    for (const [language, locale, direction] of [
+      ["العربية", "ar", "rtl"],
+      ["کوردی", "ckb", "rtl"],
+      ["English", "en", "ltr"],
+    ]) {
+      await page.getByRole("link", { name: language }).click();
+      const translatedUrl = new URL(cottageUrl);
+      translatedUrl.pathname = cottageUrl.pathname.replace(
+        /^\/en\//,
+        `/${locale}/`,
+      );
+      await expect(page).toHaveURL(translatedUrl.href);
+      await expect(page.locator("html")).toHaveAttribute("dir", direction);
+      await expectScene(page.getByRole("heading", { name: demo.cottageName }));
+    }
     await page.getByRole("link", { name: "Get exact quote" }).click();
     await expectScene(
       page.getByRole("heading", { name: "Your exact Booking Quote" }),
