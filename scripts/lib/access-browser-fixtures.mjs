@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -39,10 +41,11 @@ const pdfBytes = new TextEncoder().encode(
   "%PDF-1.7\nsynthetic access fixture\n%%EOF",
 );
 const pdfDigest = createHash("sha256").update(pdfBytes).digest("hex");
-const pngBytes = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64",
-);
+const cottagePhotoFilenames = new Map([
+  ["mobile", "cottage-garden.png"],
+  ["desktop", "cottage-pool.png"],
+  ["worker", "cottage-river.png"],
+]);
 const documents = [
   ["identity", ACCESS_REVIEW_DOCUMENT_FILENAME],
   ["authority_to_rent", "authority.pdf"],
@@ -54,6 +57,17 @@ const standardShiftPrices = new Map([
   [2, 190000],
 ]);
 const standardFullDayPrice = 250000;
+
+async function cottagePhoto(project) {
+  const filename = cottagePhotoFilenames.get(project);
+  if (!filename) {
+    throw new Error(`Unknown access browser fixture project: ${project}`);
+  }
+  return {
+    bytes: await readFile(resolve("public/uploads", filename)),
+    filename,
+  };
+}
 
 function requireData(result, message) {
   if (result.error) throw result.error;
@@ -391,6 +405,7 @@ async function preparePublishedProfile({
   privilegedClient,
   reviewerClient,
 }) {
+  const samplePhoto = await cottagePhoto(fixture.project);
   const profile = requireData(
     await ownerClient
       .from("owner_application_cottage_profiles")
@@ -433,15 +448,15 @@ async function preparePublishedProfile({
   const preparedPhoto = requireData(
     await ownerClient.rpc("prepare_cottage_profile_photo_upload", {
       target_profile_id: profile.id,
-      requested_original_filename: "synthetic-access-cottage.png",
+      requested_original_filename: samplePhoto.filename,
       requested_media_type: "image/png",
-      requested_size_bytes: pngBytes.byteLength,
+      requested_size_bytes: samplePhoto.bytes.byteLength,
     }),
     `${fixture.project} booking Cottage Profile photo was not prepared`,
   );
   const { error: photoUploadError } = await privilegedClient.storage
     .from("cottage-profile-photos")
-    .upload(preparedPhoto.object_path, pngBytes, {
+    .upload(preparedPhoto.object_path, samplePhoto.bytes, {
       contentType: "image/png",
       upsert: false,
     });
@@ -557,6 +572,32 @@ async function preparePublishedProfile({
       .eq("singleton", true);
     if (error) throw error;
   }
+}
+
+export async function refreshAccessBrowserFixturePhoto({
+  project,
+  publicationId,
+  privilegedClient,
+}) {
+  const samplePhoto = await cottagePhoto(project);
+  const publicationMedia = requireData(
+    await privilegedClient
+      .from("cottage_publication_media")
+      .select("object_path")
+      .eq("publication_id", publicationId)
+      .order("position")
+      .limit(1)
+      .maybeSingle(),
+    `${project} access booking fixture is incomplete: missing published photo`,
+  );
+
+  const { error: uploadError } = await privilegedClient.storage
+    .from("cottage-profile-photos")
+    .upload(publicationMedia.object_path, samplePhoto.bytes, {
+      contentType: "image/png",
+      upsert: true,
+    });
+  if (uploadError) throw uploadError;
 }
 
 async function createPublishedBookingFixture({

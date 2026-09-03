@@ -38,11 +38,15 @@ node scripts/prepare-access-test.mjs create desktop
 node scripts/prepare-access-test.mjs validate desktop
 ```
 
+The synthetic cottage fixtures use the bundled sample photography in `public/uploads`; the desktop walkthrough
+shows the bright pool cottage on both the discovery card and the Cottage Profile.
+
 For ordinary future reuse of the preserved demo database, skip those two fixture commands. The focused walkthrough
-validates the exact required synthetic identities and cottage before recording. It selects two future Service Days
-that have no existing availability or active commitment, opens only those days, uses one in the recording, and
-leaves the other ready for a live demonstration. Existing requests and availability remain in place; a later run
-selects new unused days rather than rewinding them.
+validates the exact required synthetic identities and cottage before recording, and upgrades an older desktop
+fixture's placeholder photo to the bundled pool cottage without deleting its profile or history. It selects two
+future Service Days that have no existing availability or active commitment, opens only those days, uses one in the
+recording, and leaves the other ready for a live demonstration. Existing requests and availability remain in place;
+a later run selects new unused days rather than rewinding them.
 
 Build and leave the application running in the first terminal:
 

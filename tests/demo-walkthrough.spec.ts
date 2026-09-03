@@ -27,11 +27,17 @@ type DemoAdministratorCredential = {
   version: 1;
 };
 
-const { accessBrowserFixture } = createRequire(import.meta.url)(
-  "../scripts/lib/access-browser-fixtures.mjs",
-) as {
-  accessBrowserFixture(project: string): AccessBrowserFixture;
-};
+const { accessBrowserFixture, refreshAccessBrowserFixturePhoto } =
+  createRequire(import.meta.url)(
+    "../scripts/lib/access-browser-fixtures.mjs",
+  ) as {
+    accessBrowserFixture(project: string): AccessBrowserFixture;
+    refreshAccessBrowserFixturePhoto(input: {
+      project: string;
+      publicationId: string;
+      privilegedClient: unknown;
+    }): Promise<void>;
+  };
 
 const administratorEmail = "mvp-demo-administrator-v2@rentcottage.test";
 const customerPhone = "+9647520000001";
@@ -75,6 +81,20 @@ function requireIsolatedLocalDemo() {
 async function expectScene(locator: Locator, milliseconds = 1_200) {
   await expect(locator).toBeVisible();
   await locator.page().waitForTimeout(milliseconds);
+}
+
+async function expectDemoImage(locator: Locator) {
+  await expect(locator).toBeVisible();
+  await expect
+    .poll(() =>
+      locator.evaluate((image) =>
+        image instanceof HTMLImageElement && image.complete
+          ? image.naturalWidth
+          : 0,
+      ),
+    )
+    .toBeGreaterThan(100);
+  await locator.page().waitForTimeout(1_800);
 }
 
 async function coverPrivateTransition(page: Page, title: string) {
@@ -302,6 +322,9 @@ async function prepareDemoState() {
     publishableKey,
     secretKey,
   );
+  const privileged = createClient(url, secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   const owner = createClient(url, publishableKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -325,6 +348,11 @@ async function prepareDemoState() {
       "The exact published synthetic demo cottage is incompatible",
     );
   }
+  await refreshAccessBrowserFixturePhoto({
+    project: "desktop",
+    publicationId: profile.data.current_publication_id,
+    privilegedClient: privileged,
+  });
   const existingOwnerRequests = await owner.rpc(
     "list_owner_booking_request_notifications",
   );
@@ -648,8 +676,14 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expectScene(
       publicCottage.getByRole("heading", { name: demo.cottageName }),
     );
+    await expectDemoImage(
+      publicCottage.getByRole("img", { name: demo.cottageName }),
+    );
     await publicCottage.getByRole("link", { name: "View cottage" }).click();
     await expectScene(page.getByRole("heading", { name: demo.cottageName }));
+    await expectDemoImage(
+      page.getByRole("img", { name: `${demo.cottageName} 1` }),
+    );
     await page.getByRole("link", { name: "Get exact quote" }).click();
     await expectScene(
       page.getByRole("heading", { name: "Your exact Booking Quote" }),
