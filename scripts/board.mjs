@@ -26,6 +26,7 @@ if (args.length > 1 || (args.length === 1 && args[0] !== "--json")) {
 } else {
   try {
     const report = classifyBoard(fetchBoard(runGh));
+    if (report.drift.length > 0) process.exitCode = 1;
     console.log(
       args[0] === "--json" ? JSON.stringify(report) : formatBoard(report),
     );

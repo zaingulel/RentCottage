@@ -24,6 +24,11 @@ const issueSelection = `
   __typename
   ... on Issue {
     id number title state repository { nameWithOwner }
+    subIssuesSummary { total completed }
+    closedByPullRequestsReferences(first:20, includeClosedPrs:true) {
+      totalCount nodes { id number state merged repository { nameWithOwner } }
+      pageInfo { hasNextPage endCursor }
+    }
     labels(first:20) {
       totalCount nodes { name } pageInfo { hasNextPage endCursor }
     }
@@ -164,6 +169,11 @@ function normalizeItem(item) {
     area: fieldValue(item, "Area"),
     labels: labels.map(({ name }) => name),
     assignees: assignees.map(({ login }) => login),
+    subIssuesSummary: content.subIssuesSummary,
+    closingPullRequests: requireComplete(
+      content.closedByPullRequestsReferences,
+      `#${content.number} closing pull requests`,
+    ),
     blockers: blockers.map((blocker) => ({
       id: blocker.id,
       number: blocker.number,
@@ -308,6 +318,34 @@ function validateItem(item) {
     throw new Error(`#${item.number} has an unknown or missing Status`);
   if (!AREA_OPTIONS.includes(item.area))
     throw new Error(`#${item.number} has an unknown or missing Area`);
+  const summary = item.subIssuesSummary;
+  if (
+    !isRecord(summary) ||
+    !Number.isInteger(summary.total) ||
+    !Number.isInteger(summary.completed) ||
+    summary.total < 0 ||
+    summary.completed < 0 ||
+    summary.completed > summary.total
+  )
+    throw new Error(`#${item.number} sub-issue summary is invalid`);
+  if (
+    !Array.isArray(item.closingPullRequests) ||
+    item.closingPullRequests.some(
+      (pr) =>
+        typeof pr?.id !== "string" ||
+        pr.id.length === 0 ||
+        !Number.isInteger(pr.number) ||
+        pr.number <= 0 ||
+        !["OPEN", "CLOSED", "MERGED"].includes(pr.state) ||
+        pr.merged !== (pr.state === "MERGED") ||
+        pr.repository?.nameWithOwner !== BOARD_REPOSITORY,
+    ) ||
+    new Set(item.closingPullRequests.map((pr) => pr.id)).size !==
+      item.closingPullRequests.length ||
+    new Set(item.closingPullRequests.map((pr) => pr.number)).size !==
+      item.closingPullRequests.length
+  )
+    throw new Error(`#${item.number} closing pull requests are invalid`);
   requireUniqueStrings(item.labels, `#${item.number} labels`);
   requireUniqueStrings(item.assignees, `#${item.number} assignees`);
   if (
@@ -334,13 +372,6 @@ function classifyOpenItem(item) {
     .filter(({ state }) => state === "OPEN")
     .map(({ number }) => number)
     .sort((left, right) => left - right);
-  if (openBlockers.length > 0 && UNBLOCKED_STATUSES.has(item.status))
-    throw new Error(
-      `#${item.number} cannot be ${item.status} while native blockers remain open`,
-    );
-  if (ACTIVE_STATUSES.has(item.status) && item.assignees.length === 0)
-    throw new Error(`#${item.number} is ${item.status} without an assignee`);
-
   const triageLabels = item.labels.filter((label) => TRIAGE_LABELS.has(label));
   if (triageLabels.length > 1)
     throw new Error(`#${item.number} has multiple triage labels`);
@@ -377,6 +408,7 @@ export function classifyBoard(board) {
   const issueIds = new Set();
   const issueNumbers = new Set();
   const openItems = [];
+  const drift = [];
   for (const item of board.items) {
     validateItem(item);
     if (
@@ -389,18 +421,81 @@ export function classifyBoard(board) {
     issueIds.add(item.issueId);
     issueNumbers.add(item.number);
 
+    const findings = [];
+    const add = (code, reason, correction) =>
+      findings.push({
+        number: item.number,
+        title: item.title,
+        code,
+        reason,
+        correction,
+      });
     if (item.state === "CLOSED" && item.status !== "Done")
-      throw new Error(
-        `#${item.number} is closed but its Status is ${item.status}`,
+      add(
+        "closed-not-done",
+        `Issue is closed but Status is ${item.status}`,
+        "Review setting Status to Done.",
       );
-    if (item.state === "OPEN" && item.status === "Done")
-      throw new Error(`#${item.number} is open but its Status is Done`);
-    if (item.state === "OPEN") openItems.push(classifyOpenItem(item));
+    if (item.state === "OPEN") {
+      const classified = classifyOpenItem(item);
+      if (item.status === "Done")
+        add(
+          "open-done",
+          "Issue is open but Status is Done",
+          "Review reopening the board status or completing the issue.",
+        );
+      if (
+        classified.openBlockers.length > 0 &&
+        UNBLOCKED_STATUSES.has(item.status)
+      )
+        add(
+          "open-blockers",
+          `Status is ${item.status} while native blockers remain open`,
+          "Review moving blocked work to Backlog.",
+        );
+      if (ACTIVE_STATUSES.has(item.status) && item.assignees.length === 0)
+        add(
+          "missing-assignee",
+          `Status is ${item.status} without an assignee`,
+          "Check ownership before assigning or changing Status.",
+        );
+      if (
+        item.subIssuesSummary.total > 0 &&
+        item.subIssuesSummary.completed === item.subIssuesSummary.total
+      )
+        add(
+          "completed-children",
+          "All children in the native summary are completed",
+          "Request owner completion review; completed children do not prove the parent outcome shipped.",
+        );
+      const merged = item.closingPullRequests.filter(
+        (pr) => pr.state === "MERGED",
+      );
+      if (merged.length)
+        add(
+          "merged-closing-pr",
+          `Open issue has officially closing merged pull requests: ${merged.map((pr) => `#${pr.number}`).join(", ")}`,
+          "Request owner review of completion or deliberately reopened scope before changing the issue.",
+        );
+      if (
+        ACTIVE_STATUSES.has(item.status) &&
+        item.subIssuesSummary.total === 0 &&
+        !item.closingPullRequests.some((pr) => pr.state === "OPEN")
+      )
+        add(
+          "check-ownership",
+          `Active leaf has no open officially closing pull request`,
+          "Check local/runtime ownership before deciding whether to continue, park, or correct Status.",
+        );
+      if (findings.length) classified.classification = "drift";
+      openItems.push(classified);
+    }
+    drift.push(...findings);
   }
 
   openItems.sort((left, right) => left.number - right.number);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     project: {
       owner: board.project.owner,
       number: board.project.number,
@@ -409,10 +504,12 @@ export function classifyBoard(board) {
       openItemCount: openItems.length,
     },
     items: openItems,
+    drift: drift.sort((left, right) => left.number - right.number),
   };
 }
 
 const CLASSIFICATION_ORDER = [
+  "drift",
   "active-owned",
   "ready",
   "blocked",
@@ -446,5 +543,10 @@ export function formatBoard(report) {
   return [
     `RentCottage Project 4 — ${report.project.openItemCount} open of ${report.project.itemCount} items`,
     ...groups,
+    ...(report.drift.length
+      ? [
+          `Lifecycle drift (${report.drift.length})\n${report.drift.map((finding) => `#${finding.number} ${finding.title}: ${finding.reason} — ${finding.correction}`).join("\n")}`,
+        ]
+      : []),
   ].join("\n\n");
 }

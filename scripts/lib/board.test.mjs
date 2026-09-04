@@ -36,6 +36,8 @@ function issueItem({
   blockers = [],
   status = "Backlog",
   area = "Foundation & quality",
+  children = { total: 0, completed: 0 },
+  prs = [],
 } = {}) {
   return {
     id: `item-${number}`,
@@ -50,6 +52,16 @@ function issueItem({
       repository: { nameWithOwner: "zaingulel/RentCottage" },
       labels: connection(labels.map((name) => ({ name }))),
       assignees: connection(assignees.map((login) => ({ login }))),
+      subIssuesSummary: children,
+      closedByPullRequestsReferences: connection(
+        prs.map((state, index) => ({
+          id: `pr-${index + 1}`,
+          number: index + 1,
+          state,
+          merged: state === "MERGED",
+          repository: { nameWithOwner: "zaingulel/RentCottage" },
+        })),
+      ),
       blockedBy: connection(
         blockers.map(({ number: blockerNumber, state: blockerState }) => ({
           id: `issue-${blockerNumber}`,
@@ -218,6 +230,7 @@ describe("Project 4 board intake", () => {
           number: 161,
           status: "In progress",
           assignees: ["zaingulel"],
+          prs: ["OPEN"],
         }),
         issueItem({
           number: 157,
@@ -249,19 +262,156 @@ describe("Project 4 board intake", () => {
     ]);
   });
 
-  it("fails when a Ready item regains an open native blocker", () => {
+  it("collects simultaneous lifecycle drift and excludes affected work from ready", () => {
+    const report = classifyBoard(
+      fetchBoard(() =>
+        projectPage([
+          issueItem({ number: 1, state: "CLOSED", status: "Ready" }),
+          issueItem({ number: 2, status: "Done" }),
+          issueItem({
+            number: 3,
+            status: "In progress",
+            blockers: [{ number: 9, state: "OPEN" }],
+          }),
+          issueItem({ number: 4 }),
+        ]),
+      ),
+    );
+    expect(report.schemaVersion).toBe(3);
+    expect(report.drift.map(({ number, code }) => [number, code])).toEqual([
+      [1, "closed-not-done"],
+      [2, "open-done"],
+      [3, "open-blockers"],
+      [3, "missing-assignee"],
+      [3, "check-ownership"],
+    ]);
+    expect(
+      report.items
+        .filter((item) => item.classification === "ready")
+        .map((item) => item.number),
+    ).toEqual([4]);
+    for (const finding of report.drift) {
+      expect(finding.title).toBeTruthy();
+      expect(finding.reason).toBeTruthy();
+      expect(finding.correction).toBeTruthy();
+      expect(formatBoard(report)).toContain(finding.reason);
+      expect(formatBoard(report)).toContain(finding.correction);
+    }
+  });
+
+  it("flags completed nonempty parent groups for review without claiming they shipped", () => {
+    const report = classifyBoard(
+      fetchBoard(() =>
+        projectPage([
+          issueItem({ number: 1, children: { total: 2, completed: 2 } }),
+          issueItem({ number: 2, children: { total: 2, completed: 1 } }),
+          issueItem({ number: 3 }),
+          issueItem({
+            number: 4,
+            state: "CLOSED",
+            status: "Done",
+            children: { total: 2, completed: 2 },
+          }),
+        ]),
+      ),
+    );
+    expect(report.drift.map(({ number, code }) => [number, code])).toEqual([
+      [1, "completed-children"],
+    ]);
+    expect(report.items[0].classification).toBe("drift");
+    expect(report.drift[0].correction).toContain("completion review");
+  });
+
+  it.each([
+    undefined,
+    { total: -1, completed: 0 },
+    { total: 1, completed: 2 },
+    { total: 1.5, completed: 1 },
+  ])("rejects malformed child summary %j", (children) => {
+    const item = issueItem();
+    item.content.subIssuesSummary = children;
+    expect(() => classifyBoard(fetchBoard(() => projectPage([item])))).toThrow(
+      "sub-issue summary is invalid",
+    );
+  });
+
+  it("uses official merged references and checks ownership only for active leaves without an open PR", () => {
     const execute = vi.fn(() =>
       projectPage([
+        issueItem({ number: 10, prs: ["MERGED", "OPEN"] }),
         issueItem({
-          number: 160,
-          status: "Ready",
-          blockers: [{ number: 159, state: "OPEN" }],
+          number: 11,
+          status: "In progress",
+          assignees: ["z"],
+          prs: ["CLOSED"],
+        }),
+        issueItem({
+          number: 12,
+          status: "In review",
+          assignees: ["z"],
+          prs: ["OPEN"],
+        }),
+        issueItem({
+          number: 13,
+          status: "In progress",
+          assignees: ["z"],
+          children: { total: 2, completed: 1 },
+        }),
+        issueItem({ number: 14, prs: ["CLOSED"] }),
+        issueItem({
+          number: 15,
+          state: "CLOSED",
+          status: "Done",
+          prs: ["MERGED"],
         }),
       ]),
     );
+    const report = classifyBoard(fetchBoard(execute));
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0][3]).toContain("includeClosedPrs:true");
+    expect(report.drift.map(({ number, code }) => [number, code])).toEqual([
+      [10, "merged-closing-pr"],
+      [11, "check-ownership"],
+    ]);
+    expect(report.drift[0].correction).toContain("reopened");
+    expect(report.drift[1].correction).toContain(
+      "Check local/runtime ownership",
+    );
+    expect(
+      report.items
+        .filter((item) => item.classification === "ready")
+        .map((item) => item.number),
+    ).toEqual([14]);
+  });
 
-    expect(() => classifyBoard(fetchBoard(execute))).toThrow(
-      "#160 cannot be Ready while native blockers remain open",
+  it.each([
+    undefined,
+    connection([], { totalCount: 1 }),
+    connection([], { pageInfo: { hasNextPage: true, endCursor: "more" } }),
+    connection([null]),
+    connection([
+      {
+        id: "p",
+        number: 1,
+        state: "OPEN",
+        merged: true,
+        repository: { nameWithOwner: "zaingulel/RentCottage" },
+      },
+    ]),
+    connection([
+      {
+        id: "p",
+        number: 1,
+        state: "MERGED",
+        merged: true,
+        repository: { nameWithOwner: "other/repo" },
+      },
+    ]),
+  ])("rejects incomplete or invalid official PR evidence %j", (references) => {
+    const item = issueItem();
+    item.content.closedByPullRequestsReferences = references;
+    expect(() => classifyBoard(fetchBoard(() => projectPage([item])))).toThrow(
+      /closing pull requests/,
     );
   });
 
@@ -343,6 +493,41 @@ describe("verify:board command", () => {
     expect(result.status).toBe(2);
     expect(result.callCount).toBe(0);
     expect(result.stderr).toContain("Usage: npm run verify:board -- [--json]");
+  });
+
+  it.each([[[]], [["--json"]]])(
+    "prints all drift before returning failure for %j",
+    (args) => {
+      const result = runBoardCommand(args, {
+        ghOutput: projectPage([
+          issueItem({ number: 1, state: "CLOSED", status: "Backlog" }),
+          issueItem({ number: 2, status: "Done" }),
+        ]),
+      });
+      expect(result.status).toBe(1);
+      expect(result.callCount).toBe(1);
+      expect(result.stderr).toBe("");
+      if (args.length) {
+        const report = JSON.parse(result.stdout);
+        expect(report.schemaVersion).toBe(3);
+        expect(report.drift.map((item) => item.number)).toEqual([1, 2]);
+      } else {
+        expect(result.stdout).toContain("#1");
+        expect(result.stdout).toContain("#2");
+        expect(result.stdout).toContain("Lifecycle drift (2)");
+      }
+    },
+  );
+
+  it("returns a valid empty intake without extra requests", () => {
+    const result = runBoardCommand(["--json"], { ghOutput: projectPage([]) });
+    expect(result.status).toBe(0);
+    expect(result.callCount).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schemaVersion: 3,
+      items: [],
+      drift: [],
+    });
   });
 
   it("returns failure when the GitHub provider fails", () => {
