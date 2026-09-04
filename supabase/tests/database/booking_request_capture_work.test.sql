@@ -1,6 +1,6 @@
 begin;
 
-select plan(27);
+select plan(50);
 
 select has_table(
   'public', 'booking_request_capture_work',
@@ -258,7 +258,7 @@ create function pg_temp.insert_capture_work(
   target_idempotency_key text default
     'booking-request-capture:60000000-0000-4000-8000-000000001001:1',
   target_fingerprint text default
-    'ff1be0d836d449f5ccb77e4803fa203e3f043533afb74ca085bced2e1bf47f7f',
+    'fc055a3502a5be592055e1558f26ae493de2db0657ce85f988993894d3414681',
   target_capture_logical_id text default
     '73000000-0000-4000-8000-000000001001:capture',
   target_currency text default 'IQD'
@@ -283,7 +283,7 @@ as $$
     '73000000-0000-4000-8000-000000001001:authorization',
     '73000000-0000-4000-8000-000000001001:authorization:attempt-1',
     target_capture_logical_id,
-    '73000000-0000-4000-8000-000000001001:capture:attempt-1',
+    '73000000-0000-4000-8000-000000001001:capture:attempt-2',
     target_amount_fils, target_currency, target_provider, 'local-test',
     'capture-merchant', 'capture-terminal',
     target_idempotency_key, target_fingerprint
@@ -292,17 +292,18 @@ $$;
 
 select lives_ok(
   $$select pg_temp.insert_capture_work()$$,
-  'one exact accepted-request graph can create queued capture work'
+  'one exact accepted-request graph can queue the established capture attempt-2'
 );
 select results_eq(
   $$select state, lease_generation, lease_token is null,
       lease_expires_at is null, outcome, completed_at is null,
-      provider_idempotency_key, request_fingerprint
+      provider_idempotency_key, request_fingerprint, capture_physical_attempt_id
     from public.booking_request_capture_work$$,
   $$values (
     'queued'::text, 0::bigint, true, true, null::text, true,
     'booking-request-capture:60000000-0000-4000-8000-000000001001:1'::text,
-    'ff1be0d836d449f5ccb77e4803fa203e3f043533afb74ca085bced2e1bf47f7f'::text
+    'fc055a3502a5be592055e1558f26ae493de2db0657ce85f988993894d3414681'::text,
+    '73000000-0000-4000-8000-000000001001:capture:attempt-2'::text
   )$$,
   'queued capture work stores the independently worked replay identity'
 );
@@ -351,7 +352,7 @@ select throws_ok(
   $$select pg_temp.insert_capture_work(
     115000000, 'fictional-payments',
     'booking-request-capture:60000000-0000-4000-8000-000000001001:1',
-    'ff1be0d836d449f5ccb77e4803fa203e3f043533afb74ca085bced2e1bf47f7f',
+    'fc055a3502a5be592055e1558f26ae493de2db0657ce85f988993894d3414681',
     '73000000-0000-4000-8000-000000001001:authorization'
   )$$,
   'RC409', null,
@@ -399,6 +400,28 @@ select throws_ok(
 );
 rollback to savepoint missing_capture_source_binding;
 
+savepoint claim_owned_by_another_attempt;
+delete from public.booking_request_capture_work;
+insert into public.booking_request_submission_attempts (
+  id, customer_user_id, idempotency_key, payment_lifecycle_id, profile_id,
+  locale, public_slug, requested_search, quote_fingerprint, quote_payload,
+  intent_fingerprint, intent_payload, state
+)
+select '70000000-0000-4000-8000-000000001002', customer_user_id,
+  '71000000-0000-4000-8000-000000001002',
+  '73000000-0000-4000-8000-000000001002', profile_id,
+  locale, public_slug, requested_search, quote_fingerprint, quote_payload,
+  repeat('e', 64), intent_payload, 'authorizing'
+from public.booking_request_submission_attempts;
+update public.booking_request_authorization_claims
+set attempt_id = '70000000-0000-4000-8000-000000001002';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work rejects a claim owned by another existing attempt'
+);
+rollback to savepoint claim_owned_by_another_attempt;
+
 savepoint missing_capture_provider_binding;
 delete from public.booking_request_capture_work;
 update public.booking_request_submission_attempts
@@ -410,6 +433,87 @@ select throws_ok(
   'capture work requires the full provider identity on the authorized attempt'
 );
 rollback to savepoint missing_capture_provider_binding;
+
+savepoint attempt_provider;
+delete from public.booking_request_capture_work;
+update public.booking_request_submission_attempts set authorization_provider = 'different-provider';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work binds the exact authorized attempt provider'
+);
+rollback to savepoint attempt_provider;
+
+savepoint attempt_environment;
+delete from public.booking_request_capture_work;
+update public.booking_request_submission_attempts set authorization_environment = 'different-environment';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work binds the exact authorized attempt environment'
+);
+rollback to savepoint attempt_environment;
+
+savepoint attempt_merchant;
+delete from public.booking_request_capture_work;
+update public.booking_request_submission_attempts set authorization_merchant_id = 'different-merchant';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work binds the exact authorized attempt merchant'
+);
+rollback to savepoint attempt_merchant;
+
+savepoint attempt_terminal;
+delete from public.booking_request_capture_work;
+update public.booking_request_submission_attempts set authorization_terminal_id = 'different-terminal';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work binds the exact authorized attempt terminal'
+);
+rollback to savepoint attempt_terminal;
+
+savepoint claim_provider;
+delete from public.booking_request_capture_work;
+update public.booking_request_authorization_claims set provider = 'different-provider';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work binds the exact authorization claim provider'
+);
+rollback to savepoint claim_provider;
+
+savepoint claim_environment;
+delete from public.booking_request_capture_work;
+update public.booking_request_authorization_claims set environment = 'different-environment';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work binds the exact authorization claim environment'
+);
+rollback to savepoint claim_environment;
+
+savepoint claim_merchant;
+delete from public.booking_request_capture_work;
+update public.booking_request_authorization_claims set merchant_id = 'different-merchant';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work binds the exact authorization claim merchant'
+);
+rollback to savepoint claim_merchant;
+
+savepoint claim_terminal;
+delete from public.booking_request_capture_work;
+update public.booking_request_authorization_claims set terminal_id = 'different-terminal';
+select throws_ok(
+  $$select pg_temp.insert_capture_work()$$,
+  'RC409', null,
+  'capture work binds the exact authorization claim terminal'
+);
+rollback to savepoint claim_terminal;
+
 
 savepoint mismatched_authorization_lifecycle;
 delete from public.booking_request_capture_work;
@@ -451,6 +555,43 @@ select throws_ok(
   '23514', null,
   'queued capture work cannot hold a partial lease'
 );
+
+savepoint queued_token;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set lease_token = '80000000-0000-4000-8000-000000001002'$$,
+  '23514', null,
+  'queued capture work cannot carry a lease token'
+);
+rollback to savepoint queued_token;
+
+savepoint queued_expiry;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set lease_expires_at = clock_timestamp()$$,
+  '23514', null,
+  'queued capture work cannot carry a lease expiry'
+);
+rollback to savepoint queued_expiry;
+
+savepoint queued_outcome;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set outcome = 'succeeded'$$,
+  '23514', null,
+  'queued capture work cannot carry an outcome'
+);
+rollback to savepoint queued_outcome;
+
+savepoint queued_completion;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set completed_at = clock_timestamp()$$,
+  '23514', null,
+  'queued capture work cannot carry a completion time'
+);
+rollback to savepoint queued_completion;
+
 select lives_ok(
   $$update public.booking_request_capture_work
     set state = 'processing', lease_generation = 1,
@@ -458,11 +599,109 @@ select lives_ok(
       lease_expires_at = clock_timestamp() - interval '1 second'$$,
   'processing capture work requires a complete lease and may retain an expired lease'
 );
+
+savepoint processing_generation;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set lease_generation = 0$$,
+  '23514', null,
+  'processing capture work requires a positive lease generation'
+);
+rollback to savepoint processing_generation;
+
+savepoint processing_token;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set lease_token = null$$,
+  '23514', null,
+  'processing capture work requires a lease token'
+);
+rollback to savepoint processing_token;
+
+savepoint processing_expiry;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set lease_expires_at = null$$,
+  '23514', null,
+  'processing capture work requires a lease expiry'
+);
+rollback to savepoint processing_expiry;
+
+savepoint processing_outcome;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set outcome = 'succeeded'$$,
+  '23514', null,
+  'processing capture work cannot carry an outcome'
+);
+rollback to savepoint processing_outcome;
+
+savepoint processing_completion;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set completed_at = clock_timestamp()$$,
+  '23514', null,
+  'processing capture work cannot carry a completion time'
+);
+rollback to savepoint processing_completion;
+
 select throws_ok(
   $$update public.booking_request_capture_work set amount_fils = 1$$,
   'RC204', null,
   'capture-work identity and money bindings are immutable'
 );
+
+savepoint complete_token;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set state = 'complete', lease_expires_at = null,
+      outcome = 'succeeded', completed_at = clock_timestamp()$$,
+  '23514', null,
+  'completed capture work cannot retain a lease token'
+);
+rollback to savepoint complete_token;
+
+savepoint complete_expiry;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set state = 'complete', lease_token = null,
+      outcome = 'succeeded', completed_at = clock_timestamp()$$,
+  '23514', null,
+  'completed capture work cannot retain a lease expiry'
+);
+rollback to savepoint complete_expiry;
+
+savepoint complete_completion;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set state = 'complete', lease_token = null, lease_expires_at = null,
+      outcome = 'succeeded'$$,
+  '23514', null,
+  'completed capture work requires a completion time'
+);
+rollback to savepoint complete_completion;
+
+savepoint complete_unsuccessful;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set state = 'complete', lease_token = null, lease_expires_at = null,
+      outcome = 'failed', completed_at = clock_timestamp()$$,
+  '23514', null,
+  'completed capture work rejects an unsuccessful outcome'
+);
+rollback to savepoint complete_unsuccessful;
+
+savepoint complete_generation;
+select throws_ok(
+  $$update public.booking_request_capture_work
+    set state = 'complete', lease_generation = 0,
+      lease_token = null, lease_expires_at = null,
+      outcome = 'succeeded', completed_at = clock_timestamp()$$,
+  '23514', null,
+  'completed capture work requires a positive lease generation'
+);
+rollback to savepoint complete_generation;
+
 savepoint missing_capture_outcome;
 select throws_ok(
   $$update public.booking_request_capture_work

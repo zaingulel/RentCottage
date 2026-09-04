@@ -201,7 +201,7 @@ begin
     or new.capture_logical_operation_id
       <> new.payment_lifecycle_id::text || ':capture'
     or new.capture_physical_attempt_id
-      <> new.capture_logical_operation_id || ':attempt-1'
+      <> new.capture_logical_operation_id || ':attempt-2'
     or new.capture_logical_operation_id = new.authorization_logical_operation_id
     or new.capture_physical_attempt_id = new.authorization_physical_attempt_id
     or new.provider_idempotency_key
