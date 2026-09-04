@@ -30,8 +30,9 @@ Present the options in a concise Markdown table with one issue per row and colum
 Dependencies / owner, Risk, and Builder route. Link each issue, put the recommended option first, and mark it
 **Recommended**. Keep cells short for scanning; give the recommendation's reason and the current branch/worktree,
 verification result, and safe parallel capacity in brief prose outside the table.
-Stop for the owner's choice. A yes approves that issue's stated outcome and acceptance
-criteria; high-blast-radius work proceeds only through read-only planning until its concrete plan is approved.
+End with a question naming the recommended issue and stop for the owner's choice. A yes to that question
+approves the named issue's stated outcome and acceptance criteria; high-blast-radius work proceeds only
+through read-only planning until its concrete plan is approved.
 
 ## Start the approved job
 
