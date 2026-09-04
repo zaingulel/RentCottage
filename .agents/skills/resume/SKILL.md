@@ -25,9 +25,12 @@ section before considering new work. Leave foreign work unchanged.
 
 After ownership and board classification narrow the shortlist, fetch bodies and attributed comments for at most
 three credible issues in one aliased GraphQL query using the procedure in `docs/agents/issue-tracker.md`.
-An incomplete candidate stays out of recommendations until its named missing evidence is fetched. Report the current branch/worktree,
-verification result, owner, outcome, dependencies, risk, route, and whether safe parallel capacity exists.
-Recommend one issue and stop for the owner's choice. A yes approves that issue's stated outcome and acceptance
+An incomplete candidate stays out of recommendations until its named missing evidence is fetched.
+Present the options in a concise Markdown table with one issue per row and columns: Issue, Outcome,
+Dependencies / owner, Risk, and Builder route. Link each issue, put the recommended option first, and mark it
+**Recommended**. Keep cells short for scanning; give the recommendation's reason and the current branch/worktree,
+verification result, and safe parallel capacity in brief prose outside the table.
+Stop for the owner's choice. A yes approves that issue's stated outcome and acceptance
 criteria; high-blast-radius work proceeds only through read-only planning until its concrete plan is approved.
 
 ## Start the approved job
