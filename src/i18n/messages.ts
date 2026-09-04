@@ -23,6 +23,7 @@ export interface MarketplaceMessages {
   amenitiesLabel: string;
   amenityNames: Record<AmenityKey, string>;
   searchCta: string;
+  ownerSignIn: string;
   retreatBlurb: string;
   trustedTitle: string;
   trustedSubtitle: string;
@@ -75,6 +76,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       family: "مناسب للعائلات",
     },
     searchCta: "ابحث عن ملاذك",
+    ownerSignIn: "دخول مالك البيت",
     retreatBlurb:
       "بيوت قليلة، مختارة يدًا بيد مع أصحابها، من بساتين النخيل إلى المرتفعات.",
     trustedTitle: "حجز موثوق، خطوة بخطوة",
@@ -132,6 +134,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       family: "گونجاو بۆ خێزان",
     },
     searchCta: "پەناگەکەت بدۆزەوە",
+    ownerSignIn: "چوونەژوورەوەی خاوەنی ماڵ",
     retreatBlurb:
       "کۆمەڵێک ماڵی کەم، دەستبەدەست لەگەڵ خاوەنەکانیان هەڵبژێردراون، لە باخەکانی خورما تا بەرزاییەکان.",
     trustedTitle: "حجزێکی متمانەپێکراو، هەنگاو بە هەنگاو",
@@ -190,6 +193,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
       family: "Family friendly",
     },
     searchCta: "Find your retreat",
+    ownerSignIn: "Owner sign-in",
     retreatBlurb:
       "A small collection, chosen hand in hand with their owners, from palm orchards to the highlands.",
     trustedTitle: "A trusted booking, step by step",

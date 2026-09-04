@@ -1205,6 +1205,14 @@ html[lang="ckb"] .booking-summary strong {
   opacity: 0.84;
 }
 
+.retreat-access {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
 .language-switcher {
   direction: ltr;
   display: flex;
@@ -1617,6 +1625,17 @@ a:focus-visible {
 
   .retreat-utility {
     inset-block-start: 0.85rem;
+    align-items: flex-start;
+  }
+
+  .retreat-access {
+    max-width: 12.5rem;
+  }
+
+  .retreat-access .action-link {
+    min-height: 2.25rem;
+    padding-inline: 0.7rem;
+    font-size: 0.78rem;
   }
 
   .language-switcher {

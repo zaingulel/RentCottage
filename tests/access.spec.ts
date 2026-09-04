@@ -581,10 +581,14 @@ test("the fictional booking-request back door is unavailable", async ({
   expect(response?.status()).toBe(404);
 });
 
-test("a prospective Cottage Owner receives no approved-owner claim", async ({
+test("Owner sign-in from the homepage gives a prospective Cottage Owner no approved-owner claim", async ({
   page,
 }) => {
-  await page.goto("/ckb/owner/access");
+  await page.goto("/ckb");
+  await page
+    .getByRole("link", { name: "چوونەژوورەوەی خاوەنی ماڵ", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/ckb\/owner\/access$/);
   await page.getByLabel("ژمارە تەلەفۆنی عێراقی").fill("+9647500000001");
   await page.getByRole("button", { name: "کۆدی پشتڕاستکردنەوە بنێرە" }).click();
   await page.getByLabel("کۆدی پشتڕاستکردنەوە").fill("123456");
