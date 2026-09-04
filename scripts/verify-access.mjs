@@ -216,6 +216,12 @@ export function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = execute(
+        "node",
+        ["scripts/verify-booking-request-capture-work-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
     }
 
     const status = execute(
