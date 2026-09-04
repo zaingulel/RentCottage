@@ -47,6 +47,10 @@ describe("MarketplaceShell", () => {
     expect(
       screen.getByRole("button", { name: "Search available cottages" }),
     ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Owner sign-in" })).toHaveAttribute(
+      "href",
+      "/en/owner/access",
+    );
     expect(screen.queryByText("Visual direction")).not.toBeInTheDocument();
   });
 
@@ -93,6 +97,9 @@ describe("MarketplaceShell", () => {
     expect(document.documentElement).toHaveAttribute("lang", "ckb");
     expect(document.documentElement).toHaveAttribute("dir", "rtl");
     expect(screen.getByRole("navigation", { name: "زمان" })).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "چوونەژوورەوەی خاوەنی ماڵ" }),
+    ).toHaveAttribute("href", "/ckb/owner/access");
     expect(screen.getByRole("checkbox", { name: "مەلەوانگە" })).toBeVisible();
     expect(screen.queryByText("Garden House")).not.toBeInTheDocument();
 
@@ -100,6 +107,10 @@ describe("MarketplaceShell", () => {
     expect(document.documentElement).toHaveAttribute("dir", "ltr");
     expect(screen.getByLabelText("Governorate (optional)")).toHaveValue(
       "Baghdad",
+    );
+    expect(screen.getByRole("link", { name: "Owner sign-in" })).toHaveAttribute(
+      "href",
+      "/en/owner/access",
     );
   });
 });
