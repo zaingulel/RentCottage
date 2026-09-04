@@ -56,6 +56,44 @@ function snapshot(table, orderBy) {
   `);
 }
 
+function snapshotPredecessorGraph() {
+  return {
+    snapshots: snapshot("booking_snapshots", "rows.id"),
+    requests: snapshot("booking_requests", "rows.id"),
+    attempts: snapshot("booking_request_submission_attempts", "rows.id"),
+    claims: snapshot("booking_request_authorization_claims", "rows.id"),
+    claimItems: snapshot(
+      "booking_request_authorization_claim_items",
+      "rows.claim_id, rows.service_day, rows.unit_kind, rows.unit_id",
+    ),
+    claimOccupancies: snapshot(
+      "booking_request_authorization_claim_occupancies",
+      "rows.claim_id, rows.schedule_revision_id, rows.shift_id, rows.service_day",
+    ),
+    reconciliationOutbox: snapshot(
+      "booking_request_authorization_reconciliation_outbox",
+      "rows.claim_id",
+    ),
+    providerIdentities: snapshot(
+      "booking_request_provider_operation_identities",
+      "rows.attempt_id, rows.operation_kind",
+    ),
+    providerOperations: snapshot(
+      "simulated_payment_provider_operations",
+      "rows.id",
+    ),
+    releaseWork: snapshot("booking_request_release_work", "rows.id"),
+    commitments: snapshot("cottage_booking_period_commitments", "rows.id"),
+    inventory: snapshot("cottage_inventory_commitments", "rows.id"),
+    occupancies: snapshot(
+      "cottage_booking_period_occupancies",
+      "rows.booking_period_commitment_id, rows.shift_id, rows.service_day",
+    ),
+    notifications: snapshot("booking_request_status_notifications", "rows.id"),
+    ownerNotifications: snapshot("owner_request_notifications", "rows.id"),
+  };
+}
+
 let failure;
 
 harness.guardDisposableLocalDatabase();
@@ -507,81 +545,13 @@ try {
     commit;
   `);
 
-  const before = {
-    snapshots: snapshot("booking_snapshots", "rows.id"),
-    requests: snapshot("booking_requests", "rows.id"),
-    attempts: snapshot("booking_request_submission_attempts", "rows.id"),
-    claims: snapshot("booking_request_authorization_claims", "rows.id"),
-    claimItems: snapshot(
-      "booking_request_authorization_claim_items",
-      "rows.claim_id, rows.service_day, rows.unit_kind, rows.unit_id",
-    ),
-    claimOccupancies: snapshot(
-      "booking_request_authorization_claim_occupancies",
-      "rows.claim_id, rows.schedule_revision_id, rows.shift_id, rows.service_day",
-    ),
-    reconciliationOutbox: snapshot(
-      "booking_request_authorization_reconciliation_outbox",
-      "rows.claim_id",
-    ),
-    providerIdentities: snapshot(
-      "booking_request_provider_operation_identities",
-      "rows.attempt_id, rows.operation_kind",
-    ),
-    providerOperations: snapshot(
-      "simulated_payment_provider_operations",
-      "rows.id",
-    ),
-    releaseWork: snapshot("booking_request_release_work", "rows.id"),
-    commitments: snapshot("cottage_booking_period_commitments", "rows.id"),
-    inventory: snapshot("cottage_inventory_commitments", "rows.id"),
-    occupancies: snapshot(
-      "cottage_booking_period_occupancies",
-      "rows.booking_period_commitment_id, rows.shift_id, rows.service_day",
-    ),
-    notifications: snapshot("booking_request_status_notifications", "rows.id"),
-    ownerNotifications: snapshot("owner_request_notifications", "rows.id"),
-  };
+  const before = snapshotPredecessorGraph();
 
   const upgradeArgs = ["migration", "up", "--local"];
   const upgrade = runSupabase(upgradeArgs);
   if (upgrade.status !== 0) throw commandFailure(upgradeArgs, upgrade);
 
-  const after = {
-    snapshots: snapshot("booking_snapshots", "rows.id"),
-    requests: snapshot("booking_requests", "rows.id"),
-    attempts: snapshot("booking_request_submission_attempts", "rows.id"),
-    claims: snapshot("booking_request_authorization_claims", "rows.id"),
-    claimItems: snapshot(
-      "booking_request_authorization_claim_items",
-      "rows.claim_id, rows.service_day, rows.unit_kind, rows.unit_id",
-    ),
-    claimOccupancies: snapshot(
-      "booking_request_authorization_claim_occupancies",
-      "rows.claim_id, rows.schedule_revision_id, rows.shift_id, rows.service_day",
-    ),
-    reconciliationOutbox: snapshot(
-      "booking_request_authorization_reconciliation_outbox",
-      "rows.claim_id",
-    ),
-    providerIdentities: snapshot(
-      "booking_request_provider_operation_identities",
-      "rows.attempt_id, rows.operation_kind",
-    ),
-    providerOperations: snapshot(
-      "simulated_payment_provider_operations",
-      "rows.id",
-    ),
-    releaseWork: snapshot("booking_request_release_work", "rows.id"),
-    commitments: snapshot("cottage_booking_period_commitments", "rows.id"),
-    inventory: snapshot("cottage_inventory_commitments", "rows.id"),
-    occupancies: snapshot(
-      "cottage_booking_period_occupancies",
-      "rows.booking_period_commitment_id, rows.shift_id, rows.service_day",
-    ),
-    notifications: snapshot("booking_request_status_notifications", "rows.id"),
-    ownerNotifications: snapshot("owner_request_notifications", "rows.id"),
-  };
+  const after = snapshotPredecessorGraph();
   for (const key of Object.keys(before)) {
     assertEqual(
       after[key],

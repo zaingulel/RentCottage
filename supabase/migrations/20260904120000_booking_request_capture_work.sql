@@ -19,12 +19,11 @@ create table public.booking_request_capture_work (
   provider_idempotency_key text not null,
   request_fingerprint text not null
     check (request_fingerprint ~ '^[0-9a-f]{64}$'),
-  state text not null default 'queued'
-    check (state in ('queued', 'processing', 'complete')),
-  lease_generation bigint not null default 0 check (lease_generation >= 0),
+  state text not null default 'queued',
+  lease_generation bigint not null default 0,
   lease_token uuid,
   lease_expires_at timestamptz,
-  outcome text check (outcome = 'succeeded'),
+  outcome text,
   created_at timestamptz not null default now(),
   completed_at timestamptz,
   foreign key (attempt_id, payment_lifecycle_id)
