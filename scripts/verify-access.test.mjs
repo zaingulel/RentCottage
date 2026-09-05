@@ -769,6 +769,33 @@ describe("access verification command", () => {
       ...browserCommands,
       stopCommand,
     ]);
+    expect(run.mock.calls[0][2].env).toMatchObject({
+      DOCKER_CONFIG: "/tmp/access-docker",
+      DO_NOT_TRACK: "1",
+      EXISTING: "kept",
+      SUPABASE_TELEMETRY_DISABLED: "1",
+    });
+    expect(run.mock.calls[1][2]).toMatchObject({
+      encoding: "utf8",
+      env: {
+        DOCKER_CONFIG: "/tmp/access-docker",
+        DO_NOT_TRACK: "1",
+        EXISTING: "kept",
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+        SUPABASE_TELEMETRY_DISABLED: "1",
+      },
+      maxBuffer: 1024 * 1024,
+    });
+    expect(run.mock.calls[1][2]).toHaveProperty("input", undefined);
+    expect(run.mock.calls[1][2].env.DOCKER_CONFIG).toBe(
+      run.mock.calls[0][2].env.DOCKER_CONFIG,
+    );
+    expect(run.mock.calls[1][2].env).not.toHaveProperty("SUPABASE_URL");
+    expect(run.mock.calls[1][2].env).not.toHaveProperty(
+      "SUPABASE_PUBLISHABLE_KEY",
+    );
+    expect(run.mock.calls[1][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[9][2].env).toMatchObject({
       EXISTING: "kept",
       SUPABASE_URL: "http://127.0.0.1:54331",

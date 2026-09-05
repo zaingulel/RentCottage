@@ -197,7 +197,11 @@ export function main(
     try {
       createLocalSupabaseConcurrencyHarness({
         environment: databaseConcurrencyEnvironment,
-        spawnSyncProcess: run,
+        spawnSyncProcess: (command, args, options) =>
+          run(command, args, {
+            ...options,
+            env: databaseConcurrencyEnvironment,
+          }),
         workingDirectory: localWorkdir,
       }).guardDisposableLocalDatabase();
     } catch (error) {
