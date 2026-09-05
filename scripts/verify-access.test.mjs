@@ -1,10 +1,12 @@
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
   readlinkSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,6 +21,82 @@ const localCredentials = JSON.stringify({
   PUBLISHABLE_KEY: "local-publishable",
   SECRET_KEY: "local-secret",
 });
+
+function runUpgradeVerifier(
+  script,
+  args,
+  { failPriorReset = false, failProof = false } = {},
+) {
+  const fakeBin = mkdtempSync(join(tmpdir(), "rentcottage-upgrade-verifier-"));
+  const commandLog = join(fakeBin, "commands.log");
+  const npxPath = join(fakeBin, "npx");
+  const dockerPath = join(fakeBin, "docker");
+  writeFileSync(
+    npxPath,
+    `#!/bin/sh
+printf 'npx %s\\n' "$*" >> "$COMMAND_LOG"
+case "$FAIL_PRIOR_RESET:$*" in
+  1:*--version*) printf 'forced prior reset failure\\n' >&2; exit 7 ;;
+esac
+`,
+  );
+  writeFileSync(
+    dockerPath,
+    `#!/bin/sh
+printf 'docker %s\\n' "$*" >> "$COMMAND_LOG"
+if [ "$1" = "inspect" ]; then
+  printf '%s|%s\\n' "$SUPABASE_LOCAL_PROJECT" "$PWD"
+  exit 0
+fi
+sql=$(cat)
+if [ "$FAIL_PROOF" = "1" ]; then
+  case "$sql" in
+    *"select max(version)"*|*"owner_application_cottage_profiles where owner_user_id"*)
+      printf 'forced proof failure\\n' >&2
+      exit 8
+      ;;
+  esac
+fi
+case "$sql" in
+  *"select max(version)"*) printf '20260822090100\\n' ;;
+  *"bool_and(name = 'Preserved private cottage'"*) printf '1|t|1|2\\n' ;;
+  *"owner_application_cottage_profiles where owner_user_id"*) printf '21|Preserved private cottage|Private orchard gate|Turn after the old bridge|Preserved description|Preserved rules|1|2\\n' ;;
+  *"begin_booking_request_authorization_claim"*) printf '%s\\n' '{"status":"ready","executionPermit":{"claimId":"96000000-0000-4000-8000-000000000633","generation":1,"idempotencyKey":"booking-request:96000000-0000-4000-8000-000000000633:1","notAfter":"2101-01-01T00:00:00.000Z","purpose":"booking-request-authorization"}}' ;;
+  *"query_simulated_payment_provider_operation"*"missing-request"*) printf 'RC409\\n' >&2; exit 1 ;;
+  *"query_simulated_payment_provider_operation"*) printf '%s\\n' '{"outcome":"not-executed"}' ;;
+  *"execute_simulated_payment_provider_operation"*) printf '%s\\n' '{"outcome":"succeeded","providerRequestId":"request","providerReference":"reference","movementReference":"movement","retrySafe":false}' ;;
+  *"VERBOSITY verbose"*"create_owner_cottage_profile_draft"*|*"VERBOSITY verbose"*"restore_administrator_cottage_profile_draft"*) printf 'RC420\\n' >&2; exit 1 ;;
+esac
+`,
+  );
+  chmodSync(npxPath, 0o755);
+  chmodSync(dockerPath, 0o755);
+
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [resolve(process.cwd(), "scripts", script), ...args],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          COMMAND_LOG: commandLog,
+          FAIL_PRIOR_RESET: failPriorReset ? "1" : "0",
+          FAIL_PROOF: failProof ? "1" : "0",
+          PATH: `${fakeBin}:${process.env.PATH}`,
+          SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verifier-test",
+          SUPABASE_LOCAL_PROJECT: "rentcottage-verifier-test",
+        },
+      },
+    );
+    return {
+      commands: existsSync(commandLog) ? readFileSync(commandLog, "utf8") : "",
+      result,
+    };
+  } finally {
+    rmSync(fakeBin, { recursive: true, force: true });
+  }
+}
 
 describe("local Supabase concurrency harness", () => {
   it("fails closed before Docker when the local project identity is invalid", () => {
@@ -254,11 +332,94 @@ describe("access verification command", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain(
-      "Usage: node scripts/verify-cottage-profile-draft-concurrency.mjs [--verify-migration-preflight]",
+      "Usage: node scripts/verify-cottage-profile-draft-concurrency.mjs [--verify-migration-preflight [--defer-successful-restore]]",
     );
     expect(result.stderr).not.toContain("SUPABASE_URL");
     expect(result.stderr).not.toContain("Docker");
   });
+
+  it.each([
+    [
+      "verify-cottage-profile-draft-concurrency.mjs",
+      ["--defer-successful-restore"],
+    ],
+    ["verify-booking-request-lifecycle-upgrade.mjs", ["--unexpected"]],
+  ])(
+    "rejects invalid restore deferral arguments before subprocess work in %s",
+    (script, args) => {
+      const { commands, result } = runUpgradeVerifier(script, args);
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("Usage: node scripts/");
+      expect(commands).toBe("");
+    },
+  );
+
+  it.each([
+    [
+      "verify-cottage-profile-draft-concurrency.mjs",
+      ["--verify-migration-preflight"],
+    ],
+    ["verify-booking-request-lifecycle-upgrade.mjs", []],
+  ])(
+    "restores the current schema by default after %s succeeds",
+    (script, args) => {
+      const { commands, result } = runUpgradeVerifier(script, args);
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(commands).toContain("npx supabase db reset --local --version");
+      expect(commands.match(/npx supabase db reset --local\n/g)).toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it.each([
+    [
+      "verify-cottage-profile-draft-concurrency.mjs",
+      ["--verify-migration-preflight", "--defer-successful-restore"],
+    ],
+    [
+      "verify-booking-request-lifecycle-upgrade.mjs",
+      ["--defer-successful-restore"],
+    ],
+  ])(
+    "defers only the successful current-schema restore for %s",
+    (script, args) => {
+      const { commands, result } = runUpgradeVerifier(script, args);
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(commands).toContain("npx supabase db reset --local --version");
+      expect(commands).not.toMatch(/npx supabase db reset --local\n/);
+    },
+  );
+
+  it.each([
+    [
+      "verify-cottage-profile-draft-concurrency.mjs",
+      ["--verify-migration-preflight", "--defer-successful-restore"],
+    ],
+    [
+      "verify-booking-request-lifecycle-upgrade.mjs",
+      ["--defer-successful-restore"],
+    ],
+  ])(
+    "restores the current schema after %s fails with deferral requested",
+    (script, args) => {
+      for (const failure of [
+        { failPriorReset: true, message: "forced prior reset failure" },
+        { failProof: true, message: "forced proof failure" },
+      ]) {
+        const { commands, result } = runUpgradeVerifier(script, args, failure);
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(failure.message);
+        expect(commands.match(/npx supabase db reset --local\n/g)).toHaveLength(
+          1,
+        );
+      }
+    },
+  );
 
   it("rejects arguments before starting Docker or Supabase", () => {
     const run = vi.fn();
@@ -377,6 +538,7 @@ describe("access verification command", () => {
         [
           "scripts/verify-cottage-profile-draft-concurrency.mjs",
           "--verify-migration-preflight",
+          "--defer-successful-restore",
         ],
       ],
       [
@@ -386,7 +548,13 @@ describe("access verification command", () => {
           "--verify-migration-preflight",
         ],
       ],
-      ["node", ["scripts/verify-booking-request-lifecycle-upgrade.mjs"]],
+      [
+        "node",
+        [
+          "scripts/verify-booking-request-lifecycle-upgrade.mjs",
+          "--defer-successful-restore",
+        ],
+      ],
       ["node", ["scripts/verify-booking-request-capture-work-upgrade.mjs"]],
       ["npx", ["supabase", "status", "-o", "json"]],
       ["node", ["scripts/verify-access-fixture-contract.mjs"]],

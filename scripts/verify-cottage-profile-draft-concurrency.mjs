@@ -4,16 +4,20 @@ import { spawnSync } from "node:child_process";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const migrationPreflightMode = "--verify-migration-preflight";
+const deferSuccessfulRestoreMode = "--defer-successful-restore";
 const requestedModes = process.argv.slice(2);
 if (
-  requestedModes.length > 1 ||
-  (requestedModes.length === 1 && requestedModes[0] !== migrationPreflightMode)
+  requestedModes.length > 2 ||
+  (requestedModes.length > 0 && requestedModes[0] !== migrationPreflightMode) ||
+  (requestedModes.length === 2 &&
+    requestedModes[1] !== deferSuccessfulRestoreMode)
 ) {
   console.error(
-    `Usage: node scripts/verify-cottage-profile-draft-concurrency.mjs [${migrationPreflightMode}]`,
+    `Usage: node scripts/verify-cottage-profile-draft-concurrency.mjs [${migrationPreflightMode} [${deferSuccessfulRestoreMode}]]`,
   );
   process.exit(2);
 }
+const deferSuccessfulRestore = requestedModes[1] === deferSuccessfulRestoreMode;
 
 const harness = createLocalSupabaseConcurrencyHarness();
 
@@ -202,15 +206,17 @@ function verifyMigrationPreflight() {
   } catch (error) {
     failure = error;
   } finally {
-    const restored = runSupabase(resetCurrentArgs);
-    if (restored.status !== 0) {
-      const restoreFailure = commandFailure(resetCurrentArgs, restored);
-      failure = failure
-        ? new AggregateError(
-            [failure, restoreFailure],
-            "Cottage Profile migration preflight and schema restoration failed.",
-          )
-        : restoreFailure;
+    if (failure || !deferSuccessfulRestore) {
+      const restored = runSupabase(resetCurrentArgs);
+      if (restored.status !== 0) {
+        const restoreFailure = commandFailure(resetCurrentArgs, restored);
+        failure = failure
+          ? new AggregateError(
+              [failure, restoreFailure],
+              "Cottage Profile migration preflight and schema restoration failed.",
+            )
+          : restoreFailure;
+      }
     }
   }
   if (failure) throw failure;

@@ -192,11 +192,13 @@ export function main(
     if (!focusedFixtureContract) {
       result = execute("npx", supabaseArguments(["supabase", "test", "db"]));
       if (result.status !== 0) return result.status;
+      // Each deferred verifier is followed by one that resets the database; standalone and failed runs still restore themselves.
       result = execute(
         "node",
         [
           "scripts/verify-cottage-profile-draft-concurrency.mjs",
           "--verify-migration-preflight",
+          "--defer-successful-restore",
         ],
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
@@ -212,7 +214,10 @@ export function main(
       if (result.status !== 0) return result.status;
       result = execute(
         "node",
-        ["scripts/verify-booking-request-lifecycle-upgrade.mjs"],
+        [
+          "scripts/verify-booking-request-lifecycle-upgrade.mjs",
+          "--defer-successful-restore",
+        ],
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
