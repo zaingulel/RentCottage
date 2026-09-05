@@ -40,8 +40,32 @@ const requiredExpensiveSteps = [
   ["npm", ["run", "build:worker"]],
   ["npm", ["run", "scan:client-secrets"]],
   ["npm", ["run", "test:browser"]],
-  ["npm", ["run", "smoke:preview"]],
+  [
+    "npm",
+    [
+      "run",
+      "smoke:preview",
+      "--",
+      "--config=playwright.worker-prebuilt.config.ts",
+    ],
+  ],
 ];
+
+function requiredCiSteps(mode) {
+  const chromium = [
+    "npx",
+    ["playwright", "install", "--with-deps", "chromium"],
+  ];
+  if (mode === "--database")
+    return [["npm", ["run", "verify:access:database"]]];
+  if (mode === "--browser")
+    return [
+      chromium,
+      ["npm", ["run", "verify:access:browser"]],
+      ...requiredExpensiveSteps.slice(1),
+    ];
+  return [...requiredBaselineSteps, chromium, ...requiredExpensiveSteps];
+}
 
 const repositories = [];
 
@@ -112,8 +136,90 @@ describe("repository verification command", () => {
 
     expect(main(["unexpected"], { run, stderr })).toBe(2);
     expect(run).not.toHaveBeenCalled();
-    expect(stderr).toHaveBeenCalledWith("Usage: npm run verify [-- --full]");
+    expect(stderr).toHaveBeenCalledWith(
+      "Usage: npm run verify [-- [--baseline|--database|--browser] [--full]]",
+    );
   });
+
+  it("runs the baseline independently without selecting services", () => {
+    const result = runVerification("/missing-git-evidence", {
+      args: ["--baseline"],
+    });
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      requiredBaselineSteps,
+    );
+    expect(result.stderr).not.toHaveBeenCalled();
+  });
+
+  it.each(["--database", "--browser"])(
+    "routes %s independently through the existing selector",
+    (mode) => {
+      const repository = createRepository();
+      commit(repository, "AGENTS.md", "updated instructions\n");
+      const prose = runVerification(repository, { args: [mode] });
+      expect(prose.status).toBe(0);
+      expect(prose.calls).toEqual([]);
+      expect(prose.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("Expensive verification: skipped"),
+      );
+
+      const expected =
+        mode === "--database"
+          ? [["npm", ["run", "verify:access:database"]]]
+          : [
+              ["npm", ["run", "verify:access:browser"]],
+              ...requiredExpensiveSteps.slice(1),
+            ];
+      for (const args of [
+        [mode, "--full"],
+        ["--full", mode],
+      ]) {
+        const forced = runVerification(repository, { args });
+        expect(forced.status).toBe(0);
+        expect(
+          forced.calls.map(([command, commandArgs]) => [command, commandArgs]),
+        ).toEqual(expected);
+      }
+      write(repository, "src/runtime.ts", "export const value = 'dirty';\n");
+      const selected = runVerification(repository, { args: [mode] });
+      expect(selected.status).toBe(0);
+      expect(selected.calls.map(([command, args]) => [command, args])).toEqual(
+        expected,
+      );
+    },
+  );
+
+  it.each([
+    ["--database", "--browser"],
+    ["--baseline", "--browser"],
+    ["--baseline", "--database"],
+    ["--full", "--full"],
+    ["--database", "--database"],
+    ["--browser", "unexpected"],
+  ])("rejects conflicting or malformed modes %j", (...args) => {
+    const result = runVerification("/missing-git-evidence", { args });
+    expect(result.status).toBe(2);
+    expect(result.run).not.toHaveBeenCalled();
+    expect(result.stdout).not.toHaveBeenCalled();
+  });
+
+  it.each(["--baseline", "--database", "--browser"])(
+    "installs Chromium only for the full browser mode in CI: %s",
+    (mode) => {
+      const result = runVerification("/missing-git-evidence", {
+        args: [mode, "--full"],
+        environment: { GITHUB_ACTIONS: "true" },
+      });
+      expect(result.status).toBe(0);
+      const installs = result.calls.filter(([command]) => command === "npx");
+      expect(installs.map(([command, args]) => [command, args])).toEqual(
+        mode === "--browser"
+          ? [["npx", ["playwright", "install", "--with-deps", "chromium"]]]
+          : [],
+      );
+    },
+  );
 
   it("keeps both verification groups in their approved order", () => {
     expect(baselineVerificationSteps).toEqual(requiredBaselineSteps);
@@ -142,6 +248,25 @@ describe("repository verification command", () => {
     for (const call of run.mock.calls) {
       expect(call[2]).toEqual(expectedEnvironment);
     }
+  });
+
+  it("does not reuse a placeholder Worker build unless compilation succeeds", () => {
+    const run = vi.fn((command, args) => ({
+      status:
+        command === "npm" && args.join(" ") === "run build:worker" ? 8 : 0,
+    }));
+    expect(
+      main(["--browser", "--full"], {
+        environment: {},
+        run,
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+      }),
+    ).toBe(8);
+    expect(run.mock.calls.map(([command, args]) => [command, args])).toEqual([
+      ["npm", ["run", "verify:access:browser"]],
+      ["npm", ["run", "build:worker"]],
+    ]);
   });
 
   it("stops immediately and preserves a failing exit code", () => {
@@ -342,117 +467,129 @@ describe("repository verification command", () => {
     );
   });
 
-  it("uses source and checked-out merge histories in CI", () => {
-    const repository = createRepository();
-    const originalBase = git(repository, ["rev-parse", "HEAD"]);
+  it.each([undefined, "--database", "--browser"])(
+    "uses source and checked-out merge histories in CI: %s",
+    (mode) => {
+      const repository = createRepository();
+      const originalBase = git(repository, ["rev-parse", "HEAD"]);
 
-    git(repository, ["switch", "-c", "source", originalBase]);
-    commit(repository, "src/runtime.ts", "export const value = 'source';\n");
-    const source = commit(repository, "AGENTS.md", "source instructions\n");
+      git(repository, ["switch", "-c", "source", originalBase]);
+      commit(repository, "src/runtime.ts", "export const value = 'source';\n");
+      const source = commit(repository, "AGENTS.md", "source instructions\n");
 
-    git(repository, ["switch", "main"]);
-    commit(repository, "src/runtime.ts", "export const value = 'base';\n");
-    const base = git(repository, ["rev-parse", "HEAD"]);
-    const merge = spawnSync("git", ["merge", "--no-ff", "source"], {
-      cwd: repository,
-      encoding: "utf8",
-    });
-    expect(merge.status).not.toBe(0);
-    write(repository, "src/runtime.ts", "export const value = 'base';\n");
-    git(repository, ["add", "."]);
-    git(repository, ["commit", "-m", "merge source"]);
+      git(repository, ["switch", "main"]);
+      commit(repository, "src/runtime.ts", "export const value = 'base';\n");
+      const base = git(repository, ["rev-parse", "HEAD"]);
+      const merge = spawnSync("git", ["merge", "--no-ff", "source"], {
+        cwd: repository,
+        encoding: "utf8",
+      });
+      expect(merge.status).not.toBe(0);
+      write(repository, "src/runtime.ts", "export const value = 'base';\n");
+      git(repository, ["add", "."]);
+      git(repository, ["commit", "-m", "merge source"]);
 
-    const result = runVerification(repository, {
-      environment: {
-        GITHUB_ACTIONS: "true",
-        VERIFY_BASE_SHA: base,
-        VERIFY_SOURCE_SHA: source,
-      },
-    });
+      const result = runVerification(repository, {
+        args: mode ? [mode] : [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_BASE_SHA: base,
+          VERIFY_SOURCE_SHA: source,
+        },
+      });
 
-    expect(result.status).toBe(0);
-    expect(result.calls).toHaveLength(
-      requiredBaselineSteps.length + 1 + requiredExpensiveSteps.length,
-    );
-    expect(result.calls[requiredBaselineSteps.length].slice(0, 2)).toEqual([
-      "npx",
-      ["playwright", "install", "--with-deps", "chromium"],
-    ]);
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining(`base ${base}`),
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining(`source ${source}`),
-    );
-  });
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        requiredCiSteps(mode),
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining(`base ${base}`),
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining(`source ${source}`),
+      );
+    },
+  );
 
-  it("skips Chromium and expensive checks for a docs-only CI merge", () => {
-    const repository = createRepository();
-    const base = git(repository, ["rev-parse", "HEAD"]);
-    const source = commit(repository, "AGENTS.md", "source instructions\n");
-    git(repository, ["switch", "main"]);
-    git(repository, ["merge", "--no-ff", source]);
+  it.each([undefined, "--database", "--browser"])(
+    "skips Chromium and expensive checks for a docs-only CI merge: %s",
+    (mode) => {
+      const repository = createRepository();
+      const base = git(repository, ["rev-parse", "HEAD"]);
+      const source = commit(repository, "AGENTS.md", "source instructions\n");
+      git(repository, ["switch", "main"]);
+      git(repository, ["merge", "--no-ff", source]);
 
-    const result = runVerification(repository, {
-      environment: {
-        GITHUB_ACTIONS: "true",
-        VERIFY_BASE_SHA: base,
-        VERIFY_SOURCE_SHA: source,
-      },
-    });
+      const result = runVerification(repository, {
+        args: mode ? [mode] : [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_BASE_SHA: base,
+          VERIFY_SOURCE_SHA: source,
+        },
+      });
 
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-      requiredBaselineSteps,
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining("Expensive verification: skipped"),
-    );
-  });
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        mode ? [] : requiredBaselineSteps,
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("Expensive verification: skipped"),
+      );
+    },
+  );
 
-  it("selects full CI evidence for a runtime change visible only in the merge result", () => {
-    const repository = createRepository();
-    const base = git(repository, ["rev-parse", "HEAD"]);
-    const source = commit(repository, "AGENTS.md", "source instructions\n");
-    git(repository, ["switch", "main"]);
-    git(repository, ["merge", "--no-ff", "--no-commit", source]);
-    write(repository, "src/runtime.ts", "export const value = 'merge';\n");
-    git(repository, ["add", "."]);
-    git(repository, ["commit", "-m", "merge source"]);
+  it.each([undefined, "--database", "--browser"])(
+    "selects full CI evidence for a runtime change visible only in the merge result: %s",
+    (mode) => {
+      const repository = createRepository();
+      const base = git(repository, ["rev-parse", "HEAD"]);
+      const source = commit(repository, "AGENTS.md", "source instructions\n");
+      git(repository, ["switch", "main"]);
+      git(repository, ["merge", "--no-ff", "--no-commit", source]);
+      write(repository, "src/runtime.ts", "export const value = 'merge';\n");
+      git(repository, ["add", "."]);
+      git(repository, ["commit", "-m", "merge source"]);
 
-    const result = runVerification(repository, {
-      environment: {
-        GITHUB_ACTIONS: "true",
-        VERIFY_BASE_SHA: base,
-        VERIFY_SOURCE_SHA: source,
-      },
-    });
+      const result = runVerification(repository, {
+        args: mode ? [mode] : [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_BASE_SHA: base,
+          VERIFY_SOURCE_SHA: source,
+        },
+      });
 
-    expect(result.status).toBe(0);
-    expect(result.calls).toHaveLength(
-      requiredBaselineSteps.length + 1 + requiredExpensiveSteps.length,
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining("src/runtime.ts requires full evidence"),
-    );
-  });
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        requiredCiSteps(mode),
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("src/runtime.ts requires full evidence"),
+      );
+    },
+  );
 
-  it("fails closed for invalid CI merge identity", () => {
-    const repository = createRepository();
-    commit(repository, "AGENTS.md", "updated instructions\n");
-    const result = runVerification(repository, {
-      environment: {
-        GITHUB_ACTIONS: "true",
-        VERIFY_BASE_SHA: git(repository, ["rev-parse", "origin/main"]),
-        VERIFY_SOURCE_SHA: git(repository, ["rev-parse", "HEAD"]),
-      },
-    });
+  it.each([undefined, "--database", "--browser"])(
+    "fails closed for invalid CI merge identity: %s",
+    (mode) => {
+      const repository = createRepository();
+      commit(repository, "AGENTS.md", "updated instructions\n");
+      const result = runVerification(repository, {
+        args: mode ? [mode] : [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_BASE_SHA: git(repository, ["rev-parse", "origin/main"]),
+          VERIFY_SOURCE_SHA: git(repository, ["rev-parse", "HEAD"]),
+        },
+      });
 
-    expect(result.calls).toHaveLength(
-      requiredBaselineSteps.length + 1 + requiredExpensiveSteps.length,
-    );
-    expect(result.stderr).toHaveBeenCalledWith(
-      expect.stringContaining("merge parent"),
-    );
-  });
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        requiredCiSteps(mode),
+      );
+      expect(result.stderr).toHaveBeenCalledWith(
+        expect.stringContaining("merge parent"),
+      );
+    },
+  );
 });

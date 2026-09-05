@@ -442,6 +442,16 @@ export function main(
         return validateWorkerFixtures.status;
       }
 
+      const workerEnvironment = {
+        ...browserEnvironment,
+        PLAYWRIGHT_SERVER: "worker",
+      };
+      const workerBuild = execute("npm", ["run", "build:worker"], {
+        env: workerEnvironment,
+        stdio: "inherit",
+      });
+      if (workerBuild.status !== 0) return workerBuild.status;
+
       const workerBrowser = execute(
         "npx",
         [
@@ -450,11 +460,12 @@ export function main(
           "tests/access.spec.ts",
           "tests/booking-request-access.spec.ts",
           "--project=worker",
+          "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",
           "--output=playwright-report/access-worker",
         ],
         {
-          env: { ...browserEnvironment, PLAYWRIGHT_SERVER: "worker" },
+          env: workerEnvironment,
           stdio: "inherit",
         },
       );
@@ -472,11 +483,12 @@ export function main(
           "test",
           "tests/worker-scheduled-expiry.spec.ts",
           "--project=worker",
+          "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",
           "--output=playwright-report/scheduled-expiry-worker",
         ],
         {
-          env: { ...browserEnvironment, PLAYWRIGHT_SERVER: "worker" },
+          env: workerEnvironment,
           stdio: "inherit",
         },
       );

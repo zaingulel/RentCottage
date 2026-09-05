@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -24,6 +25,9 @@ type Workflow = {
     string,
     {
       if?: string;
+      needs?: string[];
+      "runs-on"?: string;
+      "timeout-minutes"?: number;
       env?: Record<string, string>;
       environment?: string;
       name?: string;
@@ -68,11 +72,18 @@ describe("pull-request CI", () => {
     const { workflow } = loadWorkflow();
     const jobs = workflow.jobs ?? {};
 
-    expect(Object.keys(jobs)).toEqual(["test"]);
+    expect(Object.keys(jobs)).toEqual([
+      "baseline",
+      "database",
+      "browser",
+      "test",
+    ]);
     expect(jobs.test.name).toBe(
       "${{ github.event.pull_request.draft == false && 'test' || 'ci-control-no-test' }}",
     );
-    expect(jobs.test.if).toBeUndefined();
+    expect(jobs.test.if).toBe("${{ always() }}");
+    expect(jobs.test.needs).toEqual(["baseline", "database", "browser"]);
+    expect(jobs.test["timeout-minutes"]).toBe(5);
     expect(jobs.test.permissions).toEqual({ contents: "read" });
 
     const steps = jobs.test.steps ?? [];
@@ -81,46 +92,119 @@ describe("pull-request CI", () => {
       if: "github.event.pull_request.draft == true",
       run: expect.stringContaining("no check named test"),
     });
-    expect(readySteps(steps)).toHaveLength(4);
+    expect(readySteps(steps)).toHaveLength(1);
+    expect(steps).toHaveLength(2);
   });
 
-  it("tests GitHub's merge result through the same verification command used locally", () => {
-    const { source, workflow } = loadWorkflow();
-    const steps = readySteps(workflow.jobs?.test.steps ?? []);
-    const checkout = steps.find(
-      (step) =>
-        step.uses ===
-        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-    );
-    const setupNode = steps.find(
-      (step) =>
-        step.uses ===
-        "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
-    );
+  it.each(["baseline", "database", "browser"])(
+    "independently tests GitHub's merge result through the %s verification command",
+    (mode) => {
+      const { source, workflow } = loadWorkflow();
+      const job = workflow.jobs?.[mode];
+      expect(job?.if).toBe("github.event.pull_request.draft == false");
+      expect(job?.needs).toBeUndefined();
+      expect(job?.["runs-on"]).toBe("ubuntu-latest");
+      expect(job?.["timeout-minutes"]).toBe(60);
+      const steps = job?.steps ?? [];
+      expect(steps).toHaveLength(4);
+      expect(steps.every((step) => step.if === undefined)).toBe(true);
+      const checkout = steps.find(
+        (step) =>
+          step.uses ===
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      );
+      const setupNode = steps.find(
+        (step) =>
+          step.uses ===
+          "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+      );
 
-    expect(checkout).toBeDefined();
-    expect(checkout?.with).toEqual({
-      "fetch-depth": 0,
-      "persist-credentials": false,
+      expect(checkout).toBeDefined();
+      expect(checkout?.with).toEqual({
+        ref: "${{ github.sha }}",
+        "fetch-depth": 0,
+        "persist-credentials": false,
+      });
+      expect(setupNode).toBeDefined();
+      expect(setupNode?.with).toEqual({
+        "node-version-file": ".nvmrc",
+        cache: "npm",
+      });
+      expect(steps).toContainEqual(expect.objectContaining({ run: "npm ci" }));
+      expect(steps).toContainEqual(
+        expect.objectContaining({
+          env: {
+            VERIFY_BASE_SHA: "${{ github.event.pull_request.base.sha }}",
+            VERIFY_SOURCE_SHA: "${{ github.event.pull_request.head.sha }}",
+          },
+          run: `npm run verify -- --${mode}`,
+        }),
+      );
+      expect(source).not.toContain("npx playwright install");
+
+      expect(source).not.toContain("workflow_dispatch");
+      expect(source).not.toContain("check-runs");
+      expect(source).not.toContain("pull_request_number");
+      expect(source).not.toContain("expected_head_oid");
+      expect(source).not.toContain("${{ secrets.");
+    },
+  );
+
+  it("accepts only complete successful evidence in the actual aggregate shell", () => {
+    const { workflow } = loadWorkflow();
+    const aggregate = readySteps(workflow.jobs?.test.steps ?? [])[0];
+    expect(aggregate?.env).toEqual({
+      BASELINE_RESULT: "${{ needs.baseline.result }}",
+      DATABASE_RESULT: "${{ needs.database.result }}",
+      BROWSER_RESULT: "${{ needs.browser.result }}",
     });
-    expect(setupNode).toBeDefined();
-    expect(steps).toContainEqual(expect.objectContaining({ run: "npm ci" }));
-    expect(steps).toContainEqual(
-      expect.objectContaining({
-        env: {
-          VERIFY_BASE_SHA: "${{ github.event.pull_request.base.sha }}",
-          VERIFY_SOURCE_SHA: "${{ github.event.pull_request.head.sha }}",
-        },
-        run: "npm run verify",
-      }),
-    );
-    expect(source).not.toContain("npx playwright install");
-
-    expect(source).not.toContain("workflow_dispatch");
-    expect(source).not.toContain("check-runs");
-    expect(source).not.toContain("pull_request_number");
-    expect(source).not.toContain("expected_head_oid");
-    expect(source).not.toContain("${{ secrets.");
+    expect(aggregate?.run).toBeTypeOf("string");
+    const results = [
+      "success",
+      "failure",
+      "cancelled",
+      "skipped",
+      "",
+      undefined,
+    ];
+    for (const baseline of results) {
+      for (const database of results) {
+        for (const browser of results) {
+          const env: NodeJS.ProcessEnv = { ...process.env };
+          delete env.BASELINE_RESULT;
+          delete env.DATABASE_RESULT;
+          delete env.BROWSER_RESULT;
+          if (baseline !== undefined) env.BASELINE_RESULT = baseline;
+          if (database !== undefined) env.DATABASE_RESULT = database;
+          if (browser !== undefined) env.BROWSER_RESULT = browser;
+          const result = spawnSync(
+            "bash",
+            [
+              "--noprofile",
+              "--norc",
+              "-e",
+              "-o",
+              "pipefail",
+              "-c",
+              aggregate.run as string,
+            ],
+            { env, encoding: "utf8" },
+          );
+          expect(result.error).toBeUndefined();
+          expect(result.signal).toBeNull();
+          expect(
+            result.status,
+            JSON.stringify({ baseline, database, browser }),
+          ).toBe(
+            baseline === "success" &&
+              database === "success" &&
+              browser === "success"
+              ? 0
+              : 1,
+          );
+        }
+      }
+    }
   });
 });
 

@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { lstatSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const USAGE = "Usage: npm run verify [-- --full]";
+const USAGE =
+  "Usage: npm run verify [-- [--baseline|--database|--browser] [--full]]";
 
 export const baselineVerificationSteps = [
   ["npm", ["run", "audit:production"]],
@@ -28,7 +29,15 @@ export const expensiveVerificationSteps = [
   ["npm", ["run", "build:worker"]],
   ["npm", ["run", "scan:client-secrets"]],
   ["npm", ["run", "test:browser"]],
-  ["npm", ["run", "smoke:preview"]],
+  [
+    "npm",
+    [
+      "run",
+      "smoke:preview",
+      "--",
+      "--config=playwright.worker-prebuilt.config.ts",
+    ],
+  ],
 ];
 
 const approvedProsePaths = new Set([
@@ -283,29 +292,50 @@ export function main(
     stdout = console.log,
   } = {},
 ) {
-  if (args.length > 1 || (args.length === 1 && args[0] !== "--full")) {
+  const modes = args.filter((arg) => arg !== "--full");
+  if (
+    modes.length > 1 ||
+    new Set(args).size !== args.length ||
+    args.some(
+      (arg) =>
+        !["--baseline", "--database", "--browser", "--full"].includes(arg),
+    )
+  ) {
     stderr(USAGE);
     return 2;
   }
 
+  const mode = modes[0];
+  const baseline = mode === undefined || mode === "--baseline";
+  const browser = mode === undefined || mode === "--browser";
   const verificationEnvironment = { ...environment, ...testEnvironment };
-  const selection =
-    args[0] === "--full"
+  const selection = args.includes("--baseline")
+    ? { expensive: false, reason: "baseline mode" }
+    : args.includes("--full")
       ? { expensive: true, reason: "explicit --full" }
       : selectVerification(cwd, environment, stdout, stderr);
-  stdout("Baseline verification: selected");
+  stdout(`Baseline verification: ${baseline ? "selected" : "unselected"}`);
   stdout(
     `Expensive verification: ${selection.expensive ? "selected" : "skipped"} (${selection.reason})`,
   );
 
   const preparation =
-    selection.expensive && environment.GITHUB_ACTIONS === "true"
+    browser && selection.expensive && environment.GITHUB_ACTIONS === "true"
       ? [["npx", ["playwright", "install", "--with-deps", "chromium"]]]
       : [];
+  const expensiveSteps =
+    mode === "--database"
+      ? [["npm", ["run", "verify:access:database"]]]
+      : mode === "--browser"
+        ? [
+            ["npm", ["run", "verify:access:browser"]],
+            ...expensiveVerificationSteps.slice(1),
+          ]
+        : expensiveVerificationSteps;
   const steps = [
-    ...baselineVerificationSteps,
+    ...(baseline ? baselineVerificationSteps : []),
     ...preparation,
-    ...(selection.expensive ? expensiveVerificationSteps : []),
+    ...(selection.expensive ? expensiveSteps : []),
   ];
   for (let index = 0; index < steps.length; index += 1) {
     const [command, commandArgs] = steps[index];
