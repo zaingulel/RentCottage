@@ -84,8 +84,8 @@ const captureRequest = {
     idempotencyKey:
       "booking-request-capture:88888888-8888-4888-8888-888888888888:1",
     requestFingerprint:
-      "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    workId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "3f21b7db06c2aa8475f0c5a410354ed012bc4df2e628ec46cc15e3c9d5db1a0c",
+    workId: "88888888-8888-4888-8888-888888888888",
     leaseGeneration: 2,
     leaseToken: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
     notAfter: "2099-08-22T00:00:00.000Z",
@@ -168,34 +168,98 @@ describe("durable simulated payment provider", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it("keeps a Capture permit non-operative before touching the ledger", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: {
-        outcome: "succeeded",
-        providerRequestId: "must-not-execute",
-        providerReference: "must-not-execute",
-        movementReference: "must-not-execute",
-      },
-      error: null,
-    });
+  it("executes the exact Capture permit through the fixed-success ledger without personal data", async () => {
+    const result = {
+      outcome: "succeeded",
+      providerRequestId: "sim-request-capture",
+      providerReference: "sim-reference-capture",
+      movementReference: "sim-movement-capture",
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: result, error: null });
     const provider = new DurablePaymentSimulator({
       client: { rpc } as unknown as SupabaseClient,
       now: () => "2099-08-21T17:00:00.000Z",
+      executeOutcome: "failed",
     });
 
-    await expect(provider.execute(captureRequest)).resolves.toEqual({
-      outcome: "not-executed",
-    });
-    await expect(
-      provider.execute({
-        ...captureRequest,
-        kind: "release",
-        logicalOperationId: `${request.paymentLifecycleId}:release`,
-        attemptId: `${request.paymentLifecycleId}:release:attempt-3`,
-      }),
-    ).resolves.toEqual({ outcome: "not-executed" });
-    expect(rpc).not.toHaveBeenCalled();
+    await expect(provider.execute(captureRequest)).resolves.toEqual(result);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "execute_simulated_booking_request_capture",
+      { target_permit: captureRequest.executionPermit },
+    );
+    const serialized = JSON.stringify(rpc.mock.calls);
+    for (const personalField of [
+      "customerName",
+      "phone",
+      "bookingNote",
+      "cottage",
+    ]) {
+      expect(serialized).not.toContain(personalField);
+    }
   });
+
+  it.each([
+    ["kind", { kind: "release" }],
+    ["Payment Lifecycle", { paymentLifecycleId: "another-lifecycle" }],
+    ["logical operation", { logicalOperationId: "another-operation" }],
+    ["physical attempt", { attemptId: "another-attempt" }],
+    ["Customer Total", { amountFils: 1 }],
+    ["currency", { currency: "USD" }],
+    [
+      "provider",
+      {
+        executionPermit: {
+          ...captureRequest.executionPermit,
+          providerIdentity: {
+            ...captureRequest.executionPermit.providerIdentity,
+            terminalId: "another-terminal",
+          },
+        },
+      },
+    ],
+    [
+      "fingerprint",
+      {
+        executionPermit: {
+          ...captureRequest.executionPermit,
+          requestFingerprint: "a".repeat(64),
+        },
+      },
+    ],
+    [
+      "expiry",
+      {
+        executionPermit: {
+          ...captureRequest.executionPermit,
+          notAfter: "2099-08-21T17:00:00.000Z",
+        },
+      },
+    ],
+    [
+      "invalid expiry",
+      {
+        executionPermit: {
+          ...captureRequest.executionPermit,
+          notAfter: "invalid",
+        },
+      },
+    ],
+  ])(
+    "refuses a Capture %s mismatch without touching the ledger",
+    async (_name, replacement) => {
+      const rpc = vi.fn();
+      const provider = new DurablePaymentSimulator({
+        client: { rpc } as unknown as SupabaseClient,
+        now: () => "2099-08-21T17:00:00.000Z",
+      });
+      await expect(
+        provider.execute({ ...captureRequest, ...replacement } as Parameters<
+          DurablePaymentSimulator["execute"]
+        >[0]),
+      ).resolves.toEqual({ outcome: "not-executed" });
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
 
   it("refuses an unsupported permit purpose without touching the ledger", async () => {
     const rpc = vi.fn().mockResolvedValue({
