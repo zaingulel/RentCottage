@@ -2,6 +2,20 @@ import { spawnSync } from "node:child_process";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
+const deferSuccessfulRestoreMode = "--defer-successful-restore";
+const requestedModes = process.argv.slice(2);
+if (
+  requestedModes.length > 1 ||
+  (requestedModes.length === 1 &&
+    requestedModes[0] !== deferSuccessfulRestoreMode)
+) {
+  console.error(
+    `Usage: node scripts/verify-booking-request-lifecycle-upgrade.mjs [${deferSuccessfulRestoreMode}]`,
+  );
+  process.exit(2);
+}
+const deferSuccessfulRestore = requestedModes[0] === deferSuccessfulRestoreMode;
+
 const priorMigrationVersion = "20260822090100";
 const ownerId = "96000000-0000-4000-8000-000000000033";
 const customerId = "96000000-0000-4000-8000-000000000034";
@@ -290,15 +304,17 @@ try {
 } catch (error) {
   failure = error;
 } finally {
-  const restored = runSupabase(resetCurrentArgs);
-  if (restored.status !== 0) {
-    const restoreFailure = commandFailure(resetCurrentArgs, restored);
-    failure = failure
-      ? new AggregateError(
-          [failure, restoreFailure],
-          "Booking Request upgrade proof and schema restoration failed.",
-        )
-      : restoreFailure;
+  if (failure || !deferSuccessfulRestore) {
+    const restored = runSupabase(resetCurrentArgs);
+    if (restored.status !== 0) {
+      const restoreFailure = commandFailure(resetCurrentArgs, restored);
+      failure = failure
+        ? new AggregateError(
+            [failure, restoreFailure],
+            "Booking Request upgrade proof and schema restoration failed.",
+          )
+        : restoreFailure;
+    }
   }
 }
 
