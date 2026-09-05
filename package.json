@@ -22,6 +22,8 @@
     "verify:board": "node scripts/board.mjs",
     "verify": "node scripts/verify.mjs",
     "verify:access": "node scripts/verify-access.mjs",
+    "verify:access:database": "node scripts/verify-access.mjs --database",
+    "verify:access:browser": "node scripts/verify-access.mjs --browser",
     "verify:cloudflare-deployment": "node scripts/verify-cloudflare-deployment.mjs",
     "verify:preview": "node scripts/verify-preview.mjs",
     "verify:supabase-secret": "node scripts/verify-supabase-secret.mjs"

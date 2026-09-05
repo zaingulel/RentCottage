@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -21,6 +22,111 @@ const localCredentials = JSON.stringify({
   PUBLISHABLE_KEY: "local-publishable",
   SECRET_KEY: "local-secret",
 });
+
+const startCommand = [
+  "npx",
+  [
+    "supabase",
+    "start",
+    "-x",
+    "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
+  ],
+];
+const ownershipCommand = [
+  "docker",
+  [
+    "inspect",
+    "supabase_db_rentcottage",
+    "--format",
+    '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+  ],
+];
+const resetCommand = ["npx", ["supabase", "db", "reset", "--local"]];
+const statusCommand = ["npx", ["supabase", "status", "-o", "json"]];
+const stopCommand = ["npx", ["supabase", "stop", "--no-backup"]];
+const databasePreflightCommands = [
+  ["npx", ["supabase", "test", "db"]],
+  [
+    "node",
+    [
+      "scripts/verify-cottage-profile-draft-concurrency.mjs",
+      "--verify-migration-preflight",
+      "--defer-successful-restore",
+    ],
+  ],
+  [
+    "node",
+    [
+      "scripts/verify-booking-period-hold-concurrency.mjs",
+      "--verify-migration-preflight",
+    ],
+  ],
+  [
+    "node",
+    [
+      "scripts/verify-booking-request-lifecycle-upgrade.mjs",
+      "--defer-successful-restore",
+    ],
+  ],
+  ["node", ["scripts/verify-booking-request-capture-work-upgrade.mjs"]],
+];
+const databaseCheckCommands = [
+  ["node", ["scripts/verify-access-fixture-contract.mjs"]],
+  ["node", ["scripts/prepare-access-test.mjs", "create", "mobile"]],
+  ["node", ["scripts/verify-cottage-profile-draft-concurrency.mjs"]],
+  ["node", ["scripts/verify-cottage-shift-schedule-concurrency.mjs"]],
+  ["node", ["scripts/verify-cottage-inventory-concurrency.mjs"]],
+  ["node", ["scripts/verify-booking-period-hold-concurrency.mjs"]],
+  ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
+  ["node", ["scripts/verify-booking-request-lifecycle-concurrency.mjs"]],
+];
+const browserCommands = [
+  ["node", ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"]],
+  [
+    "node",
+    ["scripts/prepare-access-test.mjs", "validate", "mobile", "desktop"],
+  ],
+  [
+    "npx",
+    [
+      "playwright",
+      "test",
+      "tests/access.spec.ts",
+      "tests/booking-request-access.spec.ts",
+      "--project=mobile",
+      "--project=desktop",
+      "--workers=1",
+      "--output=playwright-report/access-next",
+    ],
+  ],
+  ["node", ["scripts/prepare-access-test.mjs", "create", "worker"]],
+  ["node", ["scripts/prepare-access-test.mjs", "validate", "worker"]],
+  [
+    "npx",
+    [
+      "playwright",
+      "test",
+      "tests/access.spec.ts",
+      "tests/booking-request-access.spec.ts",
+      "--project=worker",
+      "--workers=1",
+      "--output=playwright-report/access-worker",
+    ],
+  ],
+  ["node", ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"]],
+  [
+    "npx",
+    [
+      "playwright",
+      "test",
+      "tests/worker-scheduled-expiry.spec.ts",
+      "--project=worker",
+      "--workers=1",
+      "--output=playwright-report/scheduled-expiry-worker",
+    ],
+  ],
+  ["node", ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"]],
+];
 
 function runUpgradeVerifier(
   script,
@@ -96,6 +202,39 @@ esac
   } finally {
     rmSync(fakeBin, { recursive: true, force: true });
   }
+}
+
+function ownedRun(
+  implementation,
+  { project = "rentcottage", workdir = process.cwd() } = {},
+) {
+  return vi.fn((command, args, options) => {
+    if (command === "docker" && args[0] === "inspect") {
+      const ownedWorkdir = typeof workdir === "function" ? workdir() : workdir;
+      return { status: 0, stdout: `${project}|${ownedWorkdir}\n`, stderr: "" };
+    }
+    return implementation(command, args, options);
+  });
+}
+
+function successfulRun({
+  project = "rentcottage",
+  workdir = process.cwd(),
+} = {}) {
+  return ownedRun(
+    (command, args) => ({
+      status: 0,
+      stdout:
+        command === "npx" && args.join(" ") === "supabase status -o json"
+          ? localCredentials
+          : "",
+    }),
+    { project, workdir },
+  );
+}
+
+function commands(run) {
+  return run.mock.calls.map(([command, args]) => [command, args]);
 }
 
 describe("local Supabase concurrency harness", () => {
@@ -250,6 +389,20 @@ describe("local Supabase concurrency harness", () => {
 });
 
 describe("access verification command", () => {
+  it("exposes stable standalone database and browser aliases", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+
+    expect(packageJson.scripts["verify:access"]).toBe(
+      "node scripts/verify-access.mjs",
+    );
+    expect(packageJson.scripts["verify:access:database"]).toBe(
+      "node scripts/verify-access.mjs --database",
+    );
+    expect(packageJson.scripts["verify:access:browser"]).toBe(
+      "node scripts/verify-access.mjs --browser",
+    );
+  });
+
   it("constructs and cleans the real isolated Supabase workdir on success and failure", () => {
     const workingDirectory = process.cwd();
     const sourceConfigPath = join(workingDirectory, "supabase", "config.toml");
@@ -298,11 +451,19 @@ describe("access verification command", () => {
       const stateRoot = mkdtempSync(
         join(tmpdir(), `rentcottage-access-workdir-${startStatus}-`),
       );
-      const run = vi.fn((command, args) => ({
-        status: command === "npx" && args[1] === "start" ? startStatus : 0,
-        stdout:
-          command === "npx" && args.includes("status") ? localCredentials : "",
-      }));
+      const run = ownedRun(
+        (command, args) => ({
+          status: command === "npx" && args[1] === "start" ? startStatus : 0,
+          stdout:
+            command === "npx" && args.includes("status")
+              ? localCredentials
+              : "",
+        }),
+        {
+          project: "rentcottage-issue-32-constructor",
+          workdir: () => realpathSync(join(stateRoot, "project")),
+        },
+      );
 
       expect(
         main([], {
@@ -427,10 +588,94 @@ describe("access verification command", () => {
 
     expect(main(["unexpected"], { run, stderr })).toBe(2);
     expect(run).not.toHaveBeenCalled();
+
+    expect(main(["--database", "--browser"], { run, stderr })).toBe(2);
+    expect(main(["--database", "--database"], { run, stderr })).toBe(2);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("runs complete database evidence without browser work", () => {
+    const run = successfulRun();
+
+    expect(main(["--database"], { environment: {}, run })).toBe(0);
+
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      ...databasePreflightCommands,
+      statusCommand,
+      ...databaseCheckCommands,
+      stopCommand,
+    ]);
+  });
+
+  it("runs complete browser evidence from fresh fixtures without database checks", () => {
+    const run = successfulRun();
+
+    expect(main(["--browser"], { environment: {}, run })).toBe(0);
+
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      statusCommand,
+      ...browserCommands,
+      stopCommand,
+    ]);
+  });
+
+  it("refuses to reset, modify, browse, or stop a foreign local project", () => {
+    const run = vi.fn((command, args) => ({
+      status: 0,
+      stdout:
+        command === "docker" && args[0] === "inspect"
+          ? "rentcottage|/tmp/another-checkout\n"
+          : "",
+    }));
+    const removeTemp = vi.fn();
+    const stderr = vi.fn();
+
+    expect(
+      main(["--browser"], {
+        environment: {},
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp,
+        run,
+        stderr,
+        workingDirectory: "/tmp/this-checkout",
+      }),
+    ).toBe(1);
+    expect(commands(run)).toEqual([
+      [
+        "npx",
+        [
+          "supabase",
+          "start",
+          "-x",
+          "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
+        ],
+      ],
+      [
+        "docker",
+        [
+          "inspect",
+          "supabase_db_rentcottage",
+          "--format",
+          '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+        ],
+      ],
+    ]);
+    expect(stderr).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "does not belong to this disposable local checkout",
+      ),
+    );
+    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
   it("runs only the public Worker fixture contract in focused disposable mode", () => {
-    const run = vi.fn((command, args) => ({
+    const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
         command === "npx" && args.join(" ") === "supabase status -o json"
@@ -448,22 +693,15 @@ describe("access verification command", () => {
       }),
     ).toBe(0);
 
-    expect(run.mock.calls.map(([command, args]) => [command, args])).toEqual([
-      [
-        "npx",
-        [
-          "supabase",
-          "start",
-          "-x",
-          "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
-        ],
-      ],
-      ["npx", ["supabase", "db", "reset", "--local"]],
-      ["npx", ["supabase", "status", "-o", "json"]],
-      ["node", ["scripts/verify-access-fixture-contract.mjs"]],
-      ["npx", ["supabase", "stop", "--no-backup"]],
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      statusCommand,
+      databaseCheckCommands[0],
+      stopCommand,
     ]);
-    expect(run.mock.calls[3][2].env).toMatchObject({
+    expect(run.mock.calls[4][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
@@ -498,7 +736,7 @@ describe("access verification command", () => {
   });
 
   it("runs database and browser evidence with local credentials then stops", () => {
-    const run = vi.fn((command, args) => ({
+    const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
         command === "npx" && args.join(" ") === "supabase status -o json"
@@ -521,107 +759,44 @@ describe("access verification command", () => {
       }),
     ).toBe(0);
 
-    expect(run.mock.calls.map(([command, args]) => [command, args])).toEqual([
-      [
-        "npx",
-        [
-          "supabase",
-          "start",
-          "-x",
-          "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
-        ],
-      ],
-      ["npx", ["supabase", "db", "reset", "--local"]],
-      ["npx", ["supabase", "test", "db"]],
-      [
-        "node",
-        [
-          "scripts/verify-cottage-profile-draft-concurrency.mjs",
-          "--verify-migration-preflight",
-          "--defer-successful-restore",
-        ],
-      ],
-      [
-        "node",
-        [
-          "scripts/verify-booking-period-hold-concurrency.mjs",
-          "--verify-migration-preflight",
-        ],
-      ],
-      [
-        "node",
-        [
-          "scripts/verify-booking-request-lifecycle-upgrade.mjs",
-          "--defer-successful-restore",
-        ],
-      ],
-      ["node", ["scripts/verify-booking-request-capture-work-upgrade.mjs"]],
-      ["npx", ["supabase", "status", "-o", "json"]],
-      ["node", ["scripts/verify-access-fixture-contract.mjs"]],
-      ["node", ["scripts/prepare-access-test.mjs", "create", "mobile"]],
-      ["node", ["scripts/verify-cottage-profile-draft-concurrency.mjs"]],
-      ["node", ["scripts/verify-cottage-shift-schedule-concurrency.mjs"]],
-      ["node", ["scripts/verify-cottage-inventory-concurrency.mjs"]],
-      ["node", ["scripts/verify-booking-period-hold-concurrency.mjs"]],
-      [
-        "node",
-        ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"],
-      ],
-      [
-        "node",
-        ["scripts/prepare-access-test.mjs", "validate", "mobile", "desktop"],
-      ],
-      [
-        "npx",
-        [
-          "playwright",
-          "test",
-          "tests/access.spec.ts",
-          "tests/booking-request-access.spec.ts",
-          "--project=mobile",
-          "--project=desktop",
-          "--workers=1",
-          "--output=playwright-report/access-next",
-        ],
-      ],
-      ["node", ["scripts/prepare-access-test.mjs", "create", "worker"]],
-      ["node", ["scripts/prepare-access-test.mjs", "validate", "worker"]],
-      [
-        "npx",
-        [
-          "playwright",
-          "test",
-          "tests/access.spec.ts",
-          "tests/booking-request-access.spec.ts",
-          "--project=worker",
-          "--workers=1",
-          "--output=playwright-report/access-worker",
-        ],
-      ],
-      [
-        "node",
-        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
-      ],
-      [
-        "npx",
-        [
-          "playwright",
-          "test",
-          "tests/worker-scheduled-expiry.spec.ts",
-          "--project=worker",
-          "--workers=1",
-          "--output=playwright-report/scheduled-expiry-worker",
-        ],
-      ],
-      [
-        "node",
-        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
-      ],
-      ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
-      ["node", ["scripts/verify-booking-request-lifecycle-concurrency.mjs"]],
-      ["npx", ["supabase", "stop", "--no-backup"]],
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      ...databasePreflightCommands,
+      statusCommand,
+      ...databaseCheckCommands,
+      ...browserCommands,
+      stopCommand,
     ]);
-    expect(run.mock.calls[8][2].env).toMatchObject({
+    expect(run.mock.calls[0][2].env).toMatchObject({
+      DOCKER_CONFIG: "/tmp/access-docker",
+      DO_NOT_TRACK: "1",
+      EXISTING: "kept",
+      SUPABASE_TELEMETRY_DISABLED: "1",
+    });
+    expect(run.mock.calls[1][2]).toMatchObject({
+      encoding: "utf8",
+      env: {
+        DOCKER_CONFIG: "/tmp/access-docker",
+        DO_NOT_TRACK: "1",
+        EXISTING: "kept",
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+        SUPABASE_TELEMETRY_DISABLED: "1",
+      },
+      maxBuffer: 1024 * 1024,
+    });
+    expect(run.mock.calls[1][2]).toHaveProperty("input", undefined);
+    expect(run.mock.calls[1][2].env.DOCKER_CONFIG).toBe(
+      run.mock.calls[0][2].env.DOCKER_CONFIG,
+    );
+    expect(run.mock.calls[1][2].env).not.toHaveProperty("SUPABASE_URL");
+    expect(run.mock.calls[1][2].env).not.toHaveProperty(
+      "SUPABASE_PUBLISHABLE_KEY",
+    );
+    expect(run.mock.calls[1][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[9][2].env).toMatchObject({
       EXISTING: "kept",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
@@ -632,51 +807,48 @@ describe("access verification command", () => {
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[9][2].env).toMatchObject({
+    expect(run.mock.calls[10][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[10][2].env).toMatchObject({
+    expect(run.mock.calls[11][2].env).toMatchObject({
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[10][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[3][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
-    });
-    expect(run.mock.calls[3][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[11][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[4][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
     expect(run.mock.calls[4][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[12][2].env).toMatchObject({
+    expect(run.mock.calls[5][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[12][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[5][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[13][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
     expect(run.mock.calls[13][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[14][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
+    expect(run.mock.calls[14][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[15][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
+    expect(run.mock.calls[15][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[16][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      NEXTJS_ENV: "test",
-      SUPABASE_PROJECT_REF: "local-test",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_SECRET_KEY: "local-secret",
     });
     expect(run.mock.calls[17][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
@@ -687,32 +859,45 @@ describe("access verification command", () => {
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[19][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      NEXTJS_ENV: "test",
+      SUPABASE_PROJECT_REF: "local-test",
+    });
+    expect(run.mock.calls[20][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+    });
+    expect(run.mock.calls[21][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+    });
+    expect(run.mock.calls[22][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
-    expect(run.mock.calls[20][2].env).toMatchObject({
+    expect(run.mock.calls[23][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[20][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[21][2].env).toMatchObject({
+    expect(run.mock.calls[23][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[24][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[22][2].env).toMatchObject({
+    expect(run.mock.calls[25][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[22][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[25][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
   it("creates the mobile Cottage Owner identity before its concurrency proof", () => {
     let mobileIdentityCreated = false;
-    const run = vi.fn((command, args) => {
+    const run = ownedRun((command, args) => {
       const invocation = [command, ...args].join(" ");
       if (invocation === "node scripts/prepare-access-test.mjs create mobile") {
         mobileIdentityCreated = true;
@@ -733,54 +918,9 @@ describe("access verification command", () => {
     expect(mobileIdentityCreated).toBe(true);
   });
 
-  it("creates and validates project-scoped browser fixtures at each runtime boundary", () => {
-    const run = vi.fn((command, args) => ({
-      status: 0,
-      stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
-          ? localCredentials
-          : "",
-    }));
-
-    expect(main([], { environment: {}, run })).toBe(0);
-
-    const commands = run.mock.calls.map(([command, args]) =>
-      [command, ...args].join(" "),
-    );
-    const fixtureContract = commands.indexOf(
-      "node scripts/verify-access-fixture-contract.mjs",
-    );
-    const createNext = commands.indexOf(
-      "node scripts/prepare-access-test.mjs create mobile desktop",
-    );
-    const validateNext = commands.indexOf(
-      "node scripts/prepare-access-test.mjs validate mobile desktop",
-    );
-    const nextBrowser = commands.indexOf(
-      "npx playwright test tests/access.spec.ts tests/booking-request-access.spec.ts --project=mobile --project=desktop --workers=1 --output=playwright-report/access-next",
-    );
-    const createWorker = commands.indexOf(
-      "node scripts/prepare-access-test.mjs create worker",
-    );
-    const validateWorker = commands.indexOf(
-      "node scripts/prepare-access-test.mjs validate worker",
-    );
-    const workerBrowser = commands.indexOf(
-      "npx playwright test tests/access.spec.ts tests/booking-request-access.spec.ts --project=worker --workers=1 --output=playwright-report/access-worker",
-    );
-
-    expect(fixtureContract).toBeGreaterThan(-1);
-    expect(fixtureContract).toBeLessThan(createNext);
-    expect(createNext).toBeLessThan(validateNext);
-    expect(validateNext).toBeLessThan(nextBrowser);
-    expect(nextBrowser).toBeLessThan(createWorker);
-    expect(createWorker).toBeLessThan(validateWorker);
-    expect(validateWorker).toBeLessThan(workerBrowser);
-  });
-
-  it("blocks Worker journeys when their scoped fixture validation fails and still cleans up", () => {
+  it("blocks Worker journeys when browser fixture validation fails and still cleans up", () => {
     const removeTemp = vi.fn();
-    const run = vi.fn((command, args) => ({
+    const run = ownedRun((command, args) => ({
       status:
         command === "node" &&
         args.join(" ") === "scripts/prepare-access-test.mjs validate worker"
@@ -793,7 +933,7 @@ describe("access verification command", () => {
     }));
 
     expect(
-      main([], {
+      main(["--browser"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -819,13 +959,19 @@ describe("access verification command", () => {
     const isolatedWorkdir = "/tmp/access-state/project";
     const prepareProject = vi.fn(() => isolatedWorkdir);
     const removeTemp = vi.fn();
-    const run = vi.fn((command, args) => ({
-      status: 0,
-      stdout:
-        command === "npx" && args[0] === "supabase" && args.includes("status")
-          ? localCredentials
-          : "",
-    }));
+    const run = ownedRun(
+      (command, args) => ({
+        status: 0,
+        stdout:
+          command === "npx" && args[0] === "supabase" && args.includes("status")
+            ? localCredentials
+            : "",
+      }),
+      {
+        project: "rentcottage-issue-32-v3",
+        workdir: isolatedWorkdir,
+      },
+    );
 
     expect(
       main([], {
@@ -849,7 +995,16 @@ describe("access verification command", () => {
     expect(
       supabaseCalls.every(([, args]) => args.includes(isolatedWorkdir)),
     ).toBe(true);
-    expect(run.mock.calls[3][2].env).toMatchObject({
+    expect(commands(run)).toContainEqual([
+      "docker",
+      [
+        "inspect",
+        "supabase_db_rentcottage-issue-32-v3",
+        "--format",
+        '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+      ],
+    ]);
+    expect(run.mock.calls[4][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-issue-32-v3",
       SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
       SUPABASE_LOCAL_WORKDIR: isolatedWorkdir,
@@ -857,16 +1012,24 @@ describe("access verification command", () => {
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-state");
   });
 
-  it("stops and cleans up after a failed verification step", () => {
-    const run = vi
-      .fn()
-      .mockReturnValueOnce({ status: 0, stdout: "" })
-      .mockReturnValueOnce({ status: 9, stdout: "" })
-      .mockReturnValue({ status: 0, stdout: "" });
+  it("preserves a database failure when cleanup also fails", () => {
+    const run = ownedRun((command, args) => {
+      const invocation = [command, ...args].join(" ");
+      return {
+        status:
+          invocation === "node scripts/verify-booking-request-concurrency.mjs"
+            ? 9
+            : invocation === "npx supabase stop --no-backup"
+              ? 6
+              : 0,
+        stdout:
+          invocation === "npx supabase status -o json" ? localCredentials : "",
+      };
+    });
     const removeTemp = vi.fn();
 
     expect(
-      main([], {
+      main(["--database"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -877,7 +1040,16 @@ describe("access verification command", () => {
       "npx",
       ["supabase", "stop", "--no-backup"],
     ]);
-    expect(removeTemp).toHaveBeenCalled();
+    expect(
+      run.mock.calls.filter(
+        ([command, args]) =>
+          command === "npx" && args.join(" ") === "supabase stop --no-backup",
+      ),
+    ).toHaveLength(1);
+    expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
+      false,
+    );
+    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
   it("prints captured command output when startup fails", () => {
@@ -902,7 +1074,7 @@ describe("access verification command", () => {
   });
 
   it("rejects malformed Supabase credentials before spawning a browser", () => {
-    const run = vi.fn((command, args) => ({
+    const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
         command === "npx" && args.join(" ") === "supabase status -o json"
@@ -931,7 +1103,7 @@ describe("access verification command", () => {
   });
 
   it("rejects unreadable Supabase credential output", () => {
-    const run = vi.fn((command, args) => ({
+    const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
         command === "npx" && args.join(" ") === "supabase status -o json"
@@ -950,7 +1122,7 @@ describe("access verification command", () => {
   });
 
   it("rejects a non-loopback Supabase API URL", () => {
-    const run = vi.fn((command, args) => ({
+    const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
         command === "npx" && args.join(" ") === "supabase status -o json"
@@ -979,7 +1151,7 @@ describe("access verification command", () => {
   });
 
   it("fails when the local services cannot be stopped cleanly", () => {
-    const run = vi.fn((command, args) => ({
+    const run = ownedRun((command, args) => ({
       status:
         command === "npx" && args.join(" ") === "supabase stop --no-backup"
           ? 6
