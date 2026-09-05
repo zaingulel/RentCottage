@@ -13,7 +13,9 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const FIXTURE_CONTRACT_MODE = "--fixture-contract";
-const USAGE = `Usage: npm run verify:access [${FIXTURE_CONTRACT_MODE}]`;
+const DATABASE_MODE = "--database";
+const BROWSER_MODE = "--browser";
+const USAGE = `Usage: npm run verify:access [${DATABASE_MODE}|${BROWSER_MODE}|${FIXTURE_CONTRACT_MODE}]`;
 const LOCAL_PROJECT_PATTERN = /^rentcottage(?:-[a-z0-9]+)*$/;
 const EXCLUDED_SERVICES =
   "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
@@ -101,12 +103,20 @@ export function main(
     workingDirectory = process.cwd(),
   } = {},
 ) {
-  const focusedFixtureContract =
-    args.length === 1 && args[0] === FIXTURE_CONTRACT_MODE;
-  if (args.length !== 0 && !focusedFixtureContract) {
+  const mode = args.length === 1 ? args[0] : undefined;
+  if (
+    args.length > 1 ||
+    (mode !== undefined &&
+      mode !== DATABASE_MODE &&
+      mode !== BROWSER_MODE &&
+      mode !== FIXTURE_CONTRACT_MODE)
+  ) {
     stderr(USAGE);
     return 2;
   }
+  const focusedFixtureContract = mode === FIXTURE_CONTRACT_MODE;
+  const databaseMode = mode === undefined || mode === DATABASE_MODE;
+  const browserMode = mode === undefined || mode === BROWSER_MODE;
 
   const localProject = environment.SUPABASE_LOCAL_PROJECT ?? "rentcottage";
   if (!LOCAL_PROJECT_PATTERN.test(localProject)) {
@@ -189,7 +199,7 @@ export function main(
     delete databaseConcurrencyEnvironment.SUPABASE_URL;
     delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
     delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
-    if (!focusedFixtureContract) {
+    const verifyDatabasePreflight = () => {
       result = execute("npx", supabaseArguments(["supabase", "test", "db"]));
       if (result.status !== 0) return result.status;
       // Each deferred verifier is followed by one that resets the database; standalone and failed runs still restore themselves.
@@ -227,6 +237,11 @@ export function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      return 0;
+    };
+    if (databaseMode) {
+      const preflightStatus = verifyDatabasePreflight();
+      if (preflightStatus !== 0) return preflightStatus;
     }
 
     const status = execute(
@@ -262,189 +277,202 @@ export function main(
       SUPABASE_SECRET_KEY: secretKey,
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     };
-    const fixtureContract = execute(
-      "node",
-      ["scripts/verify-access-fixture-contract.mjs"],
-      {
-        env: { ...accessEnvironment, ...databaseConcurrencyEnvironment },
-        stdio: "inherit",
-      },
-    );
-    if (fixtureContract.status !== 0) return fixtureContract.status;
-    if (focusedFixtureContract) return 0;
-    const createDraftConcurrencyFixture = execute(
-      "node",
-      ["scripts/prepare-access-test.mjs", "create", "mobile"],
-      { env: accessEnvironment, stdio: "inherit" },
-    );
-    if (createDraftConcurrencyFixture.status !== 0) {
-      return createDraftConcurrencyFixture.status;
-    }
-    const scheduleConcurrencyEnvironment = { ...accessEnvironment };
-    delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
-    const draftConcurrency = execute(
-      "node",
-      ["scripts/verify-cottage-profile-draft-concurrency.mjs"],
-      {
-        env: {
-          ...scheduleConcurrencyEnvironment,
-          ...databaseConcurrencyEnvironment,
+    const verifyFixtureContract = () => {
+      const fixtureContract = execute(
+        "node",
+        ["scripts/verify-access-fixture-contract.mjs"],
+        {
+          env: { ...accessEnvironment, ...databaseConcurrencyEnvironment },
+          stdio: "inherit",
         },
-        stdio: "inherit",
-      },
-    );
-    if (draftConcurrency.status !== 0) return draftConcurrency.status;
-    const scheduleConcurrency = execute(
-      "node",
-      ["scripts/verify-cottage-shift-schedule-concurrency.mjs"],
-      { env: scheduleConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (scheduleConcurrency.status !== 0) return scheduleConcurrency.status;
-    const inventoryConcurrencyEnvironment = {
-      ...scheduleConcurrencyEnvironment,
-      ...databaseConcurrencyEnvironment,
+      );
+      return fixtureContract.status;
     };
-    const inventoryConcurrency = execute(
-      "node",
-      ["scripts/verify-cottage-inventory-concurrency.mjs"],
-      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (inventoryConcurrency.status !== 0) return inventoryConcurrency.status;
-    const bookingPeriodHoldConcurrency = execute(
-      "node",
-      ["scripts/verify-booking-period-hold-concurrency.mjs"],
-      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (bookingPeriodHoldConcurrency.status !== 0) {
-      return bookingPeriodHoldConcurrency.status;
-    }
-    const createNextFixtures = execute(
-      "node",
-      ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"],
-      {
-        env: accessEnvironment,
-        stdio: "inherit",
-      },
-    );
-    if (createNextFixtures.status !== 0) return createNextFixtures.status;
-    const validateNextFixtures = execute(
-      "node",
-      ["scripts/prepare-access-test.mjs", "validate", "mobile", "desktop"],
-      {
-        env: accessEnvironment,
-        stdio: "inherit",
-      },
-    );
-    if (validateNextFixtures.status !== 0) {
-      return validateNextFixtures.status;
-    }
-    const browserEnvironment = {
-      ...accessEnvironment,
-      APP_ENVIRONMENT: "test",
-      NEXTJS_ENV: "test",
-      SUPABASE_PROJECT_REF: "local-test",
-      PLAYWRIGHT_SERVER: "next",
-    };
-    const browser = execute(
-      "npx",
-      [
-        "playwright",
-        "test",
-        "tests/access.spec.ts",
-        "tests/booking-request-access.spec.ts",
-        "--project=mobile",
-        "--project=desktop",
-        "--workers=1",
-        "--output=playwright-report/access-next",
-      ],
-      { env: browserEnvironment, stdio: "inherit" },
-    );
-    if (browser.status !== 0) return browser.status;
+    if (focusedFixtureContract) return verifyFixtureContract();
 
-    const createWorkerFixtures = execute(
-      "node",
-      ["scripts/prepare-access-test.mjs", "create", "worker"],
-      { env: accessEnvironment, stdio: "inherit" },
-    );
-    if (createWorkerFixtures.status !== 0) {
-      return createWorkerFixtures.status;
-    }
-    const validateWorkerFixtures = execute(
-      "node",
-      ["scripts/prepare-access-test.mjs", "validate", "worker"],
-      { env: accessEnvironment, stdio: "inherit" },
-    );
-    if (validateWorkerFixtures.status !== 0) {
-      return validateWorkerFixtures.status;
-    }
-
-    const workerBrowser = execute(
-      "npx",
-      [
-        "playwright",
-        "test",
-        "tests/access.spec.ts",
-        "tests/booking-request-access.spec.ts",
-        "--project=worker",
-        "--workers=1",
-        "--output=playwright-report/access-worker",
-      ],
-      {
-        env: { ...browserEnvironment, PLAYWRIGHT_SERVER: "worker" },
-        stdio: "inherit",
-      },
-    );
-    if (workerBrowser.status !== 0) return workerBrowser.status;
-    const scheduledExpirySeed = execute(
-      "node",
-      ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
-      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (scheduledExpirySeed.status !== 0) return scheduledExpirySeed.status;
-    const scheduledExpiry = execute(
-      "npx",
-      [
-        "playwright",
-        "test",
-        "tests/worker-scheduled-expiry.spec.ts",
-        "--project=worker",
-        "--workers=1",
-        "--output=playwright-report/scheduled-expiry-worker",
-      ],
-      {
-        env: { ...browserEnvironment, PLAYWRIGHT_SERVER: "worker" },
-        stdio: "inherit",
-      },
-    );
-    if (scheduledExpiry.status !== 0) return scheduledExpiry.status;
-    const scheduledExpiryVerify = execute(
-      "node",
-      ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
-      { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (scheduledExpiryVerify.status !== 0) {
-      return scheduledExpiryVerify.status;
-    }
-    const bookingRequestConcurrency = execute(
-      "node",
-      ["scripts/verify-booking-request-concurrency.mjs"],
-      { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-    );
-    if (bookingRequestConcurrency.status !== 0) {
-      return bookingRequestConcurrency.status;
-    }
-    const bookingRequestLifecycleConcurrency = execute(
-      "node",
-      ["scripts/verify-booking-request-lifecycle-concurrency.mjs"],
-      {
-        env: {
-          ...inventoryConcurrencyEnvironment,
-          SUPABASE_SECRET_KEY: secretKey,
+    const verifyDatabaseChecks = () => {
+      const fixtureContractStatus = verifyFixtureContract();
+      if (fixtureContractStatus !== 0) return fixtureContractStatus;
+      const createDraftConcurrencyFixture = execute(
+        "node",
+        ["scripts/prepare-access-test.mjs", "create", "mobile"],
+        { env: accessEnvironment, stdio: "inherit" },
+      );
+      if (createDraftConcurrencyFixture.status !== 0) {
+        return createDraftConcurrencyFixture.status;
+      }
+      const scheduleConcurrencyEnvironment = { ...accessEnvironment };
+      delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
+      const inventoryConcurrencyEnvironment = {
+        ...scheduleConcurrencyEnvironment,
+        ...databaseConcurrencyEnvironment,
+      };
+      const draftConcurrency = execute(
+        "node",
+        ["scripts/verify-cottage-profile-draft-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (draftConcurrency.status !== 0) return draftConcurrency.status;
+      const scheduleConcurrency = execute(
+        "node",
+        ["scripts/verify-cottage-shift-schedule-concurrency.mjs"],
+        { env: scheduleConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (scheduleConcurrency.status !== 0) return scheduleConcurrency.status;
+      const inventoryConcurrency = execute(
+        "node",
+        ["scripts/verify-cottage-inventory-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (inventoryConcurrency.status !== 0) return inventoryConcurrency.status;
+      const bookingPeriodHoldConcurrency = execute(
+        "node",
+        ["scripts/verify-booking-period-hold-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (bookingPeriodHoldConcurrency.status !== 0) {
+        return bookingPeriodHoldConcurrency.status;
+      }
+      const bookingRequestConcurrency = execute(
+        "node",
+        ["scripts/verify-booking-request-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (bookingRequestConcurrency.status !== 0) {
+        return bookingRequestConcurrency.status;
+      }
+      const bookingRequestLifecycleConcurrency = execute(
+        "node",
+        ["scripts/verify-booking-request-lifecycle-concurrency.mjs"],
+        {
+          env: {
+            ...inventoryConcurrencyEnvironment,
+            SUPABASE_SECRET_KEY: secretKey,
+          },
+          stdio: "inherit",
         },
-        stdio: "inherit",
-      },
-    );
-    return bookingRequestLifecycleConcurrency.status;
+      );
+      if (bookingRequestLifecycleConcurrency.status !== 0) {
+        return bookingRequestLifecycleConcurrency.status;
+      }
+      return 0;
+    };
+    if (databaseMode) {
+      const databaseStatus = verifyDatabaseChecks();
+      if (databaseStatus !== 0) return databaseStatus;
+    }
+    if (!browserMode) return 0;
+    const verifyBrowserJourneys = () => {
+      const createNextFixtures = execute(
+        "node",
+        ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"],
+        {
+          env: accessEnvironment,
+          stdio: "inherit",
+        },
+      );
+      if (createNextFixtures.status !== 0) return createNextFixtures.status;
+      const validateNextFixtures = execute(
+        "node",
+        ["scripts/prepare-access-test.mjs", "validate", "mobile", "desktop"],
+        {
+          env: accessEnvironment,
+          stdio: "inherit",
+        },
+      );
+      if (validateNextFixtures.status !== 0) {
+        return validateNextFixtures.status;
+      }
+      const browserEnvironment = {
+        ...accessEnvironment,
+        APP_ENVIRONMENT: "test",
+        NEXTJS_ENV: "test",
+        SUPABASE_PROJECT_REF: "local-test",
+        PLAYWRIGHT_SERVER: "next",
+      };
+      const browser = execute(
+        "npx",
+        [
+          "playwright",
+          "test",
+          "tests/access.spec.ts",
+          "tests/booking-request-access.spec.ts",
+          "--project=mobile",
+          "--project=desktop",
+          "--workers=1",
+          "--output=playwright-report/access-next",
+        ],
+        { env: browserEnvironment, stdio: "inherit" },
+      );
+      if (browser.status !== 0) return browser.status;
+
+      const createWorkerFixtures = execute(
+        "node",
+        ["scripts/prepare-access-test.mjs", "create", "worker"],
+        { env: accessEnvironment, stdio: "inherit" },
+      );
+      if (createWorkerFixtures.status !== 0) {
+        return createWorkerFixtures.status;
+      }
+      const validateWorkerFixtures = execute(
+        "node",
+        ["scripts/prepare-access-test.mjs", "validate", "worker"],
+        { env: accessEnvironment, stdio: "inherit" },
+      );
+      if (validateWorkerFixtures.status !== 0) {
+        return validateWorkerFixtures.status;
+      }
+
+      const workerBrowser = execute(
+        "npx",
+        [
+          "playwright",
+          "test",
+          "tests/access.spec.ts",
+          "tests/booking-request-access.spec.ts",
+          "--project=worker",
+          "--workers=1",
+          "--output=playwright-report/access-worker",
+        ],
+        {
+          env: { ...browserEnvironment, PLAYWRIGHT_SERVER: "worker" },
+          stdio: "inherit",
+        },
+      );
+      if (workerBrowser.status !== 0) return workerBrowser.status;
+      const scheduledExpirySeed = execute(
+        "node",
+        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (scheduledExpirySeed.status !== 0) return scheduledExpirySeed.status;
+      const scheduledExpiry = execute(
+        "npx",
+        [
+          "playwright",
+          "test",
+          "tests/worker-scheduled-expiry.spec.ts",
+          "--project=worker",
+          "--workers=1",
+          "--output=playwright-report/scheduled-expiry-worker",
+        ],
+        {
+          env: { ...browserEnvironment, PLAYWRIGHT_SERVER: "worker" },
+          stdio: "inherit",
+        },
+      );
+      if (scheduledExpiry.status !== 0) return scheduledExpiry.status;
+      const scheduledExpiryVerify = execute(
+        "node",
+        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (scheduledExpiryVerify.status !== 0) {
+        return scheduledExpiryVerify.status;
+      }
+      return 0;
+    };
+    return verifyBrowserJourneys();
   };
 
   try {

@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: github.event.pull_request.draft == false
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: github.event.pull_request.draft == false
@@ -34,6 +35,7 @@ jobs:
       - if: github.event.pull_request.draft == false
         run: npm ci
       - if: github.event.pull_request.draft == false
-        run: npx playwright install --with-deps chromium
-      - if: github.event.pull_request.draft == false
+        env:
+          VERIFY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          VERIFY_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: npm run verify

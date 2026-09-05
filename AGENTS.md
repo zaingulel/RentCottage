@@ -98,10 +98,11 @@ finding returns to the sole writer. Run focused verification for the repair, the
 and what they could break. No review follows a repair that adds no factual claim. After two non-converging
 repair-and-scoped-review cycles, stop and return to the owner to split, rescope, or stop.
 
-Greptile is the sole external reviewer and is best-effort. Use one attempt per pull-request head and re-review
-only after a genuine repair push. An unavailable attempt is reported, never presented as complete, and does not
-replace local review, executable verification, required Continuous Integration (CI), conversation resolution,
-or ownership.
+Documentation-only changes skip Greptile under `docs/agents/delivery.md`. For other changes, Greptile is the sole
+external reviewer and is best-effort: request it explicitly on the finished draft and settle the attempt before
+marking ready for Continuous Integration (CI). `.greptile/config.json` disables automatic reviews. A changed head
+needs a fresh attempt when review is required; unchanged-head CI retries need none. An unavailable attempt does
+not replace local review, executable verification, required CI, conversation resolution, or ownership.
 
 ## Delivery and CI
 

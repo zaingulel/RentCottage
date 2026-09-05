@@ -81,10 +81,10 @@ describe("pull-request CI", () => {
       if: "github.event.pull_request.draft == true",
       run: expect.stringContaining("no check named test"),
     });
-    expect(readySteps(steps)).toHaveLength(5);
+    expect(readySteps(steps)).toHaveLength(4);
   });
 
-  it("tests GitHub's merge result through the same full verification command used locally", () => {
+  it("tests GitHub's merge result through the same verification command used locally", () => {
     const { source, workflow } = loadWorkflow();
     const steps = readySteps(workflow.jobs?.test.steps ?? []);
     const checkout = steps.find(
@@ -99,17 +99,22 @@ describe("pull-request CI", () => {
     );
 
     expect(checkout).toBeDefined();
-    expect(checkout?.with).toEqual({ "persist-credentials": false });
+    expect(checkout?.with).toEqual({
+      "fetch-depth": 0,
+      "persist-credentials": false,
+    });
     expect(setupNode).toBeDefined();
     expect(steps).toContainEqual(expect.objectContaining({ run: "npm ci" }));
     expect(steps).toContainEqual(
       expect.objectContaining({
-        run: "npx playwright install --with-deps chromium",
+        env: {
+          VERIFY_BASE_SHA: "${{ github.event.pull_request.base.sha }}",
+          VERIFY_SOURCE_SHA: "${{ github.event.pull_request.head.sha }}",
+        },
+        run: "npm run verify",
       }),
     );
-    expect(steps).toContainEqual(
-      expect.objectContaining({ run: "npm run verify" }),
-    );
+    expect(source).not.toContain("npx playwright install");
 
     expect(source).not.toContain("workflow_dispatch");
     expect(source).not.toContain("check-runs");
