@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
@@ -667,7 +668,7 @@ try {
     authorizationEvidenceCount: 3,
     activeHoldCount: 3,
     confirmedBookingCount: 0,
-    confirmationRelationCount: 0,
+    confirmationRelationCount: 2,
     policyCount: 0,
     directPrivilegeCount: 0,
   })) {
@@ -682,7 +683,7 @@ try {
   }
 
   console.log(
-    "Booking Request capture-work upgrade preserved pending, release-processing, and accepted predecessor graphs byte-for-byte; retained three active holds and successful authorizations; inferred no capture work, evidence, operation, confirmation, or receipt; and kept the new relation RLS-private from every application role.",
+    "Booking Request capture-work upgrade preserved pending, release-processing, and accepted predecessor graphs byte-for-byte; retained three active holds and successful authorizations; inferred no capture work, evidence, operation, confirmation, or receipt rows; and created the private empty outcome relations without application-role access.",
   );
 
   const captureWorkPredecessor = "20260904120000";
@@ -787,6 +788,83 @@ try {
   );
   console.log(
     "Capture execution upgrade preserved queued, processing and complete predecessor work and every source graph byte-for-byte; existing Authorization ledger columns are unchanged and their new capture-only permit column remains null.",
+  );
+
+  const confirmationPredecessor = "20260905120000";
+  const resetConfirmationArgs = [
+    "db",
+    "reset",
+    "--local",
+    "--version",
+    confirmationPredecessor,
+  ];
+  const resetConfirmation = runSupabase(resetConfirmationArgs);
+  if (resetConfirmation.status !== 0)
+    throw commandFailure(resetConfirmationArgs, resetConfirmation);
+  assertEqual(
+    harness.runSql(
+      "select max(version) from supabase_migrations.schema_migrations;",
+    ),
+    confirmationPredecessor,
+    "Confirmation upgrade reset to the wrong predecessor.",
+  );
+  const confirmationSource = readFileSync(
+    new URL(
+      "../supabase/tests/database/booking_request_confirmation.test.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const confirmationFixture = confirmationSource
+    .split("-- BEGIN CONFIRMATION FIXTURE\n")[1]
+    ?.split("-- END CONFIRMATION FIXTURE")[0];
+  if (!confirmationFixture)
+    throw new Error("The complete confirmation fixture must be available.");
+  harness.runSql(`begin; ${confirmationFixture} commit;`);
+  harness.runSql(`select public.complete_booking_request_capture(
+    '60000000-0000-4000-8000-000000001001',
+    (capture_execution_permit ->> 'leaseGeneration')::bigint,
+    (capture_execution_permit ->> 'leaseToken')::uuid,
+    jsonb_build_object('outcome', 'succeeded',
+      'providerRequestId', provider_request_id,
+      'providerReference', provider_reference,
+      'movementReference', movement_reference)
+  ) from public.simulated_payment_provider_operations
+  where operation_kind = 'capture'
+    and payment_lifecycle_id = '73000000-0000-4000-8000-000000001001';`);
+  const beforeConfirmation = {
+    ...snapshotPredecessorGraph(),
+    captureWork: snapshot(
+      "booking_request_capture_work",
+      "rows.booking_request_id",
+    ),
+  };
+  const confirmationUpgrade = runSupabase(upgradeArgs);
+  if (confirmationUpgrade.status !== 0)
+    throw commandFailure(upgradeArgs, confirmationUpgrade);
+  const afterConfirmation = {
+    ...snapshotPredecessorGraph(),
+    captureWork: snapshot(
+      "booking_request_capture_work",
+      "rows.booking_request_id",
+    ),
+  };
+  for (const key of Object.keys(beforeConfirmation)) {
+    assertEqual(
+      afterConfirmation[key],
+      beforeConfirmation[key],
+      `Confirmation migration changed completed-Capture predecessor ${key}.`,
+    );
+  }
+  assertEqual(
+    harness.runSql(
+      "select (select count(*) from public.booking_confirmations) || ':' || (select count(*) from public.booking_receipts) || ':' || (select count(*) from public.cottage_booking_period_commitments where status = 'pending_hold') || ':' || (select count(*) from public.booking_request_capture_work where state = 'complete');",
+    ),
+    "0:0:1:1",
+    "Confirmation migration must not infer outcomes from completed Capture evidence.",
+  );
+  console.log(
+    "Confirmation upgrade preserved a genuinely completed Capture graph byte-for-byte, created only private empty outcome relations, and inferred no confirmation, receipt, or commitment promotion.",
   );
 } catch (error) {
   failure = error;
