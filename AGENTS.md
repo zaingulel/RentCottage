@@ -35,13 +35,13 @@ RentCottage is a trilingual cottage marketplace. `src/` contains the Next.js app
 tracker verification; `.github/workflows/preview.yml` owns preview deployment.
 
 Authentication, authorization, payments, personal data, database migrations, security/privacy boundaries,
-destructive data changes, and new user-facing behaviour with no settled design require an approved concrete plan
+destructive data changes, and new user-facing behaviour with no settled design require a concrete plan
 before editing. Plans name affected areas, expected behaviour, verification, migration, and rollback.
 
 ## Owner gates
 
-1. **Work selection:** the owner approves the issue outcome and acceptance criteria. High-blast-radius work also
-   requires approval of its concrete plan.
+1. **Work selection:** the owner approves the issue outcome and acceptance criteria, authorizing planning, builder
+   routing, implementation, verification, and review within the selected scope. Scope expansion requires owner approval.
 2. **Delivery approval:** the owner reviews one filled pull-request body containing the finished bundle and local
    evidence. The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
    hosted settings, and tracker mutation require that authority.
