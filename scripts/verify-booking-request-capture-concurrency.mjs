@@ -163,9 +163,19 @@ async function proveAdmissionAfterLocks(permit) {
 
 let seeded = false;
 const cleanup = `begin;
+  alter table public.booking_receipts disable trigger reject_booking_receipt_change;
+  delete from public.booking_receipts where booking_confirmation_id in (
+    select id from public.booking_confirmations where booking_request_id = '${requestId}'
+  );
+  alter table public.booking_receipts enable trigger reject_booking_receipt_change;
+  alter table public.booking_confirmations disable trigger reject_booking_confirmation_change;
+  delete from public.booking_confirmations where booking_request_id = '${requestId}';
+  alter table public.booking_confirmations enable trigger reject_booking_confirmation_change;
   delete from public.booking_request_capture_work where booking_request_id = '${requestId}';
   delete from public.simulated_payment_provider_operations where claim_id = '72000000-0000-4000-8000-000000001001';
   delete from public.booking_request_provider_operation_identities where attempt_id = '70000000-0000-4000-8000-000000001001';
+  delete from public.booking_request_authorization_claim_items where claim_id = '72000000-0000-4000-8000-000000001001';
+  delete from public.booking_request_authorization_claim_occupancies where claim_id = '72000000-0000-4000-8000-000000001001';
   delete from public.booking_request_authorization_claims where id = '72000000-0000-4000-8000-000000001001';
   delete from public.booking_request_submission_attempts where id = '70000000-0000-4000-8000-000000001001';
   delete from public.booking_requests where id = '${requestId}';
@@ -181,8 +191,8 @@ const cleanup = `begin;
   delete from public.cottage_shift_schedule_revisions where id = '30000000-0000-4000-8000-000000001001';
   alter table public.cottage_shift_schedule_revisions enable trigger reject_cottage_shift_schedule_revision_delete;
   delete from public.owner_application_cottage_profiles where id = '20000000-0000-4000-8000-000000001001';
-  delete from public.account_contexts where user_id in ('10000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001002');
-  delete from auth.users where id in ('10000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001002');
+  delete from public.account_contexts where user_id in ('10000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001002', '10000000-0000-4000-8000-000000001003');
+  delete from auth.users where id in ('10000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001002', '10000000-0000-4000-8000-000000001003');
 commit;`;
 
 harness.guardDisposableLocalDatabase();
@@ -265,8 +275,78 @@ try {
     ),
     "1",
   );
+  harness.runSql(cleanup);
+  seeded = false;
+
+  const confirmationSource = readFileSync(
+    new URL(
+      "../supabase/tests/database/booking_request_confirmation.test.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const confirmationFixture = confirmationSource
+    .split("-- BEGIN CONFIRMATION FIXTURE\n")[1]
+    ?.split("-- END CONFIRMATION FIXTURE")[0];
+  assert.ok(
+    confirmationFixture,
+    "The complete confirmation fixture must be available",
+  );
+  harness.runSql(`begin; ${confirmationFixture} commit;`);
+  seeded = true;
+  const captureSnapshot = JSON.parse(
+    harness.runSql(
+      `select public.complete_booking_request_capture(
+        '${requestId}',
+        (capture_execution_permit ->> 'leaseGeneration')::bigint,
+        (capture_execution_permit ->> 'leaseToken')::uuid,
+        jsonb_build_object('outcome', 'succeeded',
+          'providerRequestId', provider_request_id,
+          'providerReference', provider_reference,
+          'movementReference', movement_reference)
+      ) -> 'snapshot'
+      from public.simulated_payment_provider_operations
+      where operation_kind = 'capture' and payment_lifecycle_id = '73000000-0000-4000-8000-000000001001';`,
+    ),
+  );
+  const confirmationSql = `select public.finalize_booking_request_confirmation('${requestId}', ${literal(captureSnapshot)});`;
+  rows.push([
+    "commitment",
+    "public.cottage_booking_period_commitments where id = '50000000-0000-4000-8000-000000001001'",
+  ]);
+  await proveLockOrder(confirmationSql, "confirmation");
+  const [confirmed, confirmationReplay] = await duplicate(
+    confirmationSql,
+    "confirmation",
+  );
+  assert.deepEqual(
+    confirmationReplay,
+    confirmed,
+    "Concurrent finalization must return one identical persisted outcome",
+  );
+  assert.equal(
+    harness.runSql(
+      `select count(*) || ':' || (select count(*) from public.booking_receipts) || ':' || (select count(*) from public.cottage_booking_period_commitments where status = 'confirmed_booking') from public.booking_confirmations;`,
+    ),
+    "1:2:1",
+    "Concurrent finalization must persist one confirmation, two receipts, and one promoted commitment",
+  );
+  assert.equal(
+    harness.runSql(
+      `select count(*) from public.cottage_booking_period_occupancies where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001' and active;`,
+    ),
+    "5",
+    "Concurrent finalization must retain every selected Shift occupancy",
+  );
+  assert.equal(
+    harness.runSql(
+      `select count(*) from public.booking_request_release_work where booking_request_id = '${requestId}';`,
+    ),
+    "0",
+    "Successful finalization must not create release work",
+  );
   console.log(
-    "Booking Request Capture contention proved one lease, one physical provider execution, one Capture identity and movement, exact replay, ordered locks for all three entry points through the completed Capture identity, and admission refusal after a blocked deadline.",
+    "Booking Request Capture contention proved one lease, one physical provider execution, one Capture identity and movement, exact replay, ordered locks for all three entry points through the completed Capture identity, and admission refusal after a blocked deadline. Confirmation contention then proved one identical outcome, two receipts, retained complete occupancy, no release work, and the same ordered Capture lock prefix through the commitment.",
   );
 } finally {
   for (const session of sessions) {
