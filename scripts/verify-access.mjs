@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+
 const FIXTURE_CONTRACT_MODE = "--fixture-contract";
 const DATABASE_MODE = "--database";
 const BROWSER_MODE = "--browser";
@@ -173,6 +175,18 @@ export function main(
     return { ...result, status: result.status ?? 1 };
   };
 
+  const databaseConcurrencyEnvironment = {
+    ...supabaseEnvironment,
+    SUPABASE_DB_CONTAINER: `supabase_db_${localProject}`,
+    SUPABASE_LOCAL_PROJECT: localProject,
+  };
+  if (isolatedProject) {
+    databaseConcurrencyEnvironment.SUPABASE_LOCAL_WORKDIR = localWorkdir;
+  }
+  delete databaseConcurrencyEnvironment.SUPABASE_URL;
+  delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
+  delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
+
   const verify = () => {
     let result = execute(
       "npx",
@@ -180,6 +194,18 @@ export function main(
       { encoding: "utf8", stdio: "pipe" },
     );
     if (result.status !== 0) return result.status;
+    try {
+      createLocalSupabaseConcurrencyHarness({
+        environment: databaseConcurrencyEnvironment,
+        spawnSyncProcess: run,
+        workingDirectory: localWorkdir,
+      }).guardDisposableLocalDatabase();
+    } catch (error) {
+      stderr(
+        `Unable to verify disposable local Supabase ownership: ${error.message}`,
+      );
+      return 1;
+    }
     started = true;
 
     result = execute(
@@ -188,17 +214,6 @@ export function main(
     );
     if (result.status !== 0) return result.status;
 
-    const databaseConcurrencyEnvironment = {
-      ...supabaseEnvironment,
-      SUPABASE_DB_CONTAINER: `supabase_db_${localProject}`,
-      SUPABASE_LOCAL_PROJECT: localProject,
-    };
-    if (isolatedProject) {
-      databaseConcurrencyEnvironment.SUPABASE_LOCAL_WORKDIR = localWorkdir;
-    }
-    delete databaseConcurrencyEnvironment.SUPABASE_URL;
-    delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
-    delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
     const verifyDatabasePreflight = () => {
       result = execute("npx", supabaseArguments(["supabase", "test", "db"]));
       if (result.status !== 0) return result.status;
