@@ -101,6 +101,7 @@ const browserCommands = [
   ],
   ["node", ["scripts/prepare-access-test.mjs", "create", "worker"]],
   ["node", ["scripts/prepare-access-test.mjs", "validate", "worker"]],
+  ["npm", ["run", "build:worker"]],
   [
     "npx",
     [
@@ -109,6 +110,7 @@ const browserCommands = [
       "tests/access.spec.ts",
       "tests/booking-request-access.spec.ts",
       "--project=worker",
+      "--config=playwright.worker-prebuilt.config.ts",
       "--workers=1",
       "--output=playwright-report/access-worker",
     ],
@@ -121,6 +123,7 @@ const browserCommands = [
       "test",
       "tests/worker-scheduled-expiry.spec.ts",
       "--project=worker",
+      "--config=playwright.worker-prebuilt.config.ts",
       "--workers=1",
       "--output=playwright-report/scheduled-expiry-worker",
     ],
@@ -871,28 +874,92 @@ describe("access verification command", () => {
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
-    expect(run.mock.calls[22][2].env).toMatchObject({
+    expect(run.mock.calls[23][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
-    expect(run.mock.calls[23][2].env).toMatchObject({
+    expect(run.mock.calls[24][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[23][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[24][2].env).toMatchObject({
+    expect(run.mock.calls[24][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[25][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[25][2].env).toMatchObject({
+    expect(run.mock.calls[26][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[25][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[26][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+  });
+
+  it.each([
+    { status: 7 },
+    { status: null, signal: "SIGTERM" },
+    { status: null, error: new Error("build unavailable") },
+  ])(
+    "blocks prebuilt Worker journeys on a failed build and still cleans up: %j",
+    (failure) => {
+      const removeTemp = vi.fn();
+      const run = ownedRun((command, args) => {
+        if (command === "npm" && args.join(" ") === "run build:worker")
+          return failure;
+        return {
+          status: 0,
+          stdout:
+            args.join(" ") === "supabase status -o json"
+              ? localCredentials
+              : "",
+        };
+      });
+      expect(
+        main(["--browser"], {
+          environment: {},
+          makeTemp: () => "/tmp/access-docker",
+          removeTemp,
+          run,
+          stderr: vi.fn(),
+        }),
+      ).toBe(failure.status ?? 1);
+      expect(
+        run.mock.calls.some(([, args]) =>
+          args.includes("--config=playwright.worker-prebuilt.config.ts"),
+        ),
+      ).toBe(false);
+      expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
+      expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+    },
+  );
+
+  it("builds Worker access and scheduled expiry once with the same real local bindings", () => {
+    const run = successfulRun();
+    expect(main(["--browser"], { environment: {}, run })).toBe(0);
+    const builds = run.mock.calls.filter(([command]) => command === "npm");
+    const workers = run.mock.calls.filter(([, args]) =>
+      args.includes("--project=worker"),
+    );
+    expect(builds).toHaveLength(1);
+    expect(builds[0].slice(0, 2)).toEqual(["npm", ["run", "build:worker"]]);
+    expect(workers).toHaveLength(2);
+    for (const worker of workers) {
+      expect(worker[1]).toContain(
+        "--config=playwright.worker-prebuilt.config.ts",
+      );
+      expect(worker[2].env).toEqual(builds[0][2].env);
+      expect(run.mock.calls.indexOf(builds[0])).toBeLessThan(
+        run.mock.calls.indexOf(worker),
+      );
+    }
+    expect(builds[0][2].env).toMatchObject({
+      SUPABASE_SECRET_KEY: "local-secret",
+      NEXTJS_ENV: "test",
+      PLAYWRIGHT_SERVER: "worker",
+    });
   });
 
   it("creates the mobile Cottage Owner identity before its concurrency proof", () => {

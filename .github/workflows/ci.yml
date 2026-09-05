@@ -12,30 +12,86 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: ${{ github.event.pull_request.draft == false && 'test' || 'ci-control-no-test' }}
+  baseline:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - env:
+          VERIFY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          VERIFY_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run verify -- --baseline
+
+  database:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - env:
+          VERIFY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          VERIFY_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run verify -- --database
+
+  browser:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - env:
+          VERIFY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          VERIFY_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run verify -- --browser
+
+  test:
+    name: ${{ github.event.pull_request.draft == false && 'test' || 'ci-control-no-test' }}
+    needs: [baseline, database, browser]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
       - name: Record a draft without exposing the required check
         if: github.event.pull_request.draft == true
         run: echo "Draft pull request; no suite runs and no check named test is emitted."
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Require every verification job to succeed
         if: github.event.pull_request.draft == false
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        if: github.event.pull_request.draft == false
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - if: github.event.pull_request.draft == false
-        run: npm ci
-      - if: github.event.pull_request.draft == false
         env:
-          VERIFY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          VERIFY_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
-        run: npm run verify
+          BASELINE_RESULT: ${{ needs.baseline.result }}
+          DATABASE_RESULT: ${{ needs.database.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+        run: |
+          if [[ "$BASELINE_RESULT" != "success" || "$DATABASE_RESULT" != "success" || "$BROWSER_RESULT" != "success" ]]; then
+            echo "Verification incomplete: baseline=$BASELINE_RESULT database=$DATABASE_RESULT browser=$BROWSER_RESULT"
+            exit 1
+          fi

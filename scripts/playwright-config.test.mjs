@@ -46,3 +46,48 @@ describe("Playwright Worker port isolation", () => {
     expect(config.webServer.command).toContain("--port 8788");
   });
 });
+
+describe("Playwright build freshness", () => {
+  it("rebuilds by default and never accepts an existing Next or Worker server", async () => {
+    const worker = await loadConfig();
+    expect(worker.webServer.command).toMatch(/^npm run build:worker && /);
+    expect(worker.webServer.reuseExistingServer).toBe(false);
+    vi.resetModules();
+    process.env.PLAYWRIGHT_SERVER = "next";
+    const next = (await import("../playwright.config.ts")).default;
+    expect(next.webServer.command).toBe(
+      "npm run build && npm run start -- -p 3000",
+    );
+    expect(next.webServer.reuseExistingServer).toBe(false);
+  });
+
+  it("reuses only Worker compilation while preserving preview bindings and settings", async () => {
+    const standard = await loadConfig("8798");
+    const prebuilt = (await import("../playwright.worker-prebuilt.config.ts"))
+      .default;
+    expect(prebuilt).toMatchObject({
+      ...standard,
+      webServer: {
+        ...standard.webServer,
+        command: standard.webServer.command.replace(
+          /^npm run build:worker && /,
+          "",
+        ),
+        reuseExistingServer: false,
+      },
+    });
+    expect(prebuilt.webServer.command).toMatch(/^WRANGLER_LOG_PATH=/);
+    expect(prebuilt.webServer.command).not.toContain("build");
+  });
+
+  it.each([undefined, "next", "invalid"])(
+    "rejects prebuilt startup outside Worker mode: %s",
+    async (server) => {
+      if (server === undefined) delete process.env.PLAYWRIGHT_SERVER;
+      else process.env.PLAYWRIGHT_SERVER = server;
+      await expect(
+        import("../playwright.worker-prebuilt.config.ts"),
+      ).rejects.toThrow("Prebuilt preview requires PLAYWRIGHT_SERVER=worker");
+    },
+  );
+});
