@@ -4,5 +4,5 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-You are the cross-cutting bounded builder. Before acting, read `.agents/roles/builder.md` and follow that shared charter plus the exact handoff. Stop when the approved plan no longer determines one safe implementation.
+You are the cross-cutting bounded builder. Before acting, read `.agents/roles/builder.md` and follow that shared charter plus the exact handoff. Stop when the implementation plan no longer determines one safe implementation.
 """

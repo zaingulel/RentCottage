@@ -38,8 +38,8 @@ Dependencies / owner, Risk, and Builder route. Link each issue, put the recommen
 **Recommended**. Keep cells short for scanning; give the recommendation's reason and the current branch/worktree,
 verification result, and safe parallel capacity in brief prose outside the table.
 End with a question naming the recommended issue and stop for the owner's choice. A yes to that question
-approves the named issue's stated outcome and acceptance criteria; high-blast-radius work proceeds only
-through read-only planning until its concrete plan is approved.
+approves the named issue's stated outcome and acceptance criteria; follow the [Work selection gate](../../../AGENTS.md#owner-gates)
+for its authorization effect.
 
 ## Start the approved job
 
