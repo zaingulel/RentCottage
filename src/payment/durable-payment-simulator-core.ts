@@ -167,7 +167,28 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
   ): Promise<ProviderOperationResult> {
     const permit = request.executionPermit;
     if (permit?.purpose === "booking-request-capture") {
-      return { outcome: "not-executed" };
+      if (
+        !(Date.parse(this.#now()) < Date.parse(permit.notAfter)) ||
+        request.kind !== "capture" ||
+        request.paymentLifecycleId !== permit.paymentLifecycleId ||
+        request.logicalOperationId !== permit.captureLogicalOperationId ||
+        request.attemptId !== permit.capturePhysicalAttemptId ||
+        request.amountFils !== permit.amountFils ||
+        request.currency !== permit.currency ||
+        Object.keys(identity).some(
+          (key) =>
+            identity[key as keyof PaymentProviderIdentity] !==
+            permit.providerIdentity[key as keyof PaymentProviderIdentity],
+        ) ||
+        operationFingerprint(request) !== permit.requestFingerprint
+      )
+        return { outcome: "not-executed" };
+      const { data, error } = await this.#client.rpc(
+        "execute_simulated_booking_request_capture",
+        { target_permit: permit },
+      );
+      if (error) throw new Error("Simulated payment execution is unavailable");
+      return providerResult(data);
     }
     const purposeMatchesKind =
       (permit?.purpose === "booking-request-authorization" &&

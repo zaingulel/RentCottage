@@ -79,6 +79,7 @@ const databaseCheckCommands = [
   ["node", ["scripts/verify-booking-period-hold-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-request-lifecycle-concurrency.mjs"]],
+  ["node", ["scripts/verify-booking-request-capture-concurrency.mjs"]],
 ];
 const browserCommands = [
   ["node", ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"]],
@@ -613,6 +614,28 @@ describe("access verification command", () => {
     ]);
   });
 
+  it.each([{ mode: [] }, { mode: ["--database"] }])(
+    "propagates Capture concurrency failure in mode $mode and cleans up",
+    ({ mode }) => {
+      const run = ownedRun((command, args) => ({
+        status:
+          command === "node" &&
+          args[0] === "scripts/verify-booking-request-capture-concurrency.mjs"
+            ? 7
+            : 0,
+        stdout:
+          command === "npx" && args.join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      }));
+      expect(main(mode, { environment: {}, run, stderr: vi.fn() })).toBe(7);
+      expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
+      expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
+        false,
+      );
+    },
+  );
+
   it("runs complete browser evidence from fresh fixtures without database checks", () => {
     const run = successfulRun();
 
@@ -854,47 +877,52 @@ describe("access verification command", () => {
       SUPABASE_SECRET_KEY: "local-secret",
     });
     expect(run.mock.calls[17][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
+    expect(run.mock.calls[17][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[18][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[19][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
-      NEXTJS_ENV: "test",
-      SUPABASE_PROJECT_REF: "local-test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[20][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+      NEXTJS_ENV: "test",
+      SUPABASE_PROJECT_REF: "local-test",
     });
     expect(run.mock.calls[21][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
-    expect(run.mock.calls[23][2].env).toMatchObject({
+    expect(run.mock.calls[22][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+    });
+    expect(run.mock.calls[24][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
-    expect(run.mock.calls[24][2].env).toMatchObject({
+    expect(run.mock.calls[25][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[24][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[25][2].env).toMatchObject({
+    expect(run.mock.calls[25][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[26][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[26][2].env).toMatchObject({
+    expect(run.mock.calls[27][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[26][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[27][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 

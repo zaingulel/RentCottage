@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
@@ -51,7 +52,7 @@ function assertEqual(actual, expected, message) {
 
 function snapshot(table, orderBy) {
   return harness.runSql(`
-    select coalesce(jsonb_agg(to_jsonb(rows) order by ${orderBy}), '[]'::jsonb)
+    select coalesce(jsonb_agg(${table === "simulated_payment_provider_operations" ? "to_jsonb(rows) - 'capture_execution_permit'" : "to_jsonb(rows)"} order by ${orderBy}), '[]'::jsonb)
     from public.${table} rows;
   `);
 }
@@ -111,7 +112,7 @@ try {
     "Capture-work upgrade proof reset to the wrong predecessor.",
   );
 
-  harness.runSql(`
+  const seedPredecessorGraph = `
     begin;
     insert into auth.users (id, aud, role, phone, phone_confirmed_at)
     values
@@ -543,7 +544,8 @@ try {
         '91000000-0000-4000-8000-000000000001', 'in_product',
         '2100-01-03 01:04:00+00');
     commit;
-  `);
+  `;
+  harness.runSql(seedPredecessorGraph);
 
   const before = snapshotPredecessorGraph();
 
@@ -681,6 +683,110 @@ try {
 
   console.log(
     "Booking Request capture-work upgrade preserved pending, release-processing, and accepted predecessor graphs byte-for-byte; retained three active holds and successful authorizations; inferred no capture work, evidence, operation, confirmation, or receipt; and kept the new relation RLS-private from every application role.",
+  );
+
+  const captureWorkPredecessor = "20260904120000";
+  const resetCaptureWorkArgs = [
+    "db",
+    "reset",
+    "--local",
+    "--version",
+    captureWorkPredecessor,
+  ];
+  const resetCaptureWork = runSupabase(resetCaptureWorkArgs);
+  if (resetCaptureWork.status !== 0)
+    throw commandFailure(resetCaptureWorkArgs, resetCaptureWork);
+  assertEqual(
+    harness.runSql(
+      "select max(version) from supabase_migrations.schema_migrations;",
+    ),
+    captureWorkPredecessor,
+    "Capture execution upgrade reset to the wrong predecessor.",
+  );
+  harness.runSql(seedPredecessorGraph);
+  harness.runSql(
+    "begin; delete from public.booking_request_release_work; update public.booking_requests set status = 'accepted'; commit;",
+  );
+  for (let position = 1; position <= 3; position++) {
+    const suffix = String(position).padStart(12, "0");
+    const requestId = `96000000-0000-4000-8000-${suffix}`;
+    const lifecycleId = `99000000-0000-4000-8000-${suffix}`;
+    const fingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          provider: {
+            provider: "fictional-payments",
+            environment: "local-test",
+            merchantId: "capture-upgrade-merchant",
+            terminalId: "capture-upgrade-terminal",
+          },
+          kind: "capture",
+          paymentLifecycleId: lifecycleId,
+          logicalOperationId: `${lifecycleId}:capture`,
+          attemptId: `${lifecycleId}:capture:attempt-2`,
+          amountFils: 115000000,
+          currency: "IQD",
+        }),
+      )
+      .digest("hex");
+    const state = ["queued", "processing", "complete"][position - 1];
+    harness.runSql(`insert into public.booking_request_capture_work (
+      booking_request_id, attempt_id, authorization_claim_id, authorization_claim_generation,
+      payment_lifecycle_id, authorization_logical_operation_id, authorization_physical_attempt_id,
+      capture_logical_operation_id, capture_physical_attempt_id, amount_fils, currency,
+      provider, environment, merchant_id, terminal_id, provider_idempotency_key, request_fingerprint,
+      state, lease_generation, lease_token, lease_expires_at, outcome, created_at, completed_at
+    ) values (
+      '${requestId}', '97000000-0000-4000-8000-${suffix}', '98000000-0000-4000-8000-${suffix}', 1,
+      '${lifecycleId}', '${lifecycleId}:authorization', '${lifecycleId}:authorization:attempt-1',
+      '${lifecycleId}:capture', '${lifecycleId}:capture:attempt-2', 115000000, 'IQD',
+      'fictional-payments', 'local-test', 'capture-upgrade-merchant', 'capture-upgrade-terminal',
+      'booking-request-capture:${requestId}:1', '${fingerprint}', '${state}', ${position === 1 ? 0 : position},
+      ${position === 2 ? "'99200000-0000-4000-8000-000000000002'" : "null"},
+      ${position === 2 ? "'2101-01-01T00:00:30.000Z'" : "null"}, ${position === 3 ? "'succeeded'" : "null"},
+      '2100-01-01T00:00:00.000Z', ${position === 3 ? "'2100-01-01T01:00:00.000Z'" : "null"}
+    );`);
+  }
+  const beforeExecution = {
+    ...snapshotPredecessorGraph(),
+    captureWork: snapshot(
+      "booking_request_capture_work",
+      "rows.booking_request_id",
+    ),
+  };
+  const executionUpgrade = runSupabase(upgradeArgs);
+  if (executionUpgrade.status !== 0)
+    throw commandFailure(upgradeArgs, executionUpgrade);
+  const afterExecution = {
+    ...snapshotPredecessorGraph(),
+    captureWork: snapshot(
+      "booking_request_capture_work",
+      "rows.booking_request_id",
+    ),
+  };
+  for (const key of Object.keys(beforeExecution)) {
+    assertEqual(
+      afterExecution[key],
+      beforeExecution[key],
+      `Capture execution migration changed predecessor ${key}.`,
+    );
+  }
+  assertEqual(
+    harness.runSql(
+      "select string_agg(state, ',' order by booking_request_id) from public.booking_request_capture_work;",
+    ),
+    "queued,processing,complete",
+    "Capture execution migration must retain every predecessor work state.",
+  );
+  assertEqual(
+    harness.runSql(
+      "select count(*) from public.simulated_payment_provider_operations where capture_execution_permit is not null or operation_kind = 'capture';",
+    ),
+    "0",
+    "Capture execution migration must not backfill a permit or execute capture.",
+  );
+  console.log(
+    "Capture execution upgrade preserved queued, processing and complete predecessor work and every source graph byte-for-byte; existing Authorization ledger columns are unchanged and their new capture-only permit column remains null.",
   );
 } catch (error) {
   failure = error;

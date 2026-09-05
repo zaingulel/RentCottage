@@ -374,7 +374,12 @@ export function main(
       if (bookingRequestLifecycleConcurrency.status !== 0) {
         return bookingRequestLifecycleConcurrency.status;
       }
-      return 0;
+      const bookingRequestCaptureConcurrency = execute(
+        "node",
+        ["scripts/verify-booking-request-capture-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      return bookingRequestCaptureConcurrency.status;
     };
     if (databaseMode) {
       const databaseStatus = verifyDatabaseChecks();
