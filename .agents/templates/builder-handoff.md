@@ -5,7 +5,7 @@ Claim: {{CLAIM}}
 Construction mode: {{CONSTRUCTION_MODE}}
 Working directory: {{WORKTREE_ROOT}}
 
-Approved plan:
+Implementation plan:
 {{PLAN}}
 
 Files allowed for this claim:
