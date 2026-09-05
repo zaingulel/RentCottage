@@ -905,6 +905,9 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page
     .getByRole("button", { name: "Create another cottage draft" })
     .click();
+  await expect(
+    page.getByRole("link", { name: "Open Cottage Profile" }),
+  ).toHaveCount(2);
   await page.reload();
   await expect(
     page.getByRole("link", { name: "Open Cottage Profile" }),
