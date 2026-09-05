@@ -51,8 +51,9 @@ Destructive actions keep exact-target approval.
 
 ## Native job lifecycle
 
-- Fetch `origin/main` and create `job/<issue>` directly from that ref in one native worktree. A dirty or stale
-  primary checkout is preserved; it is not synchronized, stashed, cleaned, or used as a prerequisite.
+- Fetch `origin/main` and create `job/<issue>` directly from that ref in one native worktree. The primary checkout is preserved
+  and is never switched, stashed, cleaned, or used as a prerequisite. `closeout` owns safe automatic local-main
+  updates after merge and retries during `resume`; retain active, dirty, divergent or uncertain targets.
 - One writer owns the job worktree. Other agents are read-only unless the coordinator explicitly hands the sole
   writer role to one builder and waits for it to stop.
 - Parallel tickets require demonstrably separate behaviour, files, migrations, providers/database seams, tests,

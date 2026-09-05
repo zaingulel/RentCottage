@@ -21,6 +21,13 @@ reviewed by the owner; malformed or incomplete evidence stops selection. Keep dr
 Retry only a named failed source. A branch with a draft pull request is unfinished work; read its `Not done`
 section before considering new work. Leave foreign work unchanged.
 
+For remaining local job branches and worktrees, check their matching merged pull requests and run
+`git worktree prune --dry-run --verbose`. Use [closeout](../closeout/SKILL.md) to assess missed cleanup before
+shortlisting. Complete only exact targets covered by existing closeout authority; otherwise report the proposed
+targets and why they remain. Keep unfinished and active work excluded from cleanup. A historical cleanup decision
+does not prevent selecting unrelated work. Also assess and retry [safe local-main updates](../closeout/SKILL.md#update-local-main)
+under that procedure; report skipped updates with their reason.
+
 ## Work pick
 
 After ownership and board classification narrow the shortlist, fetch bodies and attributed comments for at most
@@ -37,9 +44,18 @@ through read-only planning until its concrete plan is approved.
 ## Start the approved job
 
 Freshly fetch `origin/main`. Create one native worktree and `job/<issue>` branch directly from that ref; do not
-switch, clean, stash, pull, or synchronize the primary checkout. If the runtime already created the approved job
+switch, clean, stash, or pull the primary checkout to start a job. Safe local-main updates belong to the initial
+reconciliation above. If the runtime already created the approved job
 worktree, verify its branch and exact base instead of creating another.
 
 Assign one writer. Move the issue only under existing tracker authority. Install dependencies in a fresh
 worktree, make the route explicit, then plan and build under `AGENTS.md`. Commit each coherent green slice
 locally. Delivery waits for the owner-approved pull-request body.
+
+## Finish the approved job
+
+Include the exact branch and absolute worktree path in the filled pull-request body's proposed closeout actions.
+After delivery approval, follow `docs/agents/delivery.md` and watch the approved merge until it lands or reports a
+failure or blocker. When GitHub confirms `MERGED`, run [closeout](../closeout/SKILL.md) in the same session under
+that existing exact-target approval. Report the confirmed merge and cleanup result, including retained targets.
+A queued merge is still pending; do not close out its worktree. Park genuinely unfinished work with `handoff`.
