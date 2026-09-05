@@ -1,6 +1,6 @@
 name = "plan-reviewer"
 description = "Independent read-only review of one fixed RentCottage plan for feasibility, scope, coherence, and security/privacy."
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """

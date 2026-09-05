@@ -68,7 +68,9 @@ beyond Git's own inventory.
 
 ## Team and routing
 
-The coordinator owns scope, integration, verification, and owner communication. Use the smallest useful team:
+The coordinator owns scope, integration, verification, and owner communication. For Codex, select the seat by
+its role and risk, then explicitly pass the model and reasoning effort from `.codex/agents/<seat>.toml`; these
+repository definitions take precedence over machine-wide model routing. Use the smallest useful team:
 
 - `explorer` locates code and evidence without judging or editing.
 - `architect` produces a concrete plan; `plan-reviewer` challenges a fixed high-risk plan once.
