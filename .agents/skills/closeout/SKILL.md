@@ -7,8 +7,10 @@ description: Reconcile an approved merged RentCottage job and remove its clean w
 
 Run in the same session as an authorised merge, or assess a missed closeout found by `resume`.
 The approved pull-request body must name the exact branch and absolute worktree path for removal. That approval
-covers closeout after the merge without another routine prompt. Historical targets without that authority are
-reported with the proposed removal and recovery implications for an exact-target owner decision.
+covers closeout after the merge without another routine prompt. Verify the exact targets against the original
+owner approval and the delivery packet that approval covered; the editable live pull-request body alone is not
+approval evidence. If that original evidence is unavailable or the targets differ, retain the targets and report
+the proposed removal and recovery implications for renewed exact-target approval.
 
 1. Confirm the same-repository pull request is `MERGED`. Record its head branch, head commit, merge commit and
    named closing issues. Confirm those issues' live state; reconcile only the issues the approved body names.
@@ -25,10 +27,12 @@ reported with the proposed removal and recovery implications for an exact-target
    deleting its branch. The same command removes an exact stale registration when its directory is confirmed
    permanently absent, has no active owner, and its removal is approved. A temporarily unavailable or uncertain
    path is retained; a refusal never permits force removal.
-5. Prefer `git branch -d <branch>` when Git can prove the branch merged into `origin/main` or its retained exact
-   pull-request upstream. After a squash merge with a missing upstream, use
+5. Try `git branch -d <branch>` after the removal proofs above. Git checks the configured upstream, or current
+   `HEAD` when there is no upstream; it does not independently check `origin/main`. If deletion refuses because
+   that history cannot prove the merge, use
    `git update-ref -d refs/heads/<branch> <approved-head>` only after steps 1–4 prove that exact commit was the
-   merged pull-request head and no worktree still checks out the branch. This expected-commit deletion fails if
+   merged pull-request head and no worktree still checks out the branch, for either squash or ordinary merges.
+   This expected-commit deletion fails if
    the branch moves; it does not depend on a remote-tracking ref surviving. Never substitute `git branch -D` or
    delete a branch with a different tip. Remove that branch's local configuration section after successful ref
    deletion if it remains. Verify the local branch is absent. Check the remote branch separately; if it remains,
