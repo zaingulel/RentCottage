@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
+import { createBookingRequestCaptureProcessing } from "@/booking-request/booking-request-capture-processing";
 import { createBookingRequestCapture } from "@/booking-request/booking-request-capture";
 import { createBookingRequestCaptureRecovery } from "@/booking-request/booking-request-capture-recovery";
 import { createBookingRequestConfirmation } from "@/booking-request/booking-request-confirmation";
@@ -76,7 +77,8 @@ async function main() {
     async execute(request) {
       const result = await durable.execute(request);
       send({ stage: "execute", request, result });
-      if (mode === "lose-response") throw lostResponse;
+      if (mode === "lose-response" || mode === "process-lose-response")
+        throw lostResponse;
       return result;
     },
     async query(request) {
@@ -97,7 +99,27 @@ async function main() {
   const confirmation = createBookingRequestConfirmation({
     repository: new SupabaseBookingRequestConfirmationRepository(client),
   });
-  if (mode === "lose-response" || mode === "capture-only") {
+  if (
+    [
+      "process",
+      "process-lose-response",
+      "process-interrupt-confirmation",
+    ].includes(mode)
+  ) {
+    const result = await createBookingRequestCaptureProcessing({
+      repository,
+      provider,
+      confirmation:
+        mode === "process-interrupt-confirmation"
+          ? {
+              execute: async () => {
+                throw new Error("Interrupted confirmation");
+              },
+            }
+          : confirmation,
+    }).processDue();
+    send({ stage: "complete", result });
+  } else if (mode === "lose-response" || mode === "capture-only") {
     try {
       const result = await createBookingRequestCapture({
         repository,

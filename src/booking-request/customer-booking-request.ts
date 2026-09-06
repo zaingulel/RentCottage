@@ -21,6 +21,7 @@ export interface CustomerBookingRequest {
   readonly id: string;
   readonly bookingRequestReference: string;
   readonly status: BookingRequestStatus;
+  readonly paymentStatus: "capture-processing" | "paid-confirmed" | null;
   readonly cottageName: string;
   readonly bookingPeriod: BookingQuoteItem[];
   readonly partySize: number;
@@ -46,6 +47,10 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     typeof request.bookingRequestReference !== "string" ||
     !/^RC-REQ-[A-F0-9]{16}$/.test(request.bookingRequestReference) ||
     !isBookingRequestStatus(request.status) ||
+    (request.paymentStatus !== null &&
+      (request.status !== "accepted" ||
+        (request.paymentStatus !== "capture-processing" &&
+          request.paymentStatus !== "paid-confirmed"))) ||
     typeof request.cottageName !== "string" ||
     !Array.isArray(request.bookingPeriod) ||
     !validateQuotedItems(request.bookingPeriod as BookingQuoteItem[]) ||
@@ -123,6 +128,10 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     id: request.id,
     bookingRequestReference: request.bookingRequestReference,
     status: request.status,
+    paymentStatus: request.paymentStatus as
+      | "capture-processing"
+      | "paid-confirmed"
+      | null,
     cottageName: request.cottageName,
     bookingPeriod,
     partySize: request.partySize as number,

@@ -8,6 +8,7 @@ const baseRequest = {
   id: "00000000-0000-4000-8000-000000000033",
   bookingRequestReference: reference,
   status: "declined",
+  paymentStatus: null,
   cottageName: "The Reed House",
   bookingPeriod: [
     {
@@ -44,6 +45,39 @@ function clientReturning(data: unknown) {
 }
 
 describe("Customer Booking Request database projection", () => {
+  it.each(["capture-processing", "paid-confirmed"] as const)(
+    "retains authoritative %s evidence",
+    async (paymentStatus) => {
+      const result = await getCustomerBookingRequest(
+        clientReturning({ ...baseRequest, status: "accepted", paymentStatus }),
+        reference,
+      );
+      expect(result).toMatchObject({ status: "accepted", paymentStatus });
+    },
+  );
+  it.each([undefined, "paid", 1, { status: "paid-confirmed" }])(
+    "rejects malformed payment projection %s",
+    async (paymentStatus) => {
+      await expect(
+        getCustomerBookingRequest(
+          clientReturning({ ...baseRequest, paymentStatus }),
+          reference,
+        ),
+      ).rejects.toThrow("invalid");
+    },
+  );
+  it("rejects paid evidence attached to a pending request", async () => {
+    await expect(
+      getCustomerBookingRequest(
+        clientReturning({
+          ...baseRequest,
+          status: "pending",
+          paymentStatus: "paid-confirmed",
+        }),
+        reference,
+      ),
+    ).rejects.toThrow("invalid");
+  });
   it.each([
     { id: "not-a-uuid" },
     {

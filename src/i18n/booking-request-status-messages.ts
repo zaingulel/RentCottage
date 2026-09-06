@@ -39,17 +39,17 @@ export const bookingRequestDisplayStatusMessages: Record<
 > = {
   en: {
     ...bookingRequestStatusMessages.en,
-    "capture-processing": "Payment capture processing",
+    "capture-processing": "Payment confirmation pending",
     "paid-confirmed": "Booking confirmed",
   },
   ar: {
     ...bookingRequestStatusMessages.ar,
-    "capture-processing": "جارٍ تحصيل الدفع",
+    "capture-processing": "بانتظار تأكيد الدفع",
     "paid-confirmed": "تم تأكيد الحجز",
   },
   ckb: {
     ...bookingRequestStatusMessages.ckb,
-    "capture-processing": "پارەدان لە پرۆسەدایە",
+    "capture-processing": "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
     "paid-confirmed": "حجز پشتڕاست کراوەتەوە",
   },
 };
@@ -60,17 +60,17 @@ export const bookingRequestPaymentDisplayMessages: Record<
 > = {
   en: {
     "capture-processing":
-      "The Cottage Owner accepted the request. Payment is being collected. The booking is not confirmed yet.",
+      "The Cottage Owner accepted the request. Payment confirmation is pending. The booking is not confirmed yet.",
     "paid-confirmed": "Payment succeeded. The booking is confirmed.",
   },
   ar: {
     "capture-processing":
-      "وافق مالك البيت على الطلب. جارٍ تحصيل الدفع. الحجز غير مؤكد بعد.",
+      "وافق مالك البيت على الطلب. بانتظار تأكيد الدفع. الحجز غير مؤكد بعد.",
     "paid-confirmed": "نجحت عملية الدفع. تم تأكيد الحجز.",
   },
   ckb: {
     "capture-processing":
-      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. پارەدان وەردەگیرێت. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. چاوەڕێی پشتڕاستکردنەوەی پارەدانین. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
     "paid-confirmed": "پارەدان سەرکەوتوو بوو. حجزەکە پشتڕاست کراوەتەوە.",
   },
 };

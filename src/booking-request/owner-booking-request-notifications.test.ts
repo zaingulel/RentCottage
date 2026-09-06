@@ -7,6 +7,7 @@ const notification = {
   id: "00000000-0000-4000-8000-000000000033",
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
   status: "pending",
+  paymentStatus: null,
   customerName: "Ava Hassan",
   partySize: 4,
   bookingNote: "Garden seating, please.",
@@ -35,6 +36,34 @@ const notification = {
 };
 
 describe("Owner Booking Request notifications", () => {
+  it.each(["capture-processing", "paid-confirmed"] as const)(
+    "retains authoritative %s payment state",
+    async (paymentStatus) => {
+      const client = {
+        rpc: vi.fn().mockResolvedValue({
+          data: [{ ...notification, status: "accepted", paymentStatus }],
+          error: null,
+        }),
+      } as unknown as SupabaseClient;
+      await expect(
+        listOwnerBookingRequestNotifications(client),
+      ).resolves.toMatchObject([{ status: "accepted", paymentStatus }]);
+    },
+  );
+  it.each([undefined, "paid", 1, {}])(
+    "rejects malformed payment state %#",
+    async (paymentStatus) => {
+      const client = {
+        rpc: vi.fn().mockResolvedValue({
+          data: [{ ...notification, paymentStatus }],
+          error: null,
+        }),
+      } as unknown as SupabaseClient;
+      await expect(
+        listOwnerBookingRequestNotifications(client),
+      ).rejects.toThrow("invalid");
+    },
+  );
   it("loads the complete minimal owner projection", async () => {
     const rpc = vi
       .fn()

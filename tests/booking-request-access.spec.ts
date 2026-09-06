@@ -343,25 +343,107 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const scheduledExpiryReference = await submitAnotherRequest("en");
     await page.goto(`/en/booking-requests/${scheduledExpiryReference}`);
     await expect(page.getByText("Pending", { exact: true })).toBeVisible();
-  } else {
+  } else if (testInfo.project.name === "worker") {
+    await page.goto(`/en/booking-requests/${requestReference}`);
+    await expect(
+      page.getByRole("button", { name: "Withdraw pending request" }),
+    ).toBeVisible();
     await ownerNotice
       .getByRole("button", { name: "Accept complete request" })
       .click();
+    // The Customer stays mounted across the independent Owner action.
+    await expect(page.getByRole("status")).toContainText(
+      "Payment confirmation pending",
+      { timeout: 15000 },
+    );
+    await expect(ownerNotice.getByRole("status")).toContainText(
+      "Payment confirmation pending",
+    );
     await expect(
-      ownerNotice.getByText("Accepted", { exact: true }),
-    ).toBeVisible();
-    await ownerPage.reload();
-    await expect(
-      ownerPage.getByText("Status notification", { exact: true }),
-    ).toBeVisible();
-    await page
-      .getByRole("link", { name: "View and manage this request" })
-      .click();
-    await expect(page.getByText("Accepted", { exact: true })).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("en-customer-booking-request-accepted.png"),
-      fullPage: true,
-    });
+      page.getByRole("button", { name: "Withdraw pending request" }),
+    ).toHaveCount(0);
+    await expect(ownerNotice.getByRole("button")).toHaveCount(0);
+    const locales = [
+      {
+        locale: "en",
+        pending: "Payment confirmation pending",
+        confirmed: "Booking confirmed",
+      },
+      {
+        locale: "ar",
+        pending: "بانتظار تأكيد الدفع",
+        confirmed: "تم تأكيد الحجز",
+      },
+      {
+        locale: "ckb",
+        pending: "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
+        confirmed: "حجز پشتڕاست کراوەتەوە",
+      },
+    ] as const;
+    async function captureViews(
+      state: "capture-processing" | "paid-confirmed",
+    ) {
+      for (const copy of locales) {
+        await page.goto(`/${copy.locale}/booking-requests/${requestReference}`);
+        await ownerPage.goto(`/${copy.locale}/owner/cottages`);
+        for (const surface of [page, ownerPage]) {
+          await expect(surface.locator("html")).toHaveAttribute(
+            "dir",
+            copy.locale === "en" ? "ltr" : "rtl",
+          );
+        }
+        await expect(page.getByRole("status")).toContainText(
+          state === "capture-processing" ? copy.pending : copy.confirmed,
+        );
+        await expect(ownerNotice.getByRole("status")).toContainText(
+          state === "capture-processing" ? copy.pending : copy.confirmed,
+        );
+        await expect(ownerNotice.getByRole("button")).toHaveCount(0);
+        for (const viewport of [
+          { name: "mobile", width: 390, height: 844 },
+          { name: "desktop", width: 1440, height: 1000 },
+        ]) {
+          for (const [role, surface] of [
+            ["customer", page],
+            ["owner", ownerPage],
+          ] as const) {
+            await surface.setViewportSize({
+              width: viewport.width,
+              height: viewport.height,
+            });
+            await surface.evaluate(() => document.fonts.ready);
+            expect(
+              await surface.evaluate(
+                () =>
+                  document.documentElement.scrollWidth <=
+                  document.documentElement.clientWidth,
+              ),
+            ).toBe(true);
+            await surface.screenshot({
+              path: testInfo.outputPath(
+                `${role}-${copy.locale}-${viewport.name}-${state}.png`,
+              ),
+              fullPage: true,
+            });
+          }
+        }
+      }
+    }
+    await captureViews("capture-processing");
+    const scheduled = await page.request.get(
+      "/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A",
+    );
+    expect(scheduled.ok()).toBe(true);
+    // Both Sorani pages remain mounted while the real Worker confirms payment.
+    await expect(page.getByRole("status")).toContainText(
+      "حجز پشتڕاست کراوەتەوە",
+      { timeout: 15000 },
+    );
+    await expect(ownerNotice.getByRole("status")).toContainText(
+      "حجز پشتڕاست کراوەتەوە",
+    );
+    await captureViews("paid-confirmed");
+    expect((await page.request.get("/__scheduled")).ok()).toBe(true);
   }
   await ownerContext.close();
 });

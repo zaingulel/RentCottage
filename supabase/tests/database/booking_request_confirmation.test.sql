@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(38);
 
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
@@ -107,6 +107,8 @@ select throws_ok($$select public.finalize_booking_request_confirmation('60000000
 reset role;
 select is((select count(*) from public.booking_confirmations),0::bigint,'rejected Capture writes no outcome');
 
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000001002', true);
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->>'paymentStatus', 'capture-processing', 'Capture complete without confirmation still projects pending confirmation');
 savepoint substituted_snapshot;
 insert into public.booking_snapshots select '40000000-0000-4000-8000-000000001002'::uuid,'10000000-0000-4000-8000-000000001003'::uuid,profile_id,quote_fingerprint,intent_fingerprint,quote_payload,intent_payload,booking_terms_version,booking_terms_locale,booking_terms_body,booking_terms_sha256,cancellation_policy_version,acceptance_locale,acceptance_evidence,acceptance_evidence_fingerprint,marketplace_commission_rate_basis_points,marketplace_commission_amount_fils,created_at from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001';
 update public.booking_requests set booking_snapshot_id='40000000-0000-4000-8000-000000001002' where id='60000000-0000-4000-8000-000000001001';
@@ -176,5 +178,7 @@ select is(public.finalize_booking_request_confirmation('60000000-0000-4000-8000-
 reset role;
 select ok((select count(*) from public.booking_confirmations)=1 and (select count(*) from public.booking_receipts)=2 and not exists(select 1 from public.booking_request_release_work),'replay creates no duplicates or release work');
 
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000001002', true);
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->>'paymentStatus', 'paid-confirmed', 'Confirmed capture and promoted commitment project paid confirmation');
 select * from finish();
 rollback;

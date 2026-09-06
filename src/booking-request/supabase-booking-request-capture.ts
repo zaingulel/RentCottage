@@ -200,6 +200,27 @@ export class SupabaseBookingRequestCaptureRepository
     BookingRequestCaptureRecoveryRepository
 {
   constructor(private readonly client: SupabaseClient) {}
+  async listQueued(
+    limit: number,
+    providerIdentity: PaymentProviderIdentity,
+  ): Promise<readonly string[]> {
+    const { data, error } = await this.client.rpc(
+      "list_due_booking_request_capture_intents",
+      {
+        target_limit: limit,
+        target_provider_identity: providerIdentity,
+      },
+    );
+    if (error) throw new Error("Capture intent selection is unavailable");
+    if (
+      !Array.isArray(data) ||
+      data.length > limit ||
+      data.some((id) => !isUuid(id)) ||
+      new Set(data).size !== data.length
+    )
+      throw new Error("Database returned invalid Capture intents");
+    return data;
+  }
   async lease(
     bookingRequestId: string,
     providerIdentity: PaymentProviderIdentity,

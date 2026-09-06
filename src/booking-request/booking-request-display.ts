@@ -9,14 +9,14 @@ export type BookingRequestDisplayStatus =
 
 export type CustomerBookingRequestDisplay = Omit<
   CustomerBookingRequest,
-  "status"
+  "status" | "paymentStatus"
 > & {
   readonly status: BookingRequestDisplayStatus;
 };
 
 export type OwnerBookingRequestNotificationDisplay = Omit<
   OwnerBookingRequestNotification,
-  "status"
+  "status" | "paymentStatus"
 > & {
   readonly status: BookingRequestDisplayStatus;
 };
@@ -25,4 +25,17 @@ export function isPaymentDisplayStatus(
   status: BookingRequestDisplayStatus,
 ): status is "capture-processing" | "paid-confirmed" {
   return status === "capture-processing" || status === "paid-confirmed";
+}
+
+export function customerBookingRequestDisplay({
+  paymentStatus,
+  ...request
+}: CustomerBookingRequest): CustomerBookingRequestDisplay {
+  return { ...request, status: paymentStatus ?? request.status };
+}
+export function ownerBookingRequestNotificationDisplay({
+  paymentStatus,
+  ...notification
+}: OwnerBookingRequestNotification): OwnerBookingRequestNotificationDisplay {
+  return { ...notification, status: paymentStatus ?? notification.status };
 }

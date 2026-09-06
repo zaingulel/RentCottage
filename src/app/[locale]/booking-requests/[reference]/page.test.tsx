@@ -1,13 +1,18 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadRequest, notFound } = vi.hoisted(() => ({
+const { loadRequest, notFound, router } = vi.hoisted(() => ({
   loadRequest: vi.fn(),
   notFound: vi.fn(),
+  router: { refresh: vi.fn() },
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/navigation", () => ({ notFound, unstable_rethrow: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  notFound,
+  unstable_rethrow: vi.fn(),
+  useRouter: () => router,
+}));
 vi.mock("@/booking-request/request-customer-booking-request", () => ({
   loadCustomerBookingRequest: loadRequest,
 }));

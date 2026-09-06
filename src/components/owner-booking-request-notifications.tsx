@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
 import {
   isPaymentDisplayStatus,
@@ -16,9 +17,11 @@ import { BookingRequestDecisionControls } from "./booking-request-decision-contr
 function OwnerBookingRequestCard({
   locale,
   notification,
+  refresh,
 }: {
   locale: Locale;
   notification: OwnerBookingRequestNotificationDisplay;
+  refresh: () => void;
 }) {
   const copy = ownerBookingRequestMessages[locale];
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
@@ -130,7 +133,10 @@ function OwnerBookingRequestCard({
         <BookingRequestDecisionControls
           locale={locale}
           bookingRequestId={notification.id}
-          onStatusChange={setStatus}
+          onStatusChange={(next) => {
+            setStatus(next);
+            if (next !== "pending" && next !== "processing") refresh();
+          }}
         />
       ) : null}
     </article>
@@ -145,6 +151,16 @@ export function OwnerBookingRequestNotifications({
   notifications: OwnerBookingRequestNotificationDisplay[] | undefined;
 }) {
   const copy = ownerBookingRequestMessages[locale];
+  const refresh = useBookingRequestRefresh(
+    Boolean(
+      notifications?.some(
+        ({ status }) =>
+          status === "pending" ||
+          status === "processing" ||
+          status === "capture-processing",
+      ),
+    ),
+  );
   if (!notifications) {
     return (
       <section className="owner-booking-requests" role="alert">
@@ -172,7 +188,8 @@ export function OwnerBookingRequestNotifications({
           <OwnerBookingRequestCard
             locale={locale}
             notification={notification}
-            key={notification.bookingRequestReference}
+            key={`${notification.bookingRequestReference}:${notification.status}`}
+            refresh={refresh}
           />
         ))}
       </div>
