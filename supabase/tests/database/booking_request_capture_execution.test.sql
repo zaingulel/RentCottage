@@ -1,5 +1,5 @@
 begin;
-select plan(99);
+select plan(152);
 
 -- BEGIN CAPTURE EXECUTION FIXTURE
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
@@ -229,18 +229,22 @@ values ('50000000-0000-4000-8000-000000001001', '30000000-0000-4000-8000-0000000
 
 
 select ok((select prosecdef and proconfig = array['search_path=""'] from pg_proc where oid = signature::regprocedure), 'Capture RPC is security-definer with an empty search path: ' || signature)
-from (values ('public.lease_booking_request_capture_work(uuid,jsonb)'), ('public.execute_simulated_booking_request_capture(jsonb)'), ('public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'), ('public.lock_booking_request_capture_source(uuid)')) functions(signature);
+from (values ('public.lease_booking_request_capture_work(uuid,jsonb)'), ('public.execute_simulated_booking_request_capture(jsonb)'), ('public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'), ('public.lock_booking_request_capture_source(uuid)'), ('public.claim_due_booking_request_captures(integer,jsonb)'), ('public.query_simulated_booking_request_capture(jsonb,text,text)')) functions(signature);
 select ok(has_function_privilege(role_name, signature, 'EXECUTE') = (role_name = 'service_role'), role_name || ' has only the intended Capture entry-point privilege: ' || signature)
 from (values ('anon'), ('authenticated'), ('service_role')) roles(role_name)
-cross join (values ('public.lease_booking_request_capture_work(uuid,jsonb)'), ('public.execute_simulated_booking_request_capture(jsonb)'), ('public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)')) functions(signature);
+cross join (values ('public.lease_booking_request_capture_work(uuid,jsonb)'), ('public.execute_simulated_booking_request_capture(jsonb)'), ('public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'), ('public.claim_due_booking_request_captures(integer,jsonb)'), ('public.query_simulated_booking_request_capture(jsonb,text,text)')) functions(signature);
 select ok(not has_function_privilege(role_name, 'public.lock_booking_request_capture_source(uuid)', 'EXECUTE'), role_name || ' cannot invoke the private locking helper') from (values ('anon'), ('authenticated'), ('service_role')) roles(role_name);
-select ok(not exists (select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) privileges where p.oid in ('public.lease_booking_request_capture_work(uuid,jsonb)'::regprocedure, 'public.execute_simulated_booking_request_capture(jsonb)'::regprocedure, 'public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'::regprocedure, 'public.lock_booking_request_capture_source(uuid)'::regprocedure) and privileges.grantee = 0), 'PUBLIC has no Capture execution privilege');
+select ok(not exists (select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) privileges where p.oid in ('public.lease_booking_request_capture_work(uuid,jsonb)'::regprocedure, 'public.execute_simulated_booking_request_capture(jsonb)'::regprocedure, 'public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'::regprocedure, 'public.lock_booking_request_capture_source(uuid)'::regprocedure, 'public.claim_due_booking_request_captures(integer,jsonb)'::regprocedure, 'public.query_simulated_booking_request_capture(jsonb,text,text)'::regprocedure) and privileges.grantee = 0), 'PUBLIC has no Capture execution privilege');
 set local role anon;
+select throws_ok($$select public.claim_due_booking_request_captures(20,null)$$, '42501', null, 'anon cannot reclaim Capture');
+select throws_ok($$select public.query_simulated_booking_request_capture(null,null,null)$$, '42501', null, 'anon cannot query Capture');
 select throws_ok($$select public.lease_booking_request_capture_work(null, null)$$, '42501', null, 'anonymous callers cannot lease capture work');
 select throws_ok($$select public.execute_simulated_booking_request_capture(null)$$, '42501', null, 'anonymous callers cannot execute Capture');
 select throws_ok($$select public.complete_booking_request_capture(null, null, null, null)$$, '42501', null, 'anonymous callers cannot complete Capture');
 reset role;
 set local role authenticated;
+select throws_ok($$select public.claim_due_booking_request_captures(20,null)$$, '42501', null, 'authenticated cannot reclaim Capture');
+select throws_ok($$select public.query_simulated_booking_request_capture(null,null,null)$$, '42501', null, 'authenticated cannot query Capture');
 select throws_ok($$select public.lease_booking_request_capture_work(null, null)$$, '42501', null, 'authenticated callers cannot lease capture work');
 select throws_ok($$select public.execute_simulated_booking_request_capture(null)$$, '42501', null, 'authenticated callers cannot execute Capture');
 select throws_ok($$select public.complete_booking_request_capture(null, null, null, null)$$, '42501', null, 'authenticated callers cannot complete Capture');
@@ -250,6 +254,10 @@ set local role service_role;
 select is(public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000009999', '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'), '{"status":"unavailable"}'::jsonb, 'service role can call the private capture entry point');
 select throws_ok($$select public.query_simulated_payment_provider_operation('{"providerIdentity":{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"},"requestFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","paymentLifecycleId":"73000000-0000-4000-8000-000000001001","logicalOperationId":"73000000-0000-4000-8000-000000001001:capture","physicalAttemptId":"73000000-0000-4000-8000-000000001001:capture:attempt-2","operationKind":"capture","amountFils":115000000,"currency":"IQD"}', null, null, 'succeeded')$$, '22023', null, 'existing reconciliation RPC remains closed to Capture');
 reset role;
+
+select is(public.claim_due_booking_request_captures(20, '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'), '[]'::jsonb, 'queued Capture cannot be selected for recovery');
+select throws_ok(format('select public.claim_due_booking_request_captures(%s, %L)', coalesce(limit_value::text,'null'), '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'), 'RC409', null, 'database rejects invalid recovery limit') from (values (null::integer),(0),(51)) limits(limit_value);
+select throws_ok(format('select public.claim_due_booking_request_captures(20, %L)', identity), 'RC409', null, 'database rejects malformed recovery provider identity') from (values ('null'::jsonb), ('{}'::jsonb), ('{"provider":true,"environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)) identities(identity);
 
 create temp table capture_preservation as select
   (select to_jsonb(r) from public.booking_requests r where id = '60000000-0000-4000-8000-000000001001') as request,
@@ -352,6 +360,64 @@ select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %
 select is((select count(*) from public.booking_request_provider_operation_identities where operation_kind = 'capture'), 0::bigint, 'expired evidence leaves no normalized Capture');
 select is((select state from public.booking_request_capture_work where booking_request_id = '60000000-0000-4000-8000-000000001001'), 'processing', 'expired evidence leaves work incomplete');
 rollback to savepoint exact_expiry;
+create temp table capture_query as select jsonb_build_object(
+  'providerIdentity', result #> '{permit,providerIdentity}', 'requestFingerprint', result #> '{permit,requestFingerprint}',
+  'paymentLifecycleId', result #> '{permit,paymentLifecycleId}', 'logicalOperationId', result #> '{permit,captureLogicalOperationId}',
+  'physicalAttemptId', result #> '{permit,capturePhysicalAttemptId}', 'operationKind', 'capture',
+  'amountFils', result #> '{permit,amountFils}', 'currency', 'IQD') operation from capture_lease;
+select is(public.query_simulated_booking_request_capture((select operation from capture_query), (select result ->> 'providerRequestId' from capture_result), (select result ->> 'providerReference' from capture_result)), (select result from capture_result), 'query returns the original capture result');
+select throws_ok(format('select public.query_simulated_booking_request_capture(%L, %L, %L)', (select operation from capture_query), 'replaced-request', (select result ->> 'providerReference' from capture_result)), 'RC409', null, 'query refuses a replaced provider request');
+select throws_ok(format('select public.query_simulated_booking_request_capture(%L, %L, %L)', (select operation from capture_query), (select result ->> 'providerRequestId' from capture_result), 'replaced-reference'), 'RC409', null, 'query refuses a replaced provider reference');
+select throws_ok(format('select public.query_simulated_booking_request_capture(%L, %L, %L)', (select operation from capture_query) || replacement, (select result ->> 'providerRequestId' from capture_result), (select result ->> 'providerReference' from capture_result)), 'RC409', null, 'query validates ' || label)
+from (values ('lifecycle', '{"paymentLifecycleId":"73000000-0000-4000-8000-000000009999"}'::jsonb),
+('operation','{"logicalOperationId":"replaced"}'::jsonb), ('attempt','{"physicalAttemptId":"replaced"}'::jsonb),
+('kind','{"operationKind":"release"}'::jsonb), ('amount','{"amountFils":1}'::jsonb), ('currency','{"currency":"USD"}'::jsonb),
+('fingerprint','{"requestFingerprint":"replaced"}'::jsonb), ('provider','{"providerIdentity":{}}'::jsonb), ('extra fields','{"unexpected":true}'::jsonb)) mutations(label,replacement);
+
+savepoint missing_recovery_evidence;
+update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z';
+delete from public.simulated_payment_provider_operations where operation_kind = 'capture';
+select is(public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)), '[{"status":"unavailable"}]'::jsonb, 'missing execution evidence is visibly unavailable');
+select is((select lease_generation from public.booking_request_capture_work), 1::bigint, 'missing execution evidence cannot renew ownership');
+rollback to savepoint missing_recovery_evidence;
+
+savepoint recovery;
+update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z' where booking_request_id = '60000000-0000-4000-8000-000000001001';
+savepoint invalid_historical_execution;
+update public.simulated_payment_provider_operations set created_at = (capture_execution_permit ->> 'notAfter')::timestamptz where operation_kind = 'capture';
+select throws_ok(format('select public.claim_due_booking_request_captures(20, %L)', (select result #> '{permit,providerIdentity}' from capture_lease)), 'RC409', null, 'reclaim cannot legitimize capture at the original admission deadline');
+rollback to savepoint invalid_historical_execution;
+create temp table recovered as select public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)) result;
+select is((select result #>> '{0,status}' from recovered), 'reconcile', 'expired successful Capture is reclaimed for reconciliation');
+select is((select lease_generation from public.booking_request_capture_work), 2::bigint, 'recovery advances the ownership generation');
+select isnt((select lease_token::text from public.booking_request_capture_work), (select result #>> '{permit,leaseToken}' from capture_lease), 'recovery replaces the ownership token');
+select is((select capture_execution_permit from public.simulated_payment_provider_operations where operation_kind = 'capture'), (select result -> 'permit' from capture_lease), 'reclaim preserves the original execution permit exactly');
+select is((select recovery_operation_id from public.booking_request_capture_work), (select id from public.simulated_payment_provider_operations where operation_kind = 'capture'), 'recovery records the original physical operation');
+select ok(not (select result #> '{0,lease}' ? 'purpose' from recovered), 'recovery lease carries no execution permit purpose');
+select is(public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)), '[]'::jsonb, 'an active recovery lease is excluded from another drain');
+select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), (select result from capture_result)), 'RC409', null, 'the original executor cannot complete reclaimed work');
+select throws_ok(format('select public.execute_simulated_booking_request_capture(%L)', (select result -> 'permit' from capture_lease)), 'RC409', null, 'recovery cannot use the original permit to execute again');
+select throws_ok(format('select public.execute_simulated_booking_request_capture(%L)', (select result #> '{0,lease}' from recovered)), 'RC409', null, 'a recovery lease cannot authorize provider execution');
+savepoint superseded_recovery;
+update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z';
+select is(public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)) #>> '{0,lease,leaseGeneration}', '3', 'an expired recovery owner can itself be reclaimed');
+select throws_ok(format('select public.complete_booking_request_capture(%L, 2, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{0,lease,leaseToken}' from recovered), (select result from capture_result)), 'RC409', null, 'superseded recovery token cannot complete');
+select is((select state from public.booking_request_capture_work), 'processing', 'superseded completion cannot persist capture');
+rollback to savepoint superseded_recovery;
+select throws_ok(format('select public.complete_booking_request_capture(%L, 2, %L, %L)', '60000000-0000-4000-8000-000000001001', '80000000-0000-4000-8000-000000009999', (select result from capture_result)), 'RC409', null, 'the current recovery generation still requires its exact ownership token');
+savepoint invalid_recovered_occurrence;
+update public.simulated_payment_provider_operations set created_at = (capture_execution_permit ->> 'notAfter')::timestamptz where operation_kind = 'capture';
+select throws_ok(format('select public.complete_booking_request_capture(%L, 2, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{0,lease,leaseToken}' from recovered), (select result from capture_result)), 'RC409', null, 'completion independently checks the original execution deadline after recovery');
+rollback to savepoint invalid_recovered_occurrence;
+create temp table recovered_completion as select public.complete_booking_request_capture(
+  '60000000-0000-4000-8000-000000001001', (select (result #>> '{0,lease,leaseGeneration}')::bigint from recovered),
+  (select (result #>> '{0,lease,leaseToken}')::uuid from recovered), (select result from capture_result)) result;
+select is((select result ->> 'status' from recovered_completion), 'complete', 'the current recovery owner completes original successful evidence');
+select is(public.complete_booking_request_capture('60000000-0000-4000-8000-000000001001', null, null, null), (select result from recovered_completion), 'completed recovery has exact null-lease evidence replay');
+select throws_ok(format('select public.complete_booking_request_capture(%L, 2, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{0,lease,leaseToken}' from recovered), (select result from capture_result)), 'RC409', null, 'completed recovery cannot replay a cleared historical recovery token');
+select is(public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)) #>> '{0,status}', 'complete', 'complete-but-unconfirmed evidence remains due without a new lease');
+rollback to savepoint recovery;
+
 savepoint replaced_lease;
 update public.booking_request_capture_work set lease_generation = 2 where booking_request_id = '60000000-0000-4000-8000-000000001001';
 select throws_ok(format('select public.complete_booking_request_capture(%L, %s, %L, %L)', '60000000-0000-4000-8000-000000001001', (select lease_generation from public.booking_request_capture_work where booking_request_id = '60000000-0000-4000-8000-000000001001'), (select lease_token::text from public.booking_request_capture_work where booking_request_id = '60000000-0000-4000-8000-000000001001'), (select result from capture_result)), 'RC409', null, 'new lease generation cannot adopt the old successful ledger');

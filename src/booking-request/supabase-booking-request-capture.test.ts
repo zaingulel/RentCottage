@@ -305,4 +305,82 @@ describe("Supabase Booking Request Capture repository", () => {
       "Capture completion is unavailable",
     );
   });
+  it("rehydrates bounded recovery work and completed evidence without execution authority", async () => {
+    const lease = {
+      ...permit,
+      leaseGeneration: 2,
+      recoveryOperationId: "66666666-6666-4666-8666-666666666666",
+      providerResult: expectation.captureProviderResult,
+    };
+    Reflect.deleteProperty(lease, "purpose");
+    const { repository, rpc } = setup([
+      { status: "reconcile", lease },
+      completed,
+      { status: "unavailable" },
+    ]);
+    const result = await repository.claimDue(20, permit.providerIdentity);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "claim_due_booking_request_captures",
+      { target_limit: 20, target_provider_identity: permit.providerIdentity },
+    );
+    expect(result).toEqual([
+      { status: "reconcile", lease },
+      { status: "complete", snapshot },
+      { status: "unavailable" },
+    ]);
+    if (result[0].status !== "reconcile")
+      throw new Error("Missing recovery lease");
+    expect(result[0].lease).not.toHaveProperty("purpose");
+    rpc.mockResolvedValue({ data: completed, error: null });
+    await expect(
+      repository.complete(result[0].lease, success),
+    ).resolves.toEqual({ status: "complete", snapshot });
+  });
+
+  it.each([
+    null,
+    {},
+    [{ status: "unavailable", extra: true }],
+    ...[
+      { purpose: "booking-request-capture" },
+      { leaseGeneration: 1 },
+      { leaseToken: "wrong" },
+      { recoveryOperationId: null },
+      { notAfter: "invalid" },
+      {
+        providerResult: {
+          ...expectation.captureProviderResult,
+          movementReference: "",
+        },
+      },
+      { capturePhysicalAttemptId: "replacement" },
+      {
+        providerIdentity: {
+          ...permit.providerIdentity,
+          terminalId: "replacement",
+        },
+      },
+    ].map((replacement) => {
+      const lease = {
+        ...permit,
+        leaseGeneration: 2,
+        recoveryOperationId: "66666666-6666-4666-8666-666666666666",
+        providerResult: expectation.captureProviderResult,
+      };
+      Reflect.deleteProperty(lease, "purpose");
+      return [{ status: "reconcile", lease: { ...lease, ...replacement } }];
+    }),
+  ])("rejects malformed recovery projections %#", async (data) => {
+    const { repository } = setup(data);
+    await expect(
+      repository.claimDue(20, permit.providerIdentity),
+    ).rejects.toThrow();
+  });
+  it("does not turn unavailable recovery selection into an empty drain", async () => {
+    const { repository, rpc } = setup([]);
+    rpc.mockResolvedValue({ data: [], error: { message: "offline" } });
+    await expect(
+      repository.claimDue(20, permit.providerIdentity),
+    ).rejects.toThrow("Capture recovery selection is unavailable");
+  });
 });

@@ -2,6 +2,7 @@ begin;
 select plan(36);
 
 -- BEGIN CONFIRMATION FIXTURE
+-- BEGIN CAPTURE RECOVERY SOURCE
 insert into auth.users (id, aud, role, phone, phone_confirmed_at) values
 ('10000000-0000-4000-8000-000000001001','authenticated','authenticated','+9647500001001',now()),
 ('10000000-0000-4000-8000-000000001002','authenticated','authenticated','+9647500001002',now()),
@@ -71,6 +72,7 @@ values ('70000000-0000-4000-8000-000000001001','authorization','fictional-paymen
 insert into public.booking_request_capture_work
 (booking_request_id,attempt_id,authorization_claim_id,authorization_claim_generation,payment_lifecycle_id,authorization_logical_operation_id,authorization_physical_attempt_id,capture_logical_operation_id,capture_physical_attempt_id,amount_fils,currency,provider,environment,merchant_id,terminal_id,provider_idempotency_key,request_fingerprint)
 values ('60000000-0000-4000-8000-000000001001','70000000-0000-4000-8000-000000001001','72000000-0000-4000-8000-000000001001',1,'73000000-0000-4000-8000-000000001001','73000000-0000-4000-8000-000000001001:authorization','73000000-0000-4000-8000-000000001001:authorization:attempt-1','73000000-0000-4000-8000-000000001001:capture','73000000-0000-4000-8000-000000001001:capture:attempt-2',115000000,'IQD','fictional-payments','local-test','fictional-merchant','fictional-terminal','booking-request-capture:60000000-0000-4000-8000-000000001001:1','6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d');
+-- END CAPTURE RECOVERY SOURCE
 set local role service_role;
 create temp table confirmation_capture_lease as select public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result;
 create temp table confirmation_capture_result as select public.execute_simulated_booking_request_capture((select result->'permit' from confirmation_capture_lease)) result;
