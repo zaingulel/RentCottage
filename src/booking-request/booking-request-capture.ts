@@ -9,6 +9,10 @@ import type {
 export type BookingRequestCaptureResult =
   | { readonly status: "processing" | "expired" | "unavailable" }
   | {
+      readonly status: "payment-required";
+      readonly window: BookingRequestPaymentRequiredWindow;
+    }
+  | {
       readonly status: "complete";
       readonly snapshot: BookingRequestCaptureSnapshot;
     };
@@ -16,6 +20,11 @@ export type BookingRequestCaptureResult =
 export type BookingRequestCaptureLeasedWork = {
   readonly status: "leased";
   readonly permit: BookingRequestCaptureExecutionPermit;
+};
+
+export type BookingRequestPaymentRequiredWindow = {
+  readonly recordedAt: string;
+  readonly deadline: string;
 };
 
 export interface BookingRequestCaptureRepository {
@@ -27,6 +36,12 @@ export interface BookingRequestCaptureRepository {
     permit: BookingRequestCaptureExecutionPermit,
     result: Extract<ProviderOperationResult, { outcome: "succeeded" }>,
   ): Promise<Extract<BookingRequestCaptureResult, { status: "complete" }>>;
+  recordFailure(
+    permit: BookingRequestCaptureExecutionPermit,
+    result: Extract<ProviderOperationResult, { outcome: "failed" }>,
+  ): Promise<
+    Extract<BookingRequestCaptureResult, { status: "payment-required" }>
+  >;
 }
 
 export interface BookingRequestCapture {
@@ -66,6 +81,9 @@ export function createBookingRequestCapture({
         currency: permit.currency,
         executionPermit: permit,
       });
+      if (result.outcome === "failed") {
+        return repository.recordFailure(permit, result);
+      }
       if (result.outcome !== "succeeded") {
         throw new Error(
           "Booking Request Capture did not return successful provider evidence",

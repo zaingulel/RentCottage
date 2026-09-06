@@ -9,6 +9,7 @@ const baseRequest = {
   bookingRequestReference: reference,
   status: "declined",
   paymentStatus: null,
+  paymentRequiredWindow: null,
   cottageName: "The Reed House",
   bookingPeriod: [
     {
@@ -45,6 +46,59 @@ function clientReturning(data: unknown) {
 }
 
 describe("Customer Booking Request database projection", () => {
+  it.each([
+    ["2099-08-21T09:19:59.999Z", "open"],
+    ["2099-08-21T09:20:00.000Z", "elapsed"],
+  ] as const)(
+    "validates the fixed Payment Required window as %s database time",
+    async (databaseNow, phase) => {
+      await expect(
+        getCustomerBookingRequest(
+          clientReturning({
+            ...baseRequest,
+            status: "accepted",
+            paymentStatus: "payment-required",
+            paymentRequiredWindow: {
+              recordedAt: "2099-08-21T09:00:00.000Z",
+              deadline: "2099-08-21T09:20:00.000Z",
+              databaseNow,
+            },
+          }),
+          reference,
+        ),
+      ).resolves.toMatchObject({
+        paymentRequiredWindow: {
+          recordedAt: "2099-08-21T09:00:00.000Z",
+          deadline: "2099-08-21T09:20:00.000Z",
+          phase,
+        },
+      });
+    },
+  );
+
+  it.each([
+    null,
+    {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.001Z",
+      databaseNow: "2099-08-21T09:10:00.000Z",
+    },
+  ])(
+    "rejects Payment Required without an exact fixed window %#",
+    async (paymentRequiredWindow) => {
+      await expect(
+        getCustomerBookingRequest(
+          clientReturning({
+            ...baseRequest,
+            status: "accepted",
+            paymentStatus: "payment-required",
+            paymentRequiredWindow,
+          }),
+          reference,
+        ),
+      ).rejects.toThrow("invalid");
+    },
+  );
   it.each(["capture-processing", "paid-confirmed"] as const)(
     "retains authoritative %s evidence",
     async (paymentStatus) => {

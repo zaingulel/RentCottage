@@ -7,7 +7,11 @@ import {
 import { isContactSafeBookingRequestText } from "./booking-request-content";
 import {
   isBookingRequestPaymentStatus,
+  isBookingRequestNotificationStatus,
   isBookingRequestStatus,
+  paymentRequiredWindowFrom,
+  type BookingRequestNotificationStatus,
+  type BookingRequestPaymentRequiredWindow,
   type BookingRequestPaymentStatus,
   type BookingRequestStatus,
 } from "./booking-request-status";
@@ -17,6 +21,7 @@ export interface OwnerBookingRequestNotification {
   bookingRequestReference: string;
   status: BookingRequestStatus;
   paymentStatus: BookingRequestPaymentStatus | null;
+  paymentRequiredWindow: BookingRequestPaymentRequiredWindow | null;
   customerName: string;
   partySize: number;
   bookingNote: string | null;
@@ -30,7 +35,7 @@ export interface OwnerBookingRequestNotification {
   cancellationPolicyVersion: string;
   statusNotifications: readonly {
     id: string;
-    status: Exclude<BookingRequestStatus, "pending" | "processing">;
+    status: BookingRequestNotificationStatus;
     createdAt: string;
   }[];
   responseDeadline: string;
@@ -42,6 +47,7 @@ const keys = new Set([
   "bookingRequestReference",
   "status",
   "paymentStatus",
+  "paymentRequiredWindow",
   "customerName",
   "partySize",
   "bookingNote",
@@ -72,6 +78,16 @@ function notificationFrom(
   }
   const notification = value as Record<string, unknown>;
   const actualKeys = Object.keys(notification);
+  const paymentStatus = isBookingRequestPaymentStatus(
+    notification.paymentStatus,
+    notification.status as BookingRequestStatus,
+  )
+    ? notification.paymentStatus
+    : undefined;
+  const paymentRequiredWindow = paymentRequiredWindowFrom(
+    notification.paymentRequiredWindow,
+    paymentStatus ?? null,
+  );
   if (
     actualKeys.length !== keys.size ||
     actualKeys.some((key) => !keys.has(key)) ||
@@ -80,10 +96,8 @@ function notificationFrom(
     typeof notification.bookingRequestReference !== "string" ||
     !/^RC-REQ-[A-F0-9]{16}$/.test(notification.bookingRequestReference) ||
     !isBookingRequestStatus(notification.status) ||
-    !isBookingRequestPaymentStatus(
-      notification.paymentStatus,
-      notification.status,
-    ) ||
+    paymentStatus === undefined ||
+    paymentRequiredWindow === undefined ||
     typeof notification.customerName !== "string" ||
     notification.customerName.length < 2 ||
     notification.customerName.length > 120 ||
@@ -128,9 +142,7 @@ function notificationFrom(
         !row ||
         typeof row.id !== "string" ||
         !uuid.test(row.id) ||
-        !isBookingRequestStatus(row.status) ||
-        row.status === "pending" ||
-        row.status === "processing" ||
+        !isBookingRequestNotificationStatus(row.status) ||
         !validTimestamp(row.createdAt)
       );
     }) ||
@@ -173,7 +185,8 @@ function notificationFrom(
     id: notification.id,
     bookingRequestReference: notification.bookingRequestReference,
     status: notification.status,
-    paymentStatus: notification.paymentStatus,
+    paymentStatus,
+    paymentRequiredWindow,
     customerName: notification.customerName,
     partySize: notification.partySize as number,
     bookingNote: notification.bookingNote as string | null,

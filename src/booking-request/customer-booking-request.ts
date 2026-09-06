@@ -10,7 +10,11 @@ import {
 } from "./booking-request-lifecycle";
 import {
   isBookingRequestPaymentStatus,
+  isBookingRequestNotificationStatus,
   isBookingRequestStatus,
+  paymentRequiredWindowFrom,
+  type BookingRequestNotificationStatus,
+  type BookingRequestPaymentRequiredWindow,
   type BookingRequestPaymentStatus,
   type BookingRequestStatus,
 } from "./booking-request-status";
@@ -24,6 +28,7 @@ export interface CustomerBookingRequest {
   readonly bookingRequestReference: string;
   readonly status: BookingRequestStatus;
   readonly paymentStatus: BookingRequestPaymentStatus | null;
+  readonly paymentRequiredWindow: BookingRequestPaymentRequiredWindow | null;
   readonly cottageName: string;
   readonly bookingPeriod: BookingQuoteItem[];
   readonly partySize: number;
@@ -35,7 +40,7 @@ export interface CustomerBookingRequest {
   readonly declineNote: string | null;
   readonly statusNotifications: readonly {
     id: string;
-    status: Exclude<BookingRequestStatus, "pending" | "processing">;
+    status: BookingRequestNotificationStatus;
     createdAt: string;
   }[];
 }
@@ -43,13 +48,24 @@ export interface CustomerBookingRequest {
 function fromData(value: unknown): CustomerBookingRequest | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
   const request = value as Record<string, unknown>;
+  const paymentStatus = isBookingRequestPaymentStatus(
+    request.paymentStatus,
+    request.status as BookingRequestStatus,
+  )
+    ? request.paymentStatus
+    : undefined;
+  const paymentRequiredWindow = paymentRequiredWindowFrom(
+    request.paymentRequiredWindow,
+    paymentStatus ?? null,
+  );
   if (
     typeof request.id !== "string" ||
     !uuid.test(request.id) ||
     typeof request.bookingRequestReference !== "string" ||
     !/^RC-REQ-[A-F0-9]{16}$/.test(request.bookingRequestReference) ||
     !isBookingRequestStatus(request.status) ||
-    !isBookingRequestPaymentStatus(request.paymentStatus, request.status) ||
+    paymentStatus === undefined ||
+    paymentRequiredWindow === undefined ||
     typeof request.cottageName !== "string" ||
     !Array.isArray(request.bookingPeriod) ||
     !validateQuotedItems(request.bookingPeriod as BookingQuoteItem[]) ||
@@ -73,9 +89,7 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
         !row ||
         typeof row.id !== "string" ||
         !uuid.test(row.id) ||
-        !isBookingRequestStatus(row.status) ||
-        row.status === "pending" ||
-        row.status === "processing" ||
+        !isBookingRequestNotificationStatus(row.status) ||
         typeof row.createdAt !== "string" ||
         Number.isNaN(Date.parse(row.createdAt))
       );
@@ -127,7 +141,8 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     id: request.id,
     bookingRequestReference: request.bookingRequestReference,
     status: request.status,
-    paymentStatus: request.paymentStatus,
+    paymentStatus,
+    paymentRequiredWindow,
     cottageName: request.cottageName,
     bookingPeriod,
     partySize: request.partySize as number,

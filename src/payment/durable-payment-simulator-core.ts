@@ -53,7 +53,8 @@ function providerResult(value: unknown): ProviderOperationResult {
   if (
     result.outcome === "failed" &&
     typeof result.providerRequestId === "string" &&
-    typeof result.providerReference === "string"
+    typeof result.providerReference === "string" &&
+    !("movementReference" in result)
   ) {
     return {
       outcome: "failed",
@@ -185,7 +186,7 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
         return { outcome: "not-executed" };
       const { data, error } = await this.#client.rpc(
         "execute_simulated_booking_request_capture",
-        { target_permit: permit },
+        { target_permit: permit, target_outcome: this.#executeOutcome },
       );
       if (error) throw new Error("Simulated payment execution is unavailable");
       return providerResult(data);

@@ -51,6 +51,30 @@ function assertEqual(actual, expected, message) {
   }
 }
 
+function assertPaymentRequiredUpgrade(actual, expected, message) {
+  const expectedRows = JSON.parse(expected).map((row) => ({
+    ...row,
+    payment_required_recorded_at: null,
+    payment_required_deadline: null,
+  }));
+  const actualRows = JSON.parse(actual);
+  const canonical = (rows) =>
+    JSON.stringify(
+      rows.map((row) =>
+        Object.fromEntries(
+          Object.entries(row).sort(([left], [right]) =>
+            left.localeCompare(right),
+          ),
+        ),
+      ),
+    );
+  if (canonical(actualRows) !== canonical(expectedRows)) {
+    throw new Error(
+      `${message}\nExpected: ${JSON.stringify(expectedRows)}\nReceived: ${JSON.stringify(actualRows)}`,
+    );
+  }
+}
+
 function snapshot(table, orderBy, omitAddedColumns = true) {
   return harness.runSql(`
     select coalesce(jsonb_agg(${omitAddedColumns && table === "simulated_payment_provider_operations" ? "to_jsonb(rows) - 'capture_execution_permit'" : table === "booking_request_capture_work" ? "to_jsonb(rows) - 'recovery_operation_id'" : "to_jsonb(rows)"} order by ${orderBy}), '[]'::jsonb)
@@ -766,11 +790,14 @@ try {
     ),
   };
   for (const key of Object.keys(beforeExecution)) {
-    assertEqual(
-      afterExecution[key],
-      beforeExecution[key],
-      `Capture execution migration changed predecessor ${key}.`,
-    );
+    const message = `Capture execution migration changed predecessor ${key}.`;
+    if (key === "captureWork")
+      assertPaymentRequiredUpgrade(
+        afterExecution[key],
+        beforeExecution[key],
+        message,
+      );
+    else assertEqual(afterExecution[key], beforeExecution[key], message);
   }
   assertEqual(
     harness.runSql(
@@ -850,11 +877,14 @@ try {
     ),
   };
   for (const key of Object.keys(beforeConfirmation)) {
-    assertEqual(
-      afterConfirmation[key],
-      beforeConfirmation[key],
-      `Confirmation migration changed completed-Capture predecessor ${key}.`,
-    );
+    const message = `Confirmation migration changed completed-Capture predecessor ${key}.`;
+    if (key === "captureWork")
+      assertPaymentRequiredUpgrade(
+        afterConfirmation[key],
+        beforeConfirmation[key],
+        message,
+      );
+    else assertEqual(afterConfirmation[key], beforeConfirmation[key], message);
   }
   assertEqual(
     harness.runSql(
@@ -946,12 +976,16 @@ try {
   if (recoveryUpgrade.status !== 0)
     throw commandFailure(upgradeArgs, recoveryUpgrade);
   const afterRecovery = recoveryGraph();
-  for (const key of Object.keys(beforeRecovery))
-    assertEqual(
-      afterRecovery[key],
-      beforeRecovery[key],
-      `Recovery migration changed predecessor ${key}.`,
-    );
+  for (const key of Object.keys(beforeRecovery)) {
+    const message = `Recovery migration changed predecessor ${key}.`;
+    if (key === "captureWork")
+      assertPaymentRequiredUpgrade(
+        afterRecovery[key],
+        beforeRecovery[key],
+        message,
+      );
+    else assertEqual(afterRecovery[key], beforeRecovery[key], message);
+  }
   assertEqual(
     harness.runSql(
       "select count(*) from public.booking_request_capture_work where recovery_operation_id is not null;",
@@ -981,7 +1015,7 @@ try {
     "reset",
     "--local",
     "--version",
-    "20260906120000",
+    "20260906140000",
   ];
   const admissionReset = runSupabase(admissionResetArgs);
   if (admissionReset.status !== 0)
@@ -1066,12 +1100,16 @@ try {
   if (admissionUpgrade.status !== 0)
     throw commandFailure(upgradeArgs, admissionUpgrade);
   const afterAdmission = admissionGraph();
-  for (const key of Object.keys(beforeAdmission))
-    assertEqual(
-      afterAdmission[key],
-      beforeAdmission[key],
-      `Admission migration changed predecessor ${key}.`,
-    );
+  for (const key of Object.keys(beforeAdmission)) {
+    const message = `Payment Required migration changed predecessor ${key}.`;
+    if (key === "captureWork")
+      assertPaymentRequiredUpgrade(
+        afterAdmission[key],
+        beforeAdmission[key],
+        message,
+      );
+    else assertEqual(afterAdmission[key], beforeAdmission[key], message);
+  }
   assertEqual(
     harness.runSql(
       "select (select count(*) from public.booking_request_capture_work) || ':' || (select sum(physical_execution_count) from public.simulated_payment_provider_operations where operation_kind = 'capture') || ':' || (select count(*) from public.booking_confirmations) || ':' || (select count(*) from public.booking_receipts);",
@@ -1080,7 +1118,7 @@ try {
     "Admission migration must not infer capture, execution, confirmation, or receipts.",
   );
   console.log(
-    "Admission upgrade preserved pending, release-processing, historical accepted, queued, processing, completed and confirmed graphs byte-for-byte without provider or booking effects.",
+    "Payment Required upgrade preserved pending, release-processing, historical accepted, queued, processing, completed and confirmed graphs byte-for-byte; both new terminal timestamps are null on every predecessor row and no provider or booking effect was inferred.",
   );
 } catch (error) {
   failure = error;

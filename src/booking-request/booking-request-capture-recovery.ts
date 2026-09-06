@@ -1,11 +1,15 @@
 import type {
   BookingRequestCapturePermitExpectation,
   BookingRequestCaptureProviderResultIdentity,
+  BookingRequestCaptureFailureProviderResultIdentity,
   PaymentProviderAdapter,
   PaymentProviderIdentity,
   ProviderOperationResult,
 } from "@/payment/payment-contract";
-import type { BookingRequestCaptureResult } from "./booking-request-capture";
+import type {
+  BookingRequestCaptureResult,
+  BookingRequestPaymentRequiredWindow,
+} from "./booking-request-capture";
 import type {
   BookingRequestConfirmation,
   BookingRequestConfirmationResult,
@@ -14,7 +18,9 @@ import type {
 export type BookingRequestCaptureRecoveryLease =
   BookingRequestCapturePermitExpectation & {
     readonly recoveryOperationId: string;
-    readonly providerResult: BookingRequestCaptureProviderResultIdentity;
+    readonly providerResult:
+      | BookingRequestCaptureProviderResultIdentity
+      | BookingRequestCaptureFailureProviderResultIdentity;
   };
 export type BookingRequestCaptureRecoveryWork =
   | {
@@ -32,12 +38,22 @@ export interface BookingRequestCaptureRecoveryRepository {
     lease: BookingRequestCapturePermitExpectation,
     result: Extract<ProviderOperationResult, { outcome: "succeeded" }>,
   ): Promise<Extract<BookingRequestCaptureResult, { status: "complete" }>>;
+  recordFailure(
+    lease: BookingRequestCapturePermitExpectation,
+    result: Extract<ProviderOperationResult, { outcome: "failed" }>,
+  ): Promise<
+    Extract<BookingRequestCaptureResult, { status: "payment-required" }>
+  >;
 }
 export type BookingRequestCaptureRecoveryResult =
   | { readonly status: "invalid" | "processing" | "unavailable" }
   | {
       readonly status: "confirmed";
       readonly confirmation: BookingRequestConfirmationResult;
+    }
+  | {
+      readonly status: "payment-required";
+      readonly window: BookingRequestPaymentRequiredWindow;
     };
 
 export function createBookingRequestCaptureRecovery({
@@ -88,21 +104,24 @@ export function createBookingRequestCaptureRecovery({
               results.push({ status: "processing" });
               continue;
             }
-            if (result.outcome !== "succeeded")
+            if (result.outcome !== "succeeded" && result.outcome !== "failed")
               throw new Error(
-                "Capture recovery did not return successful provider evidence",
+                "Capture recovery did not return final provider evidence",
               );
             if (
               Object.entries(lease.providerResult).some(
                 ([key, value]) =>
-                  result[
-                    key as keyof BookingRequestCaptureProviderResultIdentity
-                  ] !== value,
+                  result[key as "providerRequestId" | "providerReference"] !==
+                  value,
               )
             )
               throw new Error(
                 "Capture recovery provider evidence does not match",
               );
+            if (result.outcome === "failed") {
+              results.push(await repository.recordFailure(lease, result));
+              continue;
+            }
             completed = await repository.complete(lease, result);
           } else completed = work;
           results.push({

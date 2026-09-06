@@ -80,3 +80,75 @@ test("the actual Worker settles capture despite expiry failure and repeated sche
     if (seeded) harness.runSql(cleanup);
   }
 });
+
+test("the actual Worker recovers a persisted definitive failure into one fixed Payment Required window", async ({
+  request,
+}) => {
+  const harness = createLocalSupabaseConcurrencyHarness();
+  harness.guardDisposableLocalDatabase();
+  const id = "60000000-0000-4000-8000-000000001001";
+  const source = readFileSync(
+    "supabase/tests/database/booking_request_confirmation.test.sql",
+    "utf8",
+  )
+    .split("-- BEGIN CAPTURE RECOVERY SOURCE\n")[1]
+    .split("-- END CAPTURE RECOVERY SOURCE")[0];
+  const pending = source.slice(
+    0,
+    source.indexOf("insert into public.booking_request_capture_work"),
+  );
+  const cleanup = readFileSync(
+    "scripts/verify-booking-request-capture-concurrency.mjs",
+    "utf8",
+  )
+    .split("const cleanup = `")[1]
+    .split("`;")[0]
+    .replaceAll("${requestId}", id);
+  const observe = () =>
+    JSON.parse(
+      harness.runSql(`select jsonb_build_object(
+        'work',(select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id='${id}'),
+        'execution',(select to_jsonb(operation) from public.simulated_payment_provider_operations operation where operation_kind='capture' and payment_lifecycle_id='73000000-0000-4000-8000-000000001001'),
+        'confirmation',(select to_jsonb(confirmation) from public.booking_confirmations confirmation where booking_request_id='${id}'),
+        'paymentRequiredNotifications',(select count(*) from public.booking_request_status_notifications notification where booking_request_id='${id}' and status='payment-required'),
+        'commitment',(select to_jsonb(commitment) from public.cottage_booking_period_commitments commitment where id='50000000-0000-4000-8000-000000001001'),
+        'occupancies',(select jsonb_agg(to_jsonb(occupancy) order by shift_id,service_day) from public.cottage_booking_period_occupancies occupancy where booking_period_commitment_id='50000000-0000-4000-8000-000000001001'),
+        'intentActive',(select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id='${id}')
+      );`),
+    );
+  let seeded = false;
+  try {
+    harness.runSql(`begin; ${pending}
+      update public.booking_requests set status='pending',settled_at=null where id='${id}';
+      set local role service_role;
+      select public.claim_booking_request_action('10000000-0000-4000-8000-000000001001','${id}','accept'); commit;`);
+    seeded = true;
+    harness.runSql(`set role service_role;
+      with leased as (select public.lease_booking_request_capture_work('${id}',
+        '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result)
+      select public.execute_simulated_booking_request_capture(result->'permit','failed') from leased;
+      reset role;
+      update public.booking_request_capture_work set lease_expires_at=clock_timestamp()-interval '1 second' where booking_request_id='${id}';`);
+    const before = observe();
+    expect(before.execution.original_outcome).toBe("failed");
+    expect(before.execution.movement_reference).toBeNull();
+    expect(before.work.state).toBe("processing");
+    expect((await request.get("/__scheduled")).ok()).toBe(true);
+    const paymentRequired = observe();
+    expect(paymentRequired.work.state).toBe("payment_required");
+    expect(
+      Date.parse(paymentRequired.work.payment_required_deadline) -
+        Date.parse(paymentRequired.work.payment_required_recorded_at),
+    ).toBe(1_200_000);
+    expect(paymentRequired.paymentRequiredNotifications).toBe(1);
+    expect(paymentRequired.confirmation).toBeNull();
+    expect(paymentRequired.commitment.status).toBe("pending_hold");
+    expect(paymentRequired.occupancies).toEqual(before.occupancies);
+    expect(paymentRequired.occupancies).toHaveLength(5);
+    expect(paymentRequired.intentActive).toBe(true);
+    expect((await request.get("/__scheduled")).ok()).toBe(true);
+    expect(observe()).toEqual(paymentRequired);
+  } finally {
+    if (seeded) harness.runSql(cleanup);
+  }
+});

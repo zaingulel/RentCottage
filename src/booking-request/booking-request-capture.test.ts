@@ -48,6 +48,19 @@ const success = {
   providerReference: "capture-reference",
   movementReference: "capture-movement",
 };
+const failure = {
+  outcome: "failed" as const,
+  providerRequestId: "capture-failed-request",
+  providerReference: "capture-failed-reference",
+  retrySafe: false,
+};
+const paymentRequired = {
+  status: "payment-required" as const,
+  window: {
+    recordedAt: "2099-01-01T00:00:01.000Z",
+    deadline: "2099-01-01T00:20:01.000Z",
+  },
+};
 
 const snapshot: BookingRequestCaptureSnapshot = {
   bookingRequestId: permit.bookingRequestId,
@@ -120,6 +133,9 @@ function setup() {
       order.push("complete");
       return { status: "complete" as const, snapshot };
     }),
+    recordFailure: vi
+      .fn<BookingRequestCaptureRepository["recordFailure"]>()
+      .mockResolvedValue(paymentRequired),
   };
   const provider = {
     identity: permit.providerIdentity,
@@ -188,6 +204,30 @@ describe("Booking Request Capture", () => {
     expect(repository.complete).not.toHaveBeenCalled();
   });
 
+  it("records definitive failure as one durable Payment Required window without confirmation evidence", async () => {
+    const { capture, repository, provider } = setup();
+    provider.execute.mockResolvedValue(failure);
+    await expect(capture.execute(permit.bookingRequestId)).resolves.toEqual(
+      paymentRequired,
+    );
+    expect(repository.recordFailure).toHaveBeenCalledExactlyOnceWith(
+      permit,
+      failure,
+    );
+    expect(repository.complete).not.toHaveBeenCalled();
+  });
+
+  it("returns an existing Payment Required window without another provider execution", async () => {
+    const { capture, repository, provider } = setup();
+    repository.lease.mockResolvedValue(paymentRequired);
+    await expect(capture.execute(permit.bookingRequestId)).resolves.toEqual(
+      paymentRequired,
+    );
+    expect(provider.execute).not.toHaveBeenCalled();
+    expect(repository.recordFailure).not.toHaveBeenCalled();
+    expect(repository.complete).not.toHaveBeenCalled();
+  });
+
   it.each([
     { bookingRequestId: "99999999-9999-4999-8999-999999999999" },
     { workId: "99999999-9999-4999-8999-999999999999" },
@@ -218,12 +258,6 @@ describe("Booking Request Capture", () => {
   it.each([
     { outcome: "not-executed" as const },
     { ...success, outcome: "indeterminate" as const },
-    {
-      outcome: "failed" as const,
-      providerRequestId: "failed",
-      providerReference: "failed",
-      retrySafe: true,
-    },
   ])(
     "fails loudly for $outcome provider evidence without completion or retry",
     async (result) => {

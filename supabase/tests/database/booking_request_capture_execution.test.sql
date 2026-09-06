@@ -1,5 +1,5 @@
 begin;
-select plan(152);
+select plan(213);
 
 -- BEGIN CAPTURE EXECUTION FIXTURE
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
@@ -83,7 +83,7 @@ insert into public.cottage_booking_period_commitments (
   'CAPTURE-WORK-HOLD-1', 'pending_hold',
   tstzmultirange(tstzrange(
     '2101-01-01 08:00:00+03'::timestamptz,
-    '2101-01-01 12:00:00+03'::timestamptz, '[)'
+    '2101-01-01 22:00:00+03'::timestamptz, '[)'
   ))
 );
 insert into public.booking_requests (
@@ -173,7 +173,7 @@ insert into public.booking_request_authorization_claims (
   repeat('a', 64), repeat('b', 64),
   tstzmultirange(tstzrange(
     '2101-01-01 08:00:00+03'::timestamptz,
-    '2101-01-01 12:00:00+03'::timestamptz, '[)'
+    '2101-01-01 22:00:00+03'::timestamptz, '[)'
   )),
   '2101-01-01 00:00:00+00', '2100-12-31 23:59:00+00'
 );
@@ -224,7 +224,26 @@ insert into public.booking_request_provider_operation_identities (attempt_id, op
 select id, 'authorization', authorization_provider, authorization_environment, authorization_merchant_id, authorization_terminal_id, authorization_provider_request_id, authorization_provider_reference, authorization_movement_reference
 from public.booking_request_submission_attempts where id = '70000000-0000-4000-8000-000000001001';
 insert into public.cottage_booking_period_occupancies (booking_period_commitment_id, schedule_revision_id, shift_id, service_day, active)
-values ('50000000-0000-4000-8000-000000001001', '30000000-0000-4000-8000-000000001001', '32000000-0000-4000-8000-000000001001', '2101-01-01', true);
+values
+  ('50000000-0000-4000-8000-000000001001', '30000000-0000-4000-8000-000000001001', '32000000-0000-4000-8000-000000001001', '2101-01-01', true),
+  ('50000000-0000-4000-8000-000000001001', '30000000-0000-4000-8000-000000001001', '32000000-0000-4000-8000-000000001002', '2101-01-01', true);
+insert into public.cottage_inventory_commitments
+  (id, unit_kind, unit_id, service_day, committed_price_iqd, booking_period_commitment_id)
+values ('51000000-0000-4000-8000-000000001001', 'full_day_bundle',
+  '31000000-0000-4000-8000-000000001001', '2101-01-01', 115000,
+  '50000000-0000-4000-8000-000000001001');
+insert into public.booking_request_authorization_claim_items
+  (claim_id, unit_kind, unit_id, service_day, price_iqd)
+values ('72000000-0000-4000-8000-000000001001', 'full_day_bundle',
+  '31000000-0000-4000-8000-000000001001', '2101-01-01', 115000);
+insert into public.booking_request_authorization_claim_occupancies
+  (claim_id, schedule_revision_id, shift_id, service_day, active)
+values ('72000000-0000-4000-8000-000000001001',
+  '30000000-0000-4000-8000-000000001001',
+  '32000000-0000-4000-8000-000000001001', '2101-01-01', false),
+  ('72000000-0000-4000-8000-000000001001',
+  '30000000-0000-4000-8000-000000001001',
+  '32000000-0000-4000-8000-000000001002', '2101-01-01', false);
 -- END CAPTURE EXECUTION FIXTURE
 
 
@@ -333,6 +352,247 @@ select is(public.execute_simulated_booking_request_capture((select (result -> 'p
 select is((select lease_generation from public.booking_request_capture_work where booking_request_id = '60000000-0000-4000-8000-000000001001'), 1::bigint, 'expired work is not renewed');
 rollback to savepoint expired_capture;
 
+savepoint payment_required_capture;
+create temp table failed_capture_result as select public.execute_simulated_booking_request_capture(
+  (select result -> 'permit' from capture_lease), 'failed'
+) as result;
+select is((select result from failed_capture_result), jsonb_build_object(
+  'outcome','failed','providerRequestId',(select provider_request_id from public.simulated_payment_provider_operations where operation_kind='capture'),
+  'providerReference',(select provider_reference from public.simulated_payment_provider_operations where operation_kind='capture'),'retrySafe',false
+), 'selected definitive failure returns movement-free provider evidence');
+select is(public.execute_simulated_booking_request_capture((select result -> 'permit' from capture_lease), 'succeeded'),
+  (select result from failed_capture_result), 'provider replay cannot rewrite the first failed outcome');
+select is((select physical_execution_count::integer from public.simulated_payment_provider_operations where operation_kind='capture'), 1,
+  'failed Capture has exactly one physical execution');
+
+savepoint failed_success_completion;
+select throws_ok(format('select public.complete_booking_request_capture(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select (result - 'retrySafe') || '{"outcome":"succeeded","movementReference":null}'::jsonb from failed_capture_result)),
+  'RC409', 'Booking Request successful Capture evidence is invalid',
+  'success completion explicitly rejects authoritative failed Capture before constructing a paid snapshot');
+rollback to savepoint failed_success_completion;
+
+savepoint replaced_failure_permit;
+update public.simulated_payment_provider_operations set capture_execution_permit =
+  capture_execution_permit || jsonb_build_object('notAfter', '2099-01-01T00:00:00.000Z') where operation_kind='capture';
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null,
+  'direct failure completion requires the exact original execution deadline');
+rollback to savepoint replaced_failure_permit;
+
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result || replacement from failed_capture_result)), 'RC409', null,
+  'failure finalization rejects ' || label)
+from (values
+  ('pending response', '{"outcome":"pending"}'::jsonb),
+  ('indeterminate response', '{"outcome":"indeterminate"}'::jsonb),
+  ('substituted provider identity', '{"providerReference":"substituted"}'::jsonb),
+  ('conflicting movement', '{"movementReference":"unexpected-movement"}'::jsonb),
+  ('retry authority', '{"retrySafe":true}'::jsonb)
+) mutations(label,replacement);
+
+savepoint missing_failure_ledger;
+delete from public.simulated_payment_provider_operations where operation_kind='capture';
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null, 'a failed response without durable execution cannot open Payment Required');
+rollback to savepoint missing_failure_ledger;
+
+savepoint indeterminate_failure_ledger;
+update public.simulated_payment_provider_operations set original_outcome='indeterminate',current_outcome='indeterminate' where operation_kind='capture';
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null, 'indeterminate provider evidence cannot open Payment Required');
+select is((select state from public.booking_request_capture_work), 'processing', 'indeterminate evidence remains capture processing');
+rollback to savepoint indeterminate_failure_ledger;
+
+savepoint late_failure_ledger;
+update public.simulated_payment_provider_operations set created_at=(capture_execution_permit->>'notAfter')::timestamptz where operation_kind='capture';
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null, 'failed execution at its original deadline cannot open Payment Required');
+rollback to savepoint late_failure_ledger;
+
+savepoint preauthorization_failure_ledger;
+update public.simulated_payment_provider_operations set created_at='2020-01-01T00:00:00Z' where operation_kind='capture';
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null, 'failed execution before Authorization cannot open Payment Required');
+rollback to savepoint preauthorization_failure_ledger;
+
+savepoint expired_failure_fence;
+update public.booking_request_capture_work set lease_expires_at=clock_timestamp();
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null, 'expired direct failure ownership cannot open Payment Required');
+rollback to savepoint expired_failure_fence;
+select is((select count(*) from public.booking_request_status_notifications), 0::bigint, 'refused failure evidence emits no recovery notification');
+
+savepoint missing_failure_occupancy;
+delete from public.booking_request_authorization_claim_occupancies
+where claim_id='72000000-0000-4000-8000-000000001001';
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null,
+  'failure finalization rejects a changed retained occupancy set');
+rollback to savepoint missing_failure_occupancy;
+
+savepoint failure_bundle_hold;
+
+savepoint failure_missing_bundle_component;
+delete from public.booking_request_authorization_claim_occupancies where shift_id='32000000-0000-4000-8000-000000001002';
+delete from public.cottage_booking_period_occupancies where shift_id='32000000-0000-4000-8000-000000001002';
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null,
+  'failure rejects the same missing Full-Day Bundle component in both occupancy sets');
+select ok((select state='processing' and payment_required_recorded_at is null and payment_required_deadline is null
+  from public.booking_request_capture_work) and not exists(select 1 from public.booking_request_status_notifications),
+  'missing bundle component leaves no Payment Required window or notification');
+rollback to savepoint failure_missing_bundle_component;
+
+savepoint failure_unselected_occupancy;
+insert into public.booking_request_authorization_claim_occupancies(claim_id,schedule_revision_id,shift_id,service_day,active)
+values ('72000000-0000-4000-8000-000000001001','30000000-0000-4000-8000-000000001001',
+  '32000000-0000-4000-8000-000000001001','2101-01-02',false);
+insert into public.cottage_booking_period_occupancies(booking_period_commitment_id,schedule_revision_id,shift_id,service_day,active)
+values ('50000000-0000-4000-8000-000000001001','30000000-0000-4000-8000-000000001001',
+  '32000000-0000-4000-8000-000000001001','2101-01-02',true);
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null,
+  'failure rejects an unselected occupancy present in both sets');
+select ok((select state='processing' and payment_required_recorded_at is null and payment_required_deadline is null
+  from public.booking_request_capture_work) and not exists(select 1 from public.booking_request_status_notifications),
+  'unselected occupancy leaves no Payment Required window or notification');
+rollback to savepoint failure_unselected_occupancy;
+
+savepoint failure_empty_hold;
+delete from public.booking_request_authorization_claim_items;
+delete from public.cottage_inventory_commitments;
+delete from public.booking_request_authorization_claim_occupancies;
+delete from public.cottage_booking_period_occupancies;
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null,
+  'failure rejects empty selected-item and occupancy evidence');
+select ok((select state='processing' and payment_required_recorded_at is null and payment_required_deadline is null
+  from public.booking_request_capture_work) and not exists(select 1 from public.booking_request_status_notifications),
+  'empty hold leaves no Payment Required window or notification');
+rollback to savepoint failure_empty_hold;
+
+select is(public.record_booking_request_capture_failure('60000000-0000-4000-8000-000000001001',1,
+  (select (result #>> '{permit,leaseToken}')::uuid from capture_lease),
+  (select result from failed_capture_result))->>'status','payment-required', 'complete Full-Day Bundle failure opens Payment Required');
+select results_eq($$select shift_id,service_day from public.cottage_booking_period_occupancies where active order by shift_id$$,
+  $$values ('32000000-0000-4000-8000-000000001001'::uuid,'2101-01-01'::date),
+    ('32000000-0000-4000-8000-000000001002'::uuid,'2101-01-01'::date)$$,
+  'complete failed bundle retains exactly every selected component');
+rollback to savepoint failure_bundle_hold;
+
+create function pg_temp.fail_payment_required_notification() returns trigger language plpgsql as $$begin raise exception 'forced notification failure' using errcode='RC499'; end;$$;
+create trigger fail_payment_required_notification before insert on public.booking_request_status_notifications
+for each row when (new.status='payment-required') execute function pg_temp.fail_payment_required_notification();
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC499', null, 'notification failure aborts Payment Required atomically');
+select is((select state from public.booking_request_capture_work), 'processing', 'failed notification leaves capture processing');
+select is((select count(*) from public.booking_request_status_notifications), 0::bigint, 'failed transaction leaves no recovery notification');
+drop trigger fail_payment_required_notification on public.booking_request_status_notifications;
+
+create temp table failure_recording_boundary as select date_trunc('milliseconds',clock_timestamp()) started_at;
+create temp table payment_required_result as select public.record_booking_request_capture_failure(
+  '60000000-0000-4000-8000-000000001001', 1,
+  (select (result #>> '{permit,leaseToken}')::uuid from capture_lease),
+  (select result from failed_capture_result)
+) as result;
+select is((select result ->> 'status' from payment_required_result), 'payment-required', 'definitive failed Capture opens Payment Required');
+select is((select extract(epoch from payment_required_deadline-payment_required_recorded_at)::integer from public.booking_request_capture_work),
+  1200, 'Payment Required deadline is exactly 1,200 seconds');
+select is((select completed_at from public.booking_request_capture_work),
+  (select payment_required_recorded_at from public.booking_request_capture_work), 'durable Customer-action and completion times are one clock reading');
+select ok((select payment_required_recorded_at >= started_at from public.booking_request_capture_work cross join failure_recording_boundary),
+  'Customer-action time comes from failure recording rather than transaction start or prior evidence');
+select is((select count(*) from public.booking_request_status_notifications where status='payment-required'
+  and recipient_user_id='10000000-0000-4000-8000-000000001002'), 1::bigint, 'Customer receives one Payment Required notification');
+savepoint payment_required_projection;
+insert into public.owner_request_notifications(booking_request_id,owner_user_id)
+values ('60000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001');
+insert into auth.users(id,aud,role,phone,phone_confirmed_at) values
+  ('10000000-0000-4000-8000-000000001003','authenticated','authenticated','+9647500001003',now()),
+  ('10000000-0000-4000-8000-000000001004','authenticated','authenticated','+9647500001004',now());
+insert into public.account_contexts(user_id,role,owner_approval_state) values
+  ('10000000-0000-4000-8000-000000001003','customer',null),
+  ('10000000-0000-4000-8000-000000001004','cottage_owner','approved');
+grant select on payment_required_result to authenticated;
+set local role authenticated;
+set local request.jwt.claim.sub='10000000-0000-4000-8000-000000001002';
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->>'paymentStatus','payment-required',
+  'authenticated Customer sees Payment Required');
+select is((public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentRequiredWindow')-'databaseNow',
+  (select result->'paymentRequiredWindow' from payment_required_result), 'Customer projection preserves the original recorded window');
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')#>'{statusNotifications,0,status}',
+  '"payment-required"'::jsonb, 'Customer projection includes the Payment Required notification');
+select ok(not (public.get_customer_booking_request('RC-REQ-0000000000001001') ?|
+  array['paymentSnapshot','provider','exactAddress','phone','accessDetails']), 'Customer Payment Required projection excludes private evidence and access details');
+set local request.jwt.claim.sub='10000000-0000-4000-8000-000000001001';
+select is(public.list_owner_booking_request_notifications()#>>'{0,paymentStatus}','payment-required',
+  'approved owning Owner sees Payment Required');
+select is(public.list_owner_booking_request_notifications()#>'{0,statusNotifications}','[]'::jsonb,
+  'Owner projection does not expose the Customer payment notification');
+select ok(not ((public.list_owner_booking_request_notifications()->0) ?|
+  array['paymentSnapshot','provider','exactAddress','phone','accessDetails']), 'Owner Payment Required projection excludes private evidence and access details');
+set local request.jwt.claim.sub='10000000-0000-4000-8000-000000001003';
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001'),null::jsonb,
+  'unrelated Customer cannot read Payment Required or its notification');
+set local request.jwt.claim.sub='10000000-0000-4000-8000-000000001004';
+select is(public.list_owner_booking_request_notifications(),'[]'::jsonb,
+  'unrelated approved Owner cannot read Payment Required or its notification');
+reset role;
+rollback to savepoint payment_required_projection;
+select is(public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000001001',
+  (select result #> '{permit,providerIdentity}' from capture_lease)), (select result from payment_required_result),
+  'terminal work replays the original window without another Capture');
+select is((select count(*) from public.booking_confirmations), 0::bigint, 'Payment Required creates no Confirmed Booking');
+select is((select status from public.cottage_booking_period_commitments), 'pending_hold', 'Payment Required retains the Pending Hold');
+select ok((select bool_and(active) from public.cottage_booking_period_occupancies), 'Payment Required retains every selected occupancy');
+select ok((select intent_dedupe_active from public.booking_request_submission_attempts), 'Payment Required retains the active Booking Request intent');
+select is((select jsonb_array_length(payment_snapshot -> 'movements') from public.booking_request_submission_attempts), 1,
+  'Payment Required adds no Capture money movement');
+select is((select count(*) from public.booking_request_provider_operation_identities where operation_kind='capture'), 0::bigint,
+  'Payment Required creates no successful Capture identity');
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result || '{"providerReference":"replaced"}'::jsonb from failed_capture_result)), 'RC409', null,
+  'changed failure evidence cannot replay or replace the window');
+select is(public.record_booking_request_capture_failure(
+  '60000000-0000-4000-8000-000000001001',1,
+  (select (result #>> '{permit,leaseToken}')::uuid from capture_lease),(select result from failed_capture_result)),
+  (select result from payment_required_result), 'exact failure replay returns the original durable window');
+select throws_ok(format('update public.booking_request_capture_work set %s', mutation), 'RC204', null,
+  'terminal failure cannot ' || label)
+from (values
+  ('extend the deadline', 'payment_required_deadline=payment_required_deadline+interval ''1 minute'''),
+  ('replace the period', 'payment_required_recorded_at=payment_required_recorded_at+interval ''1 minute'',payment_required_deadline=payment_required_deadline+interval ''1 minute'',completed_at=completed_at+interval ''1 minute'''),
+  ('clear the deadline', 'payment_required_deadline=null'),
+  ('requeue capture', 'state=''queued''')
+) mutations(label,mutation);
+select is(public.claim_due_booking_request_captures(20,(select result #> '{permit,providerIdentity}' from capture_lease)),
+  '[]'::jsonb, 'terminal failure is never scheduled for another Capture');
+select is((select count(*) from public.booking_request_status_notifications where status='payment-required'),1::bigint,
+  'replay and scheduling retain exactly one recovery notification');
+select is((select count(*) from public.booking_receipts),0::bigint, 'Payment Required never creates paid receipts');
+savepoint conflicting_terminal_failure;
+update public.simulated_payment_provider_operations set original_outcome='succeeded',current_outcome='succeeded',movement_reference='conflicting-capture-movement' where operation_kind='capture';
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  (select result from failed_capture_result)), 'RC409', null, 'terminal replay still rejects conflicting provider money movement');
+rollback to savepoint conflicting_terminal_failure;
+rollback to savepoint payment_required_capture;
+
 create temp table capture_result as select public.execute_simulated_booking_request_capture((select result -> 'permit' from capture_lease)) as result;
 select is((select result ->> 'outcome' from capture_result), 'succeeded', 'the durable simulator has one fixed successful outcome');
 select is((select capture_execution_permit from public.simulated_payment_provider_operations where operation_kind = 'capture'), (select result -> 'permit' from capture_lease), 'the provider ledger retains the exact durable admission permit');
@@ -373,6 +633,15 @@ from (values ('lifecycle', '{"paymentLifecycleId":"73000000-0000-4000-8000-00000
 ('operation','{"logicalOperationId":"replaced"}'::jsonb), ('attempt','{"physicalAttemptId":"replaced"}'::jsonb),
 ('kind','{"operationKind":"release"}'::jsonb), ('amount','{"amountFils":1}'::jsonb), ('currency','{"currency":"USD"}'::jsonb),
 ('fingerprint','{"requestFingerprint":"replaced"}'::jsonb), ('provider','{"providerIdentity":{}}'::jsonb), ('extra fields','{"unexpected":true}'::jsonb)) mutations(label,replacement);
+
+savepoint invalid_query_generation;
+update public.simulated_payment_provider_operations set capture_execution_permit =
+  capture_execution_permit || '{"leaseGeneration":0}'::jsonb where operation_kind='capture';
+select throws_ok(format('select public.query_simulated_booking_request_capture(%L,%L,%L)',
+  (select operation from capture_query),(select result ->> 'providerRequestId' from capture_result),
+  (select result ->> 'providerReference' from capture_result)), 'RC409', null,
+  'query rejects an original execution permit with no admitted generation');
+rollback to savepoint invalid_query_generation;
 
 savepoint missing_recovery_evidence;
 update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z';

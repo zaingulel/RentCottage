@@ -177,6 +177,11 @@ export interface BookingRequestCaptureProviderResultIdentity {
   readonly movementReference: string;
 }
 
+export interface BookingRequestCaptureFailureProviderResultIdentity {
+  readonly providerRequestId: string;
+  readonly providerReference: string;
+}
+
 export interface BookingRequestCaptureEvidenceExpectation extends BookingRequestCaptureBinding {
   readonly authorizationProviderResult: BookingRequestCaptureProviderResultIdentity;
   readonly captureProviderResult: BookingRequestCaptureProviderResultIdentity;

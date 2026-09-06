@@ -15,7 +15,7 @@ import type { BookingRequestConfirmation } from "./booking-request-confirmation"
 
 export interface BookingRequestCaptureProcessingRepository
   extends
-    Omit<BookingRequestCaptureRepository, "complete">,
+    Omit<BookingRequestCaptureRepository, "complete" | "recordFailure">,
     BookingRequestCaptureRecoveryRepository {
   listQueued(
     limit: number,
@@ -64,6 +64,8 @@ export function createBookingRequestCaptureProcessing({
               status: "confirmed",
               confirmation: await confirmation.execute(id, completed.snapshot),
             });
+          else if (completed.status === "payment-required")
+            results.push(completed);
           else
             results.push({
               status:

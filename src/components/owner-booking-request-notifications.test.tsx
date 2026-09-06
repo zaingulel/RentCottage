@@ -47,6 +47,7 @@ const pendingNotification = {
   bookingTermsVersion: "terms-v1",
   cancellationPolicyVersion: "cancel-v1",
   statusNotifications: [],
+  paymentRequiredWindow: null,
   responseDeadline: "2099-08-21T21:00:00.000Z",
   createdAt: "2099-08-21T17:00:00.000Z",
 };
@@ -57,6 +58,25 @@ describe("Owner Booking Request notifications", () => {
     refresh.mockClear();
   });
   afterEach(() => vi.useRealTimers());
+  it("shows the Cottage Owner distinct Payment Required state without an action", () => {
+    render(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[ownerDisplayFixtures["payment-required-open"]]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The Customer’s automatic payment failed",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("not confirmed");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The selected Cottage Shifts remain held.",
+    );
+    expect(screen.getByText("Payment deadline").nextSibling).toHaveTextContent(
+      "12:20",
+    );
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
   it("replaces the mounted card and its action state on authoritative payment updates", () => {
     const view = render(
       <OwnerBookingRequestNotifications
@@ -131,6 +151,7 @@ describe("Owner Booking Request notifications", () => {
             bookingTermsVersion: "rentcottage-mvp-2026-08-04",
             cancellationPolicyVersion: "rentcottage-cancellation-2026-08-04",
             statusNotifications: [],
+            paymentRequiredWindow: null,
             responseDeadline: "2099-08-21T21:00:00.000Z",
             createdAt: "2099-08-21T17:00:00.000Z",
           },
@@ -203,6 +224,7 @@ describe("Owner Booking Request notifications", () => {
             bookingTermsVersion: "terms-v1",
             cancellationPolicyVersion: "cancel-v1",
             statusNotifications: [],
+            paymentRequiredWindow: null,
             responseDeadline: "2099-08-21T21:00:00.000Z",
             createdAt: "2099-08-21T17:00:00.000Z",
           },

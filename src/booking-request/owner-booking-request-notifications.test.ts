@@ -8,6 +8,7 @@ const notification = {
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
   status: "pending",
   paymentStatus: null,
+  paymentRequiredWindow: null,
   customerName: "Ava Hassan",
   partySize: 4,
   bookingNote: "Garden seating, please.",
@@ -36,6 +37,33 @@ const notification = {
 };
 
 describe("Owner Booking Request notifications", () => {
+  it("retains the elapsed Payment Required window from database time", async () => {
+    const client = {
+      rpc: vi.fn().mockResolvedValue({
+        data: [
+          {
+            ...notification,
+            status: "accepted",
+            paymentStatus: "payment-required",
+            paymentRequiredWindow: {
+              recordedAt: "2099-08-21T09:00:00.000Z",
+              deadline: "2099-08-21T09:20:00.000Z",
+              databaseNow: "2099-08-21T09:20:00.000Z",
+            },
+          },
+        ],
+        error: null,
+      }),
+    } as unknown as SupabaseClient;
+    await expect(
+      listOwnerBookingRequestNotifications(client),
+    ).resolves.toMatchObject([
+      {
+        paymentStatus: "payment-required",
+        paymentRequiredWindow: { phase: "elapsed" },
+      },
+    ]);
+  });
   it.each(["capture-processing", "paid-confirmed"] as const)(
     "retains authoritative %s payment state",
     async (paymentStatus) => {
