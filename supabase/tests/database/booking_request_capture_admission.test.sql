@@ -1,5 +1,35 @@
 begin;
-select plan(26);
+select plan(34);
+
+select ok((select not prosecdef and provolatile = 's' and proconfig = array['search_path=""']
+  from pg_proc where oid = 'public.booking_request_payment_status(public.booking_requests)'::regprocedure),
+  'The shared payment projection is stable and invoker-only with an empty search path');
+select ok(not exists (
+  select 1 from pg_proc functions, lateral aclexplode(coalesce(functions.proacl, acldefault('f', functions.proowner))) privileges
+  where functions.oid = 'public.booking_request_payment_status(public.booking_requests)'::regprocedure
+    and privileges.grantee = 0 and privileges.privilege_type = 'EXECUTE'
+), 'PUBLIC has no shared payment projection execution grant');
+select ok(not has_function_privilege('anon', 'public.booking_request_payment_status(public.booking_requests)', 'execute'),
+  'anon cannot execute the private payment projection');
+set local role anon;
+select throws_ok($$select public.booking_request_payment_status(null::public.booking_requests)$$,
+  '42501', 'permission denied for function booking_request_payment_status',
+  'anon direct calls are denied at the private function boundary');
+reset role;
+select ok(not has_function_privilege('authenticated', 'public.booking_request_payment_status(public.booking_requests)', 'execute'),
+  'authenticated cannot execute the private payment projection');
+set local role authenticated;
+select throws_ok($$select public.booking_request_payment_status(null::public.booking_requests)$$,
+  '42501', 'permission denied for function booking_request_payment_status',
+  'authenticated direct calls are denied at the private function boundary');
+reset role;
+select ok(not has_function_privilege('service_role', 'public.booking_request_payment_status(public.booking_requests)', 'execute'),
+  'service_role cannot execute the private payment projection');
+set local role service_role;
+select throws_ok($$select public.booking_request_payment_status(null::public.booking_requests)$$,
+  '42501', 'permission denied for function booking_request_payment_status',
+  'service_role direct calls are denied at the private function boundary');
+reset role;
 
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
 values
@@ -189,9 +219,13 @@ values ('50000000-0000-4000-8000-000000001001', '30000000-0000-4000-8000-0000000
 update public.booking_requests set status = 'pending';
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000001002', true);
+set local role authenticated;
 select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentStatus', 'null'::jsonb, 'Pending request has no payment confirmation claim');
+reset role;
 update public.booking_requests set status = 'accepted';
+set local role authenticated;
 select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentStatus', 'null'::jsonb, 'Historical acceptance without intent remains legacy accepted');
+reset role;
 update public.booking_requests set status = 'pending';
 update public.account_contexts set role = 'customer' , owner_approval_state = null where user_id = '10000000-0000-4000-8000-000000001001';
 select is(public.claim_booking_request_action('10000000-0000-4000-8000-000000001001',
@@ -237,14 +271,18 @@ select is(public.claim_booking_request_action('10000000-0000-4000-8000-000000001
   '60000000-0000-4000-8000-000000001001', 'withdraw')->>'status', 'accepted', 'Admitted acceptance fences withdrawal');
 select is(public.claim_booking_request_expiry('60000000-0000-4000-8000-000000001001')->>'status', 'accepted', 'Admitted acceptance fences expiry');
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000001002', true);
+set local role authenticated;
 select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->>'paymentStatus', 'capture-processing', 'Admission projects pending confirmation to the Customer');
+reset role;
 insert into public.owner_request_notifications (booking_request_id, owner_user_id)
 values ('60000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001001');
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000001001', true);
+set local role authenticated;
 select is(public.list_owner_booking_request_notifications()#>>'{0,paymentStatus}', 'capture-processing', 'Owner sees authoritative admission');
 select is(public.get_customer_booking_request('RC-REQ-0000000000001001'), null::jsonb, 'Owner cannot use the Customer projection');
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000001002', true);
 select is(public.list_owner_booking_request_notifications(), '[]'::jsonb, 'Customer cannot use the Owner projection');
+reset role;
 select ok(has_function_privilege('service_role', 'public.list_due_booking_request_capture_intents(integer,jsonb)', 'execute')
   and not has_function_privilege('anon', 'public.list_due_booking_request_capture_intents(integer,jsonb)', 'execute')
   and not has_function_privilege('authenticated', 'public.list_due_booking_request_capture_intents(integer,jsonb)', 'execute'),

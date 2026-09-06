@@ -6,6 +6,7 @@ import { BookingRequestStatusContent } from "./booking-request-status-content";
 
 import {
   isPaymentDisplayStatus,
+  shouldRefreshBookingRequestStatus,
   type BookingRequestDisplayStatus,
   type CustomerBookingRequestDisplay,
 } from "@/booking-request/booking-request-display";
@@ -96,9 +97,7 @@ function CustomerBookingRequestStatusView({
     request.status,
   );
   const refresh = useBookingRequestRefresh(
-    request.status === "pending" ||
-      request.status === "processing" ||
-      request.status === "capture-processing",
+    shouldRefreshBookingRequestStatus(request.status),
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);

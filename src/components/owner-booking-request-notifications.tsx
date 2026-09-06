@@ -5,6 +5,7 @@ import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-
 import { BookingRequestStatusContent } from "./booking-request-status-content";
 import {
   isPaymentDisplayStatus,
+  shouldRefreshBookingRequestStatus,
   type BookingRequestDisplayStatus,
   type OwnerBookingRequestNotificationDisplay,
 } from "@/booking-request/booking-request-display";
@@ -153,11 +154,8 @@ export function OwnerBookingRequestNotifications({
   const copy = ownerBookingRequestMessages[locale];
   const refresh = useBookingRequestRefresh(
     Boolean(
-      notifications?.some(
-        ({ status }) =>
-          status === "pending" ||
-          status === "processing" ||
-          status === "capture-processing",
+      notifications?.some(({ status }) =>
+        shouldRefreshBookingRequestStatus(status),
       ),
     ),
   );

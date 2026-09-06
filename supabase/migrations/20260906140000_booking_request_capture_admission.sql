@@ -296,6 +296,30 @@ $$;
 revoke all on function public.claim_due_booking_request_captures(integer,jsonb) from public, anon, authenticated;
 grant execute on function public.claim_due_booking_request_captures(integer,jsonb) to service_role;
 
+create function public.booking_request_payment_status(target_request public.booking_requests)
+returns text
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select case when target_request.status = 'accepted' then case
+      when exists (
+        select 1 from public.booking_confirmations confirmations
+        join public.cottage_booking_period_commitments commitments on commitments.id = confirmations.booking_period_commitment_id
+        join public.booking_request_capture_work capture_work on capture_work.booking_request_id = confirmations.booking_request_id
+        where confirmations.booking_request_id = target_request.id
+          and confirmations.booking_snapshot_id = target_request.booking_snapshot_id
+          and confirmations.booking_period_commitment_id = target_request.booking_period_commitment_id
+          and commitments.status = 'confirmed_booking' and capture_work.state = 'complete'
+      ) then 'paid-confirmed'
+      when exists (select 1 from public.booking_request_capture_work capture_work where capture_work.booking_request_id = target_request.id)
+        then 'capture-processing'
+      end end;
+$$;
+revoke all on function public.booking_request_payment_status(public.booking_requests)
+  from public, anon, authenticated, service_role;
+
 create or replace function public.get_customer_booking_request(target_reference text)
 returns jsonb
 language sql
@@ -307,19 +331,7 @@ as $$
     'id', requests.id,
     'bookingRequestReference', requests.booking_request_reference,
     'status', requests.status,
-    'paymentStatus', case when requests.status = 'accepted' then case
-      when exists (
-        select 1 from public.booking_confirmations confirmations
-        join public.cottage_booking_period_commitments commitments on commitments.id = confirmations.booking_period_commitment_id
-        join public.booking_request_capture_work capture_work on capture_work.booking_request_id = confirmations.booking_request_id
-        where confirmations.booking_request_id = requests.id
-          and confirmations.booking_snapshot_id = requests.booking_snapshot_id
-          and confirmations.booking_period_commitment_id = requests.booking_period_commitment_id
-          and commitments.status = 'confirmed_booking' and capture_work.state = 'complete'
-      ) then 'paid-confirmed'
-      when exists (select 1 from public.booking_request_capture_work capture_work where capture_work.booking_request_id = requests.id)
-        then 'capture-processing'
-      end end,
+    'paymentStatus', public.booking_request_payment_status(requests),
     'cottageName', snapshots.quote_payload ->> 'cottageName',
     'bookingPeriod', snapshots.quote_payload -> 'items',
     'partySize', requests.party_size,
@@ -361,19 +373,7 @@ as $$
     'id', requests.id,
     'bookingRequestReference', requests.booking_request_reference,
     'status', requests.status,
-    'paymentStatus', case when requests.status = 'accepted' then case
-      when exists (
-        select 1 from public.booking_confirmations confirmations
-        join public.cottage_booking_period_commitments commitments on commitments.id = confirmations.booking_period_commitment_id
-        join public.booking_request_capture_work capture_work on capture_work.booking_request_id = confirmations.booking_request_id
-        where confirmations.booking_request_id = requests.id
-          and confirmations.booking_snapshot_id = requests.booking_snapshot_id
-          and confirmations.booking_period_commitment_id = requests.booking_period_commitment_id
-          and commitments.status = 'confirmed_booking' and capture_work.state = 'complete'
-      ) then 'paid-confirmed'
-      when exists (select 1 from public.booking_request_capture_work capture_work where capture_work.booking_request_id = requests.id)
-        then 'capture-processing'
-      end end,
+    'paymentStatus', public.booking_request_payment_status(requests),
     'customerName', requests.customer_name,
     'partySize', requests.party_size,
     'bookingNote', requests.booking_note,
