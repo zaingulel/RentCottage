@@ -9,6 +9,17 @@ Git is shipped and in-flight state. GitHub Issues and Project 4 are planned stat
 
 ## Reconcile once
 
+First fetch `origin/main` with `git fetch --no-prune origin main` and record its commit. If fetching fails, report
+freshness unavailable and do not make a freshness claim or work selection from stale board evidence. Read
+`AGENTS.md`, this skill, and [Update local main](../closeout/SKILL.md#update-local-main) from that recorded commit
+with `git show <recorded-origin-main>:<path>`. Apply that fetched update procedure to the actual `main` checkout
+before intake. The coordinating resume session may update it when no other task owns it. After a successful update,
+verify the recorded target and reread those files from disk. If the checkout is retained, keep its path, branch and
+reason; use the fetched instructions read-only and choose verifier code at the recorded target: use a usable
+existing isolated checkout first, otherwise create a fresh verifier-only worktree without duplicating a job. If no
+current verifier checkout is available, report board freshness unavailable rather than treating stale local code as
+current evidence.
+
 Start these independent reads together and await every result in one bounded intake:
 
 - `git status --short --branch`, recent `origin/main` history, remotes, and `git worktree list --porcelain`;
@@ -25,8 +36,7 @@ For remaining local job branches and worktrees, check their matching merged pull
 `git worktree prune --dry-run --verbose`. Use [closeout](../closeout/SKILL.md) to assess missed cleanup before
 shortlisting. Complete only exact targets covered by existing closeout authority; otherwise report the proposed
 targets and why they remain. Keep unfinished and active work excluded from cleanup. A historical cleanup decision
-does not prevent selecting unrelated work. Also assess and retry [safe local-main updates](../closeout/SKILL.md#update-local-main)
-under that procedure; report skipped updates with their reason.
+does not prevent selecting unrelated work.
 
 ## Work pick
 
@@ -43,10 +53,11 @@ for its authorization effect.
 
 ## Start the approved job
 
-Freshly fetch `origin/main`. Create one native worktree and `job/<issue>` branch directly from that ref; do not
+After selection, fetch `origin/main` again with `git fetch --no-prune origin main` and record the new target.
+Create one native worktree and `job/<issue>` branch directly from that freshly fetched `origin/main`; do not
 switch, clean, stash, or pull the primary checkout to start a job. Safe local-main updates belong to the initial
 reconciliation above. If the runtime already created the approved job
-worktree, verify its branch and exact base instead of creating another.
+worktree, verify its branch and exact base against that newly recorded commit instead of creating another.
 
 Assign one writer. Move the issue only under existing tracker authority. Install dependencies in a fresh
 worktree, make the route explicit, then plan and build under `AGENTS.md`. Commit each coherent green slice
