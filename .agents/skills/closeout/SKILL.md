@@ -19,9 +19,12 @@ the proposed removal and recovery implications for renewed exact-target approval
    `job/<issue>`. Confirm the writer has stopped and no replacement task or open pull request owns the branch.
    Retain primary, current, detached, foreign, dirty, active or uncertain worktrees. Check tracked, untracked and
    ignored files; report valuable local files rather than cleaning a target to make it eligible.
-3. Run `git fetch --no-prune origin main` and confirm the recorded merge commit is an ancestor of `origin/main`.
+3. Confirm the recorded `origin/main` target from [Update local main](#update-local-main) contains the merge
+   commit.
    Require the local branch tip to equal the merged pull request's head commit; extra local commits or missing evidence retain the target.
-   Run `npm run verify:board` after authorised tracker reconciliation. Resolve failed verification before removal.
+   Run `npm run verify:board` after authorised tracker reconciliation from the current verifier checkout selected by
+   [Update local main](#update-local-main). If none is available, retain the target; stale verifier code cannot
+   permit removal.
 4. From outside the target, recheck ownership, cleanliness and the branch tip, then use ordinary
    `git worktree remove <path>`. Verify the exact path is absent from `git worktree list --porcelain` before
    deleting its branch. The same command removes an exact stale registration when its directory is confirmed
@@ -55,18 +58,30 @@ After an approved merge, and during resume intake to recover a missed update, ad
 when safe. This standing authority covers only a fast-forward local update; it does not authorise pushes or job
 removal. A skipped update does not prevent unrelated job cleanup or work selection.
 
-- Fetch with `git fetch --no-prune origin main`. Record the current `refs/heads/main` and `origin/main` commits.
-  If equal, report up to date. If local `main` is missing, ahead, divergent or owned by active work, retain it and
-  report why. Require `git merge-base --is-ancestor <local-main> <origin-main>` before any update.
-- Inspect `git worktree list --porcelain` and runtime ownership. If any worktree has `main` checked out, update
-  only from that exact checkout when it is idle, clean (including untracked files), available, and has no merge,
-  rebase or other operation in progress. Recheck its branch and status immediately before
-  `git -C <main-worktree> merge --ff-only <recorded-origin-main>`. Git must preserve ignored files too: inspect
-  potential incoming-path collisions and use `--no-overwrite-ignore`. Retain uncertain files or ownership.
-- If no worktree checks out `main` and no active task owns it, recheck the worktree inventory and use
-  `git update-ref refs/heads/main <recorded-origin-main> <recorded-local-main>`. The expected old commit protects
-  against concurrent branch movement. This advances the unoccupied branch without touching a primary checkout
-  on another branch, including its uncommitted changes.
-- Verify local `main` equals the recorded target and, when updated in a checkout, that checkout remains clean.
-  Report the old and new commits or the precise skipped/failed reason. Leave conflicts or refusals untouched;
-  never switch branches, reset, stash, clean, or discard local commits to make an update possible.
+1. Use the caller's just-fetched recorded `origin/main` target when available; otherwise fetch with
+   `git fetch --no-prune origin main` and record the fetched commit. Read this procedure, `AGENTS.md`, and `resume`
+   from that commit with `git show <recorded-origin-main>:<path>` before applying it; closeout therefore resolves
+   the current procedure even when it started from an older root checkout. A failed fetch leaves freshness
+   unavailable: preserve local state and stop before board operations.
+2. Record `refs/heads/main`, inspect `git worktree list --porcelain` and runtime ownership, and require
+   `git merge-base --is-ancestor <recorded-local-main> <recorded-origin-main>`. If local `main` is missing, ahead
+   or divergent, retain it and report why. A clean checkout is eligible only when it is also idle, available, has
+   no merge, rebase or other operation in progress, and no other task owns it. The coordinating resume or closeout
+   session may establish that it is idle when no other owner exists.
+3. When `main` is checked out, inspect tracked, untracked, and ignored files for incoming file or directory path
+   collisions. Recheck ownership, branch and status immediately before
+   `git -C <main-worktree> merge --ff-only --no-overwrite-ignore <recorded-origin-main>`. Preserve active,
+   dirty, unavailable, uncertain, or collision-bearing checkouts; never switch, reset, stash or clean one to make
+   it eligible.
+4. When no worktree checks out `main` and no active task owns it, recheck the inventory and use
+   `git update-ref refs/heads/main <recorded-origin-main> <recorded-local-main>`. The expected old commit protects
+   against concurrent movement. This advances only an unoccupied branch ref; it does not refresh files in a root
+   checkout on another branch, whose verifier checkout is selected in step 5.
+5. Verify local `main` equals the recorded target and, when a checkout was updated, that it remains clean; that
+   refreshed checkout is the verifier checkout. For every case without a refreshed `main` checkout — dirty, active,
+   unavailable, uncertain, collision-bearing, ahead, divergent, missing, or an old topic root — select a verifier
+   checkout at the recorded target: use a
+   usable existing isolated checkout first, otherwise create a fresh verifier-only worktree without duplicating a
+   job. If none is available, report board freshness unavailable and do not execute stale board operations. Reread
+   the refreshed files from disk before board checks or decisions. Report the old and new commits, or the precise
+   preserved path, branch and reason. Leave conflicts or refusals untouched.
