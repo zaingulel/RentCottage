@@ -7,6 +7,10 @@ const { actOnBookingRequest } = vi.hoisted(() => ({
 vi.mock("@/booking-request/lifecycle-actions", () => ({ actOnBookingRequest }));
 
 import { CustomerBookingRequestStatus } from "./customer-booking-request-status";
+import {
+  customerDisplayFixtures,
+  restrictedBookingRequestSentinels,
+} from "../../tests/fixtures/booking-request-display.fixtures";
 
 const request = {
   id: "00000000-0000-4000-8000-000000000033",
@@ -102,4 +106,71 @@ describe("Customer Booking Request status", () => {
     );
     expect(actOnBookingRequest).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    [
+      "en",
+      "Payment capture processing",
+      "Booking confirmed",
+      "The Cottage Owner accepted the request. Payment is being collected. The booking is not confirmed yet.",
+      "Payment succeeded. The booking is confirmed.",
+      "Owner response deadline",
+    ],
+    [
+      "ar",
+      "جارٍ تحصيل الدفع",
+      "تم تأكيد الحجز",
+      "وافق مالك البيت على الطلب. جارٍ تحصيل الدفع. الحجز غير مؤكد بعد.",
+      "نجحت عملية الدفع. تم تأكيد الحجز.",
+      "موعد رد المالك",
+    ],
+    [
+      "ckb",
+      "پارەدان لە پرۆسەدایە",
+      "حجز پشتڕاست کراوەتەوە",
+      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. پارەدان وەردەگیرێت. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+      "پارەدان سەرکەوتوو بوو. حجزەکە پشتڕاست کراوەتەوە.",
+      "کاتی کۆتایی وەڵامی خاوەن",
+    ],
+  ] as const)(
+    "renders distinct, contact-safe payment states in %s",
+    (
+      locale,
+      captureProcessing,
+      paidConfirmed,
+      captureDescription,
+      paidDescription,
+      responseDeadline,
+    ) => {
+      const initial = render(
+        <CustomerBookingRequestStatus
+          locale={locale}
+          request={customerDisplayFixtures["capture-processing"]}
+        />,
+      );
+
+      expect(screen.getByRole("status")).toHaveTextContent(captureProcessing);
+      expect(screen.getByRole("status")).toHaveTextContent(captureDescription);
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+      expect(screen.queryByText(responseDeadline)).not.toBeInTheDocument();
+      for (const value of Object.values(restrictedBookingRequestSentinels)) {
+        expect(initial.container.innerHTML).not.toContain(value);
+      }
+
+      initial.unmount();
+      const confirmed = render(
+        <CustomerBookingRequestStatus
+          locale={locale}
+          request={customerDisplayFixtures["paid-confirmed"]}
+        />,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(paidConfirmed);
+      expect(screen.getByRole("status")).toHaveTextContent(paidDescription);
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+      expect(screen.queryByText(responseDeadline)).not.toBeInTheDocument();
+      for (const value of Object.values(restrictedBookingRequestSentinels)) {
+        expect(confirmed.container.innerHTML).not.toContain(value);
+      }
+    },
+  );
 });

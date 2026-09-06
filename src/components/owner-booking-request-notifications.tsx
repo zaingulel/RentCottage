@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { OwnerBookingRequestNotification } from "@/booking-request/owner-booking-request-notifications";
-import { bookingRequestStatusMessages } from "@/i18n/booking-request-status-messages";
+import { BookingRequestStatusContent } from "./booking-request-status-content";
+import {
+  isPaymentDisplayStatus,
+  type BookingRequestDisplayStatus,
+  type OwnerBookingRequestNotificationDisplay,
+} from "@/booking-request/booking-request-display";
+import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
 import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "@/i18n/format";
 import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messages";
 import type { Locale } from "@/i18n/routing";
@@ -13,19 +18,35 @@ function OwnerBookingRequestCard({
   notification,
 }: {
   locale: Locale;
-  notification: OwnerBookingRequestNotification;
+  notification: OwnerBookingRequestNotificationDisplay;
 }) {
   const copy = ownerBookingRequestMessages[locale];
-  const [status, setStatus] = useState(notification.status);
+  const [status, setStatus] = useState<BookingRequestDisplayStatus>(
+    notification.status,
+  );
   return (
     <article
       aria-label={notification.bookingRequestReference}
       className="owner-booking-request-card"
     >
-      <header>
+      <header
+        className={
+          isPaymentDisplayStatus(status)
+            ? "booking-request-payment-header"
+            : undefined
+        }
+      >
         <strong>{notification.bookingRequestReference}</strong>
-        <span role="status" aria-live="polite">
-          {bookingRequestStatusMessages[locale][status]}
+        <span
+          role="status"
+          aria-live="polite"
+          className={
+            isPaymentDisplayStatus(status)
+              ? "booking-request-payment-status"
+              : undefined
+          }
+        >
+          <BookingRequestStatusContent locale={locale} status={status} />
         </span>
       </header>
       <dl>
@@ -62,10 +83,12 @@ function OwnerBookingRequestCard({
             <dd>{notification.bookingNote}</dd>
           </div>
         ) : null}
-        <div>
-          <dt>{copy.responseDeadline}</dt>
-          <dd>{formatIraqDateTime(notification.responseDeadline, locale)}</dd>
-        </div>
+        {!isPaymentDisplayStatus(status) ? (
+          <div>
+            <dt>{copy.responseDeadline}</dt>
+            <dd>{formatIraqDateTime(notification.responseDeadline, locale)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>{copy.bookingPrice}</dt>
           <dd>{formatIqd(notification.bookingPriceIqd, locale)}</dd>
@@ -97,7 +120,7 @@ function OwnerBookingRequestCard({
           <div key={receipt.id}>
             <dt>{copy.notification}</dt>
             <dd>
-              {bookingRequestStatusMessages[locale][receipt.status]} ·{" "}
+              {bookingRequestDisplayStatusMessages[locale][receipt.status]} ·{" "}
               {formatIraqDateTime(receipt.createdAt, locale)}
             </dd>
           </div>
@@ -119,7 +142,7 @@ export function OwnerBookingRequestNotifications({
   notifications,
 }: {
   locale: Locale;
-  notifications: OwnerBookingRequestNotification[] | undefined;
+  notifications: OwnerBookingRequestNotificationDisplay[] | undefined;
 }) {
   const copy = ownerBookingRequestMessages[locale];
   if (!notifications) {
@@ -129,14 +152,19 @@ export function OwnerBookingRequestNotifications({
       </section>
     );
   }
+  const containsPaymentDisplayState = notifications.some(({ status }) =>
+    isPaymentDisplayStatus(status),
+  );
   return (
     <section
       className="owner-booking-requests"
       aria-labelledby="owner-booking-requests-heading"
     >
       <div>
-        <h2 id="owner-booking-requests-heading">{copy.title}</h2>
-        <p>{copy.intro}</p>
+        <h2 id="owner-booking-requests-heading">
+          {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
+        </h2>
+        <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
       </div>
       {notifications.length === 0 ? <p>{copy.empty}</p> : null}
       <div className="owner-booking-request-grid">

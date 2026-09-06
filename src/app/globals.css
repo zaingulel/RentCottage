@@ -2584,7 +2584,7 @@ a:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.owner-booking-request-card > header span {
+.owner-booking-request-card > header > span {
   border-radius: 999px;
   background: rgb(198 138 69 / 15%);
   padding: 0.25rem 0.6rem;
@@ -2665,6 +2665,31 @@ a:focus-visible {
   background: #e9f5ee;
   color: #175c36;
   font-weight: 700;
+}
+
+.owner-booking-request-card > header.booking-request-payment-header {
+  display: grid;
+}
+
+.booking-request-status-badge.booking-request-payment-status,
+.owner-booking-request-card > header > .booking-request-payment-status {
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: var(--green);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.booking-request-payment-status > strong,
+.booking-request-payment-status > span {
+  display: block;
+}
+
+.booking-request-payment-status > span {
+  margin-block-start: 0.35rem;
+  color: var(--ink);
+  font-weight: 400;
+  line-height: 1.5;
 }
 
 @media (max-width: 40rem) {

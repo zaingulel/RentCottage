@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { BookingRequestStatusContent } from "./booking-request-status-content";
 
-import type { CustomerBookingRequest } from "@/booking-request/customer-booking-request";
+import {
+  isPaymentDisplayStatus,
+  type BookingRequestDisplayStatus,
+  type CustomerBookingRequestDisplay,
+} from "@/booking-request/booking-request-display";
 import { actOnBookingRequest } from "@/booking-request/lifecycle-actions";
-import type { BookingRequestStatus } from "@/booking-request/booking-request-status";
 import {
   bookingRequestDeclineReasonMessages,
   bookingRequestStatusMessages,
@@ -72,10 +76,12 @@ export function CustomerBookingRequestStatus({
   request,
 }: {
   locale: Locale;
-  request: CustomerBookingRequest;
+  request: CustomerBookingRequestDisplay;
 }) {
   const copy = messages[locale];
-  const [status, setStatus] = useState<BookingRequestStatus>(request.status);
+  const [status, setStatus] = useState<BookingRequestDisplayStatus>(
+    request.status,
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   async function withdraw() {
@@ -110,11 +116,11 @@ export function CustomerBookingRequestStatus({
     >
       <h1 id="customer-booking-request-title">{copy.title}</h1>
       <p
-        className="booking-request-status-badge"
+        className={`booking-request-status-badge${isPaymentDisplayStatus(status) ? " booking-request-payment-status" : ""}`}
         role="status"
         aria-live="polite"
       >
-        {bookingRequestStatusMessages[locale][status]}
+        <BookingRequestStatusContent locale={locale} status={status} />
       </p>
       <strong>{request.bookingRequestReference}</strong>
       <dl>
@@ -151,10 +157,12 @@ export function CustomerBookingRequestStatus({
           <dt>{copy.total}</dt>
           <dd>{formatIqd(request.customerTotalIqd, locale)}</dd>
         </div>
-        <div>
-          <dt>{copy.deadline}</dt>
-          <dd>{formatIraqDateTime(request.responseDeadline, locale)}</dd>
-        </div>
+        {!isPaymentDisplayStatus(status) ? (
+          <div>
+            <dt>{copy.deadline}</dt>
+            <dd>{formatIraqDateTime(request.responseDeadline, locale)}</dd>
+          </div>
+        ) : null}
         {request.declineReason ? (
           <div>
             <dt>{copy.reason}</dt>
