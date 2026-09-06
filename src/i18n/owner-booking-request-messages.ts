@@ -32,7 +32,7 @@ export const ownerBookingRequestMessages: Record<
       "Respond before the deadline. Customer contact and payment details stay private.",
     paymentTitle: "Booking Requests",
     paymentIntro:
-      "Payment is being collected or has succeeded. Customer contact and payment details stay private.",
+      "Review each request’s status. Respond to pending requests before the deadline. Customer contact and payment details stay private.",
     empty: "No Booking Requests are waiting for your response.",
     future:
       "Online Booking Request alerts are not available yet. They will appear after launch checks are complete.",
@@ -57,7 +57,7 @@ export const ownerBookingRequestMessages: Record<
     intro: "رد قبل الموعد النهائي. تبقى بيانات اتصال العميل والدفع خاصة.",
     paymentTitle: "طلبات الحجز",
     paymentIntro:
-      "يجري تحصيل الدفع أو نجح. تبقى بيانات اتصال العميل والدفع خاصة.",
+      "راجع حالة كل طلب. رد على الطلبات قيد الانتظار قبل الموعد النهائي. تبقى بيانات اتصال العميل والدفع خاصة.",
     empty: "لا توجد طلبات حجز تنتظر ردك.",
     future:
       "تنبيهات طلبات الحجز عبر الإنترنت غير متاحة بعد. ستظهر بعد اكتمال فحوصات الإطلاق.",
@@ -83,7 +83,7 @@ export const ownerBookingRequestMessages: Record<
       "پێش کاتی کۆتایی وەڵام بدەرەوە. زانیاری پەیوەندی و پارەدانی کڕیار نهێنی دەمێنێتەوە.",
     paymentTitle: "داواکارییەکانی حجز",
     paymentIntro:
-      "پارەدان وەردەگیرێت یان سەرکەوتوو بووە. زانیاری پەیوەندی کڕیار و پارەدان نهێنی دەمێنێتەوە.",
+      "دۆخی هەر داواکارییەک بپشکنە. پێش کاتی کۆتایی وەڵامی داواکارییە چاوەڕوانەکان بدەرەوە. زانیاری پەیوەندی و پارەدانی کڕیار نهێنی دەمێنێتەوە.",
     empty: "هیچ داواکارییەکی حجز چاوەڕوانی وەڵامت نییە.",
     future:
       "ئاگادارکردنەوەکانی داواکاری حجزکردنی ئۆنلاین هێشتا بەردەست نین. دوای تەواوبوونی پشکنینەکانی دەستپێکردن دەردەکەون.",

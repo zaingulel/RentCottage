@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { actOnBookingRequest } = vi.hoisted(() => ({
@@ -257,6 +263,46 @@ describe("Owner Booking Request notifications", () => {
     );
     expect(actOnBookingRequest).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    [
+      "en",
+      "Review each request’s status. Respond to pending requests before the deadline. Customer contact and payment details stay private.",
+    ],
+    [
+      "ar",
+      "راجع حالة كل طلب. رد على الطلبات قيد الانتظار قبل الموعد النهائي. تبقى بيانات اتصال العميل والدفع خاصة.",
+    ],
+    [
+      "ckb",
+      "دۆخی هەر داواکارییەک بپشکنە. پێش کاتی کۆتایی وەڵامی داواکارییە چاوەڕوانەکان بدەرەوە. زانیاری پەیوەندی و پارەدانی کڕیار نهێنی دەمێنێتەوە.",
+    ],
+  ] as const)(
+    "describes mixed request states truthfully in %s",
+    (locale, introduction) => {
+      render(
+        <OwnerBookingRequestNotifications
+          locale={locale}
+          notifications={[
+            pendingNotification,
+            {
+              ...ownerDisplayFixtures["capture-processing"],
+              bookingRequestReference: "RC-REQ-BBBBBBBBBBBBBBBB",
+            },
+            {
+              ...ownerDisplayFixtures["paid-confirmed"],
+              bookingRequestReference: "RC-REQ-CCCCCCCCCCCCCCCC",
+            },
+          ]}
+        />,
+      );
+      expect(screen.getByText(introduction)).toBeInTheDocument();
+      const [pending, processing, confirmed] = screen.getAllByRole("article");
+      expect(within(pending).getAllByRole("button")).toHaveLength(2);
+      expect(within(processing).queryByRole("button")).not.toBeInTheDocument();
+      expect(within(confirmed).queryByRole("button")).not.toBeInTheDocument();
+    },
+  );
 
   it.each([
     [
