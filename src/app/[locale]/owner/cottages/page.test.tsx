@@ -6,17 +6,20 @@ const {
   loadOwnerBookingRequestNotifications,
   loadOwnerCottageAccess,
   notFound,
+  router,
 } = vi.hoisted(() => ({
   listOwner: vi.fn(),
   loadOwnerBookingRequestNotifications: vi.fn(),
   loadOwnerCottageAccess: vi.fn(),
   notFound: vi.fn(),
+  router: { refresh: vi.fn() },
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/navigation", () => ({
   notFound,
   unstable_rethrow: vi.fn(),
+  useRouter: () => router,
 }));
 vi.mock("@/cottage-profile/request-owner-cottage-access", () => ({
   loadOwnerCottageAccess,

@@ -570,7 +570,8 @@ function verifyCutoffExpiryRelease(label) {
   runSql(`
     drop table if exists public.test_booking_request_cutoff_stale_work;
     update public.booking_request_authorization_claims claims
-    set reconciliation_expires_at = clock_timestamp() - interval '1 second'
+    -- The preceding cutoff observer already proved not_after is in the past.
+    set reconciliation_expires_at = claims.not_after
     from public.test_booking_request_time_boundary_fixture fixture
     where fixture.label = '${label}'
       and claims.attempt_id = fixture.attempt_id;

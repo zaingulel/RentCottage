@@ -5,12 +5,14 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { actOnBookingRequest } = vi.hoisted(() => ({
+const { actOnBookingRequest, refresh } = vi.hoisted(() => ({
   actOnBookingRequest: vi.fn(),
+  refresh: vi.fn(),
 }));
 vi.mock("@/booking-request/lifecycle-actions", () => ({ actOnBookingRequest }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 import { OwnerBookingRequestNotifications } from "./owner-booking-request-notifications";
 import {
@@ -50,7 +52,38 @@ const pendingNotification = {
 };
 
 describe("Owner Booking Request notifications", () => {
-  beforeEach(() => actOnBookingRequest.mockReset());
+  beforeEach(() => {
+    actOnBookingRequest.mockReset();
+    refresh.mockClear();
+  });
+  afterEach(() => vi.useRealTimers());
+  it("replaces the mounted card and its action state on authoritative payment updates", () => {
+    const view = render(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[pendingNotification]}
+      />,
+    );
+    view.rerender(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[
+          { ...pendingNotification, status: "capture-processing" },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Payment confirmation pending",
+    );
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    view.rerender(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[{ ...pendingNotification, status: "paid-confirmed" }]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Booking confirmed");
+  });
   it("shows only the future notice when the privileged test path is unavailable", () => {
     render(
       <OwnerBookingRequestNotifications
@@ -307,27 +340,27 @@ describe("Owner Booking Request notifications", () => {
   it.each([
     [
       "en",
-      "Payment capture processing",
+      "Payment confirmation pending",
       "Booking confirmed",
-      "The Cottage Owner accepted the request. Payment is being collected. The booking is not confirmed yet.",
+      "The Cottage Owner accepted the request. Payment confirmation is pending. The booking is not confirmed yet.",
       "Payment succeeded. The booking is confirmed.",
       "Respond by",
       "Booking Requests",
     ],
     [
       "ar",
-      "جارٍ تحصيل الدفع",
+      "بانتظار تأكيد الدفع",
       "تم تأكيد الحجز",
-      "وافق مالك البيت على الطلب. جارٍ تحصيل الدفع. الحجز غير مؤكد بعد.",
+      "وافق مالك البيت على الطلب. بانتظار تأكيد الدفع. الحجز غير مؤكد بعد.",
       "نجحت عملية الدفع. تم تأكيد الحجز.",
       "الرد قبل",
       "طلبات الحجز",
     ],
     [
       "ckb",
-      "پارەدان لە پرۆسەدایە",
+      "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
       "حجز پشتڕاست کراوەتەوە",
-      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. پارەدان وەردەگیرێت. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. چاوەڕێی پشتڕاستکردنەوەی پارەدانین. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
       "پارەدان سەرکەوتوو بوو. حجزەکە پشتڕاست کراوەتەوە.",
       "وەڵام بدەرەوە پێش",
       "داواکارییەکانی حجز",

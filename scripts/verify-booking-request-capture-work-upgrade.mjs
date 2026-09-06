@@ -976,6 +976,112 @@ try {
   console.log(
     "Recovery upgrade preserved real outstanding and completed Capture graphs, original execution permits and all existing columns byte-for-byte; recovery links start null and no execution, reclaim, confirmation, receipt, or hold promotion is inferred.",
   );
+  const admissionResetArgs = [
+    "db",
+    "reset",
+    "--local",
+    "--version",
+    "20260906120000",
+  ];
+  const admissionReset = runSupabase(admissionResetArgs);
+  if (admissionReset.status !== 0)
+    throw commandFailure(admissionResetArgs, admissionReset);
+  harness.runSql(seedPredecessorGraph);
+  const captureSource = confirmationFixture.split(
+    "-- END CAPTURE RECOVERY SOURCE",
+  )[0];
+  for (const [index, state] of [
+    [14, "queued"],
+    [15, "processing"],
+    [16, "complete"],
+    [17, "confirmed"],
+  ]) {
+    const lifecycle = `73000000-0000-4000-8000-00000000${index}01`;
+    const fingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          provider: {
+            provider: "fictional-payments",
+            environment: "local-test",
+            merchantId: "fictional-merchant",
+            terminalId: "fictional-terminal",
+          },
+          kind: "capture",
+          paymentLifecycleId: lifecycle,
+          logicalOperationId: `${lifecycle}:capture`,
+          attemptId: `${lifecycle}:capture:attempt-2`,
+          amountFils: 115000000,
+          currency: "IQD",
+        }),
+      )
+      .digest("hex");
+    const fixture = captureSource
+      .replaceAll("00000000100", `00000000${index}0`)
+      .replaceAll("750000100", `750000${index}0`)
+      .replaceAll("confirmation-auth-", `admission-${index}-auth-`)
+      .replaceAll("CONFIRMATION-HOLD-1", `ADMISSION-UPGRADE-HOLD-${index}`)
+      .replaceAll(
+        "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+        fingerprint,
+      );
+    harness.runSql(`begin; ${fixture} commit;`);
+    if (state === "queued") continue;
+    const request = `60000000-0000-4000-8000-00000000${index}01`;
+    const lease = JSON.parse(
+      harness.runSql(
+        `select public.lease_booking_request_capture_work('${request}', '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}');`,
+      ),
+    );
+    const executed = JSON.parse(
+      harness.runSql(
+        `select public.execute_simulated_booking_request_capture('${JSON.stringify(lease.permit)}'::jsonb);`,
+      ),
+    );
+    if (state === "processing") continue;
+    const completed = JSON.parse(
+      harness.runSql(
+        `select public.complete_booking_request_capture('${request}', ${lease.permit.leaseGeneration}, '${lease.permit.leaseToken}', '${JSON.stringify(executed)}'::jsonb);`,
+      ),
+    );
+    if (state === "confirmed")
+      harness.runSql(
+        `select public.finalize_booking_request_confirmation('${request}', '${JSON.stringify(completed.snapshot)}'::jsonb);`,
+      );
+  }
+  const admissionGraph = () => ({
+    ...recoveryGraph(),
+    captureWork: harness.runSql(
+      "select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work;",
+    ),
+  });
+  const beforeAdmission = admissionGraph();
+  assertEqual(
+    harness.runSql(
+      "select string_agg(state, ',' order by booking_request_id) from public.booking_request_capture_work;",
+    ),
+    "queued,processing,complete,complete",
+    "Admission upgrade needs every predecessor capture state.",
+  );
+  const admissionUpgrade = runSupabase(upgradeArgs);
+  if (admissionUpgrade.status !== 0)
+    throw commandFailure(upgradeArgs, admissionUpgrade);
+  const afterAdmission = admissionGraph();
+  for (const key of Object.keys(beforeAdmission))
+    assertEqual(
+      afterAdmission[key],
+      beforeAdmission[key],
+      `Admission migration changed predecessor ${key}.`,
+    );
+  assertEqual(
+    harness.runSql(
+      "select (select count(*) from public.booking_request_capture_work) || ':' || (select sum(physical_execution_count) from public.simulated_payment_provider_operations where operation_kind = 'capture') || ':' || (select count(*) from public.booking_confirmations) || ':' || (select count(*) from public.booking_receipts);",
+    ),
+    "4:3:1:2",
+    "Admission migration must not infer capture, execution, confirmation, or receipts.",
+  );
+  console.log(
+    "Admission upgrade preserved pending, release-processing, historical accepted, queued, processing, completed and confirmed graphs byte-for-byte without provider or booking effects.",
+  );
 } catch (error) {
   failure = error;
 } finally {

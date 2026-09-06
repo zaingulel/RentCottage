@@ -6,7 +6,9 @@ import {
 } from "@/booking-quote/booking-quote";
 import { isContactSafeBookingRequestText } from "./booking-request-content";
 import {
+  isBookingRequestPaymentStatus,
   isBookingRequestStatus,
+  type BookingRequestPaymentStatus,
   type BookingRequestStatus,
 } from "./booking-request-status";
 
@@ -14,6 +16,7 @@ export interface OwnerBookingRequestNotification {
   id: string;
   bookingRequestReference: string;
   status: BookingRequestStatus;
+  paymentStatus: BookingRequestPaymentStatus | null;
   customerName: string;
   partySize: number;
   bookingNote: string | null;
@@ -38,6 +41,7 @@ const keys = new Set([
   "id",
   "bookingRequestReference",
   "status",
+  "paymentStatus",
   "customerName",
   "partySize",
   "bookingNote",
@@ -76,6 +80,10 @@ function notificationFrom(
     typeof notification.bookingRequestReference !== "string" ||
     !/^RC-REQ-[A-F0-9]{16}$/.test(notification.bookingRequestReference) ||
     !isBookingRequestStatus(notification.status) ||
+    !isBookingRequestPaymentStatus(
+      notification.paymentStatus,
+      notification.status,
+    ) ||
     typeof notification.customerName !== "string" ||
     notification.customerName.length < 2 ||
     notification.customerName.length > 120 ||
@@ -165,6 +173,7 @@ function notificationFrom(
     id: notification.id,
     bookingRequestReference: notification.bookingRequestReference,
     status: notification.status,
+    paymentStatus: notification.paymentStatus,
     customerName: notification.customerName,
     partySize: notification.partySize as number,
     bookingNote: notification.bookingNote as string | null,

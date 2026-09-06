@@ -30,6 +30,17 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
       {
         name: "replace-booking-request-server-action",
         setup(pluginBuild) {
+          pluginBuild.onResolve({ filter: /^next\/navigation$/ }, () => ({
+            path: "fixture-router",
+            namespace: "router-fixture",
+          }));
+          pluginBuild.onLoad(
+            { filter: /.*/, namespace: "router-fixture" },
+            () => ({
+              contents: "export const useRouter = () => ({ refresh() {} });",
+              loader: "ts",
+            }),
+          );
           pluginBuild.onResolve(
             { filter: /booking-request\/lifecycle-actions$/ },
             () => ({
@@ -57,13 +68,17 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
   for (const locale of [
     {
       name: "en",
-      processing: "Payment capture processing",
+      processing: "Payment confirmation pending",
       confirmed: "Booking confirmed",
     },
-    { name: "ar", processing: "جارٍ تحصيل الدفع", confirmed: "تم تأكيد الحجز" },
+    {
+      name: "ar",
+      processing: "بانتظار تأكيد الدفع",
+      confirmed: "تم تأكيد الحجز",
+    },
     {
       name: "ckb",
-      processing: "پارەدان لە پرۆسەدایە",
+      processing: "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
       confirmed: "حجز پشتڕاست کراوەتەوە",
     },
   ] as const) {

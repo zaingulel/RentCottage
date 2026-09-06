@@ -14,3 +14,18 @@ export function isBookingRequestStatus(
 ): value is BookingRequestStatus {
   return bookingRequestStatuses.includes(value as BookingRequestStatus);
 }
+
+export type BookingRequestPaymentStatus =
+  | "capture-processing"
+  | "paid-confirmed";
+
+export function isBookingRequestPaymentStatus(
+  value: unknown,
+  requestStatus: BookingRequestStatus,
+): value is BookingRequestPaymentStatus | null {
+  return (
+    value === null ||
+    (requestStatus === "accepted" &&
+      (value === "capture-processing" || value === "paid-confirmed"))
+  );
+}

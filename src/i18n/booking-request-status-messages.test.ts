@@ -24,9 +24,9 @@ describe("Booking Request lifecycle copy", () => {
   );
 
   it.each([
-    ["en", "Payment capture processing", "Booking confirmed"],
-    ["ar", "جارٍ تحصيل الدفع", "تم تأكيد الحجز"],
-    ["ckb", "پارەدان لە پرۆسەدایە", "حجز پشتڕاست کراوەتەوە"],
+    ["en", "Payment confirmation pending", "Booking confirmed"],
+    ["ar", "بانتظار تأكيد الدفع", "تم تأكيد الحجز"],
+    ["ckb", "چاوەڕێی پشتڕاستکردنەوەی پارەدان", "حجز پشتڕاست کراوەتەوە"],
   ] as const)(
     "distinguishes capture processing from paid confirmation in %s",
     (locale, captureProcessing, paidConfirmed) => {

@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { actOnBookingRequest } = vi.hoisted(() => ({
+const { actOnBookingRequest, refresh } = vi.hoisted(() => ({
   actOnBookingRequest: vi.fn(),
+  refresh: vi.fn(),
 }));
 vi.mock("@/booking-request/lifecycle-actions", () => ({ actOnBookingRequest }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 import { CustomerBookingRequestStatus } from "./customer-booking-request-status";
 import {
@@ -40,7 +42,58 @@ const request = {
 };
 
 describe("Customer Booking Request status", () => {
-  beforeEach(() => actOnBookingRequest.mockReset());
+  beforeEach(() => {
+    actOnBookingRequest.mockReset();
+    refresh.mockClear();
+  });
+  afterEach(() => vi.useRealTimers());
+  it("replaces mounted pending and processing state with authoritative confirmation", () => {
+    const view = render(
+      <CustomerBookingRequestStatus locale="en" request={request} />,
+    );
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={{ ...request, status: "capture-processing" }}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Payment confirmation pending",
+    );
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={{ ...request, status: "paid-confirmed" }}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Booking confirmed");
+  });
+  it("keeps pending customers current and stops refresh on confirmation and unmount", () => {
+    vi.useFakeTimers();
+    const view = render(
+      <CustomerBookingRequestStatus locale="en" request={request} />,
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersToNextTimer();
+    expect(refresh).toHaveBeenCalledOnce();
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={{ ...request, status: "paid-confirmed" }}
+      />,
+    );
+    expect(vi.getTimerCount()).toBe(0);
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={{ ...request, status: "capture-processing" }}
+      />,
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("shows a contact-safe processing state while authoritative withdrawal settles", async () => {
     let finish!: (value: {
       status: "withdrawn";
@@ -110,25 +163,25 @@ describe("Customer Booking Request status", () => {
   it.each([
     [
       "en",
-      "Payment capture processing",
+      "Payment confirmation pending",
       "Booking confirmed",
-      "The Cottage Owner accepted the request. Payment is being collected. The booking is not confirmed yet.",
+      "The Cottage Owner accepted the request. Payment confirmation is pending. The booking is not confirmed yet.",
       "Payment succeeded. The booking is confirmed.",
       "Owner response deadline",
     ],
     [
       "ar",
-      "جارٍ تحصيل الدفع",
+      "بانتظار تأكيد الدفع",
       "تم تأكيد الحجز",
-      "وافق مالك البيت على الطلب. جارٍ تحصيل الدفع. الحجز غير مؤكد بعد.",
+      "وافق مالك البيت على الطلب. بانتظار تأكيد الدفع. الحجز غير مؤكد بعد.",
       "نجحت عملية الدفع. تم تأكيد الحجز.",
       "موعد رد المالك",
     ],
     [
       "ckb",
-      "پارەدان لە پرۆسەدایە",
+      "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
       "حجز پشتڕاست کراوەتەوە",
-      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. پارەدان وەردەگیرێت. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. چاوەڕێی پشتڕاستکردنەوەی پارەدانین. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
       "پارەدان سەرکەوتوو بوو. حجزەکە پشتڕاست کراوەتەوە.",
       "کاتی کۆتایی وەڵامی خاوەن",
     ],

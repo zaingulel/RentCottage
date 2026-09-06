@@ -500,6 +500,293 @@ async function proveApplicationRecovery(source) {
   );
 }
 
+const ownerId = "10000000-0000-4000-8000-000000001001";
+const customerId = "10000000-0000-4000-8000-000000001002";
+const acceptSql = `select public.claim_booking_request_action('${ownerId}', '${requestId}', 'accept');`;
+function pendingSource(source) {
+  return (
+    source.slice(
+      0,
+      source.indexOf("insert into public.booking_request_capture_work"),
+    ) +
+    `update public.booking_requests set status = 'pending', settled_at = null, created_at = statement_timestamp() - interval '1 hour', response_deadline = statement_timestamp() + interval '3 hours' where id = '${requestId}';`
+  );
+}
+async function proveOwnerAdmission(source) {
+  const pending = pendingSource(source);
+  const reset = () => {
+    harness.runSql(`begin; ${pending} commit;`);
+    seeded = true;
+  };
+  reset();
+  const admissions = await duplicate(acceptSql, "owner_accept");
+  assert.deepEqual(admissions[0], admissions[1]);
+  assert.equal(
+    harness.runSql(
+      `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
+    ),
+    "1",
+  );
+  const identity = harness.runSql(
+    `select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id = '${requestId}';`,
+  );
+  harness.runSql(acceptSql);
+  assert.equal(
+    harness.runSql(
+      `select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id = '${requestId}';`,
+    ),
+    identity,
+  );
+  harness.runSql(cleanup);
+  seeded = false;
+
+  for (const action of ["decline", "withdraw", "expire"]) {
+    for (const acceptFirst of [true, false]) {
+      reset();
+      if (action === "expire" && !acceptFirst)
+        harness.runSql(
+          `update public.booking_requests set response_deadline = statement_timestamp(), created_at = statement_timestamp() - interval '4 hours' where id = '${requestId}';`,
+        );
+      const otherSql =
+        action === "expire"
+          ? `select public.claim_booking_request_expiry('${requestId}');`
+          : `select public.claim_booking_request_action('${action === "withdraw" ? customerId : ownerId}', '${requestId}', '${action}', ${action === "decline" ? "'other'" : "null"});`;
+      const holder = start(
+        `begin; set application_name = 'owner_decision_holder'; set local role service_role; ${acceptFirst ? acceptSql : otherSql} select 'DECISION_HELD';`,
+      );
+      await harness.waitForMarker(holder, "DECISION_HELD");
+      const contender = start(
+        `begin; set application_name = 'owner_decision_contender'; set local role service_role; ${acceptFirst ? otherSql : acceptSql} commit;`,
+        true,
+      );
+      await blockedBy(
+        "owner_decision_contender",
+        contender,
+        "owner_decision_holder",
+      );
+      await finish(holder, { action: "commit" });
+      await finish(contender);
+      assert.equal(
+        harness.runSql(
+          `select status from public.booking_requests where id = '${requestId}';`,
+        ),
+        acceptFirst ? "accepted" : "processing",
+      );
+      assert.equal(
+        harness.runSql(
+          `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
+        ),
+        acceptFirst ? "1" : "0",
+      );
+      assert.equal(
+        harness.runSql(
+          `select count(*) from public.simulated_payment_provider_operations where operation_kind = 'capture';`,
+        ),
+        "0",
+      );
+      harness.runSql(cleanup);
+      seeded = false;
+    }
+  }
+  reset();
+  await proveLockOrder(acceptSql, "owner_admission", [
+    rows[0],
+    ["account", `public.account_contexts where user_id = '${ownerId}'`],
+    rows[2],
+    rows[3],
+  ]);
+  for (const change of [
+    "role = 'customer', owner_approval_state = null",
+    "owner_approval_state = 'prospective'",
+  ]) {
+    const holder = start(
+      `begin; set application_name = 'owner_account_holder'; update public.account_contexts set ${change} where user_id = '${ownerId}'; select 'ACCOUNT_HELD';`,
+    );
+    await harness.waitForMarker(holder, "ACCOUNT_HELD");
+    const contender = start(
+      `begin; set application_name = 'owner_account_contender'; set local role service_role; ${acceptSql} commit;`,
+      true,
+    );
+    await blockedBy(
+      "owner_account_contender",
+      contender,
+      "owner_account_holder",
+    );
+    await finish(holder, { action: "commit" });
+    await finish(contender);
+    assert.equal(result(contender).status, "access-required");
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
+      ),
+      "0",
+    );
+    harness.runSql(
+      `update public.account_contexts set role = 'cottage_owner', owner_approval_state = 'approved' where user_id = '${ownerId}';`,
+    );
+  }
+  const holder = start(
+    `begin; set application_name = 'owner_deadline_holder'; update public.booking_requests set response_deadline = statement_timestamp() + interval '2 seconds', created_at = statement_timestamp() - interval '4 hours' + interval '2 seconds' where id = '${requestId}'; select 'DEADLINE_HELD';`,
+  );
+  await harness.waitForMarker(holder, "DEADLINE_HELD");
+  const contender = start(
+    `begin; set application_name = 'owner_deadline_contender'; set local role service_role; ${acceptSql} commit;`,
+    true,
+  );
+  await blockedBy(
+    "owner_deadline_contender",
+    contender,
+    "owner_deadline_holder",
+  );
+  holder.child.stdin.write(
+    `select clock_timestamp() < response_deadline from public.booking_requests where id = '${requestId}'; select 'BEFORE_DEADLINE';\n`,
+  );
+  await harness.waitForMarker(holder, "BEFORE_DEADLINE");
+  assert.ok(holder.stdout.includes("t\nBEFORE_DEADLINE"));
+  // Observe the actual database deadline within the holder's uncommitted row.
+  holder.child.stdin.write(
+    `do $$ begin while clock_timestamp() < (select response_deadline from public.booking_requests where id = '${requestId}') loop perform pg_sleep(0.01); end loop; end $$; select 'DEADLINE_REACHED';\n`,
+  );
+  await harness.waitForMarker(holder, "DEADLINE_REACHED");
+  await finish(holder, { action: "commit" });
+  await finish(contender);
+  assert.equal(
+    harness.runSql(
+      `select status from public.booking_requests where id = '${requestId}';`,
+    ),
+    "processing",
+  );
+  assert.equal(
+    harness.runSql(
+      `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
+    ),
+    "0",
+  );
+  harness.runSql(cleanup);
+  seeded = false;
+  console.log(
+    "Owner admission proved duplicate intent identity, both winning orders against decline/withdrawal/expiry, request-first locks, post-contention role/approval checks and deadline expiry.",
+  );
+}
+async function proveRecoveryProgress(source) {
+  const pending = pendingSource(source);
+  const clone = (sql, index) =>
+    sql
+      .replaceAll("1003", String(2003 + Number(index) * 10))
+      .replaceAll("1002", String(2002 + Number(index) * 10))
+      .replaceAll("1001", String(2001 + Number(index) * 10))
+      .replaceAll(
+        "confirmation-auth-request-1",
+        `confirmation-auth-request-${index}`,
+      )
+      .replaceAll(
+        "confirmation-auth-reference-1",
+        `confirmation-auth-reference-${index}`,
+      )
+      .replaceAll(
+        "confirmation-auth-movement-1",
+        `confirmation-auth-movement-${index}`,
+      )
+      .replaceAll("CONFIRMATION-HOLD-1", `CONFIRMATION-HOLD-${index}`);
+  // Twenty earlier missing-execution candidates must not starve the twenty-first recoverable capture.
+  const indexes = Array.from({ length: 21 }, (_, i) =>
+    String(i + 2).padStart(2, "0"),
+  );
+  try {
+    for (const index of indexes) {
+      harness.runSql(
+        `begin; ${clone(pending, index)} ${clone(acceptSql, index)} commit;`,
+      );
+      const leased = JSON.parse(harness.runSql(clone(leaseSql, index)));
+      if (index === indexes.at(-1))
+        harness.runSql(
+          `select public.execute_simulated_booking_request_capture(${literal(leased.permit)});`,
+        );
+      harness.runSql(
+        `update public.booking_request_capture_work set lease_expires_at = clock_timestamp() where booking_request_id = '${clone(requestId, index)}';`,
+      );
+    }
+    const unavailableBefore = harness.runSql(
+      `select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work where recovery_operation_id is null and booking_request_id <> '${clone(requestId, indexes.at(-1))}';`,
+    );
+    const recovered = JSON.parse(
+      harness.runSql(
+        `select public.claim_due_booking_request_captures(20, ${literal(providerIdentity)});`,
+      ),
+    );
+    assert.equal(recovered.length, 20);
+    assert.equal(
+      recovered.filter((row) => row.status === "reconcile").length,
+      1,
+      "Later execution evidence must make bounded progress past unavailable work",
+    );
+    assert.equal(
+      recovered.filter((row) => row.status === "unavailable").length,
+      19,
+    );
+    assert.equal(
+      harness.runSql(
+        `select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work where recovery_operation_id is null and booking_request_id <> '${clone(requestId, indexes.at(-1))}';`,
+      ),
+      unavailableBefore,
+      "Missing execution must never renew ownership",
+    );
+    console.log(
+      "Recovery selected later exact provider evidence beyond a full unavailable batch without renewing missing-evidence ownership.",
+    );
+  } finally {
+    for (const index of indexes) harness.runSql(clone(cleanup, index));
+  }
+}
+
+async function proveCaptureProcessing(source) {
+  for (const mode of [
+    "process",
+    "process-lose-response",
+    "process-interrupt-confirmation",
+  ]) {
+    harness.runSql(`begin; ${pendingSource(source)} ${acceptSql} commit;`);
+    seeded = true;
+    const admitted = observeRecovery();
+    if (mode === "process") {
+      const clients = [startWorker(mode), startWorker(mode)];
+      await Promise.all(clients.map(finishWorker));
+    } else {
+      assert.deepEqual(await finishWorker(startWorker(mode)), [
+        { status: "unavailable" },
+      ]);
+      const interrupted = observeRecovery();
+      assert.equal(interrupted.ledger.length, 1);
+      assert.equal(interrupted.confirmations.length, 0);
+      assert.equal(interrupted.receipts.length, 0);
+      if (mode === "process-lose-response") expireCaptureLease();
+      const result = await finishWorker(startWorker("process"));
+      assert.equal(result[0].status, "confirmed");
+    }
+    const confirmed = observeRecovery();
+    assert.equal(confirmed.ledger.length, 1);
+    assert.equal(confirmed.ledger[0].physical_execution_count, 1);
+    assert.equal(confirmed.ledger[0].amount_fils, 115000000);
+    assert.equal(confirmed.confirmations.length, 1);
+    assert.equal(confirmed.receipts.length, 2);
+    assert.equal(confirmed.commitment.status, "confirmed_booking");
+    assert.deepEqual(confirmed.occupancies, admitted.occupancies);
+    assert.equal(confirmed.occupancies.length, 5);
+    assert.equal(confirmed.releases, 0);
+    await finishWorker(startWorker("process"));
+    assert.deepEqual(
+      observeRecovery(),
+      confirmed,
+      "Repeated processing must preserve all durable identities",
+    );
+    harness.runSql(cleanup);
+    seeded = false;
+  }
+  console.log(
+    "Composed processing confirmed newly admitted work through two competing clients and recovered both response-loss and confirmation interruption: one physical capture, one confirmation, two receipts and five unchanged occupancies.",
+  );
+}
+
 let seeded = false;
 const cleanup = `begin;
   alter table public.booking_receipts disable trigger reject_booking_receipt_change;
@@ -510,6 +797,7 @@ const cleanup = `begin;
   alter table public.booking_confirmations disable trigger reject_booking_confirmation_change;
   delete from public.booking_confirmations where booking_request_id = '${requestId}';
   alter table public.booking_confirmations enable trigger reject_booking_confirmation_change;
+  delete from public.booking_request_release_work where booking_request_id = '${requestId}';
   delete from public.booking_request_capture_work where booking_request_id = '${requestId}';
   delete from public.simulated_payment_provider_operations where claim_id = '72000000-0000-4000-8000-000000001001';
   delete from public.booking_request_provider_operation_identities where attempt_id = '70000000-0000-4000-8000-000000001001';
@@ -517,6 +805,8 @@ const cleanup = `begin;
   delete from public.booking_request_authorization_claim_occupancies where claim_id = '72000000-0000-4000-8000-000000001001';
   delete from public.booking_request_authorization_claims where id = '72000000-0000-4000-8000-000000001001';
   delete from public.booking_request_submission_attempts where id = '70000000-0000-4000-8000-000000001001';
+  delete from public.booking_request_status_notifications where booking_request_id = '${requestId}';
+  delete from public.owner_request_notifications where booking_request_id = '${requestId}';
   delete from public.booking_requests where id = '${requestId}';
   alter table public.booking_snapshots disable trigger reject_booking_snapshot_update;
   delete from public.booking_snapshots where id = '40000000-0000-4000-8000-000000001001';
@@ -696,7 +986,10 @@ try {
     recoverySource,
     "Capture recovery needs the complete source-only fixture",
   );
+  await proveOwnerAdmission(recoverySource);
+  await proveRecoveryProgress(recoverySource);
   await proveApplicationRecovery(recoverySource);
+  await proveCaptureProcessing(recoverySource);
 } finally {
   for (const worker of workers) worker.child.kill("SIGTERM");
   await Promise.all([...workers].map((worker) => worker.exited));

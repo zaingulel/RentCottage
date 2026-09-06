@@ -4,6 +4,8 @@ import handler from "./.open-next/worker.js";
 
 import { runScheduledBookingRequestExpiry } from "./src/booking-request/booking-request-expiry-schedule";
 
+import { runScheduledBookingRequestCapture } from "./src/booking-request/booking-request-capture-schedule";
+
 interface Environment {
   readonly APP_ENVIRONMENT?: string;
   readonly SUPABASE_PROJECT_REF?: string;
@@ -15,6 +17,11 @@ interface Environment {
 export default {
   fetch: handler.fetch,
   async scheduled(_controller, environment: Environment) {
-    await runScheduledBookingRequestExpiry(environment);
+    const results = await Promise.allSettled([
+      runScheduledBookingRequestExpiry(environment),
+      runScheduledBookingRequestCapture(environment),
+    ]);
+    if (results.some((result) => result.status === "rejected"))
+      throw new Error("Scheduled booking-request processing is incomplete");
   },
 } satisfies ExportedHandler<Environment>;

@@ -130,6 +130,27 @@ function setup(data: unknown = { status: "leased", permit }) {
 }
 
 describe("Supabase Booking Request Capture repository", () => {
+  it("selects bounded queued identities for the exact provider without execution authority", async () => {
+    const { repository, rpc } = setup([permit.bookingRequestId]);
+    await expect(
+      repository.listQueued(20, permit.providerIdentity),
+    ).resolves.toEqual([permit.bookingRequestId]);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "list_due_booking_request_capture_intents",
+      { target_limit: 20, target_provider_identity: permit.providerIdentity },
+    );
+  });
+  it.each([
+    {},
+    null,
+    ["invalid"],
+    [permit.bookingRequestId, permit.bookingRequestId],
+  ])("rejects invalid or duplicated queued selection %#", async (data) => {
+    await expect(
+      setup(data).repository.listQueued(20, permit.providerIdentity),
+    ).rejects.toThrow("invalid Capture intents");
+  });
+
   it("leases only the specified seeded work with the complete provider identity", async () => {
     const { rpc, repository } = setup();
     const result = await repository.lease(

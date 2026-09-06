@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
 
 import {
   isPaymentDisplayStatus,
+  shouldRefreshBookingRequestStatus,
   type BookingRequestDisplayStatus,
   type CustomerBookingRequestDisplay,
 } from "@/booking-request/booking-request-display";
@@ -71,7 +73,19 @@ const messages = {
   },
 } as const;
 
-export function CustomerBookingRequestStatus({
+export function CustomerBookingRequestStatus(props: {
+  locale: Locale;
+  request: CustomerBookingRequestDisplay;
+}) {
+  return (
+    <CustomerBookingRequestStatusView
+      key={`${props.request.id}:${props.request.status}`}
+      {...props}
+    />
+  );
+}
+
+function CustomerBookingRequestStatusView({
   locale,
   request,
 }: {
@@ -81,6 +95,9 @@ export function CustomerBookingRequestStatus({
   const copy = messages[locale];
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
     request.status,
+  );
+  const refresh = useBookingRequestRefresh(
+    shouldRefreshBookingRequestStatus(request.status),
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
@@ -101,7 +118,10 @@ export function CustomerBookingRequestStatus({
       ) {
         setStatus(request.status);
         setError(true);
-      } else setStatus(result.status);
+      } else {
+        setStatus(result.status);
+        refresh();
+      }
     } catch {
       setStatus(request.status);
       setError(true);

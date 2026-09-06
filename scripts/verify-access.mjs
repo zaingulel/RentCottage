@@ -454,6 +454,7 @@ export function main(
       }
 
       const workerEnvironment = {
+        ...databaseConcurrencyEnvironment,
         ...browserEnvironment,
         PLAYWRIGHT_SERVER: "worker",
       };
@@ -493,6 +494,7 @@ export function main(
           "playwright",
           "test",
           "tests/worker-scheduled-expiry.spec.ts",
+          "tests/worker-scheduled-capture.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",
