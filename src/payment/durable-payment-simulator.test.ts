@@ -198,6 +198,50 @@ describe("durable simulated payment provider", () => {
     }
   });
 
+  it("queries Capture evidence without an execution permit or outcome rewrite", async () => {
+    const result = {
+      outcome: "succeeded",
+      providerRequestId: "original-request",
+      providerReference: "original-reference",
+      movementReference: "original-movement",
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: result, error: null });
+    const provider = new DurablePaymentSimulator({
+      client: { rpc } as unknown as SupabaseClient,
+      now: () => "2099-08-21T17:00:00.000Z",
+      reconciliationOutcome: "failed",
+    });
+    await expect(
+      provider.query({
+        kind: "capture",
+        paymentLifecycleId: captureRequest.paymentLifecycleId,
+        logicalOperationId: captureRequest.logicalOperationId,
+        attemptId: captureRequest.attemptId,
+        amountFils: captureRequest.amountFils,
+        currency: "IQD",
+        providerRequestId: result.providerRequestId,
+        providerReference: result.providerReference,
+      }),
+    ).resolves.toEqual(result);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "query_simulated_booking_request_capture",
+      {
+        target_operation: {
+          providerIdentity: provider.identity,
+          requestFingerprint: captureRequest.executionPermit.requestFingerprint,
+          paymentLifecycleId: captureRequest.paymentLifecycleId,
+          logicalOperationId: captureRequest.logicalOperationId,
+          physicalAttemptId: captureRequest.attemptId,
+          operationKind: "capture",
+          amountFils: captureRequest.amountFils,
+          currency: "IQD",
+        },
+        target_provider_request_id: result.providerRequestId,
+        target_provider_reference: result.providerReference,
+      },
+    );
+  });
+
   it.each([
     ["kind", { kind: "release" }],
     ["Payment Lifecycle", { paymentLifecycleId: "another-lifecycle" }],

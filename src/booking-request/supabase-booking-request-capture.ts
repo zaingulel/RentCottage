@@ -6,7 +6,6 @@ import {
 } from "@/payment/booking-request-capture-contract";
 import type {
   BookingRequestCaptureBinding,
-  BookingRequestCaptureExecutionPermit,
   ProviderOperationResult,
   BookingRequestCapturePermitExpectation,
   BookingRequestCaptureEvidenceExpectation,
@@ -19,6 +18,11 @@ import type {
   BookingRequestCaptureResult,
   BookingRequestCaptureRepository,
 } from "./booking-request-capture";
+
+import type {
+  BookingRequestCaptureRecoveryRepository,
+  BookingRequestCaptureRecoveryWork,
+} from "./booking-request-capture-recovery";
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -128,7 +132,7 @@ function completedFrom(
   value: unknown,
   bookingRequestId: string,
   providerIdentity: PaymentProviderIdentity,
-  permit?: BookingRequestCaptureExecutionPermit,
+  permit?: BookingRequestCapturePermitExpectation,
   providerResult?: BookingRequestCaptureProviderResultIdentity,
 ): Extract<BookingRequestCaptureResult, { status: "complete" }> {
   const result = record(value);
@@ -190,7 +194,11 @@ function completedFrom(
   };
 }
 
-export class SupabaseBookingRequestCaptureRepository implements BookingRequestCaptureRepository {
+export class SupabaseBookingRequestCaptureRepository
+  implements
+    BookingRequestCaptureRepository,
+    BookingRequestCaptureRecoveryRepository
+{
   constructor(private readonly client: SupabaseClient) {}
   async lease(
     bookingRequestId: string,
@@ -239,8 +247,84 @@ export class SupabaseBookingRequestCaptureRepository implements BookingRequestCa
       permit: rehydrateBookingRequestCaptureExecutionPermit(permit, expected),
     };
   }
+  async claimDue(
+    limit: number,
+    providerIdentity: PaymentProviderIdentity,
+  ): Promise<readonly BookingRequestCaptureRecoveryWork[]> {
+    const { data, error } = await this.client.rpc(
+      "claim_due_booking_request_captures",
+      {
+        target_limit: limit,
+        target_provider_identity: providerIdentity,
+      },
+    );
+    if (error) throw new Error("Capture recovery selection is unavailable");
+    if (!Array.isArray(data) || data.length > limit)
+      throw new Error("Database returned invalid Capture recovery work");
+    return data.map((value: unknown): BookingRequestCaptureRecoveryWork => {
+      const result = record(value);
+      if (result?.status === "complete") {
+        const snapshot = record(result.snapshot);
+        if (!snapshot || !isUuid(snapshot.bookingRequestId))
+          throw new Error(
+            "Database returned invalid Capture recovery evidence",
+          );
+        return completedFrom(
+          result,
+          snapshot.bookingRequestId as string,
+          providerIdentity,
+        );
+      }
+      if (result?.status === "unavailable" && exactKeys(result, ["status"]))
+        return { status: "unavailable" };
+      const lease = record(result?.lease);
+      if (
+        !result ||
+        !exactKeys(result, ["status", "lease"]) ||
+        result.status !== "reconcile" ||
+        !lease ||
+        !isUuid(lease.bookingRequestId) ||
+        lease.workId !== lease.bookingRequestId ||
+        !positiveInteger(lease.leaseGeneration) ||
+        (lease.leaseGeneration as number) < 2 ||
+        !isUuid(lease.leaseToken) ||
+        !timestamp(lease.notAfter) ||
+        !isUuid(lease.recoveryOperationId)
+      )
+        throw new Error("Database returned an invalid Capture recovery lease");
+      const binding = bindingFrom(
+        lease,
+        lease.bookingRequestId as string,
+        providerIdentity,
+      );
+      if (
+        !exactKeys(lease, [
+          ...Object.keys(binding),
+          "workId",
+          "leaseGeneration",
+          "leaseToken",
+          "notAfter",
+          "recoveryOperationId",
+          "providerResult",
+        ])
+      )
+        throw new Error("Database returned an invalid Capture recovery lease");
+      return {
+        status: "reconcile",
+        lease: {
+          ...binding,
+          workId: lease.workId as string,
+          leaseGeneration: lease.leaseGeneration as number,
+          leaseToken: lease.leaseToken as string,
+          notAfter: lease.notAfter as string,
+          recoveryOperationId: lease.recoveryOperationId as string,
+          providerResult: resultIdentityFrom(lease.providerResult),
+        },
+      };
+    });
+  }
   async complete(
-    permit: BookingRequestCaptureExecutionPermit,
+    permit: BookingRequestCapturePermitExpectation,
     providerResult: Extract<ProviderOperationResult, { outcome: "succeeded" }>,
   ) {
     const { data, error } = await this.client.rpc(

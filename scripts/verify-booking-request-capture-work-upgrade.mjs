@@ -51,9 +51,9 @@ function assertEqual(actual, expected, message) {
   }
 }
 
-function snapshot(table, orderBy) {
+function snapshot(table, orderBy, omitAddedColumns = true) {
   return harness.runSql(`
-    select coalesce(jsonb_agg(${table === "simulated_payment_provider_operations" ? "to_jsonb(rows) - 'capture_execution_permit'" : "to_jsonb(rows)"} order by ${orderBy}), '[]'::jsonb)
+    select coalesce(jsonb_agg(${omitAddedColumns && table === "simulated_payment_provider_operations" ? "to_jsonb(rows) - 'capture_execution_permit'" : table === "booking_request_capture_work" ? "to_jsonb(rows) - 'recovery_operation_id'" : "to_jsonb(rows)"} order by ${orderBy}), '[]'::jsonb)
     from public.${table} rows;
   `);
 }
@@ -865,6 +865,116 @@ try {
   );
   console.log(
     "Confirmation upgrade preserved a genuinely completed Capture graph byte-for-byte, created only private empty outcome relations, and inferred no confirmation, receipt, or commitment promotion.",
+  );
+
+  const recoveryPredecessor = "20260905200000";
+  const resetRecoveryArgs = [
+    "db",
+    "reset",
+    "--local",
+    "--version",
+    recoveryPredecessor,
+  ];
+  const resetRecovery = runSupabase(resetRecoveryArgs);
+  if (resetRecovery.status !== 0)
+    throw commandFailure(resetRecoveryArgs, resetRecovery);
+  assertEqual(
+    harness.runSql(
+      "select max(version) from supabase_migrations.schema_migrations;",
+    ),
+    recoveryPredecessor,
+    "Recovery upgrade reset to the wrong predecessor.",
+  );
+  harness.runSql(`begin; ${confirmationFixture} commit;`);
+  const secondLifecycle = "73000000-0000-4000-8000-000000001101";
+  const secondFingerprint = createHash("sha256")
+    .update(
+      JSON.stringify({
+        provider: {
+          provider: "fictional-payments",
+          environment: "local-test",
+          merchantId: "fictional-merchant",
+          terminalId: "fictional-terminal",
+        },
+        kind: "capture",
+        paymentLifecycleId: secondLifecycle,
+        logicalOperationId: `${secondLifecycle}:capture`,
+        attemptId: `${secondLifecycle}:capture:attempt-2`,
+        amountFils: 115000000,
+        currency: "IQD",
+      }),
+    )
+    .digest("hex");
+  const secondFixture = confirmationFixture
+    .replaceAll("00000000100", "00000000110")
+    .replaceAll("750000100", "750000110")
+    .replaceAll("confirmation-auth-", "recovery-upgrade-auth-")
+    .replaceAll("CONFIRMATION-HOLD-1", "CONFIRMATION-HOLD-2")
+    .replaceAll(
+      "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+      secondFingerprint,
+    );
+  harness.runSql(`begin; ${secondFixture} commit;`);
+  harness.runSql(`select public.complete_booking_request_capture(
+    '60000000-0000-4000-8000-000000001101', (capture_execution_permit ->> 'leaseGeneration')::bigint,
+    (capture_execution_permit ->> 'leaseToken')::uuid, jsonb_build_object('outcome','succeeded',
+      'providerRequestId',provider_request_id,'providerReference',provider_reference,'movementReference',movement_reference))
+    from public.simulated_payment_provider_operations where operation_kind = 'capture' and payment_lifecycle_id = '${secondLifecycle}';`);
+  const recoveryGraph = () => ({
+    ...snapshotPredecessorGraph(),
+    captureWork: snapshot(
+      "booking_request_capture_work",
+      "rows.booking_request_id",
+    ),
+    providerOperations: snapshot(
+      "simulated_payment_provider_operations",
+      "rows.id",
+      false,
+    ),
+    confirmations: snapshot("booking_confirmations", "rows.id"),
+    receipts: snapshot("booking_receipts", "rows.id"),
+  });
+  const beforeRecovery = recoveryGraph();
+  assertEqual(
+    harness.runSql(
+      "select string_agg(state, ',' order by booking_request_id) from public.booking_request_capture_work;",
+    ),
+    "processing,complete",
+    "Upgrade needs both outstanding and completed real Capture evidence.",
+  );
+  const recoveryUpgrade = runSupabase(upgradeArgs);
+  if (recoveryUpgrade.status !== 0)
+    throw commandFailure(upgradeArgs, recoveryUpgrade);
+  const afterRecovery = recoveryGraph();
+  for (const key of Object.keys(beforeRecovery))
+    assertEqual(
+      afterRecovery[key],
+      beforeRecovery[key],
+      `Recovery migration changed predecessor ${key}.`,
+    );
+  assertEqual(
+    harness.runSql(
+      "select count(*) from public.booking_request_capture_work where recovery_operation_id is not null;",
+    ),
+    "0",
+    "Migration must not infer recovery ownership.",
+  );
+  assertEqual(
+    harness.runSql(
+      "select count(*) || ':' || sum(physical_execution_count) from public.simulated_payment_provider_operations where operation_kind = 'capture';",
+    ),
+    "2:2",
+    "Migration must preserve exactly the two original Capture executions.",
+  );
+  assertEqual(
+    harness.runSql(
+      "select (select count(*) from public.booking_confirmations) || ':' || (select count(*) from public.booking_receipts) || ':' || (select count(*) from public.cottage_booking_period_commitments where status = 'pending_hold');",
+    ),
+    "0:0:2",
+    "Recovery migration cannot confirm, create receipts, or promote holds.",
+  );
+  console.log(
+    "Recovery upgrade preserved real outstanding and completed Capture graphs, original execution permits and all existing columns byte-for-byte; recovery links start null and no execution, reclaim, confirmation, receipt, or hold promotion is inferred.",
   );
 } catch (error) {
   failure = error;

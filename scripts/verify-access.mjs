@@ -377,7 +377,13 @@ export function main(
       const bookingRequestCaptureConcurrency = execute(
         "node",
         ["scripts/verify-booking-request-capture-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+        {
+          env: {
+            ...inventoryConcurrencyEnvironment,
+            SUPABASE_SECRET_KEY: secretKey,
+          },
+          stdio: "inherit",
+        },
       );
       return bookingRequestCaptureConcurrency.status;
     };

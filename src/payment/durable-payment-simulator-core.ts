@@ -226,6 +226,18 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
   async query(
     request: ProviderReconciliationQuery,
   ): Promise<ProviderOperationResult> {
+    if (request.kind === "capture") {
+      const { data, error } = await this.#client.rpc(
+        "query_simulated_booking_request_capture",
+        {
+          ...operationPayload(request),
+          target_provider_request_id: request.providerRequestId,
+          target_provider_reference: request.providerReference,
+        },
+      );
+      if (error) throw new Error("Simulated payment query is unavailable");
+      return providerResult(data);
+    }
     const { data, error } = await this.#client.rpc(
       "query_simulated_payment_provider_operation",
       {
