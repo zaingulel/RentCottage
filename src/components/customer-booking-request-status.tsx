@@ -13,7 +13,7 @@ import {
 import { actOnBookingRequest } from "@/booking-request/lifecycle-actions";
 import {
   bookingRequestDeclineReasonMessages,
-  bookingRequestStatusMessages,
+  bookingRequestDisplayStatusMessages,
 } from "@/i18n/booking-request-status-messages";
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
@@ -37,6 +37,7 @@ const messages = {
       "Reserved money and held inventory are being released. Do not submit another request yet.",
     failed: "The request could not be updated safely. Try again.",
     notification: "Status notification",
+    paymentDeadline: "Payment deadline",
   },
   ar: {
     title: "حالة طلب الحجز",
@@ -53,6 +54,7 @@ const messages = {
     processing: "جارٍ تحرير المبلغ والفترة المحجوزين. لا ترسل طلباً آخر الآن.",
     failed: "تعذر تحديث الطلب بأمان. حاول مرة أخرى.",
     notification: "إشعار الحالة",
+    paymentDeadline: "موعد الدفع",
   },
   ckb: {
     title: "دۆخی داواکاری حجز",
@@ -70,6 +72,7 @@ const messages = {
       "پارە و ماوەی گیراو ئازاد دەکرێن. هێشتا داواکارییەکی تر مەبنێرە.",
     failed: "داواکارییەکە بە سەلامەتی نوێ نەکرایەوە. دووبارە هەوڵ بدە.",
     notification: "ئاگادارکردنەوەی دۆخ",
+    paymentDeadline: "کاتی کۆتایی پارەدان",
   },
 } as const;
 
@@ -79,7 +82,7 @@ export function CustomerBookingRequestStatus(props: {
 }) {
   return (
     <CustomerBookingRequestStatusView
-      key={`${props.request.id}:${props.request.status}`}
+      key={`${props.request.id}:${props.request.status}:${props.request.paymentRequiredWindow?.phase ?? "none"}`}
       {...props}
     />
   );
@@ -97,7 +100,10 @@ function CustomerBookingRequestStatusView({
     request.status,
   );
   const refresh = useBookingRequestRefresh(
-    shouldRefreshBookingRequestStatus(request.status),
+    shouldRefreshBookingRequestStatus(
+      request.status,
+      request.paymentRequiredWindow,
+    ),
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
@@ -140,7 +146,12 @@ function CustomerBookingRequestStatusView({
         role="status"
         aria-live="polite"
       >
-        <BookingRequestStatusContent locale={locale} status={status} />
+        <BookingRequestStatusContent
+          locale={locale}
+          status={status}
+          role="customer"
+          paymentRequiredPhase={request.paymentRequiredWindow?.phase}
+        />
       </p>
       <strong>{request.bookingRequestReference}</strong>
       <dl>
@@ -183,6 +194,17 @@ function CustomerBookingRequestStatusView({
             <dd>{formatIraqDateTime(request.responseDeadline, locale)}</dd>
           </div>
         ) : null}
+        {status === "payment-required" && request.paymentRequiredWindow ? (
+          <div>
+            <dt>{copy.paymentDeadline}</dt>
+            <dd>
+              {formatIraqDateTime(
+                request.paymentRequiredWindow.deadline,
+                locale,
+              )}
+            </dd>
+          </div>
+        ) : null}
         {request.declineReason ? (
           <div>
             <dt>{copy.reason}</dt>
@@ -199,7 +221,7 @@ function CustomerBookingRequestStatusView({
           <div key={receipt.id}>
             <dt>{copy.notification}</dt>
             <dd>
-              {bookingRequestStatusMessages[locale][receipt.status]} ·{" "}
+              {bookingRequestDisplayStatusMessages[locale][receipt.status]} ·{" "}
               {formatIraqDateTime(receipt.createdAt, locale)}
             </dd>
           </div>

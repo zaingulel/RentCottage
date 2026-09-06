@@ -15,6 +15,12 @@ import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messag
 import type { Locale } from "@/i18n/routing";
 import { BookingRequestDecisionControls } from "./booking-request-decision-controls";
 
+const paymentDeadlineMessages: Record<Locale, string> = {
+  en: "Payment deadline",
+  ar: "موعد الدفع",
+  ckb: "کاتی کۆتایی پارەدان",
+};
+
 function OwnerBookingRequestCard({
   locale,
   notification,
@@ -50,7 +56,12 @@ function OwnerBookingRequestCard({
               : undefined
           }
         >
-          <BookingRequestStatusContent locale={locale} status={status} />
+          <BookingRequestStatusContent
+            locale={locale}
+            status={status}
+            role="owner"
+            paymentRequiredPhase={notification.paymentRequiredWindow?.phase}
+          />
         </span>
       </header>
       <dl>
@@ -91,6 +102,17 @@ function OwnerBookingRequestCard({
           <div>
             <dt>{copy.responseDeadline}</dt>
             <dd>{formatIraqDateTime(notification.responseDeadline, locale)}</dd>
+          </div>
+        ) : null}
+        {status === "payment-required" && notification.paymentRequiredWindow ? (
+          <div>
+            <dt>{paymentDeadlineMessages[locale]}</dt>
+            <dd>
+              {formatIraqDateTime(
+                notification.paymentRequiredWindow.deadline,
+                locale,
+              )}
+            </dd>
           </div>
         ) : null}
         <div>
@@ -154,8 +176,8 @@ export function OwnerBookingRequestNotifications({
   const copy = ownerBookingRequestMessages[locale];
   const refresh = useBookingRequestRefresh(
     Boolean(
-      notifications?.some(({ status }) =>
-        shouldRefreshBookingRequestStatus(status),
+      notifications?.some(({ status, paymentRequiredWindow }) =>
+        shouldRefreshBookingRequestStatus(status, paymentRequiredWindow),
       ),
     ),
   );

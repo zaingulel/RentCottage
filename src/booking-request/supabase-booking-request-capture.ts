@@ -10,6 +10,7 @@ import type {
   BookingRequestCapturePermitExpectation,
   BookingRequestCaptureEvidenceExpectation,
   BookingRequestCaptureProviderResultIdentity,
+  BookingRequestCaptureFailureProviderResultIdentity,
   PaymentProviderIdentity,
 } from "@/payment/payment-contract";
 
@@ -128,6 +129,57 @@ function resultIdentityFrom(
   return identity as unknown as BookingRequestCaptureProviderResultIdentity;
 }
 
+function recoveryResultIdentityFrom(
+  value: unknown,
+):
+  | BookingRequestCaptureProviderResultIdentity
+  | BookingRequestCaptureFailureProviderResultIdentity {
+  const identity = record(value);
+  if (
+    !identity ||
+    (!exactKeys(identity, ["providerRequestId", "providerReference"]) &&
+      !exactKeys(identity, [
+        "providerRequestId",
+        "providerReference",
+        "movementReference",
+      ])) ||
+    Object.values(identity).some(
+      (item) => typeof item !== "string" || item.trim().length === 0,
+    )
+  )
+    throw new Error("Database returned invalid Capture provider evidence");
+  return identity as unknown as
+    | BookingRequestCaptureProviderResultIdentity
+    | BookingRequestCaptureFailureProviderResultIdentity;
+}
+
+function paymentRequiredFrom(
+  value: unknown,
+): Extract<BookingRequestCaptureResult, { status: "payment-required" }> {
+  const result = record(value);
+  const window = record(result?.paymentRequiredWindow);
+  if (
+    !result ||
+    !exactKeys(result, ["status", "paymentRequiredWindow"]) ||
+    result.status !== "payment-required" ||
+    !window ||
+    !exactKeys(window, ["recordedAt", "deadline"]) ||
+    !timestamp(window.recordedAt) ||
+    !timestamp(window.deadline) ||
+    Date.parse(window.deadline as string) -
+      Date.parse(window.recordedAt as string) !==
+      1_200_000
+  )
+    throw new Error("Database returned invalid Payment Required evidence");
+  return {
+    status: "payment-required",
+    window: {
+      recordedAt: window.recordedAt as string,
+      deadline: window.deadline as string,
+    },
+  };
+}
+
 function completedFrom(
   value: unknown,
   bookingRequestId: string,
@@ -236,6 +288,7 @@ export class SupabaseBookingRequestCaptureRepository
     const result = record(data);
     if (result?.status === "complete")
       return completedFrom(data, bookingRequestId, providerIdentity);
+    if (result?.status === "payment-required") return paymentRequiredFrom(data);
     if (
       result &&
       exactKeys(result, ["status"]) &&
@@ -339,7 +392,7 @@ export class SupabaseBookingRequestCaptureRepository
           leaseToken: lease.leaseToken as string,
           notAfter: lease.notAfter as string,
           recoveryOperationId: lease.recoveryOperationId as string,
-          providerResult: resultIdentityFrom(lease.providerResult),
+          providerResult: recoveryResultIdentityFrom(lease.providerResult),
         },
       };
     });
@@ -365,5 +418,21 @@ export class SupabaseBookingRequestCaptureRepository
       permit,
       providerResult,
     );
+  }
+  async recordFailure(
+    permit: BookingRequestCapturePermitExpectation,
+    providerResult: Extract<ProviderOperationResult, { outcome: "failed" }>,
+  ) {
+    const { data, error } = await this.client.rpc(
+      "record_booking_request_capture_failure",
+      {
+        target_booking_request_id: permit.bookingRequestId,
+        target_lease_generation: permit.leaseGeneration,
+        target_lease_token: permit.leaseToken,
+        target_provider_result: providerResult,
+      },
+    );
+    if (error) throw new Error("Payment Required recording is unavailable");
+    return paymentRequiredFrom(data);
   }
 }

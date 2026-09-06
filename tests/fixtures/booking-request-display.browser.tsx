@@ -21,7 +21,11 @@ function renderBookingRequestDisplay({
 }: {
   locale: "en" | "ar" | "ckb";
   role: "customer" | "owner";
-  status: "capture-processing" | "paid-confirmed";
+  status:
+    | "capture-processing"
+    | "payment-required-open"
+    | "payment-required-elapsed"
+    | "paid-confirmed";
 }) {
   document.documentElement.lang = locale;
   document.documentElement.dir = locale === "en" ? "ltr" : "rtl";

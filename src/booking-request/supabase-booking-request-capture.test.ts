@@ -222,6 +222,63 @@ describe("Supabase Booking Request Capture repository", () => {
     },
   );
 
+  it("validates and replays the original fixed Payment Required window", async () => {
+    const paymentRequired = {
+      status: "payment-required",
+      paymentRequiredWindow: {
+        recordedAt: "2099-08-21T09:00:00.000Z",
+        deadline: "2099-08-21T09:20:00.000Z",
+      },
+    };
+    const { repository, rpc } = setup(paymentRequired);
+    await expect(
+      repository.lease(permit.bookingRequestId, permit.providerIdentity),
+    ).resolves.toEqual({
+      status: "payment-required",
+      window: paymentRequired.paymentRequiredWindow,
+    });
+    const failure = {
+      outcome: "failed" as const,
+      providerRequestId: "failed-request",
+      providerReference: "failed-reference",
+      retrySafe: false,
+    };
+    rpc.mockResolvedValue({ data: paymentRequired, error: null });
+    await expect(repository.recordFailure(permit, failure)).resolves.toEqual({
+      status: "payment-required",
+      window: paymentRequired.paymentRequiredWindow,
+    });
+    expect(rpc).toHaveBeenLastCalledWith(
+      "record_booking_request_capture_failure",
+      {
+        target_booking_request_id: permit.bookingRequestId,
+        target_lease_generation: permit.leaseGeneration,
+        target_lease_token: permit.leaseToken,
+        target_provider_result: failure,
+      },
+    );
+  });
+
+  it.each([
+    null,
+    { recordedAt: "invalid", deadline: "2099-08-21T09:20:00.000Z" },
+    {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.001Z",
+    },
+  ])(
+    "rejects malformed or extended Payment Required window %#",
+    async (window) => {
+      const { repository } = setup({
+        status: "payment-required",
+        paymentRequiredWindow: window,
+      });
+      await expect(
+        repository.lease(permit.bookingRequestId, permit.providerIdentity),
+      ).rejects.toThrow("invalid Payment Required evidence");
+    },
+  );
+
   it("fails loudly when leasing is unavailable even if data claims success", async () => {
     const { repository, rpc } = setup();
     rpc.mockResolvedValue({
@@ -326,6 +383,21 @@ describe("Supabase Booking Request Capture repository", () => {
       "Capture completion is unavailable",
     );
   });
+  it("rejects terminal Payment Required returned as due recovery work", async () => {
+    const { repository } = setup([
+      {
+        status: "payment-required",
+        paymentRequiredWindow: {
+          recordedAt: "2099-08-21T09:00:00.000Z",
+          deadline: "2099-08-21T09:20:00.000Z",
+        },
+      },
+    ]);
+    await expect(
+      repository.claimDue(20, permit.providerIdentity),
+    ).rejects.toThrow("invalid Capture recovery lease");
+  });
+
   it("rehydrates bounded recovery work and completed evidence without execution authority", async () => {
     const lease = {
       ...permit,

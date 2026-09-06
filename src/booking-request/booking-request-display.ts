@@ -2,6 +2,7 @@ import type { CustomerBookingRequest } from "./customer-booking-request";
 import type { OwnerBookingRequestNotification } from "./owner-booking-request-notifications";
 import {
   isBookingRequestStatus,
+  type BookingRequestPaymentRequiredWindow,
   type BookingRequestPaymentStatus,
   type BookingRequestStatus,
 } from "./booking-request-status";
@@ -32,11 +33,13 @@ export function isPaymentDisplayStatus(
 
 export function shouldRefreshBookingRequestStatus(
   status: BookingRequestDisplayStatus,
+  window?: BookingRequestPaymentRequiredWindow | null,
 ): boolean {
   return (
     status === "pending" ||
     status === "processing" ||
-    status === "capture-processing"
+    status === "capture-processing" ||
+    (status === "payment-required" && window?.phase === "open")
   );
 }
 

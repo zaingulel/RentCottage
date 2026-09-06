@@ -11,6 +11,7 @@ function setup() {
       .mockRejectedValueOnce(new Error("item unavailable"))
       .mockResolvedValue({ status: "processing" }),
     complete: vi.fn(),
+    recordFailure: vi.fn(),
   };
   const provider: PaymentProviderAdapter = {
     identity: {
@@ -33,6 +34,27 @@ function setup() {
   };
 }
 describe("Booking Request capture processing", () => {
+  it("settles Payment Required capture work without confirmation or another execution", async () => {
+    const { processing, repository } = setup();
+    repository.claimDue.mockResolvedValue([]);
+    repository.listQueued.mockResolvedValue(["failed-capture"]);
+    repository.lease.mockReset().mockResolvedValue({
+      status: "payment-required",
+      window: {
+        recordedAt: "2099-01-01T00:00:00.000Z",
+        deadline: "2099-01-01T00:20:00.000Z",
+      },
+    });
+    await expect(processing.processDue()).resolves.toEqual([
+      {
+        status: "payment-required",
+        window: {
+          recordedAt: "2099-01-01T00:00:00.000Z",
+          deadline: "2099-01-01T00:20:00.000Z",
+        },
+      },
+    ]);
+  });
   it("reports unavailable recovery and capture independently while continuing the next queued request", async () => {
     const { processing } = setup();
     await expect(processing.processDue()).resolves.toEqual([

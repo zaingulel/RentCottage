@@ -68,6 +68,7 @@ async function main() {
   const durable = new DurablePaymentSimulator({
     client,
     now: () => new Date().toISOString(),
+    executeOutcome: mode.includes("failure") ? "failed" : "succeeded",
   });
   const lostResponse = new Error(
     "Capture response lost after durable execution",
@@ -77,7 +78,11 @@ async function main() {
     async execute(request) {
       const result = await durable.execute(request);
       send({ stage: "execute", request, result });
-      if (mode === "lose-response" || mode === "process-lose-response")
+      if (
+        mode === "lose-response" ||
+        mode === "process-lose-response" ||
+        mode === "failure-lose-response"
+      )
         throw lostResponse;
       return result;
     },
@@ -119,7 +124,11 @@ async function main() {
           : confirmation,
     }).processDue();
     send({ stage: "complete", result });
-  } else if (mode === "lose-response" || mode === "capture-only") {
+  } else if (
+    mode === "lose-response" ||
+    mode === "capture-only" ||
+    mode === "failure-lose-response"
+  ) {
     try {
       const result = await createBookingRequestCapture({
         repository,
@@ -130,7 +139,11 @@ async function main() {
       if (error !== lostResponse) throw error;
       send({ stage: "complete", result: "interrupted" });
     }
-  } else if (mode === "recover" || mode === "pause-query") {
+  } else if (
+    mode === "recover" ||
+    mode === "recover-failure" ||
+    mode === "pause-query"
+  ) {
     const result = await createBookingRequestCaptureRecovery({
       repository,
       provider,

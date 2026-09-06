@@ -28,6 +28,7 @@ const sharedRequest = {
   ],
   responseDeadline: "2099-08-21T21:00:00.000Z",
   statusNotifications: [],
+  paymentRequiredWindow: null,
 };
 
 const restrictedFields = {
@@ -54,9 +55,37 @@ const customerDisplay = {
 
 export const customerDisplayFixtures = {
   "capture-processing": { ...customerDisplay, status: "capture-processing" },
+  "payment-required-open": {
+    ...customerDisplay,
+    status: "payment-required",
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "open",
+    },
+    statusNotifications: [
+      {
+        id: "00000000-0000-4000-8000-000000000146",
+        status: "payment-required",
+        createdAt: "2099-08-21T09:00:00.000Z",
+      },
+    ],
+  },
+  "payment-required-elapsed": {
+    ...customerDisplay,
+    status: "payment-required",
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
   "paid-confirmed": { ...customerDisplay, status: "paid-confirmed" },
 } satisfies Record<
-  "capture-processing" | "paid-confirmed",
+  | "capture-processing"
+  | "payment-required-open"
+  | "payment-required-elapsed"
+  | "paid-confirmed",
   CustomerBookingRequestDisplay
 >;
 
@@ -77,8 +106,29 @@ const ownerDisplay = {
 
 export const ownerDisplayFixtures = {
   "capture-processing": { ...ownerDisplay, status: "capture-processing" },
+  "payment-required-open": {
+    ...ownerDisplay,
+    status: "payment-required",
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "open",
+    },
+  },
+  "payment-required-elapsed": {
+    ...ownerDisplay,
+    status: "payment-required",
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
   "paid-confirmed": { ...ownerDisplay, status: "paid-confirmed" },
 } satisfies Record<
-  "capture-processing" | "paid-confirmed",
+  | "capture-processing"
+  | "payment-required-open"
+  | "payment-required-elapsed"
+  | "paid-confirmed",
   OwnerBookingRequestNotificationDisplay
 >;

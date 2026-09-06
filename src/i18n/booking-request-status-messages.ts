@@ -40,16 +40,19 @@ export const bookingRequestDisplayStatusMessages: Record<
   en: {
     ...bookingRequestStatusMessages.en,
     "capture-processing": "Payment confirmation pending",
+    "payment-required": "Payment Required",
     "paid-confirmed": "Booking confirmed",
   },
   ar: {
     ...bookingRequestStatusMessages.ar,
     "capture-processing": "بانتظار تأكيد الدفع",
+    "payment-required": "الدفع مطلوب",
     "paid-confirmed": "تم تأكيد الحجز",
   },
   ckb: {
     ...bookingRequestStatusMessages.ckb,
     "capture-processing": "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
+    "payment-required": "پارەدان پێویستە",
     "paid-confirmed": "حجز پشتڕاست کراوەتەوە",
   },
 };
@@ -74,6 +77,45 @@ export const bookingRequestPaymentDisplayMessages: Record<
     "paid-confirmed": "پارەدان سەرکەوتوو بوو. حجزەکە پشتڕاست کراوەتەوە.",
   },
 };
+
+export const bookingRequestPaymentRequiredMessages = {
+  en: {
+    customer: {
+      open: "Automatic payment failed. Your booking is not confirmed. Your selected Cottage Shifts remain held.",
+      elapsed:
+        "The payment deadline has passed. Your booking is still not confirmed and your selected Cottage Shifts remain held.",
+    },
+    owner: {
+      open: "The Customer’s automatic payment failed. The booking is not confirmed. The selected Cottage Shifts remain held.",
+      elapsed:
+        "The Customer payment deadline has passed. The booking is still not confirmed and the selected Cottage Shifts remain held.",
+    },
+  },
+  ar: {
+    customer: {
+      open: "فشل الدفع التلقائي. حجزك غير مؤكد. تبقى فترات البيت التي اخترتها محجوزة.",
+      elapsed:
+        "انتهى موعد الدفع. لا يزال حجزك غير مؤكد، وتبقى فترات البيت التي اخترتها محجوزة.",
+    },
+    owner: {
+      open: "فشل الدفع التلقائي للعميل. الحجز غير مؤكد. تبقى فترات البيت المختارة محجوزة.",
+      elapsed:
+        "انتهى موعد دفع العميل. لا يزال الحجز غير مؤكد، وتبقى فترات البيت المختارة محجوزة.",
+    },
+  },
+  ckb: {
+    customer: {
+      open: "پارەدانی خۆکار سەرکەوتوو نەبوو. حجزەکەت پشتڕاست نەکراوەتەوە. شەفتە هەڵبژێردراوەکانت گیراو دەمێننەوە.",
+      elapsed:
+        "کاتی کۆتایی پارەدان تێپەڕی. حجزەکەت هێشتا پشتڕاست نەکراوەتەوە و شەفتە هەڵبژێردراوەکانت گیراو دەمێننەوە.",
+    },
+    owner: {
+      open: "پارەدانی خۆکاری کڕیار سەرکەوتوو نەبوو. حجزەکە پشتڕاست نەکراوەتەوە. شەفتە هەڵبژێردراوەکان گیراو دەمێننەوە.",
+      elapsed:
+        "کاتی کۆتایی پارەدانی کڕیار تێپەڕی. حجزەکە هێشتا پشتڕاست نەکراوەتەوە و شەفتە هەڵبژێردراوەکان گیراو دەمێننەوە.",
+    },
+  },
+} as const;
 
 export const bookingRequestDeclineReasonMessages: Record<
   Locale,

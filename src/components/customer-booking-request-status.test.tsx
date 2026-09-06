@@ -39,6 +39,7 @@ const request = {
   declineReason: null,
   declineNote: null,
   statusNotifications: [],
+  paymentRequiredWindow: null,
 };
 
 describe("Customer Booking Request status", () => {
@@ -47,6 +48,38 @@ describe("Customer Booking Request status", () => {
     refresh.mockClear();
   });
   afterEach(() => vi.useRealTimers());
+  it("shows the open and elapsed Payment Required state with the fixed Iraq deadline", () => {
+    vi.useFakeTimers();
+    const view = render(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerDisplayFixtures["payment-required-open"]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Automatic payment failed",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("not confirmed");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your selected Cottage Shifts remain held.",
+    );
+    expect(screen.getByText("Payment deadline").nextSibling).toHaveTextContent(
+      "12:20",
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerDisplayFixtures["payment-required-elapsed"]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "payment deadline has passed",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("remain held");
+    expect(vi.getTimerCount()).toBe(0);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
   it("replaces mounted pending and processing state with authoritative confirmation", () => {
     const view = render(
       <CustomerBookingRequestStatus locale="en" request={request} />,

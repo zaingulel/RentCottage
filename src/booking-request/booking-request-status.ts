@@ -17,7 +17,18 @@ export function isBookingRequestStatus(
 
 export type BookingRequestPaymentStatus =
   | "capture-processing"
+  | "payment-required"
   | "paid-confirmed";
+
+export type BookingRequestNotificationStatus =
+  | Exclude<BookingRequestStatus, "pending" | "processing">
+  | "payment-required";
+
+export type BookingRequestPaymentRequiredWindow = {
+  readonly recordedAt: string;
+  readonly deadline: string;
+  readonly phase: "open" | "elapsed";
+};
 
 export function isBookingRequestPaymentStatus(
   value: unknown,
@@ -26,6 +37,49 @@ export function isBookingRequestPaymentStatus(
   return (
     value === null ||
     (requestStatus === "accepted" &&
-      (value === "capture-processing" || value === "paid-confirmed"))
+      (value === "capture-processing" ||
+        value === "payment-required" ||
+        value === "paid-confirmed"))
   );
+}
+
+export function isBookingRequestNotificationStatus(
+  value: unknown,
+): value is BookingRequestNotificationStatus {
+  return (
+    value === "payment-required" ||
+    (isBookingRequestStatus(value) &&
+      value !== "pending" &&
+      value !== "processing")
+  );
+}
+
+export function paymentRequiredWindowFrom(
+  value: unknown,
+  paymentStatus: BookingRequestPaymentStatus | null,
+): BookingRequestPaymentRequiredWindow | null | undefined {
+  if (paymentStatus !== "payment-required")
+    return value === null ? null : undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const window = value as Record<string, unknown>;
+  if (
+    Object.keys(window).length !== 3 ||
+    !["recordedAt", "deadline", "databaseNow"].every((key) => key in window) ||
+    typeof window.recordedAt !== "string" ||
+    typeof window.deadline !== "string" ||
+    typeof window.databaseNow !== "string" ||
+    [window.recordedAt, window.deadline, window.databaseNow].some((item) =>
+      Number.isNaN(Date.parse(item)),
+    ) ||
+    Date.parse(window.deadline) - Date.parse(window.recordedAt) !== 1_200_000
+  )
+    return;
+  return {
+    recordedAt: window.recordedAt,
+    deadline: window.deadline,
+    phase:
+      Date.parse(window.databaseNow) < Date.parse(window.deadline)
+        ? "open"
+        : "elapsed",
+  };
 }

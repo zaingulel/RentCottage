@@ -13,6 +13,15 @@ const { accessBrowserFixture } = createRequire(import.meta.url)(
   accessBrowserFixture(project: string): AccessBrowserFixture;
 };
 
+const { createLocalSupabaseConcurrencyHarness } = createRequire(
+  import.meta.url,
+)("../scripts/local-supabase-concurrency-harness.mjs") as {
+  createLocalSupabaseConcurrencyHarness(): {
+    guardDisposableLocalDatabase(): void;
+    runSql(sql: string): string;
+  };
+};
+
 const customerPhones: Record<string, string> = {
   mobile: "+9647520000000",
   desktop: "+9647520000001",
@@ -35,7 +44,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   page,
   browser,
 }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(testInfo.project.name === "worker" ? 240_000 : 120_000);
   const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
   if (
     process.env.APP_ENVIRONMENT !== "test" ||
@@ -368,44 +377,80 @@ test("a verified Customer double-submit creates one Pending request and one mini
         locale: "en",
         pending: "Payment confirmation pending",
         confirmed: "Booking confirmed",
+        required: "Payment Required",
+        elapsed: "deadline has passed",
       },
       {
         locale: "ar",
         pending: "بانتظار تأكيد الدفع",
         confirmed: "تم تأكيد الحجز",
+        required: "الدفع مطلوب",
+        elapsed: "انتهى موعد",
       },
       {
         locale: "ckb",
         pending: "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
         confirmed: "حجز پشتڕاست کراوەتەوە",
+        required: "پارەدان پێویستە",
+        elapsed: "تێپەڕی",
       },
     ] as const;
     async function captureViews(
-      state: "capture-processing" | "paid-confirmed",
+      state:
+        | "capture-processing"
+        | "paid-confirmed"
+        | "payment-required-open"
+        | "payment-required-elapsed",
+      reference = requestReference,
     ) {
       for (const copy of locales) {
-        await page.goto(`/${copy.locale}/booking-requests/${requestReference}`);
-        await ownerPage.goto(`/${copy.locale}/owner/cottages`);
-        for (const surface of [page, ownerPage]) {
+        // Keep the transition observers mounted: navigating an in-flight refresh
+        // can terminate Wrangler's local forwarding proxy.
+        const customerView = await page.context().newPage();
+        const ownerView = await ownerContext.newPage();
+        await customerView.goto(
+          `/${copy.locale}/booking-requests/${reference}`,
+        );
+        await ownerView.goto(`/${copy.locale}/owner/cottages`);
+        const currentOwnerNotice = ownerView.getByRole("article", {
+          name: reference,
+        });
+        for (const surface of [customerView, ownerView]) {
           await expect(surface.locator("html")).toHaveAttribute(
             "dir",
             copy.locale === "en" ? "ltr" : "rtl",
           );
         }
-        await expect(page.getByRole("status")).toContainText(
-          state === "capture-processing" ? copy.pending : copy.confirmed,
+        await expect(customerView.getByRole("status")).toContainText(
+          state === "capture-processing"
+            ? copy.pending
+            : state === "paid-confirmed"
+              ? copy.confirmed
+              : copy.required,
         );
-        await expect(ownerNotice.getByRole("status")).toContainText(
-          state === "capture-processing" ? copy.pending : copy.confirmed,
+        await expect(currentOwnerNotice.getByRole("status")).toContainText(
+          state === "capture-processing"
+            ? copy.pending
+            : state === "paid-confirmed"
+              ? copy.confirmed
+              : copy.required,
         );
-        await expect(ownerNotice.getByRole("button")).toHaveCount(0);
+        if (state === "payment-required-elapsed") {
+          await expect(customerView.getByRole("status")).toContainText(
+            copy.elapsed,
+          );
+          await expect(currentOwnerNotice.getByRole("status")).toContainText(
+            copy.elapsed,
+          );
+        }
+        await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
         for (const viewport of [
           { name: "mobile", width: 390, height: 844 },
           { name: "desktop", width: 1440, height: 1000 },
         ]) {
           for (const [role, surface] of [
-            ["customer", page],
-            ["owner", ownerPage],
+            ["customer", customerView],
+            ["owner", ownerView],
           ] as const) {
             await surface.setViewportSize({
               width: viewport.width,
@@ -427,6 +472,13 @@ test("a verified Customer double-submit creates one Pending request and one mini
             });
           }
         }
+        // Drain screenshot-page requests before closing their local proxy streams.
+        await Promise.all([
+          customerView.waitForLoadState("networkidle"),
+          ownerView.waitForLoadState("networkidle"),
+        ]);
+        await customerView.close();
+        await ownerView.close();
       }
     }
     await captureViews("capture-processing");
@@ -434,16 +486,120 @@ test("a verified Customer double-submit creates one Pending request and one mini
       "/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A",
     );
     expect(scheduled.ok()).toBe(true);
-    // Both Sorani pages remain mounted while the real Worker confirms payment.
-    await expect(page.getByRole("status")).toContainText(
-      "حجز پشتڕاست کراوەتەوە",
-      { timeout: 15000 },
-    );
+    // Both original pages remain mounted while the real Worker confirms payment.
+    await expect(page.getByRole("status")).toContainText("Booking confirmed", {
+      timeout: 15000,
+    });
     await expect(ownerNotice.getByRole("status")).toContainText(
-      "حجز پشتڕاست کراوەتەوە",
+      "Booking confirmed",
     );
     await captureViews("paid-confirmed");
     expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+
+    // A second, distinct Shift preserves the successful journey above.
+    query.set("selection", `${requestedDay}:shift:${shifts[1].position}`);
+    const failureReference = await submitAnotherRequest("en");
+    expect(failureReference).not.toBe(requestReference);
+    await page.goto(`/en/booking-requests/${failureReference}`);
+    await ownerPage.goto("/en/owner/cottages");
+    const failureNotice = ownerPage.getByRole("article", {
+      name: failureReference,
+    });
+    await failureNotice
+      .getByRole("button", { name: "Accept complete request" })
+      .click();
+    await expect(page.getByRole("status")).toContainText(
+      "Payment confirmation pending",
+      { timeout: 15000 },
+    );
+    await expect(failureNotice.getByRole("status")).toContainText(
+      "Payment confirmation pending",
+    );
+
+    const harness = createLocalSupabaseConcurrencyHarness();
+    harness.guardDisposableLocalDatabase();
+    const failureId = harness.runSql(
+      `select id from public.booking_requests where booking_request_reference='${failureReference}';`,
+    );
+    expect(failureId).toMatch(/^[0-9a-f-]{36}$/);
+    const observeFailure = () =>
+      JSON.parse(
+        harness.runSql(`select jsonb_build_object(
+      'work',(select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id='${failureId}'),
+      'provider',(select to_jsonb(operation) from public.simulated_payment_provider_operations operation join public.booking_request_capture_work work on work.payment_lifecycle_id=operation.payment_lifecycle_id where work.booking_request_id='${failureId}' and operation.operation_kind='capture'),
+      'notifications',(select count(*) from public.booking_request_status_notifications where booking_request_id='${failureId}' and status='payment-required'),
+      'hold',(select to_jsonb(commitment) from public.cottage_booking_period_commitments commitment join public.booking_requests request on request.booking_period_commitment_id=commitment.id where request.id='${failureId}'),
+      'occupancies',(select jsonb_agg(to_jsonb(occupancy) order by shift_id,service_day) from public.cottage_booking_period_occupancies occupancy join public.booking_requests request on request.booking_period_commitment_id=occupancy.booking_period_commitment_id where request.id='${failureId}'),
+      'intentActive',(select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id='${failureId}'),
+      'confirmations',(select count(*) from public.booking_confirmations where booking_request_id='${failureId}')
+    );`),
+      );
+    const held = observeFailure();
+    harness.runSql(`set role service_role;
+      with leased as (select public.lease_booking_request_capture_work('${failureId}',
+        '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result)
+      select public.execute_simulated_booking_request_capture(result->'permit','failed') from leased;
+      reset role;
+      update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${failureId}';`);
+    expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+    // Both existing pages must refresh from real Worker-persisted failure evidence.
+    await expect(page.getByRole("status")).toContainText("Payment Required", {
+      timeout: 15000,
+    });
+    await expect(failureNotice.getByRole("status")).toContainText(
+      "Payment Required",
+    );
+    await expect(page.getByRole("status")).toContainText("remain held");
+    await expect(failureNotice.getByRole("status")).toContainText(
+      "not confirmed",
+    );
+    await expect(page.getByText("Owner response deadline")).toHaveCount(0);
+    await expect(page.getByText("Payment deadline")).toBeVisible();
+    const terminal = observeFailure();
+    expect(terminal.work.state).toBe("payment_required");
+    expect(
+      Date.parse(terminal.work.payment_required_deadline) -
+        Date.parse(terminal.work.payment_required_recorded_at),
+    ).toBe(1_200_000);
+    expect(terminal.provider.original_outcome).toBe("failed");
+    expect(terminal.provider.current_outcome).toBe("failed");
+    expect(terminal.provider.movement_reference).toBeNull();
+    expect(terminal.provider.physical_execution_count).toBe(1);
+    expect(terminal.notifications).toBe(1);
+    expect(terminal.confirmations).toBe(0);
+    expect(terminal.hold).toEqual(held.hold);
+    expect(terminal.occupancies).toEqual(held.occupancies);
+    expect(terminal.intentActive).toBe(true);
+    await captureViews("payment-required-open", failureReference);
+    expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+    expect(observeFailure()).toEqual(terminal);
+
+    const windowDefinition = harness.runSql(
+      "select pg_get_functiondef('public.booking_request_payment_required_window(public.booking_requests)'::regprocedure);",
+    );
+    expect(windowDefinition).toContain("clock_timestamp()");
+    try {
+      // Pin only database read time at the exact boundary; immutable stored timestamps stay untouched.
+      harness.runSql(
+        windowDefinition.replace(
+          "clock_timestamp()",
+          "work.payment_required_deadline",
+        ),
+      );
+      await expect(page.getByRole("status")).toContainText(
+        "deadline has passed",
+        {
+          timeout: 15000,
+        },
+      );
+      await expect(failureNotice.getByRole("status")).toContainText(
+        "deadline has passed",
+      );
+      await captureViews("payment-required-elapsed", failureReference);
+      expect(observeFailure()).toEqual(terminal);
+    } finally {
+      harness.runSql(windowDefinition);
+    }
   }
   await ownerContext.close();
 });

@@ -47,6 +47,19 @@ const success = {
   providerReference: "capture-reference",
   movementReference: "capture-movement",
 };
+const failure = {
+  outcome: "failed" as const,
+  providerRequestId: success.providerRequestId,
+  providerReference: success.providerReference,
+  retrySafe: false,
+};
+const paymentRequired = {
+  status: "payment-required" as const,
+  window: {
+    recordedAt: "2099-01-01T00:00:02.000Z",
+    deadline: "2099-01-01T00:20:02.000Z",
+  },
+};
 
 const snapshot: BookingRequestCaptureSnapshot = {
   bookingRequestId: permit.bookingRequestId,
@@ -129,6 +142,7 @@ function setup() {
     complete: vi
       .fn<BookingRequestCaptureRecoveryRepository["complete"]>()
       .mockResolvedValue({ status: "complete", snapshot }),
+    recordFailure: vi.fn().mockResolvedValue(paymentRequired),
   };
   const provider = {
     identity: permit.providerIdentity,
@@ -201,6 +215,31 @@ describe("Booking Request Capture recovery", () => {
     await expect(recovery.processDue()).resolves.toEqual([
       { status: "processing" },
     ]);
+    expect(repository.complete).not.toHaveBeenCalled();
+    expect(confirmation.execute).not.toHaveBeenCalled();
+    expect(provider.execute).not.toHaveBeenCalled();
+  });
+
+  it("records a durable failed capture found by query without executing or confirming", async () => {
+    const { recovery, provider, repository, confirmation } = setup();
+    provider.query.mockResolvedValue(failure);
+    repository.claimDue.mockResolvedValue([
+      {
+        status: "reconcile",
+        lease: {
+          ...lease,
+          providerResult: {
+            providerRequestId: failure.providerRequestId,
+            providerReference: failure.providerReference,
+          },
+        },
+      },
+    ]);
+    await expect(recovery.processDue()).resolves.toEqual([paymentRequired]);
+    expect(repository.recordFailure).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ bookingRequestId: permit.bookingRequestId }),
+      failure,
+    );
     expect(repository.complete).not.toHaveBeenCalled();
     expect(confirmation.execute).not.toHaveBeenCalled();
     expect(provider.execute).not.toHaveBeenCalled();
@@ -284,24 +323,19 @@ describe("Booking Request Capture recovery", () => {
     expect(confirmation.execute).not.toHaveBeenCalled();
     expect(provider.execute).not.toHaveBeenCalled();
   });
-  it.each([
-    { outcome: "not-executed" as const },
-    {
-      outcome: "failed" as const,
-      providerRequestId: "failed",
-      providerReference: "failed",
-      retrySafe: true,
+  it.each([{ outcome: "not-executed" as const }])(
+    "refuses $outcome without execution or confirmation",
+    async (result) => {
+      const { recovery, provider, confirmation, repository } = setup();
+      provider.query.mockResolvedValue(result);
+      await expect(recovery.processDue()).resolves.toEqual([
+        { status: "unavailable" },
+      ]);
+      expect(repository.complete).not.toHaveBeenCalled();
+      expect(provider.execute).not.toHaveBeenCalled();
+      expect(confirmation.execute).not.toHaveBeenCalled();
     },
-  ])("refuses $outcome without execution or confirmation", async (result) => {
-    const { recovery, provider, confirmation, repository } = setup();
-    provider.query.mockResolvedValue(result);
-    await expect(recovery.processDue()).resolves.toEqual([
-      { status: "unavailable" },
-    ]);
-    expect(repository.complete).not.toHaveBeenCalled();
-    expect(provider.execute).not.toHaveBeenCalled();
-    expect(confirmation.execute).not.toHaveBeenCalled();
-  });
+  );
   it.each([
     "query",
     "complete",

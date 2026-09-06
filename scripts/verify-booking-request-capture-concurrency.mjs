@@ -236,6 +236,8 @@ function observeRecovery() {
     'occupancies', (select jsonb_agg(to_jsonb(o) order by service_day,shift_id) from public.cottage_booking_period_occupancies o where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001'),
     'inventory', (select jsonb_agg(to_jsonb(i) order by id) from public.cottage_inventory_commitments i where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001'),
     'identities', (select coalesce(jsonb_agg(to_jsonb(i) order by operation_kind),'[]') from public.booking_request_provider_operation_identities i where operation_kind = 'capture'),
+    'notifications', (select coalesce(jsonb_agg(to_jsonb(n) order by id),'[]') from public.booking_request_status_notifications n where booking_request_id = '${requestId}'),
+    'intentActive', (select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id = '${requestId}'),
     'confirmations', (select coalesce(jsonb_agg(to_jsonb(c) order by id),'[]') from public.booking_confirmations c),
     'receipts', (select coalesce(jsonb_agg(to_jsonb(r) order by id),'[]') from public.booking_receipts r),
     'releases', (select count(*) from public.booking_request_release_work) + (select count(*) from public.simulated_payment_provider_operations where operation_kind = 'release')
@@ -497,6 +499,169 @@ async function proveApplicationRecovery(source) {
   }
   console.log(
     "Actual Capture application recovery confirmed a lost provider response and interrupted confirmation using fresh clients: one original physical execution, fenced lease renewal, exact query identity, one Capture movement, one confirmation, two receipts, all five original occupancies, and unchanged repeated drains without release.",
+  );
+}
+
+async function proveFailureRecording(source) {
+  for (const mode of ["duplicate", "expired-after-lock"]) {
+    harness.runSql(`begin; ${source} commit;`);
+    seeded = true;
+    const lease = JSON.parse(harness.runSql(leaseSql));
+    assert.equal(lease.status, "leased");
+    const failed = JSON.parse(
+      harness.runSql(
+        `select public.execute_simulated_booking_request_capture(${literal(lease.permit)},'failed');`,
+      ),
+    );
+    const before = observeRecovery();
+    const finalize = `select public.record_booking_request_capture_failure('${requestId}',${lease.permit.leaseGeneration},'${lease.permit.leaseToken}',${literal(failed)});`;
+    if (mode === "duplicate") {
+      const [first, repeated] = await duplicate(finalize, "failure_recording");
+      assert.equal(first.status, "payment-required");
+      assert.deepEqual(
+        repeated,
+        first,
+        "Two finalizers must return one identical fixed window",
+      );
+      const after = observeRecovery();
+      assert.equal(after.notifications.length, 1);
+      assert.deepEqual(after.occupancies, before.occupancies);
+      assert.deepEqual(after.inventory, before.inventory);
+      assert.deepEqual(after.ledger, before.ledger);
+    } else {
+      harness.runSql(`begin;
+        update public.booking_request_capture_work set lease_expires_at=date_trunc('milliseconds',clock_timestamp())+interval '2 seconds' where booking_request_id='${requestId}';
+        update public.simulated_payment_provider_operations operation set capture_execution_permit=operation.capture_execution_permit || jsonb_build_object('notAfter',to_char(work.lease_expires_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+        from public.booking_request_capture_work work where work.booking_request_id='${requestId}' and operation.id=(select id from public.simulated_payment_provider_operations where operation_kind='capture'); commit;`);
+      const holder = start(
+        "begin; set application_name='failure_commitment_holder'; select 1 from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001' for update; select 'COMMITMENT_HELD';",
+      );
+      await harness.waitForMarker(holder, "COMMITMENT_HELD");
+      const contender = start(
+        `begin; set application_name='failure_deadline_contender'; set local role service_role; ${finalize} commit;`,
+        true,
+      );
+      await blockedBy(
+        "failure_deadline_contender",
+        contender,
+        "failure_commitment_holder",
+      );
+      assert.equal(
+        harness.runSql(
+          `select clock_timestamp()<lease_expires_at from public.booking_request_capture_work where booking_request_id='${requestId}';`,
+        ),
+        "t",
+      );
+      holder.child.stdin.write(
+        `do $$ begin while clock_timestamp()<(select lease_expires_at from public.booking_request_capture_work where booking_request_id='${requestId}') loop perform pg_sleep(0.01); end loop; end $$; select 'FAILURE_DEADLINE_REACHED';\n`,
+      );
+      await harness.waitForMarker(holder, "FAILURE_DEADLINE_REACHED");
+      await finish(holder, { action: "commit" });
+      await finish(contender, { expectedState: "RC409" });
+      const after = observeRecovery();
+      assert.equal(after.work.state, "processing");
+      assert.equal(after.notifications.length, 0);
+      assert.deepEqual(after.occupancies, before.occupancies);
+    }
+    harness.runSql(cleanup);
+    seeded = false;
+  }
+  console.log(
+    "Direct failed-Capture finalizers returned one identical period under contention and refused an expired fence after a blocked hold lock, retaining every original occupancy.",
+  );
+}
+
+async function proveApplicationFailureRecovery(source) {
+  const traceStart = providerTrace.length;
+  harness.runSql(`begin; ${source} commit;`);
+  seeded = true;
+  const interrupted = startWorker("failure-lose-response");
+  assert.equal(await finishWorker(interrupted), "interrupted");
+  assert.equal(
+    interrupted.messages.filter((message) => message.stage === "execute")
+      .length,
+    1,
+  );
+  const failedExecution = observeRecovery();
+  assert.equal(failedExecution.work.state, "processing");
+  assert.equal(failedExecution.ledger.length, 1);
+  assert.equal(failedExecution.ledger[0].original_outcome, "failed");
+  assert.equal(failedExecution.ledger[0].current_outcome, "failed");
+  assert.equal(failedExecution.ledger[0].movement_reference, null);
+  assert.equal(failedExecution.ledger[0].physical_execution_count, 1);
+  assert.equal(failedExecution.confirmations.length, 0);
+  assert.equal(failedExecution.receipts.length, 0);
+
+  assert.deepEqual(
+    await finishWorker(startWorker("recover-failure")),
+    [],
+    "An active failed-Capture lease cannot be reclaimed",
+  );
+  expireCaptureLease();
+  const claimSql = `select public.claim_due_booking_request_captures(20, ${literal(providerIdentity)});`;
+  const holder = start(
+    `begin; set local role service_role; ${claimSql} select 'FAILURE_RECOVERY_HELD';`,
+  );
+  await harness.waitForMarker(holder, "FAILURE_RECOVERY_HELD");
+  assert.match(holder.stdout, /"status": "reconcile"/);
+  assert.equal(
+    harness.runSql(claimSql),
+    "[]",
+    "A competing recovery skips the locked failed Capture",
+  );
+  await finish(holder, { action: "rollback" });
+  await proveLockOrder(claimSql, "failure_recovery", rows.slice(1, 5));
+
+  const recovering = [
+    startWorker("recover-failure"),
+    startWorker("recover-failure"),
+  ];
+  const recovered = await Promise.all(recovering.map(finishWorker));
+  assert.equal(
+    recovered.flat().filter((result) => result.status === "payment-required")
+      .length,
+    1,
+    "Competing recovery processes must persist one Payment Required result",
+  );
+  const terminal = observeRecovery();
+  assert.equal(terminal.work.state, "payment_required");
+  assert.equal(terminal.work.outcome, "failed");
+  assert.equal(
+    Date.parse(terminal.work.payment_required_deadline) -
+      Date.parse(terminal.work.payment_required_recorded_at),
+    20 * 60 * 1000,
+  );
+  assert.deepEqual(
+    terminal.ledger,
+    failedExecution.ledger,
+    "Failure recovery must preserve the one original provider execution",
+  );
+  assert.equal(terminal.identities.length, 0);
+  assert.equal(terminal.notifications.length, 1);
+  assert.equal(terminal.notifications[0].status, "payment-required");
+  assert.equal(terminal.confirmations.length, 0);
+  assert.equal(terminal.receipts.length, 0);
+  assert.equal(terminal.commitment.status, "pending_hold");
+  assert.deepEqual(terminal.inventory, failedExecution.inventory);
+  assert.deepEqual(terminal.occupancies, failedExecution.occupancies);
+  assert.equal(terminal.occupancies.length, 5);
+  assert.ok(terminal.occupancies.every((occupancy) => occupancy.active));
+  assert.equal(terminal.intentActive, true);
+  assert.equal(terminal.releases, 0);
+
+  assert.deepEqual(await finishWorker(startWorker("recover-failure")), []);
+  assert.deepEqual(
+    observeRecovery(),
+    terminal,
+    "Repeated failure recovery must not move the terminal window or recapture",
+  );
+  const trace = providerTrace.slice(traceStart);
+  assert.equal(trace.filter((call) => call.stage === "execute").length, 1);
+  assert.equal(trace.filter((call) => call.stage === "query").length, 1);
+  harness.runSql(cleanup);
+  seeded = false;
+  console.log(
+    "Actual failure recovery used competing fresh processes after a lost response: one failed movement-free provider execution, one immutable 20-minute Payment Required window and notification, no confirmation or receipts, the active intent, pending hold and all five original occupancies retained, and stable repeated drains.",
   );
 }
 
@@ -989,6 +1154,8 @@ try {
   await proveOwnerAdmission(recoverySource);
   await proveRecoveryProgress(recoverySource);
   await proveApplicationRecovery(recoverySource);
+  await proveFailureRecording(recoverySource);
+  await proveApplicationFailureRecovery(recoverySource);
   await proveCaptureProcessing(recoverySource);
 } finally {
   for (const worker of workers) worker.child.kill("SIGTERM");

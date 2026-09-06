@@ -168,7 +168,7 @@ describe("durable simulated payment provider", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it("executes the exact Capture permit through the fixed-success ledger without personal data", async () => {
+  it("executes the exact Capture permit with the selected outcome without personal data", async () => {
     const result = {
       outcome: "succeeded",
       providerRequestId: "sim-request-capture",
@@ -185,7 +185,10 @@ describe("durable simulated payment provider", () => {
     await expect(provider.execute(captureRequest)).resolves.toEqual(result);
     expect(rpc).toHaveBeenCalledExactlyOnceWith(
       "execute_simulated_booking_request_capture",
-      { target_permit: captureRequest.executionPermit },
+      {
+        target_permit: captureRequest.executionPermit,
+        target_outcome: "failed",
+      },
     );
     const serialized = JSON.stringify(rpc.mock.calls);
     for (const personalField of [
@@ -196,6 +199,27 @@ describe("durable simulated payment provider", () => {
     ]) {
       expect(serialized).not.toContain(personalField);
     }
+  });
+
+  it("rejects failed Capture evidence that contains a money movement", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        outcome: "failed",
+        providerRequestId: "failed-request",
+        providerReference: "failed-reference",
+        movementReference: "conflicting-movement",
+        retrySafe: false,
+      },
+      error: null,
+    });
+    const provider = new DurablePaymentSimulator({
+      client: { rpc } as unknown as SupabaseClient,
+      now: () => "2099-08-21T17:00:00.000Z",
+      executeOutcome: "failed",
+    });
+    await expect(provider.execute(captureRequest)).rejects.toThrow(
+      "invalid result",
+    );
   });
 
   it("queries Capture evidence without an execution permit or outcome rewrite", async () => {
