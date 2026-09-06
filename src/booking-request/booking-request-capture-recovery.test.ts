@@ -246,15 +246,17 @@ describe("Booking Request Capture recovery", () => {
     "providerReference",
     "movementReference",
   ] as const)("refuses replaced %s before completion", async (field) => {
-    const { recovery, provider, repository } = setup();
+    const { recovery, provider, repository, confirmation } = setup();
     provider.query.mockResolvedValue({ ...success, [field]: "replacement" });
-    await expect(recovery.processDue()).rejects.toThrow(
-      "Capture recovery provider evidence does not match",
-    );
+    await expect(recovery.processDue()).resolves.toEqual([
+      { status: "unavailable" },
+    ]);
     expect(repository.complete).not.toHaveBeenCalled();
+    expect(confirmation.execute).not.toHaveBeenCalled();
+    expect(provider.execute).not.toHaveBeenCalled();
   });
   it("refuses work assigned to another provider", async () => {
-    const { recovery, repository, provider } = setup();
+    const { recovery, repository, provider, confirmation } = setup();
     repository.claimDue.mockResolvedValue([
       {
         status: "reconcile",
@@ -264,26 +266,24 @@ describe("Booking Request Capture recovery", () => {
         },
       },
     ]);
-    await expect(recovery.processDue()).rejects.toThrow(
-      "Capture recovery provider does not match",
-    );
+    await expect(recovery.processDue()).resolves.toEqual([
+      { status: "unavailable" },
+    ]);
     expect(provider.query).not.toHaveBeenCalled();
+    expect(repository.complete).not.toHaveBeenCalled();
+    expect(confirmation.execute).not.toHaveBeenCalled();
+    expect(provider.execute).not.toHaveBeenCalled();
   });
-  it.each(["claimDue", "query", "complete", "confirmation"] as const)(
-    "propagates %s failure without another execution",
-    async (stage) => {
-      const { recovery, repository, provider, confirmation } = setup();
-      const failure = new Error("Unavailable durable evidence");
-      (stage === "query"
-        ? provider.query
-        : stage === "confirmation"
-          ? confirmation.execute
-          : repository[stage]
-      ).mockRejectedValue(failure);
-      await expect(recovery.processDue()).rejects.toBe(failure);
-      expect(provider.execute).not.toHaveBeenCalled();
-    },
-  );
+  it("propagates a claim failure before processing any item", async () => {
+    const { recovery, repository, provider, confirmation } = setup();
+    const failure = new Error("Claim unavailable");
+    repository.claimDue.mockRejectedValue(failure);
+    await expect(recovery.processDue()).rejects.toBe(failure);
+    expect(provider.query).not.toHaveBeenCalled();
+    expect(repository.complete).not.toHaveBeenCalled();
+    expect(confirmation.execute).not.toHaveBeenCalled();
+    expect(provider.execute).not.toHaveBeenCalled();
+  });
   it.each([
     { outcome: "not-executed" as const },
     {
@@ -293,12 +293,216 @@ describe("Booking Request Capture recovery", () => {
       retrySafe: true,
     },
   ])("refuses $outcome without execution or confirmation", async (result) => {
-    const { recovery, provider, confirmation } = setup();
+    const { recovery, provider, confirmation, repository } = setup();
     provider.query.mockResolvedValue(result);
-    await expect(recovery.processDue()).rejects.toThrow(
-      "did not return successful provider evidence",
-    );
+    await expect(recovery.processDue()).resolves.toEqual([
+      { status: "unavailable" },
+    ]);
+    expect(repository.complete).not.toHaveBeenCalled();
     expect(provider.execute).not.toHaveBeenCalled();
     expect(confirmation.execute).not.toHaveBeenCalled();
   });
+  it.each([
+    "query",
+    "complete",
+    "confirmation",
+    "completed-confirmation",
+  ] as const)(
+    "reports a failed first %s and still recovers the next claimed capture",
+    async (stage) => {
+      const { recovery, repository, provider, confirmation, confirmed } =
+        setup();
+      const laterBinding = {
+        bookingRequestId: "77777777-7777-4777-8777-777777777777",
+        submissionAttemptId: "88888888-8888-4888-8888-888888888888",
+        authorizationClaimId: "99999999-9999-4999-8999-999999999999",
+        authorizationClaimGeneration: 1,
+        paymentLifecycleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        authorizationLogicalOperationId:
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:authorization",
+        authorizationPhysicalAttemptId:
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:authorization:attempt-1",
+        captureLogicalOperationId:
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:capture",
+        capturePhysicalAttemptId:
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:capture:attempt-2",
+        amountFils: 105_000_000,
+        currency: "IQD" as const,
+        providerIdentity: permit.providerIdentity,
+        idempotencyKey:
+          "booking-request-capture:77777777-7777-4777-8777-777777777777:1",
+        requestFingerprint: "b".repeat(64),
+      };
+      const laterSuccess = {
+        outcome: "succeeded" as const,
+        providerRequestId: "later-request",
+        providerReference: "later-reference",
+        movementReference: "later-movement",
+      };
+      const laterLease = {
+        ...laterBinding,
+        workId: laterBinding.bookingRequestId,
+        leaseGeneration: 2,
+        leaseToken: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        notAfter: lease.notAfter,
+        recoveryOperationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        providerResult: {
+          providerRequestId: laterSuccess.providerRequestId,
+          providerReference: laterSuccess.providerReference,
+          movementReference: laterSuccess.movementReference,
+        },
+      };
+      const laterSnapshot: BookingRequestCaptureSnapshot = {
+        ...laterBinding,
+        authorization: {
+          ...snapshot.authorization,
+          paymentLifecycleId: laterBinding.paymentLifecycleId,
+          logicalOperationId: laterBinding.authorizationLogicalOperationId,
+          attemptId: laterBinding.authorizationPhysicalAttemptId,
+          providerRequestId: "later-auth-request",
+          providerReference: "later-auth-reference",
+          movementReference: "later-auth-movement",
+        },
+        capture: {
+          ...snapshot.capture,
+          paymentLifecycleId: laterBinding.paymentLifecycleId,
+          logicalOperationId: laterBinding.captureLogicalOperationId,
+          attemptId: laterBinding.capturePhysicalAttemptId,
+          ...laterLease.providerResult,
+        },
+        movements: [
+          {
+            ...snapshot.movements[0],
+            logicalOperationId: laterBinding.authorizationLogicalOperationId,
+            attemptId: laterBinding.authorizationPhysicalAttemptId,
+            movementReference: "later-auth-movement",
+          },
+          {
+            ...snapshot.movements[1],
+            logicalOperationId: laterBinding.captureLogicalOperationId,
+            attemptId: laterBinding.capturePhysicalAttemptId,
+            movementReference: "later-movement",
+          },
+        ],
+      };
+      const laterConfirmation = {
+        ...confirmed,
+        bookingRequestId: laterBinding.bookingRequestId,
+        commitmentId: "later-commitment",
+        bookingReference: "BK-456",
+        capturePhysicalAttemptId: laterBinding.capturePhysicalAttemptId,
+        captureMovementReference: "later-movement",
+        receipts: {
+          customer: {
+            id: "later-customer-receipt",
+            recipientId: "later-customer",
+          },
+          cottageOwner: {
+            id: "later-owner-receipt",
+            recipientId: "later-owner",
+          },
+        },
+      };
+      repository.claimDue.mockResolvedValue([
+        { status: "reconcile", lease },
+        { status: "reconcile", lease: laterLease },
+      ]);
+      provider.query
+        .mockResolvedValueOnce(success)
+        .mockResolvedValueOnce(laterSuccess);
+      repository.complete
+        .mockResolvedValueOnce({ status: "complete", snapshot })
+        .mockResolvedValueOnce({ status: "complete", snapshot: laterSnapshot });
+      confirmation.execute
+        .mockResolvedValueOnce(confirmed)
+        .mockResolvedValueOnce(laterConfirmation);
+      const failure = new Error(
+        "Sensitive provider diagnostic must not be returned",
+      );
+      if (stage === "query") {
+        provider.query
+          .mockReset()
+          .mockRejectedValueOnce(failure)
+          .mockResolvedValueOnce(laterSuccess);
+        repository.complete
+          .mockReset()
+          .mockResolvedValue({ status: "complete", snapshot: laterSnapshot });
+        confirmation.execute.mockReset().mockResolvedValue(laterConfirmation);
+      } else if (stage === "complete") {
+        repository.complete
+          .mockReset()
+          .mockRejectedValueOnce(failure)
+          .mockResolvedValueOnce({
+            status: "complete",
+            snapshot: laterSnapshot,
+          });
+        confirmation.execute.mockReset().mockResolvedValue(laterConfirmation);
+      } else
+        confirmation.execute
+          .mockReset()
+          .mockRejectedValueOnce(failure)
+          .mockResolvedValueOnce(laterConfirmation);
+      if (stage === "completed-confirmation") {
+        repository.claimDue.mockResolvedValue([
+          { status: "complete", snapshot },
+          { status: "reconcile", lease: laterLease },
+        ]);
+        provider.query.mockReset().mockResolvedValue(laterSuccess);
+        repository.complete
+          .mockReset()
+          .mockResolvedValue({ status: "complete", snapshot: laterSnapshot });
+      }
+      await expect(recovery.processDue()).resolves.toEqual([
+        { status: "unavailable" },
+        { status: "confirmed", confirmation: laterConfirmation },
+      ]);
+      expect(repository.claimDue).toHaveBeenCalledExactlyOnceWith(
+        20,
+        provider.identity,
+      );
+      expect(provider.query.mock.calls).toEqual([
+        ...(stage === "completed-confirmation"
+          ? []
+          : [
+              [
+                {
+                  kind: "capture",
+                  paymentLifecycleId: permit.paymentLifecycleId,
+                  logicalOperationId: permit.captureLogicalOperationId,
+                  attemptId: permit.capturePhysicalAttemptId,
+                  amountFils: permit.amountFils,
+                  currency: "IQD",
+                  providerRequestId: success.providerRequestId,
+                  providerReference: success.providerReference,
+                },
+              ],
+            ]),
+        [
+          {
+            kind: "capture",
+            paymentLifecycleId: laterBinding.paymentLifecycleId,
+            logicalOperationId: laterBinding.captureLogicalOperationId,
+            attemptId: laterBinding.capturePhysicalAttemptId,
+            amountFils: laterBinding.amountFils,
+            currency: "IQD",
+            providerRequestId: laterSuccess.providerRequestId,
+            providerReference: laterSuccess.providerReference,
+          },
+        ],
+      ]);
+      expect(repository.complete.mock.calls).toEqual([
+        ...(["query", "completed-confirmation"].includes(stage)
+          ? []
+          : [[lease, success]]),
+        [laterLease, laterSuccess],
+      ]);
+      expect(confirmation.execute.mock.calls).toEqual([
+        ...(["confirmation", "completed-confirmation"].includes(stage)
+          ? [[permit.bookingRequestId, snapshot]]
+          : []),
+        [laterBinding.bookingRequestId, laterSnapshot],
+      ]);
+      expect(provider.execute).not.toHaveBeenCalled();
+    },
+  );
 });

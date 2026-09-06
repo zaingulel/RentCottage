@@ -61,55 +61,60 @@ export function createBookingRequestCaptureRecovery({
           results.push(work);
           continue;
         }
-        let completed;
-        if (work.status === "reconcile") {
-          const { lease } = work;
-          if (
-            Object.entries(provider.identity).some(
-              ([key, value]) =>
-                lease.providerIdentity[key as keyof PaymentProviderIdentity] !==
-                value,
+        try {
+          let completed;
+          if (work.status === "reconcile") {
+            const { lease } = work;
+            if (
+              Object.entries(provider.identity).some(
+                ([key, value]) =>
+                  lease.providerIdentity[
+                    key as keyof PaymentProviderIdentity
+                  ] !== value,
+              )
             )
-          )
-            throw new Error("Capture recovery provider does not match");
-          const result = await provider.query({
-            kind: "capture",
-            paymentLifecycleId: lease.paymentLifecycleId,
-            logicalOperationId: lease.captureLogicalOperationId,
-            attemptId: lease.capturePhysicalAttemptId,
-            amountFils: lease.amountFils,
-            currency: lease.currency,
-            providerRequestId: lease.providerResult.providerRequestId,
-            providerReference: lease.providerResult.providerReference,
+              throw new Error("Capture recovery provider does not match");
+            const result = await provider.query({
+              kind: "capture",
+              paymentLifecycleId: lease.paymentLifecycleId,
+              logicalOperationId: lease.captureLogicalOperationId,
+              attemptId: lease.capturePhysicalAttemptId,
+              amountFils: lease.amountFils,
+              currency: lease.currency,
+              providerRequestId: lease.providerResult.providerRequestId,
+              providerReference: lease.providerResult.providerReference,
+            });
+            if (result.outcome === "indeterminate") {
+              results.push({ status: "processing" });
+              continue;
+            }
+            if (result.outcome !== "succeeded")
+              throw new Error(
+                "Capture recovery did not return successful provider evidence",
+              );
+            if (
+              Object.entries(lease.providerResult).some(
+                ([key, value]) =>
+                  result[
+                    key as keyof BookingRequestCaptureProviderResultIdentity
+                  ] !== value,
+              )
+            )
+              throw new Error(
+                "Capture recovery provider evidence does not match",
+              );
+            completed = await repository.complete(lease, result);
+          } else completed = work;
+          results.push({
+            status: "confirmed",
+            confirmation: await confirmation.execute(
+              completed.snapshot.bookingRequestId,
+              completed.snapshot,
+            ),
           });
-          if (result.outcome === "indeterminate") {
-            results.push({ status: "processing" });
-            continue;
-          }
-          if (result.outcome !== "succeeded")
-            throw new Error(
-              "Capture recovery did not return successful provider evidence",
-            );
-          if (
-            Object.entries(lease.providerResult).some(
-              ([key, value]) =>
-                result[
-                  key as keyof BookingRequestCaptureProviderResultIdentity
-                ] !== value,
-            )
-          )
-            throw new Error(
-              "Capture recovery provider evidence does not match",
-            );
-          completed = await repository.complete(lease, result);
-        } else completed = work;
-        results.push({
-          status: "confirmed",
-          confirmation: await confirmation.execute(
-            completed.snapshot.bookingRequestId,
-            completed.snapshot,
-          ),
-        });
+        } catch {
+          results.push({ status: "unavailable" });
+        }
       }
       return results;
     },
