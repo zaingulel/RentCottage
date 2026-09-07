@@ -56,7 +56,20 @@ The command is read-only. It fetches Project 4 fields and up to 100 items in one
 
 The intake verifies the open Project identity, exact `Status` and `Area` options, complete item count, repository issue identity, issue state, labels, assignees, native blockers, lifecycle coherence, duplicates, and pagination. A malformed, archived, draft, pull-request, foreign, duplicate, truncated, or unknown required value exits non-zero. It does not freeze issue titles, acceptance-criteria prose, historical membership, or textual blocker sections.
 
-With complete valid evidence, `--json` returns schema version 3, a `drift` array, and an entry for every open Project issue with its live Status, Area, labels, assignees, open blockers, and one classification: `active-owned`, `blocked`, `owner-gated`, `ready-for-human`, `ready`, `needs-info`, `needs-triage`, `wontfix`, or `drift`. Missing a triage label becomes `needs-triage`; conflicting triage labels fail. Human output groups the same entries and prints every drift finding with issue number, title, reason, and proposed correction. Drift exits non-zero after printing the complete report; malformed or unavailable evidence remains an intake failure.
+With complete valid evidence, `--json` returns schema version 3, a `drift` array, and an entry for every open
+Project issue with its live Status, Area, labels, assignees, open blockers, and one classification. The classifier
+applies this precedence: an assignee or `In progress`/`In review` Status is `active-owned`; otherwise an open
+native blocker is `blocked`; otherwise no recognized triage label is the inferred `needs-triage` state. A literal
+`needs-triage`, `needs-info`, or `wontfix` label keeps that classification. For either single ready label,
+`owner-gated` overrides readiness; otherwise `ready-for-human` keeps that classification and `ready-for-agent`
+becomes `ready`. More than one recognized triage label is an intake failure. `needs-triage` and `needs-info` are
+code-recognized labels but do not currently exist in the tracker; `question` is not an alias for either one.
+
+After that classification, any detected lifecycle-drift finding overrides the item classification to `drift`.
+Human output groups the same entries and prints every drift finding with issue number, title, reason, and proposed
+correction. Drift exits non-zero after printing the complete report; malformed or unavailable evidence remains an
+intake failure. See [`triage-labels.md`](triage-labels.md) for the literal live-label mapping. No inferred state or
+drift finding authorizes creating, applying, renaming, or removing a label.
 
 Drift includes closed/non-Done and open/Done mismatches, open blockers with an unblocked Status, missing active assignees, officially closing merged pull requests on open issues, and open parents whose nonzero native child summary is fully completed. Merged references require owner review of completion or deliberately reopened scope. Completed children require parent acceptance review; the summary does not prove shipment or authorize closure.
 

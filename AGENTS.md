@@ -84,8 +84,10 @@ repository definitions take precedence over machine-wide model routing. Use the 
 - `architect` produces a concrete plan; `plan-reviewer` challenges a fixed high-risk plan once.
 - `builder-lite`, `builder`, and `builder-max` are bounded writer tiers. The coordinator chooses from issue risk,
   residual judgment, uncertainty, rollback, and verification strength, then names the seat explicitly.
-- `reviewer` performs the fresh final Standards and Specification review.
-- `security-reviewer` joins that round only when `security-code-review` classifies a sensitive surface.
+- Two fresh `reviewer` instances perform the independent Standards and Specification lanes. Repository seat
+  routing overrides generic agent selection in the managed `code-review` skill.
+- `security-reviewer` joins that round as a separate lane only when `security-code-review` classifies a sensitive
+  surface.
 - `oracle` is an exceptional read-only escalation for a twice-stalled diagnosis, unresolved architecture
   tiebreak, or independent high-consequence derivation. It is not a routine rung.
 
@@ -102,11 +104,12 @@ strategy. Builders run focused evidence; the coordinator owns mutation proof and
 convergence route. Use `diagnosing-bugs` for hard or repeated failures.
 
 Finish construction by verifying, committing, and confirming that no intended change remains outside the commit.
-One fresh independent review checks that committed job diff and what it can break against repository standards
-and the issue. Run `security-code-review` first to decide whether Security joins Standards and Specification.
-A true bounded finding returns to the sole writer. Commit the repair after focused verification, then review only
-that repair delta and what it could break. No review follows a repair that adds no factual claim. After two
-non-converging repair-and-scoped-review cycles, stop and return to the owner to split, rescope, or stop.
+Run `security-code-review` to route one fresh Standards instance and one fresh Specification instance against the
+same committed job diff, plus a separate Security instance when classified sensitive. Preserve each context and
+verdict. A true bounded finding returns to the sole writer. Commit the repair after focused verification, then
+review only that repair delta and what it could break in each implicated lane. No review follows a repair that
+adds no factual claim. After two non-converging repair-and-scoped-review cycles, stop and return to the owner to
+split, rescope, or stop.
 
 Documentation-only changes skip Greptile under `docs/agents/delivery.md`. For other changes, Greptile is the sole
 external reviewer and is best-effort: request it explicitly on the finished draft and settle the attempt before

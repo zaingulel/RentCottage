@@ -36,9 +36,9 @@ Follow this bounded sequence after approval:
 2. Push with `git push --set-upstream origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`. Confirm the local branch now tracks the exact pull-request head remote ref; this retained remote-tracking ref supports ordinary branch deletion after a squash merge. If it later disappears, `closeout` owns the verified exact-head fallback. Create or update a draft pull request against `main` using the approved body. Re-read `state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels`; require the same repository, intended branch, draft state, base `main`, exact `CURRENT_PR_HEAD`, and no external-review label yet.
 3. Classify the full pull-request diff using the documentation-only exception below. If exempt, record that Greptile is not required and proceed to step 4 without adding a review label or posting a review request. Otherwise add `independent-review` as review metadata and request `gh pr comment <PR_NUMBER> --repo zaingulel/RentCottage --body "@greptileai review this draft"`. Record the request URL, time, and exact `CURRENT_PR_HEAD`. Settle the attempt using the evidence below and reconcile every emitted finding before proceeding. No paid plan, billing change, purchase, or upgrade is authorised.
 4. Re-read the pull request and require the same open draft and exact head, resolved conversations, completed required local evidence, either the documentation-only classification or a settled Greptile attempt, and no unresolved finding. Mark it ready with `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`.
-5. Use the applicable merge path:
-   - **Issue #161 reset pull request:** while the old hosted protection is still authoritative, run `gh workflow run ci.yml --repo zaingulel/RentCottage --ref main -f pull_request_number=<PR_NUMBER> -f expected_head_oid=<CURRENT_PR_HEAD>`, require its source-bound `quality` check to pass, then merge with `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --squash --match-head-commit <CURRENT_PR_HEAD>`.
-   - **Later pull requests:** GitHub's ready-only workflow checks the merge result. Require the current source-bound `test` check under strict current-base protection, then queue `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --auto --squash --match-head-commit <CURRENT_PR_HEAD>`.
+5. GitHub's ready-only workflow checks the merge result. Require the current source-bound `test` check under
+   strict current-base protection, then queue
+   `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --auto --squash --match-head-commit <CURRENT_PR_HEAD>`.
 
 Never use `--admin`.
 
@@ -61,18 +61,9 @@ When Greptile is required, record exactly one settled state for the current head
 
 Provider unavailability or exhausted allowance is reportable rather than a merge veto after all mandatory internal review, local verification, ready-only `test`, conversation, ownership, and tracker gates pass. Missing, stale, self-authored, wrong-provider, or unattributed attempt evidence stops delivery.
 
-## Merge, cutover, and closeout
+## Merge and closeout
 
 Re-read the pull request until GitHub reports the exact approved head merged. If merge is pending, blocked, changed, or unknown, retain the worktree and report the state.
-
-Issue #161 has one owner-approved hosted cutover after its reset pull request merges under the old protection path:
-
-1. Atomically replace required `quality` with source-bound `test`, enable strict current-base enforcement, and preserve conversation resolution.
-2. Immediately read the ruleset back and verify every required field and source identity.
-3. Only after that readback passes, enable repository auto-merge and immediately read that setting back.
-4. Exercise the new ready-only pull-request path.
-
-If a hosted mutation or readback fails, stop with merges safely blocked and report the exact state. Do not restore the retired release wrapper. Future changes to these hosted settings require their own owner approval.
 
 After authoritative merge evidence, reconcile only the issue and Project entries named by the approved pull-request body, then run `npm run verify:board`. Unavailable or failing board evidence stops closeout. Run `closeout` for the exact approved job worktree and branch; it owns removal proofs, exact-ref operations, refusal rules, and safe local-main updates. Missed cleanup may reuse existing exact-target closeout approval; historical targets without it require a separate owner decision.
 

@@ -1,15 +1,18 @@
-# Triage Labels
+# Triage labels and inferred states
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+GitHub currently provides these literal triage labels:
 
-| Label in mattpocock/skills | Label in our tracker | Meaning |
+| Canonical role | Existing tracker label | Meaning |
 | --- | --- | --- |
-| `needs-triage` | `needs-triage` | Maintainer needs to evaluate this issue |
-| `needs-info` | `needs-info` | Waiting on reporter for more information |
-| `ready-for-agent` | `ready-for-agent` | Fully specified, ready for an AFK agent |
+| `ready-for-agent` | `ready-for-agent` | Fully specified, ready for an away-from-keyboard agent |
 | `ready-for-human` | `ready-for-human` | Requires human implementation |
 | `wontfix` | `wontfix` | Will not be actioned |
 
-When a skill mentions a role (for example, "apply the AFK-ready triage label"), use the corresponding label string from this table.
+Apply a label only when it exists in the tracker. The board classifier also recognizes literal `needs-triage` and
+`needs-info` labels for compatibility, but neither label currently exists in this repository. An unowned,
+unblocked open item with no recognized triage label is therefore classified as the inferred `needs-triage` state;
+this inference is not an instruction to create or apply that absent label. The existing `question` label is a
+general GitHub issue label, not an alias for `needs-info`.
 
-Edit the right-hand column to match whatever vocabulary you actually use.
+See [`issue-tracker.md`](issue-tracker.md#board-intake) for the complete classification precedence and the separate
+lifecycle-drift override.
