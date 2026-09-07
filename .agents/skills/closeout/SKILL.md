@@ -12,6 +12,25 @@ owner approval and the delivery packet that approval covered; the editable live 
 approval evidence. If that original evidence is unavailable or the targets differ, retain the targets and report
 the proposed removal and recovery implications for renewed exact-target approval.
 
+## Process reconciliation
+
+Run this before normal completion or handoff and after a recoverable interruption. It reconciles process state
+without requiring a confirmed merge; worktree and branch removal remain subject to the merged-job procedure
+below.
+
+1. Read the existing session evidence for each process launched by the job: job, worktree, command, runtime
+   session handle, process identifier, start identity, and relevant parent, group, or port. Re-identify the exact
+   process and ownership before acting.
+2. Gracefully stop each unneeded confirmed-owned process, then verify its exit. Existing authorization rules govern
+   any escalation. Preserve active sibling, foreign, and uncertain processes.
+3. Record each stopped, retained, or uncertain process with its identity, reason, responsible owner, and next
+   action in existing session evidence. A recoverable interruption is reconciled on the next usable session.
+
+## Merged-job removal
+
+Before resolving a worktree for removal, run [Process reconciliation](#process-reconciliation). Retain the target
+when an owned needed or uncertain process still uses it.
+
 1. Confirm the same-repository pull request is `MERGED`. Record its head branch, head commit, merge commit and
    named closing issues. Confirm those issues' live state; reconcile only the issues the approved body names.
    Run [Update local main](#update-local-main) after confirming the merge, even if job removal must be retained.

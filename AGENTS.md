@@ -12,7 +12,8 @@ Skills own session steps. Product code does not carry a second workflow state ma
 | Agent seats | `.claude/agents/*.md` | `.codex/agents/*.toml` |
 | Isolated job | native Git worktree | native Git or Codex-managed worktree |
 
-Start or continue work with `resume`, park unfinished work with `handoff`, and run `closeout` after merge.
+Start or continue work with `resume`, park unfinished work with `handoff`, and run `closeout` after merge. Use
+`closeout`'s process reconciliation before normal completion or handoff and after a recoverable interruption.
 
 ## Sources of truth
 
@@ -70,7 +71,10 @@ beyond Git's own inventory.
 
 ## Team and routing
 
-The coordinator owns scope, integration, verification, and owner communication. For Codex, select the seat by
+The coordinator owns scope, integration, access and shared-resource readiness, verification, progress reporting,
+process-cleanup accountability, and owner communication. Builders prepare focused evidence and own the processes
+they start. `resume` owns launch readiness, `handoff` owns retained-process records, `closeout` owns process
+reconciliation, and the testing strategy owns test preparation and retry reporting. For Codex, select the seat by
 its role and risk, then explicitly pass the model and reasoning effort from `.codex/agents/<seat>.toml`; these
 repository definitions take precedence over machine-wide model routing. Use the smallest useful team:
 
