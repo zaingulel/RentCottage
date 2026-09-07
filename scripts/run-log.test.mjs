@@ -170,6 +170,27 @@ describe("run receipt command", () => {
     expect(failingCommand.status).toBe(7);
   });
 
+  it("propagates a child signal even when its receipt cannot be saved", () => {
+    const worktree = createWorktree();
+    writeFileSync(join(worktree, ".agent-evidence"), "blocks directory\n");
+    const result = spawnSync(
+      process.execPath,
+      [
+        logger,
+        "signal and receipt failure",
+        "--",
+        process.execPath,
+        "-e",
+        "process.kill(process.pid, 'SIGTERM')",
+      ],
+      { cwd: worktree, encoding: "utf8" },
+    );
+
+    expect(result.stderr).toContain("Unable to save run receipt");
+    expect(result.status).toBeNull();
+    expect(result.signal).toBe("SIGTERM");
+  });
+
   it("rejects malformed arguments before creating evidence", () => {
     const worktree = createWorktree();
     const result = spawnSync(process.execPath, [logger, "label-only"], {

@@ -72,7 +72,7 @@ export function main(
     stderr(
       `Unable to save run receipt: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return result.kind === "exit" && result.status !== 0 ? result.status : 1;
+    if (result.kind === "exit") return result.status || 1;
   }
 
   if (result.kind === "spawn-error") {
