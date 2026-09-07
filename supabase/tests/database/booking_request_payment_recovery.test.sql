@@ -256,7 +256,7 @@ select is(
     '60000000-0000-4000-8000-000000001001',
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
   )->>'status',
-  'release-required',
+  'release',
   'complete evidence creates one canonical expiry-owned original release target'
 );
 reset role;
@@ -313,7 +313,7 @@ select is(
     '60000000-0000-4000-8000-000000001001',
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
   )->>'status',
-  'attention-required',
+  'reconcile-recovery',
   'indeterminate release evidence retains inventory for reconciliation'
 );
 reset role;
@@ -362,7 +362,7 @@ select is(
     '60000000-0000-4000-8000-000000001001',
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
   )->>'status',
-  'ready-to-expire',
+  'ready',
   'complete evidence across all generations proves every Authorization released'
 );
 reset role;
