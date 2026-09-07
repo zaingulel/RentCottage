@@ -28,9 +28,21 @@ Test count and coverage percentage are not correctness targets. Functional green
 
 Every distinct material behaviour change needs one regression proof that fails when that behaviour is deliberately broken or reverted, then passes again after restoration. Prove it at the public seam selected for the behaviour; do not repeat mutation ceremony for every assertion, edge case or repair. Unchanged documentation and mechanical preservation work use existing evidence and create no new test or mutation ceremony.
 
+## Focused preparation
+
+Before an expensive journey, validate each new database observer query and fixture at its relevant disposable
+database seam: qualify ambiguous columns, assert the expected row cardinality, and preserve the public outcome.
+Validate each browser selector against its intended rendered state using an accessible name or meaningful scope;
+positional selection does not establish identity. Name the authoritative clock at every time boundary and align
+fixtures, triggers, and assertions to it without weakening deadline behaviour or reproducing production logic.
+
 ## Construction and convergence
 
-Run focused evidence during construction and the applicable broad suite once at convergence. Another broad run needs a named reason, such as changed evidence, an invalidated environment or an investigated flake. Stop retries when they produce no new information; unavailable required evidence remains unavailable, not a pass.
+Run focused evidence during construction and the applicable broad suite once at convergence. An unexpected retry
+needs a diagnosed cause or new evidence; another broad run needs a named reason, such as changed evidence, an
+invalidated environment or an investigated flake. Stop retries when they produce no new information. Report an
+intentional red proof, an unexpected failure, and unavailable evidence as distinct states, with the command and
+exit status; unavailable required evidence remains unavailable, not a pass.
 
 ## Stable commands
 

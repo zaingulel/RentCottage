@@ -32,11 +32,12 @@ reviewed by the owner; malformed or incomplete evidence stops selection. Keep dr
 Retry only a named failed source. A branch with a draft pull request is unfinished work; read its `Not done`
 section before considering new work. Leave foreign work unchanged.
 
-For remaining local job branches and worktrees, check their matching merged pull requests and run
-`git worktree prune --dry-run --verbose`. Use [closeout](../closeout/SKILL.md) to assess missed cleanup before
-shortlisting. Complete only exact targets covered by existing closeout authority; otherwise report the proposed
-targets and why they remain. Keep unfinished and active work excluded from cleanup. A historical cleanup decision
-does not prevent selecting unrelated work.
+For remaining local job branches and worktrees, read retained-process evidence, check their matching merged pull
+requests, and run `git worktree prune --dry-run --verbose`. For a recoverably interrupted prior task, run
+[Process reconciliation](../closeout/SKILL.md#process-reconciliation) before shortlisting; preserve a process with
+an active owner. Use [closeout](../closeout/SKILL.md) to assess missed cleanup. Complete only exact targets covered
+by existing closeout authority; otherwise report the proposed targets and why they remain. Keep unfinished and
+active work excluded from cleanup. A historical cleanup decision does not prevent selecting unrelated work.
 
 ## Work pick
 
@@ -59,9 +60,15 @@ switch, clean, stash, or pull the primary checkout to start a job. Safe local-ma
 reconciliation above. If the runtime already created the approved job
 worktree, verify its branch and exact base against that newly recorded commit instead of creating another.
 
-Assign one writer. Move the issue only under existing tracker authority. Install dependencies in a fresh
-worktree, make the route explicit, then plan and build under `AGENTS.md`. Commit each coherent green slice
-locally. Delivery waits for the owner-approved pull-request body.
+Assign one writer. Move the issue only under existing tracker authority. Before dependent expensive work, verify
+the current execution lane has the required Docker access, browser availability, and log-write location through
+existing narrowly scoped permission mechanisms. Consult active owners and identify conflicting database instances,
+ports, shared paths, and heavy-verification capacity; defer only conflicting checks. Before a launch, record its
+job, worktree, command, and intended port in existing session evidence, excluding secrets.
+Immediately after launch and before leaving it unattended, record the runtime session handle, process identifier, start identity,
+and relevant parent, group, or port. Repeat readiness when the execution lane or any relevant resource changes.
+Install dependencies in a fresh worktree, make the route explicit, then plan and build under
+`AGENTS.md`. Commit each coherent green slice locally. Delivery waits for the owner-approved pull-request body.
 
 ## Finish the approved job
 
