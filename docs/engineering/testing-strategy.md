@@ -74,4 +74,7 @@ commands retain their normal output and failure handling.
 - `npm run verify:board` performs the read-only live Project 4 intake required by `docs/agents/issue-tracker.md`; it is not part of the code-quality gate because it depends on current GitHub planning state.
 - `npm run run-log -- <label words> -- <command> <args>` runs exact argument vectors without a shell and appends a local `.agent-evidence/runs.jsonl` receipt with the completion time, label, working directory, arguments, and exit, signal, or spawn result. Pass secrets through the environment, never the label or arguments; command output and environment values are not captured. The receipt is ignored and local to the worktree. This small recovery aid should be removed if it stops helping long-session evidence retrieval or duplicates an authoritative platform record.
 
+The logger's maintenance cost is one Node wrapper and its focused command/receipt tests, plus local disk space
+for appended receipts. Keep those tests aligned when the command or receipt contract changes.
+
 Agents report exact commands, exit codes, failures, skipped or inapplicable checks, and current screenshots for visible work. Command output is authoritative; prose is interpretation.
