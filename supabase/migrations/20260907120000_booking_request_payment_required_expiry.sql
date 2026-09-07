@@ -171,6 +171,7 @@ begin
       and coalesce(expiry.state,'processing') <> 'complete'
     order by evaluation_order,work.payment_required_deadline,work.booking_request_id
     limit target_limit
+    for update of requests skip locked
   ) due);
 end;
 $$;
