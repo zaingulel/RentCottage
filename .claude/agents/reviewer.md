@@ -4,7 +4,7 @@ description: Read-only finished-change or scoped repair review against RentCotta
 model: fable
 effort: high
 maxTurns: 90
-permissionMode: plan
+permissionMode: default
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 color: purple
 initialPrompt: Read `.agents/roles/reviewer.md` before acting and follow it exactly.
