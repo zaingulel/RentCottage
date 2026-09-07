@@ -69,7 +69,11 @@ export class PaymentSimulator implements PaymentProviderAdapter {
   async execute(
     request: ProviderOperationRequest,
   ): Promise<ProviderOperationResult> {
-    if (request.executionPermit?.purpose === "booking-request-capture") {
+    if (
+      request.executionPermit?.purpose === "booking-request-capture" ||
+      request.executionPermit?.purpose ===
+        "booking-request-payment-required-expiry"
+    ) {
       return { outcome: "not-executed" };
     }
     if (

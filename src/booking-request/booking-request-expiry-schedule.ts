@@ -1,9 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 
 import { DurablePaymentSimulator } from "../payment/durable-payment-simulator-core";
-import { createBookingRequestLifecycle } from "./booking-request-lifecycle";
+import {
+  createBookingRequestLifecycle,
+  type BookingRequestLifecycleResult,
+} from "./booking-request-lifecycle";
+import {
+  createBookingRequestPaymentRequiredExpiry,
+  type PaymentRequiredExpiryResult,
+} from "./booking-request-payment-required-expiry";
 import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime-core";
 import { SupabaseBookingRequestLifecycleRepository } from "./supabase-booking-request-lifecycle";
+import { SupabaseBookingRequestPaymentRequiredExpiryRepository } from "./supabase-booking-request-payment-required-expiry";
 
 interface BookingRequestExpiryScheduleEnvironment {
   readonly APP_ENVIRONMENT?: string;
@@ -13,11 +21,16 @@ interface BookingRequestExpiryScheduleEnvironment {
   readonly SUPABASE_SECRET_KEY?: string;
 }
 
-type ProcessDue = (limit: number) => Promise<unknown>;
+type ProcessDue = (
+  limit: number,
+) => Promise<
+  readonly (BookingRequestLifecycleResult | PaymentRequiredExpiryResult)[]
+>;
 
 export async function runScheduledBookingRequestExpiry(
   environment: BookingRequestExpiryScheduleEnvironment,
   injectedProcessDue?: ProcessDue,
+  injectedPaymentRequiredDue?: ProcessDue,
 ) {
   if (
     !bookingRequestTestRuntimeIsEnabled(environment) ||
@@ -29,23 +42,45 @@ export async function runScheduledBookingRequestExpiry(
     );
   }
 
-  if (injectedProcessDue) return injectedProcessDue(50);
-
-  const client = createClient(
-    environment.SUPABASE_URL as string,
-    environment.SUPABASE_SECRET_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } },
-  );
-  const provider = new DurablePaymentSimulator({
-    client,
-    now: () => new Date().toISOString(),
-  });
-  const lifecycle = createBookingRequestLifecycle({
-    repository: new SupabaseBookingRequestLifecycleRepository(
+  let processDue = injectedProcessDue;
+  let paymentRequiredDue = injectedPaymentRequiredDue;
+  if (!processDue || !paymentRequiredDue) {
+    const client = createClient(
+      environment.SUPABASE_URL as string,
+      environment.SUPABASE_SECRET_KEY,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const provider = new DurablePaymentSimulator({
       client,
-      provider.identity,
-    ),
-    provider,
-  });
-  return lifecycle.processDue(50);
+      now: () => new Date().toISOString(),
+    });
+    processDue ??= createBookingRequestLifecycle({
+      repository: new SupabaseBookingRequestLifecycleRepository(
+        client,
+        provider.identity,
+      ),
+      provider,
+    }).processDue;
+    paymentRequiredDue ??= createBookingRequestPaymentRequiredExpiry({
+      repository: new SupabaseBookingRequestPaymentRequiredExpiryRepository(
+        client,
+      ),
+      provider,
+    }).processDue;
+  }
+  const drains = await Promise.allSettled([
+    Promise.resolve().then(() => processDue(50)),
+    Promise.resolve().then(() => paymentRequiredDue(50)),
+  ]);
+  const results = drains.flatMap((drain) =>
+    drain.status === "fulfilled" ? drain.value : [],
+  );
+  if (
+    drains.some((drain) => drain.status === "rejected") ||
+    results.some(
+      ({ status }) => status === "unavailable" || status === "invalid",
+    )
+  )
+    throw new Error("Scheduled booking-request expiry is incomplete");
+  return results;
 }

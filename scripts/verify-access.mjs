@@ -256,6 +256,12 @@ export function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = execute(
+        "node",
+        ["scripts/verify-booking-request-payment-required-expiry-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {
@@ -387,13 +393,22 @@ export function main(
       );
       if (bookingRequestCaptureConcurrency.status !== 0)
         return bookingRequestCaptureConcurrency.status;
-      return execute(
+      const bookingRequestRecoveryConcurrency = execute(
         "node",
         ["scripts/verify-booking-request-payment-recovery-concurrency.mjs"],
         {
           env: inventoryConcurrencyEnvironment,
           stdio: "inherit",
         },
+      );
+      if (bookingRequestRecoveryConcurrency.status !== 0)
+        return bookingRequestRecoveryConcurrency.status;
+      return execute(
+        "node",
+        [
+          "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+        ],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
       ).status;
     };
     if (databaseMode) {

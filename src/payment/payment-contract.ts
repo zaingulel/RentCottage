@@ -1,4 +1,5 @@
 import type { BookingRequestPaymentRecoveryPermit } from "./booking-request-payment-recovery-contract";
+import type { BookingRequestPaymentRequiredExpiryPermit } from "./booking-request-payment-required-expiry-contract";
 
 export type Fils = number;
 
@@ -49,7 +50,8 @@ export type ProviderExecutionPermit =
   | BookingRequestSubmissionCleanupExecutionPermit
   | BookingRequestReleaseExecutionPermit
   | BookingRequestCaptureExecutionPermit
-  | BookingRequestPaymentRecoveryPermit;
+  | BookingRequestPaymentRecoveryPermit
+  | BookingRequestPaymentRequiredExpiryPermit;
 
 export interface ProviderOperationBinding {
   readonly kind: PaymentOperationKind;
@@ -124,6 +126,7 @@ export interface PaymentProviderAdapter {
 
 export interface ProviderReconciliationQuery extends ProviderOperationBinding {
   readonly recoveryPermit?: BookingRequestPaymentRecoveryPermit;
+  readonly expiryPermit?: BookingRequestPaymentRequiredExpiryPermit;
   readonly providerRequestId: string | null;
   readonly providerReference: string | null;
 }
