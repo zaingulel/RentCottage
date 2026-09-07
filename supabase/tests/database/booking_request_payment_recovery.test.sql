@@ -89,7 +89,7 @@ select public.record_booking_request_capture_failure(
 ) result;
 reset role;
 
-select plan(31);
+select plan(49);
 select has_table('public','booking_request_payment_recovery_attempts','recovery attempts are durable');
 select has_table('public','booking_request_payment_recovery_operations','recovery operations are durable');
 select function_privs_are('public','claim_customer_booking_request_payment_recovery',
@@ -147,6 +147,261 @@ select is((select (result->>'deadline')::timestamptz from admitted_recovery),
 
 select id::text as recovery_attempt_id
 from public.booking_request_payment_recovery_attempts \gset
+
+create table public.recovery_expiry_test_clock(instant timestamptz not null);
+insert into public.recovery_expiry_test_clock
+select payment_required_deadline - interval '1 millisecond'
+from public.booking_request_capture_work
+where booking_request_id='60000000-0000-4000-8000-000000001001';
+create function public.recovery_expiry_test_now()
+returns timestamptz language sql volatile security definer set search_path = '' as $$
+  select instant from public.recovery_expiry_test_clock;
+$$;
+create temp table recovery_expiry_original_functions as
+select signature,pg_get_functiondef(signature::regprocedure) definition
+from (values
+  ('public.claim_due_booking_request_payment_required_expiries(integer,jsonb)'),
+  ('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'),
+  ('public.claim_customer_booking_request_payment_recovery(uuid,uuid,text)'),
+  ('public.lease_booking_request_payment_recovery_step(uuid)'),
+  ('public.execute_simulated_booking_request_payment_recovery(jsonb,text)')
+) functions(signature);
+select replace(
+  definition,
+  'clock_timestamp()',
+  'public.recovery_expiry_test_now()'
+)
+from recovery_expiry_original_functions \gexec
+
+set local role service_role;
+select is(
+  public.claim_due_booking_request_payment_required_expiries(
+    20,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  ),
+  '[]'::jsonb,
+  'Payment Required expiry is not admitted one instant before the fixed deadline'
+);
+create temp table recovery_permit_before_expiry as
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid) result;
+select is(
+  public.prepare_booking_request_payment_required_expiry(
+    '60000000-0000-4000-8000-000000001001',
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  )->>'status',
+  'not-due',
+  'preparation rechecks database time before the fixed deadline'
+);
+reset role;
+
+savepoint late_replacement_authorization;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(
+  (select result->'permit' from recovery_permit_before_expiry),'succeeded'
+);
+create temp table replacement_authorization_before_deadline as
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid) result;
+reset role;
+update public.recovery_expiry_test_clock set instant=(
+  select payment_required_deadline from public.booking_request_capture_work
+  where booking_request_id='60000000-0000-4000-8000-000000001001'
+);
+set local role service_role;
+select is(
+  public.execute_simulated_booking_request_payment_recovery(
+    (select result->'permit' from replacement_authorization_before_deadline),'succeeded'
+  )->>'outcome',
+  'not-executed',
+  'replacement Authorization rechecks the deadline at physical execution'
+);
+reset role;
+select is(
+  (select count(*) from public.simulated_payment_provider_operations ledger
+    where ledger.recovery_attempt_id=:'recovery_attempt_id'::uuid
+      and ledger.operation_kind='authorization'),
+  0::bigint,
+  'late replacement Authorization creates no provider movement'
+);
+rollback to savepoint late_replacement_authorization;
+
+savepoint expiry_ownership_fence;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(
+  (select result->'permit' from recovery_permit_before_expiry),'succeeded'
+);
+select public.execute_simulated_booking_request_payment_recovery(
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded'
+);
+select public.execute_simulated_booking_request_payment_recovery(
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed'
+);
+create temp table replacement_release_before_expiry_ownership as
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid) result;
+reset role;
+update public.recovery_expiry_test_clock set instant=(
+  select payment_required_deadline from public.booking_request_capture_work
+  where booking_request_id='60000000-0000-4000-8000-000000001001'
+);
+set local role service_role;
+select is(
+  jsonb_array_length(public.claim_due_booking_request_payment_required_expiries(
+    20,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  )),
+  1,
+  'the exact fixed deadline admits due Payment Required expiry work'
+);
+select is(
+  public.prepare_booking_request_payment_required_expiry(
+    '60000000-0000-4000-8000-000000001001',
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  )->>'status',
+  'release-required',
+  'complete evidence creates one canonical expiry-owned original release target'
+);
+reset role;
+select is(
+  (select count(*) from public.booking_request_payment_required_expiry_operations
+    where booking_request_id='60000000-0000-4000-8000-000000001001' and owner='expiry'),
+  1::bigint,
+  'expiry persists one release owner for the original successful Authorization'
+);
+set local role service_role;
+select is(
+  public.execute_simulated_booking_request_payment_recovery(
+    (select result->'permit' from replacement_release_before_expiry_ownership),'succeeded'
+  )->>'outcome',
+  'not-executed',
+  'a recovery permit issued before the deadline cannot move money after expiry owns release'
+);
+reset role;
+select is(
+  (select count(*) from public.simulated_payment_provider_operations
+    where recovery_attempt_id=:'recovery_attempt_id'::uuid and operation_kind='release'),
+  1::bigint,
+  'the fenced replacement release creates no second physical release operation'
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select throws_ok(
+  format(
+    'select public.claim_customer_booking_request_payment_recovery(%L,%L,%L)',
+    '60000000-0000-4000-8000-000000001001',
+    '81000000-0000-4000-8000-000000001002',
+    'simulated-replacement'
+  ),
+  'RC409',null,
+  'expiry preparation fences new recovery admission'
+);
+reset role;
+rollback to savepoint expiry_ownership_fence;
+
+savepoint indeterminate_expiry_evidence;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit',
+  'indeterminate'
+);
+reset role;
+update public.recovery_expiry_test_clock set instant=(
+  select payment_required_deadline from public.booking_request_capture_work
+  where booking_request_id='60000000-0000-4000-8000-000000001001'
+);
+set local role service_role;
+select is(
+  public.prepare_booking_request_payment_required_expiry(
+    '60000000-0000-4000-8000-000000001001',
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  )->>'status',
+  'attention-required',
+  'indeterminate release evidence retains inventory for reconciliation'
+);
+reset role;
+select is(
+  (select count(*) from public.booking_request_payment_required_expiry_operations
+    where booking_request_id='60000000-0000-4000-8000-000000001001' and owner='recovery'),
+  1::bigint,
+  'expiry reuses the exact indeterminate recovery release identity'
+);
+rollback to savepoint indeterminate_expiry_evidence;
+
+savepoint all_generation_expiry_evidence;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded'
+);
+select public.execute_simulated_booking_request_payment_recovery(
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded'
+);
+select public.execute_simulated_booking_request_payment_recovery(
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed'
+);
+select public.execute_simulated_booking_request_payment_recovery(
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded'
+);
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select public.claim_customer_booking_request_payment_recovery(
+  '60000000-0000-4000-8000-000000001001',
+  '81000000-0000-4000-8000-000000001002','simulated-replacement'
+);
+reset role;
+select is(
+  (select count(*) from public.booking_request_payment_recovery_attempts),
+  2::bigint,
+  'fixture contains two recovery generations before expiry evaluation'
+);
+update public.recovery_expiry_test_clock set instant=(
+  select payment_required_deadline from public.booking_request_capture_work
+  where booking_request_id='60000000-0000-4000-8000-000000001001'
+);
+set local role service_role;
+select is(
+  public.prepare_booking_request_payment_required_expiry(
+    '60000000-0000-4000-8000-000000001001',
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  )->>'status',
+  'ready-to-expire',
+  'complete evidence across all generations proves every Authorization released'
+);
+reset role;
+select is(
+  (select count(*) from public.booking_request_payment_required_expiry_operations
+    where booking_request_id='60000000-0000-4000-8000-000000001001' and owner='recovery'),
+  2::bigint,
+  'expiry inventories original and earlier-generation replacement release identities'
+);
+select is(
+  (select count(distinct authorization_payment_lifecycle_id)
+    from public.booking_request_payment_required_expiry_operations
+    where booking_request_id='60000000-0000-4000-8000-000000001001'),
+  2::bigint,
+  'the complete inventory keeps both original and replacement Authorization identities'
+);
+rollback to savepoint all_generation_expiry_evidence;
+
+select throws_ok(
+  $$select public.claim_due_booking_request_payment_required_expiries(
+    0,'{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  )$$,
+  '42501',null,
+  'due processing rejects an unbounded batch size'
+);
+reset role;
+set local role service_role;
+select throws_ok(
+  $$select public.claim_due_booking_request_payment_required_expiries(
+    20,'{"provider":"foreign","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  )$$,
+  'RC409',null,
+  'due processing rejects a foreign provider identity'
+);
+reset role;
+
+select definition from recovery_expiry_original_functions order by signature \gexec
+drop function public.recovery_expiry_test_now();
+drop table public.recovery_expiry_test_clock;
 
 savepoint unresolved_release;
 set local role service_role;
