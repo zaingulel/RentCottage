@@ -247,3 +247,48 @@ describe("Customer Booking Request database projection", () => {
     },
   );
 });
+
+it.each([
+  "available",
+  "processing",
+  "retryable",
+  "deadline-elapsed",
+  "confirmed",
+])(
+  "rejects a recovery projection on a declined request: %s",
+  async (status) => {
+    await expect(
+      getCustomerBookingRequest(
+        clientReturning({ ...baseRequest, paymentRecovery: { status } }),
+        reference,
+      ),
+    ).rejects.toThrow("data is invalid");
+  },
+);
+
+it.each([
+  { status: ["available"] },
+  { status: {} },
+  { status: null },
+  { status: 1 },
+])(
+  "rejects a non-string recovery status without coercion: %j",
+  async ({ status }) => {
+    await expect(
+      getCustomerBookingRequest(
+        clientReturning({
+          ...baseRequest,
+          status: "accepted",
+          paymentStatus: "payment-required",
+          paymentRequiredWindow: {
+            recordedAt: "2099-08-21T09:00:00.000Z",
+            deadline: "2099-08-21T09:20:00.000Z",
+            databaseNow: "2099-08-21T09:10:00.000Z",
+          },
+          paymentRecovery: { status },
+        }),
+        reference,
+      ),
+    ).rejects.toThrow("data is invalid");
+  },
+);

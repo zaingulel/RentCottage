@@ -600,6 +600,73 @@ test("a verified Customer double-submit creates one Pending request and one mini
     } finally {
       harness.runSql(windowDefinition);
     }
+    // Authenticate a different Customer through the real public client before exercising the command.
+    const otherCustomer = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_PUBLISHABLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const otherPhone = "+9647520000000";
+    const otp = await otherCustomer.auth.signInWithOtp({ phone: otherPhone });
+    if (otp.error) throw otp.error;
+    const verified = await otherCustomer.auth.verifyOtp({
+      phone: otherPhone,
+      token: "123456",
+      type: "sms",
+    });
+    if (verified.error) throw verified.error;
+    const role = await otherCustomer.rpc("claim_marketplace_role", {
+      requested_role: "customer",
+    });
+    if (role.error) throw role.error;
+    const recoveryGraph = () =>
+      harness.runSql(`select jsonb_build_object(
+      'attempts',(select coalesce(jsonb_agg(to_jsonb(attempts) order by id),'[]') from public.booking_request_payment_recovery_attempts attempts where booking_request_id='${failureId}'),
+      'operations',(select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id where attempts.booking_request_id='${failureId}'),
+      'ledger',(select jsonb_agg(to_jsonb(ledger) order by ledger.id) from public.simulated_payment_provider_operations ledger),
+      'requests',(select jsonb_agg(to_jsonb(requests) order by id) from public.booking_requests requests),
+      'snapshots',(select jsonb_agg(to_jsonb(snapshots) order by id) from public.booking_snapshots snapshots),
+      'claims',(select jsonb_agg(to_jsonb(claims) order by id) from public.booking_request_authorization_claims claims),
+      'submissions',(select jsonb_agg(to_jsonb(submissions) order by id) from public.booking_request_submission_attempts submissions),
+      'receipts',(select jsonb_agg(to_jsonb(receipts) order by id) from public.booking_receipts receipts),
+      'notifications',(select jsonb_agg(to_jsonb(notifications) order by id) from public.booking_request_status_notifications notifications),
+      'inventory',(select jsonb_agg(to_jsonb(inventory) order by id) from public.cottage_inventory_commitments inventory));`);
+    const beforeDenial = recoveryGraph();
+    const denied = await otherCustomer.rpc(
+      "claim_customer_booking_request_payment_recovery",
+      {
+        target_booking_request_id: failureId,
+        target_command_key: "81000000-0000-4000-8000-000000001003",
+        target_replacement_method: "simulated-replacement",
+      },
+    );
+    expect(denied.error?.code).toBe("RC404");
+    expect(recoveryGraph()).toEqual(beforeDenial);
+    expect(observeFailure()).toEqual(terminal);
+    await page.goto(`/en/booking-requests/${failureReference}`);
+    await page
+      .getByRole("button", {
+        name: "Use simulated replacement payment",
+        exact: true,
+      })
+      .click();
+    await expect(page.getByRole("status")).toContainText("Booking confirmed", {
+      timeout: 15000,
+    });
+    const recovered = observeFailure();
+    expect(recovered.work).toEqual(terminal.work);
+    expect(recovered.provider).toEqual(terminal.provider);
+    expect(recovered.occupancies).toEqual(terminal.occupancies);
+    expect(recovered.hold.id).toBe(terminal.hold.id);
+    expect(recovered.hold.status).toBe("confirmed_booking");
+    expect(recovered.confirmations).toBe(1);
+    expect(
+      harness.runSql(
+        `select count(*)||':'||sum(physical_execution_count) from public.simulated_payment_provider_operations ledger join public.booking_request_payment_recovery_attempts attempts on attempts.id=ledger.recovery_attempt_id where attempts.booking_request_id='${failureId}';`,
+      ),
+    ).toBe("3:3");
+    await captureViews("paid-confirmed", failureReference);
+    await otherCustomer.auth.signOut();
   }
   await ownerContext.close();
 });

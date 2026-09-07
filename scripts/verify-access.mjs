@@ -385,7 +385,16 @@ export function main(
           stdio: "inherit",
         },
       );
-      return bookingRequestCaptureConcurrency.status;
+      if (bookingRequestCaptureConcurrency.status !== 0)
+        return bookingRequestCaptureConcurrency.status;
+      return execute(
+        "node",
+        ["scripts/verify-booking-request-payment-recovery-concurrency.mjs"],
+        {
+          env: inventoryConcurrencyEnvironment,
+          stdio: "inherit",
+        },
+      ).status;
     };
     if (databaseMode) {
       const databaseStatus = verifyDatabaseChecks();

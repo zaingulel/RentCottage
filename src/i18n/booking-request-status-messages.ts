@@ -137,3 +137,22 @@ export const bookingRequestDeclineReasonMessages: Record<
     other: "هۆکارێکی تر",
   },
 };
+
+export const bookingRequestPaymentRecoveryMessages = {
+  en: {
+    action: "Use simulated replacement payment",
+    retry: "Retry simulated replacement payment",
+    processing:
+      "Your replacement payment is being checked. Do not start another attempt.",
+  },
+  ar: {
+    action: "استخدام دفع بديل تجريبي",
+    retry: "إعادة محاولة الدفع البديل التجريبي",
+    processing: "جارٍ التحقق من الدفع البديل. لا تبدأ محاولة أخرى.",
+  },
+  ckb: {
+    action: "پارەدانی جێگرەوەی تاقیکاری بەکاربهێنە",
+    retry: "پارەدانی جێگرەوەی تاقیکاری دووبارە بکەوە",
+    processing: "پارەدانی جێگرەوەت پشکنین دەکرێت. هەوڵێکی تر دەست پێ مەکە.",
+  },
+} as const;

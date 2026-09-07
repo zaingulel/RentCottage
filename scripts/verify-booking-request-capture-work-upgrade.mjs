@@ -76,8 +76,15 @@ function assertPaymentRequiredUpgrade(actual, expected, message) {
 }
 
 function snapshot(table, orderBy, omitAddedColumns = true) {
+  const projection =
+    table === "simulated_payment_provider_operations"
+      ? "to_jsonb(rows) - 'recovery_attempt_id' - 'authoritative_outcome_at'" +
+        (omitAddedColumns ? " - 'capture_execution_permit'" : "")
+      : table === "booking_request_capture_work"
+        ? "to_jsonb(rows) - 'recovery_operation_id'"
+        : "to_jsonb(rows)";
   return harness.runSql(`
-    select coalesce(jsonb_agg(${omitAddedColumns && table === "simulated_payment_provider_operations" ? "to_jsonb(rows) - 'capture_execution_permit'" : table === "booking_request_capture_work" ? "to_jsonb(rows) - 'recovery_operation_id'" : "to_jsonb(rows)"} order by ${orderBy}), '[]'::jsonb)
+    select coalesce(jsonb_agg(${projection} order by ${orderBy}), '[]'::jsonb)
     from public.${table} rows;
   `);
 }
@@ -1119,6 +1126,80 @@ try {
   );
   console.log(
     "Payment Required upgrade preserved pending, release-processing, historical accepted, queued, processing, completed and confirmed graphs byte-for-byte; both new terminal timestamps are null on every predecessor row and no provider or booking effect was inferred.",
+  );
+  const recovery138ResetArgs = [
+    "db",
+    "reset",
+    "--local",
+    "--version",
+    "20260906160000",
+  ];
+  const recovery138Reset = runSupabase(recovery138ResetArgs);
+  if (recovery138Reset.status !== 0)
+    throw commandFailure(recovery138ResetArgs, recovery138Reset);
+  const paymentRequiredFixture = readFileSync(
+    "supabase/tests/database/booking_request_payment_recovery.test.sql",
+    "utf8",
+  )
+    .split("select plan(")[0]
+    .replace(/^begin;/, "");
+  harness.runSql(`begin; ${paymentRequiredFixture} commit;`);
+  const recovery138Graph = () => ({
+    ...snapshotPredecessorGraph(),
+    work: harness.runSql(
+      "select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work;",
+    ),
+    ledger: harness.runSql(
+      "select jsonb_agg(to_jsonb(ledger)-'recovery_attempt_id'-'authoritative_outcome_at' order by id) from public.simulated_payment_provider_operations ledger;",
+    ),
+  });
+  const before138 = recovery138Graph();
+  const upgrade138 = runSupabase(upgradeArgs);
+  if (upgrade138.status !== 0) throw commandFailure(upgradeArgs, upgrade138);
+  const after138 = recovery138Graph();
+  for (const field of Object.keys(before138))
+    assertEqual(
+      after138[field],
+      before138[field],
+      `Customer recovery migration changed original ${field}.`,
+    );
+  assertEqual(
+    harness.runSql(
+      "select (select count(*) from public.booking_request_payment_recovery_attempts)||':'||(select count(*) from public.booking_request_payment_recovery_operations)||':'||(select count(*) from public.simulated_payment_provider_operations where recovery_attempt_id is not null or authoritative_outcome_at is not null);",
+    ),
+    "0:0:0",
+    "Recovery migration cannot invent replacement work or authoritative outcomes.",
+  );
+  const recovery138Admission = JSON.parse(
+    harness
+      .runSql(
+        `select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',false);
+    set role authenticated;select public.claim_customer_booking_request_payment_recovery('60000000-0000-4000-8000-000000001001','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
+      )
+      .split("\n")
+      .at(-1),
+  );
+  assertEqual(
+    recovery138Admission.status,
+    "processing",
+    "The existing owning Customer must be admitted after upgrade.",
+  );
+  for (let step = 0; step < 3; step++)
+    harness.runSql(
+      `set role service_role;select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${recovery138Admission.attemptId}')->'permit','succeeded');`,
+    );
+  harness.runSql(
+    `set role service_role;select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',public.get_booking_request_payment_recovery_confirmation_evidence('${recovery138Admission.attemptId}'));`,
+  );
+  assertEqual(
+    harness.runSql(
+      "select (select count(*) from public.booking_confirmations)||':'||(select count(*) from public.booking_receipts);",
+    ),
+    "1:2",
+    "The preserved request must recover through the existing confirmation transaction.",
+  );
+  console.log(
+    "Customer recovery upgrade preserved a real pre-138 Payment Required graph and fixed deadline, started with empty recovery tables/null ledger additions, then allowed its owning Customer to confirm exactly once.",
   );
 } catch (error) {
   failure = error;

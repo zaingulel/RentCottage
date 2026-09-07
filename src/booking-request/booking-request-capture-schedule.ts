@@ -1,3 +1,8 @@
+import {
+  createBookingRequestPaymentRecovery,
+  type PaymentRecoveryStatus,
+} from "./booking-request-payment-recovery";
+import { SupabaseBookingRequestPaymentRecoveryRepository } from "./supabase-booking-request-payment-recovery";
 import { createClient } from "@supabase/supabase-js";
 import { DurablePaymentSimulator } from "../payment/durable-payment-simulator-core";
 import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime-core";
@@ -21,6 +26,9 @@ type ProcessDue = (
 export async function runScheduledBookingRequestCapture(
   environment: BookingRequestCaptureScheduleEnvironment,
   injectedProcessDue?: ProcessDue,
+  injectedRecoveryDue?: (
+    limit: number,
+  ) => Promise<readonly { readonly status: PaymentRecoveryStatus }[]>,
 ) {
   if (
     !bookingRequestTestRuntimeIsEnabled(environment) ||
@@ -31,6 +39,7 @@ export async function runScheduledBookingRequestCapture(
       "Scheduled capture requires the exact local test runtime and credentials",
     );
   let processDue = injectedProcessDue;
+  let processRecoveryDue = injectedRecoveryDue;
   if (!processDue) {
     const client = createClient(
       environment.SUPABASE_URL as string,
@@ -43,6 +52,13 @@ export async function runScheduledBookingRequestCapture(
       client,
       now: () => new Date().toISOString(),
     });
+    processRecoveryDue = createBookingRequestPaymentRecovery({
+      repository: new SupabaseBookingRequestPaymentRecoveryRepository(
+        client,
+        client,
+      ),
+      provider,
+    }).processDue;
     processDue = createBookingRequestCaptureProcessing({
       repository: new SupabaseBookingRequestCaptureRepository(client),
       provider,
@@ -51,7 +67,10 @@ export async function runScheduledBookingRequestCapture(
       }),
     }).processDue;
   }
-  const results = await processDue(50);
+  const results = [
+    ...(await processDue(50)),
+    ...(await (processRecoveryDue?.(50) ?? [])),
+  ];
   if (
     results.some(
       ({ status }) => status === "unavailable" || status === "invalid",

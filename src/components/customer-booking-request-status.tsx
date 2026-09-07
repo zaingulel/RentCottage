@@ -6,13 +6,16 @@ import { BookingRequestStatusContent } from "./booking-request-status-content";
 
 import {
   isPaymentDisplayStatus,
+  canRecoverBookingRequestPayment,
   shouldRefreshBookingRequestStatus,
   type BookingRequestDisplayStatus,
   type CustomerBookingRequestDisplay,
 } from "@/booking-request/booking-request-display";
 import { actOnBookingRequest } from "@/booking-request/lifecycle-actions";
+import { recoverBookingRequestPayment } from "@/booking-request/payment-recovery-actions";
 import {
   bookingRequestDeclineReasonMessages,
+  bookingRequestPaymentRecoveryMessages,
   bookingRequestDisplayStatusMessages,
 } from "@/i18n/booking-request-status-messages";
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
@@ -82,7 +85,7 @@ export function CustomerBookingRequestStatus(props: {
 }) {
   return (
     <CustomerBookingRequestStatusView
-      key={`${props.request.id}:${props.request.status}:${props.request.paymentRequiredWindow?.phase ?? "none"}`}
+      key={`${props.request.id}:${props.request.status}:${props.request.paymentRequiredWindow?.phase ?? "none"}:${props.request.paymentRecovery?.status ?? "none"}`}
       {...props}
     />
   );
@@ -96,6 +99,8 @@ function CustomerBookingRequestStatusView({
   request: CustomerBookingRequestDisplay;
 }) {
   const copy = messages[locale];
+  const recoveryCopy = bookingRequestPaymentRecoveryMessages[locale];
+  const [commandKey, setCommandKey] = useState(() => crypto.randomUUID());
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
     request.status,
   );
@@ -103,6 +108,7 @@ function CustomerBookingRequestStatusView({
     shouldRefreshBookingRequestStatus(
       request.status,
       request.paymentRequiredWindow,
+      request.paymentRecovery,
     ),
   );
   const [pending, setPending] = useState(false);
@@ -130,6 +136,25 @@ function CustomerBookingRequestStatusView({
       }
     } catch {
       setStatus(request.status);
+      setError(true);
+    } finally {
+      setPending(false);
+    }
+  }
+  async function recoverPayment() {
+    setPending(true);
+    setError(false);
+    try {
+      const result = await recoverBookingRequestPayment({
+        locale,
+        bookingRequestId: request.id,
+        commandKey,
+      });
+      if (result.status === "unavailable" || result.status === "invalid")
+        setError(true);
+      if (result.status === "retryable") setCommandKey(crypto.randomUUID());
+      refresh();
+    } catch {
       setError(true);
     } finally {
       setPending(false);
@@ -234,6 +259,23 @@ function CustomerBookingRequestStatusView({
         ) : null}
       </dl>
       {status === "processing" ? <p>{copy.processing}</p> : null}
+      {status === "payment-required" &&
+      request.paymentRecovery?.status === "processing" ? (
+        <p>{recoveryCopy.processing}</p>
+      ) : null}
+      {canRecoverBookingRequestPayment(request) ? (
+        <ActionButton
+          kind="primary"
+          width="full"
+          type="button"
+          pending={pending}
+          onClick={() => void recoverPayment()}
+        >
+          {request.paymentRecovery?.status === "retryable"
+            ? recoveryCopy.retry
+            : recoveryCopy.action}
+        </ActionButton>
+      ) : null}
       {status === "pending" ? (
         <ActionButton
           kind="secondary"

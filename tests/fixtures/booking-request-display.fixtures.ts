@@ -132,3 +132,18 @@ export const ownerDisplayFixtures = {
   | "paid-confirmed",
   OwnerBookingRequestNotificationDisplay
 >;
+
+export const customerRecoveryDisplayFixtures = {
+  available: {
+    ...customerDisplayFixtures["payment-required-open"],
+    paymentRecovery: { status: "available" },
+  },
+  processing: {
+    ...customerDisplayFixtures["payment-required-open"],
+    paymentRecovery: { status: "processing" },
+  },
+  retryable: {
+    ...customerDisplayFixtures["payment-required-open"],
+    paymentRecovery: { status: "retryable" },
+  },
+} satisfies Record<string, CustomerBookingRequestDisplay>;

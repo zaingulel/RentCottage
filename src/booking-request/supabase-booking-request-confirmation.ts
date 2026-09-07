@@ -1,9 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { BookingRequestCaptureSnapshot } from "@/payment/payment-contract";
-
 import type {
   BookingConfirmationReceipt,
+  BookingRequestConfirmationEvidence,
+  BookingRequestRecoveryConfirmationEvidence,
   BookingRequestConfirmationRepository,
   BookingRequestConfirmationResult,
 } from "./booking-request-confirmation";
@@ -44,7 +44,7 @@ function receipt(value: unknown): BookingConfirmationReceipt | undefined {
 function confirmationFrom(
   value: unknown,
   bookingRequestId: string,
-  captureSnapshot: BookingRequestCaptureSnapshot,
+  captureSnapshot: BookingRequestConfirmationEvidence,
 ): BookingRequestConfirmationResult {
   const candidate = record(value);
   const receipts = record(candidate?.receipts);
@@ -96,7 +96,7 @@ export class SupabaseBookingRequestConfirmationRepository implements BookingRequ
 
   async finalize(
     bookingRequestId: string,
-    captureSnapshot: BookingRequestCaptureSnapshot,
+    captureSnapshot: BookingRequestConfirmationEvidence,
   ): Promise<BookingRequestConfirmationResult> {
     const { data, error } = await this.client.rpc(
       "finalize_booking_request_confirmation",
@@ -108,4 +108,34 @@ export class SupabaseBookingRequestConfirmationRepository implements BookingRequ
     if (error) throw new Error("Booking Request confirmation is unavailable");
     return confirmationFrom(data, bookingRequestId, captureSnapshot);
   }
+}
+
+export function recoveryConfirmationEvidenceFrom(
+  value: unknown,
+  attemptId: string,
+): BookingRequestRecoveryConfirmationEvidence {
+  const evidence = record(value);
+  const capture = record(evidence?.capture);
+  if (
+    !evidence ||
+    !exactKeys(evidence, [
+      "purpose",
+      "bookingRequestId",
+      "recoveryAttemptId",
+      "capturePhysicalAttemptId",
+      "capture",
+    ]) ||
+    evidence.purpose !== "booking-request-payment-recovery" ||
+    !isUuid(evidence.bookingRequestId) ||
+    evidence.recoveryAttemptId !== attemptId ||
+    !isUuid(evidence.recoveryAttemptId) ||
+    evidence.capturePhysicalAttemptId !==
+      `${attemptId}:replacement-capture:1` ||
+    !capture ||
+    !exactKeys(capture, ["movementReference"]) ||
+    typeof capture.movementReference !== "string" ||
+    !capture.movementReference
+  )
+    throw new Error("Database returned invalid recovery confirmation evidence");
+  return evidence as BookingRequestRecoveryConfirmationEvidence;
 }

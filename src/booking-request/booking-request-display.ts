@@ -34,12 +34,14 @@ export function isPaymentDisplayStatus(
 export function shouldRefreshBookingRequestStatus(
   status: BookingRequestDisplayStatus,
   window?: BookingRequestPaymentRequiredWindow | null,
+  recovery?: CustomerBookingRequest["paymentRecovery"],
 ): boolean {
   return (
     status === "pending" ||
     status === "processing" ||
     status === "capture-processing" ||
-    (status === "payment-required" && window?.phase === "open")
+    (status === "payment-required" &&
+      (window?.phase === "open" || recovery?.status === "processing"))
   );
 }
 
@@ -54,4 +56,15 @@ export function ownerBookingRequestNotificationDisplay({
   ...notification
 }: OwnerBookingRequestNotification): OwnerBookingRequestNotificationDisplay {
   return { ...notification, status: paymentStatus ?? notification.status };
+}
+
+export function canRecoverBookingRequestPayment(
+  request: CustomerBookingRequestDisplay,
+): boolean {
+  return (
+    request.status === "payment-required" &&
+    request.paymentRequiredWindow?.phase === "open" &&
+    (request.paymentRecovery?.status === "available" ||
+      request.paymentRecovery?.status === "retryable")
+  );
 }

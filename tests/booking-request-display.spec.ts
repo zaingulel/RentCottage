@@ -1,3 +1,4 @@
+import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-request-status-messages";
 import { expect, test } from "@playwright/test";
 import { build } from "esbuild";
 import { readFile } from "node:fs/promises";
@@ -8,6 +9,7 @@ declare global {
     renderBookingRequestDisplay: (input: {
       locale: "en" | "ar" | "ckb";
       role: "customer" | "owner";
+      recovery?: "available" | "processing" | "retryable";
       status:
         | "capture-processing"
         | "payment-required-open"
@@ -46,7 +48,10 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
             }),
           );
           pluginBuild.onResolve(
-            { filter: /booking-request\/lifecycle-actions$/ },
+            {
+              filter:
+                /booking-request\/(lifecycle-actions|payment-recovery-actions)$/,
+            },
             () => ({
               path: "booking-request-server-action",
               namespace: "fixture",
@@ -54,13 +59,14 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
           );
           pluginBuild.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
             contents:
-              "export async function actOnBookingRequest() { throw new Error('Fixture actions are unavailable'); }",
+              "export async function actOnBookingRequest() { throw new Error('Fixture actions are unavailable'); } export async function recoverBookingRequestPayment() { throw new Error('Fixture actions are unavailable'); }",
             loader: "ts",
           }));
         },
       },
     ],
   });
+  await page.goto("/api/health");
   await page.setContent(
     '<meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root"></main>',
   );
@@ -188,6 +194,43 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
           fullPage: true,
         });
       }
+    }
+    for (const recovery of ["available", "processing", "retryable"] as const) {
+      await page.evaluate(
+        (input) => window.renderBookingRequestDisplay(input),
+        {
+          locale: locale.name,
+          role: "customer" as const,
+          status: "payment-required-open" as const,
+          recovery,
+        },
+      );
+      const copy = bookingRequestPaymentRecoveryMessages[locale.name];
+      if (recovery === "processing") {
+        await expect(
+          page.getByText(copy.processing, { exact: true }),
+        ).toBeVisible();
+        await expect(page.getByRole("button")).toHaveCount(0);
+      } else
+        await expect(
+          page.getByRole("button", {
+            name: recovery === "available" ? copy.action : copy.retry,
+          }),
+        ).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      expect(
+        await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `customer-${locale.name}-recovery-${recovery}.png`,
+        ),
+        fullPage: true,
+      });
     }
   }
 });

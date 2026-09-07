@@ -101,3 +101,36 @@ describe("Supabase Booking Request confirmation repository", () => {
     ).rejects.toThrow("confirmation is unavailable");
   });
 });
+
+it("passes distinct replacement evidence through the same confirmation boundary and binds the returned movement", async () => {
+  const recoveryAttemptId = "44444444-4444-4444-8444-444444444444";
+  const evidence = {
+    bookingRequestId,
+    purpose: "booking-request-payment-recovery" as const,
+    recoveryAttemptId,
+    capturePhysicalAttemptId: `${recoveryAttemptId}:replacement-capture:1`,
+    capture: { movementReference: "replacement-movement" },
+  };
+  const outcome = {
+    ...response,
+    capturePhysicalAttemptId: evidence.capturePhysicalAttemptId,
+    captureMovementReference: evidence.capture.movementReference,
+  };
+  const { repository, rpc } = setup(outcome);
+  await expect(
+    repository.finalize(bookingRequestId, evidence),
+  ).resolves.toEqual(outcome);
+  expect(rpc).toHaveBeenCalledExactlyOnceWith(
+    "finalize_booking_request_confirmation",
+    {
+      target_booking_request_id: bookingRequestId,
+      target_capture_snapshot: evidence,
+    },
+  );
+  await expect(
+    setup({
+      ...outcome,
+      captureMovementReference: "unrelated-movement",
+    }).repository.finalize(bookingRequestId, evidence),
+  ).rejects.toThrow("invalid confirmation outcome");
+});

@@ -1,5 +1,16 @@
 import type { BookingRequestCaptureSnapshot } from "@/payment/payment-contract";
 
+export type BookingRequestRecoveryConfirmationEvidence = {
+  readonly purpose: "booking-request-payment-recovery";
+  readonly bookingRequestId: string;
+  readonly recoveryAttemptId: string;
+  readonly capturePhysicalAttemptId: string;
+  readonly capture: { readonly movementReference: string };
+};
+export type BookingRequestConfirmationEvidence =
+  | BookingRequestCaptureSnapshot
+  | BookingRequestRecoveryConfirmationEvidence;
+
 export type BookingConfirmationReceipt = {
   readonly id: string;
   readonly recipientId: string;
@@ -21,14 +32,14 @@ export type BookingRequestConfirmationResult = {
 export interface BookingRequestConfirmationRepository {
   finalize(
     bookingRequestId: string,
-    captureSnapshot: BookingRequestCaptureSnapshot,
+    captureSnapshot: BookingRequestConfirmationEvidence,
   ): Promise<BookingRequestConfirmationResult>;
 }
 
 export interface BookingRequestConfirmation {
   execute(
     bookingRequestId: string,
-    captureSnapshot: BookingRequestCaptureSnapshot,
+    captureSnapshot: BookingRequestConfirmationEvidence,
   ): Promise<BookingRequestConfirmationResult>;
 }
 

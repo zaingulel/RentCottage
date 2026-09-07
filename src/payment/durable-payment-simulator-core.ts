@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { recoveryRequestMatches } from "./booking-request-payment-recovery-contract";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type {
@@ -96,7 +98,8 @@ function operationPayload(request: ProviderOperationBinding) {
 
 type ActiveExecutionPermit = Exclude<
   NonNullable<ProviderOperationRequest["executionPermit"]>,
-  { readonly purpose: "booking-request-capture" }
+  | { readonly purpose: "booking-request-capture" }
+  | { readonly purpose: "booking-request-payment-recovery" }
 >;
 
 function permitPayload(permit: ActiveExecutionPermit) {
@@ -191,6 +194,20 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
       if (error) throw new Error("Simulated payment execution is unavailable");
       return providerResult(data);
     }
+    if (permit?.purpose === "booking-request-payment-recovery") {
+      if (
+        !recoveryRequestMatches(request, permit, identity) ||
+        (permit.step !== "replacement-release" &&
+          !(Date.parse(this.#now()) < Date.parse(permit.notAfter)))
+      )
+        return { outcome: "not-executed" };
+      const { data, error } = await this.#client.rpc(
+        "execute_simulated_booking_request_payment_recovery",
+        { target_permit: permit, target_outcome: this.#executeOutcome },
+      );
+      if (error) throw new Error("Simulated payment execution is unavailable");
+      return providerResult(data);
+    }
     const purposeMatchesKind =
       (permit?.purpose === "booking-request-authorization" &&
         request.kind === "authorization") ||
@@ -227,6 +244,21 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
   async query(
     request: ProviderReconciliationQuery,
   ): Promise<ProviderOperationResult> {
+    if (request.recoveryPermit) {
+      if (!recoveryRequestMatches(request, request.recoveryPermit, identity))
+        return { outcome: "not-executed" };
+      const { data, error } = await this.#client.rpc(
+        "query_simulated_booking_request_payment_recovery",
+        {
+          target_permit: request.recoveryPermit,
+          target_provider_request_id: request.providerRequestId,
+          target_provider_reference: request.providerReference,
+          target_outcome: this.#reconciliationOutcome,
+        },
+      );
+      if (error) throw new Error("Simulated payment query is unavailable");
+      return providerResult(data);
+    }
     if (request.kind === "capture") {
       const { data, error } = await this.#client.rpc(
         "query_simulated_booking_request_capture",

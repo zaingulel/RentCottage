@@ -10,6 +10,11 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
+const { withPaymentRecoveryCleanup } = createRequire(import.meta.url)(
+  "./fixtures/payment-recovery-cleanup.mjs",
+) as {
+  withPaymentRecoveryCleanup(cleanup: string, requestId: string): string;
+};
 
 test("the actual Worker settles capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
   request,
@@ -77,7 +82,7 @@ test("the actual Worker settles capture despite expiry failure and repeated sche
     expect(observe()).toEqual(confirmed);
   } finally {
     harness.runSql(expiryDefinition);
-    if (seeded) harness.runSql(cleanup);
+    if (seeded) harness.runSql(withPaymentRecoveryCleanup(cleanup, id));
   }
 });
 
@@ -148,7 +153,32 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
     expect(paymentRequired.intentActive).toBe(true);
     expect((await request.get("/__scheduled")).ok()).toBe(true);
     expect(observe()).toEqual(paymentRequired);
+    const admitted = JSON.parse(
+      harness
+        .runSql(
+          `select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',false);
+      set role authenticated; select public.claim_customer_booking_request_payment_recovery('${id}','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
+        )
+        .split("\n")
+        .at(-1)!,
+    );
+    harness.runSql(`set role service_role;select public.execute_simulated_booking_request_payment_recovery(
+      public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','indeterminate');`);
+    expect((await request.get("/__scheduled")).ok()).toBe(true);
+    const recovered = observe();
+    expect(recovered.work).toEqual(paymentRequired.work);
+    expect(recovered.execution).toEqual(paymentRequired.execution);
+    expect(recovered.confirmation.booking_request_id).toBe(id);
+    expect(recovered.commitment.status).toBe("confirmed_booking");
+    expect(recovered.occupancies).toEqual(paymentRequired.occupancies);
+    expect(
+      harness.runSql(
+        `select count(*)||':'||sum(physical_execution_count) from public.simulated_payment_provider_operations where recovery_attempt_id='${admitted.attemptId}';`,
+      ),
+    ).toBe("3:3");
+    expect((await request.get("/__scheduled")).ok()).toBe(true);
+    expect(observe()).toEqual(recovered);
   } finally {
-    if (seeded) harness.runSql(cleanup);
+    if (seeded) harness.runSql(withPaymentRecoveryCleanup(cleanup, id));
   }
 });
