@@ -55,11 +55,21 @@ the adjacent tests for affected callers.
 
 ## Construction and convergence
 
-Run focused evidence during construction and the applicable broad suite once at convergence. An unexpected retry
-needs a diagnosed cause or new evidence; another broad run needs a named reason, such as changed evidence, an
-invalidated environment or an investigated flake. Stop retries when they produce no new information. Report an
-intentional red proof, an unexpected failure, and unavailable evidence as distinct states, with the command and
-exit status; unavailable required evidence remains unavailable, not a pass.
+Run focused evidence during construction and the applicable broad suite once at convergence. Distinguish a test
+runner's configured automatic retries within one command from an agent starting another command. An automatic
+retry may classify a test as flaky when it passes on retry, as described by Playwright's
+[test-retry contract](https://playwright.dev/docs/test-retries), but it does not erase the original unexpected
+failure: diagnose and report that failure and the final command result. An agent-initiated rerun needs a diagnosed
+cause or new evidence; another broad run needs a named reason, such as changed evidence, an invalidated environment
+or an investigated flake. Stop reruns when they produce no new information.
+
+For a deliberate red/restored-green mutation proof, execute the named observer with runner retries disabled so
+the red result cannot be masked: pass `--retries=0` to Playwright or `--retry=0` to Vitest. Require the target to
+match and execute at least one test; zero matched tests is failure. Restore the implementation, run the same
+retry-disabled observer green, and record both commands and exit statuses. Report an intentional red proof, an
+unexpected failure, and unavailable evidence as distinct states; unavailable required evidence remains
+unavailable, not a pass. Default runner retry configuration and every applicable product, database, concurrency,
+migration, permissions, browser, and Worker gate remain unchanged for ordinary verification.
 
 Run focused checks, intentional red/restored green proofs, and convergence through `npm run run-log -- <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
