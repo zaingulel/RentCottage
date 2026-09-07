@@ -9,6 +9,7 @@ const notification = {
   status: "pending",
   paymentStatus: null,
   paymentRequiredWindow: null,
+  paymentRequiredExpiry: null,
   customerName: "Ava Hassan",
   partySize: 4,
   bookingNote: "Garden seating, please.",
@@ -239,3 +240,69 @@ function clientReturning(data: unknown) {
     rpc: vi.fn().mockResolvedValue({ data, error: null }),
   } as unknown as SupabaseClient;
 }
+
+describe("Payment Required expiry projection", () => {
+  const window = {
+    recordedAt: "2099-08-21T09:00:00.000Z",
+    deadline: "2099-08-21T09:20:00.000Z",
+    databaseNow: "2099-08-21T09:20:00.000Z",
+  };
+  it.each(["processing", "attention-required", "expired"] as const)(
+    "retains the minimal %s state",
+    async (status) => {
+      const expiry = { status, deadline: window.deadline };
+      const raw = {
+        ...notification,
+        status: status === "expired" ? "expired" : "accepted",
+        paymentStatus: status === "expired" ? null : "payment-required",
+        paymentRequiredWindow: status === "expired" ? null : window,
+        paymentRequiredExpiry: expiry,
+      };
+      const result = await listOwnerBookingRequestNotifications(
+        clientReturning([raw]),
+      );
+      expect(result[0].paymentRequiredExpiry).toEqual(expiry);
+      expect(result[0].paymentRequiredExpiry).not.toBe(expiry);
+    },
+  );
+  it.each([
+    undefined,
+    { status: "expired", deadline: "2099-08-21T09:20:00.000Z" },
+    { status: "processing", deadline: "invalid" },
+    { status: "processing", deadline: "2099-08-21T09:21:00.000Z" },
+    {
+      status: "processing",
+      deadline: "2099-08-21T09:20:00.000Z",
+      providerReference: "private",
+    },
+    { status: "unknown", deadline: "2099-08-21T09:20:00.000Z" },
+  ])(
+    "rejects malformed or contradictory expiry evidence %#",
+    async (paymentRequiredExpiry) => {
+      const raw = {
+        ...notification,
+        status: "accepted",
+        paymentStatus: "payment-required",
+        paymentRequiredWindow: window,
+        paymentRequiredExpiry,
+      };
+      await expect(
+        listOwnerBookingRequestNotifications(clientReturning([raw])),
+      ).rejects.toThrow("invalid");
+    },
+  );
+  it("requires confirmed payment to have no residual expiry projection", async () => {
+    const raw = {
+      ...notification,
+      status: "accepted",
+      paymentStatus: "paid-confirmed",
+      paymentRequiredExpiry: {
+        status: "attention-required",
+        deadline: window.deadline,
+      },
+    };
+    await expect(
+      listOwnerBookingRequestNotifications(clientReturning([raw])),
+    ).rejects.toThrow("invalid");
+  });
+});

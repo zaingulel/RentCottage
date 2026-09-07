@@ -28,6 +28,9 @@ function renderBookingRequestDisplay({
     | "capture-processing"
     | "payment-required-open"
     | "payment-required-elapsed"
+    | "payment-expiry-processing"
+    | "payment-expiry-attention-required"
+    | "payment-expiry-expired"
     | "paid-confirmed";
 }) {
   document.documentElement.lang = locale;

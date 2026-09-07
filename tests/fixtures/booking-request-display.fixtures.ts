@@ -29,6 +29,7 @@ const sharedRequest = {
   responseDeadline: "2099-08-21T21:00:00.000Z",
   statusNotifications: [],
   paymentRequiredWindow: null,
+  paymentRequiredExpiry: null,
 };
 
 const restrictedFields = {
@@ -80,11 +81,55 @@ export const customerDisplayFixtures = {
       phase: "elapsed",
     },
   },
+  "payment-expiry-processing": {
+    ...customerDisplay,
+    status: "payment-required",
+    paymentRequiredExpiry: {
+      status: "processing",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
+  "payment-expiry-attention-required": {
+    ...customerDisplay,
+    status: "payment-required",
+    paymentRequiredExpiry: {
+      status: "attention-required",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
+  "payment-expiry-expired": {
+    ...customerDisplay,
+    status: "expired",
+    paymentRequiredExpiry: {
+      status: "expired",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    statusNotifications: [
+      {
+        id: "00000000-0000-4000-8000-000000000147",
+        status: "expired",
+        createdAt: "2099-08-21T09:21:00.000Z",
+      },
+    ],
+  },
   "paid-confirmed": { ...customerDisplay, status: "paid-confirmed" },
 } satisfies Record<
   | "capture-processing"
   | "payment-required-open"
   | "payment-required-elapsed"
+  | "payment-expiry-processing"
+  | "payment-expiry-attention-required"
+  | "payment-expiry-expired"
   | "paid-confirmed",
   CustomerBookingRequestDisplay
 >;
@@ -124,11 +169,55 @@ export const ownerDisplayFixtures = {
       phase: "elapsed",
     },
   },
+  "payment-expiry-processing": {
+    ...ownerDisplay,
+    status: "payment-required",
+    paymentRequiredExpiry: {
+      status: "processing",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
+  "payment-expiry-attention-required": {
+    ...ownerDisplay,
+    status: "payment-required",
+    paymentRequiredExpiry: {
+      status: "attention-required",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
+  "payment-expiry-expired": {
+    ...ownerDisplay,
+    status: "expired",
+    paymentRequiredExpiry: {
+      status: "expired",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    statusNotifications: [
+      {
+        id: "00000000-0000-4000-8000-000000000147",
+        status: "expired",
+        createdAt: "2099-08-21T09:21:00.000Z",
+      },
+    ],
+  },
   "paid-confirmed": { ...ownerDisplay, status: "paid-confirmed" },
 } satisfies Record<
   | "capture-processing"
   | "payment-required-open"
   | "payment-required-elapsed"
+  | "payment-expiry-processing"
+  | "payment-expiry-attention-required"
+  | "payment-expiry-expired"
   | "paid-confirmed",
   OwnerBookingRequestNotificationDisplay
 >;

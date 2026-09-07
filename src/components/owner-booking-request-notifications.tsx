@@ -9,7 +9,10 @@ import {
   type BookingRequestDisplayStatus,
   type OwnerBookingRequestNotificationDisplay,
 } from "@/booking-request/booking-request-display";
-import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
+import {
+  bookingRequestDisplayStatusMessages,
+  bookingRequestPaymentRequiredExpiryMessages,
+} from "@/i18n/booking-request-status-messages";
 import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "@/i18n/format";
 import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messages";
 import type { Locale } from "@/i18n/routing";
@@ -34,6 +37,11 @@ function OwnerBookingRequestCard({
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
     notification.status,
   );
+  const paymentDeadline =
+    notification.paymentRequiredExpiry?.deadline ??
+    (status === "payment-required"
+      ? notification.paymentRequiredWindow?.deadline
+      : undefined);
   return (
     <article
       aria-label={notification.bookingRequestReference}
@@ -41,7 +49,8 @@ function OwnerBookingRequestCard({
     >
       <header
         className={
-          isPaymentDisplayStatus(status)
+          isPaymentDisplayStatus(status) ||
+          notification.paymentRequiredExpiry !== null
             ? "booking-request-payment-header"
             : undefined
         }
@@ -51,7 +60,8 @@ function OwnerBookingRequestCard({
           role="status"
           aria-live="polite"
           className={
-            isPaymentDisplayStatus(status)
+            isPaymentDisplayStatus(status) ||
+            notification.paymentRequiredExpiry !== null
               ? "booking-request-payment-status"
               : undefined
           }
@@ -61,6 +71,7 @@ function OwnerBookingRequestCard({
             status={status}
             role="owner"
             paymentRequiredPhase={notification.paymentRequiredWindow?.phase}
+            paymentRequiredExpiry={notification.paymentRequiredExpiry}
           />
         </span>
       </header>
@@ -98,21 +109,17 @@ function OwnerBookingRequestCard({
             <dd>{notification.bookingNote}</dd>
           </div>
         ) : null}
-        {!isPaymentDisplayStatus(status) ? (
+        {!isPaymentDisplayStatus(status) &&
+        !notification.paymentRequiredExpiry ? (
           <div>
             <dt>{copy.responseDeadline}</dt>
             <dd>{formatIraqDateTime(notification.responseDeadline, locale)}</dd>
           </div>
         ) : null}
-        {status === "payment-required" && notification.paymentRequiredWindow ? (
+        {paymentDeadline ? (
           <div>
             <dt>{paymentDeadlineMessages[locale]}</dt>
-            <dd>
-              {formatIraqDateTime(
-                notification.paymentRequiredWindow.deadline,
-                locale,
-              )}
-            </dd>
+            <dd>{formatIraqDateTime(paymentDeadline, locale)}</dd>
           </div>
         ) : null}
         <div>
@@ -146,8 +153,14 @@ function OwnerBookingRequestCard({
           <div key={receipt.id}>
             <dt>{copy.notification}</dt>
             <dd>
-              {bookingRequestDisplayStatusMessages[locale][receipt.status]} ·{" "}
-              {formatIraqDateTime(receipt.createdAt, locale)}
+              {receipt.status === "expired" &&
+              notification.paymentRequiredExpiry?.status === "expired"
+                ? bookingRequestPaymentRequiredExpiryMessages[locale]
+                    .expiredLabel
+                : bookingRequestDisplayStatusMessages[locale][
+                    receipt.status
+                  ]}{" "}
+              · {formatIraqDateTime(receipt.createdAt, locale)}
             </dd>
           </div>
         ))}
@@ -176,8 +189,8 @@ export function OwnerBookingRequestNotifications({
   const copy = ownerBookingRequestMessages[locale];
   const refresh = useBookingRequestRefresh(
     Boolean(
-      notifications?.some(({ status, paymentRequiredWindow }) =>
-        shouldRefreshBookingRequestStatus(status, paymentRequiredWindow),
+      notifications?.some(({ status }) =>
+        shouldRefreshBookingRequestStatus(status),
       ),
     ),
   );
@@ -188,8 +201,9 @@ export function OwnerBookingRequestNotifications({
       </section>
     );
   }
-  const containsPaymentDisplayState = notifications.some(({ status }) =>
-    isPaymentDisplayStatus(status),
+  const containsPaymentDisplayState = notifications.some(
+    ({ status, paymentRequiredExpiry }) =>
+      isPaymentDisplayStatus(status) || paymentRequiredExpiry !== null,
   );
   return (
     <section

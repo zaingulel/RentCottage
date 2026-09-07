@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { recoveryRequestMatches } from "./booking-request-payment-recovery-contract";
+import { paymentRequiredExpiryRequestMatches } from "./booking-request-payment-required-expiry-contract";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -100,6 +101,7 @@ type ActiveExecutionPermit = Exclude<
   NonNullable<ProviderOperationRequest["executionPermit"]>,
   | { readonly purpose: "booking-request-capture" }
   | { readonly purpose: "booking-request-payment-recovery" }
+  | { readonly purpose: "booking-request-payment-required-expiry" }
 >;
 
 function permitPayload(permit: ActiveExecutionPermit) {
@@ -208,6 +210,19 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
       if (error) throw new Error("Simulated payment execution is unavailable");
       return providerResult(data);
     }
+    if (permit?.purpose === "booking-request-payment-required-expiry") {
+      if (
+        !(Date.parse(this.#now()) >= Date.parse(permit.notBefore)) ||
+        !paymentRequiredExpiryRequestMatches(request, permit, identity)
+      )
+        return { outcome: "not-executed" };
+      const { data, error } = await this.#client.rpc(
+        "execute_simulated_booking_request_payment_required_expiry",
+        { target_permit: permit, target_outcome: this.#executeOutcome },
+      );
+      if (error) throw new Error("Simulated payment execution is unavailable");
+      return providerResult(data);
+    }
     const purposeMatchesKind =
       (permit?.purpose === "booking-request-authorization" &&
         request.kind === "authorization") ||
@@ -244,6 +259,27 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
   async query(
     request: ProviderReconciliationQuery,
   ): Promise<ProviderOperationResult> {
+    if (request.expiryPermit) {
+      if (
+        !paymentRequiredExpiryRequestMatches(
+          request,
+          request.expiryPermit,
+          identity,
+        )
+      )
+        return { outcome: "not-executed" };
+      const { data, error } = await this.#client.rpc(
+        "query_simulated_booking_request_payment_required_expiry",
+        {
+          target_permit: request.expiryPermit,
+          target_provider_request_id: request.providerRequestId,
+          target_provider_reference: request.providerReference,
+          target_outcome: this.#reconciliationOutcome,
+        },
+      );
+      if (error) throw new Error("Simulated payment query is unavailable");
+      return providerResult(data);
+    }
     if (request.recoveryPermit) {
       if (!recoveryRequestMatches(request, request.recoveryPermit, identity))
         return { outcome: "not-executed" };

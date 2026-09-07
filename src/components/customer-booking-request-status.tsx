@@ -17,6 +17,7 @@ import {
   bookingRequestDeclineReasonMessages,
   bookingRequestPaymentRecoveryMessages,
   bookingRequestDisplayStatusMessages,
+  bookingRequestPaymentRequiredExpiryMessages,
 } from "@/i18n/booking-request-status-messages";
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
@@ -85,7 +86,7 @@ export function CustomerBookingRequestStatus(props: {
 }) {
   return (
     <CustomerBookingRequestStatusView
-      key={`${props.request.id}:${props.request.status}:${props.request.paymentRequiredWindow?.phase ?? "none"}:${props.request.paymentRecovery?.status ?? "none"}`}
+      key={`${props.request.id}:${props.request.status}:${props.request.paymentRequiredWindow?.phase ?? "none"}:${props.request.paymentRecovery?.status ?? "none"}:${props.request.paymentRequiredExpiry?.status ?? "none"}`}
       {...props}
     />
   );
@@ -104,12 +105,13 @@ function CustomerBookingRequestStatusView({
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
     request.status,
   );
+  const paymentDeadline =
+    request.paymentRequiredExpiry?.deadline ??
+    (status === "payment-required"
+      ? request.paymentRequiredWindow?.deadline
+      : undefined);
   const refresh = useBookingRequestRefresh(
-    shouldRefreshBookingRequestStatus(
-      request.status,
-      request.paymentRequiredWindow,
-      request.paymentRecovery,
-    ),
+    shouldRefreshBookingRequestStatus(request.status),
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
@@ -167,7 +169,7 @@ function CustomerBookingRequestStatusView({
     >
       <h1 id="customer-booking-request-title">{copy.title}</h1>
       <p
-        className={`booking-request-status-badge${isPaymentDisplayStatus(status) ? " booking-request-payment-status" : ""}`}
+        className={`booking-request-status-badge${isPaymentDisplayStatus(status) || request.paymentRequiredExpiry !== null ? " booking-request-payment-status" : ""}`}
         role="status"
         aria-live="polite"
       >
@@ -176,6 +178,7 @@ function CustomerBookingRequestStatusView({
           status={status}
           role="customer"
           paymentRequiredPhase={request.paymentRequiredWindow?.phase}
+          paymentRequiredExpiry={request.paymentRequiredExpiry}
         />
       </p>
       <strong>{request.bookingRequestReference}</strong>
@@ -213,21 +216,16 @@ function CustomerBookingRequestStatusView({
           <dt>{copy.total}</dt>
           <dd>{formatIqd(request.customerTotalIqd, locale)}</dd>
         </div>
-        {!isPaymentDisplayStatus(status) ? (
+        {!isPaymentDisplayStatus(status) && !request.paymentRequiredExpiry ? (
           <div>
             <dt>{copy.deadline}</dt>
             <dd>{formatIraqDateTime(request.responseDeadline, locale)}</dd>
           </div>
         ) : null}
-        {status === "payment-required" && request.paymentRequiredWindow ? (
+        {paymentDeadline ? (
           <div>
             <dt>{copy.paymentDeadline}</dt>
-            <dd>
-              {formatIraqDateTime(
-                request.paymentRequiredWindow.deadline,
-                locale,
-              )}
-            </dd>
+            <dd>{formatIraqDateTime(paymentDeadline, locale)}</dd>
           </div>
         ) : null}
         {request.declineReason ? (
@@ -246,8 +244,14 @@ function CustomerBookingRequestStatusView({
           <div key={receipt.id}>
             <dt>{copy.notification}</dt>
             <dd>
-              {bookingRequestDisplayStatusMessages[locale][receipt.status]} ·{" "}
-              {formatIraqDateTime(receipt.createdAt, locale)}
+              {receipt.status === "expired" &&
+              request.paymentRequiredExpiry?.status === "expired"
+                ? bookingRequestPaymentRequiredExpiryMessages[locale]
+                    .expiredLabel
+                : bookingRequestDisplayStatusMessages[locale][
+                    receipt.status
+                  ]}{" "}
+              · {formatIraqDateTime(receipt.createdAt, locale)}
             </dd>
           </div>
         ))}

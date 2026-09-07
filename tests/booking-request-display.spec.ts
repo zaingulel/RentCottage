@@ -14,6 +14,9 @@ declare global {
         | "capture-processing"
         | "payment-required-open"
         | "payment-required-elapsed"
+        | "payment-expiry-processing"
+        | "payment-expiry-attention-required"
+        | "payment-expiry-expired"
         | "paid-confirmed";
     }) => void;
   }
@@ -78,6 +81,9 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
   for (const locale of [
     {
       name: "en",
+      attention: "could not yet be verified",
+      expired: "Expired unpaid",
+      released: "authorisations have been released",
       processing: "Payment confirmation pending",
       confirmed: "Booking confirmed",
       paymentRequired: "Payment Required",
@@ -95,6 +101,9 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
     },
     {
       name: "ar",
+      attention: "لم نتمكن بعد من التحقق",
+      expired: "انتهى الطلب دون دفع",
+      released: "تم تحرير تفويضات الدفع",
       processing: "بانتظار تأكيد الدفع",
       confirmed: "تم تأكيد الحجز",
       paymentRequired: "الدفع مطلوب",
@@ -106,6 +115,9 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
     },
     {
       name: "ckb",
+      attention: "هێشتا نەمانتوانیوە",
+      expired: "داواکارییەکە بەبێ پارەدان بەسەرچوو",
+      released: "مۆڵەتەکانی پارەدان ئازاد کراون",
       processing: "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
       confirmed: "حجز پشتڕاست کراوەتەوە",
       paymentRequired: "پارەدان پێویستە",
@@ -127,6 +139,9 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
         "capture-processing",
         "payment-required-open",
         "payment-required-elapsed",
+        "payment-expiry-processing",
+        "payment-expiry-attention-required",
+        "payment-expiry-expired",
         "paid-confirmed",
       ] as const) {
         await page.evaluate(
@@ -141,20 +156,34 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
         await expect(page.getByRole("status")).toContainText(
           status === "capture-processing"
             ? locale.processing
-            : status.startsWith("payment-required")
-              ? locale.paymentRequired
-              : locale.confirmed,
+            : status === "payment-expiry-expired"
+              ? locale.expired
+              : status.startsWith("payment-")
+                ? locale.paymentRequired
+                : locale.confirmed,
         );
-        if (status.startsWith("payment-required")) {
+        if (status.startsWith("payment-")) {
           await expect(
             page.getByText(locale.paymentDeadline, { exact: true }),
           ).toBeVisible();
           await expect(page.getByRole("status")).toContainText(
-            locale[status === "payment-required-open" ? "open" : "elapsed"][
-              role === "customer" ? 0 : 1
-            ],
+            status === "payment-expiry-expired"
+              ? locale.released
+              : status === "payment-expiry-attention-required"
+                ? locale.attention
+                : locale[
+                    status === "payment-required-open" ? "open" : "elapsed"
+                  ][role === "customer" ? 0 : 1],
           );
-          await expect(page.getByRole("status")).toContainText(locale.held);
+          if (status !== "payment-expiry-expired")
+            await expect(page.getByRole("status")).toContainText(locale.held);
+          else
+            expect(
+              await page
+                .locator("dd")
+                .filter({ hasText: locale.expired })
+                .count(),
+            ).toBe(1);
           await expect(page.getByRole("status")).toContainText(
             locale.unconfirmed,
           );

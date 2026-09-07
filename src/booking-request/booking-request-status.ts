@@ -30,6 +30,44 @@ export type BookingRequestPaymentRequiredWindow = {
   readonly phase: "open" | "elapsed";
 };
 
+export type BookingRequestPaymentRequiredExpiry = {
+  readonly status: "processing" | "attention-required" | "expired";
+  readonly deadline: string;
+};
+
+export function paymentRequiredExpiryFrom(
+  value: unknown,
+  requestStatus: BookingRequestStatus,
+  paymentStatus: BookingRequestPaymentStatus | null,
+  window: BookingRequestPaymentRequiredWindow | null | undefined,
+): BookingRequestPaymentRequiredExpiry | null | undefined {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const expiry = value as Record<string, unknown>;
+  if (
+    Object.keys(expiry).length !== 2 ||
+    typeof expiry.deadline !== "string" ||
+    Number.isNaN(Date.parse(expiry.deadline)) ||
+    !["processing", "attention-required", "expired"].includes(
+      expiry.status as string,
+    )
+  )
+    return;
+  if (
+    expiry.status === "expired"
+      ? requestStatus !== "expired" || paymentStatus !== null
+      : requestStatus !== "accepted" ||
+        paymentStatus !== "payment-required" ||
+        window?.phase !== "elapsed" ||
+        Date.parse(window.deadline) !== Date.parse(expiry.deadline)
+  )
+    return;
+  return {
+    status: expiry.status as BookingRequestPaymentRequiredExpiry["status"],
+    deadline: expiry.deadline,
+  };
+}
+
 export function isBookingRequestPaymentStatus(
   value: unknown,
   requestStatus: BookingRequestStatus,
