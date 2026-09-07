@@ -81,6 +81,25 @@ from (values
 select function_privs_are('public','booking_request_payment_required_expiry_status',array['public.booking_requests'],role,array[]::text[],
   role||' cannot read the private expiry projection helper directly') from unnest(array['anon','authenticated','service_role']) roles(role);
 
+set local role service_role;
+create temp table invalid_expiry_provider_identities(label,identity) as values
+  ('SQL null',null::jsonb),
+  ('JSON null','null'::jsonb),
+  ('scalar','"provider"'::jsonb),
+  ('array','[]'::jsonb),
+  ('missing field','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant"}'::jsonb),
+  ('extra field','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal","extra":"value"}'::jsonb),
+  ('null field','{"provider":"fictional-payments","environment":"local-test","merchantId":null,"terminalId":"fictional-terminal"}'::jsonb),
+  ('non-string field','{"provider":"fictional-payments","environment":"local-test","merchantId":1,"terminalId":"fictional-terminal"}'::jsonb),
+  ('blank field','{"provider":"fictional-payments","environment":"local-test","merchantId":" ","terminalId":"fictional-terminal"}'::jsonb);
+select throws_ok(format('select public.claim_due_booking_request_payment_required_expiries(1,%L::jsonb)',identity),
+  'RC409','Payment Required expiry provider is invalid','empty expiry queue rejects '||label)
+from invalid_expiry_provider_identities;
+select is(public.claim_due_booking_request_payment_required_expiries(1,
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'),
+  '[]'::jsonb,'a valid provider receives an empty batch when no Payment Required work exists');
+reset role;
+
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
 insert into auth.users (id, aud, role, phone, phone_confirmed_at) values
@@ -181,6 +200,7 @@ $$;
 create temp table expiry_original_functions as
 select signature,pg_get_functiondef(signature::regprocedure) definition
 from (values
+  ('public.claim_due_booking_request_payment_required_expiries(integer,jsonb)'),
   ('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'),
   ('public.execute_simulated_booking_request_payment_required_expiry(jsonb,text)'),
   ('public.query_simulated_booking_request_payment_required_expiry(jsonb,text,text,text)'),
@@ -196,6 +216,19 @@ select replace(definition,'clock_timestamp()','public.payment_required_expiry_te
 from expiry_original_functions \gexec
 insert into public.owner_request_notifications(booking_request_id,owner_user_id) values('60000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001');
 savepoint clean_slate;
+set local role service_role;
+select throws_ok(format('select public.claim_due_booking_request_payment_required_expiries(1,%L::jsonb)',identity),
+  'RC409','Payment Required expiry provider is invalid','populated expiry queue rejects '||label)
+from invalid_expiry_provider_identities;
+select is(public.claim_due_booking_request_payment_required_expiries(1,
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')->0->>'bookingRequestId',
+  '60000000-0000-4000-8000-000000001001','the matching provider receives its due request at the fixed deadline');
+select lives_ok($probe$do $check$ begin
+  if public.claim_due_booking_request_payment_required_expiries(1,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-other-merchant","terminalId":"fictional-terminal"}') <> '[]'::jsonb then
+    raise exception 'The provider batch included a foreign request';
+  end if;
+end $check$;$probe$,'a valid nonmatching provider receives an empty batch despite another provider having due work');
 reset role;
 select set_config('expiry.expected_projection',('null'::jsonb)::text,true);
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);

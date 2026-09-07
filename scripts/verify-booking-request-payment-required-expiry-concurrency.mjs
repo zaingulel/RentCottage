@@ -121,14 +121,14 @@ const second = (sql) =>
     .replaceAll("750000100", "750000110")
     .replaceAll("confirmation-auth-", "expiry-second-auth-")
     .replaceAll("CONFIRMATION-HOLD-1", "EXPIRY-SECOND-HOLD");
-function seed(id = requestId) {
+function seed(id = requestId, merchantId = identity.merchantId) {
   let source = fixture;
   if (id === secondRequestId) {
     const lifecycle = "73000000-0000-4000-8000-000000001101";
     const fingerprint = createHash("sha256")
       .update(
         JSON.stringify({
-          provider: identity,
+          provider: { ...identity, merchantId },
           kind: "capture",
           paymentLifecycleId: lifecycle,
           logicalOperationId: `${lifecycle}:capture`,
@@ -141,6 +141,32 @@ function seed(id = requestId) {
     source = second(source).replaceAll(
       "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
       fingerprint,
+    );
+  }
+  source = source.replaceAll(identity.merchantId, merchantId);
+  if (merchantId !== identity.merchantId) {
+    // The simulator executes only its fixed identity. Seed normalized historical
+    // evidence for the foreign identity, then use the existing failure recorder.
+    source = source.replace(
+      "create temp table confirmation_capture_result as select public.execute_simulated_booking_request_capture((select result->'permit' from confirmation_capture_lease),'failed') result;",
+      `reset role;
+insert into public.simulated_payment_provider_operations (
+  id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
+  provider_idempotency_key,request_fingerprint,payment_lifecycle_id,logical_operation_id,
+  physical_attempt_id,amount_fils,currency,original_outcome,current_outcome,
+  provider_request_id,provider_reference,capture_execution_permit,created_at,updated_at
+)
+select gen_random_uuid(),work.authorization_claim_id,work.authorization_claim_generation,'capture',
+  work.provider,work.environment,work.merchant_id,work.terminal_id,
+  work.provider_idempotency_key,work.request_fingerprint,work.payment_lifecycle_id,
+  work.capture_logical_operation_id,work.capture_physical_attempt_id,work.amount_fils,work.currency,
+  'failed','failed','foreign-capture-request-'||work.booking_request_id,'foreign-capture-reference-'||work.booking_request_id,
+  (select result->'permit' from confirmation_capture_lease),clock_timestamp(),clock_timestamp()
+from public.booking_request_capture_work work where work.booking_request_id='${id}';
+set local role service_role;
+create temp table confirmation_capture_result as select jsonb_build_object(
+  'outcome','failed','providerRequestId','foreign-capture-request-${id}',
+  'providerReference','foreign-capture-reference-${id}','retrySafe',false) result;`,
     );
   }
   harness.runSql(`begin;${source}commit;`);
@@ -370,6 +396,39 @@ try {
     harness.runSql(
       definition.replaceAll("clock_timestamp()", "public.expiry_race_now()"),
     );
+  const otherIdentity = { ...identity, merchantId: "fictional-other-merchant" };
+  seed(secondRequestId, otherIdentity.merchantId);
+  atDeadline();
+  const otherDueSql = `select public.claim_due_booking_request_payment_required_expiries(1,${literal(otherIdentity)});`;
+  assert.deepEqual(
+    parsed(otherDueSql).map((row) => row.bookingRequestId),
+    [secondRequestId],
+    "An earlier row for another provider identity must not block matching due work",
+  );
+  assert.deepEqual(
+    parsed(dueSql(50)).map((row) => row.bookingRequestId),
+    [requestId],
+    "Each provider batch must exclude the other identity's due request",
+  );
+  const matchingBusy = start(
+    `begin;select 1 from public.booking_requests where id='${secondRequestId}' for update;select 'MATCHING_BUSY';`,
+  );
+  await harness.waitForMarker(matchingBusy, "MATCHING_BUSY");
+  assert.deepEqual(
+    parsed(otherDueSql),
+    [],
+    "A matching locked request is skipped",
+  );
+  assert.deepEqual(
+    parsed(dueSql()).map((row) => row.bookingRequestId),
+    [requestId],
+    "A lock held for another provider does not block the matching batch",
+  );
+  await finish(matchingBusy, { action: "rollback" });
+  console.log(
+    "Provider-scoped due batches ignore an earlier foreign identity, retain per-row filtering, and skip only matching locked work.",
+  );
+  reset();
   seed(secondRequestId);
   atDeadline("+ interval '1 second'");
   const busy = start(

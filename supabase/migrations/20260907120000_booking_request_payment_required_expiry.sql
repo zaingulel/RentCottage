@@ -126,29 +126,18 @@ create function public.claim_due_booking_request_payment_required_expiries(
   target_limit integer,target_provider_identity jsonb
 )
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare provider_work public.booking_request_capture_work;
 begin
   if current_setting('role',true) <> 'service_role'
     or target_limit is null or target_limit < 1 or target_limit > 50 then
     raise exception 'Payment Required expiry batch is unavailable' using errcode='42501';
   end if;
-  select * into provider_work from public.booking_request_capture_work work
-  where work.state='payment_required'
-  order by work.booking_request_id limit 1;
-  if provider_work.booking_request_id is not null
-    and not public.booking_request_payment_required_expiry_provider_matches(
-      provider_work,target_provider_identity
-    ) then
-    raise exception 'Payment Required expiry provider is invalid' using errcode='RC409';
-  end if;
-  if provider_work.booking_request_id is null and (
-    target_provider_identity is null
+  if target_provider_identity is null
     or jsonb_typeof(target_provider_identity) <> 'object'
     or target_provider_identity ?& array['provider','environment','merchantId','terminalId'] is not true
     or target_provider_identity - array['provider','environment','merchantId','terminalId'] <> '{}'::jsonb
     or exists(select 1 from jsonb_each(target_provider_identity) entry
       where jsonb_typeof(entry.value) <> 'string' or btrim(entry.value#>>'{}')='')
-  ) then
+  then
     raise exception 'Payment Required expiry provider is invalid' using errcode='RC409';
   end if;
   return (select coalesce(jsonb_agg(jsonb_build_object(
