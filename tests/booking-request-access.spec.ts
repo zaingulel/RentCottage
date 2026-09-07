@@ -712,17 +712,24 @@ test("a verified Customer double-submit creates one Pending request and one mini
           exact: true,
         })
         .click();
+      // Refresh can remount the status view and clear its local action error.
+      // Observe the durable interrupted outcome and the authoritative visible state.
+      await expect
+        .poll(() =>
+          harness.runSql(
+            `select count(*) from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id join public.booking_request_capture_work work on work.booking_request_id=attempts.booking_request_id where attempts.booking_request_id='${failureId}' and operations.step='replacement-capture' and operations.outcome='succeeded' and operations.authoritative_outcome_at < work.payment_required_deadline;`,
+          ),
+        )
+        .toBe("1");
       await expect(
-        page
-          .getByRole("alert")
-          .filter({ hasText: "could not be updated safely" }),
-      ).toContainText("could not be updated safely");
-      expect(observeFailure().confirmations).toBe(0);
-      expect(
-        harness.runSql(
-          `select count(*) from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id where attempts.booking_request_id='${failureId}' and operations.step='replacement-capture' and operations.outcome='succeeded';`,
+        page.getByText(
+          "Your replacement payment is being checked. Do not start another attempt.",
+          { exact: true },
         ),
-      ).toBe("1");
+      ).toBeVisible();
+      await expect(page.getByRole("status")).toContainText("not confirmed");
+      await expect(page.getByRole("status")).toContainText("remain held");
+      expect(observeFailure().confirmations).toBe(0);
       harness.runSql(
         `create function public.confirmation_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${failureId}'$$;`,
       );
