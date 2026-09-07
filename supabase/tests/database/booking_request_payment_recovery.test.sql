@@ -390,12 +390,12 @@ select throws_ok(
 );
 reset role;
 set local role service_role;
-select throws_ok(
-  $$select public.claim_due_booking_request_payment_required_expiries(
+select is(
+  public.claim_due_booking_request_payment_required_expiries(
     20,'{"provider":"foreign","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-  )$$,
-  'RC409',null,
-  'due processing rejects a foreign provider identity'
+  ),
+  '[]'::jsonb,
+  'due processing returns no work for a nonmatching provider identity'
 );
 reset role;
 
