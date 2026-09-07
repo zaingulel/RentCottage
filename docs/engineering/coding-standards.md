@@ -40,3 +40,4 @@ These requirements apply only when an agent-facing command is already part of th
 - Validate arguments before network access or other external work.
 - Distinguish success, valid zero, no-op, incomplete evidence, and failure through authoritative exit status.
 - Keep stable commands in `package.json`; continuous integration must call the same verification interface used locally.
+- Agent command receipts may record exact arguments and result metadata, but never environment values or command output. Put secrets in the environment rather than arguments or labels.

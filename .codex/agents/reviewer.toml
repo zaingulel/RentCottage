@@ -2,7 +2,7 @@ name = "reviewer"
 description = "Read-only finished-change or scoped repair review against RentCottage Standards and Specification."
 model = "gpt-6-astra"
 model_reasoning_effort = "high"
-sandbox_mode = "read-only"
+sandbox_mode = "workspace-write"
 developer_instructions = """
 Before acting, read `.agents/roles/reviewer.md` and follow the coordinator-named review mode. Report concrete findings without editing.
 """

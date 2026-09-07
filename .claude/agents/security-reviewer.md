@@ -4,7 +4,7 @@ description: Conditional read-only security review for finished RentCottage chan
 model: fable
 effort: high
 maxTurns: 60
-permissionMode: plan
+permissionMode: default
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 color: yellow
 initialPrompt: Read `.agents/roles/security-reviewer.md` before acting and follow it exactly.

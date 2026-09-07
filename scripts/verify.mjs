@@ -40,7 +40,7 @@ export const expensiveVerificationSteps = [
   ],
 ];
 
-const approvedProsePaths = new Set([
+const baselineOnlyPaths = new Set([
   ".agents/roles/architect.md",
   ".agents/roles/builder.md",
   ".agents/roles/explorer.md",
@@ -63,6 +63,8 @@ const approvedProsePaths = new Set([
   ".claude/agents/reviewer.md",
   ".claude/agents/security-reviewer.md",
   ".claude/templates/builder-handoff.md",
+  ".codex/agents/reviewer.toml",
+  ".codex/agents/security-reviewer.toml",
   ".github/pull_request_template.md",
   "AGENTS.md",
   "CLAUDE.md",
@@ -82,7 +84,23 @@ const approvedProsePaths = new Set([
   "docs/product/rentcottage-mvp-prd.md",
   "docs/research/ajirly-and-iraq-booking-constraints.md",
   "docs/research/rentcottage-unresolved-commercial-compliance-research.md",
+  "scripts/run-log.mjs",
+  "scripts/run-log.test.mjs",
 ]);
+
+const browserOnlyPaths = new Set([
+  "src/app/globals.css",
+  "tests/booking-request-display.spec.ts",
+  "tests/interaction-controls.spec.ts",
+  "tests/marketplace-shell.spec.ts",
+]);
+
+function isBrowserOnlyPath(path) {
+  return (
+    browserOnlyPaths.has(path) ||
+    /^public\/uploads\/[^/]+\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(path)
+  );
+}
 
 const testEnvironment = {
   APP_ENVIRONMENT: "test",
@@ -169,9 +187,10 @@ function regularOrAbsent(mode) {
 
 function classifyChanges(changes) {
   if (changes.length === 0) {
-    return { expensive: false, reason: "no changed paths" };
+    return { browser: false, database: false, reason: "no changed paths" };
   }
 
+  let browser = false;
   for (const change of changes) {
     if (
       change.status === "T" ||
@@ -179,22 +198,31 @@ function classifyChanges(changes) {
       !regularOrAbsent(change.newMode)
     ) {
       return {
-        expensive: true,
+        browser: true,
+        database: true,
         reason: `${change.path} has a symlink or file-type change`,
       };
     }
-    if (!approvedProsePaths.has(change.path)) {
+    if (isBrowserOnlyPath(change.path)) {
+      browser = true;
+      continue;
+    }
+    if (!baselineOnlyPaths.has(change.path)) {
       return {
-        expensive: true,
-        reason: `${change.path} requires full evidence`,
+        browser: true,
+        database: true,
+        reason: `${change.path} requires full evidence because no narrower route is verified; investigate its affected behaviour before convergence, with full verification as the unresolved fallback`,
       };
     }
   }
 
   const paths = [...new Set(changes.map(({ path }) => path))].sort();
   return {
-    expensive: false,
-    reason: `only approved prose changed: ${paths.join(", ")}`,
+    browser,
+    database: false,
+    reason: browser
+      ? `only reviewed presentation inputs changed: ${paths.join(", ")}`
+      : `only approved workflow or prose changed: ${paths.join(", ")}`,
   };
 }
 
@@ -276,7 +304,8 @@ function selectVerification(cwd, environment, stdout, stderr) {
       `Unable to classify changes (${message}); selecting full verification.`,
     );
     return {
-      expensive: true,
+      browser: true,
+      database: true,
       reason: `classification unavailable: ${message}`,
     };
   }
@@ -310,32 +339,44 @@ export function main(
   const browser = mode === undefined || mode === "--browser";
   const verificationEnvironment = { ...environment, ...testEnvironment };
   const selection = args.includes("--baseline")
-    ? { expensive: false, reason: "baseline mode" }
+    ? { browser: false, database: false, reason: "baseline mode" }
     : args.includes("--full")
-      ? { expensive: true, reason: "explicit --full" }
+      ? { browser: true, database: true, reason: "explicit --full" }
       : selectVerification(cwd, environment, stdout, stderr);
+  const selectedDatabase = mode === "--browser" ? false : selection.database;
+  const selectedBrowser = mode === "--database" ? false : selection.browser;
+  const expensive = selectedDatabase || selectedBrowser;
   stdout(`Baseline verification: ${baseline ? "selected" : "unselected"}`);
   stdout(
-    `Expensive verification: ${selection.expensive ? "selected" : "skipped"} (${selection.reason})`,
+    `Database verification: ${selectedDatabase ? "selected" : "skipped"} (${selection.reason})`,
+  );
+  stdout(
+    `Browser verification: ${selectedBrowser ? "selected" : "skipped"} (${selection.reason})`,
+  );
+  stdout(
+    `Expensive verification: ${expensive ? "selected" : "skipped"} (${selection.reason})`,
   );
 
   const preparation =
-    browser && selection.expensive && environment.GITHUB_ACTIONS === "true"
+    browser && selectedBrowser && environment.GITHUB_ACTIONS === "true"
       ? [["npx", ["playwright", "install", "--with-deps", "chromium"]]]
       : [];
-  const expensiveSteps =
-    mode === "--database"
-      ? [["npm", ["run", "verify:access:database"]]]
-      : mode === "--browser"
-        ? [
-            ["npm", ["run", "verify:access:browser"]],
-            ...expensiveVerificationSteps.slice(1),
-          ]
-        : expensiveVerificationSteps;
+  const databaseSteps = [["npm", ["run", "verify:access:database"]]];
+  const browserSteps = [
+    ["npm", ["run", "verify:access:browser"]],
+    ...expensiveVerificationSteps.slice(1),
+  ];
+  const selectedServiceSteps =
+    mode === undefined && selectedDatabase && selectedBrowser
+      ? expensiveVerificationSteps
+      : [
+          ...(selectedDatabase ? databaseSteps : []),
+          ...(selectedBrowser ? browserSteps : []),
+        ];
   const steps = [
     ...(baseline ? baselineVerificationSteps : []),
     ...preparation,
-    ...(selection.expensive ? expensiveSteps : []),
+    ...selectedServiceSteps,
   ];
   for (let index = 0; index < steps.length; index += 1) {
     const [command, commandArgs] = steps[index];
