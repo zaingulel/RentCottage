@@ -29,6 +29,14 @@ export interface CustomerBookingRequest {
   readonly status: BookingRequestStatus;
   readonly paymentStatus: BookingRequestPaymentStatus | null;
   readonly paymentRequiredWindow: BookingRequestPaymentRequiredWindow | null;
+  readonly paymentRecovery?: {
+    readonly status:
+      | "available"
+      | "processing"
+      | "retryable"
+      | "deadline-elapsed"
+      | "confirmed";
+  } | null;
   readonly cottageName: string;
   readonly bookingPeriod: BookingQuoteItem[];
   readonly partySize: number;
@@ -58,6 +66,10 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     request.paymentRequiredWindow,
     paymentStatus ?? null,
   );
+  const paymentRecovery = (request.paymentRecovery ?? null) as Record<
+    string,
+    unknown
+  > | null;
   if (
     typeof request.id !== "string" ||
     !uuid.test(request.id) ||
@@ -66,6 +78,22 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     !isBookingRequestStatus(request.status) ||
     paymentStatus === undefined ||
     paymentRequiredWindow === undefined ||
+    (paymentRecovery !== null &&
+      (typeof paymentRecovery !== "object" ||
+        Array.isArray(paymentRecovery) ||
+        Object.keys(paymentRecovery).length !== 1 ||
+        typeof paymentRecovery.status !== "string" ||
+        request.status !== "accepted" ||
+        (paymentRecovery.status === "confirmed"
+          ? paymentStatus !== "paid-confirmed"
+          : paymentStatus !== "payment-required") ||
+        ![
+          "available",
+          "processing",
+          "retryable",
+          "deadline-elapsed",
+          "confirmed",
+        ].includes(paymentRecovery.status))) ||
     typeof request.cottageName !== "string" ||
     !Array.isArray(request.bookingPeriod) ||
     !validateQuotedItems(request.bookingPeriod as BookingQuoteItem[]) ||
@@ -143,6 +171,12 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     status: request.status,
     paymentStatus,
     paymentRequiredWindow,
+    ...(request.paymentRecovery === undefined
+      ? {}
+      : {
+          paymentRecovery:
+            paymentRecovery as CustomerBookingRequest["paymentRecovery"],
+        }),
     cottageName: request.cottageName,
     bookingPeriod,
     partySize: request.partySize as number,

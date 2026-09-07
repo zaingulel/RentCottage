@@ -47,3 +47,13 @@ describe("Scheduled capture admission", () => {
     },
   );
 });
+
+it("resumes admitted recovery work alongside ordinary captures in the same bounded schedule", async () => {
+  const recovery = vi.fn().mockResolvedValue([{ status: "succeeded" }]);
+  await runScheduledBookingRequestCapture(
+    environment,
+    async () => [],
+    recovery,
+  );
+  expect(recovery).toHaveBeenCalledExactlyOnceWith(50);
+});

@@ -1,11 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { actOnBookingRequest, refresh } = vi.hoisted(() => ({
-  actOnBookingRequest: vi.fn(),
-  refresh: vi.fn(),
-}));
+const { actOnBookingRequest, recoverBookingRequestPayment, refresh } =
+  vi.hoisted(() => ({
+    actOnBookingRequest: vi.fn(),
+    recoverBookingRequestPayment: vi.fn(),
+    refresh: vi.fn(),
+  }));
 vi.mock("@/booking-request/lifecycle-actions", () => ({ actOnBookingRequest }));
+vi.mock("@/booking-request/payment-recovery-actions", () => ({
+  recoverBookingRequestPayment,
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 import { CustomerBookingRequestStatus } from "./customer-booking-request-status";
@@ -257,6 +262,112 @@ describe("Customer Booking Request status", () => {
       for (const value of Object.values(restrictedBookingRequestSentinels)) {
         expect(confirmed.container.innerHTML).not.toContain(value);
       }
+    },
+  );
+});
+
+it("offers recovery only for a database-admitted open window", () => {
+  render(
+    <CustomerBookingRequestStatus
+      locale="en"
+      request={{
+        ...customerDisplayFixtures["payment-required-elapsed"],
+        paymentRecovery: { status: "retryable" },
+      }}
+    />,
+  );
+  expect(
+    screen.queryByRole("button", {
+      name: "Retry simulated replacement payment",
+    }),
+  ).not.toBeInTheDocument();
+});
+it("refreshes unresolved recovery into its persisted blocked state without inventing confirmation", async () => {
+  recoverBookingRequestPayment.mockResolvedValue({ status: "blocked" });
+  render(
+    <CustomerBookingRequestStatus
+      locale="en"
+      request={{
+        ...customerDisplayFixtures["payment-required-open"],
+        paymentRecovery: { status: "available" },
+      }}
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Use simulated replacement payment" }),
+  );
+  await waitFor(() => expect(refresh).toHaveBeenCalled());
+  expect(screen.queryByText("Booking confirmed")).not.toBeInTheDocument();
+});
+
+describe("Customer payment recovery command identity", () => {
+  beforeEach(() => {
+    recoverBookingRequestPayment.mockReset();
+    refresh.mockClear();
+  });
+  const retryableRequest = {
+    ...customerDisplayFixtures["payment-required-open"],
+    paymentRecovery: { status: "retryable" as const },
+  };
+
+  it("starts a fresh command after each definitive retryable outcome even when the persisted display stays retryable", async () => {
+    recoverBookingRequestPayment
+      .mockResolvedValueOnce({ status: "retryable" })
+      .mockResolvedValueOnce({ status: "retryable" })
+      .mockResolvedValueOnce({ status: "succeeded" });
+    const view = render(
+      <CustomerBookingRequestStatus locale="en" request={retryableRequest} />,
+    );
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const button = screen.getByRole("button", {
+        name: "Retry simulated replacement payment",
+      });
+      fireEvent.click(button);
+      await waitFor(() => expect(button).toBeEnabled());
+      expect(refresh).toHaveBeenCalledTimes(attempt);
+      view.rerender(
+        <CustomerBookingRequestStatus locale="en" request={retryableRequest} />,
+      );
+    }
+    const keys = recoverBookingRequestPayment.mock.calls.map(
+      ([input]) => input.commandKey,
+    );
+    expect(new Set(keys).size).toBe(3);
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerDisplayFixtures["paid-confirmed"]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Booking confirmed");
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it.each(["transport", "blocked", "processing", "unavailable"] as const)(
+    "keeps the same command after an uncertain %s outcome",
+    async (outcome) => {
+      if (outcome === "transport")
+        recoverBookingRequestPayment.mockRejectedValueOnce(
+          new Error("response lost"),
+        );
+      else
+        recoverBookingRequestPayment.mockResolvedValueOnce({ status: outcome });
+      recoverBookingRequestPayment.mockResolvedValueOnce({ status: "blocked" });
+      render(
+        <CustomerBookingRequestStatus locale="en" request={retryableRequest} />,
+      );
+      const button = screen.getByRole("button", {
+        name: "Retry simulated replacement payment",
+      });
+      fireEvent.click(button);
+      await waitFor(() => expect(button).toBeEnabled());
+      fireEvent.click(button);
+      await waitFor(() => expect(button).toBeEnabled());
+      expect(recoverBookingRequestPayment).toHaveBeenCalledTimes(2);
+      expect(recoverBookingRequestPayment.mock.calls[1][0].commandKey).toBe(
+        recoverBookingRequestPayment.mock.calls[0][0].commandKey,
+      );
+      expect(screen.queryByText("Booking confirmed")).not.toBeInTheDocument();
     },
   );
 });

@@ -5,6 +5,7 @@ import { OwnerBookingRequestNotifications } from "@/components/owner-booking-req
 
 import {
   customerDisplayFixtures,
+  customerRecoveryDisplayFixtures,
   ownerDisplayFixtures,
 } from "./booking-request-display.fixtures";
 
@@ -18,9 +19,11 @@ function renderBookingRequestDisplay({
   locale,
   role,
   status,
+  recovery,
 }: {
   locale: "en" | "ar" | "ckb";
   role: "customer" | "owner";
+  recovery?: "available" | "processing" | "retryable";
   status:
     | "capture-processing"
     | "payment-required-open"
@@ -33,13 +36,17 @@ function renderBookingRequestDisplay({
     <main className="booking-request-page">
       {role === "customer" ? (
         <CustomerBookingRequestStatus
-          key={status}
+          key={`${status}:${recovery ?? "none"}`}
           locale={locale}
-          request={customerDisplayFixtures[status]}
+          request={
+            recovery
+              ? customerRecoveryDisplayFixtures[recovery]
+              : customerDisplayFixtures[status]
+          }
         />
       ) : (
         <OwnerBookingRequestNotifications
-          key={status}
+          key={`${status}:${recovery ?? "none"}`}
           locale={locale}
           notifications={[ownerDisplayFixtures[status]]}
         />
