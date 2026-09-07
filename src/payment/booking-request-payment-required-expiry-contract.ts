@@ -21,13 +21,106 @@ export interface BookingRequestPaymentRequiredExpiryBinding {
   readonly providerIdentity: PaymentProviderIdentity;
 }
 
-export interface BookingRequestPaymentRequiredExpiryPermit {
+interface BookingRequestPaymentRequiredReleasePermit {
   readonly purpose: "booking-request-payment-required-expiry";
   readonly expiryWorkId: string;
   readonly expiryOperationId: string;
   readonly idempotencyKey: string;
   readonly notBefore: string;
   readonly binding: BookingRequestPaymentRequiredExpiryBinding;
+}
+
+export interface BookingRequestPaymentRequiredCorrectiveRefundPermit {
+  readonly purpose: "booking-request-payment-required-corrective-refund";
+  readonly expiryWorkId: string;
+  readonly expiryOperationId: string;
+  readonly idempotencyKey: string;
+  readonly notBefore: string;
+  readonly binding: {
+    readonly bookingRequestId: string;
+    readonly captureProviderOperationId: string;
+    readonly paymentLifecycleId: string;
+    readonly captureLogicalOperationId: string;
+    readonly capturePhysicalAttemptId: string;
+    readonly captureMovementReference: string;
+    readonly captureOccurredAt: string;
+    readonly refundLogicalOperationId: string;
+    readonly refundPhysicalAttemptId: string;
+    readonly amountFils: Fils;
+    readonly currency: "IQD";
+    readonly providerIdentity: PaymentProviderIdentity;
+  };
+}
+
+export type BookingRequestPaymentRequiredExpiryPermit =
+  | BookingRequestPaymentRequiredReleasePermit
+  | BookingRequestPaymentRequiredCorrectiveRefundPermit;
+
+function correctiveRefundPermitFrom(
+  value: unknown,
+): BookingRequestPaymentRequiredCorrectiveRefundPermit {
+  const permit = record(value);
+  const binding = record(permit?.binding);
+  const provider = record(binding?.providerIdentity);
+  if (
+    !permit ||
+    !exactKeys(permit, [
+      "purpose",
+      "expiryWorkId",
+      "expiryOperationId",
+      "idempotencyKey",
+      "notBefore",
+      "binding",
+    ]) ||
+    permit.purpose !== "booking-request-payment-required-corrective-refund" ||
+    ![permit.expiryWorkId, permit.expiryOperationId].every(
+      (item) => typeof item === "string" && uuid.test(item),
+    ) ||
+    typeof permit.notBefore !== "string" ||
+    Number.isNaN(Date.parse(permit.notBefore)) ||
+    !binding ||
+    !exactKeys(binding, [
+      "bookingRequestId",
+      "captureProviderOperationId",
+      "paymentLifecycleId",
+      "captureLogicalOperationId",
+      "capturePhysicalAttemptId",
+      "captureMovementReference",
+      "captureOccurredAt",
+      "refundLogicalOperationId",
+      "refundPhysicalAttemptId",
+      "amountFils",
+      "currency",
+      "providerIdentity",
+    ]) ||
+    ![
+      binding.bookingRequestId,
+      binding.captureProviderOperationId,
+      binding.paymentLifecycleId,
+    ].every((item) => typeof item === "string" && uuid.test(item)) ||
+    ![
+      binding.captureLogicalOperationId,
+      binding.capturePhysicalAttemptId,
+      binding.captureMovementReference,
+      binding.refundLogicalOperationId,
+      binding.refundPhysicalAttemptId,
+    ].every(nonempty) ||
+    typeof binding.captureOccurredAt !== "string" ||
+    !(Date.parse(binding.captureOccurredAt) >= Date.parse(permit.notBefore)) ||
+    permit.idempotencyKey !== binding.refundPhysicalAttemptId ||
+    !positiveInteger(binding.amountFils) ||
+    binding.currency !== "IQD" ||
+    !provider ||
+    !exactKeys(provider, [
+      "provider",
+      "environment",
+      "merchantId",
+      "terminalId",
+    ]) ||
+    !Object.values(provider).every(nonempty)
+  )
+    throw new Error("Payment Required corrective refund permit is invalid");
+  return permit as unknown as BookingRequestPaymentRequiredCorrectiveRefundPermit;
 }
 
 const uuid =
@@ -47,6 +140,11 @@ const positiveInteger = (value: unknown) =>
 export function paymentRequiredExpiryPermitFrom(
   value: unknown,
 ): BookingRequestPaymentRequiredExpiryPermit {
+  if (
+    record(value)?.purpose ===
+    "booking-request-payment-required-corrective-refund"
+  )
+    return correctiveRefundPermitFrom(value);
   const permit = record(value);
   const binding = record(permit?.binding);
   const provider = record(binding?.providerIdentity);
@@ -126,6 +224,22 @@ export function paymentRequiredExpiryRequestMatches(
     permit = paymentRequiredExpiryPermitFrom(value);
   } catch {
     return false;
+  }
+  if (permit.purpose === "booking-request-payment-required-corrective-refund") {
+    const binding = permit.binding;
+    return (
+      request.kind === "refund" &&
+      request.paymentLifecycleId === binding.paymentLifecycleId &&
+      request.logicalOperationId === binding.refundLogicalOperationId &&
+      request.attemptId === binding.refundPhysicalAttemptId &&
+      request.amountFils === binding.amountFils &&
+      request.currency === binding.currency &&
+      Object.entries(identity).every(
+        ([key, expected]) =>
+          expected ===
+          binding.providerIdentity[key as keyof PaymentProviderIdentity],
+      )
+    );
   }
   const binding = permit.binding;
   return (

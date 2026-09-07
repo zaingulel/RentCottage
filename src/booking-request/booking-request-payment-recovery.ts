@@ -11,12 +11,19 @@ export type PaymentRecoveryStatus =
   | "late-succeeded"
   | "deadline-elapsed"
   | "blocked"
+  | "quarantined"
   | "unavailable";
-export type PaymentRecoveryAdmission = {
-  readonly status: "processing" | "retryable" | "succeeded" | "late-succeeded";
-  readonly attemptId: string;
-  readonly deadline: string;
-};
+export type PaymentRecoveryAdmission =
+  | { readonly status: "quarantined" }
+  | {
+      readonly status:
+        | "processing"
+        | "retryable"
+        | "succeeded"
+        | "late-succeeded";
+      readonly attemptId: string;
+      readonly deadline: string;
+    };
 export type PaymentRecoveryLease =
   | { readonly status: Exclude<PaymentRecoveryStatus, "processing"> }
   | {
@@ -83,6 +90,7 @@ export function createBookingRequestPaymentRecovery({
     }) {
       const admitted = await repository.admit(input);
       if (
+        admitted.status === "quarantined" ||
         admitted.status === "retryable" ||
         admitted.status === "late-succeeded"
       )

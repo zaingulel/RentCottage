@@ -114,6 +114,7 @@ const signatures = [
   "execute_simulated_booking_request_payment_recovery(jsonb,text)",
   "query_simulated_booking_request_payment_recovery(jsonb,text,text,text)",
   "finalize_booking_request_confirmation(uuid,jsonb)",
+  "observe_booking_request_payment_correction(uuid,uuid,jsonb)",
 ];
 const second = (sql) =>
   sql
@@ -271,7 +272,7 @@ function assertHeld() {
   );
   assert.equal(state.confirmations.length, 0);
 }
-function assertExpired() {
+function assertExpired(successfulCaptures = 0) {
   const state = graph();
   assert.equal(state.request.status, "expired");
   assert.equal(state.commitment.status, "released_hold");
@@ -297,7 +298,7 @@ function assertExpired() {
       (row) =>
         row.operation_kind === "capture" && row.current_outcome === "succeeded",
     ).length,
-    0,
+    successfulCaptures,
   );
   assert.ok(state.ledger.every((row) => row.physical_execution_count === 1));
   assert.equal(
@@ -308,7 +309,8 @@ function assertExpired() {
 function drain() {
   for (let count = 0; count < 4; count++) {
     const prepared = prepare();
-    if (prepared.status === "release") parsed(releaseSql(prepared.permit));
+    if (prepared.status === "release" || prepared.status === "refund")
+      parsed(releaseSql(prepared.permit));
     else
       assert.ok(
         ["ready", "expired"].includes(prepared.status),
@@ -462,7 +464,7 @@ try {
   await finish(firstBatch, { action: "commit" });
   const failedRelease = prepare();
   parsed(releaseSql(failedRelease.permit, "failed"));
-  assert.equal(parsed(finalizeSql()).status, "attention-required");
+  assert.equal(parsed(finalizeSql()).status, "quarantined");
   assert.deepEqual(
     parsed(dueSql()).map((row) => row.bookingRequestId),
     [secondRequestId],
@@ -690,7 +692,14 @@ try {
           query,
           `query_${step}_expiry_first`,
         );
-        assert.equal(result(pair[0]).status, "reconcile-recovery");
+        assert.equal(result(pair[0]).status, "quarantined");
+        assert.equal(result(pair[1]).outcome, "not-executed");
+        assertHeld();
+        const quarantined = graph();
+        assert.equal(prepare().status, "quarantined");
+        assert.equal(parsed(query).outcome, "not-executed");
+        assert.deepEqual(graph(), quarantined);
+        continue;
       } else await race(query, prepareSql(), `query_${step}_query_first`);
       drain();
       assertExpired();
@@ -720,7 +729,7 @@ try {
     }
   }
   console.log(
-    "All four indeterminate recovery operations resolve safely in both query/expiry lock orders; delayed and wrong-binding terminal queries cannot change money or completion.",
+    "All four uncertain recovery steps respect both request-lock orders: prior resolution can safely expire, prior quarantine fences every delayed query and retains inventory.",
   );
 
   reset();
@@ -735,7 +744,7 @@ try {
     confirmSql(preDeadline),
     "predeadline_confirmation",
   );
-  assert.equal(result(confirmationRace[0]).status, "attention-required");
+  assert.equal(result(confirmationRace[0]).status, "processing");
   const confirmed = graph();
   assert.equal(confirmed.confirmations.length, 1);
   assert.equal(confirmed.request.status, "accepted");
@@ -765,15 +774,178 @@ try {
       prepareSql(),
       `late_capture_${offset ? "after" : "equal"}`,
     );
-    assert.equal(result(pair[1]).status, "attention-required");
-    assert.equal(parsed(finalizeSql()).status, "attention-required");
+    assert.equal(result(pair[1]).status, "refund");
+    assert.equal(parsed(finalizeSql()).status, "processing");
     assertHeld();
     assert.equal(graph().attempts[0].state, "late_succeeded");
-    assert.equal(graph().targets.length, 0);
+    assert.equal(
+      graph().targets.filter(
+        (operation) => operation.operation_kind === "refund",
+      ).length,
+      1,
+    );
+    assert.equal(
+      graph().targets.find((operation) => operation.operation_kind === "refund")
+        .amount_fils,
+      115000000,
+    );
     assert.throws(() => parsed(confirmSql(attempt)));
+    const refund = prepare().permit;
+    await race(
+      releaseSql(refund),
+      releaseSql(refund),
+      `refund_duplicate_${offset ? "after" : "equal"}`,
+    );
+    drain();
+    assertExpired(1);
+    const effects = graph().ledger;
+    assert.equal(
+      effects.filter((operation) => operation.operation_kind === "refund")
+        .length,
+      1,
+    );
+    assert.equal(
+      effects.filter((operation) => operation.operation_kind === "release")
+        .length,
+      1,
+    );
+    assert.equal(
+      effects.find((operation) => operation.operation_kind === "refund")
+        .amount_fils,
+      115000000,
+    );
   }
   console.log(
-    "Captures resolving successfully exactly at or after the deadline retain inventory, evidence and durable attention without confirmation or expiry.",
+    "Captures at or after the deadline hold inventory until one full corrective refund succeeds; concurrent refund dispatches produce one physical effect and never release a captured authorization.",
+  );
+
+  const contradictoryObservation = (capture) => {
+    const payload = {
+      receiptId: "conflicting-full-amount-receipt",
+      bookingRequestId: requestId,
+      providerOperationId: capture.id,
+      providerIdentity: identity,
+      paymentLifecycleId: capture.payment_lifecycle_id,
+      logicalOperationId: capture.logical_operation_id,
+      physicalAttemptId: capture.physical_attempt_id,
+      kind: "capture",
+      amountFils: 110000000,
+      currency: "IQD",
+      providerRequestId: capture.provider_request_id,
+      providerReference: capture.provider_reference,
+      movementReference: capture.movement_reference,
+      outcome: "succeeded",
+      occurredAt: capture.authoritative_outcome_at,
+    };
+    return `select public.observe_booking_request_payment_correction('${requestId}','${capture.id}',${literal(payload)});`;
+  };
+  for (const observationWins of [true, false]) {
+    reset();
+    const attempt = admit().attemptId;
+    execute(lease(attempt).permit);
+    execute(lease(attempt).permit);
+    const permit = lease(attempt).permit;
+    const uncertain = execute(permit, "indeterminate");
+    atDeadline();
+    parsed(querySql(permit, "succeeded", uncertain));
+    const refund = prepare();
+    assert.equal(refund.status, "refund");
+    const capture = graph().ledger.find(
+      (operation) =>
+        operation.operation_kind === "capture" &&
+        operation.current_outcome === "succeeded",
+    );
+    const observation = contradictoryObservation(capture);
+    const dispatch = releaseSql(refund.permit);
+    const pair = await race(
+      observationWins ? observation : dispatch,
+      observationWins ? dispatch : observation,
+      `observation_refund_${observationWins ? "observation" : "refund"}_first`,
+    );
+    assert.equal(result(pair[observationWins ? 0 : 1]).status, "quarantined");
+    assert.equal(
+      result(pair[observationWins ? 1 : 0]).outcome,
+      observationWins ? "not-executed" : "succeeded",
+    );
+    assertHeld();
+    const quarantined = graph();
+    const refunds = quarantined.ledger.filter(
+      (operation) => operation.operation_kind === "refund",
+    );
+    assert.equal(refunds.length, observationWins ? 0 : 1);
+    if (!observationWins) {
+      assert.equal(refunds[0].physical_execution_count, 1);
+      assert.equal(refunds[0].amount_fils, 115000000);
+    }
+    assert.equal(quarantined.expiry.state, "quarantined");
+    assert.equal(parsed(dispatch).outcome, "not-executed");
+    assert.equal(parsed(finalizeSql()).status, "quarantined");
+    assert.deepEqual(
+      graph(),
+      quarantined,
+      "Quarantine cannot release inventory or replay a refund after either observed lock order",
+    );
+  }
+  console.log(
+    "Passive conflicting observation and corrective refund honor both proven request-lock orders: at most one exact full refund, sticky quarantine and all five shifts retained.",
+  );
+
+  for (const observationWins of [true, false]) {
+    reset();
+    const attempt = admit().attemptId;
+    execute(lease(attempt).permit);
+    execute(lease(attempt).permit);
+    execute(lease(attempt).permit);
+    atDeadline();
+    const capture = graph().ledger.find(
+      (operation) =>
+        operation.operation_kind === "capture" &&
+        operation.current_outcome === "succeeded",
+    );
+    const observation = contradictoryObservation(capture);
+    const confirmation = confirmSql(attempt);
+    const pair = await race(
+      observationWins ? observation : confirmation,
+      observationWins ? confirmation : observation,
+      `observation_confirmation_${observationWins ? "observation" : "confirmation"}_first`,
+    );
+    assert.equal(result(pair[observationWins ? 0 : 1]).status, "quarantined");
+    const state = graph();
+    assert.equal(state.request.status, "accepted");
+    assert.equal(state.commitment.status, "pending_hold");
+    assert.equal(
+      state.occupancies.filter((occupancy) => occupancy.active).length,
+      5,
+    );
+    assert.equal(state.expiry.state, "quarantined");
+    assert.equal(state.confirmations.length, observationWins ? 0 : 1);
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.booking_request_confirmation_invalidations where booking_request_id='${requestId}';`,
+      ),
+      observationWins ? "0" : "1",
+    );
+    assert.equal(
+      harness.runSql(
+        `select public.booking_request_payment_status(requests) from public.booking_requests requests where requests.id='${requestId}';`,
+      ),
+      "payment-required",
+    );
+    assert.equal(parsed(confirmation).status, "quarantined");
+    assert.deepEqual(
+      graph(),
+      state,
+      "Historical confirmation replay cannot recreate an active booking after passive evidence quarantines it",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.booking_request_payment_correction_observations where booking_request_id='${requestId}' and conflict;`,
+      ),
+      "1",
+    );
+  }
+  console.log(
+    "Passive observation and confirmation honor both proven request-lock orders: observation-first prevents confirmation; confirmation-first preserves history with one invalidation and held inventory.",
   );
 
   reset();

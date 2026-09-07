@@ -31,6 +31,10 @@ function renderBookingRequestDisplay({
     | "payment-expiry-processing"
     | "payment-expiry-attention-required"
     | "payment-expiry-expired"
+    | "payment-correction-refunding"
+    | "payment-correction-quarantined"
+    | "payment-correction-expired"
+    | "payment-correction-released-review"
     | "paid-confirmed";
 }) {
   document.documentElement.lang = locale;

@@ -125,3 +125,32 @@ describe("Payment Required expiry processing", () => {
     },
   );
 });
+
+it("executes a corrective refund before asking the database to prove safe expiry", async () => {
+  const { service, repository, provider } = setup();
+  repository.prepare.mockResolvedValue({
+    status: "refund",
+    permit,
+    binding: { ...operation, kind: "refund" },
+  });
+  await expect(service.processDue(20)).resolves.toEqual([
+    { status: "expired" },
+  ]);
+  expect(provider.execute).toHaveBeenCalledExactlyOnceWith({
+    ...operation,
+    kind: "refund",
+    executionPermit: permit,
+  });
+  expect(repository.finalize).toHaveBeenCalledExactlyOnceWith(requestId);
+});
+
+it("does not execute or query a quarantined case", async () => {
+  const { service, repository, provider } = setup();
+  repository.prepare.mockResolvedValue({ status: "quarantined" });
+  await expect(service.processDue(20)).resolves.toEqual([
+    { status: "quarantined" },
+  ]);
+  expect(provider.execute).not.toHaveBeenCalled();
+  expect(provider.query).not.toHaveBeenCalled();
+  expect(repository.finalize).not.toHaveBeenCalled();
+});

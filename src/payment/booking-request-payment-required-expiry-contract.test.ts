@@ -165,3 +165,115 @@ describe("Durable simulator expiry permit", () => {
     expect(provider.requests).toEqual([]);
   });
 });
+
+describe("corrective refund provider contract", () => {
+  const refundPermit = {
+    ...permit,
+    purpose: "booking-request-payment-required-corrective-refund" as const,
+    idempotencyKey: "refund-physical",
+    binding: {
+      bookingRequestId: permit.binding.bookingRequestId,
+      captureProviderOperationId: "66666666-6666-4666-8666-666666666666",
+      paymentLifecycleId: permit.binding.authorizationPaymentLifecycleId,
+      captureLogicalOperationId: "capture-logical",
+      capturePhysicalAttemptId: "capture-physical",
+      captureMovementReference: "capture-movement",
+      captureOccurredAt: "2026-09-07T12:20:00.000Z",
+      refundLogicalOperationId: "refund-logical",
+      refundPhysicalAttemptId: "refund-physical",
+      amountFils: 115_000_000,
+      currency: "IQD" as const,
+      providerIdentity: permit.binding.providerIdentity,
+    },
+  };
+  const refund = {
+    ...request,
+    kind: "refund" as const,
+    logicalOperationId: "refund-logical",
+    attemptId: "refund-physical",
+  };
+  it("accepts an exact full Customer Total corrective refund bound to the late capture", () => {
+    expect(paymentRequiredExpiryPermitFrom(refundPermit)).toEqual(refundPermit);
+    expect(
+      paymentRequiredExpiryRequestMatches(
+        refund,
+        refundPermit,
+        permit.binding.providerIdentity,
+      ),
+    ).toBe(true);
+  });
+  it.each([
+    ["amount", { amountFils: 110_000_000 }],
+    ["attempt", { attemptId: "other" }],
+    [
+      "lifecycle",
+      { paymentLifecycleId: "77777777-7777-4777-8777-777777777777" },
+    ],
+    ["release after capture", { kind: "release" }],
+  ])("rejects substituted %s", (_label, changed) => {
+    expect(
+      paymentRequiredExpiryRequestMatches(
+        { ...refund, ...changed } as typeof refund,
+        refundPermit,
+        permit.binding.providerIdentity,
+      ),
+    ).toBe(false);
+  });
+  it.each([
+    "captureProviderOperationId",
+    "captureLogicalOperationId",
+    "capturePhysicalAttemptId",
+    "captureMovementReference",
+    "captureOccurredAt",
+  ])("requires the capture binding %s", (key) => {
+    expect(() =>
+      paymentRequiredExpiryPermitFrom({
+        ...refundPermit,
+        binding: { ...refundPermit.binding, [key]: "" },
+      }),
+    ).toThrow();
+  });
+  it.each(["2026-09-07T12:19:59.999Z", "not-a-time"])(
+    "rejects a capture before the deadline or with no authoritative occurrence: %s",
+    (captureOccurredAt) => {
+      expect(() =>
+        paymentRequiredExpiryPermitFrom({
+          ...refundPermit,
+          binding: { ...refundPermit.binding, captureOccurredAt },
+        }),
+      ).toThrow();
+    },
+  );
+  it("prevents the in-memory simulator from executing a durable corrective refund", async () => {
+    const provider = new PaymentSimulator({
+      now: () => "2026-09-07T12:21:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    await expect(
+      provider.execute({ ...refund, executionPermit: refundPermit }),
+    ).resolves.toEqual({ outcome: "not-executed" });
+    expect(provider.requests).toEqual([]);
+  });
+  it("executes refund through the existing expiry provider boundary", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        outcome: "succeeded",
+        providerRequestId: "refund-request",
+        providerReference: "refund-reference",
+        movementReference: "refund-movement",
+      },
+      error: null,
+    });
+    const provider = new DurablePaymentSimulator({
+      client: { rpc } as never,
+      now: () => "2026-09-07T12:21:00.000Z",
+    });
+    await expect(
+      provider.execute({ ...refund, executionPermit: refundPermit }),
+    ).resolves.toMatchObject({ outcome: "succeeded" });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "execute_simulated_booking_request_payment_required_expiry",
+      { target_permit: refundPermit, target_outcome: "succeeded" },
+    );
+  });
+});

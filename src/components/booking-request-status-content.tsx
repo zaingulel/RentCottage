@@ -26,6 +26,30 @@ export function BookingRequestStatusContent({
 }) {
   const label = bookingRequestDisplayStatusMessages[locale][status];
   const expiryCopy = bookingRequestPaymentRequiredExpiryMessages[locale];
+  if (
+    paymentRequiredExpiry?.status === "refunding" ||
+    paymentRequiredExpiry?.status === "quarantined" ||
+    paymentRequiredExpiry?.status === "quarantined-released" ||
+    paymentRequiredExpiry?.status === "refunded-expired"
+  ) {
+    const copy =
+      paymentRequiredExpiry.status === "refunding"
+        ? [expiryCopy.refundingLabel, expiryCopy.refundingDescription]
+        : paymentRequiredExpiry.status === "quarantined-released"
+          ? [
+              expiryCopy.quarantinedLabel,
+              expiryCopy.quarantinedReleasedDescription,
+            ]
+          : paymentRequiredExpiry.status === "quarantined"
+            ? [expiryCopy.quarantinedLabel, expiryCopy.quarantinedDescription]
+            : [expiryCopy.refundedLabel, expiryCopy.refundedDescription];
+    return (
+      <>
+        <strong>{copy[0]}</strong>
+        <span> {copy[1]}</span>
+      </>
+    );
+  }
   if (status === "expired" && paymentRequiredExpiry?.status === "expired")
     return (
       <>

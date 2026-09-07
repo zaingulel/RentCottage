@@ -10,6 +10,7 @@ export type PaymentRequiredExpiryResult = {
   readonly status:
     | "processing"
     | "attention-required"
+    | "quarantined"
     | "expired"
     | "confirmed"
     | "not-due"
@@ -21,6 +22,11 @@ export type PaymentRequiredExpiryPreparation =
   | { readonly status: "ready" }
   | {
       readonly status: "release";
+      readonly permit: BookingRequestPaymentRequiredExpiryPermit;
+      readonly binding: ProviderOperationBinding;
+    }
+  | {
+      readonly status: "refund";
       readonly permit: BookingRequestPaymentRequiredExpiryPermit;
       readonly binding: ProviderOperationBinding;
     }
@@ -79,10 +85,14 @@ export function createBookingRequestPaymentRequiredExpiry({
           );
           if (
             preparation.status === "release" ||
+            preparation.status === "refund" ||
             preparation.status === "reconcile-expiry" ||
             preparation.status === "reconcile-recovery"
           ) {
-            if (preparation.status === "release") {
+            if (
+              preparation.status === "release" ||
+              preparation.status === "refund"
+            ) {
               await provider.execute({
                 ...preparation.binding,
                 executionPermit: preparation.permit,

@@ -28,8 +28,14 @@ const { withPaymentRecoveryCleanup } = createRequire(import.meta.url)(
   withPaymentRecoveryCleanup(cleanup: string, requestId: string): string;
 };
 
-for (const outcome of ["succeeded", "failed", "indeterminate"] as const) {
-  test(`the actual Worker preserves safe expiry through ${outcome} release, interruption and unrelated drain failure`, async ({
+for (const { outcome, movement } of (["release", "refund"] as const).flatMap(
+  (movement) =>
+    (["succeeded", "failed", "indeterminate"] as const).map((outcome) => ({
+      outcome,
+      movement,
+    })),
+)) {
+  test(`the actual Worker preserves safe expiry through ${outcome} ${movement}, interruption and unrelated drain failure`, async ({
     request,
   }) => {
     const harness = createLocalSupabaseConcurrencyHarness();
@@ -76,6 +82,15 @@ for (const outcome of ["succeeded", "failed", "indeterminate"] as const) {
         `select pg_get_functiondef('public.${signature}'::regprocedure);`,
       ),
     );
+    const recoveryDefinitions = [
+      "claim_customer_booking_request_payment_recovery(uuid,uuid,text)",
+      "lease_booking_request_payment_recovery_step(uuid)",
+      "execute_simulated_booking_request_payment_recovery(jsonb,text)",
+    ].map((signature) =>
+      harness.runSql(
+        `select pg_get_functiondef('public.${signature}'::regprocedure);`,
+      ),
+    );
     const clocked = definitions.map((definition) =>
       definition.replaceAll(
         "clock_timestamp()",
@@ -110,6 +125,42 @@ for (const outcome of ["succeeded", "failed", "indeterminate"] as const) {
       harness.runSql(
         "create function public.scheduled_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='60000000-0000-4000-8000-000000001001'$$;",
       );
+      if (movement === "refund") {
+        for (const definition of recoveryDefinitions)
+          harness.runSql(
+            definition.replaceAll(
+              "clock_timestamp()",
+              "(public.scheduled_payment_expiry_now() - interval '1 millisecond')",
+            ),
+          );
+        const admitted = JSON.parse(
+          harness
+            .runSql(
+              `select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',false);set role authenticated;select public.claim_customer_booking_request_payment_recovery('${id}','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
+            )
+            .split("\n")
+            .at(-1)!,
+        );
+        harness.runSql(
+          `set role service_role;select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');`,
+        );
+        const permit = JSON.parse(
+          harness.runSql(
+            `set role service_role;select public.lease_booking_request_payment_recovery_step('${admitted.attemptId}');`,
+          ),
+        ).permit;
+        const unresolved = JSON.parse(
+          harness.runSql(
+            `set role service_role;select public.execute_simulated_booking_request_payment_recovery('${JSON.stringify(permit)}'::jsonb,'indeterminate');`,
+          ),
+        );
+        // This is a newly resolved simulator event at the actual provider clock, after D.
+        harness.runSql(
+          `set role service_role;select public.query_simulated_booking_request_payment_recovery('${JSON.stringify(permit)}'::jsonb,'${unresolved.providerRequestId}','${unresolved.providerReference}','succeeded');`,
+        );
+        for (const definition of recoveryDefinitions)
+          harness.runSql(definition);
+      }
       for (const definition of clocked) harness.runSql(definition);
       const before = observe();
       expect(Date.parse(before.capture.payment_required_deadline)).toBeLessThan(
@@ -142,13 +193,21 @@ for (const outcome of ["succeeded", "failed", "indeterminate"] as const) {
       expect(held.confirmed).toBe(0);
       expect(held.notices).toHaveLength(0);
       const releases = held.ledger.filter(
-        (row: { operation_kind: string }) => row.operation_kind === "release",
+        (row: { operation_kind: string }) => row.operation_kind === movement,
       );
       expect(releases).toHaveLength(1);
       expect(releases[0].physical_execution_count).toBe(1);
       expect(releases[0].current_outcome).toBe(outcome);
+      expect(releases[0].amount_fils).toBe(115000000);
+      if (movement === "refund")
+        expect(
+          held.ledger.filter(
+            (row: { operation_kind: string }) =>
+              row.operation_kind === "release",
+          ),
+        ).toHaveLength(1);
       if (outcome !== "succeeded")
-        expect(held.expiry.state).toBe("attention_required");
+        expect(held.expiry.state).toBe("quarantined");
       harness.runSql(ordinary);
       expect((await request.get("/__scheduled")).ok()).toBe(
         outcome !== "succeeded",
@@ -162,24 +221,28 @@ for (const outcome of ["succeeded", "failed", "indeterminate"] as const) {
       expect(settled.capture).toEqual(before.capture);
       expect(settled.confirmed).toBe(0);
       expect(settled.request.status).toBe(
-        outcome === "failed" ? "accepted" : "expired",
+        outcome !== "succeeded" ? "accepted" : "expired",
       );
       expect(settled.expiry.state).toBe(
-        outcome === "failed" ? "attention_required" : "complete",
+        outcome !== "succeeded" ? "quarantined" : "complete",
       );
       expect(settled.hold).toBe(
-        outcome === "failed" ? "pending_hold" : "released_hold",
+        outcome !== "succeeded" ? "pending_hold" : "released_hold",
       );
-      expect(settled.active).toBe(outcome === "failed" ? 5 : 0);
-      expect(settled.notices).toHaveLength(outcome === "failed" ? 0 : 2);
+      expect(settled.active).toBe(outcome !== "succeeded" ? 5 : 0);
+      expect(settled.notices).toHaveLength(outcome !== "succeeded" ? 0 : 2);
       expect((await request.get("/__scheduled")).ok()).toBe(true);
       const replay = observe();
       expect(replay.ledger).toEqual(settled.ledger);
       expect(replay.notices).toEqual(settled.notices);
-      if (outcome !== "failed") expect(replay).toEqual(settled);
+      expect(replay).toEqual(settled);
     } finally {
       harness.runSql(ordinary);
-      for (const definition of [...definitions, ...captureDefinitions])
+      for (const definition of [
+        ...definitions,
+        ...captureDefinitions,
+        ...recoveryDefinitions,
+      ])
         harness.runSql(definition);
       harness.runSql(
         "drop function if exists public.scheduled_payment_expiry_now();",

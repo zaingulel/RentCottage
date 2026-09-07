@@ -31,7 +31,14 @@ export type BookingRequestPaymentRequiredWindow = {
 };
 
 export type BookingRequestPaymentRequiredExpiry = {
-  readonly status: "processing" | "attention-required" | "expired";
+  readonly status:
+    | "processing"
+    | "attention-required"
+    | "refunding"
+    | "quarantined"
+    | "quarantined-released"
+    | "expired"
+    | "refunded-expired";
   readonly deadline: string;
 };
 
@@ -48,17 +55,26 @@ export function paymentRequiredExpiryFrom(
     Object.keys(expiry).length !== 2 ||
     typeof expiry.deadline !== "string" ||
     Number.isNaN(Date.parse(expiry.deadline)) ||
-    !["processing", "attention-required", "expired"].includes(
-      expiry.status as string,
-    )
+    ![
+      "processing",
+      "attention-required",
+      "refunding",
+      "quarantined",
+      "quarantined-released",
+      "expired",
+      "refunded-expired",
+    ].includes(expiry.status as string)
   )
     return;
   if (
-    expiry.status === "expired"
+    expiry.status === "expired" ||
+    expiry.status === "refunded-expired" ||
+    expiry.status === "quarantined-released"
       ? requestStatus !== "expired" || paymentStatus !== null
       : requestStatus !== "accepted" ||
         paymentStatus !== "payment-required" ||
-        window?.phase !== "elapsed" ||
+        !window ||
+        (expiry.status !== "quarantined" && window.phase !== "elapsed") ||
         Date.parse(window.deadline) !== Date.parse(expiry.deadline)
   )
     return;

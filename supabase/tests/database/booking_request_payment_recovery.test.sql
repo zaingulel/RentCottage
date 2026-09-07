@@ -313,8 +313,8 @@ select is(
     '60000000-0000-4000-8000-000000001001',
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
   )->>'status',
-  'reconcile-recovery',
-  'indeterminate release evidence retains inventory for reconciliation'
+  'quarantined',
+  'indeterminate release evidence permanently retains inventory for review'
 );
 reset role;
 select is(
