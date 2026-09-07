@@ -1,16 +1,18 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readlinkSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -251,7 +253,639 @@ function commands(run) {
   return run.mock.calls.map(([command, args]) => [command, args]);
 }
 
+function processIdentity(pid) {
+  const result = spawnSync(
+    "ps",
+    ["-o", "pgid=,lstart=,command=", "-p", String(pid)],
+    {
+      encoding: "utf8",
+      env: { ...process.env, LANG: "C", LC_ALL: "C" },
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) {
+    return undefined;
+  }
+  if (result.status !== 0)
+    throw new Error(`Process inspection failed: ${result.stderr}`);
+  const match = result.stdout.trim().match(/^(\d+)\s+(.{24})\s+(.+)$/);
+  if (!match) throw new Error(`Unreadable process identity for PID ${pid}.`);
+  return { group: Number(match[1]), started: match[2], command: match[3] };
+}
+
+function processIsAlive(pid) {
+  return processIdentity(pid) !== undefined;
+}
+
+function assertProcessObserverReady() {
+  if (!processIdentity(process.pid)) {
+    throw new Error("Unable to observe the lifecycle-test process identity.");
+  }
+}
+
+async function waitForCondition(predicate, label, limit = 4_000) {
+  const deadline = Date.now() + limit;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+  }
+  throw new Error(`Timed out waiting for ${label}.`);
+}
+
+async function waitForChildExit(child, label, limit = 4_000) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return { code: child.exitCode, signal: child.signalCode };
+  }
+  return await new Promise((resolveExit, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${label}.`)),
+      limit,
+    );
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      resolveExit({ code, signal });
+    });
+  });
+}
+
+async function stopExactFixtureProcess(identity) {
+  const liveIdentity = processIdentity(identity.pid);
+  if (!liveIdentity) return;
+  if (!liveIdentity.command.includes(identity.token)) {
+    throw new Error(
+      `Refusing to stop PID ${identity.pid}; its command does not match ${identity.token}.`,
+    );
+  }
+  process.kill(identity.pid, "SIGTERM");
+  try {
+    await waitForCondition(
+      () => !processIsAlive(identity.pid),
+      `${identity.token} to exit gracefully`,
+      500,
+    );
+  } catch {
+    const resistantIdentity = processIdentity(identity.pid);
+    if (!resistantIdentity) return;
+    if (
+      !resistantIdentity.command.includes(identity.token) ||
+      resistantIdentity.started !== liveIdentity.started ||
+      resistantIdentity.group !== liveIdentity.group
+    ) {
+      throw new Error(
+        `Refusing to force PID ${identity.pid}; its command does not match ${identity.token}.`,
+      );
+    }
+    process.kill(identity.pid, "SIGKILL");
+    await waitForCondition(
+      () => !processIsAlive(identity.pid),
+      `${identity.token} to exit forcibly`,
+      2_000,
+    );
+  }
+}
+
+async function observeInterruptedAccessVerification(
+  signal,
+  {
+    descendantBehavior = "graceful",
+    hangCleanup = false,
+    inspectionFailure,
+    interruptStartup = false,
+    cleanupStage,
+  } = {},
+) {
+  assertProcessObserverReady();
+  const stateRoot = mkdtempSync(
+    join(tmpdir(), "rentcottage-access-interruption-"),
+  );
+  const fakeBin = join(stateRoot, "bin");
+  mkdirSync(fakeBin);
+  const token = basename(stateRoot);
+  const fixtureProcess = join(stateRoot, "fixture-process.mjs");
+  const commandBoundary = join(stateRoot, `command-boundary-${token}.mjs`);
+  const inspectionBoundary = join(stateRoot, "inspection-boundary.mjs");
+  writeFileSync(
+    inspectionBoundary,
+    `
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import { existsSync, writeFileSync } from "node:fs";
+const originalSpawn = childProcess.spawn;
+const root = process.env.ACCESS_INTERRUPTION_ROOT;
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => setImmediate(() => writeFileSync(root + "/signal.handled", signal)));
+}
+const originalKill = process.kill;
+process.kill = (pid, signal) => {
+  if (pid < 0 && signal !== 0) writeFileSync(root + "/termination-attempt", String(pid));
+  return originalKill.call(process, pid, signal);
+};
+let inspectCommand = false;
+childProcess.spawn = (command, args, options) => {
+  if (command === "npx" && (process.env.ACCESS_INSPECTION_FAILURE === "overflow"
+    ? args[1] === "start" : args[1] === "db" && args[2] === "reset")) inspectCommand = true;
+  if (command === "/bin/ps" && inspectCommand) {
+    if (process.env.ACCESS_INSPECTION_FAILURE === "initial-timeout") {
+      return originalSpawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], options);
+    }
+    if (existsSync(root + "/fail-inspection")) {
+      return originalSpawn(process.execPath, ["-e", "process.stderr.write('controlled inspection unavailable'); process.exit(1)"], options);
+    }
+    const child = originalSpawn(command, args, options);
+    child.once("close", () => writeFileSync(root + "/identity.ready", "inspected"));
+    return child;
+  }
+  return originalSpawn(command, args, options);
+};
+syncBuiltinESMExports();
+`,
+  );
+  writeFileSync(
+    fixtureProcess,
+    `import { writeFileSync } from "node:fs";
+const [readyFile, token, behavior = "graceful"] = process.argv.slice(2);
+writeFileSync(readyFile, JSON.stringify({ pid: process.pid, ppid: process.ppid, token }));
+const finish = () => process.exit(0);
+const ignore = () => { process.title = "retitled-" + token; };
+process.on("SIGTERM", behavior === "ignore" ? ignore : finish);
+process.on("SIGINT", behavior === "ignore" ? ignore : finish);
+setInterval(() => {}, 1000);
+`,
+  );
+  writeFileSync(
+    commandBoundary,
+    `#!${process.execPath}
+import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { basename } from "node:path";
+
+const command = basename(process.argv[1]);
+const args = process.argv.slice(2);
+const root = process.env.ACCESS_INTERRUPTION_ROOT;
+const token = process.env.ACCESS_INTERRUPTION_TOKEN;
+const fixtureProcess = process.env.ACCESS_INTERRUPTION_FIXTURE;
+const hangCleanup = process.env.ACCESS_INTERRUPTION_HANG_CLEANUP === "1";
+const interruptStartup = process.env.ACCESS_INTERRUPTION_STARTUP === "1";
+const overflow = process.env.ACCESS_INSPECTION_FAILURE === "overflow";
+const cleanupStage = process.env.ACCESS_INTERRUPTION_CLEANUP_STAGE;
+const invocation = [command, ...args].join(" ");
+appendFileSync(root + "/commands.log", invocation + "\\n");
+
+const alive = (pid) => {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { if (error.code === "ESRCH") return false; throw error; }
+};
+const waitFor = async (predicate) => {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+  }
+  throw new Error("Fixture readiness timeout.");
+};
+
+if (command === "docker" && args[0] === "inspect") {
+  if (cleanupStage === "inspection" && existsSync(root + "/inspected")) {
+    writeFileSync(root + "/cleanup.ready", JSON.stringify({ pid: process.pid, token: "cleanup-stop-" + token }));
+    await waitFor(() => existsSync(root + "/cleanup.release"));
+  }
+  writeFileSync(root + "/inspected", "inspected");
+  process.stdout.write("rentcottage|" + process.cwd() + "\\n");
+  process.exit(0);
+}
+if (args[0] !== "supabase") process.exit(0);
+if (args[1] === "start") {
+  const serviceToken = "owned-service-" + token;
+  const child = spawn(process.execPath, [fixtureProcess, root + "/service.ready", serviceToken], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  await waitFor(() => existsSync(root + "/service.ready"));
+  if (!interruptStartup && !overflow) process.exit(0);
+}
+if (args[1] === "stop") {
+  appendFileSync(root + "/stop.log", "stop invoked\\n");
+  if (cleanupStage === "stop") {
+    writeFileSync(root + "/cleanup.ready", JSON.stringify({ pid: process.pid, token: "cleanup-stop-" + token }));
+    await waitFor(() => existsSync(root + "/cleanup.release"));
+  }
+  if (hangCleanup) {
+    writeFileSync(root + "/cleanup.ready", JSON.stringify({
+      pid: process.pid,
+      ppid: process.ppid,
+      token: "cleanup-stop-" + token,
+    }));
+    const ignore = () => { process.title = "retitled-cleanup-stop-" + token; };
+    process.on("SIGTERM", ignore);
+    process.on("SIGINT", ignore);
+    setInterval(() => {}, 1000);
+    await new Promise(() => {});
+  }
+  const service = JSON.parse(readFileSync(root + "/service.ready", "utf8"));
+  if (alive(service.pid)) process.kill(service.pid, "SIGTERM");
+  await waitFor(() => !alive(service.pid));
+  process.exit(0);
+}
+if ((args[1] === "db" && args[2] === "reset") || (args[1] === "start" && (interruptStartup || overflow))) {
+  if (hangCleanup || cleanupStage) process.exit(0);
+  const descendantToken = "command-descendant-" + token;
+  spawn(process.execPath, [fixtureProcess, root + "/descendant.ready", descendantToken, process.env.ACCESS_INTERRUPTION_DESCENDANT_BEHAVIOR], {
+    stdio: "ignore",
+  });
+  await waitFor(() => existsSync(root + "/descendant.ready"));
+  writeFileSync(root + "/command.ready", JSON.stringify({
+    pid: process.pid,
+    ppid: process.ppid,
+    token,
+  }));
+  const finish = () => process.exit(0);
+  process.on("SIGTERM", finish);
+  process.on("SIGINT", finish);
+  setInterval(() => {}, 1000);
+  if (overflow) {
+    await waitFor(() => existsSync(root + "/identity.ready"));
+    writeFileSync(root + "/fail-inspection", "fail");
+    process.stdout.write(Buffer.alloc(1024 * 1024 + 1, 97));
+  }
+}
+if (args[1] === "status") {
+  process.stdout.write(JSON.stringify({
+    API_URL: "http://127.0.0.1:54331",
+    PUBLISHABLE_KEY: "fixture-publishable",
+    SECRET_KEY: "fixture-secret",
+  }));
+}
+`,
+  );
+  chmodSync(commandBoundary, 0o755);
+  for (const command of ["npx", "docker", "node"]) {
+    symlinkSync(commandBoundary, join(fakeBin, command));
+  }
+
+  const unrelatedReady = join(stateRoot, "unrelated.ready");
+  const unrelatedToken = `unrelated-${token}`;
+  const unrelated = spawn(
+    process.execPath,
+    [fixtureProcess, unrelatedReady, unrelatedToken],
+    { detached: true, stdio: "ignore" },
+  );
+  unrelated.unref();
+  let wrapper;
+  try {
+    await waitForCondition(
+      () => existsSync(unrelatedReady),
+      "unrelated fixture readiness",
+    );
+    wrapper = spawn(
+      process.execPath,
+      [
+        ...(inspectionFailure || cleanupStage
+          ? ["--import", inspectionBoundary]
+          : []),
+        resolve(process.cwd(), "scripts/verify-access.mjs"),
+        hangCleanup || cleanupStage ? "--fixture-contract" : "--database",
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          ACCESS_INTERRUPTION_FIXTURE: fixtureProcess,
+          ACCESS_INTERRUPTION_DESCENDANT_BEHAVIOR: descendantBehavior,
+          ACCESS_INTERRUPTION_HANG_CLEANUP: hangCleanup ? "1" : "0",
+          ACCESS_INTERRUPTION_STARTUP: interruptStartup ? "1" : "0",
+          ACCESS_INTERRUPTION_CLEANUP_STAGE: cleanupStage ?? "",
+          ACCESS_INTERRUPTION_ROOT: stateRoot,
+          ACCESS_INTERRUPTION_TOKEN: token,
+          ACCESS_INSPECTION_FAILURE: inspectionFailure ?? "",
+          PATH: `${fakeBin}:${process.env.PATH}`,
+          SUPABASE_LOCAL_PROJECT: "rentcottage",
+          TMPDIR: stateRoot,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const stderr = [];
+    wrapper.stderr.on("data", (chunk) => stderr.push(String(chunk)));
+    if (cleanupStage) {
+      await waitForCondition(
+        () => existsSync(join(stateRoot, "cleanup.ready")),
+        "cleanup command readiness",
+      );
+      process.kill(wrapper.pid, signal);
+      await waitForCondition(
+        () => existsSync(join(stateRoot, "signal.handled")),
+        "wrapper signal handling",
+      );
+      process.kill(wrapper.pid, signal);
+      writeFileSync(join(stateRoot, "cleanup.release"), "finish");
+      const wrapperExit = await waitForChildExit(
+        wrapper,
+        "signalled cleanup wrapper",
+      );
+      expect(wrapperExit, stderr.join("")).toEqual({
+        code: signal === "SIGINT" ? 130 : 143,
+        signal: null,
+      });
+      expect(stderr.join("")).toBe("");
+      expect(existsSync(join(stateRoot, "termination-attempt"))).toBe(false);
+      expect(readFileSync(join(stateRoot, "stop.log"), "utf8")).toBe(
+        "stop invoked\n",
+      );
+      const service = JSON.parse(
+        readFileSync(join(stateRoot, "service.ready"), "utf8"),
+      );
+      expect(processIsAlive(service.pid)).toBe(false);
+      expect(processIsAlive(unrelated.pid)).toBe(true);
+      return;
+    }
+    if (hangCleanup) {
+      await waitForCondition(
+        () => existsSync(join(stateRoot, "cleanup.ready")),
+        "hung cleanup readiness",
+      );
+      const wrapperExit = await waitForChildExit(
+        wrapper,
+        "bounded hung-cleanup wrapper exit",
+        40_000,
+      );
+      const service = JSON.parse(
+        readFileSync(join(stateRoot, "service.ready"), "utf8"),
+      );
+      const unrelatedIdentity = JSON.parse(
+        readFileSync(unrelatedReady, "utf8"),
+      );
+      expect(wrapperExit).toEqual({ code: 1, signal: null });
+      expect(processIsAlive(service.pid)).toBe(true);
+      expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
+      expect(stderr.join("")).toContain("Command did not exit within 30000ms");
+      expect(stderr.join("")).toContain("Local Supabase cleanup failed.");
+      return;
+    }
+    await waitForCondition(
+      () =>
+        existsSync(join(stateRoot, "service.ready")) &&
+        existsSync(join(stateRoot, "command.ready")) &&
+        existsSync(join(stateRoot, "descendant.ready")),
+      "owned process readiness",
+    );
+    const service = JSON.parse(
+      readFileSync(join(stateRoot, "service.ready"), "utf8"),
+    );
+    const command = JSON.parse(
+      readFileSync(join(stateRoot, "command.ready"), "utf8"),
+    );
+    const descendant = JSON.parse(
+      readFileSync(join(stateRoot, "descendant.ready"), "utf8"),
+    );
+    const unrelatedIdentity = JSON.parse(readFileSync(unrelatedReady, "utf8"));
+    expect(processIdentity(command.pid)?.group).toBe(
+      processIdentity(descendant.pid)?.group,
+    );
+
+    if (inspectionFailure) {
+      if (inspectionFailure === "reidentify") {
+        await waitForCondition(
+          () => existsSync(join(stateRoot, "identity.ready")),
+          "initial process inspection",
+        );
+        writeFileSync(join(stateRoot, "fail-inspection"), "fail");
+        process.kill(wrapper.pid, signal);
+        process.kill(wrapper.pid, signal);
+      }
+      const wrapperExit = await waitForChildExit(
+        wrapper,
+        "failed inspection wrapper",
+      );
+      expect(wrapperExit, stderr.join("")).toEqual({
+        code: signal ? 143 : 1,
+        signal: null,
+      });
+      expect(stderr.join("")).toContain(
+        inspectionFailure === "initial-timeout"
+          ? "Timed out inspecting owned process group"
+          : "controlled inspection unavailable",
+      );
+      if (inspectionFailure === "overflow")
+        expect(stderr.join("")).toContain("spawn output exceeded maxBuffer");
+      expect(stderr.join("")).toContain(
+        `Retained command process group ${command.pid}`,
+      );
+      expect(stderr.join("")).not.toContain("at Timeout.");
+      expect(processIsAlive(command.pid)).toBe(true);
+      expect(processIsAlive(descendant.pid)).toBe(true);
+      expect(processIsAlive(service.pid)).toBe(true);
+      expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
+      expect(existsSync(join(stateRoot, "stop.log"))).toBe(false);
+      return;
+    }
+
+    process.kill(wrapper.pid, signal);
+    process.kill(wrapper.pid, signal);
+    const wrapperExit = await waitForChildExit(
+      wrapper,
+      "access wrapper exit",
+      descendantBehavior === "ignore" ? 9_000 : 4_000,
+    );
+    if (interruptStartup) {
+      expect(wrapperExit, stderr.join("")).toEqual({ code: 143, signal: null });
+      expect(processIsAlive(command.pid)).toBe(false);
+      expect(processIsAlive(descendant.pid)).toBe(false);
+      expect(processIsAlive(service.pid)).toBe(true);
+      expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
+      expect(existsSync(join(stateRoot, "stop.log"))).toBe(false);
+      expect(stderr.join("")).toContain(
+        "Retained local Supabase project rentcottage",
+      );
+      const retainedState = stderr
+        .join("")
+        .match(/temporary state ([^\n]+)\./)?.[1];
+      expect(retainedState).toBeTruthy();
+      expect(existsSync(retainedState)).toBe(true);
+      return;
+    }
+    await waitForCondition(
+      () =>
+        !processIsAlive(command.pid) &&
+        !processIsAlive(descendant.pid) &&
+        !processIsAlive(service.pid),
+      "owned process cleanup",
+      descendantBehavior === "ignore" ? 9_000 : 4_000,
+    );
+
+    expect(wrapperExit, stderr.join("")).toEqual({
+      code: signal === "SIGINT" ? 130 : 143,
+      signal: null,
+    });
+    expect(existsSync(join(stateRoot, "stop.log"))).toBe(true);
+    expect(readFileSync(join(stateRoot, "stop.log"), "utf8")).toBe(
+      "stop invoked\n",
+    );
+    expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
+    expect(stderr.join("")).toBe("");
+  } finally {
+    const cleanupErrors = [];
+    const identities = [
+      ["command.ready", token],
+      ["descendant.ready", `command-descendant-${token}`],
+      ["service.ready", `owned-service-${token}`],
+      ["cleanup.ready", `cleanup-stop-${token}`],
+      ["unrelated.ready", unrelatedToken],
+    ];
+    for (const [file, expectedToken] of identities) {
+      const path = join(stateRoot, file);
+      if (!existsSync(path)) continue;
+      const identity = JSON.parse(readFileSync(path, "utf8"));
+      try {
+        expect(identity.token).toBe(expectedToken);
+        await stopExactFixtureProcess(identity);
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    if (wrapper && processIsAlive(wrapper.pid)) {
+      try {
+        process.kill(wrapper.pid, "SIGTERM");
+        await waitForCondition(
+          () => !processIsAlive(wrapper.pid),
+          "access wrapper fixture cleanup",
+        );
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        cleanupErrors,
+        "Fixture process cleanup failed.",
+      );
+    }
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+}
+
 describe("local Supabase concurrency harness", () => {
+  it("awaits the exact ownership inspection before granting asynchronous access", async () => {
+    let resolveInspection;
+    let settled = false;
+    const execute = vi.fn(
+      () =>
+        new Promise((resolveResult) => {
+          resolveInspection = resolveResult;
+        }),
+    );
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+      },
+      workingDirectory: "/tmp/rentcottage-worktree",
+    });
+
+    const guarded = harness
+      .guardDisposableLocalDatabaseAsync(execute)
+      .then(() => {
+        settled = true;
+      });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(execute).toHaveBeenCalledWith("docker", ownershipCommand[1], {
+      encoding: "utf8",
+      input: undefined,
+      maxBuffer: 1024 * 1024,
+    });
+    resolveInspection({
+      status: 0,
+      stdout: "rentcottage|/tmp/rentcottage-worktree\n",
+      stderr: "",
+    });
+    await guarded;
+    expect(settled).toBe(true);
+  });
+
+  it("rejects an invalid asynchronous guard before execution", async () => {
+    const execute = vi.fn();
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_elsewhere",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+      },
+    });
+
+    await expect(
+      harness.guardDisposableLocalDatabaseAsync(execute),
+    ).rejects.toThrow(
+      "The guarded local Supabase database identity is invalid.",
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "unavailable inspection",
+      result: { status: 1, stdout: "", stderr: "unavailable" },
+      message: "The guarded local Supabase database container is unavailable.",
+    },
+    {
+      name: "wrong project",
+      result: {
+        status: 0,
+        stdout: "foreign|/tmp/rentcottage-worktree\n",
+        stderr: "",
+      },
+      message:
+        "The Supabase database container does not belong to this disposable local checkout.",
+    },
+    {
+      name: "wrong worktree",
+      result: {
+        status: 0,
+        stdout: "rentcottage|/tmp/foreign-worktree\n",
+        stderr: "",
+      },
+      message:
+        "The Supabase database container does not belong to this disposable local checkout.",
+    },
+    {
+      name: "execution error result",
+      result: { error: new Error("docker unavailable") },
+      message: "Unable to execute local Docker.",
+    },
+  ])(
+    "rejects asynchronous ownership for $name",
+    async ({ result, message }) => {
+      const harness = createLocalSupabaseConcurrencyHarness({
+        environment: {
+          SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+          SUPABASE_LOCAL_PROJECT: "rentcottage",
+        },
+        workingDirectory: "/tmp/rentcottage-worktree",
+      });
+
+      await expect(
+        harness.guardDisposableLocalDatabaseAsync(async () => result),
+      ).rejects.toThrow(message);
+    },
+  );
+
+  it.each([
+    new Error("inspection rejected"),
+    Object.assign(new Error("inspection cancelled"), { name: "AbortError" }),
+  ])("propagates asynchronous inspection rejection: %s", async (error) => {
+    const harness = createLocalSupabaseConcurrencyHarness({
+      environment: {
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+        SUPABASE_LOCAL_PROJECT: "rentcottage",
+      },
+    });
+
+    await expect(
+      harness.guardDisposableLocalDatabaseAsync(async () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+  });
+
   it("fails closed before Docker when the local project identity is invalid", () => {
     const spawnSyncProcess = vi.fn();
     const harness = createLocalSupabaseConcurrencyHarness({
@@ -403,6 +1037,61 @@ describe("local Supabase concurrency harness", () => {
 });
 
 describe("access verification command", () => {
+  it("reports an initial process-inspection timeout and retains uncertain resources without an unhandled rejection", async () => {
+    await observeInterruptedAccessVerification(undefined, {
+      inspectionFailure: "initial-timeout",
+    });
+  }, 15_000);
+
+  it("finishes cancellation reporting when process reidentification is unavailable while retaining uncertain processes", async () => {
+    await observeInterruptedAccessVerification("SIGTERM", {
+      inspectionFailure: "reidentify",
+    });
+  }, 15_000);
+
+  it("reports output overflow even when uncertain process identity prevents termination", async () => {
+    await observeInterruptedAccessVerification(undefined, {
+      inspectionFailure: "overflow",
+    });
+  }, 15_000);
+
+  it("retains and reports possible startup resources and temporary state when interrupted before ownership is established", async () => {
+    await observeInterruptedAccessVerification("SIGTERM", {
+      interruptStartup: true,
+    });
+  }, 15_000);
+
+  it.each([
+    { cleanupStage: "inspection", signal: "SIGTERM" },
+    { cleanupStage: "stop", signal: "SIGINT" },
+  ])(
+    "finishes one actual cleanup when the first $signal arrives during $cleanupStage",
+    async ({ cleanupStage, signal }) => {
+      await observeInterruptedAccessVerification(signal, { cleanupStage });
+    },
+    15_000,
+  );
+
+  it.each(["SIGTERM", "SIGINT"])(
+    "cleans its owned process tree on %s while preserving an unrelated process",
+    async (signal) => {
+      await observeInterruptedAccessVerification(signal);
+    },
+    15_000,
+  );
+
+  it("forces a known same-group descendant to exit after its leader exits gracefully", async () => {
+    await observeInterruptedAccessVerification("SIGTERM", {
+      descendantBehavior: "ignore",
+    });
+  }, 20_000);
+
+  it("bounds a hung cleanup command and reports the retained owned service", async () => {
+    await observeInterruptedAccessVerification(undefined, {
+      hangCleanup: true,
+    });
+  }, 45_000);
+
   it("exposes stable standalone database and browser aliases", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 
@@ -417,7 +1106,7 @@ describe("access verification command", () => {
     );
   });
 
-  it("constructs and cleans the real isolated Supabase workdir on success and failure", () => {
+  it("cleans the real isolated Supabase workdir on success and retains it after uncertain startup failure", async () => {
     const workingDirectory = process.cwd();
     const sourceConfigPath = join(workingDirectory, "supabase", "config.toml");
     const sourceConfig = readFileSync(sourceConfigPath, "utf8");
@@ -479,19 +1168,30 @@ describe("access verification command", () => {
         },
       );
 
-      expect(
-        main([], {
-          environment: {
-            SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-constructor",
-          },
-          makeTemp: () => stateRoot,
-          prepareProject: prepareIsolatedSupabaseWorkdir,
-          run,
-          workingDirectory,
-        }),
-      ).toBe(startStatus);
-      expect(existsSync(stateRoot)).toBe(false);
-      expect(readFileSync(sourceConfigPath, "utf8")).toBe(sourceConfig);
+      try {
+        expect(
+          await main([], {
+            environment: {
+              SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-constructor",
+            },
+            makeTemp: () => stateRoot,
+            prepareProject: prepareIsolatedSupabaseWorkdir,
+            run,
+            workingDirectory,
+          }),
+        ).toBe(startStatus);
+        expect(existsSync(stateRoot)).toBe(startStatus !== 0);
+        if (startStatus !== 0)
+          expect(
+            readFileSync(
+              join(stateRoot, "project/supabase/config.toml"),
+              "utf8",
+            ),
+          ).toContain('project_id = "rentcottage-issue-32-constructor"');
+        expect(readFileSync(sourceConfigPath, "utf8")).toBe(sourceConfig);
+      } finally {
+        rmSync(stateRoot, { recursive: true, force: true });
+      }
     }
   });
 
@@ -596,22 +1296,154 @@ describe("access verification command", () => {
     },
   );
 
-  it("rejects arguments before starting Docker or Supabase", () => {
+  it("rejects arguments before starting Docker or Supabase", async () => {
     const run = vi.fn();
     const stderr = vi.fn();
 
-    expect(main(["unexpected"], { run, stderr })).toBe(2);
+    expect(await main(["unexpected"], { run, stderr })).toBe(2);
     expect(run).not.toHaveBeenCalled();
 
-    expect(main(["--database", "--browser"], { run, stderr })).toBe(2);
-    expect(main(["--database", "--database"], { run, stderr })).toBe(2);
+    expect(await main(["--database", "--browser"], { run, stderr })).toBe(2);
+    expect(await main(["--database", "--database"], { run, stderr })).toBe(2);
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("runs complete database evidence without browser work", () => {
+  it("reports a public command spawn failure without tracking an invalid process group", async () => {
+    const emptyPath = mkdtempSync(join(tmpdir(), "rentcottage-empty-path-"));
+    const stderr = [];
+    try {
+      const wrapper = spawn(
+        process.execPath,
+        [resolve(process.cwd(), "scripts/verify-access.mjs"), "--database"],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            PATH: emptyPath,
+            SUPABASE_LOCAL_PROJECT: "rentcottage",
+            TMPDIR: emptyPath,
+          },
+          stdio: ["ignore", "ignore", "pipe"],
+        },
+      );
+      wrapper.stderr.on("data", (chunk) => stderr.push(String(chunk)));
+
+      expect(await waitForChildExit(wrapper, "spawn-failure wrapper")).toEqual({
+        code: 1,
+        signal: null,
+      });
+      expect(stderr.join("")).toContain("Unable to run npx: spawn npx ENOENT");
+    } finally {
+      rmSync(emptyPath, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves split UTF-8 command diagnostics", async () => {
+    const stateRoot = mkdtempSync(join(tmpdir(), "rentcottage-utf8-output-"));
+    const npx = join(stateRoot, "npx");
+    writeFileSync(
+      npx,
+      `#!${process.execPath}
+process.stdout.write(Buffer.from([0xe2]));
+process.stderr.write(Buffer.from([0xd8]));
+setTimeout(() => {
+  process.stdout.write(Buffer.from([0x82, 0xac, 0x0a]));
+  process.stderr.write(Buffer.from([0xb9, 0x0a]));
+  process.exit(7);
+}, 20);
+`,
+    );
+    chmodSync(npx, 0o755);
+    const stderr = [];
+    try {
+      const wrapper = spawn(
+        process.execPath,
+        [resolve(process.cwd(), "scripts/verify-access.mjs"), "--database"],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            PATH: stateRoot,
+            SUPABASE_LOCAL_PROJECT: "rentcottage",
+            TMPDIR: stateRoot,
+          },
+          stdio: ["ignore", "ignore", "pipe"],
+        },
+      );
+      wrapper.stderr.on("data", (chunk) => stderr.push(String(chunk)));
+
+      expect(await waitForChildExit(wrapper, "UTF-8 wrapper")).toEqual({
+        code: 7,
+        signal: null,
+      });
+      expect(stderr.join("")).toContain("€");
+      expect(stderr.join("")).toContain("ع");
+      expect(stderr.join("")).not.toContain("�");
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds captured public command output and cleans that exact process", async () => {
+    assertProcessObserverReady();
+    const stateRoot = mkdtempSync(join(tmpdir(), "rentcottage-output-bound-"));
+    const token = basename(stateRoot);
+    const npx = join(stateRoot, `npx-${token}`);
+    const ready = join(stateRoot, "output.ready");
+    writeFileSync(
+      npx,
+      `#!${process.execPath}
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.OUTPUT_READY, JSON.stringify({ pid: process.pid, token: process.env.OUTPUT_TOKEN }));
+process.stdout.write(Buffer.alloc(1024 * 1024 + 1, 97));
+setInterval(() => {}, 1000);
+`,
+    );
+    chmodSync(npx, 0o755);
+    symlinkSync(npx, join(stateRoot, "npx"));
+    const stderr = [];
+    try {
+      const wrapper = spawn(
+        process.execPath,
+        [resolve(process.cwd(), "scripts/verify-access.mjs"), "--database"],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            OUTPUT_READY: ready,
+            OUTPUT_TOKEN: token,
+            PATH: stateRoot,
+            SUPABASE_LOCAL_PROJECT: "rentcottage",
+            TMPDIR: stateRoot,
+          },
+          stdio: ["ignore", "ignore", "pipe"],
+        },
+      );
+      wrapper.stderr.on("data", (chunk) => stderr.push(String(chunk)));
+
+      await waitForCondition(
+        () => existsSync(ready),
+        "output fixture readiness",
+      );
+      expect(await waitForChildExit(wrapper, "output-bound wrapper")).toEqual({
+        code: 1,
+        signal: null,
+      });
+      const identity = JSON.parse(readFileSync(ready, "utf8"));
+      expect(processIsAlive(identity.pid)).toBe(false);
+      expect(stderr.join("")).toContain("spawn output exceeded maxBuffer");
+    } finally {
+      if (existsSync(ready)) {
+        await stopExactFixtureProcess(JSON.parse(readFileSync(ready, "utf8")));
+      }
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("runs complete database evidence without browser work", async () => {
     const run = successfulRun();
 
-    expect(main(["--database"], { environment: {}, run })).toBe(0);
+    expect(await main(["--database"], { environment: {}, run })).toBe(0);
 
     expect(commands(run)).toEqual([
       startCommand,
@@ -620,13 +1452,14 @@ describe("access verification command", () => {
       ...databasePreflightCommands,
       statusCommand,
       ...databaseCheckCommands,
+      ownershipCommand,
       stopCommand,
     ]);
   });
 
   it.each([{ mode: [] }, { mode: ["--database"] }])(
     "propagates Capture concurrency failure in mode $mode and cleans up",
-    ({ mode }) => {
+    async ({ mode }) => {
       const run = ownedRun((command, args) => ({
         status:
           command === "node" &&
@@ -638,7 +1471,9 @@ describe("access verification command", () => {
             ? localCredentials
             : "",
       }));
-      expect(main(mode, { environment: {}, run, stderr: vi.fn() })).toBe(7);
+      expect(await main(mode, { environment: {}, run, stderr: vi.fn() })).toBe(
+        7,
+      );
       expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
       expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
         false,
@@ -646,10 +1481,10 @@ describe("access verification command", () => {
     },
   );
 
-  it("runs complete browser evidence from fresh fixtures without database checks", () => {
+  it("runs complete browser evidence from fresh fixtures without database checks", async () => {
     const run = successfulRun();
 
-    expect(main(["--browser"], { environment: {}, run })).toBe(0);
+    expect(await main(["--browser"], { environment: {}, run })).toBe(0);
 
     expect(commands(run)).toEqual([
       startCommand,
@@ -657,11 +1492,12 @@ describe("access verification command", () => {
       resetCommand,
       statusCommand,
       ...browserCommands,
+      ownershipCommand,
       stopCommand,
     ]);
   });
 
-  it("refuses to reset, modify, browse, or stop a foreign local project", () => {
+  it("refuses to reset, modify, browse, or stop a foreign local project", async () => {
     const run = vi.fn((command, args) => ({
       status: 0,
       stdout:
@@ -673,7 +1509,7 @@ describe("access verification command", () => {
     const stderr = vi.fn();
 
     expect(
-      main(["--browser"], {
+      await main(["--browser"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -707,10 +1543,10 @@ describe("access verification command", () => {
         "does not belong to this disposable local checkout",
       ),
     );
-    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+    expect(removeTemp).not.toHaveBeenCalled();
   });
 
-  it("runs only the public Worker fixture contract in focused disposable mode", () => {
+  it("runs only the public Worker fixture contract in focused disposable mode", async () => {
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
@@ -721,7 +1557,7 @@ describe("access verification command", () => {
     const removeTemp = vi.fn();
 
     expect(
-      main(["--fixture-contract"], {
+      await main(["--fixture-contract"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -735,6 +1571,7 @@ describe("access verification command", () => {
       resetCommand,
       statusCommand,
       databaseCheckCommands[0],
+      ownershipCommand,
       stopCommand,
     ]);
     expect(run.mock.calls[4][2].env).toMatchObject({
@@ -746,14 +1583,14 @@ describe("access verification command", () => {
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
-  it("rejects a malformed local project before creating temp state or starting a subprocess", () => {
+  it("rejects a malformed local project before creating temp state or starting a subprocess", async () => {
     const makeTemp = vi.fn();
     const prepareProject = vi.fn();
     const run = vi.fn();
     const stderr = vi.fn();
 
     expect(
-      main([], {
+      await main([], {
         environment: {
           SUPABASE_LOCAL_PROJECT: "rentcottage;docker-rm",
         },
@@ -771,7 +1608,7 @@ describe("access verification command", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("runs database and browser evidence with local credentials then stops", () => {
+  it("runs database and browser evidence with local credentials then stops", async () => {
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
@@ -782,7 +1619,7 @@ describe("access verification command", () => {
     const removeTemp = vi.fn();
 
     expect(
-      main([], {
+      await main([], {
         environment: {
           EXISTING: "kept",
           SUPABASE_URL: "http://127.0.0.1:59999",
@@ -803,6 +1640,7 @@ describe("access verification command", () => {
       statusCommand,
       ...databaseCheckCommands,
       ...browserCommands,
+      ownershipCommand,
       stopCommand,
     ]);
     expect(run.mock.calls[0][2].env).toMatchObject({
@@ -942,7 +1780,7 @@ describe("access verification command", () => {
     { status: null, error: new Error("build unavailable") },
   ])(
     "blocks prebuilt Worker journeys on a failed build and still cleans up: %j",
-    (failure) => {
+    async (failure) => {
       const removeTemp = vi.fn();
       const run = ownedRun((command, args) => {
         if (command === "npm" && args.join(" ") === "run build:worker")
@@ -956,7 +1794,7 @@ describe("access verification command", () => {
         };
       });
       expect(
-        main(["--browser"], {
+        await main(["--browser"], {
           environment: {},
           makeTemp: () => "/tmp/access-docker",
           removeTemp,
@@ -974,9 +1812,9 @@ describe("access verification command", () => {
     },
   );
 
-  it("builds Worker access and scheduled expiry once with the same real local bindings", () => {
+  it("builds Worker access and scheduled expiry once with the same real local bindings", async () => {
     const run = successfulRun();
-    expect(main(["--browser"], { environment: {}, run })).toBe(0);
+    expect(await main(["--browser"], { environment: {}, run })).toBe(0);
     const builds = run.mock.calls.filter(([command]) => command === "npm");
     const workers = run.mock.calls.filter(([, args]) =>
       args.includes("--project=worker"),
@@ -1000,7 +1838,7 @@ describe("access verification command", () => {
     });
   });
 
-  it("creates the mobile Cottage Owner identity before its concurrency proof", () => {
+  it("creates the mobile Cottage Owner identity before its concurrency proof", async () => {
     let mobileIdentityCreated = false;
     const run = ownedRun((command, args) => {
       const invocation = [command, ...args].join(" ");
@@ -1019,11 +1857,11 @@ describe("access verification command", () => {
       };
     });
 
-    expect(main([], { environment: {}, run })).toBe(0);
+    expect(await main([], { environment: {}, run })).toBe(0);
     expect(mobileIdentityCreated).toBe(true);
   });
 
-  it("blocks Worker journeys when browser fixture validation fails and still cleans up", () => {
+  it("blocks Worker journeys when browser fixture validation fails and still cleans up", async () => {
     const removeTemp = vi.fn();
     const run = ownedRun((command, args) => ({
       status:
@@ -1038,7 +1876,7 @@ describe("access verification command", () => {
     }));
 
     expect(
-      main(["--browser"], {
+      await main(["--browser"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -1060,7 +1898,7 @@ describe("access verification command", () => {
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
-  it("derives the guarded database container from an isolated local project override", () => {
+  it("derives the guarded database container from an isolated local project override", async () => {
     const isolatedWorkdir = "/tmp/access-state/project";
     const prepareProject = vi.fn(() => isolatedWorkdir);
     const removeTemp = vi.fn();
@@ -1079,7 +1917,7 @@ describe("access verification command", () => {
     );
 
     expect(
-      main([], {
+      await main([], {
         environment: {
           SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
         },
@@ -1117,7 +1955,7 @@ describe("access verification command", () => {
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-state");
   });
 
-  it("preserves a database failure when cleanup also fails", () => {
+  it("preserves a database failure when cleanup also fails", async () => {
     const run = ownedRun((command, args) => {
       const invocation = [command, ...args].join(" ");
       return {
@@ -1134,7 +1972,7 @@ describe("access verification command", () => {
     const removeTemp = vi.fn();
 
     expect(
-      main(["--database"], {
+      await main(["--database"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -1154,10 +1992,114 @@ describe("access verification command", () => {
     expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
       false,
     );
-    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+    expect(removeTemp).not.toHaveBeenCalled();
   });
 
-  it("prints captured command output when startup fails", () => {
+  it("fails and retains the project when ownership changes before cleanup", async () => {
+    let inspections = 0;
+    const run = vi.fn((command, args) => {
+      if (command === "docker" && args[0] === "inspect") {
+        inspections += 1;
+        return {
+          status: 0,
+          stdout:
+            inspections === 1
+              ? `rentcottage|${process.cwd()}\n`
+              : `foreign-project|${process.cwd()}\n`,
+          stderr: "",
+        };
+      }
+      return {
+        status: 0,
+        stdout:
+          command === "npx" && args.join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      };
+    });
+    const removeTemp = vi.fn();
+    const stderr = vi.fn();
+
+    expect(
+      await main(["--fixture-contract"], {
+        environment: {},
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp,
+        run,
+        stderr,
+      }),
+    ).toBe(1);
+    expect(inspections).toBe(2);
+    expect(
+      run.mock.calls.some(
+        ([command, args]) =>
+          command === "npx" && args.join(" ") === "supabase stop --no-backup",
+      ),
+    ).toBe(false);
+    expect(removeTemp).not.toHaveBeenCalled();
+    expect(stderr).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Unable to reverify disposable local Supabase ownership before cleanup",
+      ),
+    );
+    expect(stderr).toHaveBeenCalledWith(
+      expect.stringContaining("Retained local Supabase project rentcottage"),
+    );
+  });
+
+  it.each([
+    { stage: "cleanup inspection", signal: "SIGTERM", status: 143 },
+    { stage: "cleanup stop", signal: "SIGINT", status: 130 },
+  ])(
+    "finishes exact cleanup when $signal arrives during $stage",
+    async ({ signal, stage, status }) => {
+      let inspections = 0;
+      let stops = 0;
+      const run = vi.fn((command, args) => {
+        if (command === "docker" && args[0] === "inspect") {
+          inspections += 1;
+          if (stage === "cleanup inspection" && inspections === 2) {
+            process.emit(signal);
+          }
+          return {
+            status: 0,
+            stdout: `rentcottage|${process.cwd()}\n`,
+            stderr: "",
+          };
+        }
+        if (
+          command === "npx" &&
+          args.join(" ") === "supabase stop --no-backup"
+        ) {
+          stops += 1;
+          if (stage === "cleanup stop") process.emit(signal);
+        }
+        return {
+          status: 0,
+          stdout:
+            command === "npx" && args.join(" ") === "supabase status -o json"
+              ? localCredentials
+              : "",
+        };
+      });
+      const removeTemp = vi.fn();
+
+      expect(
+        await main(["--fixture-contract"], {
+          environment: {},
+          makeTemp: () => "/tmp/access-docker",
+          removeTemp,
+          run,
+          stderr: vi.fn(),
+        }),
+      ).toBe(status);
+      expect(inspections).toBe(2);
+      expect(stops).toBe(1);
+      expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+    },
+  );
+
+  it("prints captured command output when startup fails", async () => {
     const run = vi.fn().mockReturnValue({
       status: 7,
       stdout: "startup details\n",
@@ -1166,7 +2108,7 @@ describe("access verification command", () => {
     const stderr = vi.fn();
 
     expect(
-      main([], {
+      await main([], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp: vi.fn(),
@@ -1178,7 +2120,7 @@ describe("access verification command", () => {
     expect(stderr).toHaveBeenCalledWith("docker details");
   });
 
-  it("rejects malformed Supabase credentials before spawning a browser", () => {
+  it("rejects malformed Supabase credentials before spawning a browser", async () => {
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
@@ -1192,7 +2134,7 @@ describe("access verification command", () => {
     }));
     const stderr = vi.fn();
 
-    expect(main([], { environment: {}, run, stderr })).toBe(1);
+    expect(await main([], { environment: {}, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase did not return valid local test credentials.",
     );
@@ -1207,7 +2149,7 @@ describe("access verification command", () => {
     ).toBe(false);
   });
 
-  it("rejects unreadable Supabase credential output", () => {
+  it("rejects unreadable Supabase credential output", async () => {
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
@@ -1217,7 +2159,7 @@ describe("access verification command", () => {
     }));
     const stderr = vi.fn();
 
-    expect(main([], { environment: {}, run, stderr })).toBe(1);
+    expect(await main([], { environment: {}, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase returned unreadable local test credentials.",
     );
@@ -1226,7 +2168,7 @@ describe("access verification command", () => {
     );
   });
 
-  it("rejects a non-loopback Supabase API URL", () => {
+  it("rejects a non-loopback Supabase API URL", async () => {
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
@@ -1240,7 +2182,7 @@ describe("access verification command", () => {
     }));
     const stderr = vi.fn();
 
-    expect(main([], { environment: {}, run, stderr })).toBe(1);
+    expect(await main([], { environment: {}, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase did not return valid local test credentials.",
     );
@@ -1255,7 +2197,7 @@ describe("access verification command", () => {
     ).toBe(false);
   });
 
-  it("fails when the local services cannot be stopped cleanly", () => {
+  it("fails when the local services cannot be stopped cleanly", async () => {
     const run = ownedRun((command, args) => ({
       status:
         command === "npx" && args.join(" ") === "supabase stop --no-backup"
@@ -1267,8 +2209,18 @@ describe("access verification command", () => {
           : "",
     }));
     const stderr = vi.fn();
+    const removeTemp = vi.fn();
 
-    expect(main([], { environment: {}, run, stderr })).toBe(6);
+    expect(
+      await main([], {
+        environment: {},
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp,
+        run,
+        stderr,
+      }),
+    ).toBe(6);
     expect(stderr).toHaveBeenCalledWith("Local Supabase cleanup failed.");
+    expect(removeTemp).not.toHaveBeenCalled();
   });
 });

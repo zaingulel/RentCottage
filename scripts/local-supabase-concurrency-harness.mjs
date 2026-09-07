@@ -35,6 +35,38 @@ export function createLocalSupabaseConcurrencyHarness({
   const project = environment.SUPABASE_LOCAL_PROJECT;
   const messages = { ...defaultMessages, ...messageOverrides };
 
+  function validateGuardIdentity() {
+    if (
+      !/^rentcottage(?:-[a-z0-9]+)*$/.test(project ?? "") ||
+      container !== `supabase_db_${project}` ||
+      !/^supabase_db_[a-z0-9_-]+$/.test(container)
+    ) {
+      fail(messages.invalidGuard);
+    }
+  }
+
+  function guardInspectionArguments() {
+    return [
+      "inspect",
+      container,
+      "--format",
+      '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+    ];
+  }
+
+  function validateGuardInspection(inspected) {
+    if (inspected.error)
+      fail("Unable to execute local Docker.", inspected.error);
+    if (inspected.status !== 0) fail(messages.unavailable);
+    const [labelProject, labelWorkdir] = inspected.stdout.trim().split("|");
+    if (
+      labelProject !== project ||
+      resolve(labelWorkdir) !== resolve(workingDirectory)
+    ) {
+      fail(messages.wrongOwner);
+    }
+  }
+
   function runDocker(args, input) {
     const result = spawnSyncProcess("docker", args, {
       encoding: "utf8",
@@ -71,27 +103,18 @@ export function createLocalSupabaseConcurrencyHarness({
   }
 
   function guardDisposableLocalDatabase() {
-    if (
-      !/^rentcottage(?:-[a-z0-9]+)*$/.test(project ?? "") ||
-      container !== `supabase_db_${project}` ||
-      !/^supabase_db_[a-z0-9_-]+$/.test(container)
-    ) {
-      fail(messages.invalidGuard);
-    }
-    const inspected = runDocker([
-      "inspect",
-      container,
-      "--format",
-      '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
-    ]);
-    if (inspected.status !== 0) fail(messages.unavailable);
-    const [labelProject, labelWorkdir] = inspected.stdout.trim().split("|");
-    if (
-      labelProject !== project ||
-      resolve(labelWorkdir) !== resolve(workingDirectory)
-    ) {
-      fail(messages.wrongOwner);
-    }
+    validateGuardIdentity();
+    validateGuardInspection(runDocker(guardInspectionArguments()));
+  }
+
+  async function guardDisposableLocalDatabaseAsync(execute) {
+    validateGuardIdentity();
+    const inspected = await execute("docker", guardInspectionArguments(), {
+      encoding: "utf8",
+      input: undefined,
+      maxBuffer: 1024 * 1024,
+    });
+    validateGuardInspection(inspected);
   }
 
   function startSession(sql, closeInput = false) {
@@ -189,6 +212,7 @@ export function createLocalSupabaseConcurrencyHarness({
   return {
     finishSession,
     guardDisposableLocalDatabase,
+    guardDisposableLocalDatabaseAsync,
     psqlArguments,
     runDocker,
     runSql,
