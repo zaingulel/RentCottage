@@ -68,7 +68,10 @@ job, worktree, command, and intended port in existing session evidence, excludin
 Immediately after launch and before leaving it unattended, record the runtime session handle, process identifier, start identity,
 and relevant parent, group, or port. Repeat readiness when the execution lane or any relevant resource changes.
 Install dependencies in a fresh worktree, make the route explicit, then plan and build under
-`AGENTS.md`. Commit each coherent green slice locally. Delivery waits for the owner-approved pull-request body.
+`AGENTS.md`. A small understood adjacent repair may join the same outcome when its risk is bounded and verifiable;
+the coordinator updates the writer handoff and records it for pull-request disclosure. Material product meaning,
+outcome, scope, or risk changes return to the owner. Commit each coherent green slice locally. Delivery waits for
+the owner-approved pull-request body.
 
 ## Finish the approved job
 

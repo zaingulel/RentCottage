@@ -12,6 +12,18 @@ This is RentCottage's evidence-selection authority. The selected issue defines t
 
 Test count and coverage percentage are not correctness targets. Functional green does not replace TypeScript, lint, database security, accessibility, build, runtime, or visual evidence when the change touches those evidence classes. Each change applies only the classes needed for its claims. A missing, skipped, unavailable, or unclassified required observation is not a pass.
 
+## Construction modes
+
+- **`strict-tdd`:** start with a failing public-seam proof for a reproducible defect. Also use
+  this floor for a changed security or domain invariant whose failure would be high consequence.
+- **`evidence-required`:** other changed behaviour may be built in the clearest order, but lands with an executed
+  regression proof that fails when the behaviour is broken and passes when restored.
+- **`preservation`:** documentation, mechanical changes, and refactors with no changed behaviour protect the named
+  unchanged contract using existing evidence, without new test or mutation ceremony.
+
+The architect names the mode and observer. The builder runs focused construction evidence. The coordinator owns
+the deliberate mutation proof and convergence route, so a builder does not repeatedly pay for broad suites.
+
 ## Evidence layers
 
 - Run formatting, linting, and TypeScript checks for every code change.
@@ -36,6 +48,11 @@ Validate each browser selector against its intended rendered state using an acce
 positional selection does not establish identity. Name the authoritative clock at every time boundary and align
 fixtures, triggers, and assertions to it without weakening deadline behaviour or reproducing production logic.
 
+Keep expensive fixtures alive across related assertions only when isolation is proven and failures still identify
+the broken claim. Prove a process or provider boundary with the smallest representative journey; test ordinary
+logic below it without repeatedly starting that boundary. When an interface changes, run its focused observer and
+the adjacent tests for affected callers.
+
 ## Construction and convergence
 
 Run focused evidence during construction and the applicable broad suite once at convergence. An unexpected retry
@@ -44,12 +61,17 @@ invalidated environment or an investigated flake. Stop retries when they produce
 intentional red proof, an unexpected failure, and unavailable evidence as distinct states, with the command and
 exit status; unavailable required evidence remains unavailable, not a pass.
 
+Run focused checks, intentional red/restored green proofs, and convergence through `npm run run-log -- <label>
+-- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
+commands retain their normal output and failure handling.
+
 ## Stable commands
 
-- `npm run verify` is the local and continuous-integration gate. It always audits production dependencies, checks formatting, lint and strict TypeScript, runs Vitest, regenerates Cloudflare types and checks their drift. It adds the existing access evidence, Worker build, browser-asset secret scan, browser journeys and preview smoke when any changed path is outside the command's explicit list of existing prose and agent-instruction files. The local selector unions the complete branch change from `origin/main`, staged and unstaged changes, and untracked files. CI classifies both the pull-request source and GitHub's checked-out merge result. Unknown paths, shallow or missing history, malformed Git evidence, symlinks and file-type changes select the full route. Use `npm run verify -- --full` for exhaustive convergence evidence. The full route requires Docker because the access checks start an isolated local Supabase database and prove its policies directly.
-- `npm run verify -- --baseline`, `--database`, and `--browser` run independent groups through the same command. Baseline runs the audit, format, lint, type, Vitest and Cloudflare type checks. Database and browser retain the same change selector and support `--full`; approved prose changes report expensive evidence as unselected and exit successfully without starting services. GitHub runs these modes on separate runners, each checking out the same merge revision with complete history. The final ready-only `test` check requires all three jobs to succeed; failed, cancelled, skipped or missing evidence cannot satisfy it. Drafts expose only the explanatory `ci-control-no-test` aggregate.
+- `npm run verify` is the local and continuous-integration gate. It always audits production dependencies, checks formatting, lint and strict TypeScript, runs Vitest, regenerates Cloudflare types and checks their drift. The selector independently names database and browser evidence. Reviewed workflow/prose changes use baseline only; global presentation CSS, ordinary bundled images, and the exact shell/display Playwright specifications add browser evidence without database evidence. Other paths require full evidence until their affected behaviour is investigated; unresolved scope, selector self-changes, shared configuration, shallow or missing history, malformed Git evidence, symlinks and file-type changes take the full fallback. The local selector unions the complete branch change from `origin/main`, staged and unstaged changes, and untracked files. CI classifies both the pull-request source and GitHub's checked-out merge result. `npm run verify -- --full` selects exhaustive convergence evidence. The full route requires Docker because access checks start an isolated local Supabase database and prove its policies directly.
+- `npm run verify -- --baseline`, `--database`, and `--browser` run independent groups through the same selector. Baseline runs the audit, format, lint, type, Vitest and Cloudflare type checks. Database and browser support `--full`; unselected groups report their reason and exit successfully without starting services. GitHub runs these modes on separate runners, each checking out the same merge revision with complete history. The final ready-only `test` check requires all three jobs to succeed; failed, cancelled, skipped or missing evidence cannot satisfy it. Drafts expose only the explanatory `ci-control-no-test` aggregate.
 - Browser verification builds the Worker once with real local Supabase credentials for access and scheduled expiry, then builds it separately with placeholder credentials for the client-secret scan and smoke. Internal Worker journeys select `playwright.worker-prebuilt.config.ts` only after the corresponding build succeeds. Next.js access and shell journeys keep their own normal Next.js builds; OpenNext standalone output is not reused by `next start`. Default browser commands still compile, and all preview configurations refuse existing servers so an occupied port cannot supply stale evidence. The prebuilt configuration accepts only Worker mode.
 - `npm run verify:preview -- <https-preview-url>` checks the hosted Arabic shell and live Supabase health boundary, then records the exact Git commit and preview origin. It rejects missing or malformed arguments before network access. Loopback Hypertext Transfer Protocol is allowed only for local diagnosis.
 - `npm run verify:board` performs the read-only live Project 4 intake required by `docs/agents/issue-tracker.md`; it is not part of the code-quality gate because it depends on current GitHub planning state.
+- `npm run run-log -- <label words> -- <command> <args>` runs exact argument vectors without a shell and appends a local `.agent-evidence/runs.jsonl` receipt with the completion time, label, working directory, arguments, and exit, signal, or spawn result. Pass secrets through the environment, never the label or arguments; command output and environment values are not captured. The receipt is ignored and local to the worktree. This small recovery aid should be removed if it stops helping long-session evidence retrieval or duplicates an authoritative platform record.
 
 Agents report exact commands, exit codes, failures, skipped or inapplicable checks, and current screenshots for visible work. Command output is authoritative; prose is interpretation.

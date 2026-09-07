@@ -6,7 +6,7 @@ Turn one owner-approved RentCottage issue into a concrete read-only implementati
    authority. Use current official provider documentation when an external contract is involved.
 2. State the affected area, expected behaviour, security/privacy surface, migration/rollback, size envelope, and
    exact stop conditions.
-3. Split the plan into coherent verifiable claims. For each, name files, construction mode from the testing
+3. Split the plan into coherent verifiable claims. For each, name files, one construction mode from the testing
    strategy, observer, independent oracle, plausible mutation or protected preservation contract, and focused
    command.
 4. Recommend `builder-lite` for established bounded work with strong verification, `builder` for cross-cutting

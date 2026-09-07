@@ -3,10 +3,10 @@
 ## Route
 
 - **Load trigger:** Load this authority only when preparing or executing an owner-approved delivery.
-- **Owns:** Delivery commits, push, pull-request creation, ready-only Continuous Integration (CI), auto-merge, tracker reconciliation, and closeout routing.
+- **Owns:** Push, pull-request creation, ready-only Continuous Integration (CI), auto-merge, tracker reconciliation, and closeout routing.
 - **Does not own:** Work selection, planning, construction, product acceptance criteria, provider policy or a second progress record.
-- **Required inputs:** The owner-approved finished bundle and exact outward actions; issue identity; absolute registered job-worktree path; exact local topic branch; and live stopped-writer ownership evidence.
-- **Acquired during delivery:** The committed and pushed Object ID (OID), remote branch and pull-request identity, documentation-only classification or one settled current-head Greptile attempt, the applicable required check, merge evidence, tracker reconciliation, and closeout evidence.
+- **Required inputs:** The owner-approved committed bundle and exact outward actions; reviewed commit; issue identity; absolute registered job-worktree path; exact local topic branch; and live stopped-writer ownership evidence.
+- **Acquired during delivery:** The pushed Object ID (OID), remote branch and pull-request identity, documentation-only classification or one settled current-head Greptile attempt, the applicable required check, merge evidence, tracker reconciliation, and closeout evidence.
 - **Stop conditions:** Stop on missing or stale approval, conflicting authority, changed scope, unresolved findings or conversations, failed or stale CI, unknown ownership, mismatched identity, or incomplete evidence.
 - **Next route:** A merged delivery proceeds to `closeout`; unfinished or refused work proceeds to `handoff` with the retained target and reason.
 
@@ -14,11 +14,15 @@ Do not load this document during selection-only resume, planning or ordinary con
 
 ## Owner-approved delivery
 
-Before a delivery commit or outward action, the coordinator presents one delivery packet containing the finished implementation bundle and locally knowable evidence. The same packet progressively gains the evidence acquired during delivery. Completing it does not create a second record or staged manifest, and it requires no second routine owner approval while the original approval remains current.
+Before an outward action, the coordinator presents one delivery packet containing the finished committed implementation bundle and locally knowable evidence. The same packet progressively gains the evidence acquired during delivery. Completing it does not create a second record or staged manifest, and it requires no second routine owner approval while the original approval remains current.
 
 The packet records the acceptance mapping, changed paths and commits, exact commands and results, current screenshots for visible work, security and privacy classification, migration and rollback notes, known gaps, and the proposed push, pull-request, merge, tracker, hosted-setting, deployment, and cleanup actions. The same packet gains remote evidence during delivery; it is not a second progress record or executable manifest.
 
-Approval authorises only the actions it names. It remains current while the finished bundle and safety evidence remain unchanged. A materially changed bundle, a later unvalidated head, a new unresolved finding, a failed gate, changed ownership, or an owner withdrawal stops delivery and requires fresh direction.
+Approval authorises only the actions it names. It remains current for same-outcome repairs and rebases after the
+new head receives fresh focused verification, applicable scoped internal review, full-diff classification,
+current-head Greptile handling, and CI. An unresolved finding or failed gate pauses progression until the
+same-outcome repair and its required evidence are complete. A material change to product meaning, outcome, scope,
+risk or named outward actions; changed ownership; or an owner withdrawal requires fresh direction.
 
 Keep one writer for the ticket. Before outward delivery and again before closeout, confirm the writer has stopped and no replacement task owns the target. Clean Git state is not ownership evidence; `active` or `unknown` retains the worktree.
 
@@ -26,7 +30,9 @@ Keep one writer for the ticket. Before outward delivery and again before closeou
 
 Follow this bounded sequence after approval:
 
-1. Confirm the exact branch, worktree, clean index, stopped writer, approved diff, local verification, and completed bounded internal review. Commit only the approved finished bundle and record `HEAD` as `CURRENT_PR_HEAD`.
+1. Confirm the exact branch, worktree, clean index, stopped writer, approved committed diff, local verification,
+   and completed bounded internal review. Require the reviewed commit to equal `HEAD` and record it as
+   `CURRENT_PR_HEAD`.
 2. Push with `git push --set-upstream origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`. Confirm the local branch now tracks the exact pull-request head remote ref; this retained remote-tracking ref supports ordinary branch deletion after a squash merge. If it later disappears, `closeout` owns the verified exact-head fallback. Create or update a draft pull request against `main` using the approved body. Re-read `state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels`; require the same repository, intended branch, draft state, base `main`, exact `CURRENT_PR_HEAD`, and no external-review label yet.
 3. Classify the full pull-request diff using the documentation-only exception below. If exempt, record that Greptile is not required and proceed to step 4 without adding a review label or posting a review request. Otherwise add `independent-review` as review metadata and request `gh pr comment <PR_NUMBER> --repo zaingulel/RentCottage --body "@greptileai review this draft"`. Record the request URL, time, and exact `CURRENT_PR_HEAD`. Settle the attempt using the evidence below and reconcile every emitted finding before proceeding. No paid plan, billing change, purchase, or upgrade is authorised.
 4. Re-read the pull request and require the same open draft and exact head, resolved conversations, completed required local evidence, either the documentation-only classification or a settled Greptile attempt, and no unresolved finding. Mark it ready with `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`.
@@ -40,7 +46,7 @@ Never use `--admin`.
 
 When required, Greptile is the sole external reviewer and the final review step for each pull-request head. `.greptile/config.json` disables automatic reviews; labels are metadata, and the explicit comment starts the review. Marking ready, pushing, and retrying CI must not request another review of an unchanged head.
 
-Before pushing a repair or rebase, keep the pull request in draft (`gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage --undo` if already ready). Complete focused verification and the scoped local repair review required by `AGENTS.md` before pushing. Any changed head invalidates the old classification, Greptile and CI evidence: record the new head and reassess the full diff. If Greptile is required, request `@greptileai review this draft again; <what changed> in <commit>` and settle it before marking ready. Rebase before the final required Greptile attempt, not between that attempt and CI. An unchanged-head CI retry needs no new review.
+Before pushing a same-outcome repair or rebase, keep the pull request in draft (`gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage --undo` if already ready). Complete focused verification, commit the change, and complete the scoped local repair review required by `AGENTS.md` before pushing. Any changed head invalidates the old classification, Greptile and CI evidence: record the new head and reassess the full diff. If Greptile is required, request `@greptileai review this draft again; <what changed> in <commit>` and settle it before marking ready. Rebase before the final required Greptile attempt, not between that attempt and CI. An unchanged-head CI retry needs no new review. Return to the owner only when the repair or rebase changes product meaning, outcome, scope, risk, or the named outward actions.
 
 Keep this manual-request configuration, documentation-only exception and review-before-CI ordering consistent with Flow Metrics and copy them when setting up another repository. The GitHub workflow enforces draft versus ready, not proof of the earlier review; the coordinator must verify the classification and any required attempt before changing that state. Greptile documents [manual-only configuration](https://www.greptile.com/docs/code-review/greptile-json-reference) and [explicit draft requests](https://www.greptile.com/docs/code-review/tips-recipes).
 

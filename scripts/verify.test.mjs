@@ -51,6 +51,13 @@ const requiredExpensiveSteps = [
   ],
 ];
 
+const requiredDatabaseSteps = [["npm", ["run", "verify:access:database"]]];
+
+const requiredBrowserSteps = [
+  ["npm", ["run", "verify:access:browser"]],
+  ...requiredExpensiveSteps.slice(1),
+];
+
 function requiredCiSteps(mode) {
   const chromium = [
     "npx",
@@ -321,11 +328,103 @@ describe("repository verification command", () => {
   });
 
   it.each([
+    [
+      "reviewer runtime",
+      ".codex/agents/reviewer.toml",
+      "sandbox_mode = 'workspace-write'\n",
+    ],
+    [
+      "security reviewer runtime",
+      ".codex/agents/security-reviewer.toml",
+      "sandbox_mode = 'workspace-write'\n",
+    ],
+    ["run logger", "scripts/run-log.mjs", "export const fixture = true;\n"],
+    [
+      "run logger test",
+      "scripts/run-log.test.mjs",
+      "export const fixture = true;\n",
+    ],
+  ])(
+    "keeps reviewed workflow-only %s on baseline evidence",
+    (_label, path, contents) => {
+      const repository = createRepository();
+      commit(repository, path, contents);
+
+      const result = runVerification(repository);
+
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        requiredBaselineSteps,
+      );
+    },
+  );
+
+  it.each([
+    [
+      "global presentation CSS",
+      "src/app/globals.css",
+      "body { color: black; }\n",
+    ],
+    ["bundled image", "public/uploads/hero.png", "image bytes\n"],
+    [
+      "shell journey",
+      "tests/marketplace-shell.spec.ts",
+      "test('shell', () => {});\n",
+    ],
+    [
+      "interaction journey",
+      "tests/interaction-controls.spec.ts",
+      "test('controls', () => {});\n",
+    ],
+    [
+      "booking display journey",
+      "tests/booking-request-display.spec.ts",
+      "test('display', () => {});\n",
+    ],
+  ])(
+    "selects browser evidence without database evidence for %s",
+    (_label, path, contents) => {
+      const repository = createRepository();
+      commit(repository, path, contents);
+
+      const result = runVerification(repository);
+
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual([
+        ...requiredBaselineSteps,
+        ...requiredBrowserSteps,
+      ]);
+      expect(
+        result.calls.map(([command, args]) => [command, args]),
+      ).not.toEqual(expect.arrayContaining(requiredDatabaseSteps));
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("Database verification: skipped"),
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("Browser verification: selected"),
+      );
+    },
+  );
+
+  it.each([
     ["runtime code", "src/runtime.ts", "export const value = 'changed';\n"],
     ["a test", "src/runtime.test.ts", "throw new Error('fixture');\n"],
     ["a dependency file", "package.json", "{}\n"],
     ["an asset", "docs/product/assets/runtime.json", "{}\n"],
     ["an unknown document", "docs/new-runtime-fixture.md", "fixture\n"],
+    [
+      "the selector itself",
+      "scripts/verify.mjs",
+      "export const changed = true;\n",
+    ],
+    [
+      "the selector tests",
+      "scripts/verify.test.mjs",
+      "export const changed = true;\n",
+    ],
+    [
+      "a public runtime file",
+      "public/_headers",
+      "/assets/*\n  cache-control: no-cache\n",
+    ],
   ])("selects full verification for %s", (_label, path, contents) => {
     const repository = createRepository();
     commit(repository, path, contents);
@@ -338,7 +437,21 @@ describe("repository verification command", () => {
       ...requiredExpensiveSteps,
     ]);
     expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining("Expensive verification: selected"),
+      expect.stringContaining("Database verification: selected"),
+    );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining("Browser verification: selected"),
+    );
+  });
+
+  it("explains that an unknown path needs investigation before the full fallback", () => {
+    const repository = createRepository();
+    commit(repository, "unknown-runtime.fixture", "runtime\n");
+
+    const result = runVerification(repository);
+
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringMatching(/unknown-runtime\.fixture.*investigate.*full/i),
     );
   });
 

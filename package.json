@@ -20,6 +20,7 @@
     "evaluate:translation": "node --experimental-strip-types src/translation/evaluation-cli.ts",
     "cf-typegen": "wrangler types cloudflare-env.d.ts",
     "verify:board": "node scripts/board.mjs",
+    "run-log": "node scripts/run-log.mjs",
     "verify": "node scripts/verify.mjs",
     "verify:access": "node scripts/verify-access.mjs",
     "verify:access:database": "node scripts/verify-access.mjs --database",

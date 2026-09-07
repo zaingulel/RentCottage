@@ -42,7 +42,9 @@ before editing. Plans name affected areas, expected behaviour, verification, mig
 ## Owner gates
 
 1. **Work selection:** the owner approves the issue outcome and acceptance criteria, authorizing planning, builder
-   routing, implementation, verification, and review within the selected scope. Scope expansion requires owner approval.
+   routing, implementation, verification, and review within that outcome. Small understood adjacent repairs may
+   ride with the job when their risk is bounded and verifiable; disclose them in the pull request. A material
+   change to product meaning, outcome, scope, or risk requires owner approval.
 2. **Delivery approval:** the owner reviews one filled pull-request body containing the finished bundle and local
    evidence. The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
    hosted settings, and tracker mutation require that authority.
@@ -87,22 +89,24 @@ repository definitions take precedence over machine-wide model routing. Use the 
 - `oracle` is an exceptional read-only escalation for a twice-stalled diagnosis, unresolved architecture
   tiebreak, or independent high-consequence derivation. It is not a routine rung.
 
-Planning and review manifests request read-only runtime defaults. A parent runtime can override those defaults,
-so the coordinator must verify the effective sandbox and ownership before accepting independent evidence. A
-write-capable lane is not independent review evidence and must be rerun in an enforced read-only runtime.
+Planning manifests request read-only runtime defaults. Reviewers use existing narrow permission escalation to run
+required tests and browsers and may write temporary evidence, but must not edit implementation, tests, or agent
+instructions. The coordinator verifies the effective runtime, records the reviewed commit, and confirms its
+tracked source is unchanged after evidence runs.
 Specialist fan-out beyond these seats needs owner approval for that job.
 
 ## Construction and review
 
-Use `tdd` for non-trivial behaviour at an approved public seam and `diagnosing-bugs` for hard or repeated
-failures. Each material behaviour change carries a regression proof that goes red when the behaviour is broken
-and green when restored. Run focused evidence during construction and `npm run verify` once at convergence.
+Choose `strict-tdd`, `evidence-required`, or `preservation` under the testing
+strategy. Builders run focused evidence; the coordinator owns mutation proof and the applicable `npm run verify`
+convergence route. Use `diagnosing-bugs` for hard or repeated failures.
 
-One fresh independent review checks the complete finished change against repository standards and the issue.
-Run `security-code-review` first to decide whether Security joins Standards and Specification. A true bounded
-finding returns to the sole writer. Run focused verification for the repair, then review only the repaired hunks
-and what they could break. No review follows a repair that adds no factual claim. After two non-converging
-repair-and-scoped-review cycles, stop and return to the owner to split, rescope, or stop.
+Finish construction by verifying, committing, and confirming that no intended change remains outside the commit.
+One fresh independent review checks that committed job diff and what it can break against repository standards
+and the issue. Run `security-code-review` first to decide whether Security joins Standards and Specification.
+A true bounded finding returns to the sole writer. Commit the repair after focused verification, then review only
+that repair delta and what it could break. No review follows a repair that adds no factual claim. After two
+non-converging repair-and-scoped-review cycles, stop and return to the owner to split, rescope, or stop.
 
 Documentation-only changes skip Greptile under `docs/agents/delivery.md`. For other changes, Greptile is the sole
 external reviewer and is best-effort: request it explicitly on the finished draft and settle the attempt before

@@ -20,6 +20,10 @@ Commands and results:
 
 <!-- List exact commands and outcomes. -->
 
+Small adjacent repairs included in this outcome:
+
+<!-- List and justify each bounded repair, or say "None". -->
+
 ## Review and delivery
 
 - Security and privacy impact:
