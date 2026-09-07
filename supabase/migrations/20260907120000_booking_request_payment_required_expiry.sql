@@ -1192,3 +1192,70 @@ end;
 $$;
 revoke all on function public.query_simulated_booking_request_payment_recovery(jsonb,text,text,text) from public,anon,authenticated;
 grant execute on function public.query_simulated_booking_request_payment_recovery(jsonb,text,text,text) to service_role;
+
+
+-- Participants receive only verified expiry state and the original payment deadline.
+create function public.booking_request_payment_required_expiry_status(target_request public.booking_requests)
+returns jsonb language sql stable security invoker set search_path = '' as $$
+  select case when capture.state='payment_required'
+    and expiry.payment_required_deadline=capture.payment_required_deadline
+    and not exists(select 1 from public.booking_confirmations confirmations where confirmations.booking_request_id=target_request.id)
+    and ((target_request.status='accepted' and expiry.state in ('processing','attention_required'))
+      or (target_request.status='expired' and expiry.state='complete'))
+  then jsonb_build_object('status',case expiry.state when 'complete' then 'expired'
+    when 'attention_required' then 'attention-required' else 'processing' end,
+    'deadline',to_char(capture.payment_required_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) end
+  from public.booking_request_capture_work capture
+  join public.booking_request_payment_required_expiry_work expiry on expiry.booking_request_id=capture.booking_request_id
+  where capture.booking_request_id=target_request.id;
+$$;
+revoke all on function public.booking_request_payment_required_expiry_status(public.booking_requests)
+  from public,anon,authenticated,service_role;
+
+create or replace function public.get_customer_booking_request(target_reference text)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object('id',requests.id,'bookingRequestReference',requests.booking_request_reference,
+    'status',requests.status,'paymentStatus',public.booking_request_payment_status(requests),
+    'paymentRequiredWindow',public.booking_request_payment_required_window(requests),
+    'paymentRequiredExpiry',public.booking_request_payment_required_expiry_status(requests),
+    'paymentRecovery',public.booking_request_payment_recovery_status(requests),
+    'cottageName',snapshots.quote_payload->>'cottageName','bookingPeriod',snapshots.quote_payload->'items',
+    'partySize',requests.party_size,'bookingPriceIqd',(snapshots.quote_payload->>'bookingPriceIqd')::bigint,
+    'serviceFeeIqd',(snapshots.quote_payload->>'serviceFeeIqd')::bigint,
+    'customerTotalIqd',(snapshots.quote_payload->>'customerTotalIqd')::bigint,
+    'responseDeadline',to_char(requests.response_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'declineReason',requests.decline_reason,'declineNote',requests.decline_note,
+    'statusNotifications',coalesce((select jsonb_agg(jsonb_build_object('id',receipts.id,'status',receipts.status,
+      'createdAt',to_char(receipts.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) order by receipts.created_at)
+      from public.booking_request_status_notifications receipts where receipts.booking_request_id=requests.id
+        and receipts.recipient_user_id=(select auth.uid())),'[]'::jsonb))
+  from public.booking_requests requests join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id
+  where requests.booking_request_reference=target_reference and requests.customer_user_id=(select auth.uid())
+    and exists(select 1 from public.account_contexts contexts where contexts.user_id=(select auth.uid()) and contexts.role='customer');
+$$;
+
+create or replace function public.list_owner_booking_request_notifications()
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id',requests.id,'bookingRequestReference',requests.booking_request_reference,
+    'status',requests.status,'paymentStatus',public.booking_request_payment_status(requests),
+    'paymentRequiredWindow',public.booking_request_payment_required_window(requests),
+    'paymentRequiredExpiry',public.booking_request_payment_required_expiry_status(requests),
+    'customerName',requests.customer_name,'partySize',requests.party_size,'bookingNote',requests.booking_note,
+    'cottageName',snapshots.quote_payload->>'cottageName','bookingPeriod',snapshots.quote_payload->'items',
+    'bookingPriceIqd',(snapshots.quote_payload->>'bookingPriceIqd')::bigint,
+    'marketplaceCommissionFils',snapshots.marketplace_commission_amount_fils,
+    'ownerNetFils',(snapshots.quote_payload->>'bookingPriceIqd')::bigint*1000-snapshots.marketplace_commission_amount_fils,
+    'houseRules',snapshots.quote_payload->>'houseRules','bookingTermsVersion',snapshots.booking_terms_version,
+    'cancellationPolicyVersion',snapshots.cancellation_policy_version,
+    'statusNotifications',coalesce((select jsonb_agg(jsonb_build_object('id',receipts.id,'status',receipts.status,
+      'createdAt',to_char(receipts.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) order by receipts.created_at)
+      from public.booking_request_status_notifications receipts where receipts.booking_request_id=requests.id
+        and receipts.recipient_user_id=(select auth.uid())),'[]'::jsonb),
+    'responseDeadline',to_char(requests.response_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'createdAt',to_char(notifications.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) order by notifications.created_at desc),'[]'::jsonb)
+  from public.owner_request_notifications notifications
+  join public.booking_requests requests on requests.id=notifications.booking_request_id
+  join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id
+  where notifications.owner_user_id=(select auth.uid()) and exists(select 1 from public.account_contexts contexts
+    where contexts.user_id=(select auth.uid()) and contexts.role='cottage_owner' and contexts.owner_approval_state='approved');
+$$;

@@ -48,6 +48,7 @@ const pendingNotification = {
   cancellationPolicyVersion: "cancel-v1",
   statusNotifications: [],
   paymentRequiredWindow: null,
+  paymentRequiredExpiry: null,
   responseDeadline: "2099-08-21T21:00:00.000Z",
   createdAt: "2099-08-21T17:00:00.000Z",
 };
@@ -152,6 +153,7 @@ describe("Owner Booking Request notifications", () => {
             cancellationPolicyVersion: "rentcottage-cancellation-2026-08-04",
             statusNotifications: [],
             paymentRequiredWindow: null,
+            paymentRequiredExpiry: null,
             responseDeadline: "2099-08-21T21:00:00.000Z",
             createdAt: "2099-08-21T17:00:00.000Z",
           },
@@ -225,6 +227,7 @@ describe("Owner Booking Request notifications", () => {
             cancellationPolicyVersion: "cancel-v1",
             statusNotifications: [],
             paymentRequiredWindow: null,
+            paymentRequiredExpiry: null,
             responseDeadline: "2099-08-21T21:00:00.000Z",
             createdAt: "2099-08-21T17:00:00.000Z",
           },
@@ -432,4 +435,67 @@ describe("Owner Booking Request notifications", () => {
       }
     },
   );
+});
+
+it("keeps elapsed and attention states held and refreshing until one unpaid-expiry notice arrives", () => {
+  vi.useFakeTimers();
+  try {
+    let fixture: (typeof ownerDisplayFixtures)[
+      | "payment-expiry-processing"
+      | "payment-expiry-attention-required"] =
+      ownerDisplayFixtures["payment-expiry-processing"];
+    const view = render(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[fixture]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("remain held");
+    vi.advanceTimersToNextTimer();
+    expect(refresh).toHaveBeenCalled();
+    fixture = ownerDisplayFixtures["payment-expiry-attention-required"];
+    view.rerender(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[fixture]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "could not yet be verified",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("not confirmed");
+    expect(screen.getByRole("status")).toHaveTextContent("remain held");
+    expect(screen.getByRole("status")).not.toHaveTextContent("released");
+    refresh.mockClear();
+    vi.advanceTimersToNextTimer();
+    expect(refresh).toHaveBeenCalledOnce();
+    const completed = ownerDisplayFixtures["payment-expiry-expired"];
+    view.rerender(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[completed]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Expired unpaid");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "authorisations have been released",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("not confirmed");
+    expect(screen.getByText("Payment deadline").nextSibling).toHaveTextContent(
+      "12:20",
+    );
+    expect(
+      screen.queryByText("Owner response deadline"),
+    ).not.toBeInTheDocument();
+    expect(
+      Array.from(view.container.querySelectorAll("dd")).filter((item) =>
+        item.textContent?.includes("Expired unpaid"),
+      ),
+    ).toHaveLength(1);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(vi.getTimerCount()).toBe(0);
+    view.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
 });

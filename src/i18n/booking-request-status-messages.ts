@@ -156,3 +156,27 @@ export const bookingRequestPaymentRecoveryMessages = {
     processing: "پارەدانی جێگرەوەت پشکنین دەکرێت. هەوڵێکی تر دەست پێ مەکە.",
   },
 } as const;
+
+export const bookingRequestPaymentRequiredExpiryMessages = {
+  en: {
+    attention:
+      "Payment or authorisation release could not yet be verified. The booking is not confirmed and the selected Cottage Shifts remain held.",
+    expiredLabel: "Expired unpaid",
+    expiredDescription:
+      "Payment authorisations have been released. The booking is not confirmed and this request’s hold on the selected Cottage Shifts has been released.",
+  },
+  ar: {
+    attention:
+      "لم نتمكن بعد من التحقق من الدفع أو تحرير تفويضات الدفع. الحجز غير مؤكد، وتبقى فترات البيت المختارة محجوزة.",
+    expiredLabel: "انتهى الطلب دون دفع",
+    expiredDescription:
+      "تم تحرير تفويضات الدفع. الحجز غير مؤكد، وتم تحرير الفترات التي حجزها هذا الطلب.",
+  },
+  ckb: {
+    attention:
+      "هێشتا نەمانتوانیوە پارەدان یان ئازادکردنی مۆڵەتەکانی پارەدان پشتڕاست بکەینەوە. حجزەکە پشتڕاست نەکراوەتەوە و شەفتە هەڵبژێردراوەکان گیراو دەمێننەوە.",
+    expiredLabel: "داواکارییەکە بەبێ پارەدان بەسەرچوو",
+    expiredDescription:
+      "مۆڵەتەکانی پارەدان ئازاد کراون. حجزەکە پشتڕاست نەکراوەتەوە و شەفتە گیراوەکانی ئەم داواکارییە ئازاد کراون.",
+  },
+} as const;

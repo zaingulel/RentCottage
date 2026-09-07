@@ -10,6 +10,7 @@ const baseRequest = {
   status: "declined",
   paymentStatus: null,
   paymentRequiredWindow: null,
+  paymentRequiredExpiry: null,
   cottageName: "The Reed House",
   bookingPeriod: [
     {
@@ -292,3 +293,70 @@ it.each([
     ).rejects.toThrow("data is invalid");
   },
 );
+
+describe("Payment Required expiry projection", () => {
+  const window = {
+    recordedAt: "2099-08-21T09:00:00.000Z",
+    deadline: "2099-08-21T09:20:00.000Z",
+    databaseNow: "2099-08-21T09:20:00.000Z",
+  };
+  it.each(["processing", "attention-required", "expired"] as const)(
+    "retains the minimal %s state",
+    async (status) => {
+      const expiry = { status, deadline: window.deadline };
+      const raw = {
+        ...baseRequest,
+        status: status === "expired" ? "expired" : "accepted",
+        paymentStatus: status === "expired" ? null : "payment-required",
+        paymentRequiredWindow: status === "expired" ? null : window,
+        paymentRequiredExpiry: expiry,
+      };
+      const result = await getCustomerBookingRequest(
+        clientReturning(raw),
+        reference,
+      );
+      expect(result?.paymentRequiredExpiry).toEqual(expiry);
+      expect(result?.paymentRequiredExpiry).not.toBe(expiry);
+    },
+  );
+  it.each([
+    undefined,
+    { status: "expired", deadline: "2099-08-21T09:20:00.000Z" },
+    { status: "processing", deadline: "invalid" },
+    { status: "processing", deadline: "2099-08-21T09:21:00.000Z" },
+    {
+      status: "processing",
+      deadline: "2099-08-21T09:20:00.000Z",
+      providerReference: "private",
+    },
+    { status: "unknown", deadline: "2099-08-21T09:20:00.000Z" },
+  ])(
+    "rejects malformed or contradictory expiry evidence %#",
+    async (paymentRequiredExpiry) => {
+      const raw = {
+        ...baseRequest,
+        status: "accepted",
+        paymentStatus: "payment-required",
+        paymentRequiredWindow: window,
+        paymentRequiredExpiry,
+      };
+      await expect(
+        getCustomerBookingRequest(clientReturning(raw), reference),
+      ).rejects.toThrow("invalid");
+    },
+  );
+  it("requires confirmed payment to have no residual expiry projection", async () => {
+    const raw = {
+      ...baseRequest,
+      status: "accepted",
+      paymentStatus: "paid-confirmed",
+      paymentRequiredExpiry: {
+        status: "attention-required",
+        deadline: window.deadline,
+      },
+    };
+    await expect(
+      getCustomerBookingRequest(clientReturning(raw), reference),
+    ).rejects.toThrow("invalid");
+  });
+});

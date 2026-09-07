@@ -78,6 +78,9 @@ from (values
   ('finalize_booking_request_payment_required_expiry',array['uuid'])
 ) functions(function_name,arguments);
 
+select function_privs_are('public','booking_request_payment_required_expiry_status',array['public.booking_requests'],role,array[]::text[],
+  role||' cannot read the private expiry projection helper directly') from unnest(array['anon','authenticated','service_role']) roles(role);
+
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
 insert into auth.users (id, aud, role, phone, phone_confirmed_at) values
@@ -186,11 +189,24 @@ from (values
   ('public.claim_customer_booking_request_payment_recovery(uuid,uuid,text)'),
   ('public.lease_booking_request_payment_recovery_step(uuid)'),
   ('public.execute_simulated_booking_request_payment_recovery(jsonb,text)'),
-  ('public.query_simulated_booking_request_payment_recovery(jsonb,text,text,text)')
+  ('public.query_simulated_booking_request_payment_recovery(jsonb,text,text,text)'),
+  ('public.finalize_booking_request_confirmation(uuid,jsonb)')
 ) functions(signature);
 select replace(definition,'clock_timestamp()','public.payment_required_expiry_test_now()')
 from expiry_original_functions \gexec
+insert into public.owner_request_notifications(booking_request_id,owner_user_id) values('60000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001');
 savepoint clean_slate;
+reset role;
+select set_config('expiry.expected_projection',('null'::jsonb)::text,true);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Customer receives only the absent expiry state and fixed deadline');
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+set local role authenticated;
+select is(public.list_owner_booking_request_notifications()->0->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Owner receives only the absent expiry state and fixed deadline');
+reset role;
+set local role service_role;
 set local role service_role;
 create temp table prepared_expiry as select public.prepare_booking_request_payment_required_expiry(
   '60000000-0000-4000-8000-000000001001',
@@ -203,6 +219,17 @@ select is((select (result#>>'{permit,binding,amountFils}')::bigint from prepared
   'the release covers the full IQD 110000 price plus IQD 5000 fee in fils');
 select is((select result#>>'{permit,binding,predecessorMovementReference}' from prepared_expiry),
   'confirmation-auth-movement-1','the release binds the exact original authorisation movement');
+reset role;
+select set_config('expiry.expected_projection',(jsonb_build_object('status','processing','deadline',(select to_char(payment_required_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') from public.booking_request_capture_work)))::text,true);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Customer receives only the processing expiry state and fixed deadline');
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+set local role authenticated;
+select is(public.list_owner_booking_request_notifications()->0->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Owner receives only the processing expiry state and fixed deadline');
+reset role;
+set local role service_role;
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
   'processing','an undispatched release is not safe expiry proof');
 reset role;
@@ -218,6 +245,17 @@ select is(public.execute_simulated_booking_request_payment_required_expiry((sele
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'attention_required',
   'failed release attention is durable');
+reset role;
+select set_config('expiry.expected_projection',(jsonb_build_object('status','attention-required','deadline',(select to_char(payment_required_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') from public.booking_request_capture_work)))::text,true);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Customer receives only the attention-required expiry state and fixed deadline');
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+set local role authenticated;
+select is(public.list_owner_booking_request_notifications()->0->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Owner receives only the attention-required expiry state and fixed deadline');
+reset role;
+
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,
   'failed release retains every held occupancy');
 select is((select count(*) from public.booking_request_status_notifications where status='expired'),0::bigint,
@@ -280,6 +318,17 @@ select is((select count(*) from public.cottage_booking_period_occupancies where 
 select is((select count(*) from public.cottage_inventory_commitments),3::bigint,'selected inventory history remains intact');
 select is((select count(*) from public.booking_request_submission_attempts where intent_dedupe_active),0::bigint,'the expired request no longer reserves its submission intent');
 select is((select count(*) from public.booking_confirmations),0::bigint,'safe unpaid expiry creates no Confirmed Booking');
+reset role;
+select set_config('expiry.expected_projection',(jsonb_build_object('status','expired','deadline',(select to_char(payment_required_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') from public.booking_request_capture_work)))::text,true);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Customer receives only the expired expiry state and fixed deadline');
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+set local role authenticated;
+select is(public.list_owner_booking_request_notifications()->0->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Owner receives only the expired expiry state and fixed deadline');
+reset role;
+
 select is((select count(*) from public.simulated_payment_provider_operations where operation_kind='capture' and current_outcome='succeeded'),0::bigint,
   'safe expiry creates no successful capture');
 select is((select count(*) from public.booking_request_status_notifications where status='expired' and recipient_user_id='10000000-0000-4000-8000-000000001002'),1::bigint,
@@ -359,6 +408,37 @@ select is(jsonb_build_object(
   'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.simulated_payment_provider_operations ledger),
   'notices',(select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices)),
   (select graph from recovery_terminal_graph),'delayed recovery replay changes no operation, outcome time, expiry or notification');
+reset role;
+
+rollback to clean_slate;
+update public.payment_required_expiry_test_clock set instant=(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+create temp table confirming_attempt as select public.claim_customer_booking_request_payment_recovery(
+  '60000000-0000-4000-8000-000000001001','81000000-0000-4000-8000-000000001009','simulated-replacement') result;
+reset role;
+grant select on confirming_attempt to service_role;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
+reset role;
+update public.payment_required_expiry_test_clock set instant=(select payment_required_deadline from public.booking_request_capture_work);
+set local role service_role;
+select is(public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001',
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')->>'status','attention-required','expiry waits for a valid pre-deadline capture to confirm');
+select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001', public.get_booking_request_payment_recovery_confirmation_evidence((select (result->>'attemptId')::uuid from confirming_attempt)));
+reset role;
+select is((select state from public.booking_request_payment_required_expiry_work),'attention_required','historical expiry work remains durable after recovery confirms');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->>'paymentStatus','paid-confirmed','Customer sees confirmed payment after the deadline');
+select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentRequiredExpiry','null'::jsonb,'Customer confirmation takes precedence over historical expiry attention');
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+set local role authenticated;
+select is(public.list_owner_booking_request_notifications()->0->>'paymentStatus','paid-confirmed','Owner sees confirmed payment after the deadline');
+select is(public.list_owner_booking_request_notifications()->0->'paymentRequiredExpiry','null'::jsonb,'Owner confirmation takes precedence over historical expiry attention');
 reset role;
 select definition from expiry_original_functions \gexec
 

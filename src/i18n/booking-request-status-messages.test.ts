@@ -6,6 +6,7 @@ import {
   bookingRequestDeclineReasonMessages,
   bookingRequestDisplayStatusMessages,
   bookingRequestStatusMessages,
+  bookingRequestPaymentRequiredExpiryMessages,
 } from "./booking-request-status-messages";
 
 describe("Booking Request lifecycle copy", () => {
@@ -39,3 +40,38 @@ describe("Booking Request lifecycle copy", () => {
     },
   );
 });
+
+it.each([
+  [
+    "en",
+    "Expired unpaid",
+    "could not yet be verified",
+    "remain held",
+    "authorisations have been released",
+  ],
+  [
+    "ar",
+    "انتهى الطلب دون دفع",
+    "لم نتمكن بعد من التحقق",
+    "محجوزة",
+    "تم تحرير تفويضات الدفع",
+  ],
+  [
+    "ckb",
+    "داواکارییەکە بەبێ پارەدان بەسەرچوو",
+    "هێشتا نەمانتوانیوە",
+    "گیراو دەمێننەوە",
+    "مۆڵەتەکانی پارەدان ئازاد کراون",
+  ],
+] as const)(
+  "distinguishes held uncertainty from safe unpaid expiry in %s",
+  (locale, label, unresolved, held, released) => {
+    const copy = bookingRequestPaymentRequiredExpiryMessages[locale];
+    expect(copy.attention).toContain(unresolved);
+    expect(copy.attention).toContain(held);
+    expect(copy.attention).not.toContain(released);
+    expect(copy.expiredLabel).toBe(label);
+    expect(copy.expiredDescription).toContain(released);
+    expect(copy.expiredDescription).not.toContain(held);
+  },
+);

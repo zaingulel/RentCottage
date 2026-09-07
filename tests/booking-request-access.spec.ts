@@ -44,7 +44,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   page,
   browser,
 }, testInfo) => {
-  test.setTimeout(testInfo.project.name === "worker" ? 240_000 : 120_000);
+  test.setTimeout(testInfo.project.name === "worker" ? 480_000 : 120_000);
   const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
   if (
     process.env.APP_ENVIRONMENT !== "test" ||
@@ -379,6 +379,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
         confirmed: "Booking confirmed",
         required: "Payment Required",
         elapsed: "deadline has passed",
+        attention: "could not yet be verified",
+        expired: "Expired unpaid",
+        released: "authorisations have been released",
+        held: "remain held",
+        paymentDeadline: "Payment deadline",
       },
       {
         locale: "ar",
@@ -386,6 +391,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
         confirmed: "تم تأكيد الحجز",
         required: "الدفع مطلوب",
         elapsed: "انتهى موعد",
+        attention: "لم نتمكن بعد من التحقق",
+        expired: "انتهى الطلب دون دفع",
+        released: "تم تحرير تفويضات الدفع",
+        held: "محجوزة",
+        paymentDeadline: "موعد الدفع",
       },
       {
         locale: "ckb",
@@ -393,6 +403,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
         confirmed: "حجز پشتڕاست کراوەتەوە",
         required: "پارەدان پێویستە",
         elapsed: "تێپەڕی",
+        attention: "هێشتا نەمانتوانیوە",
+        expired: "داواکارییەکە بەبێ پارەدان بەسەرچوو",
+        released: "مۆڵەتەکانی پارەدان ئازاد کراون",
+        held: "گیراو دەمێننەوە",
+        paymentDeadline: "کاتی کۆتایی پارەدان",
       },
     ] as const;
     async function captureViews(
@@ -400,7 +415,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
         | "capture-processing"
         | "paid-confirmed"
         | "payment-required-open"
-        | "payment-required-elapsed",
+        | "payment-required-elapsed"
+        | "payment-expiry-attention-required"
+        | "payment-expiry-expired",
       reference = requestReference,
     ) {
       for (const copy of locales) {
@@ -424,16 +441,20 @@ test("a verified Customer double-submit creates one Pending request and one mini
         await expect(customerView.getByRole("status")).toContainText(
           state === "capture-processing"
             ? copy.pending
-            : state === "paid-confirmed"
-              ? copy.confirmed
-              : copy.required,
+            : state === "payment-expiry-expired"
+              ? copy.expired
+              : state === "paid-confirmed"
+                ? copy.confirmed
+                : copy.required,
         );
         await expect(currentOwnerNotice.getByRole("status")).toContainText(
           state === "capture-processing"
             ? copy.pending
-            : state === "paid-confirmed"
-              ? copy.confirmed
-              : copy.required,
+            : state === "payment-expiry-expired"
+              ? copy.expired
+              : state === "paid-confirmed"
+                ? copy.confirmed
+                : copy.required,
         );
         if (state === "payment-required-elapsed") {
           await expect(customerView.getByRole("status")).toContainText(
@@ -441,6 +462,33 @@ test("a verified Customer double-submit creates one Pending request and one mini
           );
           await expect(currentOwnerNotice.getByRole("status")).toContainText(
             copy.elapsed,
+          );
+        }
+        if (state.startsWith("payment-expiry")) {
+          for (const surface of [customerView, currentOwnerNotice]) {
+            await expect(surface.getByRole("status")).toContainText(
+              state === "payment-expiry-expired"
+                ? copy.released
+                : copy.attention,
+            );
+            await expect(
+              surface.getByText(copy.paymentDeadline, { exact: true }),
+            ).toBeVisible();
+            if (state === "payment-expiry-attention-required")
+              await expect(surface.getByRole("status")).toContainText(
+                copy.held,
+              );
+            else
+              await expect(
+                surface.locator("dd").filter({ hasText: copy.expired }),
+              ).toHaveCount(1);
+            await expect(surface.getByRole("button")).toHaveCount(0);
+          }
+          await expect(customerView.locator("body")).not.toContainText(
+            "Synthetic private fixture address",
+          );
+          await expect(currentOwnerNotice).not.toContainText(
+            /providerReference|diagnostic_reason|idempotency/i,
           );
         }
         await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
@@ -466,7 +514,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
             ).toBe(true);
             await surface.screenshot({
               path: testInfo.outputPath(
-                `${role}-${copy.locale}-${viewport.name}-${state}.png`,
+                `${role}-${copy.locale}-${viewport.name}-${state}-${reference}.png`,
               ),
               fullPage: true,
             });
@@ -643,16 +691,88 @@ test("a verified Customer double-submit creates one Pending request and one mini
     expect(denied.error?.code).toBe("RC404");
     expect(recoveryGraph()).toEqual(beforeDenial);
     expect(observeFailure()).toEqual(terminal);
-    await page.goto(`/en/booking-requests/${failureReference}`);
-    await page
-      .getByRole("button", {
-        name: "Use simulated replacement payment",
-        exact: true,
-      })
-      .click();
-    await expect(page.getByRole("status")).toContainText("Booking confirmed", {
-      timeout: 15000,
-    });
+    const confirmationDefinition = harness.runSql(
+      "select pg_get_functiondef('public.finalize_booking_request_confirmation(uuid,jsonb)'::regprocedure);",
+    );
+    const recoveryExpiryDefinition = harness.runSql(
+      "select pg_get_functiondef('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'::regprocedure);",
+    );
+    try {
+      // Interrupt confirmation after the real replacement-payment action records pre-deadline success.
+      harness.runSql(
+        confirmationDefinition.replace(
+          "begin\n",
+          "begin\n  raise exception 'Injected confirmation delivery interruption';\n",
+        ),
+      );
+      await page.goto(`/en/booking-requests/${failureReference}`);
+      await page
+        .getByRole("button", {
+          name: "Use simulated replacement payment",
+          exact: true,
+        })
+        .click();
+      await expect(
+        page
+          .getByRole("alert")
+          .filter({ hasText: "could not be updated safely" }),
+      ).toContainText("could not be updated safely");
+      expect(observeFailure().confirmations).toBe(0);
+      expect(
+        harness.runSql(
+          `select count(*) from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id where attempts.booking_request_id='${failureId}' and operations.step='replacement-capture' and operations.outcome='succeeded';`,
+        ),
+      ).toBe("1");
+      harness.runSql(
+        `create function public.confirmation_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${failureId}'$$;`,
+      );
+      for (const definition of [
+        windowDefinition,
+        recoveryExpiryDefinition,
+        confirmationDefinition,
+      ])
+        harness.runSql(
+          definition.replaceAll(
+            "clock_timestamp()",
+            "public.confirmation_expiry_now()",
+          ),
+        );
+      const prepared = JSON.parse(
+        harness.runSql(
+          `set role service_role;select public.prepare_booking_request_payment_required_expiry('${failureId}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}');`,
+        ),
+      );
+      expect(prepared.status).toBe("attention-required");
+      expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+      await expect(page.getByRole("status")).toContainText(
+        "Booking confirmed",
+        { timeout: 15000 },
+      );
+      await expect(failureNotice.getByRole("status")).toContainText(
+        "Booking confirmed",
+        { timeout: 15000 },
+      );
+      expect(
+        harness.runSql(
+          `select state from public.booking_request_payment_required_expiry_work where booking_request_id='${failureId}';`,
+        ),
+      ).toBe("attention_required");
+      expect(
+        harness.runSql(
+          `select count(*) from public.booking_request_payment_required_expiry_operations where booking_request_id='${failureId}';`,
+        ),
+      ).toBe("0");
+    } finally {
+      for (const definition of [
+        windowDefinition,
+        recoveryExpiryDefinition,
+        confirmationDefinition,
+      ])
+        harness.runSql(definition);
+      harness.runSql(
+        "drop function if exists public.confirmation_expiry_now();",
+      );
+    }
     const recovered = observeFailure();
     expect(recovered.work).toEqual(terminal.work);
     expect(recovered.provider).toEqual(terminal.provider);
@@ -666,6 +786,230 @@ test("a verified Customer double-submit creates one Pending request and one mini
       ),
     ).toBe("3:3");
     await captureViews("paid-confirmed", failureReference);
+
+    // A separate future Shift proves unpaid expiry without changing either confirmed booking above.
+    const expiryDay = serviceDay(offset + 1);
+    const opened = await fixtureOwner.rpc(
+      "set_cottage_inventory_availability",
+      {
+        target_profile_id: profile.id,
+        target_schedule_revision_id: profile.current_shift_schedule_id,
+        target_service_day: expiryDay,
+        requested_states: [
+          ...shifts.map((item) => ({
+            unitId: item.id,
+            unitKind: "shift",
+            state: "open",
+          })),
+          {
+            unitId: schedule.full_day_bundle_id,
+            unitKind: "full_day_bundle",
+            state: "open",
+          },
+        ],
+      },
+    );
+    if (opened.error) throw opened.error;
+    query.set("from", expiryDay);
+    query.set("to", expiryDay);
+    query.set("selection", `${expiryDay}:shift:${shift.position}`);
+    const expiryReference = await submitAnotherRequest("en");
+    await page.goto(`/en/booking-requests/${expiryReference}`);
+    await ownerPage.goto("/en/owner/cottages");
+    const expiryNotice = ownerPage.getByRole("article", {
+      name: expiryReference,
+    });
+    await expiryNotice
+      .getByRole("button", { name: "Accept complete request" })
+      .click();
+    await expect(page.getByRole("status")).toContainText(
+      "Payment confirmation pending",
+      { timeout: 15000 },
+    );
+    const expiryId = harness.runSql(
+      `select id from public.booking_requests where booking_request_reference='${expiryReference}';`,
+    );
+    expect(expiryId).toMatch(/^[0-9a-f-]{36}$/);
+    const identity =
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
+    harness.runSql(`set role service_role;
+      with leased as (select public.lease_booking_request_capture_work('${expiryId}','${identity}') result)
+      select public.execute_simulated_booking_request_capture(result->'permit','failed') from leased;
+      reset role;update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${expiryId}';`);
+    expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+    await expect(page.getByRole("status")).toContainText("Payment Required", {
+      timeout: 15000,
+    });
+    const expiryGraph = async () => {
+      const input = {
+        target_profile_id: profile.id,
+        target_schedule_revision_id: profile.current_shift_schedule_id,
+        target_service_day: expiryDay,
+      };
+      const [availability, calendar] = await Promise.all([
+        fixtureOwner.rpc(
+          "resolve_cottage_inventory_public_availability",
+          input,
+        ),
+        fixtureOwner.rpc("resolve_cottage_inventory_owner_calendar", input),
+      ]);
+      if (availability.error) throw availability.error;
+      if (calendar.error) throw calendar.error;
+      return {
+        availability: availability.data,
+        calendar: calendar.data,
+        ...JSON.parse(
+          harness.runSql(`select jsonb_build_object(
+      'request',(select to_jsonb(r) from public.booking_requests r where id='${expiryId}'),
+      'capture',(select to_jsonb(w) from public.booking_request_capture_work w where booking_request_id='${expiryId}'),
+      'expiry',(select to_jsonb(w) from public.booking_request_payment_required_expiry_work w where booking_request_id='${expiryId}'),
+      'notices',(select coalesce(jsonb_agg(to_jsonb(n) order by id),'[]') from public.booking_request_status_notifications n where booking_request_id='${expiryId}' and status='expired'),
+      'confirmations',(select count(*) from public.booking_confirmations where booking_request_id='${expiryId}'),
+      'ledger',(select jsonb_agg(to_jsonb(o) order by o.id) from public.simulated_payment_provider_operations o join public.booking_request_capture_work w on w.authorization_claim_id=o.claim_id where w.booking_request_id='${expiryId}'),
+      'hold',(select c.status from public.cottage_booking_period_commitments c join public.booking_requests r on r.booking_period_commitment_id=c.id where r.id='${expiryId}'),
+      'occupancies',(select jsonb_agg(to_jsonb(o) order by shift_id,service_day) from public.cottage_booking_period_occupancies o join public.booking_requests r on r.booking_period_commitment_id=o.booking_period_commitment_id where r.id='${expiryId}'));`),
+        ),
+      };
+    };
+    const beforeExpiry = await expiryGraph();
+    const signatures = [
+      "booking_request_payment_required_window(public.booking_requests)",
+      "claim_due_booking_request_payment_required_expiries(integer,jsonb)",
+      "prepare_booking_request_payment_required_expiry(uuid,jsonb)",
+      "execute_simulated_booking_request_payment_required_expiry(jsonb,text)",
+      "query_simulated_booking_request_payment_required_expiry(jsonb,text,text,text)",
+      "finalize_booking_request_payment_required_expiry(uuid)",
+      "booking_request_payment_required_expiry_completed(uuid)",
+    ];
+    const definitions = signatures.map((signature) =>
+      harness.runSql(
+        `select pg_get_functiondef('public.${signature}'::regprocedure);`,
+      ),
+    );
+    const clocked = definitions.map((definition) =>
+      definition.replaceAll(
+        "clock_timestamp()",
+        "public.live_payment_expiry_now()",
+      ),
+    );
+    try {
+      harness.runSql(
+        `create function public.live_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${expiryId}'$$;`,
+      );
+      for (const definition of clocked) harness.runSql(definition);
+      // Both pages stay mounted across the real fixed deadline and later scheduled observations.
+      await expect(page.getByRole("status")).toContainText(
+        "deadline has passed",
+        { timeout: 15000 },
+      );
+      await expect(expiryNotice.getByRole("status")).toContainText(
+        "deadline has passed",
+        { timeout: 15000 },
+      );
+      await captureViews("payment-required-elapsed", expiryReference);
+      harness.runSql(
+        `set role service_role;select public.execute_simulated_booking_request_payment_required_expiry(public.prepare_booking_request_payment_required_expiry('${expiryId}','${identity}')->'permit','indeterminate');`,
+      );
+      // Model a provider which still cannot establish the existing release outcome.
+      const unresolvedQuery = clocked[4].replace(
+        "begin\n",
+        "begin\n  target_outcome := 'indeterminate';\n",
+      );
+      expect(unresolvedQuery).not.toBe(clocked[4]);
+      harness.runSql(unresolvedQuery);
+      expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+      await expect(page.getByRole("status")).toContainText(
+        "could not yet be verified",
+        { timeout: 15000 },
+      );
+      await expect(expiryNotice.getByRole("status")).toContainText(
+        "could not yet be verified",
+        { timeout: 15000 },
+      );
+      await expect(page.getByRole("button")).toHaveCount(0);
+      const attention = await expiryGraph();
+      expect(attention.expiry.state).toBe("attention_required");
+      expect(attention.request.status).toBe("accepted");
+      expect(attention.capture).toEqual(beforeExpiry.capture);
+      expect(attention.occupancies).toEqual(beforeExpiry.occupancies);
+      expect(attention.hold).toBe("pending_hold");
+      expect(attention.confirmations).toBe(0);
+      expect(attention.notices).toHaveLength(0);
+      expect(
+        attention.availability.units.find(
+          (unit: { id: string }) => unit.id === shift.id,
+        ).available,
+      ).toBe(false);
+      expect(
+        attention.calendar.units.find(
+          (unit: { id: string }) => unit.id === shift.id,
+        ).calendarState,
+      ).toBe("pending_hold");
+      await captureViews("payment-expiry-attention-required", expiryReference);
+      // Reconcile the same release and let the actual scheduled handler complete safe expiry.
+      harness.runSql(clocked[4]);
+      expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+      await expect(page.getByRole("status")).toContainText("Expired unpaid", {
+        timeout: 15000,
+      });
+      await expect(expiryNotice.getByRole("status")).toContainText(
+        "Expired unpaid",
+        { timeout: 15000 },
+      );
+      await expect(
+        page.locator("dd").filter({ hasText: "Expired unpaid" }),
+      ).toHaveCount(1);
+      await expect(
+        expiryNotice.locator("dd").filter({ hasText: "Expired unpaid" }),
+      ).toHaveCount(1);
+      const expired = await expiryGraph();
+      expect(expired.request.status).toBe("expired");
+      expect(expired.expiry.state).toBe("complete");
+      expect(expired.capture).toEqual(beforeExpiry.capture);
+      expect(expired.hold).toBe("released_hold");
+      expect(
+        expired.occupancies.every((row: { active: boolean }) => !row.active),
+      ).toBe(true);
+      expect(expired.notices).toHaveLength(2);
+      expect(
+        new Set(
+          expired.notices.map(
+            (row: { recipient_user_id: string }) => row.recipient_user_id,
+          ),
+        ).size,
+      ).toBe(2);
+      expect(expired.confirmations).toBe(0);
+      expect(
+        expired.availability.units.find(
+          (unit: { id: string }) => unit.id === shift.id,
+        ).available,
+      ).toBe(true);
+      expect(
+        expired.calendar.units.find(
+          (unit: { id: string }) => unit.id === shift.id,
+        ).calendarState,
+      ).toBe("open");
+      expect(
+        expired.ledger.filter(
+          (row: { operation_kind: string }) => row.operation_kind === "release",
+        ),
+      ).toHaveLength(1);
+      expect(
+        expired.ledger.every(
+          (row: { physical_execution_count: number }) =>
+            row.physical_execution_count === 1,
+        ),
+      ).toBe(true);
+      await captureViews("payment-expiry-expired", expiryReference);
+      expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+      expect(await expiryGraph()).toEqual(expired);
+      expect(observeFailure()).toEqual(recovered);
+    } finally {
+      for (const definition of definitions) harness.runSql(definition);
+      harness.runSql(
+        "drop function if exists public.live_payment_expiry_now();",
+      );
+    }
     await otherCustomer.auth.signOut();
   }
   await ownerContext.close();

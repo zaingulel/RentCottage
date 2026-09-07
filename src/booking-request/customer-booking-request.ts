@@ -13,6 +13,8 @@ import {
   isBookingRequestNotificationStatus,
   isBookingRequestStatus,
   paymentRequiredWindowFrom,
+  paymentRequiredExpiryFrom,
+  type BookingRequestPaymentRequiredExpiry,
   type BookingRequestNotificationStatus,
   type BookingRequestPaymentRequiredWindow,
   type BookingRequestPaymentStatus,
@@ -29,6 +31,7 @@ export interface CustomerBookingRequest {
   readonly status: BookingRequestStatus;
   readonly paymentStatus: BookingRequestPaymentStatus | null;
   readonly paymentRequiredWindow: BookingRequestPaymentRequiredWindow | null;
+  readonly paymentRequiredExpiry: BookingRequestPaymentRequiredExpiry | null;
   readonly paymentRecovery?: {
     readonly status:
       | "available"
@@ -66,6 +69,12 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     request.paymentRequiredWindow,
     paymentStatus ?? null,
   );
+  const paymentRequiredExpiry = paymentRequiredExpiryFrom(
+    request.paymentRequiredExpiry,
+    request.status as BookingRequestStatus,
+    paymentStatus ?? null,
+    paymentRequiredWindow,
+  );
   const paymentRecovery = (request.paymentRecovery ?? null) as Record<
     string,
     unknown
@@ -78,6 +87,7 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     !isBookingRequestStatus(request.status) ||
     paymentStatus === undefined ||
     paymentRequiredWindow === undefined ||
+    paymentRequiredExpiry === undefined ||
     (paymentRecovery !== null &&
       (typeof paymentRecovery !== "object" ||
         Array.isArray(paymentRecovery) ||
@@ -171,6 +181,7 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     status: request.status,
     paymentStatus,
     paymentRequiredWindow,
+    paymentRequiredExpiry,
     ...(request.paymentRecovery === undefined
       ? {}
       : {

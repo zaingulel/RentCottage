@@ -10,6 +10,8 @@ import {
   isBookingRequestNotificationStatus,
   isBookingRequestStatus,
   paymentRequiredWindowFrom,
+  paymentRequiredExpiryFrom,
+  type BookingRequestPaymentRequiredExpiry,
   type BookingRequestNotificationStatus,
   type BookingRequestPaymentRequiredWindow,
   type BookingRequestPaymentStatus,
@@ -22,6 +24,7 @@ export interface OwnerBookingRequestNotification {
   status: BookingRequestStatus;
   paymentStatus: BookingRequestPaymentStatus | null;
   paymentRequiredWindow: BookingRequestPaymentRequiredWindow | null;
+  readonly paymentRequiredExpiry: BookingRequestPaymentRequiredExpiry | null;
   customerName: string;
   partySize: number;
   bookingNote: string | null;
@@ -48,6 +51,7 @@ const keys = new Set([
   "status",
   "paymentStatus",
   "paymentRequiredWindow",
+  "paymentRequiredExpiry",
   "customerName",
   "partySize",
   "bookingNote",
@@ -88,6 +92,12 @@ function notificationFrom(
     notification.paymentRequiredWindow,
     paymentStatus ?? null,
   );
+  const paymentRequiredExpiry = paymentRequiredExpiryFrom(
+    notification.paymentRequiredExpiry,
+    notification.status as BookingRequestStatus,
+    paymentStatus ?? null,
+    paymentRequiredWindow,
+  );
   if (
     actualKeys.length !== keys.size ||
     actualKeys.some((key) => !keys.has(key)) ||
@@ -98,6 +108,7 @@ function notificationFrom(
     !isBookingRequestStatus(notification.status) ||
     paymentStatus === undefined ||
     paymentRequiredWindow === undefined ||
+    paymentRequiredExpiry === undefined ||
     typeof notification.customerName !== "string" ||
     notification.customerName.length < 2 ||
     notification.customerName.length > 120 ||
@@ -187,6 +198,7 @@ function notificationFrom(
     status: notification.status,
     paymentStatus,
     paymentRequiredWindow,
+    paymentRequiredExpiry,
     customerName: notification.customerName,
     partySize: notification.partySize as number,
     bookingNote: notification.bookingNote as string | null,

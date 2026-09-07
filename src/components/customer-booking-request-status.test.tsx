@@ -45,6 +45,7 @@ const request = {
   declineNote: null,
   statusNotifications: [],
   paymentRequiredWindow: null,
+  paymentRequiredExpiry: null,
 };
 
 describe("Customer Booking Request status", () => {
@@ -82,7 +83,7 @@ describe("Customer Booking Request status", () => {
       "payment deadline has passed",
     );
     expect(screen.getByRole("status")).toHaveTextContent("remain held");
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
   it("replaces mounted pending and processing state with authoritative confirmation", () => {
@@ -370,4 +371,58 @@ describe("Customer payment recovery command identity", () => {
       expect(screen.queryByText("Booking confirmed")).not.toBeInTheDocument();
     },
   );
+});
+
+it("keeps elapsed and attention states held and refreshing until one unpaid-expiry notice arrives", () => {
+  vi.useFakeTimers();
+  try {
+    let fixture: (typeof customerDisplayFixtures)[
+      | "payment-expiry-processing"
+      | "payment-expiry-attention-required"] =
+      customerDisplayFixtures["payment-expiry-processing"];
+    const view = render(
+      <CustomerBookingRequestStatus locale="en" request={fixture} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("remain held");
+    vi.advanceTimersToNextTimer();
+    expect(refresh).toHaveBeenCalled();
+    fixture = customerDisplayFixtures["payment-expiry-attention-required"];
+    view.rerender(
+      <CustomerBookingRequestStatus locale="en" request={fixture} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "could not yet be verified",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("not confirmed");
+    expect(screen.getByRole("status")).toHaveTextContent("remain held");
+    expect(screen.getByRole("status")).not.toHaveTextContent("released");
+    refresh.mockClear();
+    vi.advanceTimersToNextTimer();
+    expect(refresh).toHaveBeenCalledOnce();
+    const completed = customerDisplayFixtures["payment-expiry-expired"];
+    view.rerender(
+      <CustomerBookingRequestStatus locale="en" request={completed} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Expired unpaid");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "authorisations have been released",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("not confirmed");
+    expect(screen.getByText("Payment deadline").nextSibling).toHaveTextContent(
+      "12:20",
+    );
+    expect(
+      screen.queryByText("Owner response deadline"),
+    ).not.toBeInTheDocument();
+    expect(
+      Array.from(view.container.querySelectorAll("dd")).filter((item) =>
+        item.textContent?.includes("Expired unpaid"),
+      ),
+    ).toHaveLength(1);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(vi.getTimerCount()).toBe(0);
+    view.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
 });
