@@ -46,7 +46,21 @@ const ownershipCommand = [
 const resetCommand = ["npx", ["supabase", "db", "reset", "--local"]];
 const statusCommand = ["npx", ["supabase", "status", "-o", "json"]];
 const stopCommand = ["npx", ["supabase", "stop", "--no-backup"]];
+const declaredSchemaDiffCommand = [
+  "npx",
+  ["supabase", "db", "diff", "--local", "--output-format", "json"],
+];
+const emptyDeclaredSchemaDiff = JSON.stringify({
+  diff: "",
+  file: null,
+  files: [],
+  schemas: [],
+  engine: "pg-delta",
+  dropStatements: [],
+  message: "Diff complete.",
+});
 const databasePreflightCommands = [
+  declaredSchemaDiffCommand,
   ["npx", ["supabase", "test", "db"]],
   [
     "node",
@@ -232,6 +246,16 @@ function ownedRun(
     if (command === "docker" && args[0] === "inspect") {
       const ownedWorkdir = typeof workdir === "function" ? workdir() : workdir;
       return { status: 0, stdout: `${project}|${ownedWorkdir}\n`, stderr: "" };
+    }
+    if (
+      command === "npx" &&
+      args.slice(0, 6).join(" ") ===
+        "supabase db diff --local --output-format json"
+    ) {
+      const result = implementation(command, args, options);
+      return result.stdout
+        ? result
+        : { ...result, stdout: emptyDeclaredSchemaDiff };
     }
     return implementation(command, args, options);
   });
@@ -1146,6 +1170,9 @@ describe("access verification command", () => {
       expect(readlinkSync(join(workdir, "supabase", "migrations"))).toBe(
         join(workingDirectory, "supabase", "migrations"),
       );
+      expect(readlinkSync(join(workdir, "supabase", "schemas"))).toBe(
+        join(workingDirectory, "supabase", "schemas"),
+      );
       expect(readlinkSync(join(workdir, "supabase", "tests"))).toBe(
         join(workingDirectory, "supabase", "tests"),
       );
@@ -1461,6 +1488,52 @@ setInterval(() => {}, 1000);
     ]);
   });
 
+  it.each([
+    {
+      name: "a non-empty declared schema diff",
+      stdout: JSON.stringify({
+        diff: "ALTER TABLE public.booking_requests DROP COLUMN party_size;",
+        dropStatements: [],
+      }),
+      diagnostic: "ALTER TABLE public.booking_requests DROP COLUMN party_size;",
+    },
+    {
+      name: "an unreadable declared schema diff",
+      stdout: "not json",
+      diagnostic: "unreadable declared schema diff",
+    },
+  ])(
+    "fails database evidence on $name before running SQL tests and cleans up",
+    async ({ stdout, diagnostic }) => {
+      const errors = vi.fn();
+      const run = ownedRun((command, args) => ({
+        status: 0,
+        stdout:
+          command === "npx" &&
+          args.slice(0, 6).join(" ") ===
+            "supabase db diff --local --output-format json"
+            ? stdout
+            : command === "npx" && args.join(" ") === "supabase status -o json"
+              ? localCredentials
+              : "",
+      }));
+
+      expect(
+        await main(["--database"], { environment: {}, run, stderr: errors }),
+      ).toBe(1);
+
+      expect(commands(run)).toEqual([
+        startCommand,
+        ownershipCommand,
+        resetCommand,
+        declaredSchemaDiffCommand,
+        ownershipCommand,
+        stopCommand,
+      ]);
+      expect(errors.mock.calls.flat().join("\n")).toContain(diagnostic);
+    },
+  );
+
   it.each([{ mode: [] }, { mode: ["--database"] }])(
     "propagates Capture concurrency failure in mode $mode and cleans up",
     async ({ mode }) => {
@@ -1674,7 +1747,7 @@ setInterval(() => {}, 1000);
       "SUPABASE_PUBLISHABLE_KEY",
     );
     expect(run.mock.calls[1][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[11][2].env).toMatchObject({
+    expect(run.mock.calls[12][2].env).toMatchObject({
       EXISTING: "kept",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
@@ -1685,34 +1758,29 @@ setInterval(() => {}, 1000);
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[12][2].env).toMatchObject({
+    expect(run.mock.calls[13][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[13][2].env).toMatchObject({
+    expect(run.mock.calls[14][2].env).toMatchObject({
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[13][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[4][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
-    });
-    expect(run.mock.calls[4][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[14][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[5][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
     expect(run.mock.calls[5][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[15][2].env).toMatchObject({
+    expect(run.mock.calls[6][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[15][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[6][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[16][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
@@ -1726,55 +1794,60 @@ setInterval(() => {}, 1000);
     expect(run.mock.calls[18][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
-      SUPABASE_SECRET_KEY: "local-secret",
     });
+    expect(run.mock.calls[18][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[19][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[19][2].env.SUPABASE_SECRET_KEY).toBe("local-secret");
-    expect(run.mock.calls[23][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+    expect(run.mock.calls[20][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
+    expect(run.mock.calls[20][2].env.SUPABASE_SECRET_KEY).toBe("local-secret");
     expect(run.mock.calls[24][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[25][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
-      NEXTJS_ENV: "test",
-      SUPABASE_PROJECT_REF: "local-test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[26][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+      NEXTJS_ENV: "test",
+      SUPABASE_PROJECT_REF: "local-test",
     });
     expect(run.mock.calls[27][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
-    expect(run.mock.calls[29][2].env).toMatchObject({
+    expect(run.mock.calls[28][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+    });
+    expect(run.mock.calls[30][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
-    expect(run.mock.calls[30][2].env).toMatchObject({
+    expect(run.mock.calls[31][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[30][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[31][2].env).toMatchObject({
+    expect(run.mock.calls[31][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[32][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[32][2].env).toMatchObject({
+    expect(run.mock.calls[33][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[32][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[33][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
@@ -1951,7 +2024,7 @@ setInterval(() => {}, 1000);
         '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
       ],
     ]);
-    expect(run.mock.calls[4][2].env).toMatchObject({
+    expect(run.mock.calls[5][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-issue-32-v3",
       SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
       SUPABASE_LOCAL_WORKDIR: isolatedWorkdir,

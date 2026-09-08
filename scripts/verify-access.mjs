@@ -340,6 +340,7 @@ export function prepareIsolatedSupabaseWorkdir({
   }
   writeFileSync(join(target, "config.toml"), config);
   symlinkSync(join(source, "migrations"), join(target, "migrations"), "dir");
+  symlinkSync(join(source, "schemas"), join(target, "schemas"), "dir");
   symlinkSync(join(source, "tests"), join(target, "tests"), "dir");
   return realpathSync(workdir);
 }
@@ -543,7 +544,42 @@ export async function main(
     );
     if (result.status !== 0) return result.status;
 
+    // The declared schema files must describe exactly what the migration chain builds; any diff is drift.
+    const verifyDeclaredSchema = async () => {
+      result = await execute(
+        "npx",
+        supabaseArguments([
+          "supabase",
+          "db",
+          "diff",
+          "--local",
+          "--output-format",
+          "json",
+        ]),
+        { encoding: "utf8", stdio: "pipe" },
+      );
+      if (result.status !== 0) return result.status;
+      let report;
+      try {
+        report = JSON.parse(String(result.stdout));
+      } catch {
+        report = undefined;
+      }
+      if (!report || typeof report.diff !== "string") {
+        stderr("Supabase returned an unreadable declared schema diff.");
+        return 1;
+      }
+      if (report.diff.trim()) {
+        stderr("Declared schema drifts from the migration chain:");
+        stderr(report.diff.trimEnd());
+        return 1;
+      }
+      return 0;
+    };
+
     const verifyDatabasePreflight = async () => {
+      const declaredSchemaStatus = await verifyDeclaredSchema();
+      if (declaredSchemaStatus !== 0) return declaredSchemaStatus;
       result = await execute(
         "npx",
         supabaseArguments(["supabase", "test", "db"]),
