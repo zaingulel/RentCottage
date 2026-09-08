@@ -108,6 +108,14 @@ _Avoid_: Booking, reservation, order
 An overlap between a customer's active booking requests or confirmed bookings, even when they concern different cottages. RentCottage prevents a customer from creating an active request that conflicts with another active booking period.
 _Avoid_: Cottage availability conflict, speculative parallel request
 
+**Integrity Core**:
+The atomic boundary that keeps booking-request and payment records valid through concurrency, retries, stale work and partial failure. It owns authorization, deadlines, conflicts, fencing, durable identity, history and business receipts.
+_Avoid_: Database workflow, page-level check, best-effort guard
+
+**Orchestration**:
+The selection and sequencing of outcomes across booking requests, payment operations, notifications and supplier steps while the Integrity Core guards each transition.
+_Avoid_: Route-handler workflow, database workflow
+
 **Confirmed Booking**:
 A booking request that the cottage owner has accepted and for which the full authorized payment has been captured, committing the cottage and customer to the booking period under the recorded price, rules and terms.
 _Avoid_: Accepted request, pending booking

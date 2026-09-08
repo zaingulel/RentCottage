@@ -12,6 +12,12 @@ These standards apply prospectively. They do not authorize repository-wide renam
 - Keep payment, translation, notification, storage, and identity suppliers behind narrow replaceable interfaces. Supplier Software Development Kit types must not enter domain logic.
 - Do not build speculative abstractions or configuration for one use.
 
+## Database and application boundary
+
+Follow [ADR 0002](../adr/0002-database-integrity-application-orchestration.md): TypeScript application services own
+Orchestration, while PostgreSQL keeps the atomic Integrity Core. When a story changes orchestration inside a shipped
+PostgreSQL function, move that affected orchestration and leave untouched flows in place.
+
 ## Types and boundaries
 
 - Keep TypeScript `strict` enabled. Model domain states explicitly and handle them exhaustively.

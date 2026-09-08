@@ -37,6 +37,13 @@ the deliberate mutation proof and convergence route, so a builder does not repea
 - Directly inspect changed mobile, desktop, right-to-left, and accessibility states. Automated functional checks do not prove visual quality.
 - Smoke the exact hosted preview before release. A local Worker preview does not prove Cloudflare deployment or Supabase reachability.
 
+For an orchestration migration under [ADR 0002](../adr/0002-database-integrity-application-orchestration.md), prove
+outcome selection and sequencing with Vitest at the TypeScript application-service seam. Keep real PostgreSQL observers for
+authorization, constraints, locks, fencing, authoritative deadlines, durable identifiers, idempotency, history,
+replay protection, and atomic business receipts. The story's changed boundary determines the combined observer;
+application tests do not replace database concurrency or security evidence, and database tests do not replace the
+application outcome proof.
+
 ## Regression sensitivity
 
 Every distinct material behaviour change needs one regression proof that fails when that behaviour is deliberately broken or reverted, then passes again after restoration. Prove it at the public seam selected for the behaviour; do not repeat mutation ceremony for every assertion, edge case or repair. Unchanged documentation and mechanical preservation work use existing evidence and create no new test or mutation ceremony.
@@ -90,6 +97,10 @@ definitions carry the whole body because PostgreSQL replaces functions whole; th
 edit. Row Level Security policies, triggers, grants and data changes are hand-written migrations, because the diff
 engine does not track every privilege and policy change; mirror each such migration into the matching schema file so
 the declaration stays complete.
+
+An orchestration migration follows the same declared-schema rule. Change only the affected flow, preserve its
+Integrity Core in the schema declaration and generated migration, and prove that no required atomic transaction was
+split across application calls.
 
 The database evidence group runs `supabase db diff` before the SQL tests and fails on any drift between the declared
 schema and the migration chain. Two declarations must keep their exact wording for that baseline to stay empty:
