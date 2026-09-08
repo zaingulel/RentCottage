@@ -30,6 +30,7 @@ the deliberate mutation proof and convergence route, so a builder does not repea
 - Use Vitest for pure prices, fees, deadlines, filters, state transitions, configuration boundaries, and application-service outcomes.
 - Test complete marketplace actions at the application or service seam shared by the Customer Web App, Owner Backoffice, and administrator surfaces.
 - Use real local PostgreSQL and Supabase tests for schema, constraints, Row Level Security, atomic Pending Holds, overlap rejection, and concurrent requests. Mocks cannot prove those claims. `npm run verify:access:database` runs the current database, policy, migration, fixture and concurrency evidence in a disposable local Supabase project. `npm run verify:access:browser` independently prepares a fresh project for the Next.js and Worker access journeys. `npm run verify:access` runs both groups within one shared disposable lifecycle.
+- Change functions, views, tables, indexes and constraints by editing the declared schema under `supabase/schemas/` and generating the migration; see [Declared schema](#declared-schema).
 - Use supplier contract tests for payment signatures, retries, duplicate and out-of-order events, authorization release, capture, refunds, settlement, and translation failures.
 - Use the Cloudflare Workers runtime for server code, bindings, and the production Worker build. A Node.js test does not prove Workers compatibility.
 - Use isolated Playwright journeys for critical visible flows. Locate controls by accessible, user-facing names.
@@ -74,6 +75,31 @@ migration, permissions, browser, and Worker gate remain unchanged for ordinary v
 Run focused checks, intentional red/restored green proofs, and convergence through `npm run run-log -- <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.
+
+## Declared schema
+
+`supabase/schemas/` declares the complete public schema in dependency order: extensions, types, tables by domain,
+functions by domain, constraints, indexes, triggers, policies, privileges and the realtime publication.
+`supabase/config.toml` lists the files in `schema_paths`. `supabase/migrations/` stays the applied history and is never
+edited after it ships.
+
+To change a function, view, table, index or constraint: edit the object in its schema file, start the local
+database, run `npx supabase db diff -f <change-name>`, read the generated migration in `supabase/migrations/` so it
+contains only the intended objects, then commit the schema edit and the migration together. Generated function
+definitions carry the whole body because PostgreSQL replaces functions whole; the reviewed diff is the schema-file
+edit. Row Level Security policies, triggers, grants and data changes are hand-written migrations, because the diff
+engine does not track every privilege and policy change; mirror each such migration into the matching schema file so
+the declaration stays complete.
+
+The database evidence group runs `supabase db diff` before the SQL tests and fails on any drift between the declared
+schema and the migration chain. Two declarations must keep their exact wording for that baseline to stay empty:
+the migrations revoke the default `REFERENCES`, `TRIGGER`, `TRUNCATE` and `MAINTAIN` table privileges from the
+API roles, so `50_privileges.sql` repeats those revokes explicitly, and `cottage_profile_source_text_lengths` is
+written in the migration's `between` form because the diff engine compares constraint text. Direct changes made in
+Studio, the SQL editor or `psql` are invisible to the diff; always edit the schema files.
+
+The Supabase CLI stays pinned at 2.114 until `20260908120000_booking_request_payment_history.sql` wraps its
+`lock table` in a transaction: newer releases apply migrations statement by statement and refuse that lock.
 
 ## Stable commands
 
