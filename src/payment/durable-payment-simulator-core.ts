@@ -102,6 +102,7 @@ type ActiveExecutionPermit = Exclude<
   | { readonly purpose: "booking-request-capture" }
   | { readonly purpose: "booking-request-payment-recovery" }
   | { readonly purpose: "booking-request-payment-required-expiry" }
+  | { readonly purpose: "booking-request-payment-required-corrective-refund" }
 >;
 
 function permitPayload(permit: ActiveExecutionPermit) {
@@ -210,7 +211,10 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
       if (error) throw new Error("Simulated payment execution is unavailable");
       return providerResult(data);
     }
-    if (permit?.purpose === "booking-request-payment-required-expiry") {
+    if (
+      permit?.purpose === "booking-request-payment-required-expiry" ||
+      permit?.purpose === "booking-request-payment-required-corrective-refund"
+    ) {
       if (
         !(Date.parse(this.#now()) >= Date.parse(permit.notBefore)) ||
         !paymentRequiredExpiryRequestMatches(request, permit, identity)

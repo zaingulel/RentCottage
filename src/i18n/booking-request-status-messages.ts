@@ -159,6 +159,18 @@ export const bookingRequestPaymentRecoveryMessages = {
 
 export const bookingRequestPaymentRequiredExpiryMessages = {
   en: {
+    quarantinedReleasedDescription:
+      "Support needs to review a payment received for this expired request. The booking is not confirmed. The selected Cottage Shifts were already released. Please do not pay again.",
+    refundingLabel: "Payment is being returned",
+    refundingDescription:
+      "Payment arrived after the deadline and is being returned in full. The booking is not confirmed. The selected Cottage Shifts remain held until the return is verified.",
+    quarantinedLabel: "Payment needs review",
+    quarantinedDescription:
+      "Support needs to review this payment. The booking is not confirmed and the selected Cottage Shifts remain held. Please do not pay again.",
+    refundedLabel: "Expired — payment returned",
+    refundedDescription:
+      "The full payment has been returned. The booking is not confirmed and this request’s hold on the selected Cottage Shifts has been released.",
+
     attention:
       "Payment or authorisation release could not yet be verified. The booking is not confirmed and the selected Cottage Shifts remain held.",
     expiredLabel: "Expired unpaid",
@@ -166,6 +178,18 @@ export const bookingRequestPaymentRequiredExpiryMessages = {
       "Payment authorisations have been released. The booking is not confirmed and this request’s hold on the selected Cottage Shifts has been released.",
   },
   ar: {
+    quarantinedReleasedDescription:
+      "يحتاج فريق الدعم إلى مراجعة دفع لهذا الطلب المنتهي. الحجز غير مؤكد. تم تحرير فترات البيت المختارة سابقاً. يرجى عدم الدفع مرة أخرى.",
+    refundingLabel: "جارٍ إعادة الدفع",
+    refundingDescription:
+      "وصل الدفع بعد الموعد النهائي وجارٍ إعادته بالكامل. الحجز غير مؤكد. تبقى فترات البيت المختارة محجوزة حتى يتم التحقق من إعادة الدفع.",
+    quarantinedLabel: "الدفع يحتاج إلى مراجعة",
+    quarantinedDescription:
+      "يحتاج فريق الدعم إلى مراجعة هذا الدفع. الحجز غير مؤكد وتبقى فترات البيت المختارة محجوزة. يرجى عدم الدفع مرة أخرى.",
+    refundedLabel: "انتهى الطلب — تم إرجاع الدفع",
+    refundedDescription:
+      "تم إرجاع كامل المبلغ. الحجز غير مؤكد وتم تحرير الفترات التي حجزها هذا الطلب.",
+
     attention:
       "لم نتمكن بعد من التحقق من الدفع أو تحرير تفويضات الدفع. الحجز غير مؤكد، وتبقى فترات البيت المختارة محجوزة.",
     expiredLabel: "انتهى الطلب دون دفع",
@@ -173,6 +197,18 @@ export const bookingRequestPaymentRequiredExpiryMessages = {
       "تم تحرير تفويضات الدفع. الحجز غير مؤكد، وتم تحرير الفترات التي حجزها هذا الطلب.",
   },
   ckb: {
+    quarantinedReleasedDescription:
+      "تیمی پشتگیری پێویستە پێداچوونەوە بە پارەدانی ئەم داواکارییە بەسەرچووە بکات. حجزەکە پشتڕاست نەکراوەتەوە. شەفتە هەڵبژێردراوەکان پێشتر ئازاد کراون. تکایە دووبارە پارە مەدە.",
+    refundingLabel: "پارەکە دەگەڕێندرێتەوە",
+    refundingDescription:
+      "پارەکە دوای کاتی دیاریکراو گەیشتووە و بە تەواوی دەگەڕێندرێتەوە. حجزەکە پشتڕاست نەکراوەتەوە. شەفتە هەڵبژێردراوەکان گیراو دەمێننەوە تا گەڕاندنەوەی پارەکە پشتڕاست بکرێتەوە.",
+    quarantinedLabel: "پارەدان پێویستی بە پێداچوونەوە هەیە",
+    quarantinedDescription:
+      "تیمی پشتگیری پێویستە پێداچوونەوە بە ئەم پارەدانە بکات. حجزەکە پشتڕاست نەکراوەتەوە و شەفتە هەڵبژێردراوەکان گیراو دەمێننەوە. تکایە دووبارە پارە مەدە.",
+    refundedLabel: "بەسەرچوو — پارەکە گەڕێندرایەوە",
+    refundedDescription:
+      "هەموو پارەکە گەڕێندرایەوە. حجزەکە پشتڕاست نەکراوەتەوە و شەفتە گیراوەکانی ئەم داواکارییە ئازاد کراون.",
+
     attention:
       "هێشتا نەمانتوانیوە پارەدان یان ئازادکردنی مۆڵەتەکانی پارەدان پشتڕاست بکەینەوە. حجزەکە پشتڕاست نەکراوەتەوە و شەفتە هەڵبژێردراوەکان گیراو دەمێننەوە.",
     expiredLabel: "داواکارییەکە بەبێ پارەدان بەسەرچوو",

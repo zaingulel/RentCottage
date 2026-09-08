@@ -379,9 +379,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
         confirmed: "Booking confirmed",
         required: "Payment Required",
         elapsed: "deadline has passed",
-        attention: "could not yet be verified",
-        expired: "Expired unpaid",
-        released: "authorisations have been released",
+        quarantined: "Payment needs review",
+        attention: "Support needs to review this payment",
         held: "remain held",
         paymentDeadline: "Payment deadline",
       },
@@ -391,9 +390,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
         confirmed: "تم تأكيد الحجز",
         required: "الدفع مطلوب",
         elapsed: "انتهى موعد",
-        attention: "لم نتمكن بعد من التحقق",
-        expired: "انتهى الطلب دون دفع",
-        released: "تم تحرير تفويضات الدفع",
+        quarantined: "الدفع يحتاج إلى مراجعة",
+        attention: "يحتاج فريق الدعم إلى مراجعة هذا الدفع",
         held: "محجوزة",
         paymentDeadline: "موعد الدفع",
       },
@@ -403,9 +401,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
         confirmed: "حجز پشتڕاست کراوەتەوە",
         required: "پارەدان پێویستە",
         elapsed: "تێپەڕی",
-        attention: "هێشتا نەمانتوانیوە",
-        expired: "داواکارییەکە بەبێ پارەدان بەسەرچوو",
-        released: "مۆڵەتەکانی پارەدان ئازاد کراون",
+        quarantined: "پارەدان پێویستی بە پێداچوونەوە هەیە",
+        attention: "تیمی پشتگیری پێویستە پێداچوونەوە بە ئەم پارەدانە بکات",
         held: "گیراو دەمێننەوە",
         paymentDeadline: "کاتی کۆتایی پارەدان",
       },
@@ -416,8 +413,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         | "paid-confirmed"
         | "payment-required-open"
         | "payment-required-elapsed"
-        | "payment-expiry-attention-required"
-        | "payment-expiry-expired",
+        | "payment-expiry-quarantined",
       reference = requestReference,
     ) {
       for (const copy of locales) {
@@ -438,23 +434,19 @@ test("a verified Customer double-submit creates one Pending request and one mini
             copy.locale === "en" ? "ltr" : "rtl",
           );
         }
-        await expect(customerView.getByRole("status")).toContainText(
+        const expectedStatus =
           state === "capture-processing"
             ? copy.pending
-            : state === "payment-expiry-expired"
-              ? copy.expired
+            : state === "payment-expiry-quarantined"
+              ? copy.quarantined
               : state === "paid-confirmed"
                 ? copy.confirmed
-                : copy.required,
+                : copy.required;
+        await expect(customerView.getByRole("status")).toContainText(
+          expectedStatus,
         );
         await expect(currentOwnerNotice.getByRole("status")).toContainText(
-          state === "capture-processing"
-            ? copy.pending
-            : state === "payment-expiry-expired"
-              ? copy.expired
-              : state === "paid-confirmed"
-                ? copy.confirmed
-                : copy.required,
+          expectedStatus,
         );
         if (state === "payment-required-elapsed") {
           await expect(customerView.getByRole("status")).toContainText(
@@ -464,24 +456,15 @@ test("a verified Customer double-submit creates one Pending request and one mini
             copy.elapsed,
           );
         }
-        if (state.startsWith("payment-expiry")) {
+        if (state === "payment-expiry-quarantined") {
           for (const surface of [customerView, currentOwnerNotice]) {
             await expect(surface.getByRole("status")).toContainText(
-              state === "payment-expiry-expired"
-                ? copy.released
-                : copy.attention,
+              copy.attention,
             );
             await expect(
               surface.getByText(copy.paymentDeadline, { exact: true }),
             ).toBeVisible();
-            if (state === "payment-expiry-attention-required")
-              await expect(surface.getByRole("status")).toContainText(
-                copy.held,
-              );
-            else
-              await expect(
-                surface.locator("dd").filter({ hasText: copy.expired }),
-              ).toHaveCount(1);
+            await expect(surface.getByRole("status")).toContainText(copy.held);
             await expect(surface.getByRole("button")).toHaveCount(0);
           }
           await expect(customerView.locator("body")).not.toContainText(
@@ -749,7 +732,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
           `set role service_role;select public.prepare_booking_request_payment_required_expiry('${failureId}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}');`,
         ),
       );
-      expect(prepared.status).toBe("attention-required");
+      expect(prepared.status).toBe("processing");
       expect((await page.request.get("/__scheduled")).ok()).toBe(true);
       await expect(page.getByRole("status")).toContainText(
         "Booking confirmed",
@@ -763,7 +746,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         harness.runSql(
           `select state from public.booking_request_payment_required_expiry_work where booking_request_id='${failureId}';`,
         ),
-      ).toBe("attention_required");
+      ).toBe("processing");
       expect(
         harness.runSql(
           `select count(*) from public.booking_request_payment_required_expiry_operations where booking_request_id='${failureId}';`,
@@ -926,16 +909,16 @@ test("a verified Customer double-submit creates one Pending request and one mini
       harness.runSql(unresolvedQuery);
       expect((await page.request.get("/__scheduled")).ok()).toBe(true);
       await expect(page.getByRole("status")).toContainText(
-        "could not yet be verified",
+        "Support needs to review this payment",
         { timeout: 15000 },
       );
       await expect(expiryNotice.getByRole("status")).toContainText(
-        "could not yet be verified",
+        "Support needs to review this payment",
         { timeout: 15000 },
       );
       await expect(page.getByRole("button")).toHaveCount(0);
       const attention = await expiryGraph();
-      expect(attention.expiry.state).toBe("attention_required");
+      expect(attention.expiry.state).toBe("quarantined");
       expect(attention.request.status).toBe("accepted");
       expect(attention.capture).toEqual(beforeExpiry.capture);
       expect(attention.occupancies).toEqual(beforeExpiry.occupancies);
@@ -952,64 +935,15 @@ test("a verified Customer double-submit creates one Pending request and one mini
           (unit: { id: string }) => unit.id === shift.id,
         ).calendarState,
       ).toBe("pending_hold");
-      await captureViews("payment-expiry-attention-required", expiryReference);
-      // Reconcile the same release and let the actual scheduled handler complete safe expiry.
+      await captureViews("payment-expiry-quarantined", expiryReference);
+      // The actual scheduled handler cannot restart an uncertain release after quarantine.
       harness.runSql(clocked[4]);
       expect((await page.request.get("/__scheduled")).ok()).toBe(true);
-      await expect(page.getByRole("status")).toContainText("Expired unpaid", {
-        timeout: 15000,
-      });
-      await expect(expiryNotice.getByRole("status")).toContainText(
-        "Expired unpaid",
-        { timeout: 15000 },
+      await expect(page.getByRole("status")).toContainText(
+        "Payment needs review",
       );
-      await expect(
-        page.locator("dd").filter({ hasText: "Expired unpaid" }),
-      ).toHaveCount(1);
-      await expect(
-        expiryNotice.locator("dd").filter({ hasText: "Expired unpaid" }),
-      ).toHaveCount(1);
-      const expired = await expiryGraph();
-      expect(expired.request.status).toBe("expired");
-      expect(expired.expiry.state).toBe("complete");
-      expect(expired.capture).toEqual(beforeExpiry.capture);
-      expect(expired.hold).toBe("released_hold");
-      expect(
-        expired.occupancies.every((row: { active: boolean }) => !row.active),
-      ).toBe(true);
-      expect(expired.notices).toHaveLength(2);
-      expect(
-        new Set(
-          expired.notices.map(
-            (row: { recipient_user_id: string }) => row.recipient_user_id,
-          ),
-        ).size,
-      ).toBe(2);
-      expect(expired.confirmations).toBe(0);
-      expect(
-        expired.availability.units.find(
-          (unit: { id: string }) => unit.id === shift.id,
-        ).available,
-      ).toBe(true);
-      expect(
-        expired.calendar.units.find(
-          (unit: { id: string }) => unit.id === shift.id,
-        ).calendarState,
-      ).toBe("open");
-      expect(
-        expired.ledger.filter(
-          (row: { operation_kind: string }) => row.operation_kind === "release",
-        ),
-      ).toHaveLength(1);
-      expect(
-        expired.ledger.every(
-          (row: { physical_execution_count: number }) =>
-            row.physical_execution_count === 1,
-        ),
-      ).toBe(true);
-      await captureViews("payment-expiry-expired", expiryReference);
-      expect((await page.request.get("/__scheduled")).ok()).toBe(true);
-      expect(await expiryGraph()).toEqual(expired);
+      expect(await expiryGraph()).toEqual(attention);
+      await captureViews("payment-expiry-quarantined", expiryReference);
       expect(observeFailure()).toEqual(recovered);
     } finally {
       for (const definition of definitions) harness.runSql(definition);

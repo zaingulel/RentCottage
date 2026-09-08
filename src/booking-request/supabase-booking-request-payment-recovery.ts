@@ -21,6 +21,7 @@ const terminalStatuses = [
   "late-succeeded",
   "deadline-elapsed",
   "blocked",
+  "quarantined",
   "unavailable",
 ] as const;
 
@@ -45,6 +46,7 @@ export class SupabaseBookingRequestPaymentRecoveryRepository implements BookingR
     if (error)
       throw new Error("Booking Request payment recovery is unavailable");
     const value = data as Record<string, unknown>;
+    if (value?.status === "quarantined") return { status: "quarantined" };
     if (
       !value ||
       !["processing", "retryable", "succeeded", "late-succeeded"].includes(

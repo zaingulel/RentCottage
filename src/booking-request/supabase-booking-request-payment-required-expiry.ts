@@ -27,6 +27,7 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 const terminal = [
   "processing",
   "attention-required",
+  "quarantined",
   "expired",
   "confirmed",
   "not-due",
@@ -49,6 +50,15 @@ function bindingMatches(expected: object, value: unknown): boolean {
 function expiryBinding(
   permit: BookingRequestPaymentRequiredExpiryPermit,
 ): ProviderOperationBinding {
+  if (permit.purpose === "booking-request-payment-required-corrective-refund")
+    return {
+      kind: "refund",
+      paymentLifecycleId: permit.binding.paymentLifecycleId,
+      logicalOperationId: permit.binding.refundLogicalOperationId,
+      attemptId: permit.binding.refundPhysicalAttemptId,
+      amountFils: permit.binding.amountFils,
+      currency: "IQD",
+    };
   return {
     kind: "release",
     paymentLifecycleId: permit.binding.authorizationPaymentLifecycleId,
@@ -98,7 +108,11 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
     if (terminal.includes(value.status as (typeof terminal)[number]))
       return { status: value.status } as PaymentRequiredExpiryResult;
     if (value.status === "ready") return { status: "ready" };
-    if (value.status === "release" || value.status === "reconcile-expiry") {
+    if (
+      value.status === "release" ||
+      value.status === "refund" ||
+      value.status === "reconcile-expiry"
+    ) {
       let permit: BookingRequestPaymentRequiredExpiryPermit;
       try {
         permit = paymentRequiredExpiryPermitFrom(value.permit);
@@ -107,6 +121,11 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
       }
       if (
         permit.binding.bookingRequestId !== bookingRequestId ||
+        (value.status === "refund" &&
+          permit.purpose !==
+            "booking-request-payment-required-corrective-refund") ||
+        (value.status === "release" &&
+          permit.purpose !== "booking-request-payment-required-expiry") ||
         !bindingMatches(permit.binding, value.binding) ||
         !bindingMatches(providerIdentity, permit.binding.providerIdentity) ||
         (value.status === "reconcile-expiry" &&
@@ -116,8 +135,8 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
             !value.providerReference.trim()))
       )
         throw new Error("Payment Required expiry data is invalid");
-      return value.status === "release"
-        ? { status: "release", permit, binding: expiryBinding(permit) }
+      return value.status === "release" || value.status === "refund"
+        ? { status: value.status, permit, binding: expiryBinding(permit) }
         : {
             status: "reconcile-expiry",
             permit,
@@ -171,6 +190,7 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
       ![
         "processing",
         "attention-required",
+        "quarantined",
         "expired",
         "confirmed",
         "not-due",

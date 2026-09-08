@@ -38,6 +38,7 @@ export interface CustomerBookingRequest {
       | "processing"
       | "retryable"
       | "deadline-elapsed"
+      | "quarantined"
       | "confirmed";
   } | null;
   readonly cottageName: string;
@@ -102,6 +103,7 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
           "processing",
           "retryable",
           "deadline-elapsed",
+          "quarantined",
           "confirmed",
         ].includes(paymentRecovery.status))) ||
     typeof request.cottageName !== "string" ||

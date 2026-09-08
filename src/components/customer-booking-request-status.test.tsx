@@ -426,3 +426,55 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
     vi.useRealTimers();
   }
 });
+
+it.each([
+  ["payment-correction-refunding", "Payment is being returned", "remain held"],
+  [
+    "payment-correction-quarantined",
+    "Payment needs review",
+    "Please do not pay again",
+  ],
+  [
+    "payment-correction-expired",
+    "Expired — payment returned",
+    "full payment has been returned",
+  ],
+  [
+    "payment-correction-released-review",
+    "Payment needs review",
+    "were already released",
+  ],
+] as const)(
+  "shows honest correction state %s and no payment retry",
+  (fixture, label, description) => {
+    render(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerDisplayFixtures[fixture]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(label);
+    expect(screen.getByRole("status")).toHaveTextContent(description);
+    expect(screen.getByRole("status")).toHaveTextContent("not confirmed");
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  },
+);
+
+it("keeps a quarantined open payment window free of retry controls", () => {
+  render(
+    <CustomerBookingRequestStatus
+      locale="en"
+      request={{
+        ...customerDisplayFixtures["payment-correction-quarantined"],
+        paymentRequiredWindow: {
+          recordedAt: "2099-08-21T09:00:00.000Z",
+          deadline: "2099-08-21T09:20:00.000Z",
+          phase: "open",
+        },
+        paymentRecovery: { status: "available" },
+      }}
+    />,
+  );
+  expect(screen.getByRole("status")).toHaveTextContent("Payment needs review");
+  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+});

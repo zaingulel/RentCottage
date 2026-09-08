@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness();
-const priorVersion = "20260906200000";
+const priorVersion = "20260907120000";
 const identity = {
   provider: "fictional-payments",
   environment: "local-test",
@@ -138,7 +138,7 @@ try {
       "select max(version) from supabase_migrations.schema_migrations;",
     ),
     priorVersion,
-    "Upgrade must begin on the exact pre-expiry migration",
+    "Upgrade must begin on the exact pre-correction migration",
   );
   const definitions = clockSignatures.map((signature) =>
     harness.runSql(
@@ -153,16 +153,93 @@ try {
       definition.replaceAll("clock_timestamp()", "public.expiry_upgrade_now()"),
     );
   seed(10); // This recovery window is still open at migration time.
+  seed(17); // Unsafe evidence must quarantine even before the fixed deadline.
   harness.runSql(
     "update public.expiry_upgrade_clock set instant=instant-interval '21 minutes';",
   );
-  for (const index of [11, 12, 13]) seed(index);
+  for (const index of [11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24])
+    seed(index);
+  // No expiry work exists for these legacy blocked/outstanding recovery cases.
+  for (const [index, stepName, outcome] of [
+    [17, "original-release", "failed"],
+    [18, "original-release", "indeterminate"],
+    [19, "replacement-authorization", "indeterminate"],
+    [20, "replacement-capture", "indeterminate"],
+    [21, "replacement-release", "failed"],
+    [22, "replacement-release", "indeterminate"],
+  ]) {
+    const attempt = admit(index);
+    for (const preceding of [
+      "original-release",
+      "replacement-authorization",
+      "replacement-capture",
+    ]) {
+      if (preceding === stepName) break;
+      step(
+        attempt,
+        preceding === "replacement-capture" ? "failed" : "succeeded",
+      );
+    }
+    step(attempt, outcome);
+  }
+  for (const index of [23, 24]) {
+    const attempt = admit(index);
+    step(attempt, "succeeded");
+    step(attempt, "succeeded");
+    const permit = parsed(
+      `select public.lease_booking_request_payment_recovery_step('${attempt}');`,
+    ).permit;
+    if (index === 23) {
+      const unobserved = readFileSync(
+        "supabase/tests/database/booking_request_payment_correction.test.sql",
+        "utf8",
+      )
+        .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
+        .split("-- END UNOBSERVED RECOVERY FIXTURE")[0];
+      harness.runSql(
+        unobserved +
+          `select pg_temp.seed_unobserved_recovery_outcome(${literal(permit)},'indeterminate',null);`,
+      );
+    }
+  }
   const blocked = admit(12);
   step(blocked, "indeterminate");
   const recovered = admit(13);
   for (let index = 0; index < 3; index++) step(recovered, "succeeded");
   parsed(
     `select public.finalize_booking_request_confirmation('${id("60", 13)}',public.get_booking_request_payment_recovery_confirmation_evidence('${recovered}'));`,
+  );
+  // Retain legacy attention from unresolved and failed releases, one safe expiry,
+  // and one unambiguous late capture awaiting a corrective refund.
+  const late = admit(15);
+  step(late, "succeeded");
+  step(late, "succeeded");
+  const latePermit = parsed(
+    `select public.lease_booking_request_payment_recovery_step('${late}');`,
+  ).permit;
+  const uncertainCapture = parsed(
+    `select public.execute_simulated_booking_request_payment_recovery(${literal(latePermit)},'indeterminate');`,
+  );
+  parsed(
+    `select public.query_simulated_booking_request_payment_recovery(${literal(latePermit)},'${uncertainCapture.providerRequestId}','${uncertainCapture.providerReference}','succeeded');`,
+  );
+  const failed = admit(16);
+  step(failed, "failed");
+  for (const index of [12, 15, 16])
+    parsed(
+      `select public.prepare_booking_request_payment_required_expiry('${id("60", index)}',${literal(identity)});`,
+    );
+  const safe = parsed(
+    `select public.prepare_booking_request_payment_required_expiry('${id("60", 14)}',${literal(identity)});`,
+  );
+  parsed(
+    `select public.execute_simulated_booking_request_payment_required_expiry(${literal(safe.permit)},'succeeded');`,
+  );
+  assert.equal(
+    parsed(
+      `select public.finalize_booking_request_payment_required_expiry('${id("60", 14)}');`,
+    ).status,
+    "expired",
   );
   for (const definition of definitions) harness.runSql(definition);
   harness.runSql(
@@ -172,19 +249,19 @@ try {
     harness.runSql(
       "select count(*) from public.booking_request_capture_work where payment_required_deadline > clock_timestamp();",
     ),
-    "1",
+    "2",
   );
   assert.equal(
     harness.runSql(
       "select count(*) from public.booking_request_capture_work where payment_required_deadline <= clock_timestamp();",
     ),
-    "3",
+    "13",
   );
   assert.equal(
     harness.runSql(
       "select count(*) from public.booking_request_payment_recovery_attempts where state='blocked';",
     ),
-    "1",
+    "8",
   );
   assert.equal(
     harness.runSql("select count(*) from public.booking_confirmations;"),
@@ -199,18 +276,39 @@ try {
   );
   assert.equal(
     harness.runSql(
-      "select (select count(*) from public.booking_request_payment_required_expiry_work)||':'||(select count(*) from public.booking_request_payment_required_expiry_operations);",
+      "select count(*) from public.booking_request_payment_required_expiry_work where state='quarantined';",
     ),
-    "0:0",
-    "Migration must not manufacture expiry work or provider effects",
+    "9",
+    "Legacy blocked and outstanding unsafe money becomes sticky quarantine with or without prior expiry attention",
+  );
+  assert.equal(
+    harness.runSql(
+      "select count(*) from public.booking_request_payment_required_expiry_operations where operation_kind='refund';",
+    ),
+    "0",
+    "Migration never manufactures provider effects",
   );
   const due = parsed(
     `select public.claim_due_booking_request_payment_required_expiries(20,${literal(identity)});`,
   );
   assert.deepEqual(
     due.map((row) => row.bookingRequestId).sort(),
-    [id("60", 11), id("60", 12)],
-    "Legacy elapsed and blocked requests become eligible, while open and recovered requests do not",
+    [id("60", 11), id("60", 15), id("60", 24)],
+    "Only safely evaluable elapsed and late-capture cases are due; pending, confirmed, expired and quarantined cases stay fenced",
+  );
+  assert.equal(
+    harness.runSql(
+      `select state from public.booking_request_payment_recovery_attempts where booking_request_id='${id("60", 23)}';`,
+    ),
+    "replacement_authorized",
+    "Quarantining an outstanding provider response preserves the unadvanced recovery history",
+  );
+  assert.equal(
+    harness.runSql(
+      `select count(*) from public.booking_request_payment_required_expiry_work where booking_request_id='${id("60", 24)}';`,
+    ),
+    "0",
+    "A lease with no provider outcome is not indeterminate evidence and is not quarantined",
   );
   const elapsed = parsed(
     `select public.prepare_booking_request_payment_required_expiry('${id("60", 11)}',${literal(identity)});`,
@@ -229,19 +327,33 @@ try {
     parsed(
       `select public.prepare_booking_request_payment_required_expiry('${id("60", 12)}',${literal(identity)});`,
     ).status,
-    "reconcile-recovery",
+    "quarantined",
   );
   assert.equal(
     parsed(
       `select public.finalize_booking_request_payment_required_expiry('${id("60", 12)}');`,
     ).status,
-    "attention-required",
+    "quarantined",
   );
   assert.equal(
     parsed(
       `select public.prepare_booking_request_payment_required_expiry('${id("60", 13)}',${literal(identity)});`,
     ).status,
     "confirmed",
+  );
+  const corrective = parsed(
+    `select public.prepare_booking_request_payment_required_expiry('${id("60", 15)}',${literal(identity)});`,
+  );
+  assert.equal(corrective.status, "refund");
+  assert.equal(corrective.permit.binding.amountFils, 115000000);
+  parsed(
+    `select public.execute_simulated_booking_request_payment_required_expiry(${literal(corrective.permit)},'succeeded');`,
+  );
+  assert.equal(
+    parsed(
+      `select public.finalize_booking_request_payment_required_expiry('${id("60", 15)}');`,
+    ).status,
+    "expired",
   );
   const after = snapshot();
   assert.deepEqual(
@@ -261,7 +373,7 @@ try {
   );
   assert.equal(
     after.simulated_payment_provider_operations.length,
-    before.simulated_payment_provider_operations.length + 1,
+    before.simulated_payment_provider_operations.length + 2,
   );
   assert.ok(
     after.cottage_booking_period_occupancies
@@ -269,7 +381,7 @@ try {
       .every((row) => row.active),
   );
   console.log(
-    "The exact pre-139 open, elapsed, blocked and recovered graphs survive migration byte-for-byte; only the safely released legacy request expires, blocked inventory remains held and confirmed recovery is preserved.",
+    "The exact pre-140 pending, late, failed, indeterminate, safely expired and confirmed histories survive upgrade; failed and unknown money is quarantined, the late capture receives one full refund, and deadlines and receipts remain unchanged.",
   );
 } catch (error) {
   failure = error;

@@ -17,6 +17,10 @@ declare global {
         | "payment-expiry-processing"
         | "payment-expiry-attention-required"
         | "payment-expiry-expired"
+        | "payment-correction-refunding"
+        | "payment-correction-quarantined"
+        | "payment-correction-expired"
+        | "payment-correction-released-review"
         | "paid-confirmed";
     }) => void;
   }
@@ -81,6 +85,9 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
   for (const locale of [
     {
       name: "en",
+      refunding: "Payment is being returned",
+      quarantined: "Payment needs review",
+      refunded: "Expired — payment returned",
       attention: "could not yet be verified",
       expired: "Expired unpaid",
       released: "authorisations have been released",
@@ -101,6 +108,9 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
     },
     {
       name: "ar",
+      refunding: "جارٍ إعادة الدفع",
+      quarantined: "الدفع يحتاج إلى مراجعة",
+      refunded: "انتهى الطلب — تم إرجاع الدفع",
       attention: "لم نتمكن بعد من التحقق",
       expired: "انتهى الطلب دون دفع",
       released: "تم تحرير تفويضات الدفع",
@@ -115,6 +125,9 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
     },
     {
       name: "ckb",
+      refunding: "پارەکە دەگەڕێندرێتەوە",
+      quarantined: "پارەدان پێویستی بە پێداچوونەوە هەیە",
+      refunded: "بەسەرچوو — پارەکە گەڕێندرایەوە",
       attention: "هێشتا نەمانتوانیوە",
       expired: "داواکارییەکە بەبێ پارەدان بەسەرچوو",
       released: "مۆڵەتەکانی پارەدان ئازاد کراون",
@@ -142,6 +155,10 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
         "payment-expiry-processing",
         "payment-expiry-attention-required",
         "payment-expiry-expired",
+        "payment-correction-refunding",
+        "payment-correction-quarantined",
+        "payment-correction-expired",
+        "payment-correction-released-review",
         "paid-confirmed",
       ] as const) {
         await page.evaluate(
@@ -154,15 +171,36 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
           locale.name === "en" ? "ltr" : "rtl",
         );
         await expect(page.getByRole("status")).toContainText(
-          status === "capture-processing"
-            ? locale.processing
-            : status === "payment-expiry-expired"
-              ? locale.expired
-              : status.startsWith("payment-")
-                ? locale.paymentRequired
-                : locale.confirmed,
+          status === "payment-correction-refunding"
+            ? locale.refunding
+            : status === "payment-correction-quarantined" ||
+                status === "payment-correction-released-review"
+              ? locale.quarantined
+              : status === "payment-correction-expired"
+                ? locale.refunded
+                : status === "capture-processing"
+                  ? locale.processing
+                  : status === "payment-expiry-expired"
+                    ? locale.expired
+                    : status.startsWith("payment-")
+                      ? locale.paymentRequired
+                      : locale.confirmed,
         );
-        if (status.startsWith("payment-")) {
+        if (status.startsWith("payment-correction-")) {
+          await expect(page.getByRole("status")).toContainText(
+            locale.unconfirmed,
+          );
+          if (
+            status === "payment-correction-refunding" ||
+            status === "payment-correction-quarantined"
+          )
+            await expect(page.getByRole("status")).toContainText(locale.held);
+          await expect(page.getByRole("button")).toHaveCount(0);
+          if (status !== "payment-correction-expired")
+            await expect(page.getByRole("status")).not.toContainText(
+              locale.refunded,
+            );
+        } else if (status.startsWith("payment-")) {
           await expect(
             page.getByText(locale.paymentDeadline, { exact: true }),
           ).toBeVisible();

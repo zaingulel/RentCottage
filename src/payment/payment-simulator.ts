@@ -72,7 +72,9 @@ export class PaymentSimulator implements PaymentProviderAdapter {
     if (
       request.executionPermit?.purpose === "booking-request-capture" ||
       request.executionPermit?.purpose ===
-        "booking-request-payment-required-expiry"
+        "booking-request-payment-required-expiry" ||
+      request.executionPermit?.purpose ===
+        "booking-request-payment-required-corrective-refund"
     ) {
       return { outcome: "not-executed" };
     }

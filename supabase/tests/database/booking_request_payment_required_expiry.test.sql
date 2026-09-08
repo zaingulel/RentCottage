@@ -272,14 +272,14 @@ savepoint failed_release;
 set local role service_role;
 select public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from prepared_expiry),'failed');
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
-  'attention-required','a failed release never expires the request');
+  'quarantined','a failed release never expires the request');
 select is(public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from prepared_expiry),'succeeded')->>'outcome',
-  'failed','a failed release cannot be retried under its existing physical identity');
+  'not-executed','a failed release cannot be retried under its existing physical identity');
 reset role;
-select is((select state from public.booking_request_payment_required_expiry_work),'attention_required',
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined',
   'failed release attention is durable');
 reset role;
-select set_config('expiry.expected_projection',(jsonb_build_object('status','attention-required','deadline',(select to_char(payment_required_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') from public.booking_request_capture_work)))::text,true);
+select set_config('expiry.expected_projection',(jsonb_build_object('status','quarantined','deadline',(select to_char(payment_required_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') from public.booking_request_capture_work)))::text,true);
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 set local role authenticated;
 select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Customer receives only the attention-required expiry state and fixed deadline');
@@ -302,35 +302,38 @@ select throws_ok(format('select public.execute_simulated_booking_request_payment
 select throws_ok(format('select public.execute_simulated_booking_request_payment_required_expiry(%L::jsonb,%L)',
   (select jsonb_set(result->'permit','{binding,amountFils}','110000000'::jsonb) from prepared_expiry),'succeeded'),
   'RC409',null,'a partial-amount permit cannot dispatch a release');
+reset role;
+savepoint uncertain_release;
+set local role service_role;
 create temp table expiry_release_result as select public.execute_simulated_booking_request_payment_required_expiry(
   (select result->'permit' from prepared_expiry),'indeterminate') result;
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
-  'attention-required','an indeterminate release cannot expire the request');
+  'quarantined','an indeterminate release cannot expire the request');
 select is(public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001',
   '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)->>'status',
-  'reconcile-expiry','uncertainty selects the existing release query instead of a new physical attempt');
+  'quarantined','uncertainty permanently prevents automatic release queries');
 reset role;
-select is((select state from public.booking_request_payment_required_expiry_work),'attention_required',
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined',
   'indeterminate release attention is durable');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,
   'an uncertain release still blocks every held shift');
 update public.payment_required_expiry_test_clock set instant=instant+interval '1 second';
 set local role service_role;
-select throws_ok(format('select public.query_simulated_booking_request_payment_required_expiry(%L::jsonb,%L,%L,%L)',
-  (select result->'permit' from prepared_expiry),'foreign-provider-request',
-  (select result->>'providerReference' from expiry_release_result),'succeeded'),
-  'RC409',null,'a release query rejects a different provider request identity');
 select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from prepared_expiry),
   (select result->>'providerRequestId' from expiry_release_result),(select result->>'providerReference' from expiry_release_result),'succeeded')->>'outcome',
-  'succeeded','authoritative reconciliation resolves the existing release');
+  'not-executed','quarantine prevents provider queries even with a stale valid permit');
 reset role;
-select is((select authoritative_outcome_at from public.simulated_payment_provider_operations where operation_kind='release'),
-  (select instant from public.payment_required_expiry_test_clock),'reconciliation uses the new authoritative time');
+select is((select authoritative_outcome_at from public.simulated_payment_provider_operations where operation_kind='release'),null::timestamptz,'quarantine cannot invent resolution time');
+rollback to uncertain_release;
+set local role service_role;
+create temp table expiry_release_result as select public.execute_simulated_booking_request_payment_required_expiry(
+  (select result->'permit' from prepared_expiry),'succeeded') result;
+reset role;
 savepoint invalid_release_amount;
 update public.simulated_payment_provider_operations set amount_fils=110000000 where operation_kind='release';
 set local role service_role;
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
-  'attention-required','finalization revalidates the complete amount in persisted provider release evidence');
+  'quarantined','finalization revalidates the complete amount in persisted provider release evidence');
 reset role;
 rollback to invalid_release_amount;
 savepoint invalid_inventory;
@@ -338,7 +341,7 @@ update public.cottage_booking_period_occupancies set active=false
   where shift_id='32000000-0000-4000-8000-000000001002';
 set local role service_role;
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
-  'attention-required','finalization rejects an incomplete occupancy set even after successful release');
+  'quarantined','finalization rejects an incomplete occupancy set even after successful release');
 reset role;
 rollback to invalid_inventory;
 set local role service_role;
@@ -401,13 +404,13 @@ set local role service_role;
 create temp table recovery_release_permit as select public.lease_booking_request_payment_recovery_step(
   (select (result->>'attemptId')::uuid from recovery_before_expiry)) result;
 create temp table recovery_release_result as select public.execute_simulated_booking_request_payment_recovery(
-  (select result->'permit' from recovery_release_permit),'indeterminate') result;
+  (select result->'permit' from recovery_release_permit),'succeeded') result;
 reset role;
 update public.payment_required_expiry_test_clock set instant=(select payment_required_deadline from public.booking_request_capture_work);
 set local role service_role;
 select is(public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001',
   '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)->>'status',
-  'reconcile-recovery','expiry retains recovery ownership of an already dispatched uncertain release');
+  'ready','expiry reuses the existing successful recovery-owned release');
 select public.query_simulated_booking_request_payment_recovery((select result->'permit' from recovery_release_permit),
   (select result->>'providerRequestId' from recovery_release_result),(select result->>'providerReference' from recovery_release_result),'succeeded');
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
@@ -459,10 +462,10 @@ reset role;
 update public.payment_required_expiry_test_clock set instant=(select payment_required_deadline from public.booking_request_capture_work);
 set local role service_role;
 select is(public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001',
-  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')->>'status','attention-required','expiry waits for a valid pre-deadline capture to confirm');
+  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')->>'status','processing','expiry waits for a valid pre-deadline capture to confirm');
 select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001', public.get_booking_request_payment_recovery_confirmation_evidence((select (result->>'attemptId')::uuid from confirming_attempt)));
 reset role;
-select is((select state from public.booking_request_payment_required_expiry_work),'attention_required','historical expiry work remains durable after recovery confirms');
+select is((select state from public.booking_request_payment_required_expiry_work),'processing','historical expiry work remains durable after recovery confirms');
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 set local role authenticated;
 select is(public.get_customer_booking_request('RC-REQ-0000000000001001')->>'paymentStatus','paid-confirmed','Customer sees confirmed payment after the deadline');

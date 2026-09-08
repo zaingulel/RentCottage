@@ -123,6 +123,49 @@ export const customerDisplayFixtures = {
     ],
   },
   "paid-confirmed": { ...customerDisplay, status: "paid-confirmed" },
+  "payment-correction-refunding": {
+    ...customerDisplay,
+    status: "payment-required",
+    paymentRequiredExpiry: {
+      status: "refunding",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
+  "payment-correction-quarantined": {
+    ...customerDisplay,
+    status: "payment-required",
+    paymentRequiredExpiry: {
+      status: "quarantined",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
+  "payment-correction-expired": {
+    ...customerDisplay,
+    status: "expired",
+    paymentRequiredExpiry: {
+      status: "refunded-expired",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: null,
+  },
+  "payment-correction-released-review": {
+    ...customerDisplay,
+    status: "expired",
+    paymentRequiredExpiry: {
+      status: "quarantined-released",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+  },
 } satisfies Record<
   | "capture-processing"
   | "payment-required-open"
@@ -130,6 +173,10 @@ export const customerDisplayFixtures = {
   | "payment-expiry-processing"
   | "payment-expiry-attention-required"
   | "payment-expiry-expired"
+  | "payment-correction-refunding"
+  | "payment-correction-quarantined"
+  | "payment-correction-expired"
+  | "payment-correction-released-review"
   | "paid-confirmed",
   CustomerBookingRequestDisplay
 >;
@@ -211,6 +258,49 @@ export const ownerDisplayFixtures = {
     ],
   },
   "paid-confirmed": { ...ownerDisplay, status: "paid-confirmed" },
+  "payment-correction-refunding": {
+    ...ownerDisplay,
+    status: "payment-required",
+    paymentRequiredExpiry: {
+      status: "refunding",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
+  "payment-correction-quarantined": {
+    ...ownerDisplay,
+    status: "payment-required",
+    paymentRequiredExpiry: {
+      status: "quarantined",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      phase: "elapsed",
+    },
+  },
+  "payment-correction-expired": {
+    ...ownerDisplay,
+    status: "expired",
+    paymentRequiredExpiry: {
+      status: "refunded-expired",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+    paymentRequiredWindow: null,
+  },
+  "payment-correction-released-review": {
+    ...ownerDisplay,
+    status: "expired",
+    paymentRequiredExpiry: {
+      status: "quarantined-released",
+      deadline: "2099-08-21T09:20:00.000Z",
+    },
+  },
 } satisfies Record<
   | "capture-processing"
   | "payment-required-open"
@@ -218,6 +308,10 @@ export const ownerDisplayFixtures = {
   | "payment-expiry-processing"
   | "payment-expiry-attention-required"
   | "payment-expiry-expired"
+  | "payment-correction-refunding"
+  | "payment-correction-quarantined"
+  | "payment-correction-expired"
+  | "payment-correction-released-review"
   | "paid-confirmed",
   OwnerBookingRequestNotificationDisplay
 >;
