@@ -3,6 +3,9 @@ export function withPaymentRecoveryCleanup(cleanup, requestId) {
     .replace(
       "begin;",
       `begin;
+  alter table public.booking_request_payment_history disable trigger reject_booking_request_payment_history_change;
+  delete from public.booking_request_payment_history where booking_request_id='${requestId}';
+  alter table public.booking_request_payment_history enable trigger reject_booking_request_payment_history_change;
   alter table public.booking_request_payment_correction_observations disable trigger reject_payment_correction_observation_change;
   delete from public.booking_request_payment_correction_observations where booking_request_id='${requestId}';
   alter table public.booking_request_payment_correction_observations enable trigger reject_payment_correction_observation_change;

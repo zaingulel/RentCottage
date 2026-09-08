@@ -1,0 +1,73 @@
+.history {
+  width: min(64rem, calc(100% - 2.25rem));
+  margin: 2rem auto;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.heading,
+.card,
+.events > li {
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  padding: 1.2rem;
+}
+
+.heading,
+.eventTitle {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.heading p,
+.heading h1,
+.events p {
+  margin: 0;
+}
+
+.card dl,
+.events dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+.card dl > div,
+.events dl > div {
+  min-width: 0;
+}
+
+.card dt,
+.events dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.card dd,
+.events dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.events {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.references {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.55rem;
+  margin-block-start: 0.8rem;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.references dd {
+  font-size: 0.86rem;
+}

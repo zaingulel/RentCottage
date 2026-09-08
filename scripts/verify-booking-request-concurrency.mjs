@@ -633,7 +633,7 @@ function verifyCutoffExpiryRelease(label) {
   runSql(`drop table public.test_booking_request_cutoff_stale_work;`);
 }
 
-const cleanup = `
+const cleanup = `begin;
   create table if not exists public.test_booking_request_concurrency_fixture (
     profile_id uuid, schedule_id uuid, shift_id uuid, slug text,
     position smallint, service_day date, submission jsonb,
@@ -652,6 +652,19 @@ const cleanup = `
   drop table if exists public.test_booking_request_expiry_stale_work;
   drop table if exists public.test_booking_request_cutoff_stale_work;
   drop table if exists public.test_booking_request_boundary_durable_operation;
+  alter table public.booking_request_payment_history disable trigger reject_booking_request_payment_history_change;
+  delete from public.booking_request_payment_history
+  where payment_lifecycle_id in (
+    select payment_lifecycle_id from public.booking_request_submission_attempts
+    where customer_user_id = '${customerId}'
+    union
+    select payment_lifecycle_id from public.booking_request_authorization_claims
+    where customer_user_id = '${customerId}'
+    union
+    select payment_lifecycle_id from public.booking_requests
+    where customer_user_id = '${customerId}'
+  );
+  alter table public.booking_request_payment_history enable trigger reject_booking_request_payment_history_change;
   delete from public.booking_request_provider_operation_identities identities
   using public.booking_request_submission_attempts attempts
   where identities.attempt_id = attempts.id
@@ -735,7 +748,7 @@ const cleanup = `
   delete from auth.users where id = '${customerId}';
   drop table if exists public.test_booking_request_concurrency_fixture;
   drop table if exists public.test_booking_request_cross_cottage_fixture;
-`;
+commit;`;
 
 async function main() {
   guardDisposableLocalDatabase();

@@ -9,6 +9,7 @@ import { parseAdministratorCottageProfileCursor } from "@/cottage-profile/supaba
 import { CottageProfileOverview } from "@/components/cottage-profile-overview";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
+import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
 
 async function loadAdministratorCottages(
   cursor?: CottageProfileAdministratorCursor,
@@ -79,7 +80,12 @@ export default async function AdministratorCottagesPage({
     <main className="owner-application-page cottage-profile-page">
       <header className="owner-application-header">
         <Link href={`/${locale}`}>RentCottage</Link>
-        <span>{copy.adminEyebrow}</span>
+        <div>
+          <Link href={`/${locale}/administrator/payments`}>
+            {administratorPaymentHistoryMessages[locale].title}
+          </Link>
+          <span>{copy.adminEyebrow}</span>
+        </div>
       </header>
       <CottageProfileOverview
         locale={locale}

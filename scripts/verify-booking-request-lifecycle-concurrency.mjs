@@ -791,7 +791,7 @@ function verify(label, expectedOperations) {
   }
 }
 
-const cleanup = `
+const cleanup = `begin;
   delete from public.booking_request_status_notifications notifications
   using public.test_booking_request_lifecycle_fences fixture
   where notifications.booking_request_id = fixture.booking_request_id;
@@ -825,6 +825,11 @@ const cleanup = `
   delete from public.booking_request_submission_attempts attempts
   using public.test_booking_request_lifecycle_fences fixture
   where attempts.id = fixture.attempt_id;
+  alter table public.booking_request_payment_history disable trigger reject_booking_request_payment_history_change;
+  delete from public.booking_request_payment_history history
+  using public.test_booking_request_lifecycle_fences fixture
+  where history.payment_lifecycle_id = fixture.payment_lifecycle_id;
+  alter table public.booking_request_payment_history enable trigger reject_booking_request_payment_history_change;
   delete from public.booking_requests requests
   using public.test_booking_request_lifecycle_fences fixture
   where requests.id = fixture.booking_request_id;
@@ -853,7 +858,7 @@ const cleanup = `
   where id = '${fixtureIds.scheduleRevision}';
   alter table public.cottage_shift_schedule_revisions
     enable trigger reject_cottage_shift_schedule_revision_delete;
-`;
+commit;`;
 
 let failure;
 try {
