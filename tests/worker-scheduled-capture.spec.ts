@@ -114,6 +114,8 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
       harness.runSql(`select jsonb_build_object(
         'work',(select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id='${id}'),
         'execution',(select to_jsonb(operation) from public.simulated_payment_provider_operations operation where operation_kind='capture' and payment_lifecycle_id='73000000-0000-4000-8000-000000001001'),
+        'recoveryAttempt',(select to_jsonb(attempt) from public.booking_request_payment_recovery_attempts attempt where booking_request_id='${id}'),
+        'providerOperations',(select coalesce(jsonb_agg(to_jsonb(operation) order by operation.id),'[]') from public.simulated_payment_provider_operations operation where recovery_attempt_id in (select id from public.booking_request_payment_recovery_attempts where booking_request_id='${id}')),
         'confirmation',(select to_jsonb(confirmation) from public.booking_confirmations confirmation where booking_request_id='${id}'),
         'paymentRequiredNotifications',(select count(*) from public.booking_request_status_notifications notification where booking_request_id='${id}' and status='payment-required'),
         'commitment',(select to_jsonb(commitment) from public.cottage_booking_period_commitments commitment where id='50000000-0000-4000-8000-000000001001'),
@@ -163,7 +165,16 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
         .at(-1)!,
     );
     harness.runSql(`set role service_role;select public.execute_simulated_booking_request_payment_recovery(
-      public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','indeterminate');`);
+      public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');`);
+    const originalReleased = observe();
+    expect(originalReleased.recoveryAttempt.state).toBe("original_released");
+    expect(originalReleased.providerOperations).toHaveLength(1);
+    expect(originalReleased.providerOperations[0]).toMatchObject({
+      operation_kind: "release",
+      current_outcome: "succeeded",
+      physical_execution_count: 1,
+    });
+    expect(originalReleased.confirmation).toBeNull();
     expect((await request.get("/__scheduled")).ok()).toBe(true);
     const recovered = observe();
     expect(recovered.work).toEqual(paymentRequired.work);
@@ -171,11 +182,31 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
     expect(recovered.confirmation.booking_request_id).toBe(id);
     expect(recovered.commitment.status).toBe("confirmed_booking");
     expect(recovered.occupancies).toEqual(paymentRequired.occupancies);
+    expect(recovered.recoveryAttempt.state).toBe("succeeded");
+    expect(recovered.providerOperations).toHaveLength(3);
     expect(
-      harness.runSql(
-        `select count(*)||':'||sum(physical_execution_count) from public.simulated_payment_provider_operations where recovery_attempt_id='${admitted.attemptId}';`,
+      recovered.providerOperations.map(
+        (operation: {
+          operation_kind: string;
+          current_outcome: string;
+          physical_execution_count: number;
+        }) => ({
+          operationKind: operation.operation_kind,
+          outcome: operation.current_outcome,
+          physicalEffects: operation.physical_execution_count,
+        }),
       ),
-    ).toBe("3:3");
+    ).toEqual(
+      expect.arrayContaining([
+        { operationKind: "release", outcome: "succeeded", physicalEffects: 1 },
+        {
+          operationKind: "authorization",
+          outcome: "succeeded",
+          physicalEffects: 1,
+        },
+        { operationKind: "capture", outcome: "succeeded", physicalEffects: 1 },
+      ]),
+    );
     expect((await request.get("/__scheduled")).ok()).toBe(true);
     expect(observe()).toEqual(recovered);
   } finally {
