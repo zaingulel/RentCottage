@@ -20,7 +20,6 @@ export const administratorPaymentHistoryMessages = {
     accessAction: "Complete administrator access",
     unavailable:
       "Payment support history is temporarily unavailable. Please try again.",
-    notFound: "No Booking Request was found for that reference.",
     simulated: "Simulated payment evidence",
     coverage:
       "This older request shows only evidence retained when support history was introduced.",
@@ -62,7 +61,6 @@ export const administratorPaymentHistoryMessages = {
     accessRequired: "يلزم مستوى ضمان المصادقة 2 لعرض سجل دعم الدفع.",
     accessAction: "إكمال دخول المسؤول",
     unavailable: "سجل دعم الدفع غير متاح مؤقتاً. يرجى المحاولة مرة أخرى.",
-    notFound: "لم يتم العثور على طلب حجز بهذا المرجع.",
     simulated: "أدلة دفع تجريبية",
     coverage:
       "يعرض هذا الطلب الأقدم الأدلة المحتفظ بها فقط عند إضافة سجل الدعم.",
@@ -105,7 +103,6 @@ export const administratorPaymentHistoryMessages = {
     accessAction: "چوونەژوورەوەی بەڕێوەبەر تەواو بکە",
     unavailable:
       "مێژووی پشتگیری پارەدان کاتێکی کورت بەردەست نییە. دووبارە هەوڵ بدەوە.",
-    notFound: "هیچ داواکارییەکی حجز بەم سەرچاوەیە نەدۆزرایەوە.",
     simulated: "بەڵگەی پارەدانی تاقیکاری",
     coverage:
       "ئەم داواکارییە کۆنە تەنها ئەو بەڵگانە پیشان دەدات کە کاتی زیادکردنی مێژووی پشتگیری مابوونەوە.",
@@ -131,6 +128,43 @@ export const administratorPaymentHistoryMessages = {
 } as const;
 
 const enCodes = {
+  "replacement-capture-succeeded": "Replacement capture succeeded",
+  "source-evidence-invalid": "Invalid source evidence",
+  "capture-occurrence-unknown": "Capture occurrence unknown",
+  "original-capture-unresolved": "Original capture unresolved",
+  "recovery-evidence-invalid": "Invalid recovery evidence",
+  "unexplained-recovery-provider-operation":
+    "Unexplained recovery provider operation",
+  "recovery-operation-indeterminate": "Recovery operation indeterminate",
+  "corrective-capture-invalid": "Invalid capture correction evidence",
+  "unexplained-provider-operation": "Unexplained provider operation",
+  "original-release-indeterminate": "Original release indeterminate",
+  "original-release-failed": "Original release failed",
+  "replacement-authorization-invalid": "Invalid replacement authorization",
+  "replacement-release-indeterminate": "Replacement release indeterminate",
+  "replacement-release-failed": "Replacement release failed",
+  "expiry-evidence-invalid": "Invalid expiry evidence",
+  "expiry-release-failed": "Expiry release failed",
+  "expiry-release-indeterminate": "Expiry release indeterminate",
+  "expiry-refund-failed": "Expiry refund failed",
+  "expiry-refund-indeterminate": "Expiry refund indeterminate",
+  "inventory-evidence-invalid": "Invalid inventory evidence",
+  "legacy-unresolved-money": "Unresolved retained payment evidence",
+  "legacy-confirmation-evidence-invalid":
+    "Invalid retained confirmation evidence",
+  "unsafe-recovery-original-release-indeterminate":
+    "Recovery blocked: original release indeterminate",
+  "unsafe-recovery-original-release-failed":
+    "Recovery blocked: original release failed",
+  "unsafe-recovery-replacement-authorization-indeterminate":
+    "Recovery blocked: replacement authorization indeterminate",
+  "unsafe-recovery-replacement-capture-indeterminate":
+    "Recovery blocked: replacement capture indeterminate",
+  "unsafe-recovery-replacement-release-indeterminate":
+    "Recovery blocked: replacement release indeterminate",
+  "unsafe-recovery-replacement-release-failed":
+    "Recovery blocked: replacement release failed",
+
   malformed: "Malformed receipt",
   not_executed: "Not executed",
   unknown: "Unknown",
@@ -163,7 +197,6 @@ const enCodes = {
   converted: "Converted to request",
   reconciliation_required: "Reconciliation required",
   released: "Released",
-  authorization_failed: "Authorization failed",
   executing: "Executing",
   reconcile_required: "Reconciliation required",
   "not-executed": "Not executed",
@@ -218,6 +251,44 @@ export type AdministratorPaymentHistoryCode = keyof typeof enCodes;
 export const administratorPaymentHistoryCodeMessages = {
   en: enCodes,
   ar: {
+    "replacement-capture-succeeded": "نجح التحصيل البديل",
+    "source-evidence-invalid": "أدلة المصدر غير صالحة",
+    "capture-occurrence-unknown": "وقت التحصيل غير معروف",
+    "original-capture-unresolved": "التحصيل الأصلي غير محسوم",
+    "recovery-evidence-invalid": "أدلة استرداد الدفع غير صالحة",
+    "unexplained-recovery-provider-operation":
+      "عملية مزود غير مفسرة أثناء استرداد الدفع",
+    "recovery-operation-indeterminate": "نتيجة عملية استرداد الدفع غير محسومة",
+    "corrective-capture-invalid": "أدلة تصحيح التحصيل غير صالحة",
+    "unexplained-provider-operation": "عملية مزود غير مفسرة",
+    "original-release-indeterminate": "نتيجة تحرير التفويض الأصلي غير محسومة",
+    "original-release-failed": "فشل تحرير التفويض الأصلي",
+    "replacement-authorization-invalid": "التفويض البديل غير صالح",
+    "replacement-release-indeterminate":
+      "نتيجة تحرير التفويض البديل غير محسومة",
+    "replacement-release-failed": "فشل تحرير التفويض البديل",
+    "expiry-evidence-invalid": "أدلة انتهاء المهلة غير صالحة",
+    "expiry-release-failed": "فشل تحرير التفويض عند انتهاء المهلة",
+    "expiry-release-indeterminate":
+      "نتيجة تحرير التفويض عند انتهاء المهلة غير محسومة",
+    "expiry-refund-failed": "فشل رد المبلغ عند انتهاء المهلة",
+    "expiry-refund-indeterminate":
+      "نتيجة رد المبلغ عند انتهاء المهلة غير محسومة",
+    "inventory-evidence-invalid": "أدلة التوافر غير صالحة",
+    "legacy-unresolved-money": "أدلة الدفع السابقة غير محسومة",
+    "legacy-confirmation-evidence-invalid": "أدلة التأكيد السابقة غير صالحة",
+    "unsafe-recovery-original-release-indeterminate":
+      "استرداد الدفع محظور: نتيجة تحرير التفويض الأصلي غير محسومة",
+    "unsafe-recovery-original-release-failed":
+      "استرداد الدفع محظور: فشل تحرير التفويض الأصلي",
+    "unsafe-recovery-replacement-authorization-indeterminate":
+      "استرداد الدفع محظور: نتيجة التفويض البديل غير محسومة",
+    "unsafe-recovery-replacement-capture-indeterminate":
+      "استرداد الدفع محظور: نتيجة التحصيل البديل غير محسومة",
+    "unsafe-recovery-replacement-release-indeterminate":
+      "استرداد الدفع محظور: نتيجة تحرير التفويض البديل غير محسومة",
+    "unsafe-recovery-replacement-release-failed":
+      "استرداد الدفع محظور: فشل تحرير التفويض البديل",
     malformed: "إيصال غير صالح",
     not_executed: "لم يتم التنفيذ",
     unknown: "غير معروف",
@@ -250,7 +321,6 @@ export const administratorPaymentHistoryCodeMessages = {
     converted: "تم التحويل إلى طلب",
     reconciliation_required: "تتطلب المطابقة",
     released: "محرر",
-    authorization_failed: "فشل التفويض",
     executing: "قيد التنفيذ",
     reconcile_required: "تتطلب المطابقة",
     "not-executed": "لم يتم التنفيذ",
@@ -300,6 +370,48 @@ export const administratorPaymentHistoryCodeMessages = {
     "reference-unavailable": "المرجع غير متاح",
   },
   ckb: {
+    "replacement-capture-succeeded": "وەرگرتنی پارەی جێگرەوە سەرکەوتوو بوو",
+    "source-evidence-invalid": "بەڵگەی سەرچاوە نادروستە",
+    "capture-occurrence-unknown": "کاتی وەرگرتنی پارە نەزانراوە",
+    "original-capture-unresolved":
+      "وەرگرتنی پارەی سەرەتایی یەکلایی نەکراوەتەوە",
+    "recovery-evidence-invalid": "بەڵگەی چاککردنەوەی پارەدان نادروستە",
+    "unexplained-recovery-provider-operation":
+      "کرداری ڕووننەکراوەی دابینکەر لە چاککردنەوەی پارەدان",
+    "recovery-operation-indeterminate":
+      "ئەنجامی کرداری چاککردنەوەی پارەدان نادیارە",
+    "corrective-capture-invalid": "بەڵگەی ڕاستکردنەوەی وەرگرتنی پارە نادروستە",
+    "unexplained-provider-operation": "کرداری ڕووننەکراوەی دابینکەر",
+    "original-release-indeterminate":
+      "ئەنجامی ئازادکردنی مۆڵەتی سەرەتایی نادیارە",
+    "original-release-failed": "ئازادکردنی مۆڵەتی سەرەتایی شکستی هێنا",
+    "replacement-authorization-invalid": "مۆڵەتی جێگرەوە نادروستە",
+    "replacement-release-indeterminate":
+      "ئەنجامی ئازادکردنی مۆڵەتی جێگرەوە نادیارە",
+    "replacement-release-failed": "ئازادکردنی مۆڵەتی جێگرەوە شکستی هێنا",
+    "expiry-evidence-invalid": "بەڵگەی بەسەرچوونی وادە نادروستە",
+    "expiry-release-failed": "ئازادکردنی مۆڵەت لە بەسەرچوونی وادە شکستی هێنا",
+    "expiry-release-indeterminate":
+      "ئەنجامی ئازادکردنی مۆڵەت لە بەسەرچوونی وادە نادیارە",
+    "expiry-refund-failed": "گەڕاندنەوەی پارە لە بەسەرچوونی وادە شکستی هێنا",
+    "expiry-refund-indeterminate":
+      "ئەنجامی گەڕاندنەوەی پارە لە بەسەرچوونی وادە نادیارە",
+    "inventory-evidence-invalid": "بەڵگەی بەردەستبوون نادروستە",
+    "legacy-unresolved-money": "بەڵگەی پارەدانی پێشوو یەکلایی نەکراوەتەوە",
+    "legacy-confirmation-evidence-invalid":
+      "بەڵگەی پشتڕاستکردنەوەی پێشوو نادروستە",
+    "unsafe-recovery-original-release-indeterminate":
+      "چاککردنەوەی پارەدان ڕاگیراوە: ئەنجامی ئازادکردنی مۆڵەتی سەرەتایی نادیارە",
+    "unsafe-recovery-original-release-failed":
+      "چاککردنەوەی پارەدان ڕاگیراوە: ئازادکردنی مۆڵەتی سەرەتایی شکستی هێنا",
+    "unsafe-recovery-replacement-authorization-indeterminate":
+      "چاککردنەوەی پارەدان ڕاگیراوە: ئەنجامی مۆڵەتی جێگرەوە نادیارە",
+    "unsafe-recovery-replacement-capture-indeterminate":
+      "چاککردنەوەی پارەدان ڕاگیراوە: ئەنجامی وەرگرتنی پارەی جێگرەوە نادیارە",
+    "unsafe-recovery-replacement-release-indeterminate":
+      "چاککردنەوەی پارەدان ڕاگیراوە: ئەنجامی ئازادکردنی مۆڵەتی جێگرەوە نادیارە",
+    "unsafe-recovery-replacement-release-failed":
+      "چاککردنەوەی پارەدان ڕاگیراوە: ئازادکردنی مۆڵەتی جێگرەوە شکستی هێنا",
     malformed: "وەسڵی نادروست",
     not_executed: "جێبەجێ نەکرا",
     unknown: "نەزانراو",
@@ -332,7 +444,6 @@ export const administratorPaymentHistoryCodeMessages = {
     converted: "گۆڕدرا بۆ داواکاری",
     reconciliation_required: "پێویستی بە هاوتاکردن هەیە",
     released: "ئازادکراو",
-    authorization_failed: "مۆڵەتدان شکستی هێنا",
     executing: "لە جێبەجێکردندایە",
     reconcile_required: "پێویستی بە هاوتاکردن هەیە",
     "not-executed": "جێبەجێ نەکرا",

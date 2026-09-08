@@ -44,8 +44,11 @@ it("parses a successful support-safe result", async () => {
     events: [
       {
         id: "10000000-0000-4000-8000-000000000137",
-        kind: "terminal-outcome",
-        source: "confirmation",
+        kind: "state-transition",
+        source: "provider-operation",
+        fromState: "indeterminate",
+        toState: "succeeded",
+        outcome: "succeeded",
         provenance: "observed",
         recordedAt: "2026-09-08T10:00:00+00:00",
       },

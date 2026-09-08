@@ -2,6 +2,16 @@ begin;
 
 select no_plan();
 
+-- Sequence ownership is private independently of table permissions.
+select ok(not has_sequence_privilege(role_name,pg_get_serial_sequence('public.booking_request_payment_history','sequence'),privilege_name),
+  role_name || ' has no history sequence ' || privilege_name || ' entitlement')
+from unnest(array['anon','authenticated','service_role']) roles(role_name)
+cross join unnest(array['SELECT','USAGE','UPDATE']) privileges(privilege_name);
+select ok(not exists(select 1 from pg_class sequences cross join lateral aclexplode(coalesce(sequences.relacl,acldefault('S',sequences.relowner))) grants
+  where sequences.oid=pg_get_serial_sequence('public.booking_request_payment_history','sequence')::regclass and grants.grantee=0),
+  'PUBLIC has no history sequence entitlement');
+
+
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
 values (
   '10000000-0000-4000-8000-000000001370',
@@ -428,6 +438,15 @@ where namespaces.nspname='public' and procedures.prokind='f' and procedures.pros
   and procedures.proname like '%booking_request%' and procedures.proname not like '%payment_history%' \gexec
 set local role service_role;
 create temp table history_expiry as select public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}') result;
+savepoint history_expiry_ready;
+select public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from history_expiry),'failed');
+reset role;
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001370","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+create temp table history_failed_expiry as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
+select is((select result#>>'{current,reasonCode}' from history_failed_expiry),'expiry-release-failed','a real failed expiry release retains its actionable current reason');
+select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'reasonCode'='expiry-release-failed' and event->>'kind'='quarantine') from history_failed_expiry),'a real failed expiry release retains its actionable history reason');
+rollback to history_expiry_ready;
 select public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from history_expiry),'succeeded');
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status','expired','real expiry releases the unpaid authorization');
 reset role;
@@ -438,6 +457,73 @@ reset role;
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'source'='expiry-work' and event->>'operationKind'='expiry' and event->>'toState'='complete') from history_expired),'real expiry completion remains in ordered support evidence');
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'source'='booking-request' and event->>'fromState'='accepted' and event->>'toState'='expired') from history_expired),'expiry preserves the terminal Booking Request transition');
 select is((select count(*) from history_expired,jsonb_array_elements(result->'events') event where event->>'kind'='physical-attempt'),2::bigint,'expiry support history distinguishes the failed capture from one physical release');
+
+
+-- Enumerated production reasons remain meaningful; unrecognized text stays redacted.
+create temp table history_known_reasons(reason text primary key);
+insert into history_known_reasons values
+('replacement-capture-succeeded'),
+('source-evidence-invalid'),
+('capture-occurrence-unknown'),
+('original-capture-unresolved'),
+('recovery-evidence-invalid'),
+('unexplained-recovery-provider-operation'),
+('recovery-operation-indeterminate'),
+('corrective-capture-invalid'),
+('unexplained-provider-operation'),
+('original-release-indeterminate'),
+('original-release-failed'),
+('replacement-authorization-invalid'),
+('replacement-release-indeterminate'),
+('replacement-release-failed'),
+('expiry-evidence-invalid'),
+('expiry-release-failed'),
+('expiry-release-indeterminate'),
+('expiry-refund-failed'),
+('expiry-refund-indeterminate'),
+('inventory-evidence-invalid'),
+('legacy-unresolved-money'),
+('legacy-confirmation-evidence-invalid'),
+('unsafe-recovery-original-release-indeterminate'),
+('unsafe-recovery-original-release-failed'),
+('unsafe-recovery-replacement-authorization-indeterminate'),
+('unsafe-recovery-replacement-capture-indeterminate'),
+('unsafe-recovery-replacement-release-indeterminate'),
+('unsafe-recovery-replacement-release-failed');
+
+select public.append_booking_request_payment_history(
+ '73000000-0000-4000-8000-000000001371','60000000-0000-4000-8000-000000001371',
+ 'quarantine','expiry-work','observed',target_reason_code=>reason)
+from history_known_reasons;
+set local role authenticated;
+create temp table history_reason_display as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000000137') result;
+reset role;
+select ok(exists(select 1 from history_reason_display,jsonb_array_elements(result->'events') event where event->>'reasonCode'=reason),
+ 'canonical support reason remains visible: '||reason) from history_known_reasons;
+
+create temp table history_reference_cases(value text,allowed boolean);
+insert into history_reference_cases
+select prefix||suffix,true from unnest(array['sim-request-','sim-capture-request-','sim-recovery-request-','sim-expiry-request-']) prefixes(prefix)
+cross join unnest(array['1234567890abcdef1234567890abcdef','12345678-90ab-4def-8123-567890abcdef']) suffixes(suffix);
+insert into history_reference_cases values
+ ('sim-request-1234567890abcdef1234567890abcde',false),
+ ('sim-request-1234567890abcdef1234567890abcdef0',false),
+ ('private-sim-request-1234567890abcdef1234567890abcdef',false),
+ ('sim-other-request-1234567890abcdef1234567890abcdef',false),
+ ('sim-request-1234567890abcdef1234567890abcdef-private',false);
+select public.append_booking_request_payment_history(
+ '73000000-0000-4000-8000-000000001371','60000000-0000-4000-8000-000000001371',
+ 'state-transition','provider-operation','observed',target_provider_request_id=>value,
+ target_provider_reference=>replace(value,'request','reference'),target_movement_reference=>replace(value,'request','movement'))
+from history_reference_cases;
+set local role authenticated;
+create temp table history_reference_display as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000000137') result;
+reset role;
+select is((select count(*) from history_reference_display,jsonb_array_elements(result->'events') event
+ where event->>'providerRequestId'=cases.value and event->>'providerReference'=replace(cases.value,'request','reference')
+ and event->>'movementReference'=replace(cases.value,'request','movement')),
+ case when cases.allowed then 1 else 0 end::bigint,'exact bounded reconciliation reference: '||cases.value)
+from history_reference_cases cases;
 
 select * from finish();
 rollback;

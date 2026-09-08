@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
 
+import { administratorPaymentHistoryCodeMessages } from "@/i18n/administrator-payment-history-messages";
+
 import { parseAdministratorPaymentHistory } from "./administrator-payment-history";
 
 const event = {
@@ -56,3 +58,53 @@ it.each([
 ])("rejects malformed or ambiguous provider data", (value) => {
   expect(() => parseAdministratorPaymentHistory(value)).toThrow("invalid");
 });
+
+// Finite reasons emitted by the canonical correction and expiry procedures.
+it.each([
+  "replacement-capture-succeeded",
+  "source-evidence-invalid",
+  "capture-occurrence-unknown",
+  "original-capture-unresolved",
+  "recovery-evidence-invalid",
+  "unexplained-recovery-provider-operation",
+  "recovery-operation-indeterminate",
+  "corrective-capture-invalid",
+  "unexplained-provider-operation",
+  "original-release-indeterminate",
+  "original-release-failed",
+  "replacement-authorization-invalid",
+  "replacement-release-indeterminate",
+  "replacement-release-failed",
+  "expiry-evidence-invalid",
+  "expiry-release-failed",
+  "expiry-release-indeterminate",
+  "expiry-refund-failed",
+  "expiry-refund-indeterminate",
+  "inventory-evidence-invalid",
+  "legacy-unresolved-money",
+  "legacy-confirmation-evidence-invalid",
+  "unsafe-recovery-original-release-indeterminate",
+  "unsafe-recovery-original-release-failed",
+  "unsafe-recovery-replacement-authorization-indeterminate",
+  "unsafe-recovery-replacement-capture-indeterminate",
+  "unsafe-recovery-replacement-release-indeterminate",
+  "unsafe-recovery-replacement-release-failed",
+])(
+  "retains and labels canonical support reason %s in every locale",
+  (reasonCode) => {
+    const value = {
+      ...history,
+      current: { ...history.current, reasonCode },
+      events: [{ ...event, reasonCode }],
+    };
+    expect(parseAdministratorPaymentHistory(value)).toEqual(value);
+    for (const messages of Object.values(
+      administratorPaymentHistoryCodeMessages,
+    )) {
+      expect(messages[reasonCode as keyof typeof messages]).toBeTruthy();
+      expect(messages[reasonCode as keyof typeof messages]).not.toBe(
+        reasonCode,
+      );
+    }
+  },
+);

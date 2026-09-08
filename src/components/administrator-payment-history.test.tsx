@@ -1,6 +1,9 @@
 import { render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 
+import { parseAdministratorPaymentHistory } from "@/booking-request/administrator-payment-history";
+import { administratorPaymentHistoryCodeMessages } from "@/i18n/administrator-payment-history-messages";
+
 import { AdministratorPaymentHistoryView } from "./administrator-payment-history";
 
 const history = {
@@ -167,5 +170,36 @@ it.each([
     expect(screen.getByText(state)).toBeVisible();
     expect(screen.getByText(operation)).toBeVisible();
     expect(screen.getByText(reason)).toBeVisible();
+  },
+);
+
+it.each(["en", "ar", "ckb"] as const)(
+  "renders parsed provider resolution with previous and resulting outcomes in %s",
+  (locale) => {
+    const resolved = parseAdministratorPaymentHistory({
+      ...history,
+      events: [
+        {
+          ...history.events[0],
+          kind: "state-transition",
+          fromState: "indeterminate",
+          toState: "succeeded",
+          outcome: "succeeded",
+        },
+      ],
+    });
+    render(
+      <AdministratorPaymentHistoryView locale={locale} history={resolved} />,
+    );
+    expect(
+      screen.getByText(
+        administratorPaymentHistoryCodeMessages[locale].indeterminate,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getAllByText(
+        administratorPaymentHistoryCodeMessages[locale].succeeded,
+      ),
+    ).toHaveLength(2);
   },
 );

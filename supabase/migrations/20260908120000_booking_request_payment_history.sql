@@ -3,7 +3,8 @@ create table public.booking_request_payment_history (
   sequence bigint generated always as identity primary key,
   id uuid not null unique default gen_random_uuid(),
   payment_lifecycle_id uuid not null,
-  booking_request_id uuid references public.booking_requests (id) on delete restrict,
+  -- Canonical request metadata only: history must not add request-row locks to source writes.
+  booking_request_id uuid,
   kind text not null check (kind in ('logical-operation','physical-attempt','retry','receipt-observation','state-transition','terminal-outcome','quarantine')),
   source text not null check (source in ('history-boundary','authorization-claim','provider-operation','release-work','release-operation','capture-work','recovery-attempt','recovery-operation','expiry-work','expiry-operation','booking-request','confirmation','confirmation-invalidation','provider-receipt')),
   provenance text not null check (provenance in ('observed','imported')),
@@ -32,6 +33,7 @@ create index booking_request_payment_history_root_sequence_idx
 
 alter table public.booking_request_payment_history enable row level security;
 revoke all on public.booking_request_payment_history from public, anon, authenticated, service_role;
+revoke all on sequence public.booking_request_payment_history_sequence_seq from public, anon, authenticated, service_role;
 
 create function public.reject_booking_request_payment_history_change()
 returns trigger language plpgsql security definer set search_path = '' as $$
@@ -144,9 +146,11 @@ begin
   end if;
   if lifecycle_id is null then raise exception 'Payment history source has no original lifecycle' using errcode='RC409'; end if;
 
-  -- A provider row is one physical execution. Later corrections are represented
-  -- by the receipt observation that caused them, never as another execution.
-  if tg_table_name='simulated_payment_provider_operations' and tg_op='UPDATE' then
+  -- One insert records one physical execution. Query/correction updates retain
+  -- meaningful evidence changes as transitions of that same execution.
+  if tg_table_name='simulated_payment_provider_operations' and tg_op='UPDATE'
+    and (current_row->>'current_outcome',current_row->>'authoritative_outcome_at',current_row->>'movement_reference')
+      is not distinct from (prior_row->>'current_outcome',prior_row->>'authoritative_outcome_at',prior_row->>'movement_reference') then
     return new;
   end if;
 
@@ -163,7 +167,10 @@ begin
   source_time := nullif(coalesce(current_row->>'completed_at',current_row->>'result_recorded_at',current_row->>'settled_at',current_row->>'invalidated_at',current_row->>'confirmed_at',current_row->>'updated_at',current_row->>'created_at'),'')::timestamptz;
   occurrence_time := nullif(current_row->>'authoritative_outcome_at','')::timestamptz;
 
-  if tg_table_name='simulated_payment_provider_operations' then event_kind:='physical-attempt'; end if;
+  if tg_table_name='simulated_payment_provider_operations' then
+    if tg_op='INSERT' then event_kind:='physical-attempt';
+    else prior_state:=prior_outcome; current_state:=current_outcome; end if;
+  end if;
   if tg_table_name in ('booking_request_release_work','booking_request_capture_work') then event_kind:='logical-operation'; end if;
   if tg_table_name in ('booking_confirmations','booking_request_confirmation_invalidations') then event_kind:='terminal-outcome'; end if;
   if tg_table_name='booking_confirmations' then
@@ -189,7 +196,8 @@ begin
     occurrence_time := case when not (current_row->>'conflict')::boolean and current_row#>>'{payload,occurredAt}' is not null then (current_row#>>'{payload,occurredAt}')::timestamptz end;
   end if;
   if coalesce(current_state,'') in ('quarantined','blocked') then event_kind:='quarantine'; end if;
-  if tg_op='UPDATE' and (current_state,current_outcome,reason,current_row->>'lease_generation',current_row->>'generation',current_row->>'provider_operation_id')
+  if tg_op='UPDATE' and tg_table_name<>'simulated_payment_provider_operations'
+    and (current_state,current_outcome,reason,current_row->>'lease_generation',current_row->>'generation',current_row->>'provider_operation_id')
     is not distinct from (prior_state,prior_outcome,coalesce(prior_row->>'quarantine_reason',prior_row->>'diagnostic_reason',prior_row->>'reason',prior_row->>'decline_reason'),prior_row->>'lease_generation',prior_row->>'generation',prior_row->>'provider_operation_id') then
     return new;
   end if;
@@ -197,7 +205,8 @@ begin
     lifecycle_id, request_id, event_kind, source_name, 'observed', operation_name,
     coalesce(current_row->>'logical_operation_id',current_row->>'release_logical_operation_id',current_row->>'capture_logical_operation_id'),
     coalesce(current_row->>'physical_attempt_id',current_row->>'release_physical_attempt_id',current_row->>'capture_physical_attempt_id'),
-    nullif(coalesce(current_row->>'operation_generation',current_row->>'lease_generation'),'')::bigint,
+    nullif(coalesce(current_row->>'operation_generation',current_row->>'lease_generation',
+      case when tg_table_name='booking_request_authorization_claims' then current_row->>'generation' end),'')::bigint,
     case when tg_table_name='booking_request_payment_recovery_attempts' then nullif(current_row->>'generation','')::bigint end,
     prior_state, current_state, current_outcome, reason,
     nullif(coalesce(current_row->>'provider_operation_id',case when tg_table_name='simulated_payment_provider_operations' then current_row->>'id' end),'')::uuid,
@@ -257,12 +266,12 @@ order by operations.created_at,operations.id;
 
 insert into payment_history_import(
   payment_lifecycle_id,booking_request_id,kind,source,provenance,operation_kind,
-  logical_operation_id,physical_attempt_id,outcome,provider_operation_id,
+  logical_operation_id,physical_attempt_id,from_state,to_state,outcome,provider_operation_id,
   provider_request_id,provider_reference,movement_reference,amount_fils,
   provider_occurred_at,source_recorded_at,source_identity
 )
-select claims.payment_lifecycle_id,requests.id,'receipt-observation','provider-operation','imported',operations.operation_kind,
-  operations.logical_operation_id,operations.physical_attempt_id,operations.current_outcome,operations.id,
+select claims.payment_lifecycle_id,requests.id,'state-transition','provider-operation','imported',operations.operation_kind,
+  operations.logical_operation_id,operations.physical_attempt_id,operations.original_outcome,operations.current_outcome,operations.current_outcome,operations.id,
   operations.provider_request_id,operations.provider_reference,operations.movement_reference,operations.amount_fils,
   operations.authoritative_outcome_at,operations.updated_at,operations.id::text
 from public.simulated_payment_provider_operations operations
@@ -293,8 +302,8 @@ select imported.payment_lifecycle_id,imported.booking_request_id,imported.kind,i
 from (
   select claims.payment_lifecycle_id,requests.id booking_request_id,'state-transition' kind,
     'authorization-claim' source,'authorization' operation_kind,
-    claims.logical_operation_id,claims.physical_attempt_id,null::bigint operation_generation,
-    claims.generation::bigint recovery_generation,claims.state::text to_state,
+    claims.logical_operation_id,claims.physical_attempt_id,claims.generation::bigint operation_generation,
+    null::bigint recovery_generation,claims.state::text to_state,
     null::text outcome,null::text reason_code,null::uuid provider_operation_id,
     null::timestamptz provider_occurred_at,null::timestamptz received_at,
     claims.created_at source_recorded_at,1 precedence,claims.id stable_id
@@ -345,7 +354,7 @@ from (
   select requests.payment_lifecycle_id,requests.id,'logical-operation','expiry-operation',operations.operation_kind,
     operations.release_logical_operation_id,operations.release_physical_attempt_id,null,null,null,
     null,null,operations.provider_operation_id,null,null,
-    coalesce(nullif(to_jsonb(operations)->>'updated_at','')::timestamptz,requests.created_at),8,operations.id
+    operations.created_at,8,operations.id
   from public.booking_request_payment_required_expiry_operations operations join public.booking_requests requests on requests.id=operations.booking_request_id
   union all
   select requests.payment_lifecycle_id,requests.id,'terminal-outcome','confirmation','confirmation',
@@ -513,11 +522,11 @@ begin
     'physicalAttemptId',case when history.physical_attempt_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:((authorization|capture|release):attempt-[1-9][0-9]*|(original-release|replacement-authorization|replacement-capture|replacement-release(:[1-9][0-9]*)?|corrective-refund:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):[1-9][0-9]*)$' then history.physical_attempt_id when history.physical_attempt_id is not null then 'reference-unavailable' end,'operationGeneration',history.operation_generation,
     'recoveryGeneration',history.recovery_generation,'fromState',history.from_state,'toState',history.to_state,
     'outcome',history.outcome,
-    'reasonCode',case when history.reason_code in ('cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then history.reason_code when history.reason_code is not null then 'unclassified-evidence' end,
+    'reasonCode',case when history.reason_code in ('replacement-capture-succeeded','source-evidence-invalid','capture-occurrence-unknown','original-capture-unresolved','recovery-evidence-invalid','unexplained-recovery-provider-operation','recovery-operation-indeterminate','corrective-capture-invalid','unexplained-provider-operation','original-release-indeterminate','original-release-failed','replacement-authorization-invalid','replacement-release-indeterminate','replacement-release-failed','expiry-evidence-invalid','expiry-release-failed','expiry-release-indeterminate','expiry-refund-failed','expiry-refund-indeterminate','inventory-evidence-invalid','legacy-unresolved-money','legacy-confirmation-evidence-invalid','unsafe-recovery-original-release-indeterminate','unsafe-recovery-original-release-failed','unsafe-recovery-replacement-authorization-indeterminate','unsafe-recovery-replacement-capture-indeterminate','unsafe-recovery-replacement-release-indeterminate','unsafe-recovery-replacement-release-failed','cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then history.reason_code when history.reason_code is not null then 'unclassified-evidence' end,
     'providerOperationId',history.provider_operation_id,
-    'providerRequestId',case when history.provider_request_id ~ '^sim(-capture|-recovery|-expiry)?-request-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then history.provider_request_id when history.provider_request_id is not null then 'reference-unavailable' end,
-    'providerReference',case when history.provider_reference ~ '^sim(-capture|-recovery|-expiry)?-reference-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then history.provider_reference when history.provider_reference is not null then 'reference-unavailable' end,
-    'movementReference',case when history.movement_reference ~ '^sim(-capture|-recovery|-expiry)?-movement-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then history.movement_reference when history.movement_reference is not null then 'reference-unavailable' end,
+    'providerRequestId',case when history.provider_request_id ~ '^sim(-capture|-recovery|-expiry)?-request-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$' then history.provider_request_id when history.provider_request_id is not null then 'reference-unavailable' end,
+    'providerReference',case when history.provider_reference ~ '^sim(-capture|-recovery|-expiry)?-reference-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$' then history.provider_reference when history.provider_reference is not null then 'reference-unavailable' end,
+    'movementReference',case when history.movement_reference ~ '^sim(-capture|-recovery|-expiry)?-movement-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$' then history.movement_reference when history.movement_reference is not null then 'reference-unavailable' end,
     'amountFils',history.amount_fils::text,'currency',case when history.amount_fils is not null then 'IQD' end,
     'providerOccurredAt',history.provider_occurred_at,'receivedAt',history.received_at,
     'sourceRecordedAt',history.source_recorded_at,'recordedAt',history.recorded_at
@@ -526,7 +535,7 @@ begin
   return jsonb_build_object(
     'bookingRequestReference',request.booking_request_reference,'simulated',true,
     'current',jsonb_build_object('requestStatus',request.status,'paymentStatus',public.booking_request_payment_status(request),
-      'expiryStatus',expiry.state,'reasonCode',case when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) in ('cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) is not null then 'unclassified-evidence' end,
+      'expiryStatus',expiry.state,'reasonCode',case when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) in ('replacement-capture-succeeded','source-evidence-invalid','capture-occurrence-unknown','original-capture-unresolved','recovery-evidence-invalid','unexplained-recovery-provider-operation','recovery-operation-indeterminate','corrective-capture-invalid','unexplained-provider-operation','original-release-indeterminate','original-release-failed','replacement-authorization-invalid','replacement-release-indeterminate','replacement-release-failed','expiry-evidence-invalid','expiry-release-failed','expiry-release-indeterminate','expiry-refund-failed','expiry-refund-indeterminate','inventory-evidence-invalid','legacy-unresolved-money','legacy-confirmation-evidence-invalid','unsafe-recovery-original-release-indeterminate','unsafe-recovery-original-release-failed','unsafe-recovery-replacement-authorization-indeterminate','unsafe-recovery-replacement-capture-indeterminate','unsafe-recovery-replacement-release-indeterminate','unsafe-recovery-replacement-release-failed','cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) is not null then 'unclassified-evidence' end,
       'paymentRequiredDeadline',to_jsonb((select work from public.booking_request_capture_work work where work.booking_request_id=request.id))->>'payment_required_deadline'),
     'historyCoverage',case when exists(select 1 from public.booking_request_payment_history history where history.payment_lifecycle_id=request.payment_lifecycle_id and history.source='history-boundary' and history.provenance='imported') then 'retained-evidence-only' else 'complete' end,
     'events',events
