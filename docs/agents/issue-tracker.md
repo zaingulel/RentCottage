@@ -39,6 +39,25 @@ Publication is complete only when all applicable tracker surfaces agree:
 
 Do not describe work as "published and verified" if any step is missing, unavailable, truncated, unclassified, or failing. A partial write is an incomplete publication, not success.
 
+## Booking and payment story acceptance criteria
+
+Use this compact structure for each new or substantially rewritten Booking or Payment story:
+
+```md
+## Acceptance criteria
+
+- Observable outcome: <the public behaviour or persisted business result>
+- Integrity invariants: <the authorization, concurrency, deadline, identity, idempotency, history, replay, or receipt guarantees this story must preserve>
+- Preservation and out of scope: <the named unchanged contracts and excluded product behaviour>
+- Evidence: <architect-selected construction mode> with <the cheapest observer that proves the outcome and each changed boundary>
+```
+
+The architect selects the construction mode and observers under
+[`docs/engineering/testing-strategy.md`](../engineering/testing-strategy.md). Select evidence from the story's actual
+claims. For new or rewritten Booking or Payment stories, this replaces the all-evidence-class template used for
+[#34](https://github.com/zaingulel/RentCottage/issues/34) children; existing issue-specific acceptance remains
+binding.
+
 ## Project status contract
 
 - `Ready`, `In progress`, and `In review` require an open issue with no open native blocker.
