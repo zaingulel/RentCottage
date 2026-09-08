@@ -89,7 +89,7 @@ select public.record_booking_request_capture_failure(
 ) result;
 reset role;
 
-select plan(49);
+select plan(81);
 select has_table('public','booking_request_payment_recovery_attempts','recovery attempts are durable');
 select has_table('public','booking_request_payment_recovery_operations','recovery operations are durable');
 select function_privs_are('public','claim_customer_booking_request_payment_recovery',
@@ -320,8 +320,8 @@ reset role;
 select is(
   (select count(*) from public.booking_request_payment_required_expiry_operations
     where booking_request_id='60000000-0000-4000-8000-000000001001' and owner='recovery'),
-  1::bigint,
-  'expiry reuses the exact indeterminate recovery release identity'
+  0::bigint,
+  'quarantine prevents expiry from adopting unresolved recovery work'
 );
 rollback to savepoint indeterminate_expiry_evidence;
 
@@ -403,26 +403,104 @@ select definition from recovery_expiry_original_functions order by signature \ge
 drop function public.recovery_expiry_test_now();
 drop table public.recovery_expiry_test_clock;
 
-savepoint unresolved_release;
+savepoint unsafe_original_release_failed;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_recovery(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','indeterminate');
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status',
-  'reconcile','an unresolved original release is reconciled without another execution');
-create temp table reconciling_release as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid) result;
-select is(public.query_simulated_booking_request_payment_recovery(
-  (select result->'permit' from reconciling_release),(select result->>'providerRequestId' from reconciling_release),
-  (select result->>'providerReference' from reconciling_release),'succeeded')->>'outcome','succeeded',
-  'authoritative reconciliation resolves the persisted original release');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
+create temp table unsafe_result as select public.execute_simulated_booking_request_payment_recovery((select permit from unsafe_permit),'failed') result;
+select is((select result->>'outcome' from unsafe_result),'failed','original-release preserves the provider failed result');
 reset role;
-select ok((select authoritative_outcome_at > created_at and physical_execution_count=1
-  from public.simulated_payment_provider_operations where recovery_attempt_id=:'recovery_attempt_id'::uuid),
-  'resolution records its authoritative outcome time without a second physical execution');
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','failed original-release enters quarantine before expiry preparation');
+select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'failed original-release retains every selected shift');
 set local role service_role;
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)#>>'{permit,step}',
-  'replacement-authorization','release reconciliation permits the next replacement step');
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','failed original-release cannot lease automatic reconciliation');
+select is(public.query_simulated_booking_request_payment_recovery((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','failed original-release fences a stale provider query');
+select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'failed original-release is excluded from automatic recovery');
 reset role;
-rollback to savepoint unresolved_release;
+rollback to savepoint unsafe_original_release_failed;
+
+savepoint unsafe_original_release_indeterminate;
+set local role service_role;
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
+create temp table unsafe_result as select public.execute_simulated_booking_request_payment_recovery((select permit from unsafe_permit),'indeterminate') result;
+select is((select result->>'outcome' from unsafe_result),'indeterminate','original-release preserves the provider indeterminate result');
+reset role;
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','indeterminate original-release enters quarantine before expiry preparation');
+select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'indeterminate original-release retains every selected shift');
+set local role service_role;
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','indeterminate original-release cannot lease automatic reconciliation');
+select is(public.query_simulated_booking_request_payment_recovery((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','indeterminate original-release fences a stale provider query');
+select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'indeterminate original-release is excluded from automatic recovery');
+reset role;
+rollback to savepoint unsafe_original_release_indeterminate;
+
+savepoint unsafe_replacement_authorization_indeterminate;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
+create temp table unsafe_result as select public.execute_simulated_booking_request_payment_recovery((select permit from unsafe_permit),'indeterminate') result;
+select is((select result->>'outcome' from unsafe_result),'indeterminate','replacement-authorization preserves the provider indeterminate result');
+reset role;
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','indeterminate replacement-authorization enters quarantine before expiry preparation');
+select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'indeterminate replacement-authorization retains every selected shift');
+set local role service_role;
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','indeterminate replacement-authorization cannot lease automatic reconciliation');
+select is(public.query_simulated_booking_request_payment_recovery((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','indeterminate replacement-authorization fences a stale provider query');
+select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'indeterminate replacement-authorization is excluded from automatic recovery');
+reset role;
+rollback to savepoint unsafe_replacement_authorization_indeterminate;
+
+savepoint unsafe_replacement_capture_indeterminate;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
+create temp table unsafe_result as select public.execute_simulated_booking_request_payment_recovery((select permit from unsafe_permit),'indeterminate') result;
+select is((select result->>'outcome' from unsafe_result),'indeterminate','replacement-capture preserves the provider indeterminate result');
+reset role;
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','indeterminate replacement-capture enters quarantine before expiry preparation');
+select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'indeterminate replacement-capture retains every selected shift');
+set local role service_role;
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','indeterminate replacement-capture cannot lease automatic reconciliation');
+select is(public.query_simulated_booking_request_payment_recovery((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','indeterminate replacement-capture fences a stale provider query');
+select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'indeterminate replacement-capture is excluded from automatic recovery');
+reset role;
+rollback to savepoint unsafe_replacement_capture_indeterminate;
+
+savepoint unsafe_replacement_release_failed;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
+create temp table unsafe_result as select public.execute_simulated_booking_request_payment_recovery((select permit from unsafe_permit),'failed') result;
+select is((select result->>'outcome' from unsafe_result),'failed','replacement-release preserves the provider failed result');
+reset role;
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','failed replacement-release enters quarantine before expiry preparation');
+select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'failed replacement-release retains every selected shift');
+set local role service_role;
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','failed replacement-release cannot lease automatic reconciliation');
+select is(public.query_simulated_booking_request_payment_recovery((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','failed replacement-release fences a stale provider query');
+select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'failed replacement-release is excluded from automatic recovery');
+reset role;
+rollback to savepoint unsafe_replacement_release_failed;
+
+savepoint unsafe_replacement_release_indeterminate;
+set local role service_role;
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
+select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
+create temp table unsafe_result as select public.execute_simulated_booking_request_payment_recovery((select permit from unsafe_permit),'indeterminate') result;
+select is((select result->>'outcome' from unsafe_result),'indeterminate','replacement-release preserves the provider indeterminate result');
+reset role;
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','indeterminate replacement-release enters quarantine before expiry preparation');
+select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'indeterminate replacement-release retains every selected shift');
+set local role service_role;
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','indeterminate replacement-release cannot lease automatic reconciliation');
+select is(public.query_simulated_booking_request_payment_recovery((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','indeterminate replacement-release fences a stale provider query');
+select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'indeterminate replacement-release is excluded from automatic recovery');
+reset role;
+rollback to savepoint unsafe_replacement_release_indeterminate;
 
 set local role service_role;
 create temp table recovery_release as
@@ -452,7 +530,7 @@ select public.execute_simulated_booking_request_payment_recovery(
 select public.execute_simulated_booking_request_payment_recovery(
   public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed');
 select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status',
-  'blocked','a failed replacement release never proves the authorization was released');
+  'quarantined','a failed replacement release never proves the authorization was released');
 rollback to savepoint failed_cleanup;
 select public.execute_simulated_booking_request_payment_recovery(
   (select result->'permit' from recovery_capture),'succeeded');

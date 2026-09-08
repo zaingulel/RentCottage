@@ -9,6 +9,21 @@ const customer = "10000000-0000-4000-8000-000000001002";
 const key = "81000000-0000-4000-8000-000000001001";
 const sqlJson = (value) =>
   `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
+const unobservedRecoveryFixture = readFileSync(
+  "supabase/tests/database/booking_request_payment_correction.test.sql",
+  "utf8",
+)
+  .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
+  .split("-- END UNOBSERVED RECOVERY FIXTURE")[0];
+const delayedObservationSql = (permit, occurrence) => {
+  const receipt = JSON.parse(
+    harness.runSql(
+      unobservedRecoveryFixture +
+        `select pg_temp.seed_unobserved_recovery_outcome(${sqlJson(permit)},'succeeded',${occurrence});`,
+    ),
+  );
+  return `select public.observe_booking_request_payment_correction('${requestId}','${receipt.providerOperationId}',${sqlJson(receipt)});`;
+};
 const service = (sql) => harness.runSql(`set role service_role; ${sql}`);
 const parsed = (sql) => JSON.parse(service(sql));
 const admitSql = (command) =>
@@ -80,6 +95,7 @@ const clockSignatures = [
   "query_simulated_booking_request_payment_recovery(jsonb,text,text,text)",
   "finalize_booking_request_confirmation(uuid,jsonb)",
   "booking_request_payment_recovery_status(public.booking_requests)",
+  "observe_booking_request_payment_correction(uuid,uuid,jsonb)",
 ];
 const definitions = [];
 let seeded = false;
@@ -228,11 +244,14 @@ try {
     execute(lease(late.attemptId).permit);
     execute(lease(late.attemptId).permit);
     const pending = lease(late.attemptId);
-    const unresolved = execute(pending.permit, "indeterminate");
     assert.throws(() => admit("81000000-0000-4000-8000-000000001002"));
     atDeadline(boundary);
-    const query = `select public.query_simulated_booking_request_payment_recovery(${sqlJson(pending.permit)},'${unresolved.providerRequestId}','${unresolved.providerReference}','succeeded');`;
-    await duplicate(query, `late_${boundary ? "after" : "equal"}`);
+    const observation = delayedObservationSql(
+      pending.permit,
+      "public.recovery_test_now()",
+    );
+    assert.equal(parsed(observation).status, "recorded");
+    await duplicate(observation, `late_${boundary ? "after" : "equal"}`);
     assert.equal(lease(late.attemptId).status, "late-succeeded");
     assert.throws(() => parsed(finalizeSql(late.attemptId)));
     assert.equal(snapshot().confirmation, null);
@@ -245,7 +264,7 @@ try {
     );
   }
   console.log(
-    "Indeterminate captures resolving exactly at or after the deadline keep fresh authoritative timestamps and payment evidence, with no confirmation or repeated execution.",
+    "Previously unobserved captures occurring exactly at or after the deadline preserve provider occurrence through duplicate passive receipts, with no confirmation or repeated execution.",
   );
 } finally {
   for (const session of sessions) {

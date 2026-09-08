@@ -16,6 +16,21 @@ const identity = {
 };
 const literal = (value) =>
   `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
+const unobservedRecoveryFixture = readFileSync(
+  "supabase/tests/database/booking_request_payment_correction.test.sql",
+  "utf8",
+)
+  .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
+  .split("-- END UNOBSERVED RECOVERY FIXTURE")[0];
+const delayedObservationSql = (permit, occurrence) => {
+  const receipt = JSON.parse(
+    harness.runSql(
+      unobservedRecoveryFixture +
+        `select pg_temp.seed_unobserved_recovery_outcome(${literal(permit)},'succeeded',${occurrence});`,
+    ),
+  );
+  return `select public.observe_booking_request_payment_correction('${requestId}','${receipt.providerOperationId}',${literal(receipt)});`;
+};
 const serviceSql = (sql) => `set role service_role;${sql}`;
 const parsed = (sql) => JSON.parse(harness.runSql(serviceSql(sql)));
 const dueSql = (limit = 1) =>
@@ -679,57 +694,33 @@ try {
       }
       const uncertainPermit = lease(attempt).permit;
       assert.equal(uncertainPermit.step, step);
-      const uncertain = execute(uncertainPermit, "indeterminate");
+      const entry = await race(
+        recoverySql(uncertainPermit, "indeterminate"),
+        `select public.lease_booking_request_payment_recovery_step('${attempt}');`,
+        `quarantine_${step}_${expiryWins}`,
+      );
+      assert.equal(result(entry[0]).outcome, "indeterminate");
+      assert.equal(result(entry[1]).status, "quarantined");
+      assert.equal(graph().expiry.state, "quarantined");
+      const uncertain = result(entry[0]);
       atDeadline();
-      const query = querySql(
-        uncertainPermit,
-        step === "replacement-capture" ? "failed" : "succeeded",
-        uncertain,
+      const query = querySql(uncertainPermit, "succeeded", uncertain);
+      const quarantined = graph();
+      const pair = await race(
+        expiryWins ? prepareSql() : query,
+        expiryWins ? query : prepareSql(),
+        `query_${step}_${expiryWins}`,
       );
-      if (expiryWins) {
-        const pair = await race(
-          prepareSql(),
-          query,
-          `query_${step}_expiry_first`,
-        );
-        assert.equal(result(pair[0]).status, "quarantined");
-        assert.equal(result(pair[1]).outcome, "not-executed");
-        assertHeld();
-        const quarantined = graph();
-        assert.equal(prepare().status, "quarantined");
-        assert.equal(parsed(query).outcome, "not-executed");
-        assert.deepEqual(graph(), quarantined);
-        continue;
-      } else await race(query, prepareSql(), `query_${step}_query_first`);
-      drain();
-      assertExpired();
-      const settled = graph();
-      const delayed = start(`begin;${serviceSql(query)}commit;`, true);
-      await finish(delayed);
-      assert.equal(
-        result(delayed).outcome,
-        step === "replacement-capture" ? "failed" : "succeeded",
-      );
-      assert.deepEqual(
-        graph(),
-        settled,
-        "A delayed query after another worker completes expiry must replay without mutation",
-      );
-      assert.throws(
-        () =>
-          parsed(
-            querySql(uncertainPermit, "succeeded", {
-              ...uncertain,
-              providerRequestId: "foreign-request",
-            }),
-          ),
-        /RC409|binding is invalid/,
-      );
-      assert.deepEqual(graph(), settled);
+      assert.equal(result(pair[expiryWins ? 0 : 1]).status, "quarantined");
+      assert.equal(result(pair[expiryWins ? 1 : 0]).outcome, "not-executed");
+      assertHeld();
+      assert.equal(prepare().status, "quarantined");
+      assert.equal(parsed(query).outcome, "not-executed");
+      assert.deepEqual(graph(), quarantined);
     }
   }
   console.log(
-    "All four uncertain recovery steps respect both request-lock orders: prior resolution can safely expire, prior quarantine fences every delayed query and retains inventory.",
+    "All four uncertain recovery steps quarantine atomically before a contending lease; both expiry/query request-lock orders preserve the first quarantine, provider history and all inventory.",
   );
 
   reset();
@@ -767,10 +758,13 @@ try {
     execute(lease(attempt).permit);
     execute(lease(attempt).permit);
     const capturePermit = lease(attempt).permit;
-    const uncertain = execute(capturePermit, "indeterminate");
     atDeadline(offset);
+    const observation = delayedObservationSql(
+      capturePermit,
+      "public.expiry_race_now()",
+    );
     const pair = await race(
-      querySql(capturePermit, "succeeded", uncertain),
+      observation,
       prepareSql(),
       `late_capture_${offset ? "after" : "equal"}`,
     );
@@ -845,9 +839,8 @@ try {
     execute(lease(attempt).permit);
     execute(lease(attempt).permit);
     const permit = lease(attempt).permit;
-    const uncertain = execute(permit, "indeterminate");
     atDeadline();
-    parsed(querySql(permit, "succeeded", uncertain));
+    parsed(delayedObservationSql(permit, "public.expiry_race_now()"));
     const refund = prepare();
     assert.equal(refund.status, "refund");
     const capture = graph().ledger.find(

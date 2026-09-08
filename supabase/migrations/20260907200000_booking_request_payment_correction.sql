@@ -173,6 +173,40 @@ begin
 end;
 $$;
 
+create or replace function public.record_booking_request_recovery_outcome(
+  target_attempt_id uuid,target_step text,target_ledger public.simulated_payment_provider_operations,
+  target_deadline timestamptz
+)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare next_state text;
+declare request_id uuid;
+begin
+  select attempts.booking_request_id into request_id from public.booking_request_payment_recovery_attempts attempts where attempts.id=target_attempt_id;
+  perform 1 from public.booking_requests requests where requests.id=request_id for update of requests;
+  next_state := case
+    when target_ledger.current_outcome='indeterminate' then 'blocked'
+    when target_step='original-release' and target_ledger.current_outcome='succeeded' then 'original_released'
+    when target_step='original-release' then 'blocked'
+    when target_step='replacement-authorization' and target_ledger.current_outcome='succeeded' then 'replacement_authorized'
+    when target_step='replacement-authorization' then 'safely_failed'
+    when target_step='replacement-capture' and target_ledger.current_outcome='succeeded'
+      and target_ledger.authoritative_outcome_at < target_deadline then 'succeeded'
+    when target_step='replacement-capture' and target_ledger.current_outcome='succeeded' then 'late_succeeded'
+    when target_step='replacement-capture' then 'capture_failed'
+    when target_step='replacement-release' and target_ledger.current_outcome='succeeded' then 'safely_failed'
+    else 'blocked' end;
+  update public.booking_request_payment_recovery_attempts attempts set state=next_state,updated_at=clock_timestamp()
+    where attempts.id=target_attempt_id;
+  if target_ledger.current_outcome='indeterminate'
+    or (target_step in ('original-release','replacement-release') and target_ledger.current_outcome='failed') then
+    perform public.quarantine_booking_request_payment(request_id,'unsafe-recovery-'||target_step||'-'||target_ledger.current_outcome);
+  end if;
+  return jsonb_strip_nulls(jsonb_build_object('outcome',target_ledger.current_outcome,
+    'providerRequestId',target_ledger.provider_request_id,'providerReference',target_ledger.provider_reference,
+    'movementReference',target_ledger.movement_reference,'retrySafe',next_state='safely_failed'));
+end;
+$$;
+
 create function public.observe_booking_request_payment_correction(target_booking_request_id uuid,target_provider_operation_id uuid,target_receipt jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare work public.booking_request_capture_work;
@@ -180,7 +214,6 @@ declare ledger public.simulated_payment_provider_operations;
 declare expected jsonb;
 declare conflicting boolean;
 declare observed_at timestamptz;
-declare receipt_id uuid;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Payment observation unavailable' using errcode='42501'; end if;
   perform 1 from public.booking_requests requests where requests.id=target_booking_request_id for update of requests;
@@ -218,7 +251,7 @@ begin
       then conflicting := true; end if;
   exception when invalid_datetime_format or datetime_field_overflow then conflicting:=true; end;
   insert into public.booking_request_payment_correction_observations(booking_request_id,provider_operation_id,receipt_identity,payload,conflict)
-    values(target_booking_request_id,ledger.id,target_receipt->>'receiptId',target_receipt,coalesce(conflicting,true)) returning id into receipt_id;
+    values(target_booking_request_id,ledger.id,target_receipt->>'receiptId',target_receipt,coalesce(conflicting,true));
   if conflicting is not false then return public.quarantine_booking_request_payment(target_booking_request_id,'conflicting-provider-observation'); end if;
   if target_receipt->>'outcome'='indeterminate' then return public.quarantine_booking_request_payment(target_booking_request_id,'unresolved-provider-observation'); end if;
   if public.booking_request_payment_quarantined(target_booking_request_id) then return jsonb_build_object('status','quarantined'); end if;
@@ -227,9 +260,19 @@ begin
       movement_reference=target_receipt->>'movementReference',updated_at=clock_timestamp() where id=ledger.id returning * into ledger;
     update public.booking_request_payment_recovery_operations set outcome=ledger.current_outcome,authoritative_outcome_at=observed_at,updated_at=clock_timestamp()
       where provider_operation_id=ledger.id;
-    if ledger.recovery_attempt_id is not null then perform public.record_booking_request_recovery_outcome(ledger.recovery_attempt_id,
-      (select operations.step from public.booking_request_payment_recovery_operations operations where operations.provider_operation_id=ledger.id),ledger,work.payment_required_deadline); end if;
   end if;
+  -- A delayed receipt finishes its pending step without rewinding later recovery.
+  if ledger.recovery_attempt_id is not null and exists(
+    select 1 from public.booking_request_payment_recovery_attempts attempts
+    join public.booking_request_payment_recovery_operations operations on operations.recovery_attempt_id=attempts.id
+    where attempts.id=ledger.recovery_attempt_id and operations.provider_operation_id=ledger.id
+      and (attempts.state='blocked' or attempts.state=case operations.step
+        when 'original-release' then 'admitted' when 'replacement-capture' then 'replacement_authorized'
+        when 'replacement-release' then 'capture_failed' end)
+  ) then perform public.record_booking_request_recovery_outcome(ledger.recovery_attempt_id,
+    (select operations.step from public.booking_request_payment_recovery_operations operations where operations.provider_operation_id=ledger.id),ledger,work.payment_required_deadline); end if;
+  if ledger.operation_kind in ('release','refund') and ledger.current_outcome='failed' then
+    return public.quarantine_booking_request_payment(target_booking_request_id,'failed-'||ledger.operation_kind||'-observation'); end if;
   if ledger.operation_kind='capture' and ledger.current_outcome='succeeded' and observed_at >= work.payment_required_deadline then
     insert into public.booking_request_payment_required_expiry_work(booking_request_id,payment_required_deadline)
       values(work.booking_request_id,work.payment_required_deadline) on conflict do nothing;
@@ -466,7 +509,6 @@ declare instruction jsonb;
 declare request public.booking_requests;
 declare capture_work public.booking_request_capture_work;
 declare captured record;
-declare capture_id uuid;
 begin
   if current_setting('role',true) <> 'service_role' or target_booking_request_id is null then
     raise exception 'Payment Required expiry preparation is unavailable' using errcode='42501';
@@ -897,6 +939,7 @@ begin
       movement_reference=case when target_outcome='failed' then null else ledger.movement_reference end
       where operations.id=ledger.id returning * into ledger;
   end if;
+  if ledger.current_outcome<>'succeeded' then perform public.quarantine_booking_request_payment((source.work).booking_request_id,'expiry-'||target.operation_kind||'-'||ledger.current_outcome); end if;
   return jsonb_strip_nulls(jsonb_build_object('outcome',ledger.current_outcome,
     'providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
     'movementReference',ledger.movement_reference,'retrySafe',false));
@@ -1180,6 +1223,10 @@ begin
     where operations.recovery_attempt_id=attempt.id and operations.step=recovery_step;
   if previous.id is not null then
     ledger := public.validate_booking_request_recovery_operation(previous,expected);
+    if ledger.current_outcome='indeterminate'
+      or (recovery_step in ('original-release','replacement-release') and ledger.current_outcome='failed') then
+      return public.record_booking_request_recovery_outcome(attempt.id,recovery_step,ledger,work.payment_required_deadline);
+    end if;
     return jsonb_strip_nulls(jsonb_build_object('outcome',ledger.current_outcome,
       'providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
       'movementReference',ledger.movement_reference,'retrySafe',attempt.state='safely_failed'));
@@ -1279,8 +1326,10 @@ begin
       authoritative_outcome_at=ledger.authoritative_outcome_at,updated_at=outcome_time where operations.id=previous.id;
     return public.record_booking_request_recovery_outcome((source.attempt).id,previous.step,ledger,(source.work).payment_required_deadline);
   end if;
-  update public.booking_request_payment_recovery_attempts attempts set updated_at=clock_timestamp()
-    where attempts.id=(source.attempt).id and attempts.state='blocked' and ledger.current_outcome='indeterminate';
+  if ledger.current_outcome='indeterminate'
+    or (previous.step in ('original-release','replacement-release') and ledger.current_outcome='failed') then
+    return public.record_booking_request_recovery_outcome((source.attempt).id,previous.step,ledger,(source.work).payment_required_deadline);
+  end if;
   return jsonb_strip_nulls(jsonb_build_object('outcome',ledger.current_outcome,
     'providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
     'movementReference',ledger.movement_reference,'retrySafe',(source.attempt).state='safely_failed'));
@@ -2022,11 +2071,10 @@ $$;
 do $$
 declare target record;
 begin
-  for target in select work.booking_request_id,expiry.state from public.booking_request_capture_work work
-    left join public.booking_request_payment_required_expiry_work expiry on expiry.booking_request_id=work.booking_request_id
+  for target in select work.booking_request_id from public.booking_request_capture_work work
     where work.payment_required_deadline is not null order by work.booking_request_id
   loop
-    if target.state='attention_required' and exists(select 1 from public.simulated_payment_provider_operations ledger
+    if exists(select 1 from public.simulated_payment_provider_operations ledger
       join public.booking_request_capture_work work on work.authorization_claim_id=ledger.claim_id
       where work.booking_request_id=target.booking_request_id and (ledger.current_outcome='indeterminate'
         or (ledger.operation_kind='release' and ledger.current_outcome='failed'))) then

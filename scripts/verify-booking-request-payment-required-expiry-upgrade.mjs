@@ -153,10 +153,55 @@ try {
       definition.replaceAll("clock_timestamp()", "public.expiry_upgrade_now()"),
     );
   seed(10); // This recovery window is still open at migration time.
+  seed(17); // Unsafe evidence must quarantine even before the fixed deadline.
   harness.runSql(
     "update public.expiry_upgrade_clock set instant=instant-interval '21 minutes';",
   );
-  for (const index of [11, 12, 13, 14, 15, 16]) seed(index);
+  for (const index of [11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24])
+    seed(index);
+  // No expiry work exists for these legacy blocked/outstanding recovery cases.
+  for (const [index, stepName, outcome] of [
+    [17, "original-release", "failed"],
+    [18, "original-release", "indeterminate"],
+    [19, "replacement-authorization", "indeterminate"],
+    [20, "replacement-capture", "indeterminate"],
+    [21, "replacement-release", "failed"],
+    [22, "replacement-release", "indeterminate"],
+  ]) {
+    const attempt = admit(index);
+    for (const preceding of [
+      "original-release",
+      "replacement-authorization",
+      "replacement-capture",
+    ]) {
+      if (preceding === stepName) break;
+      step(
+        attempt,
+        preceding === "replacement-capture" ? "failed" : "succeeded",
+      );
+    }
+    step(attempt, outcome);
+  }
+  for (const index of [23, 24]) {
+    const attempt = admit(index);
+    step(attempt, "succeeded");
+    step(attempt, "succeeded");
+    const permit = parsed(
+      `select public.lease_booking_request_payment_recovery_step('${attempt}');`,
+    ).permit;
+    if (index === 23) {
+      const unobserved = readFileSync(
+        "supabase/tests/database/booking_request_payment_correction.test.sql",
+        "utf8",
+      )
+        .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
+        .split("-- END UNOBSERVED RECOVERY FIXTURE")[0];
+      harness.runSql(
+        unobserved +
+          `select pg_temp.seed_unobserved_recovery_outcome(${literal(permit)},'indeterminate',null);`,
+      );
+    }
+  }
   const blocked = admit(12);
   step(blocked, "indeterminate");
   const recovered = admit(13);
@@ -204,19 +249,19 @@ try {
     harness.runSql(
       "select count(*) from public.booking_request_capture_work where payment_required_deadline > clock_timestamp();",
     ),
-    "1",
+    "2",
   );
   assert.equal(
     harness.runSql(
       "select count(*) from public.booking_request_capture_work where payment_required_deadline <= clock_timestamp();",
     ),
-    "6",
+    "13",
   );
   assert.equal(
     harness.runSql(
       "select count(*) from public.booking_request_payment_recovery_attempts where state='blocked';",
     ),
-    "2",
+    "8",
   );
   assert.equal(
     harness.runSql("select count(*) from public.booking_confirmations;"),
@@ -233,8 +278,8 @@ try {
     harness.runSql(
       "select count(*) from public.booking_request_payment_required_expiry_work where state='quarantined';",
     ),
-    "2",
-    "Legacy failed and unresolved release cases become sticky quarantines",
+    "9",
+    "Legacy blocked and outstanding unsafe money becomes sticky quarantine with or without prior expiry attention",
   );
   assert.equal(
     harness.runSql(
@@ -248,8 +293,22 @@ try {
   );
   assert.deepEqual(
     due.map((row) => row.bookingRequestId).sort(),
-    [id("60", 11), id("60", 15)],
+    [id("60", 11), id("60", 15), id("60", 24)],
     "Only safely evaluable elapsed and late-capture cases are due; pending, confirmed, expired and quarantined cases stay fenced",
+  );
+  assert.equal(
+    harness.runSql(
+      `select state from public.booking_request_payment_recovery_attempts where booking_request_id='${id("60", 23)}';`,
+    ),
+    "replacement_authorized",
+    "Quarantining an outstanding provider response preserves the unadvanced recovery history",
+  );
+  assert.equal(
+    harness.runSql(
+      `select count(*) from public.booking_request_payment_required_expiry_work where booking_request_id='${id("60", 24)}';`,
+    ),
+    "0",
+    "A lease with no provider outcome is not indeterminate evidence and is not quarantined",
   );
   const elapsed = parsed(
     `select public.prepare_booking_request_payment_required_expiry('${id("60", 11)}',${literal(identity)});`,

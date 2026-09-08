@@ -28,9 +28,14 @@ const { withPaymentRecoveryCleanup } = createRequire(import.meta.url)(
   withPaymentRecoveryCleanup(cleanup: string, requestId: string): string;
 };
 
-for (const { outcome, movement } of (["release", "refund"] as const).flatMap(
-  (movement) =>
-    (["succeeded", "failed", "indeterminate"] as const).map((outcome) => ({
+for (const { outcome, movement } of (
+  ["release", "refund", "recovery-release"] as const
+).flatMap((movement) =>
+  (["succeeded", "failed", "indeterminate"] as const)
+    .filter(
+      (outcome) => movement !== "recovery-release" || outcome !== "succeeded",
+    )
+    .map((outcome) => ({
       outcome,
       movement,
     })),
@@ -125,7 +130,7 @@ for (const { outcome, movement } of (["release", "refund"] as const).flatMap(
       harness.runSql(
         "create function public.scheduled_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='60000000-0000-4000-8000-000000001001'$$;",
       );
-      if (movement === "refund") {
+      if (movement !== "release") {
         for (const definition of recoveryDefinitions)
           harness.runSql(
             definition.replaceAll(
@@ -141,23 +146,36 @@ for (const { outcome, movement } of (["release", "refund"] as const).flatMap(
             .split("\n")
             .at(-1)!,
         );
-        harness.runSql(
-          `set role service_role;select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');`,
-        );
-        const permit = JSON.parse(
+        if (movement === "recovery-release") {
           harness.runSql(
-            `set role service_role;select public.lease_booking_request_payment_recovery_step('${admitted.attemptId}');`,
-          ),
-        ).permit;
-        const unresolved = JSON.parse(
+            `set role service_role;select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','${outcome}');`,
+          );
+          expect(observe().expiry.state).toBe("quarantined");
+        } else {
           harness.runSql(
-            `set role service_role;select public.execute_simulated_booking_request_payment_recovery('${JSON.stringify(permit)}'::jsonb,'indeterminate');`,
-          ),
-        );
-        // This is a newly resolved simulator event at the actual provider clock, after D.
-        harness.runSql(
-          `set role service_role;select public.query_simulated_booking_request_payment_recovery('${JSON.stringify(permit)}'::jsonb,'${unresolved.providerRequestId}','${unresolved.providerReference}','succeeded');`,
-        );
+            `set role service_role;select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');`,
+          );
+          const permit = JSON.parse(
+            harness.runSql(
+              `set role service_role;select public.lease_booking_request_payment_recovery_step('${admitted.attemptId}');`,
+            ),
+          ).permit;
+          const unobservedFixture = readFileSync(
+            "supabase/tests/database/booking_request_payment_correction.test.sql",
+            "utf8",
+          )
+            .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
+            .split("-- END UNOBSERVED RECOVERY FIXTURE")[0];
+          const receipt = JSON.parse(
+            harness.runSql(
+              unobservedFixture +
+                `select pg_temp.seed_unobserved_recovery_outcome('${JSON.stringify(permit)}'::jsonb,'succeeded',clock_timestamp());`,
+            ),
+          );
+          harness.runSql(
+            `set role service_role;select public.observe_booking_request_payment_correction('${id}','${receipt.providerOperationId}','${JSON.stringify(receipt)}'::jsonb);`,
+          );
+        }
         for (const definition of recoveryDefinitions)
           harness.runSql(definition);
       }
@@ -166,7 +184,7 @@ for (const { outcome, movement } of (["release", "refund"] as const).flatMap(
       expect(Date.parse(before.capture.payment_required_deadline)).toBeLessThan(
         Date.now(),
       );
-      if (outcome !== "succeeded")
+      if (outcome !== "succeeded" && movement !== "recovery-release")
         harness.runSql(
           `set role service_role;select public.execute_simulated_booking_request_payment_required_expiry(public.prepare_booking_request_payment_required_expiry('${id}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')->'permit','${outcome}');`,
         );
@@ -193,7 +211,9 @@ for (const { outcome, movement } of (["release", "refund"] as const).flatMap(
       expect(held.confirmed).toBe(0);
       expect(held.notices).toHaveLength(0);
       const releases = held.ledger.filter(
-        (row: { operation_kind: string }) => row.operation_kind === movement,
+        (row: { operation_kind: string }) =>
+          row.operation_kind ===
+          (movement === "recovery-release" ? "release" : movement),
       );
       expect(releases).toHaveLength(1);
       expect(releases[0].physical_execution_count).toBe(1);
