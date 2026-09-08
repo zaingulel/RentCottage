@@ -201,6 +201,226 @@ REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."simulated_payment
 
 REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."simulated_payment_provider_operations" FROM "service_role";
 
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."account_contexts" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."account_contexts" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."account_contexts" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_ownership" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_ownership" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_ownership" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_administrator_audit" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_administrator_audit" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_administrator_audit" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_decisions" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_decisions" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_decisions" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_heads" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_heads" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_heads" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_revisions" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_revisions" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_revisions" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_photos" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_photos" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_photos" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_publication_decisions" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_publication_decisions" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_publication_decisions" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_cycles" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_cycles" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_cycles" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_photos" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_photos" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_photos" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_source_revisions" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_source_revisions" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_source_revisions" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_attempts" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_attempts" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_attempts" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_human_reviews" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_human_reviews" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_human_reviews" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_localizations" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_localizations" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_localizations" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_media" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_media" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_media" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_snapshots" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_snapshots" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_snapshots" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_cache" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_cache" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_cache" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_quality_reports" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_quality_reports" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_quality_reports" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_runtime_control" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_runtime_control" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_runtime_control" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_reservations" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_reservations" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_reservations" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_results" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_results" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_results" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_cottage_profiles" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_cottage_profiles" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_cottage_profiles" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_information_requests" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_information_requests" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_information_requests" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_lifecycle_control" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_lifecycle_control" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_lifecycle_control" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_notices" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_notices" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_notices" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_renewal_work" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_renewal_work" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_renewal_work" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_transitions" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_transitions" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_transitions" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_verification_records" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_verification_records" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_verification_records" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_applications" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_applications" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_applications" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_access_grants" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_access_grants" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_access_grants" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_audit" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_audit" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_audit" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_cleanup" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_cleanup" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_cleanup" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_versions" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_versions" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_versions" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_documents" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_documents" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_documents" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_inventory_availability" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_inventory_date_price_overrides" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_inventory_standard_prices" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_inventory_weekday_price_overrides" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_marketplace_listings" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_shift_schedule_revisions" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_shifts" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."privileged_sign_in_attempts" FROM "service_role";
+
 GRANT USAGE ON SCHEMA "public" TO "postgres";
 
 GRANT USAGE ON SCHEMA "public" TO "anon";
@@ -211,11 +431,7 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 GRANT USAGE ON SCHEMA "public" TO "supabase_auth_admin";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_cottage_profiles" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_cottage_profiles" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_cottage_profiles" TO "service_role";
+GRANT SELECT ON TABLE "public"."owner_application_cottage_profiles" TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."abandon_administrator_cottage_profile_draft"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_reason" "text") FROM PUBLIC;
 
@@ -233,11 +449,7 @@ REVOKE ALL ON FUNCTION "public"."append_booking_request_payment_history"("target
 
 REVOKE ALL ON FUNCTION "public"."apply_cottage_profile_working_copy"("target_profile_id" "uuid", "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text") FROM PUBLIC;
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_snapshots" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_snapshots" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_snapshots" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_publication_snapshots" TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."approve_cottage_profile_publication"("target_review_cycle_id" "uuid", "target_reason" "text") FROM PUBLIC;
 
@@ -257,11 +469,7 @@ REVOKE ALL ON FUNCTION "public"."begin_booking_request_submission_cleanup_releas
 
 GRANT ALL ON FUNCTION "public"."begin_booking_request_submission_cleanup_release"("target_attempt_id" "uuid", "target_payment_snapshot" "jsonb", "target_provider_identity" "jsonb") TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_attempts" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_attempts" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_attempts" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_profile_translation_attempts" TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."begin_cottage_profile_translation"("target_review_cycle_id" "uuid", "target_language" "public"."cottage_profile_source_language") FROM PUBLIC;
 
@@ -339,11 +547,7 @@ REVOKE ALL ON FUNCTION "public"."claim_due_booking_request_releases"("target_lim
 
 GRANT ALL ON FUNCTION "public"."claim_due_booking_request_releases"("target_limit" integer) TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."account_contexts" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."account_contexts" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."account_contexts" TO "service_role";
+GRANT SELECT ON TABLE "public"."account_contexts" TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."claim_marketplace_role"("requested_role" "public"."account_role") FROM PUBLIC;
 
@@ -378,12 +582,6 @@ GRANT ALL ON FUNCTION "public"."complete_owner_verification_document_access"("ta
 REVOKE ALL ON FUNCTION "public"."complete_owner_verification_document_cleanup"("target_cleanup_id" "uuid") FROM PUBLIC;
 
 GRANT ALL ON FUNCTION "public"."complete_owner_verification_document_cleanup"("target_cleanup_id" "uuid") TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_revisions" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_revisions" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_revisions" TO "service_role";
 
 GRANT SELECT("id") ON TABLE "public"."cottage_profile_localized_revisions" TO "authenticated";
 
@@ -442,12 +640,6 @@ REVOKE ALL ON FUNCTION "public"."create_pending_booking_period_hold"("target_cus
 GRANT ALL ON FUNCTION "public"."create_pending_booking_period_hold"("target_customer_user_id" "uuid", "target_profile_id" "uuid", "target_commitment_reference" "text", "requested_search" "jsonb") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."create_pending_booking_period_hold_without_authorization_claim"("target_customer_user_id" "uuid", "target_profile_id" "uuid", "target_commitment_reference" "text", "requested_search" "jsonb") FROM PUBLIC;
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_decisions" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_decisions" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_decisions" TO "service_role";
 
 GRANT SELECT("id") ON TABLE "public"."cottage_profile_localized_decisions" TO "authenticated";
 
@@ -675,11 +867,9 @@ REVOKE ALL ON FUNCTION "public"."prepare_booking_request_submission"("target_cus
 
 GRANT ALL ON FUNCTION "public"."prepare_booking_request_submission"("target_customer_user_id" "uuid", "target_idempotency_key" "uuid", "target_submission" "jsonb") TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_photos" TO "anon";
+GRANT SELECT ON TABLE "public"."cottage_profile_photos" TO "authenticated";
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_photos" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_photos" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_profile_photos" TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid") FROM PUBLIC;
 
@@ -823,11 +1013,7 @@ REVOKE ALL ON FUNCTION "public"."replace_cottage_shift_schedule"("target_profile
 
 GRANT ALL ON FUNCTION "public"."replace_cottage_shift_schedule"("target_profile_id" "uuid", "target_expected_revision" integer, "requested_shifts" "jsonb") TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_quality_reports" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_quality_reports" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_quality_reports" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_translation_quality_reports" TO "service_role";
 
 GRANT SELECT("id") ON TABLE "public"."cottage_translation_quality_reports" TO "authenticated";
 
@@ -895,11 +1081,7 @@ REVOKE ALL ON FUNCTION "public"."review_owner_application"("target_application_i
 
 GRANT ALL ON FUNCTION "public"."review_owner_application"("target_application_id" "uuid", "expected_version" bigint, "requested_action" "text", "requested_reason" "text", "requested_fields" "text"[], "requested_document_kinds" "public"."owner_verification_document_kind"[], "requested_jurisdiction" "text", "requested_licensing_basis" "public"."owner_licensing_basis", "requested_licence_or_exemption_basis" "text", "requested_expiry_dates" "jsonb") TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_human_reviews" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_human_reviews" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_translation_human_reviews" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_profile_translation_human_reviews" TO "service_role";
 
 GRANT SELECT("id") ON TABLE "public"."cottage_profile_translation_human_reviews" TO "authenticated";
 
@@ -963,11 +1145,7 @@ REVOKE ALL ON FUNCTION "public"."submit_cottage_profile_for_content_approval"("t
 
 GRANT ALL ON FUNCTION "public"."submit_cottage_profile_for_content_approval"("target_profile_id" "uuid", "target_expected_version" bigint) TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_applications" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_applications" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_applications" TO "service_role";
+GRANT SELECT ON TABLE "public"."owner_applications" TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."submit_owner_application"() FROM PUBLIC;
 
@@ -997,39 +1175,11 @@ REVOKE ALL ON FUNCTION "public"."validate_cottage_shift_insert"() FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION "public"."validate_public_cottage_search"("requested_search" "jsonb") FROM PUBLIC;
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_inventory_availability" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_ownership" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_inventory_date_price_overrides" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_profile_administrator_audit" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_inventory_standard_prices" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_inventory_weekday_price_overrides" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_marketplace_listings" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_ownership" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_ownership" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_ownership" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_administrator_audit" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_administrator_audit" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_administrator_audit" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_heads" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_heads" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_localized_heads" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_publication_decisions" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_publication_decisions" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_publication_decisions" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_profile_localized_heads" TO "authenticated";
 
 GRANT SELECT("id") ON TABLE "public"."cottage_profile_publication_decisions" TO "authenticated";
 
@@ -1041,135 +1191,57 @@ GRANT SELECT("reason") ON TABLE "public"."cottage_profile_publication_decisions"
 
 GRANT SELECT("decided_at") ON TABLE "public"."cottage_profile_publication_decisions" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_cycles" TO "anon";
+GRANT SELECT ON TABLE "public"."cottage_profile_review_cycles" TO "authenticated";
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_cycles" TO "authenticated";
+GRANT SELECT ON TABLE "public"."cottage_profile_review_cycles" TO "service_role";
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_cycles" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_profile_review_photos" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_photos" TO "anon";
+GRANT SELECT ON TABLE "public"."cottage_profile_source_revisions" TO "authenticated";
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_photos" TO "authenticated";
+GRANT SELECT ON TABLE "public"."cottage_profile_source_revisions" TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_review_photos" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_publication_localizations" TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_source_revisions" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_source_revisions" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_profile_source_revisions" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_localizations" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_localizations" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_localizations" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_media" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_media" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_publication_media" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_shift_schedule_revisions" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_publication_media" TO "service_role";
 
 GRANT SELECT ON TABLE "public"."cottage_shift_schedule_revisions" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_shifts" TO "service_role";
-
 GRANT SELECT ON TABLE "public"."cottage_shifts" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_cache" TO "anon";
+GRANT SELECT,INSERT ON TABLE "public"."cottage_translation_cache" TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_cache" TO "authenticated";
+GRANT SELECT,UPDATE ON TABLE "public"."cottage_translation_runtime_control" TO "service_role";
 
-GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_cache" TO "service_role";
+GRANT SELECT ON TABLE "public"."cottage_translation_usage_reservations" TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_runtime_control" TO "anon";
+GRANT SELECT ON TABLE "public"."cottage_translation_usage_results" TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_runtime_control" TO "authenticated";
+GRANT SELECT ON TABLE "public"."owner_application_information_requests" TO "authenticated";
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE "public"."cottage_translation_runtime_control" TO "service_role";
+GRANT SELECT ON TABLE "public"."owner_application_lifecycle_control" TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_reservations" TO "anon";
+GRANT SELECT ON TABLE "public"."owner_application_notices" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_reservations" TO "authenticated";
+GRANT SELECT ON TABLE "public"."owner_application_renewal_work" TO "authenticated";
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_reservations" TO "service_role";
+GRANT SELECT ON TABLE "public"."owner_application_transitions" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_results" TO "anon";
+GRANT SELECT ON TABLE "public"."owner_application_verification_records" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_results" TO "authenticated";
+GRANT SELECT ON TABLE "public"."owner_verification_document_access_grants" TO "service_role";
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."cottage_translation_usage_results" TO "service_role";
+GRANT SELECT ON TABLE "public"."owner_verification_document_audit" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_information_requests" TO "anon";
+GRANT SELECT ON TABLE "public"."owner_verification_document_audit" TO "service_role";
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_information_requests" TO "authenticated";
+GRANT SELECT ON TABLE "public"."owner_verification_document_cleanup" TO "service_role";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_information_requests" TO "service_role";
+GRANT SELECT ON TABLE "public"."owner_verification_document_versions" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_lifecycle_control" TO "anon";
+GRANT SELECT ON TABLE "public"."owner_verification_documents" TO "authenticated";
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_lifecycle_control" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_lifecycle_control" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_notices" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_notices" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_notices" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_renewal_work" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_renewal_work" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_renewal_work" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_transitions" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_transitions" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_transitions" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_verification_records" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_verification_records" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_application_verification_records" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_access_grants" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_access_grants" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_access_grants" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_audit" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_audit" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_audit" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_cleanup" TO "anon";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_cleanup" TO "authenticated";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_cleanup" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_versions" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_versions" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_document_versions" TO "service_role";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_documents" TO "anon";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_documents" TO "authenticated";
-
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."owner_verification_documents" TO "service_role";
-
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."privileged_sign_in_attempts" TO "service_role";
+GRANT SELECT ON TABLE "public"."privileged_sign_in_attempts" TO "service_role";
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
 
@@ -1183,8 +1255,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUN
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
 
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO "anon";
-
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO "authenticated";
-
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES FROM "anon", "authenticated", "service_role";
