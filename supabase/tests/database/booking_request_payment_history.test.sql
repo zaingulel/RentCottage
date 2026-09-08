@@ -133,7 +133,7 @@ select is((select result#>>'{events,1,reasonCode}' from visible_history),'unclas
 select is((select result#>>'{events,1,amountFils}' from visible_history),'105000000','money is a decimal string in fils');
 select is((select result#>>'{events,1,currency}' from visible_history),'IQD','money carries its fixed currency');
 select is((select result#>>'{events,1,providerOccurredAt}' from visible_history),'2100-12-31T14:00:00+00:00','provider occurrence is returned separately from recording time');
-select is((select (result#>>'{events,1,id}')::uuid from visible_history),(select id from public.booking_request_payment_history order by sequence offset 1 limit 1),'the immutable event UUID is the support reference');
+select is((select (result#>>'{events,1,id}')::uuid from visible_history),(select id from public.booking_request_payment_history where payment_lifecycle_id='73000000-0000-4000-8000-000000001371' order by sequence offset 1 limit 1),'the immutable event UUID is the support reference');
 select ok((select (result#>>'{events,1,providerOccurredAt}')::timestamptz > (result#>>'{events,2,providerOccurredAt}')::timestamptz from visible_history),'sequence order does not change when provider occurrence times are reversed');
 select ok((select result::text not like '%Sensitive Customer%' and result::text not like '%merchant-secret-value%' and result::text not like '%raw-provider-token%' and result::text not like '%secret-card-reference%' from visible_history),'the real output excludes customer data, credentials, tokens and unsafe references');
 
@@ -307,8 +307,88 @@ set local role authenticated;
 create temp table after_receipt_history as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
 reset role;
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'source'='provider-receipt' and event->>'operationKind'='capture' and event->>'physicalAttemptId'=(select payload->>'physicalAttemptId' from observed_capture) and (event->>'providerOccurredAt')::timestamptz=(select (payload->>'occurredAt')::timestamptz from observed_capture) and event ? 'receivedAt') from after_receipt_history),'receipt history preserves canonical operation identity and separate occurrence and arrival clocks');
+
+-- Repeated arrivals are support evidence, not another provider execution or receipt.
+create function pg_temp.payment_arrival_sources() returns jsonb language sql as $$
+select jsonb_object_agg(name,rows) from (
+select 'booking_requests' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_requests rows
+union all
+select 'booking_snapshots' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_snapshots rows
+union all
+select 'booking_request_capture_work' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_capture_work rows
+union all
+select 'booking_request_submission_attempts' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_submission_attempts rows
+union all
+select 'booking_request_authorization_claims' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_authorization_claims rows
+union all
+select 'simulated_payment_provider_operations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.simulated_payment_provider_operations rows
+union all
+select 'booking_request_payment_recovery_attempts' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_payment_recovery_attempts rows
+union all
+select 'booking_request_payment_recovery_operations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_payment_recovery_operations rows
+union all
+select 'booking_request_payment_required_expiry_work' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_payment_required_expiry_work rows
+union all
+select 'booking_request_payment_required_expiry_operations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_payment_required_expiry_operations rows
+union all
+select 'booking_request_release_work' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_release_work rows
+union all
+select 'booking_request_release_operations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_release_operations rows
+union all
+select 'booking_request_payment_correction_observations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_payment_correction_observations rows
+union all
+select 'booking_confirmations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_confirmations rows
+union all
+select 'booking_receipts' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_receipts rows
+union all
+select 'booking_request_confirmation_invalidations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_confirmation_invalidations rows
+union all
+select 'cottage_booking_period_commitments' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.cottage_booking_period_commitments rows
+union all
+select 'cottage_booking_period_occupancies' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.cottage_booking_period_occupancies rows
+) sources;
+$$;
+select is((select count(*) from after_receipt_history,jsonb_array_elements(result->'events') event where event->>'source'='provider-receipt'),1::bigint,'a persisted canonical receipt emits exactly one arrival');
+create temp table duplicate_sources as select pg_temp.payment_arrival_sources() result,clock_timestamp() starts_at;
 set local role service_role;
-select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from observed_capture),(select payload||'{"outcome":"failed","movementReference":null}'::jsonb from observed_capture))->>'status','quarantined','conflicting receipt quarantines the confirmed payment');
+select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from observed_capture),(select payload from observed_capture))->>'status','duplicate','the first canonical repeat keeps the duplicate decision');
+select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from observed_capture),(select payload from observed_capture))->>'status','duplicate','another canonical repeat keeps the duplicate decision');
+reset role;
+select is(pg_temp.payment_arrival_sources(),(select result from duplicate_sources),'duplicate arrivals preserve all eighteen payment source tables exactly');
+set local role authenticated;
+create temp table after_duplicates_history as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
+reset role;
+select is((select count(*) from after_duplicates_history,jsonb_array_elements(result->'events') event where event->>'source'='provider-receipt' and event->>'outcome'='duplicate'),2::bigint,'every canonical repeat has its own support arrival');
+select is((select count(*) from after_duplicates_history,jsonb_array_elements(result->'events') event where event->>'source'='provider-receipt'),3::bigint,'one canonical receipt and two repeats are three arrivals without double recording');
+select is((select count(distinct event->>'id') from after_duplicates_history,jsonb_array_elements(result->'events') event where event->>'outcome'='duplicate'),2::bigint,'repeated arrivals have distinct immutable support identities');
+select is((select jsonb_agg(event order by ordinal) from after_duplicates_history,jsonb_array_elements(result->'events') with ordinality events(event,ordinal) where ordinal <= (select jsonb_array_length(result->'events') from after_receipt_history)),(select result->'events' from after_receipt_history),'duplicate arrivals append without rewriting the canonical history prefix');
+select ok((select bool_and(event->>'providerOperationId'=(select id::text from observed_capture) and event->>'logicalOperationId'=(select payload->>'logicalOperationId' from observed_capture) and event->>'physicalAttemptId'=(select payload->>'physicalAttemptId' from observed_capture) and event->>'amountFils'='115000000' and event->>'currency'='IQD' and not(event ? 'providerOccurredAt') and not(event ? 'sourceRecordedAt') and (event->>'receivedAt')::timestamptz >= (select starts_at from duplicate_sources) and (event->>'recordedAt')::timestamptz >= (event->>'receivedAt')::timestamptz) from after_duplicates_history,jsonb_array_elements(result->'events') event where event->>'outcome'='duplicate'),'duplicate arrivals use canonical source identity and actual arrival clocks without inventing occurrence');
+
+savepoint malformed_arrivals;
+create temp table malformed_window as select clock_timestamp() starts_at;
+set local role service_role;
+select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from observed_capture),(select payload||'{"signature":"arrival-private-signature","logicalOperationId":"arrival-private-logical","physicalAttemptId":"arrival-private-attempt","providerReference":"arrival-private-reference","amountFils":1,"occurredAt":"1900-01-01T00:00:00Z"}'::jsonb from observed_capture))->>'status','quarantined','a malformed arrival preserves the existing quarantine decision');
+reset role;
+create temp table malformed_sources as select pg_temp.payment_arrival_sources() result;
+set local role service_role;
+select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from observed_capture),(select payload||'{"signature":"arrival-private-signature","logicalOperationId":"arrival-private-logical","physicalAttemptId":"arrival-private-attempt","providerReference":"arrival-private-reference","amountFils":1,"occurredAt":"1900-01-01T00:00:00Z"}'::jsonb from observed_capture))->>'status','quarantined','a repeated malformed arrival preserves sticky quarantine');
+reset role;
+select is(pg_temp.payment_arrival_sources(),(select result from malformed_sources),'repeated malformed arrivals preserve all eighteen quarantined payment source tables exactly');
+set local role authenticated;
+create temp table after_malformed_history as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
+reset role;
+select is((select count(*) from after_malformed_history,jsonb_array_elements(result->'events') event where event->>'source'='provider-receipt' and event->>'outcome'='malformed'),2::bigint,'every malformed repeat has one visible arrival even after quarantine');
+select is((select result#>>'{current,reasonCode}' from after_malformed_history),'malformed-provider-observation','current support state retains the safe malformed reason');
+select ok((select bool_and(event->>'reasonCode'='malformed-provider-observation' and event->>'providerOperationId'=(select id::text from observed_capture) and event->>'logicalOperationId'=(select payload->>'logicalOperationId' from observed_capture) and event->>'physicalAttemptId'=(select payload->>'physicalAttemptId' from observed_capture) and event->>'amountFils'='115000000' and not(event ? 'providerOccurredAt') and not(event ? 'sourceRecordedAt') and (event->>'receivedAt')::timestamptz >= (select starts_at from malformed_window) and (event->>'recordedAt')::timestamptz >= (event->>'receivedAt')::timestamptz) from after_malformed_history,jsonb_array_elements(result->'events') event where event->>'outcome'='malformed'),'malformed arrivals retain a safe reason and canonical identity instead of attacker fields or clocks');
+select ok((select result::text not like '%arrival-private-%' and result::text not like '%1900-01-01%' from after_malformed_history),'malformed payload signatures references and claimed occurrence never enter the support response');
+select is((select jsonb_agg(event order by ordinal) from after_malformed_history,jsonb_array_elements(result->'events') with ordinality events(event,ordinal) where ordinal <= (select jsonb_array_length(result->'events') from after_duplicates_history)),(select result->'events' from after_duplicates_history),'malformed arrivals and quarantine preserve the entire previous immutable prefix');
+select is((select count(*) from public.booking_request_payment_correction_observations where booking_request_id='60000000-0000-4000-8000-000000001001'),1::bigint,'malformed arrivals do not create persisted canonical receipts');
+select is((select count(*) from public.simulated_payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),4::bigint,'malformed arrivals never cause another physical payment execution');
+select is((select count(*) from public.booking_receipts),2::bigint,'quarantine retains the original two booking receipts');
+rollback to malformed_arrivals;
+
+set local role service_role;
+select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from observed_capture),(select payload||'{"outcome":"failed","movementReference":null,"occurredAt":"1900-01-01T00:00:00Z"}'::jsonb from observed_capture))->>'status','quarantined','conflicting receipt quarantines the confirmed payment');
 reset role;
 set local role authenticated;
 create temp table after_conflict_history as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
@@ -318,6 +398,22 @@ select is((select jsonb_agg(event order by ordinal) from after_conflict_history,
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'kind'='quarantine' and event->>'toState'='quarantined' and event->>'reasonCode'='conflicting-provider-observation') from after_conflict_history),'real quarantine keeps its actionable reason');
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'source'='confirmation-invalidation' and event->>'reasonCode'='conflicting-evidence' and event->>'toState'='invalidated') from after_conflict_history),'historical confirmation and its terminal invalidation remain visible');
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'source'='provider-receipt' and event->>'outcome'='conflicting' and not(event ? 'providerOccurredAt')) from after_conflict_history),'conflicting evidence does not invent a trusted occurrence time');
+
+
+select is((select count(*) from after_conflict_history,jsonb_array_elements(result->'events') event where event->>'source'='provider-receipt' and event->>'outcome'='conflicting'),1::bigint,'a newly persisted conflicting receipt emits exactly one arrival');
+create temp table conflict_sources as select pg_temp.payment_arrival_sources() result;
+set local role service_role;
+select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from observed_capture),(select payload||'{"outcome":"failed","movementReference":null,"occurredAt":"1900-01-01T00:00:00Z"}'::jsonb from observed_capture))->>'status','duplicate','an exact repeated conflict keeps the duplicate decision');
+select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from observed_capture),(select payload||'{"outcome":"failed","movementReference":null,"occurredAt":"1900-01-01T00:00:00Z"}'::jsonb from observed_capture))->>'status','duplicate','every repeated conflict remains decision-idempotent');
+reset role;
+select is(pg_temp.payment_arrival_sources(),(select result from conflict_sources),'repeated conflicts preserve all payment decisions amounts movements receipts and holds');
+set local role authenticated;
+create temp table after_repeated_conflict_history as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
+reset role;
+select is((select count(*) from after_repeated_conflict_history,jsonb_array_elements(result->'events') event where event->>'source'='provider-receipt'),6::bigint,'canonical conflict and all four repeats retain exactly six arrival events');
+select is((select count(*) from public.booking_request_payment_correction_observations where booking_request_id='60000000-0000-4000-8000-000000001001'),2::bigint,'repeated conflicts preserve the original two persisted receipts');
+select ok((select result::text not like '%1900-01-01%' and not exists(select 1 from jsonb_array_elements(result->'events') event where event->>'outcome'='duplicate' and event ? 'providerOccurredAt') from after_repeated_conflict_history),'repeated conflicting receipts never acquire an attacker-supplied trusted occurrence');
+select is((select jsonb_agg(event order by ordinal) from after_repeated_conflict_history,jsonb_array_elements(result->'events') with ordinality events(event,ordinal) where ordinal <= (select jsonb_array_length(result->'events') from after_conflict_history)),(select result->'events' from after_conflict_history),'repeated conflicts preserve the entire existing history prefix');
 
 
 rollback to history_payment_required;

@@ -391,6 +391,110 @@ create trigger observe_payment_history_confirmation after insert on public.booki
 create trigger observe_payment_history_invalidation after insert on public.booking_request_confirmation_invalidations for each row execute function public.observe_booking_request_payment_history();
 create trigger observe_payment_history_provider_receipt after insert on public.booking_request_payment_correction_observations for each row execute function public.observe_booking_request_payment_history();
 
+create or replace function public.observe_booking_request_payment_correction(target_booking_request_id uuid,target_provider_operation_id uuid,target_receipt jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare work public.booking_request_capture_work;
+declare ledger public.simulated_payment_provider_operations;
+declare expected jsonb;
+declare conflicting boolean;
+declare observed_at timestamptz;
+begin
+  if current_setting('role',true)<>'service_role' then raise exception 'Payment observation unavailable' using errcode='42501'; end if;
+  perform 1 from public.booking_requests requests where requests.id=target_booking_request_id for update of requests;
+  select * into work from public.booking_request_capture_work capture where capture.booking_request_id=target_booking_request_id for update of capture;
+  select * into ledger from public.simulated_payment_provider_operations operations where operations.id=target_provider_operation_id for update of operations;
+  if work.payment_required_deadline is null or ledger.id is null or ledger.operation_kind not in ('capture','release','refund')
+    or ledger.claim_id is distinct from work.authorization_claim_id then raise exception 'Payment observation source is invalid' using errcode='RC409'; end if;
+  if target_receipt is null or jsonb_typeof(target_receipt)<>'object'
+    or target_receipt ?& array['receiptId','bookingRequestId','providerOperationId','providerIdentity','paymentLifecycleId','logicalOperationId','physicalAttemptId','kind','amountFils','currency','providerRequestId','providerReference','movementReference','outcome','occurredAt'] is not true
+    or target_receipt-array['receiptId','bookingRequestId','providerOperationId','providerIdentity','paymentLifecycleId','logicalOperationId','physicalAttemptId','kind','amountFils','currency','providerRequestId','providerReference','movementReference','outcome','occurredAt']<>'{}'
+    or jsonb_typeof(target_receipt->'receiptId')<>'string' or length(target_receipt->>'receiptId') not between 1 and 200 then
+    perform public.append_booking_request_payment_history(
+      work.payment_lifecycle_id, work.booking_request_id,
+      'receipt-observation', 'provider-receipt', 'observed',
+      target_operation_kind => ledger.operation_kind,
+      target_logical_operation_id => ledger.logical_operation_id,
+      target_physical_attempt_id => ledger.physical_attempt_id,
+      target_outcome => 'malformed',
+      target_reason_code => 'malformed-provider-observation',
+      target_provider_operation_id => ledger.id,
+      target_provider_request_id => ledger.provider_request_id,
+      target_provider_reference => ledger.provider_reference,
+      target_movement_reference => ledger.movement_reference,
+      target_amount_fils => ledger.amount_fils,
+      target_received_at => clock_timestamp()
+    );
+    return public.quarantine_booking_request_payment(target_booking_request_id,'malformed-provider-observation'); end if;
+  if exists(select 1 from public.booking_request_payment_correction_observations observations
+    where observations.provider_operation_id=ledger.id and observations.receipt_identity=target_receipt->>'receiptId' and observations.payload=target_receipt) then
+    perform public.append_booking_request_payment_history(
+      work.payment_lifecycle_id, work.booking_request_id,
+      'receipt-observation', 'provider-receipt', 'observed',
+      target_operation_kind => ledger.operation_kind,
+      target_logical_operation_id => ledger.logical_operation_id,
+      target_physical_attempt_id => ledger.physical_attempt_id,
+      target_outcome => 'duplicate',
+      target_provider_operation_id => ledger.id,
+      target_provider_request_id => ledger.provider_request_id,
+      target_provider_reference => ledger.provider_reference,
+      target_movement_reference => ledger.movement_reference,
+      target_amount_fils => ledger.amount_fils,
+      target_received_at => clock_timestamp()
+    );
+    return jsonb_build_object('status','duplicate'); end if;
+  expected := jsonb_build_object('bookingRequestId',target_booking_request_id,'providerOperationId',ledger.id,
+    'providerIdentity',jsonb_build_object('provider',ledger.provider,'environment',ledger.environment,'merchantId',ledger.merchant_id,'terminalId',ledger.terminal_id),
+    'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
+    'kind',ledger.operation_kind,'amountFils',ledger.amount_fils,'currency',ledger.currency,'providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference);
+  conflicting := (ledger.claim_generation,ledger.amount_fils,ledger.currency,ledger.provider,ledger.environment,ledger.merchant_id,ledger.terminal_id)
+      is distinct from (work.authorization_claim_generation,work.amount_fils,work.currency,work.provider,work.environment,work.merchant_id,work.terminal_id)
+    or target_receipt-array['receiptId','movementReference','outcome','occurredAt'] is distinct from expected
+    or target_receipt->>'outcome' not in ('succeeded','failed','indeterminate')
+    or jsonb_typeof(target_receipt->'outcome') is distinct from 'string'
+    or (ledger.current_outcome<>'indeterminate' and target_receipt->>'outcome' is distinct from ledger.current_outcome)
+    or (target_receipt->>'outcome'<>'failed' and target_receipt->>'movementReference' is distinct from ledger.movement_reference)
+    or (target_receipt->>'outcome'='failed' and target_receipt->'movementReference' is distinct from 'null'::jsonb)
+    or exists(select 1 from public.booking_request_payment_correction_observations observations where observations.provider_operation_id=ledger.id
+      and (observations.receipt_identity=target_receipt->>'receiptId' or observations.payload-'receiptId' is distinct from target_receipt-'receiptId'));
+  begin
+    observed_at := (target_receipt->>'occurredAt')::timestamptz;
+    if (target_receipt->>'outcome'='indeterminate') is distinct from (observed_at is null)
+      or not isfinite(observed_at) or observed_at > clock_timestamp()
+      or (ledger.authoritative_outcome_at is not null and ledger.authoritative_outcome_at is distinct from observed_at)
+      then conflicting := true; end if;
+  exception when invalid_datetime_format or datetime_field_overflow then conflicting:=true; end;
+  insert into public.booking_request_payment_correction_observations(booking_request_id,provider_operation_id,receipt_identity,payload,conflict)
+    values(target_booking_request_id,ledger.id,target_receipt->>'receiptId',target_receipt,coalesce(conflicting,true));
+  if conflicting is not false then return public.quarantine_booking_request_payment(target_booking_request_id,'conflicting-provider-observation'); end if;
+  if target_receipt->>'outcome'='indeterminate' then return public.quarantine_booking_request_payment(target_booking_request_id,'unresolved-provider-observation'); end if;
+  if public.booking_request_payment_quarantined(target_booking_request_id) then return jsonb_build_object('status','quarantined'); end if;
+  if ledger.current_outcome='indeterminate' and target_receipt->>'outcome'<>'indeterminate' then
+    update public.simulated_payment_provider_operations set current_outcome=target_receipt->>'outcome',authoritative_outcome_at=observed_at,
+      movement_reference=target_receipt->>'movementReference',updated_at=clock_timestamp() where id=ledger.id returning * into ledger;
+    update public.booking_request_payment_recovery_operations set outcome=ledger.current_outcome,authoritative_outcome_at=observed_at,updated_at=clock_timestamp()
+      where provider_operation_id=ledger.id;
+  end if;
+  -- A delayed receipt finishes its pending step without rewinding later recovery.
+  if ledger.recovery_attempt_id is not null and exists(
+    select 1 from public.booking_request_payment_recovery_attempts attempts
+    join public.booking_request_payment_recovery_operations operations on operations.recovery_attempt_id=attempts.id
+    where attempts.id=ledger.recovery_attempt_id and operations.provider_operation_id=ledger.id
+      and (attempts.state='blocked' or attempts.state=case operations.step
+        when 'original-release' then 'admitted' when 'replacement-capture' then 'replacement_authorized'
+        when 'replacement-release' then 'capture_failed' end)
+  ) then perform public.record_booking_request_recovery_outcome(ledger.recovery_attempt_id,
+    (select operations.step from public.booking_request_payment_recovery_operations operations where operations.provider_operation_id=ledger.id),ledger,work.payment_required_deadline); end if;
+  if ledger.operation_kind in ('release','refund') and ledger.current_outcome='failed' then
+    return public.quarantine_booking_request_payment(target_booking_request_id,'failed-'||ledger.operation_kind||'-observation'); end if;
+  if ledger.operation_kind='capture' and ledger.current_outcome='succeeded' and observed_at >= work.payment_required_deadline then
+    insert into public.booking_request_payment_required_expiry_work(booking_request_id,payment_required_deadline)
+      values(work.booking_request_id,work.payment_required_deadline) on conflict do nothing;
+    perform public.invalidate_booking_request_payment_confirmation(work.booking_request_id,ledger.id,'late-capture');
+  end if;
+  return jsonb_build_object('status','recorded');
+end;
+$$;
+
 create function public.get_administrator_booking_request_payment_history(target_reference text)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare request public.booking_requests;
@@ -409,7 +513,7 @@ begin
     'physicalAttemptId',case when history.physical_attempt_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:((authorization|capture|release):attempt-[1-9][0-9]*|(original-release|replacement-authorization|replacement-capture|replacement-release(:[1-9][0-9]*)?|corrective-refund:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):[1-9][0-9]*)$' then history.physical_attempt_id when history.physical_attempt_id is not null then 'reference-unavailable' end,'operationGeneration',history.operation_generation,
     'recoveryGeneration',history.recovery_generation,'fromState',history.from_state,'toState',history.to_state,
     'outcome',history.outcome,
-    'reasonCode',case when history.reason_code in ('cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation') then history.reason_code when history.reason_code is not null then 'unclassified-evidence' end,
+    'reasonCode',case when history.reason_code in ('cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then history.reason_code when history.reason_code is not null then 'unclassified-evidence' end,
     'providerOperationId',history.provider_operation_id,
     'providerRequestId',case when history.provider_request_id ~ '^sim(-capture|-recovery|-expiry)?-request-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then history.provider_request_id when history.provider_request_id is not null then 'reference-unavailable' end,
     'providerReference',case when history.provider_reference ~ '^sim(-capture|-recovery|-expiry)?-reference-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then history.provider_reference when history.provider_reference is not null then 'reference-unavailable' end,
@@ -422,7 +526,7 @@ begin
   return jsonb_build_object(
     'bookingRequestReference',request.booking_request_reference,'simulated',true,
     'current',jsonb_build_object('requestStatus',request.status,'paymentStatus',public.booking_request_payment_status(request),
-      'expiryStatus',expiry.state,'reasonCode',case when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) in ('cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation') then coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) is not null then 'unclassified-evidence' end,
+      'expiryStatus',expiry.state,'reasonCode',case when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) in ('cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) is not null then 'unclassified-evidence' end,
       'paymentRequiredDeadline',to_jsonb((select work from public.booking_request_capture_work work where work.booking_request_id=request.id))->>'payment_required_deadline'),
     'historyCoverage',case when exists(select 1 from public.booking_request_payment_history history where history.payment_lifecycle_id=request.payment_lifecycle_id and history.source='history-boundary' and history.provenance='imported') then 'retained-evidence-only' else 'complete' end,
     'events',events
