@@ -98,8 +98,9 @@ API roles, so `50_privileges.sql` repeats those revokes explicitly, and `cottage
 written in the migration's `between` form because the diff engine compares constraint text. Direct changes made in
 Studio, the SQL editor or `psql` are invisible to the diff; always edit the schema files.
 
-The Supabase CLI stays pinned at 2.114 until `20260908120000_booking_request_payment_history.sql` wraps its
-`lock table` in a transaction: newer releases apply migrations statement by statement and refuse that lock.
+`package-lock.json` resolves the Supabase CLI to 2.114.0, and that resolution must not move until
+`20260908120000_booking_request_payment_history.sql` wraps its `lock table` in a transaction: newer releases apply
+migrations statement by statement and refuse that lock. Install with `npm ci`, which honours the lockfile.
 
 ## Stable commands
 

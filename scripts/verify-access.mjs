@@ -548,7 +548,14 @@ export async function main(
     const verifyDeclaredSchema = async () => {
       result = await execute(
         "npx",
-        supabaseArguments(["supabase", "db", "diff", "--local"]),
+        supabaseArguments([
+          "supabase",
+          "db",
+          "diff",
+          "--local",
+          "--output-format",
+          "json",
+        ]),
         { encoding: "utf8", stdio: "pipe" },
       );
       if (result.status !== 0) return result.status;

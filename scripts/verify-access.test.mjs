@@ -48,7 +48,7 @@ const statusCommand = ["npx", ["supabase", "status", "-o", "json"]];
 const stopCommand = ["npx", ["supabase", "stop", "--no-backup"]];
 const declaredSchemaDiffCommand = [
   "npx",
-  ["supabase", "db", "diff", "--local"],
+  ["supabase", "db", "diff", "--local", "--output-format", "json"],
 ];
 const emptyDeclaredSchemaDiff = JSON.stringify({
   diff: "",
@@ -249,7 +249,8 @@ function ownedRun(
     }
     if (
       command === "npx" &&
-      args.slice(0, 4).join(" ") === "supabase db diff --local"
+      args.slice(0, 6).join(" ") ===
+        "supabase db diff --local --output-format json"
     ) {
       const result = implementation(command, args, options);
       return result.stdout
@@ -1509,7 +1510,8 @@ setInterval(() => {}, 1000);
         status: 0,
         stdout:
           command === "npx" &&
-          args.slice(0, 4).join(" ") === "supabase db diff --local"
+          args.slice(0, 6).join(" ") ===
+            "supabase db diff --local --output-format json"
             ? stdout
             : command === "npx" && args.join(" ") === "supabase status -o json"
               ? localCredentials
