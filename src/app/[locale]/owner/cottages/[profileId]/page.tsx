@@ -1,66 +1,15 @@
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
-import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
-import { createRequestCottageInventory } from "@/cottage-inventory/request-cottage-inventory";
-import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
+import { loadOwnerCottageEditor } from "@/cottage-profile/owner-cottage-editor";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
 import { CottageProfileLifecycleControls } from "@/components/cottage-profile-lifecycle-controls";
 import { CottagePricingAvailabilityEditor } from "@/components/cottage-pricing-availability-editor";
 import { CottagePublicationReview } from "@/components/cottage-publication-review";
 import { CottageShiftScheduleEditor } from "@/components/cottage-shift-schedule-editor";
 import { OwnerCottageAccessFallback } from "@/components/owner-cottage-access-fallback";
-import { createRequestCottageShiftSchedule } from "@/cottage-shift-schedule/request-cottage-shift-schedule";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
-
-async function loadOwnerCottage(profileId: string) {
-  return loadOwnerCottageAccess(async (cottageProfile, approvalState) => {
-    const publication = await createRequestCottagePublication();
-    const shiftSchedule = await createRequestCottageShiftSchedule();
-    const inventory = await createRequestCottageInventory();
-    const [profile, review, scheduleResult] = await Promise.all([
-      cottageProfile.load(profileId),
-      publication.loadCurrentReview(profileId),
-      shiftSchedule.loadCurrent(profileId),
-    ]);
-    if (scheduleResult.status !== "loaded") {
-      throw new Error("Owner Cottage Shift Schedule load failed");
-    }
-    let pricing = null;
-    if (scheduleResult.schedule?.scheduleRevisionId) {
-      const pricingResult = await inventory.loadOwnerEditorState(
-        profileId,
-        scheduleResult.schedule.scheduleRevisionId,
-      );
-      if (pricingResult.status !== "loaded") {
-        throw new Error("Owner Cottage Inventory load failed");
-      }
-      const expectedUnits = new Map<string, "shift" | "full_day_bundle">([
-        ...scheduleResult.schedule.shifts.map(
-          (shift) => [shift.id, "shift"] as const,
-        ),
-        [scheduleResult.schedule.fullDayBundleId, "full_day_bundle"] as const,
-      ]);
-      if (
-        pricingResult.state.units.length !== expectedUnits.size ||
-        pricingResult.state.units.some(
-          (unit) => expectedUnits.get(unit.id) !== unit.kind,
-        )
-      ) {
-        throw new Error("Owner Cottage Inventory units do not match schedule");
-      }
-      pricing = pricingResult.state;
-    }
-    return {
-      profile,
-      review,
-      schedule: scheduleResult.schedule,
-      pricing,
-      editable: approvalState === "approved",
-    };
-  });
-}
 
 export default async function OwnerCottageProfilePage({
   params,
@@ -70,17 +19,13 @@ export default async function OwnerCottageProfilePage({
   const { locale, profileId } = await params;
   if (!isLocale(locale)) notFound();
   const copy = cottageProfileMessages[locale];
-  let page: Awaited<ReturnType<typeof loadOwnerCottage>> | undefined;
-  try {
-    page = await loadOwnerCottage(profileId);
-  } catch (error) {
-    unstable_rethrow(error);
+  const page = await loadOwnerCottageEditor(profileId);
+  if (page.status === "unavailable") {
+    unstable_rethrow(page.error);
     console.error("Owner Cottage Profile editor load failed", {
       phase: "owner_cottage_profile_editor_load",
       result: "unavailable",
     });
-  }
-  if (!page) {
     return (
       <OwnerCottageAccessFallback
         locale={locale}
