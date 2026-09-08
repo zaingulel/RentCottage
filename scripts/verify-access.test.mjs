@@ -75,6 +75,7 @@ const databasePreflightCommands = [
     "node",
     ["scripts/verify-booking-request-payment-required-expiry-upgrade.mjs"],
   ],
+  ["node", ["scripts/verify-booking-request-payment-history-upgrade.mjs"]],
 ];
 const databaseCheckCommands = [
   ["node", ["scripts/verify-access-fixture-contract.mjs"]],
@@ -87,6 +88,7 @@ const databaseCheckCommands = [
   ["node", ["scripts/verify-booking-request-lifecycle-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-request-capture-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-request-payment-recovery-concurrency.mjs"]],
+  ["node", ["scripts/verify-booking-request-payment-history-concurrency.mjs"]],
   [
     "node",
     ["scripts/verify-booking-request-payment-required-expiry-concurrency.mjs"],
@@ -105,6 +107,7 @@ const browserCommands = [
       "test",
       "tests/access.spec.ts",
       "tests/booking-request-access.spec.ts",
+      "tests/administrator-payment-history.spec.ts",
       "--project=mobile",
       "--project=desktop",
       "--workers=1",
@@ -121,6 +124,7 @@ const browserCommands = [
       "test",
       "tests/access.spec.ts",
       "tests/booking-request-access.spec.ts",
+      "tests/administrator-payment-history.spec.ts",
       "--project=worker",
       "--config=playwright.worker-prebuilt.config.ts",
       "--workers=1",
@@ -1670,7 +1674,7 @@ setInterval(() => {}, 1000);
       "SUPABASE_PUBLISHABLE_KEY",
     );
     expect(run.mock.calls[1][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[10][2].env).toMatchObject({
+    expect(run.mock.calls[11][2].env).toMatchObject({
       EXISTING: "kept",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
@@ -1681,19 +1685,19 @@ setInterval(() => {}, 1000);
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[11][2].env).toMatchObject({
+    expect(run.mock.calls[12][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[12][2].env).toMatchObject({
+    expect(run.mock.calls[13][2].env).toMatchObject({
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[12][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[13][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[4][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
@@ -1704,11 +1708,6 @@ setInterval(() => {}, 1000);
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
     expect(run.mock.calls[5][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[14][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
-    });
-    expect(run.mock.calls[14][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[15][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
@@ -1722,25 +1721,21 @@ setInterval(() => {}, 1000);
     expect(run.mock.calls[17][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
-      SUPABASE_SECRET_KEY: "local-secret",
     });
+    expect(run.mock.calls[17][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[18][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[18][2].env.SUPABASE_SECRET_KEY).toBe("local-secret");
-    expect(run.mock.calls[21][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+    expect(run.mock.calls[19][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
-    expect(run.mock.calls[22][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
-    });
+    expect(run.mock.calls[19][2].env.SUPABASE_SECRET_KEY).toBe("local-secret");
     expect(run.mock.calls[23][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
-      NEXTJS_ENV: "test",
-      SUPABASE_PROJECT_REF: "local-test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[24][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
@@ -1748,29 +1743,38 @@ setInterval(() => {}, 1000);
     });
     expect(run.mock.calls[25][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
+      NEXTJS_ENV: "test",
+      SUPABASE_PROJECT_REF: "local-test",
+    });
+    expect(run.mock.calls[26][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[27][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+    });
+    expect(run.mock.calls[29][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
-    expect(run.mock.calls[28][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
-    });
-    expect(run.mock.calls[28][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[29][2].env).toMatchObject({
-      PLAYWRIGHT_SERVER: "worker",
-      SUPABASE_SECRET_KEY: "local-secret",
-    });
     expect(run.mock.calls[30][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
       SUPABASE_LOCAL_PROJECT: "rentcottage",
     });
     expect(run.mock.calls[30][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[31][2].env).toMatchObject({
+      PLAYWRIGHT_SERVER: "worker",
+      SUPABASE_SECRET_KEY: "local-secret",
+    });
+    expect(run.mock.calls[32][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
+      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    });
+    expect(run.mock.calls[32][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
@@ -1948,6 +1952,17 @@ setInterval(() => {}, 1000);
       ],
     ]);
     expect(run.mock.calls[4][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-issue-32-v3",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
+      SUPABASE_LOCAL_WORKDIR: isolatedWorkdir,
+    });
+    const nextBrowser = run.mock.calls.find(
+      ([command, args]) =>
+        command === "npx" &&
+        args.includes("playwright") &&
+        args.includes("--project=mobile"),
+    );
+    expect(nextBrowser[2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-issue-32-v3",
       SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
       SUPABASE_LOCAL_WORKDIR: isolatedWorkdir,

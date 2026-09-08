@@ -590,6 +590,12 @@ export async function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = await execute(
+        "node",
+        ["scripts/verify-booking-request-payment-history-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {
@@ -731,6 +737,13 @@ export async function main(
       );
       if (bookingRequestRecoveryConcurrency.status !== 0)
         return bookingRequestRecoveryConcurrency.status;
+      const paymentHistoryConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-request-payment-history-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (paymentHistoryConcurrency.status !== 0)
+        return paymentHistoryConcurrency.status;
       return (
         await execute(
           "node",
@@ -768,6 +781,7 @@ export async function main(
         return validateNextFixtures.status;
       }
       const browserEnvironment = {
+        ...databaseConcurrencyEnvironment,
         ...accessEnvironment,
         APP_ENVIRONMENT: "test",
         NEXTJS_ENV: "test",
@@ -781,6 +795,7 @@ export async function main(
           "test",
           "tests/access.spec.ts",
           "tests/booking-request-access.spec.ts",
+          "tests/administrator-payment-history.spec.ts",
           "--project=mobile",
           "--project=desktop",
           "--workers=1",
@@ -825,6 +840,7 @@ export async function main(
           "test",
           "tests/access.spec.ts",
           "tests/booking-request-access.spec.ts",
+          "tests/administrator-payment-history.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",
