@@ -202,32 +202,45 @@ describe("Cottage Profile owner detail page", () => {
     ).toBeVisible();
   });
 
-  it.each([
-    ["expired", { ...profile, status: "draft" }, false],
-    ["suspended", { ...profile, status: "draft" }, false],
-    ["abandoned", { ...profile, status: "abandoned" }, true],
-  ])(
-    "keeps editor controls disabled for an %s Cottage Owner",
-    async (_state, disabledProfile, editable) => {
-      loadOwnerCottageEditor.mockResolvedValue(
-        ready({ profile: disabledProfile, pricing, editable }),
-      );
+  it("keeps editor controls disabled when the loaded editor is noneditable", async () => {
+    loadOwnerCottageEditor.mockResolvedValue(
+      ready({ pricing, editable: false }),
+    );
 
-      render(
-        await OwnerCottageProfilePage({
-          params: Promise.resolve({ locale: "en", profileId }),
-        }),
-      );
+    render(
+      await OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    );
 
-      expect(screen.getByLabelText("Cottage name")).toBeDisabled();
-      expect(
-        screen.getByLabelText("Shift 1 standard price in IQD"),
-      ).toBeDisabled();
-      expect(
-        screen.queryByRole("button", { name: "Save availability" }),
-      ).not.toBeInTheDocument();
-    },
-  );
+    expect(screen.getByLabelText("Cottage name")).toBeDisabled();
+    expect(
+      screen.getByLabelText("Shift 1 standard price in IQD"),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Save availability" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps abandoned Cottage controls disabled", async () => {
+    loadOwnerCottageEditor.mockResolvedValue(
+      ready({ profile: { ...profile, status: "abandoned" }, pricing }),
+    );
+
+    render(
+      await OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    );
+
+    expect(screen.getByLabelText("Cottage name")).toBeDisabled();
+    expect(
+      screen.getByLabelText("Shift 1 standard price in IQD"),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Save availability" }),
+    ).not.toBeInTheDocument();
+  });
 
   it("rethrows a framework interruption instead of rendering unavailable data", async () => {
     const interruption = new Error("NEXT_HTTP_ERROR_FALLBACK;404");

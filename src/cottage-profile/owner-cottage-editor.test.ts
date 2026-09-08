@@ -159,6 +159,24 @@ describe("loadOwnerCottageEditor", () => {
     });
   });
 
+  it.each(["expired", "suspended"] as const)(
+    "keeps loaded data noneditable for an %s Cottage Owner",
+    async (approvalState) => {
+      loadOwnerCottageAccess.mockImplementation(async (load) => ({
+        status: "ready",
+        value: await load(
+          { load: vi.fn().mockResolvedValue(profile) },
+          approvalState,
+        ),
+      }));
+
+      await expect(loadOwnerCottageEditor(profileId)).resolves.toMatchObject({
+        status: "ready",
+        value: { profile, review: null, schedule, pricing, editable: false },
+      });
+    },
+  );
+
   it("keeps ready data editable without pricing when no schedule revision exists", async () => {
     const loadOwnerEditorState = vi.fn();
     createCottageShiftSchedule.mockResolvedValue({
