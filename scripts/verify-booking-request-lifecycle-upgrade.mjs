@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
@@ -32,10 +33,14 @@ const amountFils = 115_000_000;
 const providerIdentity = {
   provider: "fictional-payments",
   environment: "local-test",
-  merchantId: "upgrade-merchant",
-  terminalId: "upgrade-terminal",
+  merchantId: "fictional-merchant",
+  terminalId: "fictional-terminal",
 };
 const harness = createLocalSupabaseConcurrencyHarness();
+const paymentEvidenceSql =
+  "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
+  readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
+  "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 
 function runSupabase(args) {
   const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
@@ -254,52 +259,66 @@ try {
   }
 
   const operation = providerOperation(response.executionPermit);
-  const absent = JSON.parse(
-    harness.runSql(`
-      begin;
-      set local role service_role;
-      select public.query_simulated_payment_provider_operation(
-        ${quoteJson(operation)}, null, null, 'succeeded'
-      );
-      commit;
-    `),
+  const query = Object.fromEntries(
+    Object.entries(operation).filter(([key]) =>
+      [
+        "providerIdentity",
+        "requestFingerprint",
+        "paymentLifecycleId",
+        "logicalOperationId",
+        "physicalAttemptId",
+        "operationKind",
+        "amountFils",
+        "currency",
+      ].includes(key),
+    ),
   );
-  if (JSON.stringify(absent) !== '{"outcome":"not-executed"}') {
-    throw new Error(
-      `Upgraded provider query did not prove authoritative absence: ${JSON.stringify(absent)}`,
-    );
-  }
   expectSqlFailure(
     `begin; set local role service_role;
-     select public.query_simulated_payment_provider_operation(
-       ${quoteJson(operation)}, 'missing-request', 'missing-reference', 'succeeded'
-     ); commit;`,
+     select public.reload_booking_request_payment_operation(${quoteJson(query)}, null, null); commit;`,
     "RC409",
   );
-
   const providerResult = JSON.parse(
-    harness.runSql(`
+    harness.runSql(
+      paymentEvidenceSql +
+        `
       begin;
       set local role service_role;
-      select public.execute_simulated_payment_provider_operation(
+      select pg_temp.payment_execute(
         ${quoteJson(operation)}, 'succeeded'
       );
       commit;
-    `),
+    `,
+    ),
   );
   if (
     providerResult.outcome !== "succeeded" ||
     !providerResult.providerRequestId ||
     !providerResult.providerReference ||
-    !providerResult.movementReference ||
-    providerResult.retrySafe !== false
+    !providerResult.movementReference
   ) {
     throw new Error(
       `Upgraded authorization permit was not accepted end-to-end: ${JSON.stringify(providerResult)}`,
     );
   }
+  const replay = JSON.parse(
+    harness.runSql(
+      paymentEvidenceSql +
+        `begin; set local role service_role;
+    select pg_temp.payment_query(${quoteJson(query)}, null, null, 'succeeded'); commit;`,
+    ),
+  );
+  if (JSON.stringify(replay) !== JSON.stringify(providerResult))
+    throw new Error(
+      "Upgraded recorded authorization did not retain its exact provider result",
+    );
+  expectSqlFailure(
+    `begin; set local role service_role;
+    select public.reload_booking_request_payment_operation(${quoteJson(query)}, 'missing-request', 'missing-reference'); commit;`,
+    "RC409",
+  );
   console.log(
-    "Booking Request upgrade proof applied only post-20260822090100 migrations, returned the exact five-field authorization permit, proved authoritative absence, rejected identified absence, and executed the permit end-to-end.",
+    "Booking Request upgrade proof applied only post-20260822090100 migrations, returned the exact five-field authorization permit, rejected inquiry without admission and foreign references, executed and explicitly recorded the permit, then replayed the original result without references.",
   );
 } catch (error) {
   failure = error;

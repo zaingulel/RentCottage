@@ -1,3 +1,8 @@
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
+import {
+  SupabasePaymentOperationExecutionRepository,
+  SupabaseSimulatorEffectRepository,
+} from "@/payment/supabase-payment-operation-execution";
 import { createClient } from "@supabase/supabase-js";
 
 import { createBookingRequestLifecycle } from "@/booking-request/booking-request-lifecycle";
@@ -38,7 +43,7 @@ async function main() {
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
   const durable = new DurablePaymentSimulator({
-    client,
+    effects: new SupabaseSimulatorEffectRepository(client),
     now: () => new Date().toISOString(),
   });
   const pause = process.env.LIFECYCLE_WORKER_PAUSE ?? "none";
@@ -46,18 +51,23 @@ async function main() {
   const provider: PaymentProviderAdapter = {
     identity: durable.identity,
     async execute(request: ProviderOperationRequest) {
-      if (intercepted || request.kind !== "release" || pause === "none") {
+      if (
+        intercepted ||
+        request.kind !== "release" ||
+        pause === "none" ||
+        pause === "before-record"
+      ) {
         return durable.execute(request);
       }
       intercepted = true;
-      if (pause === "before-admission") {
-        send({ stage: "permitted" });
+      if (pause === "after-admission") {
+        send({ stage: "admitted", admission: request.admission });
         await waitForContinue();
         return durable.execute(request);
       }
-      if (pause === "after-admission") {
+      if (pause === "after-effect") {
         const result = await durable.execute(request);
-        send({ stage: "admitted" });
+        send({ stage: "effect" });
         await waitForContinue();
         return result;
       }
@@ -66,12 +76,55 @@ async function main() {
     query: (request) => durable.query(request),
     verifySignedEvent: () => durable.verifySignedEvent(),
   };
+  const recording = new SupabasePaymentOperationExecutionRepository(client);
+  const operations = createPaymentOperationExecution({
+    repository: {
+      async admit(request, identity) {
+        if (
+          !intercepted &&
+          request.kind === "release" &&
+          pause === "before-admission"
+        ) {
+          intercepted = true;
+          send({ stage: "permitted", request, identity });
+          await waitForContinue();
+        }
+        return recording.admit(request, identity);
+      },
+      async reload(query, identity) {
+        if (
+          !intercepted &&
+          query.kind === "release" &&
+          pause === "before-reload"
+        ) {
+          intercepted = true;
+          send({ stage: "querying", query, identity });
+          await waitForContinue();
+        }
+        return recording.reload(query, identity);
+      },
+      async record(admission, result) {
+        if (
+          !intercepted &&
+          admission.binding.kind === "release" &&
+          pause === "before-record"
+        ) {
+          intercepted = true;
+          send({ stage: "unrecorded", admission, result });
+          await waitForContinue();
+        }
+        return recording.record(admission, result);
+      },
+    },
+    provider,
+  });
   const lifecycle = createBookingRequestLifecycle({
     repository: new SupabaseBookingRequestLifecycleRepository(
       client,
       durable.identity,
     ),
     provider,
+    operations,
   });
   const result = await lifecycle.act({
     actor: "customer",

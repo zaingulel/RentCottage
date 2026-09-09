@@ -5,7 +5,7 @@ import {
   paymentRequiredExpiryRequestMatches,
 } from "./booking-request-payment-required-expiry-contract";
 
-import { DurablePaymentSimulator } from "./durable-payment-simulator-core";
+import { SupabasePaymentOperationExecutionRepository } from "./supabase-payment-operation-execution";
 import { PaymentSimulator } from "./payment-simulator";
 
 const permit = {
@@ -85,73 +85,41 @@ describe("Payment Required expiry provider contract", () => {
   });
 });
 
-describe("Durable simulator expiry permit", () => {
-  const providerResult = {
-    outcome: "succeeded",
-    providerRequestId: "expiry-request",
-    providerReference: "expiry-reference",
-    movementReference: "expiry-release",
-  };
-  it("dispatches only the exact release at or after its fixed deadline", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValue({ data: providerResult, error: null });
-    let now = "2026-09-07T12:19:59.999Z";
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as never,
-      now: () => now,
-    });
+describe("Durable expiry admission", () => {
+  it("passes the fixed database deadline with the exact release admission", async () => {
+    const admission = {
+      purpose: permit.purpose,
+      operationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      providerIdentity: permit.binding.providerIdentity,
+      binding: request,
+      idempotencyKey: permit.idempotencyKey,
+      requestFingerprint: permit.binding.requestFingerprint,
+      notBefore: permit.notBefore,
+      notAfter: null,
+      mode: "execute",
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: admission, error: null });
+    const repository = new SupabasePaymentOperationExecutionRepository({
+      rpc,
+    } as never);
     await expect(
-      provider.execute({ ...request, executionPermit: permit }),
-    ).resolves.toEqual({ outcome: "not-executed" });
+      repository.admit(
+        { ...request, executionPermit: permit },
+        permit.binding.providerIdentity,
+      ),
+    ).resolves.toEqual(admission);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "admit_booking_request_payment_required_expiry",
+      { target_permit: permit },
+    );
+    rpc.mockClear();
+    await expect(
+      repository.admit(
+        { ...request, kind: "capture", executionPermit: permit },
+        permit.binding.providerIdentity,
+      ),
+    ).rejects.toThrow("permit");
     expect(rpc).not.toHaveBeenCalled();
-    now = "2026-09-07T12:20:00.000Z";
-    await expect(
-      provider.execute({ ...request, executionPermit: permit }),
-    ).resolves.toEqual(providerResult);
-    expect(rpc).toHaveBeenCalledExactlyOnceWith(
-      "execute_simulated_booking_request_payment_required_expiry",
-      {
-        target_permit: permit,
-        target_outcome: "succeeded",
-      },
-    );
-    await expect(
-      provider.execute({
-        ...request,
-        kind: "capture",
-        executionPermit: permit,
-      }),
-    ).resolves.toEqual({ outcome: "not-executed" });
-    expect(rpc).toHaveBeenCalledTimes(1);
-  });
-
-  it("queries the same expiry identity and retains the signed-event boundary", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValue({ data: providerResult, error: null });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as never,
-      now: () => "2026-09-07T12:21:00.000Z",
-    });
-    await expect(
-      provider.query({
-        ...request,
-        expiryPermit: permit,
-        providerRequestId: "expiry-request",
-        providerReference: "expiry-reference",
-      }),
-    ).resolves.toEqual(providerResult);
-    expect(rpc).toHaveBeenCalledExactlyOnceWith(
-      "query_simulated_booking_request_payment_required_expiry",
-      {
-        target_permit: permit,
-        target_provider_request_id: "expiry-request",
-        target_provider_reference: "expiry-reference",
-        target_outcome: "succeeded",
-      },
-    );
-    expect(provider.verifySignedEvent()).toBe(false);
   });
 
   it("does not let the in-memory simulator execute a durable expiry permit", async () => {
@@ -254,26 +222,31 @@ describe("corrective refund provider contract", () => {
     ).resolves.toEqual({ outcome: "not-executed" });
     expect(provider.requests).toEqual([]);
   });
-  it("executes refund through the existing expiry provider boundary", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: {
-        outcome: "succeeded",
-        providerRequestId: "refund-request",
-        providerReference: "refund-reference",
-        movementReference: "refund-movement",
-      },
-      error: null,
-    });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as never,
-      now: () => "2026-09-07T12:21:00.000Z",
-    });
+  it("admits the exact corrective refund through the expiry integrity boundary", async () => {
+    const admission = {
+      purpose: refundPermit.purpose,
+      operationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      providerIdentity: refundPermit.binding.providerIdentity,
+      binding: refund,
+      idempotencyKey: refundPermit.idempotencyKey,
+      requestFingerprint: "a".repeat(64),
+      notBefore: refundPermit.notBefore,
+      notAfter: null,
+      mode: "execute",
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: admission, error: null });
+    const repository = new SupabasePaymentOperationExecutionRepository({
+      rpc,
+    } as never);
     await expect(
-      provider.execute({ ...refund, executionPermit: refundPermit }),
-    ).resolves.toMatchObject({ outcome: "succeeded" });
+      repository.admit(
+        { ...refund, executionPermit: refundPermit },
+        refundPermit.binding.providerIdentity,
+      ),
+    ).resolves.toEqual(admission);
     expect(rpc).toHaveBeenCalledExactlyOnceWith(
-      "execute_simulated_booking_request_payment_required_expiry",
-      { target_permit: refundPermit, target_outcome: "succeeded" },
+      "admit_booking_request_payment_required_expiry",
+      { target_permit: refundPermit },
     );
   });
 });

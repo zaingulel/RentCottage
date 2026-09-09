@@ -212,6 +212,26 @@ function optionalString(value: unknown): string | undefined {
   return requiredString(value);
 }
 
+function supportReference(
+  value: unknown,
+  kind: "request" | "reference" | "movement",
+  operationId: unknown,
+): string | undefined {
+  const parsed = optionalString(value);
+  if (parsed === undefined || parsed === "reference-unavailable") return parsed;
+  const legacy = new RegExp(
+    `^sim(-capture|-recovery|-expiry)?-${kind}-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$`,
+  );
+  if (
+    !legacy.test(parsed) &&
+    (typeof operationId !== "string" ||
+      !uuid.test(operationId) ||
+      parsed !== `internal-${kind}:${operationId}`)
+  )
+    throw new Error("Administrator payment history data is invalid");
+  return parsed;
+}
+
 function optionalTimestamp(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   const parsed = requiredString(value);
@@ -289,9 +309,21 @@ function parseEvent(value: unknown): AdministratorPaymentHistoryEvent {
     outcome: optionalCode(event.outcome, outcomes),
     reasonCode: optionalCode(event.reasonCode, reasons),
     providerOperationId: optionalString(event.providerOperationId),
-    providerRequestId: optionalString(event.providerRequestId),
-    providerReference: optionalString(event.providerReference),
-    movementReference: optionalString(event.movementReference),
+    providerRequestId: supportReference(
+      event.providerRequestId,
+      "request",
+      event.providerOperationId,
+    ),
+    providerReference: supportReference(
+      event.providerReference,
+      "reference",
+      event.providerOperationId,
+    ),
+    movementReference: supportReference(
+      event.movementReference,
+      "movement",
+      event.providerOperationId,
+    ),
     amountFils,
     currency: event.currency as "IQD" | undefined,
     providerOccurredAt: optionalTimestamp(event.providerOccurredAt),

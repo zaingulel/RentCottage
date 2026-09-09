@@ -290,6 +290,58 @@ describe("Supabase Booking Request Capture repository", () => {
     ).rejects.toThrow("Capture lease is unavailable");
   });
 
+  it.each(["succeeded", "failed"] as const)(
+    "passes only accepted %s result identity to the booking transition after evidence recording",
+    async (outcome) => {
+      const identity =
+        outcome === "succeeded"
+          ? success
+          : {
+              outcome,
+              providerRequestId: "failed-request",
+              providerReference: "failed-reference",
+              retrySafe: false,
+            };
+      const observation = {
+        ...identity,
+        evidence: {
+          operationId: "66666666-6666-4666-8666-666666666666",
+          eventId: "recorded-provider-event",
+          provenance: "fictional-provider" as const,
+          originalOutcome: outcome,
+          executedAt: "2026-09-09T00:00:00.000Z",
+          occurredAt: "2026-09-09T00:00:00.000Z",
+          closedAt: null,
+        },
+      };
+      const { repository, rpc } = setup(
+        outcome === "succeeded"
+          ? completed
+          : {
+              status: "payment-required",
+              paymentRequiredWindow: {
+                recordedAt: "2026-09-09T00:00:00.000Z",
+                deadline: "2026-09-09T00:20:00.000Z",
+              },
+            },
+      );
+      if (observation.outcome === "succeeded")
+        await repository.complete(permit, observation);
+      else await repository.recordFailure(permit, observation);
+      expect(rpc).toHaveBeenCalledExactlyOnceWith(
+        outcome === "succeeded"
+          ? "complete_booking_request_capture"
+          : "record_booking_request_capture_failure",
+        {
+          target_booking_request_id: permit.bookingRequestId,
+          target_lease_generation: permit.leaseGeneration,
+          target_lease_token: permit.leaseToken,
+          target_provider_result: identity,
+        },
+      );
+    },
+  );
+
   it("completes with the original lease and provider result and rehydrates immutable ledger-backed evidence", async () => {
     const { repository, rpc } = setup(completed);
     const result = await repository.complete(permit, success);

@@ -1,3 +1,4 @@
+import { paymentQueryReferencesAreValid } from "@/payment/payment-operation-execution";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -129,10 +130,10 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
         !bindingMatches(permit.binding, value.binding) ||
         !bindingMatches(providerIdentity, permit.binding.providerIdentity) ||
         (value.status === "reconcile-expiry" &&
-          (typeof value.providerRequestId !== "string" ||
-            !value.providerRequestId.trim() ||
-            typeof value.providerReference !== "string" ||
-            !value.providerReference.trim()))
+          !paymentQueryReferencesAreValid(
+            value.providerRequestId,
+            value.providerReference,
+          ))
       )
         throw new Error("Payment Required expiry data is invalid");
       return value.status === "release" || value.status === "refund"
@@ -141,8 +142,8 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
             status: "reconcile-expiry",
             permit,
             binding: expiryBinding(permit),
-            providerRequestId: value.providerRequestId as string,
-            providerReference: value.providerReference as string,
+            providerRequestId: value.providerRequestId as string | null,
+            providerReference: value.providerReference as string | null,
           };
     }
     if (value.status === "reconcile-recovery") {
@@ -151,10 +152,10 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
         permit.binding.bookingRequestId !== bookingRequestId ||
         !bindingMatches(permit.binding, value.binding) ||
         !bindingMatches(providerIdentity, permit.binding.providerIdentity) ||
-        typeof value.providerRequestId !== "string" ||
-        !value.providerRequestId.trim() ||
-        typeof value.providerReference !== "string" ||
-        !value.providerReference.trim()
+        !paymentQueryReferencesAreValid(
+          value.providerRequestId,
+          value.providerReference,
+        )
       )
         throw new Error("Payment Required expiry data is invalid");
       return {
@@ -168,8 +169,8 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
           amountFils: permit.binding.amountFils,
           currency: "IQD",
         },
-        providerRequestId: value.providerRequestId,
-        providerReference: value.providerReference,
+        providerRequestId: value.providerRequestId as string | null,
+        providerReference: value.providerReference as string | null,
       };
     }
     throw new Error("Payment Required expiry data is invalid");

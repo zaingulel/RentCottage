@@ -1,3 +1,4 @@
+import type { PaymentOperationAdmission } from "./payment-operation-execution";
 import type { BookingRequestPaymentRecoveryPermit } from "./booking-request-payment-recovery-contract";
 import type { BookingRequestPaymentRequiredExpiryPermit } from "./booking-request-payment-required-expiry-contract";
 
@@ -64,9 +65,25 @@ export interface ProviderOperationBinding {
 
 export interface ProviderOperationRequest extends ProviderOperationBinding {
   readonly executionPermit: ProviderExecutionPermit | null;
+  readonly admission?: PaymentOperationAdmission;
 }
 
-export type ProviderOperationResult =
+export interface ProviderObservationIdentity {
+  readonly operationId: string;
+  readonly eventId: string;
+  readonly provenance:
+    | "fictional-provider"
+    | "provider-event"
+    | "legacy-simulated";
+  readonly originalOutcome: ProviderOutcome | null;
+  readonly executedAt: string | null;
+  readonly occurredAt: string | null;
+  readonly closedAt: string | null;
+}
+
+export type ProviderOperationResult = {
+  readonly evidence?: ProviderObservationIdentity;
+} & (
   | {
       readonly outcome: "not-executed";
     }
@@ -87,7 +104,8 @@ export type ProviderOperationResult =
       readonly providerRequestId: string;
       readonly providerReference: string;
       readonly movementReference: string;
-    };
+    }
+);
 
 export interface PaymentProviderIdentity {
   readonly provider: string;
@@ -125,6 +143,7 @@ export interface PaymentProviderAdapter {
 }
 
 export interface ProviderReconciliationQuery extends ProviderOperationBinding {
+  readonly admission?: PaymentOperationAdmission;
   readonly recoveryPermit?: BookingRequestPaymentRecoveryPermit;
   readonly expiryPermit?: BookingRequestPaymentRequiredExpiryPermit;
   readonly providerRequestId: string | null;

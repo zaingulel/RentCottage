@@ -1,3 +1,8 @@
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
+import {
+  SupabasePaymentOperationExecutionRepository,
+  SupabaseSimulatorEffectRepository,
+} from "@/payment/supabase-payment-operation-execution";
 import {
   createBookingRequestPaymentRecovery,
   type PaymentRecoveryStatus,
@@ -49,19 +54,25 @@ export async function runScheduledBookingRequestCapture(
       },
     );
     const provider = new DurablePaymentSimulator({
-      client,
+      effects: new SupabaseSimulatorEffectRepository(client),
       now: () => new Date().toISOString(),
+    });
+    const operations = createPaymentOperationExecution({
+      repository: new SupabasePaymentOperationExecutionRepository(client),
+      provider: provider,
     });
     processRecoveryDue = createBookingRequestPaymentRecovery({
       repository: new SupabaseBookingRequestPaymentRecoveryRepository(
         client,
         client,
       ),
-      provider,
+
+      operations,
     }).processDue;
     processDue = createBookingRequestCaptureProcessing({
       repository: new SupabaseBookingRequestCaptureRepository(client),
       provider,
+      operations,
       confirmation: createBookingRequestConfirmation({
         repository: new SupabaseBookingRequestConfirmationRepository(client),
       }),

@@ -1,3 +1,9 @@
+// SQL arrangement mirrors admission, isolated effect, and explicit recording.
+const paymentEvidenceSql =
+  "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
+  readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
+  "\n-- END PAYMENT EVIDENCE FIXTURE\n";
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { createRequire } from "node:module";
 import { createClient } from "@supabase/supabase-js";
@@ -550,28 +556,35 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const harness = createLocalSupabaseConcurrencyHarness();
     harness.guardDisposableLocalDatabase();
     const failureId = harness.runSql(
-      `select id from public.booking_requests where booking_request_reference='${failureReference}';`,
+      paymentEvidenceSql +
+        `select id from public.booking_requests where booking_request_reference='${failureReference}';`,
     );
     expect(failureId).toMatch(/^[0-9a-f-]{36}$/);
     const observeFailure = () =>
       JSON.parse(
-        harness.runSql(`select jsonb_build_object(
+        harness.runSql(
+          paymentEvidenceSql +
+            `select jsonb_build_object(
       'work',(select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id='${failureId}'),
-      'provider',(select to_jsonb(operation) from public.simulated_payment_provider_operations operation join public.booking_request_capture_work work on work.payment_lifecycle_id=operation.payment_lifecycle_id where work.booking_request_id='${failureId}' and operation.operation_kind='capture'),
+      'provider',(select pg_temp.payment_fixture_operation_json(operation) from public.payment_provider_operations operation join public.booking_request_capture_work work on work.payment_lifecycle_id=operation.payment_lifecycle_id where work.booking_request_id='${failureId}' and operation.operation_kind='capture'),
       'notifications',(select count(*) from public.booking_request_status_notifications where booking_request_id='${failureId}' and status='payment-required'),
       'hold',(select to_jsonb(commitment) from public.cottage_booking_period_commitments commitment join public.booking_requests request on request.booking_period_commitment_id=commitment.id where request.id='${failureId}'),
       'occupancies',(select jsonb_agg(to_jsonb(occupancy) order by shift_id,service_day) from public.cottage_booking_period_occupancies occupancy join public.booking_requests request on request.booking_period_commitment_id=occupancy.booking_period_commitment_id where request.id='${failureId}'),
       'intentActive',(select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id='${failureId}'),
       'confirmations',(select count(*) from public.booking_confirmations where booking_request_id='${failureId}')
-    );`),
+    );`,
+        ),
       );
     const held = observeFailure();
-    harness.runSql(`set role service_role;
+    harness.runSql(
+      paymentEvidenceSql +
+        `set role service_role;
       with leased as (select public.lease_booking_request_capture_work('${failureId}',
         '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result)
-      select public.execute_simulated_booking_request_capture(result->'permit','failed') from leased;
+      select pg_temp.capture_execute(result->'permit','failed') from leased;
       reset role;
-      update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${failureId}';`);
+      update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${failureId}';`,
+    );
     expect((await page.request.get("/__scheduled")).ok()).toBe(true);
     // Both existing pages must refresh from real Worker-persisted failure evidence.
     await expect(page.getByRole("status")).toContainText("Payment Required", {
@@ -606,16 +619,18 @@ test("a verified Customer double-submit creates one Pending request and one mini
     expect(observeFailure()).toEqual(terminal);
 
     const windowDefinition = harness.runSql(
-      "select pg_get_functiondef('public.booking_request_payment_required_window(public.booking_requests)'::regprocedure);",
+      paymentEvidenceSql +
+        "select pg_get_functiondef('public.booking_request_payment_required_window(public.booking_requests)'::regprocedure);",
     );
     expect(windowDefinition).toContain("clock_timestamp()");
     try {
       // Pin only database read time at the exact boundary; immutable stored timestamps stay untouched.
       harness.runSql(
-        windowDefinition.replace(
-          "clock_timestamp()",
-          "work.payment_required_deadline",
-        ),
+        paymentEvidenceSql +
+          windowDefinition.replace(
+            "clock_timestamp()",
+            "work.payment_required_deadline",
+          ),
       );
       await expect(page.getByRole("status")).toContainText(
         "deadline has passed",
@@ -629,7 +644,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await captureViews("payment-required-elapsed", failureReference);
       expect(observeFailure()).toEqual(terminal);
     } finally {
-      harness.runSql(windowDefinition);
+      harness.runSql(paymentEvidenceSql + windowDefinition);
     }
     // Authenticate a different Customer through the real public client before exercising the command.
     const otherCustomer = createClient(
@@ -651,17 +666,20 @@ test("a verified Customer double-submit creates one Pending request and one mini
     });
     if (role.error) throw role.error;
     const recoveryGraph = () =>
-      harness.runSql(`select jsonb_build_object(
+      harness.runSql(
+        paymentEvidenceSql +
+          `select jsonb_build_object(
       'attempts',(select coalesce(jsonb_agg(to_jsonb(attempts) order by id),'[]') from public.booking_request_payment_recovery_attempts attempts where booking_request_id='${failureId}'),
       'operations',(select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id where attempts.booking_request_id='${failureId}'),
-      'ledger',(select jsonb_agg(to_jsonb(ledger) order by ledger.id) from public.simulated_payment_provider_operations ledger),
+      'ledger',(select jsonb_agg(pg_temp.payment_fixture_operation_json(ledger) order by ledger.id) from public.payment_provider_operations ledger),
       'requests',(select jsonb_agg(to_jsonb(requests) order by id) from public.booking_requests requests),
       'snapshots',(select jsonb_agg(to_jsonb(snapshots) order by id) from public.booking_snapshots snapshots),
       'claims',(select jsonb_agg(to_jsonb(claims) order by id) from public.booking_request_authorization_claims claims),
       'submissions',(select jsonb_agg(to_jsonb(submissions) order by id) from public.booking_request_submission_attempts submissions),
       'receipts',(select jsonb_agg(to_jsonb(receipts) order by id) from public.booking_receipts receipts),
       'notifications',(select jsonb_agg(to_jsonb(notifications) order by id) from public.booking_request_status_notifications notifications),
-      'inventory',(select jsonb_agg(to_jsonb(inventory) order by id) from public.cottage_inventory_commitments inventory));`);
+      'inventory',(select jsonb_agg(to_jsonb(inventory) order by id) from public.cottage_inventory_commitments inventory));`,
+      );
     const beforeDenial = recoveryGraph();
     const denied = await otherCustomer.rpc(
       "claim_customer_booking_request_payment_recovery",
@@ -675,18 +693,21 @@ test("a verified Customer double-submit creates one Pending request and one mini
     expect(recoveryGraph()).toEqual(beforeDenial);
     expect(observeFailure()).toEqual(terminal);
     const confirmationDefinition = harness.runSql(
-      "select pg_get_functiondef('public.finalize_booking_request_confirmation(uuid,jsonb)'::regprocedure);",
+      paymentEvidenceSql +
+        "select pg_get_functiondef('public.finalize_booking_request_confirmation(uuid,jsonb)'::regprocedure);",
     );
     const recoveryExpiryDefinition = harness.runSql(
-      "select pg_get_functiondef('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'::regprocedure);",
+      paymentEvidenceSql +
+        "select pg_get_functiondef('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'::regprocedure);",
     );
     try {
       // Interrupt confirmation after the real replacement-payment action records pre-deadline success.
       harness.runSql(
-        confirmationDefinition.replace(
-          "begin\n",
-          "begin\n  raise exception 'Injected confirmation delivery interruption';\n",
-        ),
+        paymentEvidenceSql +
+          confirmationDefinition.replace(
+            "begin\n",
+            "begin\n  raise exception 'Injected confirmation delivery interruption';\n",
+          ),
       );
       await page.goto(`/en/booking-requests/${failureReference}`);
       await page
@@ -700,7 +721,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await expect
         .poll(() =>
           harness.runSql(
-            `select count(*) from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id join public.booking_request_capture_work work on work.booking_request_id=attempts.booking_request_id where attempts.booking_request_id='${failureId}' and operations.step='replacement-capture' and operations.outcome='succeeded' and operations.authoritative_outcome_at < work.payment_required_deadline;`,
+            paymentEvidenceSql +
+              `select count(*) from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id join public.booking_request_capture_work work on work.booking_request_id=attempts.booking_request_id where attempts.booking_request_id='${failureId}' and operations.step='replacement-capture' and operations.outcome='succeeded' and operations.authoritative_outcome_at < work.payment_required_deadline;`,
           ),
         )
         .toBe("1");
@@ -714,7 +736,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await expect(page.getByRole("status")).toContainText("remain held");
       expect(observeFailure().confirmations).toBe(0);
       harness.runSql(
-        `create function public.confirmation_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${failureId}'$$;`,
+        paymentEvidenceSql +
+          `create function public.confirmation_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${failureId}'$$;`,
       );
       for (const definition of [
         windowDefinition,
@@ -722,14 +745,16 @@ test("a verified Customer double-submit creates one Pending request and one mini
         confirmationDefinition,
       ])
         harness.runSql(
-          definition.replaceAll(
-            "clock_timestamp()",
-            "public.confirmation_expiry_now()",
-          ),
+          paymentEvidenceSql +
+            definition.replaceAll(
+              "clock_timestamp()",
+              "public.confirmation_expiry_now()",
+            ),
         );
       const prepared = JSON.parse(
         harness.runSql(
-          `set role service_role;select public.prepare_booking_request_payment_required_expiry('${failureId}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}');`,
+          paymentEvidenceSql +
+            `set role service_role;select public.prepare_booking_request_payment_required_expiry('${failureId}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}');`,
         ),
       );
       expect(prepared.status).toBe("processing");
@@ -744,12 +769,14 @@ test("a verified Customer double-submit creates one Pending request and one mini
       );
       expect(
         harness.runSql(
-          `select state from public.booking_request_payment_required_expiry_work where booking_request_id='${failureId}';`,
+          paymentEvidenceSql +
+            `select state from public.booking_request_payment_required_expiry_work where booking_request_id='${failureId}';`,
         ),
       ).toBe("processing");
       expect(
         harness.runSql(
-          `select count(*) from public.booking_request_payment_required_expiry_operations where booking_request_id='${failureId}';`,
+          paymentEvidenceSql +
+            `select count(*) from public.booking_request_payment_required_expiry_operations where booking_request_id='${failureId}';`,
         ),
       ).toBe("0");
     } finally {
@@ -758,9 +785,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
         recoveryExpiryDefinition,
         confirmationDefinition,
       ])
-        harness.runSql(definition);
+        harness.runSql(paymentEvidenceSql + definition);
       harness.runSql(
-        "drop function if exists public.confirmation_expiry_now();",
+        paymentEvidenceSql +
+          "drop function if exists public.confirmation_expiry_now();",
       );
     }
     const recovered = observeFailure();
@@ -772,7 +800,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
     expect(recovered.confirmations).toBe(1);
     expect(
       harness.runSql(
-        `select count(*)||':'||sum(physical_execution_count) from public.simulated_payment_provider_operations ledger join public.booking_request_payment_recovery_attempts attempts on attempts.id=ledger.recovery_attempt_id where attempts.booking_request_id='${failureId}';`,
+        paymentEvidenceSql +
+          `select count(*)||':'||sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=ledger.id)) from public.payment_provider_operations ledger join public.booking_request_payment_recovery_attempts attempts on attempts.id=ledger.recovery_attempt_id where attempts.booking_request_id='${failureId}';`,
       ),
     ).toBe("3:3");
     await captureViews("paid-confirmed", failureReference);
@@ -817,15 +846,19 @@ test("a verified Customer double-submit creates one Pending request and one mini
       { timeout: 15000 },
     );
     const expiryId = harness.runSql(
-      `select id from public.booking_requests where booking_request_reference='${expiryReference}';`,
+      paymentEvidenceSql +
+        `select id from public.booking_requests where booking_request_reference='${expiryReference}';`,
     );
     expect(expiryId).toMatch(/^[0-9a-f-]{36}$/);
     const identity =
       '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
-    harness.runSql(`set role service_role;
+    harness.runSql(
+      paymentEvidenceSql +
+        `set role service_role;
       with leased as (select public.lease_booking_request_capture_work('${expiryId}','${identity}') result)
-      select public.execute_simulated_booking_request_capture(result->'permit','failed') from leased;
-      reset role;update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${expiryId}';`);
+      select pg_temp.capture_execute(result->'permit','failed') from leased;
+      reset role;update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${expiryId}';`,
+    );
     expect((await page.request.get("/__scheduled")).ok()).toBe(true);
     await expect(page.getByRole("status")).toContainText("Payment Required", {
       timeout: 15000,
@@ -849,15 +882,18 @@ test("a verified Customer double-submit creates one Pending request and one mini
         availability: availability.data,
         calendar: calendar.data,
         ...JSON.parse(
-          harness.runSql(`select jsonb_build_object(
+          harness.runSql(
+            paymentEvidenceSql +
+              `select jsonb_build_object(
       'request',(select to_jsonb(r) from public.booking_requests r where id='${expiryId}'),
       'capture',(select to_jsonb(w) from public.booking_request_capture_work w where booking_request_id='${expiryId}'),
       'expiry',(select to_jsonb(w) from public.booking_request_payment_required_expiry_work w where booking_request_id='${expiryId}'),
       'notices',(select coalesce(jsonb_agg(to_jsonb(n) order by id),'[]') from public.booking_request_status_notifications n where booking_request_id='${expiryId}' and status='expired'),
       'confirmations',(select count(*) from public.booking_confirmations where booking_request_id='${expiryId}'),
-      'ledger',(select jsonb_agg(to_jsonb(o) order by o.id) from public.simulated_payment_provider_operations o join public.booking_request_capture_work w on w.authorization_claim_id=o.claim_id where w.booking_request_id='${expiryId}'),
+      'ledger',(select jsonb_agg(pg_temp.payment_fixture_operation_json(o) order by o.id) from public.payment_provider_operations o join public.booking_request_capture_work w on w.authorization_claim_id=o.claim_id where w.booking_request_id='${expiryId}'),
       'hold',(select c.status from public.cottage_booking_period_commitments c join public.booking_requests r on r.booking_period_commitment_id=c.id where r.id='${expiryId}'),
-      'occupancies',(select jsonb_agg(to_jsonb(o) order by shift_id,service_day) from public.cottage_booking_period_occupancies o join public.booking_requests r on r.booking_period_commitment_id=o.booking_period_commitment_id where r.id='${expiryId}'));`),
+      'occupancies',(select jsonb_agg(to_jsonb(o) order by shift_id,service_day) from public.cottage_booking_period_occupancies o join public.booking_requests r on r.booking_period_commitment_id=o.booking_period_commitment_id where r.id='${expiryId}'));`,
+          ),
         ),
       };
     };
@@ -866,14 +902,20 @@ test("a verified Customer double-submit creates one Pending request and one mini
       "booking_request_payment_required_window(public.booking_requests)",
       "claim_due_booking_request_payment_required_expiries(integer,jsonb)",
       "prepare_booking_request_payment_required_expiry(uuid,jsonb)",
-      "execute_simulated_booking_request_payment_required_expiry(jsonb,text)",
-      "query_simulated_booking_request_payment_required_expiry(jsonb,text,text,text)",
+      "persist_simulated_payment_effect(jsonb,jsonb)",
+      "resolve_simulated_payment_effect(jsonb,text,jsonb)",
+      "seal_simulated_payment_absence(jsonb)",
+      "validate_payment_provider_observation(jsonb,uuid)",
+      "accept_payment_provider_observation(uuid,jsonb)",
+      "admit_booking_request_payment_required_expiry(jsonb)",
+      "reload_booking_request_payment_operation(jsonb,text,text)",
       "finalize_booking_request_payment_required_expiry(uuid)",
       "booking_request_payment_required_expiry_completed(uuid)",
     ];
     const definitions = signatures.map((signature) =>
       harness.runSql(
-        `select pg_get_functiondef('public.${signature}'::regprocedure);`,
+        paymentEvidenceSql +
+          `select pg_get_functiondef('public.${signature}'::regprocedure);`,
       ),
     );
     const clocked = definitions.map((definition) =>
@@ -884,9 +926,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
     );
     try {
       harness.runSql(
-        `create function public.live_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${expiryId}'$$;`,
+        paymentEvidenceSql +
+          `create function public.live_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${expiryId}'$$;`,
       );
-      for (const definition of clocked) harness.runSql(definition);
+      for (const definition of clocked)
+        harness.runSql(paymentEvidenceSql + definition);
       // Both pages stay mounted across the real fixed deadline and later scheduled observations.
       await expect(page.getByRole("status")).toContainText(
         "deadline has passed",
@@ -898,15 +942,16 @@ test("a verified Customer double-submit creates one Pending request and one mini
       );
       await captureViews("payment-required-elapsed", expiryReference);
       harness.runSql(
-        `set role service_role;select public.execute_simulated_booking_request_payment_required_expiry(public.prepare_booking_request_payment_required_expiry('${expiryId}','${identity}')->'permit','indeterminate');`,
+        paymentEvidenceSql +
+          `set role service_role;select pg_temp.expiry_execute(public.prepare_booking_request_payment_required_expiry('${expiryId}','${identity}')->'permit','indeterminate');`,
       );
       // Model a provider which still cannot establish the existing release outcome.
       const unresolvedQuery = clocked[4].replace(
-        "begin\n",
-        "begin\n  target_outcome := 'indeterminate';\n",
+        "  if jsonb_typeof(target_result#>'{evidence,occurredAt}')",
+        "  return winner.result;\n  if jsonb_typeof(target_result#>'{evidence,occurredAt}')",
       );
       expect(unresolvedQuery).not.toBe(clocked[4]);
-      harness.runSql(unresolvedQuery);
+      harness.runSql(paymentEvidenceSql + unresolvedQuery);
       expect((await page.request.get("/__scheduled")).ok()).toBe(true);
       await expect(page.getByRole("status")).toContainText(
         "Support needs to review this payment",
@@ -937,7 +982,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       ).toBe("pending_hold");
       await captureViews("payment-expiry-quarantined", expiryReference);
       // The actual scheduled handler cannot restart an uncertain release after quarantine.
-      harness.runSql(clocked[4]);
+      harness.runSql(paymentEvidenceSql + clocked[4]);
       expect((await page.request.get("/__scheduled")).ok()).toBe(true);
       await expect(page.getByRole("status")).toContainText(
         "Payment needs review",
@@ -946,9 +991,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await captureViews("payment-expiry-quarantined", expiryReference);
       expect(observeFailure()).toEqual(recovered);
     } finally {
-      for (const definition of definitions) harness.runSql(definition);
+      for (const definition of definitions)
+        harness.runSql(paymentEvidenceSql + definition);
       harness.runSql(
-        "drop function if exists public.live_payment_expiry_now();",
+        paymentEvidenceSql +
+          "drop function if exists public.live_payment_expiry_now();",
       );
     }
     await otherCustomer.auth.signOut();

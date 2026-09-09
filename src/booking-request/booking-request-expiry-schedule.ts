@@ -1,3 +1,8 @@
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
+import {
+  SupabasePaymentOperationExecutionRepository,
+  SupabaseSimulatorEffectRepository,
+} from "@/payment/supabase-payment-operation-execution";
 import { createClient } from "@supabase/supabase-js";
 
 import { DurablePaymentSimulator } from "../payment/durable-payment-simulator-core";
@@ -51,8 +56,12 @@ export async function runScheduledBookingRequestExpiry(
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
     const provider = new DurablePaymentSimulator({
-      client,
+      effects: new SupabaseSimulatorEffectRepository(client),
       now: () => new Date().toISOString(),
+    });
+    const operations = createPaymentOperationExecution({
+      repository: new SupabasePaymentOperationExecutionRepository(client),
+      provider: provider,
     });
     processDue ??= createBookingRequestLifecycle({
       repository: new SupabaseBookingRequestLifecycleRepository(
@@ -60,12 +69,14 @@ export async function runScheduledBookingRequestExpiry(
         provider.identity,
       ),
       provider,
+      operations,
     }).processDue;
     paymentRequiredDue ??= createBookingRequestPaymentRequiredExpiry({
       repository: new SupabaseBookingRequestPaymentRequiredExpiryRepository(
         client,
       ),
       provider,
+      operations,
     }).processDue;
   }
   const drains = await Promise.allSettled([

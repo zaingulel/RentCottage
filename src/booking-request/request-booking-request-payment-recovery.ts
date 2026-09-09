@@ -1,4 +1,10 @@
 import "server-only";
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
+import {
+  SupabasePaymentOperationExecutionRepository,
+  SupabaseSimulatorEffectRepository,
+} from "@/payment/supabase-payment-operation-execution";
+
 import { createClient } from "@supabase/supabase-js";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { getServerEnvironment } from "@/config/server-runtime";
@@ -14,14 +20,20 @@ export async function createRequestBookingRequestPaymentRecovery() {
   const serviceClient = createClient(supabase.url, supabase.secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  const provider = new DurablePaymentSimulator({
+    effects: new SupabaseSimulatorEffectRepository(serviceClient),
+    now: () => new Date().toISOString(),
+  });
+  const operations = createPaymentOperationExecution({
+    repository: new SupabasePaymentOperationExecutionRepository(serviceClient),
+    provider: provider,
+  });
   return createBookingRequestPaymentRecovery({
     repository: new SupabaseBookingRequestPaymentRecoveryRepository(
       customerClient,
       serviceClient,
     ),
-    provider: new DurablePaymentSimulator({
-      client: serviceClient,
-      now: () => new Date().toISOString(),
-    }),
+
+    operations,
   });
 }

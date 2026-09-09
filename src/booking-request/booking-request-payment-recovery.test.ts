@@ -1,3 +1,4 @@
+import { withRecordedProviderResults } from "../../tests/fixtures/payment-operation-execution.fixtures";
 import { recoveryPermitFixture } from "../../tests/fixtures/payment-recovery.fixtures";
 import { describe, expect, it, vi } from "vitest";
 
@@ -51,20 +52,22 @@ describe("Customer Booking Request payment recovery", () => {
         providerReference: "reference",
         movementReference: "movement",
       });
-    const service = createBookingRequestPaymentRecovery({
-      repository,
-      provider: {
-        identity: {
-          provider: "fictional-payments",
-          environment: "local-test",
-          merchantId: "fictional-merchant",
-          terminalId: "fictional-terminal",
+    const service = createBookingRequestPaymentRecovery(
+      withRecordedProviderResults({
+        repository,
+        provider: {
+          identity: {
+            provider: "fictional-payments",
+            environment: "local-test",
+            merchantId: "fictional-merchant",
+            terminalId: "fictional-terminal",
+          },
+          execute,
+          query: vi.fn(),
+          verifySignedEvent: vi.fn(),
         },
-        execute,
-        query: vi.fn(),
-        verifySignedEvent: vi.fn(),
-      },
-    });
+      }),
+    );
 
     await expect(
       service.execute({ bookingRequestId, commandKey: attemptId }),
@@ -102,15 +105,17 @@ it("reconciles an admitted unresolved operation without another physical executi
     due: vi.fn().mockResolvedValue([]),
     finalize: vi.fn(),
   };
-  const service = createBookingRequestPaymentRecovery({
-    repository,
-    provider: {
-      identity: {} as never,
-      execute,
-      query,
-      verifySignedEvent: vi.fn(),
-    },
-  });
+  const service = createBookingRequestPaymentRecovery(
+    withRecordedProviderResults({
+      repository,
+      provider: {
+        identity: {} as never,
+        execute,
+        query,
+        verifySignedEvent: vi.fn(),
+      },
+    }),
+  );
   await service.execute({ bookingRequestId, commandKey: attemptId });
   expect(query).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -132,18 +137,163 @@ it("continues admitted work after one recovery item is unavailable", async () =>
       .mockResolvedValue({ status: "succeeded" }),
     finalize: vi.fn(),
   };
-  const service = createBookingRequestPaymentRecovery({
-    repository,
-    provider: {
-      identity: {} as never,
-      execute: vi.fn(),
-      query: vi.fn(),
-      verifySignedEvent: vi.fn(),
-    },
-  });
+  const service = createBookingRequestPaymentRecovery(
+    withRecordedProviderResults({
+      repository,
+      provider: {
+        identity: {} as never,
+        execute: vi.fn(),
+        query: vi.fn(),
+        verifySignedEvent: vi.fn(),
+      },
+    }),
+  );
   await expect(service.processDue(50)).resolves.toEqual([
     { status: "unavailable" },
     { status: "succeeded" },
   ]);
   expect(repository.finalize).toHaveBeenCalledExactlyOnceWith(second);
+});
+
+describe("recovery through explicit durable recording", () => {
+  it("cannot advance the recovery step while its provider result is unrecorded", async () => {
+    const { createPaymentOperationExecution } =
+      await import("@/payment/payment-operation-execution");
+    const permit = recoveryPermitFixture("original-release");
+    const binding = {
+      kind: "release" as const,
+      paymentLifecycleId: permit.binding.paymentLifecycleId,
+      logicalOperationId: permit.operationId,
+      attemptId: permit.idempotencyKey,
+      amountFils: permit.binding.amountFils,
+      currency: "IQD" as const,
+    };
+    const admission = {
+      purpose: permit.purpose,
+      operationId: "operation-1",
+      providerIdentity: permit.binding.providerIdentity,
+      binding,
+      idempotencyKey: permit.idempotencyKey,
+      requestFingerprint: "a".repeat(64),
+      notBefore: null,
+      notAfter: permit.notAfter,
+      mode: "execute" as const,
+    };
+    let recorded = false;
+    let releaseRecording!: () => void;
+    let reachedRecording!: () => void;
+    const atRecording = new Promise<void>((resolve) => {
+      reachedRecording = resolve;
+    });
+    const mayRecord = new Promise<void>((resolve) => {
+      releaseRecording = resolve;
+    });
+    const provider: PaymentProviderAdapter = {
+      identity: permit.binding.providerIdentity,
+      execute: vi.fn(async () => ({
+        outcome: "succeeded" as const,
+        providerRequestId: "request",
+        providerReference: "reference",
+        movementReference: "movement",
+        evidence: {
+          operationId: "operation-1",
+          eventId: "event-1",
+          provenance: "fictional-provider" as const,
+          originalOutcome: "succeeded" as const,
+          executedAt: "2026-09-06T12:00:00Z",
+          occurredAt: "2026-09-06T12:00:00Z",
+          closedAt: null,
+        },
+      })),
+      query: vi.fn(),
+      verifySignedEvent: () => false,
+    };
+    const operations = createPaymentOperationExecution({
+      provider,
+      repository: {
+        admit: async () => admission,
+        reload: async () => admission,
+        record: async (_admission, result) => {
+          reachedRecording();
+          await mayRecord;
+          recorded = true;
+          return result;
+        },
+      },
+    });
+    const repository = {
+      admit: vi.fn(),
+      due: vi.fn(),
+      finalize: vi.fn(),
+      lease: vi.fn(async () =>
+        recorded
+          ? { status: "succeeded" as const }
+          : { status: "leased" as const, permit, binding },
+      ),
+    };
+    const recovery = createBookingRequestPaymentRecovery({
+      repository,
+      operations,
+    });
+    const pending = recovery.resume(attemptId);
+    await atRecording;
+    expect(recorded).toBe(false);
+    expect(repository.lease).toHaveBeenCalledTimes(1);
+    expect(repository.finalize).not.toHaveBeenCalled();
+    releaseRecording();
+    await expect(pending).resolves.toEqual({ status: "succeeded" });
+    expect(repository.finalize).toHaveBeenCalledExactlyOnceWith(attemptId);
+  });
+});
+
+it("keeps recovery blocked when admission denies an already leased operation", async () => {
+  const { createPaymentOperationExecution } =
+    await import("@/payment/payment-operation-execution");
+  const { SupabasePaymentOperationExecutionRepository } =
+    await import("@/payment/supabase-payment-operation-execution");
+  const permit = recoveryPermitFixture("original-release");
+  const binding = {
+    kind: "release" as const,
+    paymentLifecycleId: permit.binding.paymentLifecycleId,
+    logicalOperationId: permit.binding.logicalOperationId,
+    attemptId: permit.binding.physicalAttemptId,
+    amountFils: permit.binding.amountFils,
+    currency: "IQD" as const,
+  };
+  const rpc = vi
+    .fn()
+    .mockResolvedValue({ data: { status: "not-admitted" }, error: null });
+  const provider: PaymentProviderAdapter = {
+    identity: permit.binding.providerIdentity,
+    execute: vi.fn(),
+    query: vi.fn(),
+    verifySignedEvent: vi.fn(),
+  };
+  const repository = {
+    admit: vi
+      .fn()
+      .mockResolvedValue({ status: "processing", attemptId, deadline }),
+    lease: vi.fn().mockResolvedValue({ status: "leased", permit, binding }),
+    due: vi.fn(),
+    finalize: vi.fn(),
+  };
+  const service = createBookingRequestPaymentRecovery({
+    repository,
+    operations: createPaymentOperationExecution({
+      provider,
+      repository: new SupabasePaymentOperationExecutionRepository({
+        rpc,
+      } as never),
+    }),
+  });
+  await expect(
+    service.execute({ bookingRequestId, commandKey: attemptId }),
+  ).resolves.toEqual({ status: "blocked" });
+  expect(rpc).toHaveBeenCalledExactlyOnceWith(
+    "admit_booking_request_payment_recovery",
+    { target_permit: permit },
+  );
+  expect(provider.execute).not.toHaveBeenCalled();
+  expect(provider.query).not.toHaveBeenCalled();
+  expect(repository.finalize).not.toHaveBeenCalled();
 });

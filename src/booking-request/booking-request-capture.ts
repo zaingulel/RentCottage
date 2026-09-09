@@ -1,3 +1,5 @@
+import { recordedPaymentResult } from "@/payment/payment-operation-execution";
+import type { PaymentOperationExecution } from "@/payment/payment-operation-execution";
 import type {
   BookingRequestCaptureExecutionPermit,
   BookingRequestCaptureSnapshot,
@@ -50,10 +52,12 @@ export interface BookingRequestCapture {
 
 export function createBookingRequestCapture({
   repository,
+  operations,
   provider,
 }: {
   repository: BookingRequestCaptureRepository;
   provider: PaymentProviderAdapter;
+  operations: PaymentOperationExecution;
 }): BookingRequestCapture {
   return {
     async execute(bookingRequestId) {
@@ -72,15 +76,17 @@ export function createBookingRequestCapture({
           "Capture permit does not match the Booking Request or provider",
         );
       }
-      const result = await provider.execute({
-        kind: "capture",
-        paymentLifecycleId: permit.paymentLifecycleId,
-        logicalOperationId: permit.captureLogicalOperationId,
-        attemptId: permit.capturePhysicalAttemptId,
-        amountFils: permit.amountFils,
-        currency: permit.currency,
-        executionPermit: permit,
-      });
+      const result = recordedPaymentResult(
+        await operations.execute({
+          kind: "capture",
+          paymentLifecycleId: permit.paymentLifecycleId,
+          logicalOperationId: permit.captureLogicalOperationId,
+          attemptId: permit.capturePhysicalAttemptId,
+          amountFils: permit.amountFils,
+          currency: permit.currency,
+          executionPermit: permit,
+        }),
+      );
       if (result.outcome === "failed") {
         return repository.recordFailure(permit, result);
       }

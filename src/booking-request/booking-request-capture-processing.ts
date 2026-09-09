@@ -1,3 +1,4 @@
+import type { PaymentOperationExecution } from "@/payment/payment-operation-execution";
 import type {
   PaymentProviderAdapter,
   PaymentProviderIdentity,
@@ -25,17 +26,24 @@ export interface BookingRequestCaptureProcessingRepository
 
 export function createBookingRequestCaptureProcessing({
   repository,
+  operations,
   provider,
   confirmation,
 }: {
   repository: BookingRequestCaptureProcessingRepository;
   provider: PaymentProviderAdapter;
+  operations: PaymentOperationExecution;
   confirmation: BookingRequestConfirmation;
 }) {
-  const capture = createBookingRequestCapture({ repository, provider });
+  const capture = createBookingRequestCapture({
+    repository,
+    provider,
+    operations,
+  });
   const recovery = createBookingRequestCaptureRecovery({
     repository,
     provider,
+    operations,
     confirmation,
   });
   return {

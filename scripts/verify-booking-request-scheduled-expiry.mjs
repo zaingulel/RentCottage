@@ -54,7 +54,7 @@ export function main(args, environment = process.env) {
       on notifications.booking_request_id = requests.id
     join public.booking_request_release_operations operations
       on operations.work_id = work.id
-    join public.simulated_payment_provider_operations provider
+    join public.payment_provider_operations provider
       on provider.payment_lifecycle_id = attempts.payment_lifecycle_id
       and provider.operation_kind = 'release'
     where requests.status = 'expired'

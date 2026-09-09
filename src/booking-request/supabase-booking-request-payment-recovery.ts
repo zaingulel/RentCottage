@@ -1,3 +1,4 @@
+import { paymentQueryReferencesAreValid } from "@/payment/payment-operation-execution";
 import {
   recoveryConfirmationEvidenceFrom,
   SupabaseBookingRequestConfirmationRepository,
@@ -89,18 +90,18 @@ export class SupabaseBookingRequestPaymentRecoveryRepository implements BookingR
       } as const;
       if (value.status === "reconcile") {
         if (
-          typeof value.providerRequestId !== "string" ||
-          !value.providerRequestId ||
-          typeof value.providerReference !== "string" ||
-          !value.providerReference
+          !paymentQueryReferencesAreValid(
+            value.providerRequestId,
+            value.providerReference,
+          )
         )
           throw new Error("Booking Request payment recovery data is invalid");
         return {
           status: "reconcile",
           permit,
           binding,
-          providerRequestId: value.providerRequestId,
-          providerReference: value.providerReference,
+          providerRequestId: value.providerRequestId as string | null,
+          providerReference: value.providerReference as string | null,
         };
       }
       return { status: "leased", permit, binding };

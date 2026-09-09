@@ -1,3 +1,4 @@
+import { historicalProviderOperationSource } from "../tests/fixtures/payment-provider-history.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -6,9 +7,10 @@ import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness();
+let paymentEvidenceInstalled = false;
 const priorVersion = "20260907200000";
 const fixture = readFileSync(
-  "supabase/tests/database/booking_request_payment_correction.test.sql",
+  "supabase/fixtures/legacy-booking_request_payment_correction.sql",
   "utf8",
 )
   .split("select no_plan();")[0]
@@ -84,7 +86,7 @@ function sourceHashes() {
       createHash("sha256")
         .update(
           harness.runSql(
-            `select coalesce(jsonb_agg(to_jsonb(source) order by to_jsonb(source)::text),'[]') from public.${table} source;`,
+            `select coalesce(jsonb_agg(to_jsonb(source) order by to_jsonb(source)::text),'[]') from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} source;`,
           ),
         )
         .digest("hex"),
@@ -101,11 +103,238 @@ function history(reference) {
   );
 }
 const olderWithoutProvider = readFileSync(
-  "supabase/tests/database/booking_request_payment_history.test.sql",
+  "supabase/fixtures/legacy-booking_request_payment_history.sql",
   "utf8",
 )
   .split("-- BEGIN HISTORY BROWSER FIXTURE")[1]
   .split("select public.append_booking_request_payment_history(")[0];
+function verifyProviderEvidenceCutover() {
+  // This stage begins at the last shipped schema, with history already installed.
+  supabase(["db", "reset", "--local", "--version", "20260908130000"]);
+  paymentEvidenceInstalled = false;
+  harness.runSql(`begin;${fixture}${expiryFixture}commit;`);
+  const literal = (value) =>
+    `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
+  const recovery = [];
+  for (const suffix of ["1001", "1441"]) {
+    const customerSuffix = suffix === "1001" ? "1002" : "1442";
+    const requestId = `60000000-0000-4000-8000-00000000${suffix}`;
+    const claimed = JSON.parse(
+      harness.runSql(`begin;
+      set request.jwt.claims='{"sub":"10000000-0000-4000-8000-00000000${customerSuffix}","role":"authenticated","aal":"aal1"}';
+      set local role authenticated;
+      select public.claim_customer_booking_request_payment_recovery('${requestId}','81000000-0000-4000-8000-00000000${suffix}','simulated-replacement'); commit;`),
+    );
+    const leased = JSON.parse(
+      harness.runSql(
+        `set role service_role; select public.lease_booking_request_payment_recovery_step('${claimed.attemptId}');`,
+      ),
+    );
+    assert.equal(leased.status, "leased");
+    const result = JSON.parse(
+      harness.runSql(
+        `set role service_role; select public.execute_simulated_booking_request_payment_recovery(${literal(leased.permit)},'${suffix === "1001" ? "succeeded" : "indeterminate"}');`,
+      ),
+    );
+    assert.equal(
+      result.outcome,
+      suffix === "1001" ? "succeeded" : "indeterminate",
+    );
+    if (suffix === "1001") {
+      // Retained historical metadata predating sticky quarantine: the original
+      // indeterminate response resolved successfully before this schema existed.
+      // This is source-fixture arrangement, not a current recovery transition.
+      harness.runSql(`update public.simulated_payment_provider_operations set original_outcome='indeterminate'
+        where recovery_attempt_id='${claimed.attemptId}' and operation_kind='release';`);
+    } else {
+      assert.equal(
+        harness.runSql(
+          `select public.booking_request_payment_quarantined('${requestId}');`,
+        ),
+        "t",
+        "A currently uncertain legacy release retains shipped sticky quarantine",
+      );
+    }
+    recovery.push({ requestId, permit: leased.permit });
+  }
+  const receipt = JSON.parse(
+    harness.runSql(`select jsonb_build_object('receiptId','legacy-pre-execution-occurrence',
+    'bookingRequestId','60000000-0000-4000-8000-000000001001','providerOperationId',id,
+    'providerIdentity',jsonb_build_object('provider',provider,'environment',environment,'merchantId',merchant_id,'terminalId',terminal_id),
+    'paymentLifecycleId',payment_lifecycle_id,'logicalOperationId',logical_operation_id,'physicalAttemptId',physical_attempt_id,
+    'kind',operation_kind,'amountFils',amount_fils,'currency',currency,'providerRequestId',provider_request_id,'providerReference',provider_reference,
+    'movementReference',movement_reference,'outcome',current_outcome,'occurredAt',created_at-interval '1 second')
+    from public.simulated_payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001' and operation_kind='capture';`),
+  );
+  const observe = (value) =>
+    JSON.parse(
+      harness.runSql(
+        `set role service_role; select public.observe_booking_request_payment_correction('${value.bookingRequestId}','${value.providerOperationId}',${literal(value)});`,
+      ),
+    );
+  assert.equal(
+    observe(receipt).status,
+    "recorded",
+    "The shipped correction accepts this historical occurrence before row creation",
+  );
+  harness.runSql(`select public.append_booking_request_payment_history('73000000-0000-4000-8000-000000001001','60000000-0000-4000-8000-000000001001',
+    'state-transition','provider-operation','imported',target_provider_operation_id=>'${receipt.providerOperationId}',target_outcome=>'failed',target_source_recorded_at=>'2026-01-01T00:00:00Z');`);
+  const graph = sourceHashes();
+  const retainedHistory = harness.runSql(
+    "select jsonb_agg(to_jsonb(history) order by sequence) from public.booking_request_payment_history history;",
+  );
+  const sequence = harness.runSql(
+    "select jsonb_build_array(last_value,is_called) from public.booking_request_payment_history_sequence_seq;",
+  );
+  const catalog = (table) =>
+    JSON.parse(
+      harness.runSql(`select jsonb_build_object('table',tables.oid,'type',tables.reltype,
+    'indexes',(select jsonb_agg(indexrelid order by indexrelid) from pg_index where indrelid=tables.oid),
+    'foreignKeys',(select jsonb_agg(jsonb_build_array(oid,conname,conrelid,confrelid) order by oid) from pg_constraint where contype='f' and (conrelid=tables.oid or confrelid=tables.oid)))
+    from pg_class tables where tables.oid='public.${table}'::regclass;`),
+    );
+  const identity = catalog("simulated_payment_provider_operations");
+  const original = JSON.parse(
+    harness.runSql(
+      "select jsonb_agg(to_jsonb(operation) order by id) from public.simulated_payment_provider_operations operation;",
+    ),
+  );
+  assert.ok(
+    original.some(
+      (row) =>
+        row.original_outcome === "indeterminate" &&
+        row.current_outcome === "succeeded",
+    ),
+  );
+  assert.ok(original.some((row) => row.current_outcome === "indeterminate"));
+  assert.ok(
+    original.some(
+      (row) =>
+        row.current_outcome === "failed" &&
+        row.authoritative_outcome_at === null,
+    ),
+  );
+  supabase(["migration", "up", "--local"]);
+  paymentEvidenceInstalled = true;
+  assert.deepEqual(
+    sourceHashes(),
+    graph,
+    "Evidence cutover preserves every historical source row, reference and link",
+  );
+  assert.equal(
+    harness.runSql(
+      "select jsonb_agg(to_jsonb(history) order by sequence) from public.booking_request_payment_history history;",
+    ),
+    retainedHistory,
+    "Evidence import neither appends nor rewrites existing observed or imported history",
+  );
+  assert.equal(
+    harness.runSql(
+      "select jsonb_build_array(last_value,is_called) from public.booking_request_payment_history_sequence_seq;",
+    ),
+    sequence,
+    "Evidence import consumes no history sequence value",
+  );
+  const afterIdentity = catalog("payment_provider_operations");
+  assert.equal(
+    afterIdentity.table,
+    identity.table,
+    "Table object identity survives the rename",
+  );
+  assert.equal(
+    afterIdentity.type,
+    identity.type,
+    "Composite type identity survives the rename",
+  );
+  assert.deepEqual(
+    afterIdentity.indexes,
+    identity.indexes,
+    "Existing indexes retain object identity",
+  );
+  for (const key of identity.foreignKeys)
+    assert.ok(
+      afterIdentity.foreignKeys.some(
+        (current) => JSON.stringify(current) === JSON.stringify(key),
+      ),
+      "Existing foreign keys retain their exact objects and endpoints",
+    );
+  const imported = JSON.parse(
+    harness.runSql(
+      "select jsonb_agg(to_jsonb(operation) order by id) from public.payment_provider_operations operation;",
+    ),
+  );
+  for (const before of original) {
+    const after = imported.find((row) => row.id === before.id);
+    assert.equal(after.executed_at, before.created_at);
+    assert.equal(
+      after.original_outcome_at,
+      before.original_outcome === "indeterminate" ? null : before.created_at,
+    );
+    assert.equal(
+      after.authoritative_outcome_at,
+      before.authoritative_outcome_at,
+      "Unknown provider occurrence stays unknown",
+    );
+    assert.equal(after.recorded_at, before.updated_at);
+    assert.equal(after.evidence_provenance, "legacy-simulated");
+  }
+  assert.equal(
+    observe(receipt).status,
+    "duplicate",
+    "Exact old receipt replay remains idempotent after import",
+  );
+  const newReceipt = {
+    ...receipt,
+    receiptId: "legacy-post-upgrade-continuation",
+  };
+  assert.equal(
+    observe(newReceipt).status,
+    "recorded",
+    "A new valid receipt can extend accepted imported evidence without relabeling its origin",
+  );
+  assert.equal(
+    harness.runSql(
+      `select evidence_provenance from public.payment_provider_operations where id='${receipt.providerOperationId}';`,
+    ),
+    "legacy-simulated",
+  );
+  const pending = recovery[0];
+  const continued = JSON.parse(
+    harness.runSql(`${readFileSync("supabase/fixtures/payment-evidence.sql", "utf8")}
+    set role service_role; select pg_temp.permit_query(${literal(pending.permit)},null,null,'succeeded');`),
+  );
+  assert.equal(
+    continued.outcome,
+    "succeeded",
+    "An imported resolved attempt replays through current null-reference inquiry and explicit recording",
+  );
+  assert.equal(
+    harness.runSql(
+      "select sum(physical_execution_count) from public.simulated_payment_effects;",
+    ),
+    String(original.length),
+    "Historical continuation never reexecutes a prior physical operation",
+  );
+  assert.equal(
+    harness.runSql(
+      `select public.booking_request_payment_quarantined('${recovery[1].requestId}');`,
+    ),
+    "t",
+    "Import and unrelated continuation never clear existing quarantine",
+  );
+  const prefix = harness.runSql(
+    `select jsonb_agg(to_jsonb(history) order by sequence) from public.booking_request_payment_history history where sequence<=${JSON.parse(sequence)[0]};`,
+  );
+  assert.equal(
+    prefix,
+    retainedHistory,
+    "Post-upgrade continuation preserves every original history row and clock",
+  );
+  console.log(
+    "Provider evidence cutover preserves table/composite/index/foreign-key identity, exact source rows and both observed/imported history; original execution and known/unknown occurrence clocks remain distinct; old receipt replay, new legacy correction and null-reference recovery continue without another physical effect.",
+  );
+}
+
 let failure;
 harness.guardDisposableLocalDatabase();
 try {
@@ -155,6 +384,7 @@ try {
   );
   const installationStarted = harness.runSql("select clock_timestamp();");
   supabase(["migration", "up", "--local"]);
+  paymentEvidenceInstalled = true;
   assert.deepEqual(
     sourceHashes(),
     before,
@@ -287,6 +517,7 @@ try {
   console.log(
     "Upgrade preserves all selected source hashes and exact imported facts/clocks through AAL2; pre-installation roots without provider evidence remain partial and subsequent real recovery events append without rewriting imports.",
   );
+  verifyProviderEvidenceCutover();
 } catch (error) {
   failure = error;
 } finally {

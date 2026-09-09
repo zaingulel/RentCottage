@@ -1,3 +1,8 @@
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
+import {
+  SupabasePaymentOperationExecutionRepository,
+  SupabaseSimulatorEffectRepository,
+} from "@/payment/supabase-payment-operation-execution";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { createBookingRequestCaptureProcessing } from "@/booking-request/booking-request-capture-processing";
@@ -66,10 +71,15 @@ async function main() {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const durable = new DurablePaymentSimulator({
-    client,
+    effects: new SupabaseSimulatorEffectRepository(client),
     now: () => new Date().toISOString(),
-    executeOutcome: mode.includes("failure") ? "failed" : "succeeded",
+    executeOutcome: mode.includes("indeterminate")
+      ? "indeterminate"
+      : mode.includes("failure")
+        ? "failed"
+        : "succeeded",
   });
+  let responseLost = false;
   const lostResponse = new Error(
     "Capture response lost after durable execution",
   );
@@ -82,8 +92,10 @@ async function main() {
         mode === "lose-response" ||
         mode === "process-lose-response" ||
         mode === "failure-lose-response"
-      )
+      ) {
+        responseLost = true;
         throw lostResponse;
+      }
       return result;
     },
     async query(request) {
@@ -96,10 +108,16 @@ async function main() {
               : reject(new Error("Invalid continuation")),
           );
         });
-      return durable.query(request);
+      const result = await durable.query(request);
+      send({ stage: "query-result", result });
+      return result;
     },
     verifySignedEvent: () => false,
   };
+  const operations = createPaymentOperationExecution({
+    repository: new SupabasePaymentOperationExecutionRepository(client),
+    provider,
+  });
   const repository = new SupabaseBookingRequestCaptureRepository(client);
   const confirmation = createBookingRequestConfirmation({
     repository: new SupabaseBookingRequestConfirmationRepository(client),
@@ -114,6 +132,7 @@ async function main() {
     const result = await createBookingRequestCaptureProcessing({
       repository,
       provider,
+      operations,
       confirmation:
         mode === "process-interrupt-confirmation"
           ? {
@@ -127,26 +146,39 @@ async function main() {
   } else if (
     mode === "lose-response" ||
     mode === "capture-only" ||
+    mode === "indeterminate-capture" ||
     mode === "failure-lose-response"
   ) {
     try {
       const result = await createBookingRequestCapture({
         repository,
         provider,
+        operations,
       }).execute(required("CAPTURE_BOOKING_REQUEST_ID"));
       send({ stage: "complete", result });
     } catch (error) {
-      if (error !== lostResponse) throw error;
+      if (
+        mode === "indeterminate-capture" &&
+        error instanceof Error &&
+        error.message ===
+          "Booking Request Capture did not return successful provider evidence"
+      ) {
+        send({ stage: "complete", result: "indeterminate" });
+        return;
+      }
+      if (!responseLost) throw error;
       send({ stage: "complete", result: "interrupted" });
     }
   } else if (
     mode === "recover" ||
+    mode === "recover-indeterminate" ||
     mode === "recover-failure" ||
     mode === "pause-query"
   ) {
     const result = await createBookingRequestCaptureRecovery({
       repository,
       provider,
+      operations,
       confirmation,
     }).processDue();
     send({ stage: "complete", result });

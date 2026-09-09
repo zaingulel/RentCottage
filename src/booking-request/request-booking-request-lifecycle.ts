@@ -1,4 +1,9 @@
 import "server-only";
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
+import {
+  SupabasePaymentOperationExecutionRepository,
+  SupabaseSimulatorEffectRepository,
+} from "@/payment/supabase-payment-operation-execution";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -20,8 +25,14 @@ export function createRequestBookingRequestLifecycle() {
     });
   }
   const provider = new DurablePaymentSimulator({
-    client: privilegedClient,
+    effects: new SupabaseSimulatorEffectRepository(privilegedClient),
     now: () => new Date().toISOString(),
+  });
+  const operations = createPaymentOperationExecution({
+    repository: new SupabasePaymentOperationExecutionRepository(
+      privilegedClient,
+    ),
+    provider: provider,
   });
   return createBookingRequestLifecycle({
     repository: new SupabaseBookingRequestLifecycleRepository(
@@ -29,5 +40,6 @@ export function createRequestBookingRequestLifecycle() {
       provider.identity,
     ),
     provider,
+    operations,
   });
 }

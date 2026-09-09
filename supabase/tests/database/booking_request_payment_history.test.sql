@@ -1,4 +1,59 @@
 begin;
+-- BEGIN PAYMENT EVIDENCE FIXTURE
+-- Test arrangement: admission, isolated effect, and explicit recording.
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
+declare observed jsonb;
+declare proposed jsonb;
+declare recorder text;
+declare operation_id text:=admission->>'operationId';
+begin
+  if admission->>'status'='not-admitted' then return jsonb_build_object('outcome','not-executed'); end if;
+  if operation_id is null then return admission; end if;
+  proposed:=jsonb_build_object('outcome',outcome,'providerRequestId','fixture-request-'||operation_id,'providerReference','fixture-reference-'||operation_id,
+    'evidence',jsonb_build_object('operationId',operation_id,'eventId','fixture-'||operation_id||'-'||outcome,'provenance','fictional-provider',
+      'originalOutcome',outcome,'executedAt',clock_timestamp(),'occurredAt',case when outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
+    ||case when outcome='failed' then jsonb_build_object('retrySafe',false) else jsonb_build_object('movementReference','fixture-movement-'||operation_id) end;
+  if admission->>'mode'='execute' then observed:=public.persist_simulated_payment_effect(effect_binding,proposed);
+  else
+    observed:=public.seal_simulated_payment_absence(effect_binding);
+    if observed->>'outcome'='indeterminate' and outcome<>'indeterminate' then
+      proposed:=jsonb_set(proposed,'{evidence,originalOutcome}',observed#>'{evidence,originalOutcome}');
+      proposed:=jsonb_set(proposed,'{evidence,executedAt}',observed#>'{evidence,executedAt}');
+      proposed:=proposed||jsonb_build_object('providerRequestId',observed->>'providerRequestId','providerReference',observed->>'providerReference');
+      if outcome='succeeded' then proposed:=proposed||jsonb_build_object('movementReference',observed->>'movementReference'); end if;
+      observed:=public.resolve_simulated_payment_effect(effect_binding,observed#>>'{evidence,eventId}',proposed);
+    end if;
+  end if;
+  recorder:=case admission->>'purpose' when 'booking-request-capture' then 'record_booking_request_capture_observation'
+    when 'booking-request-payment-recovery' then 'record_booking_request_payment_recovery_observation'
+    when 'booking-request-payment-required-expiry' then 'record_booking_request_payment_required_expiry_observation'
+    when 'booking-request-payment-required-corrective-refund' then 'record_booking_request_payment_required_expiry_observation'
+    else 'record_booking_request_provider_operation_observation' end;
+  execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed;
+  return observed-'evidence';
+end;
+$$;
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  execute format('select public.%I($1)',routine) into admission using permit;
+  result:=pg_temp.payment_fixture_result(admission,outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.capture_execute(permit jsonb,outcome text default 'succeeded') returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
+$$;
+create or replace function pg_temp.recovery_execute(permit jsonb,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_recovery',permit,outcome);
+$$;
+create or replace function pg_temp.expiry_execute(permit jsonb,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_required_expiry',permit,outcome);
+$$;
+-- END PAYMENT EVIDENCE FIXTURE
 
 select no_plan();
 
@@ -251,7 +306,32 @@ values ('60000000-0000-4000-8000-000000001001','70000000-0000-4000-8000-00000000
 -- END CAPTURE RECOVERY SOURCE
 set local role service_role;
 create temp table confirmation_capture_lease as select public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result;
-create temp table confirmation_capture_result as select public.execute_simulated_booking_request_capture((select result->'permit' from confirmation_capture_lease),'failed') result;
+-- Exercise private supplier text through the real accepted observation boundary.
+savepoint support_private_reference;
+create temp table support_admission as select public.admit_booking_request_capture((select result->'permit' from confirmation_capture_lease)) value;
+create temp table support_initial as select public.persist_simulated_payment_effect(value-array['purpose','binding','mode'],
+ jsonb_build_object('outcome','indeterminate','providerRequestId','secret-card-token-accepted','providerReference','merchant-secret-accepted','movementReference','raw-private-movement-accepted',
+ 'evidence',jsonb_build_object('operationId',value->>'operationId','eventId','support-private-initial','provenance','fictional-provider','originalOutcome','indeterminate','executedAt',clock_timestamp(),'occurredAt',null,'closedAt',null))) result from support_admission;
+select public.record_booking_request_capture_observation((support_admission.value->>'operationId')::uuid,result) from support_admission,support_initial;
+create temp table support_terminal as select public.resolve_simulated_payment_effect(value-array['purpose','binding','mode'],result#>>'{evidence,eventId}',
+ jsonb_set(jsonb_set(result-'movementReference'||'{"outcome":"failed","retrySafe":false}'::jsonb,'{evidence,eventId}','"support-private-terminal"'),'{evidence,occurredAt}',to_jsonb(clock_timestamp()))) result
+ from support_admission,support_initial;
+select public.record_booking_request_capture_observation((support_admission.value->>'operationId')::uuid,result) from support_admission,support_terminal;
+reset role;
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001370","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+create temp table support_private_display as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
+reset role;
+select ok(exists(select 1 from support_private_display,jsonb_array_elements(result->'events') event,support_admission
+ where event->>'providerRequestId'='internal-request:'||(support_admission.value->>'operationId')
+ and event->>'providerReference'='internal-reference:'||(support_admission.value->>'operationId')),'secret-shaped accepted references expose only internal correlation aliases');
+select ok(exists(select 1 from support_private_display,jsonb_array_elements(result->'events') event,support_admission
+ where event->>'movementReference'='internal-movement:'||(support_admission.value->>'operationId')),'historical movement aliases use accepted past observations after the current movement becomes null');
+select ok((select result::text not like '%secret-card-token-accepted%' and result::text not like '%merchant-secret-accepted%' and result::text not like '%raw-private-movement-accepted%' from support_private_display),'no accepted private reference bytes enter support display');
+select ok(exists(select 1 from public.payment_provider_operations,support_admission where id=(support_admission.value->>'operationId')::uuid and provider_request_id='secret-card-token-accepted' and provider_reference='merchant-secret-accepted' and movement_reference is null),'support display leaves private accepted provider bytes unchanged');
+rollback to support_private_reference;
+set local role service_role;
+create temp table confirmation_capture_result as select pg_temp.capture_execute((select result->'permit' from confirmation_capture_lease),'failed') result;
 reset role;
 -- END CONFIRMATION FIXTURE
 
@@ -265,7 +345,7 @@ select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-00000000
 set local role authenticated;
 select ok(exists(select 1 from jsonb_array_elements(public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001')->'events') event where event->>'kind'='retry' and event->>'operationKind'='capture' and event->>'operationGeneration'='2'),'real capture reclamation is a retry with its new ownership generation');
 reset role;
-select is((select count(*) from public.simulated_payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),1::bigint,'capture reclamation does not execute another payment');
+select is((select count(*) from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),1::bigint,'capture reclamation does not execute another payment');
 rollback to history_retry;
 set local role service_role;
 create temp table recovery_payment_required as
@@ -286,13 +366,13 @@ create temp table history_recovery as select public.claim_customer_booking_reque
 reset role;
 grant select on history_recovery to service_role;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from history_recovery))->'permit','succeeded');
-select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from history_recovery))->'permit','succeeded');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from history_recovery))->'permit','succeeded');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from history_recovery))->'permit','succeeded');
 create temp table history_capture_permit as select public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from history_recovery))->'permit' permit;
-select public.execute_simulated_booking_request_payment_recovery((select permit from history_capture_permit),'succeeded');
+select pg_temp.recovery_execute((select permit from history_capture_permit),'succeeded');
 select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',public.get_booking_request_payment_recovery_confirmation_evidence((select (result->>'attemptId')::uuid from history_recovery)));
 reset role;
-select is((select count(*) from public.simulated_payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),4::bigint,'capture failure and three recovery steps produce four physical executions');
+select is((select count(*) from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),4::bigint,'capture failure and three recovery steps produce four physical executions');
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001370","role":"authenticated","aal":"aal2"}',true);
 set local role authenticated;
 create temp table before_correction_history as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
@@ -306,7 +386,7 @@ create temp table observed_capture as select ledger.id,(select payment_required_
   'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
   'kind','capture','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
   'movementReference',ledger.movement_reference,'outcome','succeeded','occurredAt',to_char(ledger.authoritative_outcome_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) payload
-from public.simulated_payment_provider_operations ledger where ledger.operation_kind='capture' and ledger.recovery_attempt_id is not null;
+from public.payment_provider_operations ledger where ledger.operation_kind='capture' and ledger.recovery_attempt_id is not null;
 grant select on observed_capture to service_role;
 
 set local role service_role;
@@ -331,7 +411,7 @@ select 'booking_request_submission_attempts' name,coalesce(jsonb_agg(to_jsonb(ro
 union all
 select 'booking_request_authorization_claims' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_authorization_claims rows
 union all
-select 'simulated_payment_provider_operations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.simulated_payment_provider_operations rows
+select 'payment_provider_operations' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.payment_provider_operations rows
 union all
 select 'booking_request_payment_recovery_attempts' name,coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) rows from public.booking_request_payment_recovery_attempts rows
 union all
@@ -393,7 +473,7 @@ select ok((select bool_and(event->>'reasonCode'='malformed-provider-observation'
 select ok((select result::text not like '%arrival-private-%' and result::text not like '%1900-01-01%' from after_malformed_history),'malformed payload signatures references and claimed occurrence never enter the support response');
 select is((select jsonb_agg(event order by ordinal) from after_malformed_history,jsonb_array_elements(result->'events') with ordinality events(event,ordinal) where ordinal <= (select jsonb_array_length(result->'events') from after_duplicates_history)),(select result->'events' from after_duplicates_history),'malformed arrivals and quarantine preserve the entire previous immutable prefix');
 select is((select count(*) from public.booking_request_payment_correction_observations where booking_request_id='60000000-0000-4000-8000-000000001001'),1::bigint,'malformed arrivals do not create persisted canonical receipts');
-select is((select count(*) from public.simulated_payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),4::bigint,'malformed arrivals never cause another physical payment execution');
+select is((select count(*) from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),4::bigint,'malformed arrivals never cause another physical payment execution');
 select is((select count(*) from public.booking_receipts),2::bigint,'quarantine retains the original two booking receipts');
 rollback to malformed_arrivals;
 
@@ -403,7 +483,7 @@ reset role;
 set local role authenticated;
 create temp table after_conflict_history as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
 reset role;
-select is((select count(*) from public.simulated_payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),4::bigint,'receipt observations do not execute another payment');
+select is((select count(*) from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001'),4::bigint,'receipt observations do not execute another payment');
 select is((select jsonb_agg(event order by ordinal) from after_conflict_history,jsonb_array_elements(result->'events') with ordinality events(event,ordinal) where ordinal <= (select jsonb_array_length(result->'events') from before_correction_history)),(select result->'events' from before_correction_history),'new receipt and quarantine evidence never changes or reorders earlier history');
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'kind'='quarantine' and event->>'toState'='quarantined' and event->>'reasonCode'='conflicting-provider-observation') from after_conflict_history),'real quarantine keeps its actionable reason');
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'source'='confirmation-invalidation' and event->>'reasonCode'='conflicting-evidence' and event->>'toState'='invalidated') from after_conflict_history),'historical confirmation and its terminal invalidation remain visible');
@@ -435,11 +515,11 @@ create function public.payment_history_test_now() returns timestamptz language s
 select replace(pg_get_functiondef(procedures.oid),'clock_timestamp()','public.payment_history_test_now()')
 from pg_proc procedures join pg_namespace namespaces on namespaces.oid=procedures.pronamespace
 where namespaces.nspname='public' and procedures.prokind='f' and procedures.prosrc like '%clock_timestamp()%'
-  and procedures.proname like '%booking_request%' and procedures.proname not like '%payment_history%' \gexec
+  and (procedures.proname like '%booking_request%' or procedures.proname in ('persist_simulated_payment_effect','seal_simulated_payment_absence','resolve_simulated_payment_effect','validate_payment_provider_observation','accept_payment_provider_observation','simulated_payment_absence_receipt')) and procedures.proname not like '%payment_history%' \gexec
 set local role service_role;
 create temp table history_expiry as select public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}') result;
 savepoint history_expiry_ready;
-select public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from history_expiry),'failed');
+select pg_temp.expiry_execute((select result->'permit' from history_expiry),'failed');
 reset role;
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001370","role":"authenticated","aal":"aal2"}',true);
 set local role authenticated;
@@ -447,7 +527,7 @@ create temp table history_failed_expiry as select public.get_administrator_booki
 select is((select result#>>'{current,reasonCode}' from history_failed_expiry),'expiry-release-failed','a real failed expiry release retains its actionable current reason');
 select ok((select exists(select 1 from jsonb_array_elements(result->'events') event where event->>'reasonCode'='expiry-release-failed' and event->>'kind'='quarantine') from history_failed_expiry),'a real failed expiry release retains its actionable history reason');
 rollback to history_expiry_ready;
-select public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from history_expiry),'succeeded');
+select pg_temp.expiry_execute((select result->'permit' from history_expiry),'succeeded');
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status','expired','real expiry releases the unpaid authorization');
 reset role;
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001370","role":"authenticated","aal":"aal2"}',true);
@@ -524,6 +604,34 @@ select is((select count(*) from history_reference_display,jsonb_array_elements(r
  and event->>'movementReference'=replace(cases.value,'request','movement')),
  case when cases.allowed then 1 else 0 end::bigint,'exact bounded reconciliation reference: '||cases.value)
 from history_reference_cases cases;
+
+-- Provider-specific text stays private; support correlation uses accepted evidence.
+create temp table internal_reference_source as select * from public.payment_provider_operations
+ where claim_id='72000000-0000-4000-8000-000000001001' and recovery_attempt_id is null and operation_kind='capture';
+select public.append_booking_request_payment_history(
+ '73000000-0000-4000-8000-000000001001','60000000-0000-4000-8000-000000001001',
+ 'state-transition','provider-operation','observed',target_provider_operation_id=>id,
+ target_provider_request_id=>provider_request_id,target_provider_reference=>provider_reference)
+from internal_reference_source;
+select public.append_booking_request_payment_history(
+ '73000000-0000-4000-8000-000000001001','60000000-0000-4000-8000-000000001001',
+ 'state-transition','provider-operation','observed',target_provider_operation_id=>id,
+ target_provider_request_id=>'fixture-request-mismatched') from internal_reference_source;
+select public.append_booking_request_payment_history(
+ '73000000-0000-4000-8000-000000001371','60000000-0000-4000-8000-000000001371',
+ 'state-transition','provider-operation','observed',target_provider_operation_id=>id,
+ target_provider_request_id=>provider_request_id) from internal_reference_source;
+set local role authenticated;
+create temp table internal_reference_display as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001') result;
+create temp table foreign_reference_display as select public.get_administrator_booking_request_payment_history('RC-REQ-0000000000000137') result;
+reset role;
+select ok(exists(select 1 from internal_reference_display,jsonb_array_elements(result->'events') event,internal_reference_source source
+ where event->>'providerRequestId'='internal-request:'||source.id and event->>'providerReference'='internal-reference:'||source.id),
+ 'accepted provider-independent references produce operation-bound internal aliases');
+select is((select result#>>'{events,-1,providerRequestId}' from internal_reference_display),'reference-unavailable','an unaccepted history reference cannot borrow an operation alias');
+select is((select result#>>'{events,-1,providerRequestId}' from foreign_reference_display),'reference-unavailable','another Booking Request cannot borrow accepted evidence aliases');
+select ok((select result::text not like '%'||source.provider_request_id||'%' and result::text not like '%'||source.provider_reference||'%'
+ from internal_reference_display,internal_reference_source source),'raw accepted provider references remain private');
 
 select * from finish();
 rollback;

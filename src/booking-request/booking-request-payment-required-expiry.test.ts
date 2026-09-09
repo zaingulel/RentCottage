@@ -1,6 +1,8 @@
+import { withRecordedProviderResults } from "../../tests/fixtures/payment-operation-execution.fixtures";
 import { describe, expect, it, vi } from "vitest";
 
 import type { PaymentProviderAdapter } from "@/payment/payment-contract";
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
 import { createBookingRequestPaymentRequiredExpiry } from "./booking-request-payment-required-expiry";
 
 const requestId = "11111111-1111-4111-8111-111111111111";
@@ -51,14 +53,40 @@ function setup() {
   return {
     repository,
     provider,
-    service: createBookingRequestPaymentRequiredExpiry({
-      repository,
-      provider,
-    }),
+    service: createBookingRequestPaymentRequiredExpiry(
+      withRecordedProviderResults({
+        repository,
+        provider,
+      }),
+    ),
   };
 }
 
 describe("Payment Required expiry processing", () => {
+  it("preserves fresh expiry evaluation when ownership changes between preparation and admission", async () => {
+    const { repository, provider } = setup();
+    repository.finalize.mockResolvedValueOnce({ status: "processing" });
+    const evidence = {
+      admit: vi.fn().mockResolvedValue({ status: "not-admitted" }),
+      reload: vi.fn(),
+      record: vi.fn(),
+    };
+    const service = createBookingRequestPaymentRequiredExpiry({
+      repository,
+      provider,
+      operations: createPaymentOperationExecution({
+        repository: evidence,
+        provider,
+      }),
+    });
+    await expect(service.processDue(20)).resolves.toEqual([
+      { status: "processing" },
+    ]);
+    expect(provider.execute).not.toHaveBeenCalled();
+    expect(provider.query).not.toHaveBeenCalled();
+    expect(evidence.record).not.toHaveBeenCalled();
+    expect(repository.finalize).toHaveBeenCalledExactlyOnceWith(requestId);
+  });
   it("performs one bound release and finalizes from fresh database evidence", async () => {
     const { service, repository, provider } = setup();
     await expect(service.processDue(20)).resolves.toEqual([

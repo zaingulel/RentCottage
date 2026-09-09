@@ -1,3 +1,8 @@
+// SQL arrangement mirrors admission, isolated effect, and explicit recording.
+const paymentEvidenceSql =
+  "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
+  readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
+  "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -35,12 +40,12 @@ const rows = [
   ],
   [
     "ledger",
-    "public.simulated_payment_provider_operations where operation_kind = 'capture' and payment_lifecycle_id = '73000000-0000-4000-8000-000000001001'",
+    "public.payment_provider_operations where operation_kind = 'capture' and payment_lifecycle_id = '73000000-0000-4000-8000-000000001001'",
   ],
 ];
 
 function start(sql, close = false) {
-  const session = harness.startSession(sql, close);
+  const session = harness.startSession(paymentEvidenceSql + sql, close);
   sessions.add(session);
   return session;
 }
@@ -59,7 +64,8 @@ async function blockedBy(contenderName, contender, holderName) {
   await harness.waitForLock(contenderName, contender);
   assert.equal(
     harness.runSql(
-      `select count(*) from pg_stat_activity contender cross join pg_stat_activity holder where contender.application_name = '${contenderName}' and holder.application_name = '${holderName}' and holder.pid = any(pg_blocking_pids(contender.pid));`,
+      paymentEvidenceSql +
+        `select count(*) from pg_stat_activity contender cross join pg_stat_activity holder where contender.application_name = '${contenderName}' and holder.application_name = '${holderName}' and holder.pid = any(pg_blocking_pids(contender.pid));`,
     ),
     "1",
     "The expected earlier row must be the actual blocker",
@@ -99,7 +105,8 @@ async function proveLockOrder(sql, label, lockRows = rows) {
     for (const [laterName, laterRow] of lockRows.slice(index + 1)) {
       assert.equal(
         harness.runSql(
-          `begin; select 1 from ${laterRow} for update nowait; rollback;`,
+          paymentEvidenceSql +
+            `begin; select 1 from ${laterRow} for update nowait; rollback;`,
         ),
         "1",
         `${label} must not lock later ${laterName} while blocked on ${rowName}`,
@@ -121,12 +128,11 @@ async function proveAdmissionAfterLocks(permit) {
   const holder =
     start(`begin; set application_name = 'capture_expiry_holder'; select 1 from ${rows[0][1]} for update;
     update public.booking_request_capture_work set lease_expires_at = date_trunc('milliseconds', clock_timestamp()) + interval '10 seconds' where booking_request_id = '${requestId}';
-    update public.simulated_payment_provider_operations set capture_execution_permit = capture_execution_permit || jsonb_build_object('notAfter', (select to_char(lease_expires_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') from public.booking_request_capture_work where booking_request_id = '${requestId}')) where operation_kind = 'capture' and payment_lifecycle_id = '${permit.paymentLifecycleId}';
-    select capture_execution_permit from public.simulated_payment_provider_operations where operation_kind = 'capture' and payment_lifecycle_id = '${permit.paymentLifecycleId}'; select 'EXPIRY_HELD';`);
+    select ${literal(permit)} || jsonb_build_object('notAfter', to_char(lease_expires_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) from public.booking_request_capture_work where booking_request_id = '${requestId}'; select 'EXPIRY_HELD';`);
   await harness.waitForMarker(holder, "EXPIRY_HELD");
   const expiringPermit = result(holder);
   const contender = start(
-    `begin; set application_name = 'capture_expiry_contender'; set local role service_role; select public.execute_simulated_booking_request_capture(${literal(expiringPermit)}); rollback;`,
+    `begin; set application_name = 'capture_expiry_contender'; set local role service_role; select pg_temp.capture_execute(${literal(expiringPermit)}); rollback;`,
     true,
   );
   await blockedBy(
@@ -136,7 +142,8 @@ async function proveAdmissionAfterLocks(permit) {
   );
   assert.equal(
     harness.runSql(
-      `select clock_timestamp() < '${expiringPermit.notAfter}'::timestamptz;`,
+      paymentEvidenceSql +
+        `select clock_timestamp() < '${expiringPermit.notAfter}'::timestamptz;`,
     ),
     "t",
     "Provider must begin waiting before its admission deadline",
@@ -144,7 +151,8 @@ async function proveAdmissionAfterLocks(permit) {
   const observationDeadline = Date.now() + 15_000;
   while (
     harness.runSql(
-      `select clock_timestamp() >= '${expiringPermit.notAfter}'::timestamptz;`,
+      paymentEvidenceSql +
+        `select clock_timestamp() >= '${expiringPermit.notAfter}'::timestamptz;`,
     ) !== "t"
   ) {
     assert.ok(
@@ -160,9 +168,11 @@ async function proveAdmissionAfterLocks(permit) {
     { outcome: "not-executed" },
     "Admission checks the deadline after blocked locks are acquired",
   );
-  harness.runSql(`begin;
-    update public.booking_request_capture_work set lease_expires_at = '${permit.notAfter}' where booking_request_id = '${requestId}';
-    update public.simulated_payment_provider_operations set capture_execution_permit = ${literal(permit)} where operation_kind = 'capture' and payment_lifecycle_id = '${permit.paymentLifecycleId}'; commit;`);
+  harness.runSql(
+    paymentEvidenceSql +
+      `begin;
+    update public.booking_request_capture_work set lease_expires_at = '${permit.notAfter}' where booking_request_id = '${requestId}'; commit;`,
+  );
 }
 
 const workers = new Set();
@@ -171,14 +181,14 @@ const temporaryDirectory = mkdtempSync(
   join(tmpdir(), "rentcottage-capture-workers-"),
 );
 const workerBundle = join(temporaryDirectory, "worker.mjs");
-function startWorker(mode) {
+function startWorker(mode, bookingRequestId = requestId) {
   for (const key of ["SUPABASE_URL", "SUPABASE_SECRET_KEY"])
     assert.ok(process.env[key], `${key} is required for Capture recovery`);
   const child = spawn(process.execPath, [workerBundle], {
     env: {
       ...process.env,
       CAPTURE_WORKER_MODE: mode,
-      CAPTURE_BOOKING_REQUEST_ID: requestId,
+      CAPTURE_BOOKING_REQUEST_ID: bookingRequestId,
     },
     stdio: ["ignore", "ignore", "pipe", "ipc"],
   });
@@ -227,9 +237,12 @@ async function finishWorker(worker) {
 }
 function observeRecovery() {
   return JSON.parse(
-    harness.runSql(`select jsonb_build_object(
+    harness.runSql(
+      paymentEvidenceSql +
+        `select jsonb_build_object(
     'work', (select to_jsonb(w) from public.booking_request_capture_work w where booking_request_id = '${requestId}'),
-    'ledger', (select jsonb_agg(to_jsonb(l) order by id) from public.simulated_payment_provider_operations l where operation_kind = 'capture'),
+    'ledger', (select jsonb_agg(pg_temp.payment_fixture_operation_json(l) order by id) from public.payment_provider_operations l where operation_kind = 'capture'),
+    'effects', (select jsonb_agg(to_jsonb(e) order by e.operation_id) from public.simulated_payment_effects e join public.payment_provider_operations l on l.id=e.operation_id where l.operation_kind='capture'),
     'snapshot', (select payment_snapshot from public.booking_request_submission_attempts where booking_request_id = '${requestId}'),
     'request', (select to_jsonb(r) from public.booking_requests r where id = '${requestId}'),
     'commitment', (select to_jsonb(c) from public.cottage_booking_period_commitments c where id = '50000000-0000-4000-8000-000000001001'),
@@ -240,21 +253,67 @@ function observeRecovery() {
     'intentActive', (select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id = '${requestId}'),
     'confirmations', (select coalesce(jsonb_agg(to_jsonb(c) order by id),'[]') from public.booking_confirmations c),
     'receipts', (select coalesce(jsonb_agg(to_jsonb(r) order by id),'[]') from public.booking_receipts r),
-    'releases', (select count(*) from public.booking_request_release_work) + (select count(*) from public.simulated_payment_provider_operations where operation_kind = 'release')
-  );`),
+    'releases', (select count(*) from public.booking_request_release_work) + (select count(*) from public.payment_provider_operations where operation_kind = 'release')
+  );`,
+    ),
   );
 }
 function expireCaptureLease() {
   harness.runSql(
-    `update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z' where booking_request_id = '${requestId}';`,
+    paymentEvidenceSql +
+      `update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z' where booking_request_id = '${requestId}';`,
   );
 }
 function assertBooking(before, after) {
   assert.equal(after.work.state, "complete");
   assert.deepEqual(
-    after.ledger,
-    before.ledger,
-    "Recovery must retain all original provider evidence and one physical execution",
+    after.effects,
+    before.effects,
+    "Recovery retains the original isolated provider effect",
+  );
+  const projectionFields = new Set([
+    "original_outcome",
+    "current_outcome",
+    "provider_request_id",
+    "provider_reference",
+    "movement_reference",
+    "original_outcome_at",
+    "executed_at",
+    "authoritative_outcome_at",
+    "recorded_at",
+    "updated_at",
+    "evidence_provenance",
+  ]);
+  const admission = (row) =>
+    Object.fromEntries(
+      Object.entries(row).filter(([key]) => !projectionFields.has(key)),
+    );
+  assert.deepEqual(
+    after.ledger.map(admission),
+    before.ledger.map(admission),
+    "Recording preserves every admitted operation identity and bound permit",
+  );
+  if (before.ledger[0].recorded_at !== null)
+    assert.deepEqual(
+      after.ledger,
+      before.ledger,
+      "Already recorded evidence is unchanged",
+    );
+  assert.equal(
+    after.ledger[0].provider_request_id,
+    before.effects[0].result.providerRequestId,
+  );
+  assert.equal(
+    after.ledger[0].provider_reference,
+    before.effects[0].result.providerReference,
+  );
+  assert.equal(
+    after.ledger[0].movement_reference,
+    before.effects[0].result.movementReference,
+  );
+  assert.equal(
+    Date.parse(after.ledger[0].executed_at),
+    Date.parse(before.effects[0].result.evidence.executedAt),
   );
   assert.equal(after.ledger.length, 1);
   assert.equal(
@@ -267,7 +326,7 @@ function assertBooking(before, after) {
   assert.equal(after.identities.length, 1);
   assert.equal(
     after.identities[0].movement_reference,
-    before.ledger[0].movement_reference,
+    before.effects[0].result.movementReference,
   );
   assert.equal(
     after.snapshot.capture.attemptId,
@@ -275,7 +334,7 @@ function assertBooking(before, after) {
   );
   assert.equal(
     after.snapshot.capture.movementReference,
-    before.ledger[0].movement_reference,
+    before.effects[0].result.movementReference,
   );
   assert.equal(
     after.snapshot.movements.filter((movement) => movement.kind === "capture")
@@ -310,7 +369,7 @@ async function proveApplicationRecovery(source) {
   });
   for (const mode of ["lose-response", "capture-only"]) {
     const traceStart = providerTrace.length;
-    harness.runSql(`begin; ${source} commit;`);
+    harness.runSql(paymentEvidenceSql + `begin; ${source} commit;`);
     seeded = true;
     const initial = startWorker(mode);
     const initialResult = await finishWorker(initial);
@@ -340,6 +399,10 @@ async function proveApplicationRecovery(source) {
     );
     if (mode === "lose-response") {
       assert.equal(initialResult, "interrupted");
+      assert.equal(before.ledger[0].recorded_at, null);
+      assert.equal(before.ledger[0].current_outcome, null);
+      assert.equal(before.ledger[0].provider_request_id, null);
+      assert.equal(before.ledger[0].provider_reference, null);
       assert.equal(before.snapshot.capture, null);
       assert.equal(before.work.state, "processing");
       const activeDrain = startWorker("recover");
@@ -357,7 +420,8 @@ async function proveApplicationRecovery(source) {
       assert.match(holder.stdout, /"status": "reconcile"/);
       assert.equal(
         harness.runSql(
-          `begin; set local role service_role; ${claimSql} commit;`,
+          paymentEvidenceSql +
+            `begin; set local role service_role; ${claimSql} commit;`,
         ),
         "[]",
         "A competing session skips the locked recovery candidate",
@@ -385,7 +449,7 @@ async function proveApplicationRecovery(source) {
       );
       expireCaptureLease();
       await proveLockOrder(claimSql, "recovery_claim", rows.slice(1, 5));
-      const querySql = `select public.query_simulated_booking_request_capture(${literal({ providerIdentity, requestFingerprint: before.ledger[0].request_fingerprint, paymentLifecycleId: before.ledger[0].payment_lifecycle_id, logicalOperationId: before.ledger[0].logical_operation_id, physicalAttemptId: before.ledger[0].physical_attempt_id, operationKind: "capture", amountFils: before.ledger[0].amount_fils, currency: "IQD" })}, '${before.ledger[0].provider_request_id}', '${before.ledger[0].provider_reference}');`;
+      const querySql = `select pg_temp.capture_query(${literal({ providerIdentity, requestFingerprint: before.ledger[0].request_fingerprint, paymentLifecycleId: before.ledger[0].payment_lifecycle_id, logicalOperationId: before.ledger[0].logical_operation_id, physicalAttemptId: before.ledger[0].physical_attempt_id, operationKind: "capture", amountFils: before.ledger[0].amount_fils, currency: "IQD" })}, ${before.ledger[0].provider_request_id === null ? "null" : `'${before.ledger[0].provider_request_id}'`}, ${before.ledger[0].provider_reference === null ? "null" : `'${before.ledger[0].provider_reference}'`});`;
       await proveLockOrder(querySql, "recovery_query", rows.slice(0, 5));
       const recovering = startWorker("pause-query");
       const query = await stage(recovering, "query");
@@ -417,7 +481,18 @@ async function proveApplicationRecovery(source) {
           Object.entries(work).filter(([key]) => !leaseFields.includes(key)),
         );
       assert.deepEqual(bindings(reclaimed.work), bindings(before.work));
-      assert.deepEqual(query.request, {
+      const { admission: queriedAdmission, ...queriedBinding } = query.request;
+      assert.equal(queriedAdmission.operationId, before.ledger[0].id);
+      assert.equal(
+        queriedAdmission.idempotencyKey,
+        before.ledger[0].provider_idempotency_key,
+      );
+      assert.equal(queriedAdmission.mode, "reconcile");
+      assert.equal(
+        Date.parse(queriedAdmission.notAfter),
+        Date.parse(before.ledger[0].admission.notAfter),
+      );
+      assert.deepEqual(queriedBinding, {
         kind: "capture",
         paymentLifecycleId: before.ledger[0].payment_lifecycle_id,
         logicalOperationId: before.ledger[0].logical_operation_id,
@@ -494,7 +569,7 @@ async function proveApplicationRecovery(source) {
       journeyTrace.filter((call) => call.stage === "query").length,
       mode === "lose-response" ? 1 : 0,
     );
-    harness.runSql(cleanup);
+    harness.runSql(paymentEvidenceSql + cleanup);
     seeded = false;
   }
   console.log(
@@ -504,13 +579,22 @@ async function proveApplicationRecovery(source) {
 
 async function proveFailureRecording(source) {
   for (const mode of ["duplicate", "expired-after-lock"]) {
-    harness.runSql(`begin; ${source} commit;`);
+    harness.runSql(paymentEvidenceSql + `begin; ${source} commit;`);
     seeded = true;
-    const lease = JSON.parse(harness.runSql(leaseSql));
+    const lease = JSON.parse(harness.runSql(paymentEvidenceSql + leaseSql));
     assert.equal(lease.status, "leased");
+    if (mode === "expired-after-lock") {
+      lease.permit = JSON.parse(
+        harness.runSql(
+          paymentEvidenceSql +
+            `update public.booking_request_capture_work set lease_expires_at=date_trunc('milliseconds',clock_timestamp())+interval '10 seconds' where booking_request_id='${requestId}' returning ${literal(lease.permit)} || jsonb_build_object('notAfter',to_char(lease_expires_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'));`,
+        ),
+      );
+    }
     const failed = JSON.parse(
       harness.runSql(
-        `select public.execute_simulated_booking_request_capture(${literal(lease.permit)},'failed');`,
+        paymentEvidenceSql +
+          `select pg_temp.capture_execute(${literal(lease.permit)},'failed');`,
       ),
     );
     const before = observeRecovery();
@@ -529,10 +613,6 @@ async function proveFailureRecording(source) {
       assert.deepEqual(after.inventory, before.inventory);
       assert.deepEqual(after.ledger, before.ledger);
     } else {
-      harness.runSql(`begin;
-        update public.booking_request_capture_work set lease_expires_at=date_trunc('milliseconds',clock_timestamp())+interval '2 seconds' where booking_request_id='${requestId}';
-        update public.simulated_payment_provider_operations operation set capture_execution_permit=operation.capture_execution_permit || jsonb_build_object('notAfter',to_char(work.lease_expires_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
-        from public.booking_request_capture_work work where work.booking_request_id='${requestId}' and operation.id=(select id from public.simulated_payment_provider_operations where operation_kind='capture'); commit;`);
       const holder = start(
         "begin; set application_name='failure_commitment_holder'; select 1 from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001' for update; select 'COMMITMENT_HELD';",
       );
@@ -548,7 +628,8 @@ async function proveFailureRecording(source) {
       );
       assert.equal(
         harness.runSql(
-          `select clock_timestamp()<lease_expires_at from public.booking_request_capture_work where booking_request_id='${requestId}';`,
+          paymentEvidenceSql +
+            `select clock_timestamp()<lease_expires_at from public.booking_request_capture_work where booking_request_id='${requestId}';`,
         ),
         "t",
       );
@@ -563,7 +644,7 @@ async function proveFailureRecording(source) {
       assert.equal(after.notifications.length, 0);
       assert.deepEqual(after.occupancies, before.occupancies);
     }
-    harness.runSql(cleanup);
+    harness.runSql(paymentEvidenceSql + cleanup);
     seeded = false;
   }
   console.log(
@@ -571,9 +652,194 @@ async function proveFailureRecording(source) {
   );
 }
 
+async function proveIndeterminateCaptureRecovery(source) {
+  const other = (sql) =>
+    sql
+      .replaceAll("00000000100", "00000000110")
+      .replaceAll("750000100", "750000110")
+      .replaceAll("confirmation-auth-", "unknown-other-auth-")
+      .replaceAll("CONFIRMATION-HOLD-1", "UNKNOWN-OTHER-HOLD-1");
+  const otherId = other(requestId);
+  for (const outcome of ["succeeded", "failed"]) {
+    const traceStart = providerTrace.length;
+    harness.runSql(paymentEvidenceSql + `begin; ${source} commit;`);
+    seeded = true;
+    const initial = startWorker("indeterminate-capture");
+    assert.equal(await finishWorker(initial), "indeterminate");
+    const unknown = observeRecovery();
+    assert.equal(unknown.ledger.length, 1);
+    assert.equal(unknown.ledger[0].original_outcome, "indeterminate");
+    assert.equal(unknown.ledger[0].current_outcome, "indeterminate");
+    assert.ok(unknown.ledger[0].movement_reference);
+    assert.equal(unknown.ledger[0].physical_execution_count, 1);
+    assert.equal(unknown.work.state, "processing");
+    assert.equal(unknown.commitment.status, "pending_hold");
+    assert.equal(unknown.confirmations.length, 0);
+    assert.equal(unknown.receipts.length, 0);
+    const initialObservation = harness.runSql(
+      `select to_jsonb(observation) from public.payment_provider_observations observation where operation_id='${unknown.ledger[0].id}';`,
+    );
+    let otherSeeded = false;
+    try {
+      harness.runSql(
+        paymentEvidenceSql +
+          `begin; ${other(pendingSource(source))} ${other(acceptSql)} commit;`,
+      );
+      otherSeeded = true;
+      assert.equal(
+        (await finishWorker(startWorker("capture-only", otherId))).status,
+        "complete",
+      );
+      expireCaptureLease();
+      const waiting = startWorker("recover-indeterminate");
+      const pending = await finishWorker(waiting);
+      assert.equal(
+        pending.filter((result) => result.status === "processing").length,
+        1,
+        "Unknown Capture remains processing through a fresh inquiry",
+      );
+      assert.equal(
+        pending.filter((result) => result.status === "confirmed").length,
+        1,
+        "The same batch confirms unrelated eligible work despite valid unknown Capture",
+      );
+      const query = waiting.messages.find(
+        (message) => message.stage === "query",
+      );
+      assert.equal(query.request.admission.operationId, unknown.ledger[0].id);
+      assert.equal(
+        query.request.admission.idempotencyKey,
+        unknown.ledger[0].provider_idempotency_key,
+      );
+      assert.equal(query.request.admission.mode, "reconcile");
+      assert.equal(
+        waiting.messages.find((message) => message.stage === "query-result")
+          .result.outcome,
+        "indeterminate",
+      );
+      assert.equal(
+        waiting.messages.filter((message) => message.stage === "execute")
+          .length,
+        0,
+      );
+    } finally {
+      if (otherSeeded) harness.runSql(paymentEvidenceSql + other(cleanup));
+    }
+    const stillUnknown = observeRecovery();
+    assert.deepEqual(stillUnknown.ledger, unknown.ledger);
+    assert.deepEqual(stillUnknown.effects, unknown.effects);
+    assert.deepEqual(stillUnknown.occupancies, unknown.occupancies);
+    assert.equal(stillUnknown.confirmations.length, 0);
+    assert.equal(stillUnknown.receipts.length, 0);
+    assert.equal(stillUnknown.commitment.status, "pending_hold");
+    assert.equal(stillUnknown.snapshot.capture, null);
+    expireCaptureLease();
+    const terminalWorker = startWorker(
+      outcome === "failed" ? "recover-failure" : "recover",
+    );
+    const terminalResult = await finishWorker(terminalWorker);
+    assert.equal(
+      terminalResult[0].status,
+      outcome === "failed" ? "payment-required" : "confirmed",
+    );
+    const terminal = observeRecovery();
+    assert.equal(terminal.ledger.length, 1);
+    assert.equal(terminal.ledger[0].id, unknown.ledger[0].id);
+    assert.deepEqual(terminal.ledger[0].admission, unknown.ledger[0].admission);
+    assert.equal(terminal.ledger[0].original_outcome, "indeterminate");
+    assert.equal(terminal.ledger[0].current_outcome, outcome);
+    assert.equal(terminal.ledger[0].executed_at, unknown.ledger[0].executed_at);
+    assert.equal(terminal.ledger[0].original_outcome_at, null);
+    assert.equal(terminal.ledger[0].physical_execution_count, 1);
+    assert.equal(
+      harness.runSql(
+        `select to_jsonb(observation) from public.payment_provider_observations observation where operation_id='${unknown.ledger[0].id}' and event_id='${unknown.effects[0].result.evidence.eventId}';`,
+      ),
+      initialObservation,
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.payment_provider_observations where operation_id='${unknown.ledger[0].id}';`,
+      ),
+      "2",
+    );
+    assert.deepEqual(terminal.inventory, unknown.inventory);
+    assert.deepEqual(terminal.occupancies, unknown.occupancies);
+    assert.equal(terminal.releases, 0);
+    if (outcome === "succeeded") {
+      assert.equal(terminal.work.state, "complete");
+      assert.equal(terminal.confirmations.length, 1);
+      assert.equal(terminal.receipts.length, 2);
+      assert.equal(terminal.commitment.status, "confirmed_booking");
+      assert.equal(
+        terminal.ledger[0].movement_reference,
+        unknown.ledger[0].movement_reference,
+      );
+      assert.equal(
+        Date.parse(terminal.snapshot.movements[1].recordedAt),
+        Date.parse(terminal.ledger[0].authoritative_outcome_at),
+        "Confirmation records authoritative success occurrence, not initial unknown execution or receipt time",
+      );
+      assert.ok(
+        Date.parse(terminal.ledger[0].authoritative_outcome_at) >
+          Date.parse(terminal.ledger[0].executed_at),
+      );
+    } else {
+      assert.equal(terminal.work.state, "payment_required");
+      assert.equal(terminal.ledger[0].movement_reference, null);
+      assert.equal(terminal.notifications.length, 1);
+      assert.equal(terminal.confirmations.length, 0);
+      assert.equal(terminal.receipts.length, 0);
+      assert.equal(terminal.commitment.status, "pending_hold");
+      assert.equal(
+        Date.parse(terminal.work.payment_required_deadline) -
+          Date.parse(terminal.work.payment_required_recorded_at),
+        1200000,
+      );
+      const prepared = JSON.parse(
+        harness.runSql(
+          paymentEvidenceSql +
+            `begin;
+        create function public.unknown_capture_expiry_now() returns timestamptz language sql as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${requestId}'$$;
+        do $$begin execute replace(pg_get_functiondef('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'::regprocedure),'clock_timestamp()','public.unknown_capture_expiry_now()');end$$;
+        set local role service_role; select public.prepare_booking_request_payment_required_expiry('${requestId}',${literal(providerIdentity)}); rollback;`,
+        ),
+      );
+      assert.equal(
+        prepared.status,
+        "release",
+        "Resolved unknown Capture failure remains safely eligible for expiry preparation",
+      );
+    }
+    const repeat = await finishWorker(
+      startWorker(outcome === "failed" ? "recover-failure" : "recover"),
+    );
+    assert.ok(repeat.every((result) => result.status === "confirmed"));
+    assert.deepEqual(
+      observeRecovery(),
+      terminal,
+      "Terminal replay preserves the accepted snapshot/window and receipts",
+    );
+    const trace = providerTrace
+      .slice(traceStart)
+      .filter(
+        (call) =>
+          call.request.paymentLifecycleId ===
+          unknown.ledger[0].payment_lifecycle_id,
+      );
+    assert.equal(trace.filter((call) => call.stage === "execute").length, 1);
+    assert.equal(trace.filter((call) => call.stage === "query").length, 2);
+    harness.runSql(paymentEvidenceSql + cleanup);
+    seeded = false;
+  }
+  console.log(
+    "Original indeterminate Capture survives fresh unknown inquiry, unrelated eligible work, and same-identity success/failure resolution: one execution, immutable original evidence, exact success occurrence, one confirmation or fixed Payment Required window, safe expiry preparation, and terminal replay.",
+  );
+}
+
 async function proveApplicationFailureRecovery(source) {
   const traceStart = providerTrace.length;
-  harness.runSql(`begin; ${source} commit;`);
+  harness.runSql(paymentEvidenceSql + `begin; ${source} commit;`);
   seeded = true;
   const interrupted = startWorker("failure-lose-response");
   assert.equal(await finishWorker(interrupted), "interrupted");
@@ -585,8 +851,14 @@ async function proveApplicationFailureRecovery(source) {
   const failedExecution = observeRecovery();
   assert.equal(failedExecution.work.state, "processing");
   assert.equal(failedExecution.ledger.length, 1);
-  assert.equal(failedExecution.ledger[0].original_outcome, "failed");
-  assert.equal(failedExecution.ledger[0].current_outcome, "failed");
+  assert.equal(failedExecution.ledger[0].original_outcome, null);
+  assert.equal(failedExecution.ledger[0].current_outcome, null);
+  assert.equal(failedExecution.ledger[0].recorded_at, null);
+  assert.equal(failedExecution.effects[0].result.outcome, "failed");
+  assert.equal(
+    failedExecution.effects[0].result.evidence.originalOutcome,
+    "failed",
+  );
   assert.equal(failedExecution.ledger[0].movement_reference, null);
   assert.equal(failedExecution.ledger[0].physical_execution_count, 1);
   assert.equal(failedExecution.confirmations.length, 0);
@@ -605,7 +877,7 @@ async function proveApplicationFailureRecovery(source) {
   await harness.waitForMarker(holder, "FAILURE_RECOVERY_HELD");
   assert.match(holder.stdout, /"status": "reconcile"/);
   assert.equal(
-    harness.runSql(claimSql),
+    harness.runSql(paymentEvidenceSql + claimSql),
     "[]",
     "A competing recovery skips the locked failed Capture",
   );
@@ -632,9 +904,29 @@ async function proveApplicationFailureRecovery(source) {
     20 * 60 * 1000,
   );
   assert.deepEqual(
-    terminal.ledger,
-    failedExecution.ledger,
+    terminal.effects,
+    failedExecution.effects,
     "Failure recovery must preserve the one original provider execution",
+  );
+  assert.equal(terminal.ledger[0].id, failedExecution.ledger[0].id);
+  assert.deepEqual(
+    terminal.ledger[0].admission,
+    failedExecution.ledger[0].admission,
+  );
+  assert.equal(terminal.ledger[0].original_outcome, "failed");
+  assert.equal(terminal.ledger[0].current_outcome, "failed");
+  assert.equal(
+    terminal.ledger[0].provider_request_id,
+    failedExecution.effects[0].result.providerRequestId,
+  );
+  assert.equal(
+    terminal.ledger[0].provider_reference,
+    failedExecution.effects[0].result.providerReference,
+  );
+  assert.equal(terminal.ledger[0].movement_reference, null);
+  assert.equal(
+    Date.parse(terminal.ledger[0].executed_at),
+    Date.parse(failedExecution.effects[0].result.evidence.executedAt),
   );
   assert.equal(terminal.identities.length, 0);
   assert.equal(terminal.notifications.length, 1);
@@ -658,7 +950,7 @@ async function proveApplicationFailureRecovery(source) {
   const trace = providerTrace.slice(traceStart);
   assert.equal(trace.filter((call) => call.stage === "execute").length, 1);
   assert.equal(trace.filter((call) => call.stage === "query").length, 1);
-  harness.runSql(cleanup);
+  harness.runSql(paymentEvidenceSql + cleanup);
   seeded = false;
   console.log(
     "Actual failure recovery used competing fresh processes after a lost response: one failed movement-free provider execution, one immutable 20-minute Payment Required window and notification, no confirmation or receipts, the active intent, pending hold and all five original occupancies retained, and stable repeated drains.",
@@ -680,7 +972,7 @@ function pendingSource(source) {
 async function proveOwnerAdmission(source) {
   const pending = pendingSource(source);
   const reset = () => {
-    harness.runSql(`begin; ${pending} commit;`);
+    harness.runSql(paymentEvidenceSql + `begin; ${pending} commit;`);
     seeded = true;
   };
   reset();
@@ -688,21 +980,24 @@ async function proveOwnerAdmission(source) {
   assert.deepEqual(admissions[0], admissions[1]);
   assert.equal(
     harness.runSql(
-      `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
+      paymentEvidenceSql +
+        `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
     ),
     "1",
   );
   const identity = harness.runSql(
-    `select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id = '${requestId}';`,
+    paymentEvidenceSql +
+      `select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id = '${requestId}';`,
   );
-  harness.runSql(acceptSql);
+  harness.runSql(paymentEvidenceSql + acceptSql);
   assert.equal(
     harness.runSql(
-      `select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id = '${requestId}';`,
+      paymentEvidenceSql +
+        `select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id = '${requestId}';`,
     ),
     identity,
   );
-  harness.runSql(cleanup);
+  harness.runSql(paymentEvidenceSql + cleanup);
   seeded = false;
 
   for (const action of ["decline", "withdraw", "expire"]) {
@@ -710,7 +1005,8 @@ async function proveOwnerAdmission(source) {
       reset();
       if (action === "expire" && !acceptFirst)
         harness.runSql(
-          `update public.booking_requests set response_deadline = statement_timestamp(), created_at = statement_timestamp() - interval '4 hours' where id = '${requestId}';`,
+          paymentEvidenceSql +
+            `update public.booking_requests set response_deadline = statement_timestamp(), created_at = statement_timestamp() - interval '4 hours' where id = '${requestId}';`,
         );
       const otherSql =
         action === "expire"
@@ -733,23 +1029,26 @@ async function proveOwnerAdmission(source) {
       await finish(contender);
       assert.equal(
         harness.runSql(
-          `select status from public.booking_requests where id = '${requestId}';`,
+          paymentEvidenceSql +
+            `select status from public.booking_requests where id = '${requestId}';`,
         ),
         acceptFirst ? "accepted" : "processing",
       );
       assert.equal(
         harness.runSql(
-          `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
+          paymentEvidenceSql +
+            `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
         ),
         acceptFirst ? "1" : "0",
       );
       assert.equal(
         harness.runSql(
-          `select count(*) from public.simulated_payment_provider_operations where operation_kind = 'capture';`,
+          paymentEvidenceSql +
+            `select count(*) from public.payment_provider_operations where operation_kind = 'capture';`,
         ),
         "0",
       );
-      harness.runSql(cleanup);
+      harness.runSql(paymentEvidenceSql + cleanup);
       seeded = false;
     }
   }
@@ -782,12 +1081,14 @@ async function proveOwnerAdmission(source) {
     assert.equal(result(contender).status, "access-required");
     assert.equal(
       harness.runSql(
-        `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
+        paymentEvidenceSql +
+          `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
       ),
       "0",
     );
     harness.runSql(
-      `update public.account_contexts set role = 'cottage_owner', owner_approval_state = 'approved' where user_id = '${ownerId}';`,
+      paymentEvidenceSql +
+        `update public.account_contexts set role = 'cottage_owner', owner_approval_state = 'approved' where user_id = '${ownerId}';`,
     );
   }
   const holder = start(
@@ -817,17 +1118,19 @@ async function proveOwnerAdmission(source) {
   await finish(contender);
   assert.equal(
     harness.runSql(
-      `select status from public.booking_requests where id = '${requestId}';`,
+      paymentEvidenceSql +
+        `select status from public.booking_requests where id = '${requestId}';`,
     ),
     "processing",
   );
   assert.equal(
     harness.runSql(
-      `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
+      paymentEvidenceSql +
+        `select count(*) from public.booking_request_capture_work where booking_request_id = '${requestId}';`,
     ),
     "0",
   );
-  harness.runSql(cleanup);
+  harness.runSql(paymentEvidenceSql + cleanup);
   seeded = false;
   console.log(
     "Owner admission proved duplicate intent identity, both winning orders against decline/withdrawal/expiry, request-first locks, post-contention role/approval checks and deadline expiry.",
@@ -860,23 +1163,30 @@ async function proveRecoveryProgress(source) {
   try {
     for (const index of indexes) {
       harness.runSql(
-        `begin; ${clone(pending, index)} ${clone(acceptSql, index)} commit;`,
+        paymentEvidenceSql +
+          `begin; ${clone(pending, index)} ${clone(acceptSql, index)} commit;`,
       );
-      const leased = JSON.parse(harness.runSql(clone(leaseSql, index)));
+      const leased = JSON.parse(
+        harness.runSql(paymentEvidenceSql + clone(leaseSql, index)),
+      );
       if (index === indexes.at(-1))
         harness.runSql(
-          `select public.execute_simulated_booking_request_capture(${literal(leased.permit)});`,
+          paymentEvidenceSql +
+            `select pg_temp.capture_execute(${literal(leased.permit)});`,
         );
       harness.runSql(
-        `update public.booking_request_capture_work set lease_expires_at = clock_timestamp() where booking_request_id = '${clone(requestId, index)}';`,
+        paymentEvidenceSql +
+          `update public.booking_request_capture_work set lease_expires_at = clock_timestamp() where booking_request_id = '${clone(requestId, index)}';`,
       );
     }
     const unavailableBefore = harness.runSql(
-      `select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work where recovery_operation_id is null and booking_request_id <> '${clone(requestId, indexes.at(-1))}';`,
+      paymentEvidenceSql +
+        `select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work where recovery_operation_id is null and booking_request_id <> '${clone(requestId, indexes.at(-1))}';`,
     );
     const recovered = JSON.parse(
       harness.runSql(
-        `select public.claim_due_booking_request_captures(20, ${literal(providerIdentity)});`,
+        paymentEvidenceSql +
+          `select public.claim_due_booking_request_captures(20, ${literal(providerIdentity)});`,
       ),
     );
     assert.equal(recovered.length, 20);
@@ -891,7 +1201,8 @@ async function proveRecoveryProgress(source) {
     );
     assert.equal(
       harness.runSql(
-        `select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work where recovery_operation_id is null and booking_request_id <> '${clone(requestId, indexes.at(-1))}';`,
+        paymentEvidenceSql +
+          `select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work where recovery_operation_id is null and booking_request_id <> '${clone(requestId, indexes.at(-1))}';`,
       ),
       unavailableBefore,
       "Missing execution must never renew ownership",
@@ -900,7 +1211,8 @@ async function proveRecoveryProgress(source) {
       "Recovery selected later exact provider evidence beyond a full unavailable batch without renewing missing-evidence ownership.",
     );
   } finally {
-    for (const index of indexes) harness.runSql(clone(cleanup, index));
+    for (const index of indexes)
+      harness.runSql(paymentEvidenceSql + clone(cleanup, index));
   }
 }
 
@@ -910,7 +1222,10 @@ async function proveCaptureProcessing(source) {
     "process-lose-response",
     "process-interrupt-confirmation",
   ]) {
-    harness.runSql(`begin; ${pendingSource(source)} ${acceptSql} commit;`);
+    harness.runSql(
+      paymentEvidenceSql +
+        `begin; ${pendingSource(source)} ${acceptSql} commit;`,
+    );
     seeded = true;
     const admitted = observeRecovery();
     if (mode === "process") {
@@ -944,7 +1259,7 @@ async function proveCaptureProcessing(source) {
       confirmed,
       "Repeated processing must preserve all durable identities",
     );
-    harness.runSql(cleanup);
+    harness.runSql(paymentEvidenceSql + cleanup);
     seeded = false;
   }
   console.log(
@@ -954,6 +1269,11 @@ async function proveCaptureProcessing(source) {
 
 let seeded = false;
 const cleanup = `begin;
+  alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
+  alter table public.payment_provider_observations disable trigger guard_payment_provider_observation;
+  delete from public.payment_provider_observations where operation_id in (select id from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001');
+  alter table public.payment_provider_observations enable trigger guard_payment_provider_observation;
+  delete from public.simulated_payment_effects where operation_id in (select id from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001');
   alter table public.booking_request_payment_history disable trigger reject_booking_request_payment_history_change;
   delete from public.booking_request_payment_history
   where payment_lifecycle_id in (
@@ -970,7 +1290,7 @@ const cleanup = `begin;
   alter table public.booking_confirmations enable trigger reject_booking_confirmation_change;
   delete from public.booking_request_release_work where booking_request_id = '${requestId}';
   delete from public.booking_request_capture_work where booking_request_id = '${requestId}';
-  delete from public.simulated_payment_provider_operations where claim_id = '72000000-0000-4000-8000-000000001001';
+  delete from public.payment_provider_operations where claim_id = '72000000-0000-4000-8000-000000001001';
   delete from public.booking_request_provider_operation_identities where attempt_id = '70000000-0000-4000-8000-000000001001';
   delete from public.booking_request_authorization_claim_items where claim_id = '72000000-0000-4000-8000-000000001001';
   delete from public.booking_request_authorization_claim_occupancies where claim_id = '72000000-0000-4000-8000-000000001001';
@@ -993,6 +1313,7 @@ const cleanup = `begin;
   delete from public.owner_application_cottage_profiles where id = '20000000-0000-4000-8000-000000001001';
   delete from public.account_contexts where user_id in ('10000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001002', '10000000-0000-4000-8000-000000001003');
   delete from auth.users where id in ('10000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001002', '10000000-0000-4000-8000-000000001003');
+alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
 commit;`;
 
 harness.guardDisposableLocalDatabase();
@@ -1008,7 +1329,7 @@ try {
     .split("-- BEGIN CAPTURE EXECUTION FIXTURE\n")[1]
     ?.split("-- END CAPTURE EXECUTION FIXTURE")[0];
   assert.ok(fixture, "The shared capture fixture must be available");
-  harness.runSql(`begin; ${fixture} commit;`);
+  harness.runSql(paymentEvidenceSql + `begin; ${fixture} commit;`);
   seeded = true;
 
   const [leased, processing] = await duplicate(leaseSql, "lease");
@@ -1016,7 +1337,8 @@ try {
   assert.deepEqual(processing, { status: "processing" });
   assert.equal(
     harness.runSql(
-      "select count(*) from public.simulated_payment_provider_operations where operation_kind = 'capture';",
+      paymentEvidenceSql +
+        "select count(*) from public.payment_provider_operations where operation_kind = 'capture';",
     ),
     "0",
     "Committed leasing must precede provider execution",
@@ -1024,9 +1346,11 @@ try {
   // Contention proofs use a fixed fixture deadline after observing the real lease.
   const permit = { ...leased.permit, notAfter: "2100-01-01T00:00:00.000Z" };
   harness.runSql(
-    `update public.booking_request_capture_work set lease_expires_at = '${permit.notAfter}' where booking_request_id = '${requestId}';`,
+    paymentEvidenceSql +
+      `update public.booking_request_capture_work set lease_expires_at = '${permit.notAfter}' where booking_request_id = '${requestId}';`,
   );
-  const providerSql = `select public.execute_simulated_booking_request_capture(${literal(permit)});`;
+  await proveAdmissionAfterLocks(permit);
+  const providerSql = `select pg_temp.capture_execute(${literal(permit)});`;
   const [executed, repeated] = await duplicate(providerSql, "provider");
   assert.deepEqual(
     repeated,
@@ -1039,7 +1363,6 @@ try {
   await proveLockOrder(leaseSql, "lease");
   await proveLockOrder(providerSql, "provider");
   await proveLockOrder(completeSql, "complete");
-  await proveAdmissionAfterLocks(permit);
   const [completed, replayed] = await duplicate(completeSql, "complete");
   assert.deepEqual(
     completed,
@@ -1053,29 +1376,32 @@ try {
   ]);
   await proveLockOrder(completeSql, "completed_replay");
   assert.deepEqual(
-    JSON.parse(harness.runSql(leaseSql)),
+    JSON.parse(harness.runSql(paymentEvidenceSql + leaseSql)),
     completed,
     "Completed leasing must replay evidence without another provider call",
   );
   assert.equal(
     harness.runSql(
-      `select count(*) || ':' || sum(physical_execution_count) from public.simulated_payment_provider_operations where operation_kind = 'capture' and payment_lifecycle_id = '${permit.paymentLifecycleId}';`,
+      paymentEvidenceSql +
+        `select count(*) || ':' || sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=payment_provider_operations.id)) from public.payment_provider_operations where operation_kind = 'capture' and payment_lifecycle_id = '${permit.paymentLifecycleId}';`,
     ),
     "1:1",
   );
   assert.equal(
     harness.runSql(
-      `select count(*) from public.booking_request_provider_operation_identities where attempt_id = '${permit.submissionAttemptId}' and operation_kind = 'capture';`,
+      paymentEvidenceSql +
+        `select count(*) from public.booking_request_provider_operation_identities where attempt_id = '${permit.submissionAttemptId}' and operation_kind = 'capture';`,
     ),
     "1",
   );
   assert.equal(
     harness.runSql(
-      `select jsonb_array_length(jsonb_path_query_array(payment_snapshot, '$.movements[*] ? (@.kind == "capture")')) from public.booking_request_submission_attempts where id = '${permit.submissionAttemptId}';`,
+      paymentEvidenceSql +
+        `select jsonb_array_length(jsonb_path_query_array(payment_snapshot, '$.movements[*] ? (@.kind == "capture")')) from public.booking_request_submission_attempts where id = '${permit.submissionAttemptId}';`,
     ),
     "1",
   );
-  harness.runSql(cleanup);
+  harness.runSql(paymentEvidenceSql + cleanup);
   seeded = false;
 
   const confirmationSource = readFileSync(
@@ -1092,11 +1418,12 @@ try {
     confirmationFixture,
     "The complete confirmation fixture must be available",
   );
-  harness.runSql(`begin; ${confirmationFixture} commit;`);
+  harness.runSql(paymentEvidenceSql + `begin; ${confirmationFixture} commit;`);
   seeded = true;
   const captureSnapshot = JSON.parse(
     harness.runSql(
-      `select public.complete_booking_request_capture(
+      paymentEvidenceSql +
+        `select public.complete_booking_request_capture(
         '${requestId}',
         (capture_execution_permit ->> 'leaseGeneration')::bigint,
         (capture_execution_permit ->> 'leaseToken')::uuid,
@@ -1105,7 +1432,7 @@ try {
           'providerReference', provider_reference,
           'movementReference', movement_reference)
       ) -> 'snapshot'
-      from public.simulated_payment_provider_operations
+      from public.payment_provider_operations
       where operation_kind = 'capture' and payment_lifecycle_id = '73000000-0000-4000-8000-000000001001';`,
     ),
   );
@@ -1126,21 +1453,24 @@ try {
   );
   assert.equal(
     harness.runSql(
-      `select count(*) || ':' || (select count(*) from public.booking_receipts) || ':' || (select count(*) from public.cottage_booking_period_commitments where status = 'confirmed_booking') from public.booking_confirmations;`,
+      paymentEvidenceSql +
+        `select count(*) || ':' || (select count(*) from public.booking_receipts) || ':' || (select count(*) from public.cottage_booking_period_commitments where status = 'confirmed_booking') from public.booking_confirmations;`,
     ),
     "1:2:1",
     "Concurrent finalization must persist one confirmation, two receipts, and one promoted commitment",
   );
   assert.equal(
     harness.runSql(
-      `select count(*) from public.cottage_booking_period_occupancies where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001' and active;`,
+      paymentEvidenceSql +
+        `select count(*) from public.cottage_booking_period_occupancies where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001' and active;`,
     ),
     "5",
     "Concurrent finalization must retain every selected Shift occupancy",
   );
   assert.equal(
     harness.runSql(
-      `select count(*) from public.booking_request_release_work where booking_request_id = '${requestId}';`,
+      paymentEvidenceSql +
+        `select count(*) from public.booking_request_release_work where booking_request_id = '${requestId}';`,
     ),
     "0",
     "Successful finalization must not create release work",
@@ -1148,7 +1478,7 @@ try {
   console.log(
     "Booking Request Capture contention proved one lease, one physical provider execution, one Capture identity and movement, exact replay, ordered locks for all three entry points through the completed Capture identity, and admission refusal after a blocked deadline. Confirmation contention then proved one identical outcome, two receipts, retained complete occupancy, no release work, and the same ordered Capture lock prefix through the commitment.",
   );
-  harness.runSql(cleanup);
+  harness.runSql(paymentEvidenceSql + cleanup);
   seeded = false;
   const recoverySource = confirmationSource
     .split("-- BEGIN CAPTURE RECOVERY SOURCE\n")[1]
@@ -1163,6 +1493,7 @@ try {
   await proveFailureRecording(recoverySource);
   await proveApplicationFailureRecovery(recoverySource);
   await proveCaptureProcessing(recoverySource);
+  await proveIndeterminateCaptureRecovery(recoverySource);
 } finally {
   for (const worker of workers) worker.child.kill("SIGTERM");
   await Promise.all([...workers].map((worker) => worker.exited));
@@ -1172,5 +1503,5 @@ try {
       session.child.stdin.end("rollback;\n");
   }
   await Promise.all([...sessions].map((session) => session.exited));
-  if (seeded) harness.runSql(cleanup);
+  if (seeded) harness.runSql(paymentEvidenceSql + cleanup);
 }

@@ -4,7 +4,7 @@ import {
   recoveryBindingFrom,
   recoveryPermitFrom,
 } from "./booking-request-payment-recovery-contract";
-import { DurablePaymentSimulator } from "./durable-payment-simulator-core";
+import { SupabasePaymentOperationExecutionRepository } from "./supabase-payment-operation-execution";
 
 describe("Booking Request recovery provider contract", () => {
   it.each([
@@ -12,46 +12,48 @@ describe("Booking Request recovery provider contract", () => {
     ["replacement-authorization", "authorization"],
     ["replacement-capture", "capture"],
     ["replacement-release", "release"],
-  ] as const)(
-    "dispatches %s only with operation kind %s",
-    async (step, kind) => {
-      const permit = recoveryPermitFixture(step);
-      const rpc = vi.fn().mockResolvedValue({
-        data: {
-          outcome: "succeeded",
-          providerRequestId: "request",
-          providerReference: "reference",
-          movementReference: "movement",
-        },
-        error: null,
-      });
-      const provider = new DurablePaymentSimulator({
-        client: { rpc } as never,
-        now: () => "2026-09-06T12:00:00.000Z",
-      });
-      const request = {
-        kind,
-        paymentLifecycleId: permit.binding.paymentLifecycleId,
-        logicalOperationId: permit.operationId,
-        attemptId: permit.idempotencyKey,
-        amountFils: permit.binding.amountFils,
-        currency: "IQD" as const,
-        executionPermit: permit,
-      };
-      await expect(provider.execute(request)).resolves.toMatchObject({
-        outcome: "succeeded",
-      });
-      expect(rpc).toHaveBeenCalledOnce();
-      rpc.mockClear();
-      await expect(
-        provider.execute({
-          ...request,
-          kind: kind === "release" ? "capture" : "release",
-        }),
-      ).resolves.toEqual({ outcome: "not-executed" });
-      expect(rpc).not.toHaveBeenCalled();
-    },
-  );
+  ] as const)("admits %s only with operation kind %s", async (step, kind) => {
+    const permit = recoveryPermitFixture(step);
+    const request = {
+      kind,
+      paymentLifecycleId: permit.binding.paymentLifecycleId,
+      logicalOperationId: permit.operationId,
+      attemptId: permit.idempotencyKey,
+      amountFils: permit.binding.amountFils,
+      currency: "IQD" as const,
+      executionPermit: permit,
+    };
+    const admission = {
+      purpose: permit.purpose,
+      operationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      providerIdentity: permit.binding.providerIdentity,
+      binding: request,
+      idempotencyKey: permit.idempotencyKey,
+      requestFingerprint: "a".repeat(64),
+      notBefore: null,
+      notAfter: permit.notAfter,
+      mode: "execute",
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: admission, error: null });
+    const repository = new SupabasePaymentOperationExecutionRepository({
+      rpc,
+    } as never);
+    await expect(
+      repository.admit(request, permit.binding.providerIdentity),
+    ).resolves.toEqual(admission);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(
+      "admit_booking_request_payment_recovery",
+      { target_permit: permit },
+    );
+    rpc.mockClear();
+    await expect(
+      repository.admit(
+        { ...request, kind: kind === "release" ? "capture" : "release" },
+        permit.binding.providerIdentity,
+      ),
+    ).rejects.toThrow("permit");
+    expect(rpc).not.toHaveBeenCalled();
+  });
   it("validates a complete request, claim, replacement and predecessor binding", () => {
     const permit = recoveryPermitFixture();
     expect(recoveryPermitFrom(permit)).toEqual(permit);
@@ -90,65 +92,29 @@ describe("Booking Request recovery provider contract", () => {
     { logicalOperationId: "other" },
     { attemptId: "other" },
   ])(
-    "never dispatches a payment request that disagrees with its permit: %j",
+    "rejects a request that disagrees with its permit: %j",
     async (override) => {
       const permit = recoveryPermitFixture();
       const rpc = vi.fn();
-      const provider = new DurablePaymentSimulator({
-        client: { rpc } as never,
-        now: () => "2026-09-06T12:00:00.000Z",
-      });
+      const repository = new SupabasePaymentOperationExecutionRepository({
+        rpc,
+      } as never);
       await expect(
-        provider.execute({
-          kind: "capture",
-          paymentLifecycleId: permit.binding.paymentLifecycleId,
-          logicalOperationId: permit.operationId,
-          attemptId: permit.idempotencyKey,
-          amountFils: 105_000_000,
-          currency: "IQD",
-          executionPermit: permit,
-          ...override,
-        } as never),
-      ).resolves.toEqual({ outcome: "not-executed" });
+        repository.admit(
+          {
+            kind: "capture",
+            paymentLifecycleId: permit.binding.paymentLifecycleId,
+            logicalOperationId: permit.operationId,
+            attemptId: permit.idempotencyKey,
+            amountFils: 105_000_000,
+            currency: "IQD",
+            executionPermit: permit,
+            ...override,
+          } as never,
+          permit.binding.providerIdentity,
+        ),
+      ).rejects.toThrow("permit");
       expect(rpc).not.toHaveBeenCalled();
     },
   );
-  it("queries the persisted recovery identity after its dispatch deadline", async () => {
-    const permit = recoveryPermitFixture();
-    const rpc = vi.fn().mockResolvedValue({
-      data: {
-        outcome: "succeeded",
-        providerRequestId: "original-request",
-        providerReference: "original-reference",
-        movementReference: "original-movement",
-      },
-      error: null,
-    });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as never,
-      now: () => "2101-01-01T00:00:00.000Z",
-    });
-    await expect(
-      provider.query({
-        kind: "capture",
-        paymentLifecycleId: permit.binding.paymentLifecycleId,
-        logicalOperationId: permit.operationId,
-        attemptId: permit.idempotencyKey,
-        amountFils: 105_000_000,
-        currency: "IQD",
-        recoveryPermit: permit,
-        providerRequestId: "original-request",
-        providerReference: "original-reference",
-      }),
-    ).resolves.toMatchObject({ outcome: "succeeded" });
-    expect(rpc).toHaveBeenCalledWith(
-      "query_simulated_booking_request_payment_recovery",
-      {
-        target_permit: permit,
-        target_provider_request_id: "original-request",
-        target_provider_reference: "original-reference",
-        target_outcome: "succeeded",
-      },
-    );
-  });
 });

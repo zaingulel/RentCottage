@@ -92,3 +92,5 @@ CREATE INDEX "owner_verification_documents_application_id_idx" ON "public"."owne
 CREATE INDEX "privileged_sign_in_attempts_actor_user_id_idx" ON "public"."privileged_sign_in_attempts" USING "btree" ("actor_user_id", "attempted_at" DESC);
 
 CREATE INDEX "privileged_sign_in_attempts_attempted_at_idx" ON "public"."privileged_sign_in_attempts" USING "btree" ("attempted_at");
+
+CREATE INDEX payment_provider_observations_operation_idx ON public.payment_provider_observations USING btree (operation_id,received_at,id);

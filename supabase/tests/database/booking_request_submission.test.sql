@@ -1,4 +1,62 @@
 begin;
+-- BEGIN PAYMENT EVIDENCE FIXTURE
+-- Test arrangement: admission, isolated effect, and explicit recording.
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
+declare observed jsonb;
+declare proposed jsonb;
+declare recorder text;
+declare operation_id text:=admission->>'operationId';
+begin
+  if admission->>'status'='not-admitted' then return jsonb_build_object('outcome','not-executed'); end if;
+  if operation_id is null then return admission; end if;
+  proposed:=jsonb_build_object('outcome',outcome,'providerRequestId','fixture-request-'||operation_id,'providerReference','fixture-reference-'||operation_id,
+    'evidence',jsonb_build_object('operationId',operation_id,'eventId','fixture-'||operation_id||'-'||outcome,'provenance','fictional-provider',
+      'originalOutcome',outcome,'executedAt',clock_timestamp(),'occurredAt',case when outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
+    ||case when outcome='failed' then jsonb_build_object('retrySafe',false) else jsonb_build_object('movementReference','fixture-movement-'||operation_id) end;
+  if admission->>'mode'='execute' then observed:=public.persist_simulated_payment_effect(effect_binding,proposed);
+  else
+    observed:=public.seal_simulated_payment_absence(effect_binding);
+    if observed->>'outcome'='indeterminate' and outcome<>'indeterminate' then
+      proposed:=jsonb_set(proposed,'{evidence,originalOutcome}',observed#>'{evidence,originalOutcome}');
+      proposed:=jsonb_set(proposed,'{evidence,executedAt}',observed#>'{evidence,executedAt}');
+      proposed:=proposed||jsonb_build_object('providerRequestId',observed->>'providerRequestId','providerReference',observed->>'providerReference');
+      if outcome='succeeded' then proposed:=proposed||jsonb_build_object('movementReference',observed->>'movementReference'); end if;
+      observed:=public.resolve_simulated_payment_effect(effect_binding,observed#>>'{evidence,eventId}',proposed);
+    end if;
+  end if;
+  recorder:=case admission->>'purpose' when 'booking-request-capture' then 'record_booking_request_capture_observation'
+    when 'booking-request-payment-recovery' then 'record_booking_request_payment_recovery_observation'
+    when 'booking-request-payment-required-expiry' then 'record_booking_request_payment_required_expiry_observation'
+    when 'booking-request-payment-required-corrective-refund' then 'record_booking_request_payment_required_expiry_observation'
+    else 'record_booking_request_provider_operation_observation' end;
+  execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed;
+  return observed-'evidence';
+end;
+$$;
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  execute format('select public.%I($1)',routine) into admission using permit;
+  result:=pg_temp.payment_fixture_result(admission,outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.payment_execute(operation jsonb,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_provider_operation',operation,outcome);
+$$;
+create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  result:=pg_temp.payment_fixture_result(public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],request_id,reference),outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+-- END PAYMENT EVIDENCE FIXTURE
 
 select plan(277);
 
@@ -100,29 +158,29 @@ select is(
   'the release ledger is composite-linked to its work, attempt, and lifecycle'
 );
 select has_function(
-  'public', 'execute_simulated_payment_provider_operation',
-  array['jsonb', 'text'],
+  'public', 'admit_booking_request_provider_operation',
+  array['jsonb'],
   'the fictional provider executes through a durable PostgreSQL ledger'
 );
 select has_function(
-  'public', 'query_simulated_payment_provider_operation',
-  array['jsonb', 'text', 'text', 'text'],
+  'public', 'reload_booking_request_payment_operation',
+  array['jsonb', 'text', 'text'],
   'the fictional provider reconciles through the same durable ledger'
 );
 select ok(
   has_function_privilege(
     'service_role',
-    'public.execute_simulated_payment_provider_operation(jsonb,text)',
+    'public.admit_booking_request_provider_operation(jsonb)',
     'execute'
   )
   and not has_function_privilege(
     'anon',
-    'public.execute_simulated_payment_provider_operation(jsonb,text)',
+    'public.admit_booking_request_provider_operation(jsonb)',
     'execute'
   )
   and not has_function_privilege(
     'authenticated',
-    'public.execute_simulated_payment_provider_operation(jsonb,text)',
+    'public.admit_booking_request_provider_operation(jsonb)',
     'execute'
   )
   and has_function_privilege(
@@ -225,7 +283,7 @@ select is(
       'public.booking_request_authorization_claim_items'::regclass,
       'public.booking_request_authorization_claim_occupancies'::regclass,
       'public.booking_request_authorization_reconciliation_outbox'::regclass,
-      'public.simulated_payment_provider_operations'::regclass,
+      'public.payment_provider_operations'::regclass,
       'public.booking_snapshots'::regclass,
       'public.booking_requests'::regclass,
       'public.owner_request_notifications'::regclass,
@@ -248,7 +306,7 @@ select ok(
       ('public.booking_request_authorization_claim_items'),
       ('public.booking_request_authorization_claim_occupancies'),
       ('public.booking_request_authorization_reconciliation_outbox'),
-      ('public.simulated_payment_provider_operations'),
+      ('public.payment_provider_operations'),
       ('public.booking_snapshots'),
       ('public.booking_requests'),
       ('public.owner_request_notifications'),
@@ -791,7 +849,7 @@ select to_jsonb(attempts) as attempt_record,
     as claim_count,
   (select count(*)::integer
     from public.booking_request_authorization_reconciliation_outbox) as outbox_count,
-  (select count(*)::integer from public.simulated_payment_provider_operations)
+  (select count(*)::integer from public.payment_provider_operations)
     as provider_count
 from public.booking_request_submission_attempts attempts
 where attempts.id = (
@@ -866,7 +924,7 @@ select results_eq(
       (select count(*)::integer
         from public.booking_request_authorization_reconciliation_outbox)
         = baseline.outbox_count,
-      (select count(*)::integer from public.simulated_payment_provider_operations)
+      (select count(*)::integer from public.payment_provider_operations)
         = baseline.provider_count
     from authorization_null_baseline baseline
     join public.booking_request_submission_attempts attempts
@@ -1074,7 +1132,7 @@ grant select on simulated_authorization_operation to service_role;
 savepoint provider_query_null_input_audit;
 create temporary table provider_query_null_baseline as
 select to_jsonb(claims) as claim_record,
-  (select count(*)::integer from public.simulated_payment_provider_operations)
+  (select count(*)::integer from public.payment_provider_operations)
     as provider_count
 from public.booking_request_authorization_claims claims;
 create function pg_temp.assert_null_query_bindings_rejected(target_operation jsonb)
@@ -1091,7 +1149,7 @@ begin
       target_operation, array['providerIdentity', required_key], 'null'::jsonb
     );
     begin
-      perform public.query_simulated_payment_provider_operation(
+      perform pg_temp.payment_query(
         invalid_operation, null, null, 'succeeded'
       );
       raise exception 'provider query accepted null binding %', required_key
@@ -1107,7 +1165,7 @@ begin
       target_operation, array[required_key], 'null'::jsonb
     );
     begin
-      perform public.query_simulated_payment_provider_operation(
+      perform pg_temp.payment_query(
         invalid_operation, null, null, 'succeeded'
       );
       raise exception 'provider query accepted null binding %', required_key
@@ -1123,33 +1181,26 @@ language plpgsql
 as $$
 begin
   begin
-    perform public.query_simulated_payment_provider_operation(
+    perform pg_temp.payment_query(
       null, null, null, 'succeeded'
     );
     raise exception 'provider query accepted SQL null operation' using errcode='P0001';
-  exception when sqlstate '22023' then null;
+  exception when sqlstate '22023' or sqlstate 'RC409' then null;
   end;
   begin
-    perform public.query_simulated_payment_provider_operation(
+    perform pg_temp.payment_query(
       'null'::jsonb, null, null, 'succeeded'
     );
     raise exception 'provider query accepted JSON null operation' using errcode='P0001';
-  exception when sqlstate '22023' then null;
+  exception when sqlstate '22023' or sqlstate 'RC409' then null;
   end;
   begin
-    perform public.query_simulated_payment_provider_operation(
+    perform pg_temp.payment_query(
       jsonb_set(target_operation, '{providerIdentity}', 'null'::jsonb),
       null, null, 'succeeded'
     );
     raise exception 'provider query accepted JSON null provider' using errcode='P0001';
-  exception when sqlstate '22023' then null;
-  end;
-  begin
-    perform public.query_simulated_payment_provider_operation(
-      target_operation, null, null, null
-    );
-    raise exception 'provider query accepted null outcome' using errcode='P0001';
-  exception when sqlstate '22023' then null;
+  exception when sqlstate '22023' or sqlstate 'RC409' then null;
   end;
 end;
 $$;
@@ -1167,12 +1218,12 @@ select lives_ok(
     'select pg_temp.assert_query_objects_rejected(%L::jsonb)',
     (select operation::text from simulated_authorization_operation)
   ),
-  'provider query rejects null operation, provider object, and outcome inputs'
+  'provider inquiry rejects null operation and provider object inputs'
 );
 reset role;
 select results_eq(
   $$select to_jsonb(claims) = baseline.claim_record,
-      (select count(*)::integer from public.simulated_payment_provider_operations)
+      (select count(*)::integer from public.payment_provider_operations)
         = baseline.provider_count
     from provider_query_null_baseline baseline
     join public.booking_request_authorization_claims claims
@@ -1182,15 +1233,113 @@ select results_eq(
 );
 rollback to savepoint provider_query_null_input_audit;
 
+savepoint absent_execution_expires;
+update public.booking_request_submission_attempts
+set state = 'reconciliation_required',
+  payment_snapshot = (select snapshot from pending_authorization_payment),
+  authorization_provider_request_id = null,
+  authorization_provider_reference = null,
+  authorization_movement_reference = null;
+update public.booking_request_authorization_claims
+set state = 'reconciliation_required',
+  reconciliation_expires_at = clock_timestamp() - interval '1 second',
+  state_revision = state_revision + 1;
+update public.booking_request_authorization_reconciliation_outbox
+set state = 'pending', observed_state_revision = (
+    select state_revision from public.booking_request_authorization_claims
+  ), lease_token = null, lease_expires_at = null;
+set local role service_role;
+select is(
+  public.expire_booking_request_authorization_claims(),
+  1,
+  'an expired claim without any provider admission is safely terminalized'
+);
+reset role;
+select results_eq(
+  $$select attempts.state, claims.state::text, occupancies.active, outbox.state,
+      (select count(*)::integer from public.booking_requests),
+      (select count(*)::integer from public.cottage_booking_period_commitments)
+    from public.booking_request_submission_attempts attempts
+    join public.booking_request_authorization_claims claims
+      on claims.attempt_id = attempts.id
+    join public.booking_request_authorization_claim_occupancies occupancies
+      on occupancies.claim_id = claims.id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id = claims.id$$,
+  $$values ('expired'::text, 'expired'::text, false, 'complete'::text,
+    0::integer, 0::integer)$$,
+  'an evidenced unexecuted expiry frees inventory without creating product records'
+);
+create temporary table expired_reconciliation_baseline on commit drop as
+select attempts.id as attempt_id,
+    attempts.state as attempt_state,
+    attempts.payment_snapshot,
+    attempts.updated_at as attempt_updated_at,
+    claims.state as claim_state,
+    claims.state_revision as claim_state_revision,
+    claims.updated_at as claim_updated_at,
+    outbox.state as outbox_state,
+    outbox.observed_state_revision,
+    outbox.lease_token,
+    outbox.lease_expires_at,
+    outbox.updated_at as outbox_updated_at
+  from public.booking_request_submission_attempts attempts
+  join public.booking_request_authorization_claims claims
+    on claims.attempt_id = attempts.id
+  join public.booking_request_authorization_reconciliation_outbox outbox
+    on outbox.claim_id = claims.id;
+grant select on expired_reconciliation_baseline to service_role;
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.save_booking_request_payment_snapshot(%L::uuid, %L::jsonb, %L::jsonb)',
+    (select attempt_id from expired_reconciliation_baseline),
+    (select payment_snapshot::text from expired_reconciliation_baseline),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
+  ),
+  'RC409', null,
+  'an identical stale reconciliation snapshot cannot regress an expired attempt'
+);
+select public.mark_booking_request_reconciliation_required(
+  (select attempt_id from expired_reconciliation_baseline)
+);
+reset role;
+select results_eq(
+  $$select attempts.state, attempts.payment_snapshot, attempts.updated_at,
+      claims.state, claims.state_revision, claims.updated_at,
+      outbox.state, outbox.observed_state_revision,
+      outbox.lease_token, outbox.lease_expires_at, outbox.updated_at
+    from public.booking_request_submission_attempts attempts
+    join public.booking_request_authorization_claims claims
+      on claims.attempt_id = attempts.id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id = claims.id$$,
+  $$select attempt_state, payment_snapshot, attempt_updated_at,
+      claim_state, claim_state_revision, claim_updated_at,
+      outbox_state, observed_state_revision,
+      lease_token, lease_expires_at, outbox_updated_at
+    from expired_reconciliation_baseline$$,
+  'stale same-snapshot save and marker preserve expired payment, claim, audit, and outbox state'
+);
+select is(
+  public.public_cottage_unit_is_available(
+    '60000000-0000-4000-8000-000000003201', 'shift',
+    '62000000-0000-4000-8000-000000003202', '2099-08-21'
+  ),
+  true,
+  'authoritative absence restores public availability without a recovery runner'
+);
+rollback to savepoint absent_execution_expires;
+
 create temporary table simulated_authorization_results (result jsonb);
 grant select, insert on simulated_authorization_results to service_role;
 set local role service_role;
 insert into simulated_authorization_results
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
   (select operation from simulated_authorization_operation), 'indeterminate'
 );
 insert into simulated_authorization_results
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
   (select operation from simulated_authorization_operation), 'succeeded'
 );
 select results_eq(
@@ -1202,14 +1351,14 @@ select results_eq(
 );
 reset role;
 select results_eq(
-  $$select count(*)::integer, sum(physical_execution_count)::integer
-    from public.simulated_payment_provider_operations$$,
+  $$select count(*)::integer, sum((select effects.physical_execution_count from public.simulated_payment_effects effects where effects.operation_id=payment_provider_operations.id))::integer
+    from public.payment_provider_operations$$,
   $$values (1::integer, 1::integer)$$,
   'the durable ledger records exactly one physical fictional authorization'
 );
 set local role service_role;
 select is(
-  public.query_simulated_payment_provider_operation(
+  pg_temp.payment_query(
     (select operation from simulated_authorization_operation),
     (select result ->> 'providerRequestId'
       from simulated_authorization_results limit 1),
@@ -1221,7 +1370,7 @@ select is(
   'reconciliation resolves the same physical fictional authorization'
 );
 select is(
-  public.query_simulated_payment_provider_operation(
+  pg_temp.payment_query(
     (select operation from simulated_authorization_operation),
     null,
     null,
@@ -1230,22 +1379,16 @@ select is(
   'succeeded',
   'reconciliation discovers the immutable operation when a crash lost provider identifiers'
 );
-select is(
-  public.query_simulated_payment_provider_operation(
-    jsonb_set(
-      (select operation from simulated_authorization_operation),
-      '{requestFingerprint}', to_jsonb(repeat('c', 64))
-    ),
-    null,
-    null,
-    'succeeded'
-  ) ->> 'outcome',
-  'not-executed',
-  'reconciliation reports authoritative ledger absence without inventing provider identity'
+select throws_ok(
+  $$select pg_temp.payment_query(
+    jsonb_set((select operation from simulated_authorization_operation),
+      '{requestFingerprint}',to_jsonb(repeat('c',64))),null,null,'succeeded')$$,
+  'RC409',null,
+  'inquiry rejects a mismatched fingerprint without fabricating absence'
 );
 select throws_ok(
   format(
-    'select public.execute_simulated_payment_provider_operation(%L::jsonb, %L)',
+    'select pg_temp.payment_execute(%L::jsonb, %L)',
     (select jsonb_set(operation, '{requestFingerprint}', to_jsonb(repeat('b', 64)))::text
       from simulated_authorization_operation),
     'succeeded'
@@ -1258,7 +1401,7 @@ select ok(
   not exists (
     select 1 from information_schema.columns
     where table_schema = 'public'
-      and table_name = 'simulated_payment_provider_operations'
+      and table_name = 'payment_provider_operations'
       and column_name in (
         'customer_user_id', 'customer_name', 'phone', 'booking_note',
         'profile_id', 'public_slug', 'quote_payload', 'intent_payload'
@@ -1437,7 +1580,7 @@ rollback to savepoint expired_pre_finalization_availability;
 
 savepoint indeterminate_expiry_remains_protected;
 delete from public.booking_request_provider_operation_identities;
-update public.simulated_payment_provider_operations
+update public.payment_provider_operations
 set current_outcome = 'indeterminate';
 update public.booking_request_submission_attempts
 set state = 'reconciliation_required',
@@ -1478,105 +1621,7 @@ select results_eq(
 );
 rollback to savepoint indeterminate_expiry_remains_protected;
 
-savepoint absent_execution_expires;
-delete from public.booking_request_provider_operation_identities;
-delete from public.simulated_payment_provider_operations;
-update public.booking_request_submission_attempts
-set state = 'reconciliation_required',
-  payment_snapshot = (select snapshot from pending_authorization_payment),
-  authorization_provider_request_id = null,
-  authorization_provider_reference = null,
-  authorization_movement_reference = null;
-update public.booking_request_authorization_claims
-set state = 'reconciliation_required',
-  reconciliation_expires_at = clock_timestamp() - interval '1 second',
-  state_revision = state_revision + 1;
-update public.booking_request_authorization_reconciliation_outbox
-set state = 'pending', observed_state_revision = (
-    select state_revision from public.booking_request_authorization_claims
-  ), lease_token = null, lease_expires_at = null;
-set local role service_role;
-select is(
-  public.expire_booking_request_authorization_claims(),
-  1,
-  'authoritative ledger absence terminalizes an unexecuted expired claim'
-);
-reset role;
-select results_eq(
-  $$select attempts.state, claims.state::text, occupancies.active, outbox.state,
-      (select count(*)::integer from public.booking_requests),
-      (select count(*)::integer from public.cottage_booking_period_commitments)
-    from public.booking_request_submission_attempts attempts
-    join public.booking_request_authorization_claims claims
-      on claims.attempt_id = attempts.id
-    join public.booking_request_authorization_claim_occupancies occupancies
-      on occupancies.claim_id = claims.id
-    join public.booking_request_authorization_reconciliation_outbox outbox
-      on outbox.claim_id = claims.id$$,
-  $$values ('expired'::text, 'expired'::text, false, 'complete'::text,
-    0::integer, 0::integer)$$,
-  'an evidenced unexecuted expiry frees inventory without creating product records'
-);
-create temporary table expired_reconciliation_baseline on commit drop as
-select attempts.id as attempt_id,
-    attempts.state as attempt_state,
-    attempts.payment_snapshot,
-    attempts.updated_at as attempt_updated_at,
-    claims.state as claim_state,
-    claims.state_revision as claim_state_revision,
-    claims.updated_at as claim_updated_at,
-    outbox.state as outbox_state,
-    outbox.observed_state_revision,
-    outbox.lease_token,
-    outbox.lease_expires_at,
-    outbox.updated_at as outbox_updated_at
-  from public.booking_request_submission_attempts attempts
-  join public.booking_request_authorization_claims claims
-    on claims.attempt_id = attempts.id
-  join public.booking_request_authorization_reconciliation_outbox outbox
-    on outbox.claim_id = claims.id;
-grant select on expired_reconciliation_baseline to service_role;
-set local role service_role;
-select throws_ok(
-  format(
-    'select public.save_booking_request_payment_snapshot(%L::uuid, %L::jsonb, %L::jsonb)',
-    (select attempt_id from expired_reconciliation_baseline),
-    (select payment_snapshot::text from expired_reconciliation_baseline),
-    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'
-  ),
-  'RC409', null,
-  'an identical stale reconciliation snapshot cannot regress an expired attempt'
-);
-select public.mark_booking_request_reconciliation_required(
-  (select attempt_id from expired_reconciliation_baseline)
-);
-reset role;
-select results_eq(
-  $$select attempts.state, attempts.payment_snapshot, attempts.updated_at,
-      claims.state, claims.state_revision, claims.updated_at,
-      outbox.state, outbox.observed_state_revision,
-      outbox.lease_token, outbox.lease_expires_at, outbox.updated_at
-    from public.booking_request_submission_attempts attempts
-    join public.booking_request_authorization_claims claims
-      on claims.attempt_id = attempts.id
-    join public.booking_request_authorization_reconciliation_outbox outbox
-      on outbox.claim_id = claims.id$$,
-  $$select attempt_state, payment_snapshot, attempt_updated_at,
-      claim_state, claim_state_revision, claim_updated_at,
-      outbox_state, observed_state_revision,
-      lease_token, lease_expires_at, outbox_updated_at
-    from expired_reconciliation_baseline$$,
-  'stale same-snapshot save and marker preserve expired payment, claim, audit, and outbox state'
-);
-select is(
-  public.public_cottage_unit_is_available(
-    '60000000-0000-4000-8000-000000003201', 'shift',
-    '62000000-0000-4000-8000-000000003202', '2099-08-21'
-  ),
-  true,
-  'authoritative absence restores public availability without a recovery runner'
-);
-rollback to savepoint absent_execution_expires;
+
 
 savepoint authorized_finalization_recovery;
 create temporary table authorized_finalization_work (result jsonb);
@@ -1636,7 +1681,7 @@ create temporary table cleanup_issuer_null_baseline as
 select to_jsonb(attempts) as attempt_record, to_jsonb(claims) as claim_record,
   (select count(*)::integer
     from public.booking_request_authorization_reconciliation_outbox) as outbox_count,
-  (select count(*)::integer from public.simulated_payment_provider_operations)
+  (select count(*)::integer from public.payment_provider_operations)
     as provider_count,
   (select count(*)::integer from public.booking_request_release_work) as work_count
 from public.booking_request_submission_attempts attempts
@@ -1765,7 +1810,7 @@ select results_eq(
       (select count(*)::integer
         from public.booking_request_authorization_reconciliation_outbox)
         = baseline.outbox_count,
-      (select count(*)::integer from public.simulated_payment_provider_operations)
+      (select count(*)::integer from public.payment_provider_operations)
         = baseline.provider_count,
       (select count(*)::integer from public.booking_request_release_work)
         = baseline.work_count
@@ -1863,7 +1908,7 @@ create temporary table failed_release_result (result jsonb);
 grant select, insert on failed_release_result to service_role;
 set local role service_role;
 insert into failed_release_result
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
   (select operation from failed_release_operation), 'failed'
 );
 select results_eq(
@@ -1912,7 +1957,7 @@ select results_eq(
       on occupancies.claim_id = claims.id
     join public.booking_request_authorization_reconciliation_outbox outbox
       on outbox.claim_id = claims.id
-    left join public.simulated_payment_provider_operations operations
+    left join public.payment_provider_operations operations
       on operations.claim_id = claims.id
     group by attempts.state, claims.state, occupancies.active, outbox.state,
       attempts.release_provider_request_id$$,
@@ -1966,7 +2011,7 @@ select results_eq(
   'a distinct cleanup retry receives a new revision-bound provider identity'
 );
 create temporary table successful_release_retry_result as
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
   jsonb_build_object(
     'providerIdentity', recovered.result -> 'providerIdentity',
     'permitPurpose', permit.result -> 'executionPermit' ->> 'purpose',
@@ -2038,10 +2083,10 @@ select is(
 reset role;
 select results_eq(
   $$select claims.state::text, occupancies.active, outbox.state,
-      (select count(*)::integer from public.simulated_payment_provider_operations),
-      (select count(*)::integer from public.simulated_payment_provider_operations
+      (select count(*)::integer from public.payment_provider_operations),
+      (select count(*)::integer from public.payment_provider_operations
         where operation_kind = 'release' and current_outcome = 'failed'),
-      (select count(*)::integer from public.simulated_payment_provider_operations
+      (select count(*)::integer from public.payment_provider_operations
         where operation_kind = 'release' and current_outcome = 'succeeded')
     from public.booking_request_authorization_claims claims
     join public.booking_request_authorization_claim_occupancies occupancies
@@ -2089,7 +2134,7 @@ grant select on simulated_release_operation to service_role;
 set local role service_role;
 select lives_ok(
   format(
-    'select public.execute_simulated_payment_provider_operation(%L::jsonb, %L)',
+    'select pg_temp.payment_execute(%L::jsonb, %L)',
     (select operation::text from simulated_release_operation),
     'succeeded'
   ),
@@ -2113,7 +2158,7 @@ select results_eq(
       outbox.lease_token is null,
       (select count(*)::integer from public.booking_requests),
       (select count(*)::integer from public.cottage_booking_period_commitments),
-      (select count(*)::integer from public.simulated_payment_provider_operations)
+      (select count(*)::integer from public.payment_provider_operations)
     from public.booking_request_submission_attempts attempts
     join public.booking_request_authorization_claims claims
       on claims.attempt_id = attempts.id
@@ -2161,7 +2206,7 @@ create temporary table lost_release_result (result jsonb);
 grant select, insert on lost_release_result to service_role;
 set local role service_role;
 insert into lost_release_result
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
   (select operation from lost_release_operation), 'indeterminate'
 );
 reset role;
@@ -2221,7 +2266,7 @@ select is(
 create temporary table reconciled_release_result (result jsonb);
 grant select, insert on reconciled_release_result to service_role;
 insert into reconciled_release_result
-select public.query_simulated_payment_provider_operation(
+select pg_temp.payment_query(
   (select operation from lost_release_operation),
   (select result ->> 'providerRequestId' from lost_release_result),
   (select result ->> 'providerReference' from lost_release_result),
@@ -2632,7 +2677,7 @@ select results_eq(
       on work.attempt_id = attempts.id
     left join public.booking_request_release_operations operations
       on operations.work_id = work.id
-    left join public.simulated_payment_provider_operations provider
+    left join public.payment_provider_operations provider
       on provider.provider_idempotency_key = operations.provider_idempotency_key
     left join public.booking_request_status_notifications notifications
       on notifications.booking_request_id = requests.id
@@ -3026,7 +3071,7 @@ select public.save_booking_request_release_snapshot(
 ) as permit from withdrawal_release_snapshots;
 grant select on withdrawal_release_permit to service_role;
 create temporary table withdrawal_provider_result as
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
     jsonb_build_object(
       'providerIdentity', jsonb_build_object(
         'provider', 'fictional-payments', 'environment', 'local-test',
@@ -3151,7 +3196,7 @@ where id = (select work_id from postexpiry_release_snapshot);
 set local role service_role;
 select throws_ok(
   format(
-    'select public.execute_simulated_payment_provider_operation(%L::jsonb,%L)',
+    'select pg_temp.payment_execute(%L::jsonb,%L)',
     (select operation::text from postexpiry_provider_operation), 'succeeded'
   ),
   'RC409', null,
@@ -3162,7 +3207,7 @@ select results_eq(
   $$select operations.state,
       count(provider.id)::integer
     from public.booking_request_release_operations operations
-    left join public.simulated_payment_provider_operations provider
+    left join public.payment_provider_operations provider
       on provider.provider_idempotency_key = operations.provider_idempotency_key
     group by operations.state$$,
   $$values ('executing'::text, 0::integer)$$,
@@ -3189,7 +3234,7 @@ select results_eq(
 );
 set local role service_role;
 create temporary table postexpiry_absence_result as
-select public.query_simulated_payment_provider_operation(
+select pg_temp.payment_query(
   jsonb_build_object(
     'providerIdentity', jsonb_build_object(
       'provider', 'fictional-payments', 'environment', 'local-test',
@@ -3311,7 +3356,7 @@ select results_eq(
       on work.attempt_id = attempts.id
     left join public.booking_request_release_operations operations
       on operations.work_id = work.id
-    left join public.simulated_payment_provider_operations provider
+    left join public.payment_provider_operations provider
       on provider.provider_idempotency_key = operations.provider_idempotency_key
     left join public.booking_request_status_notifications notifications
       on notifications.booking_request_id = requests.id
@@ -3403,7 +3448,7 @@ begin
     required_path := array['providerIdentity', required_key];
     invalid_operation := jsonb_set(target_operation, required_path, 'null'::jsonb);
     begin
-      perform public.execute_simulated_payment_provider_operation(
+      perform pg_temp.payment_execute(
         invalid_operation, 'succeeded'
       );
       raise exception 'provider accepted null required binding at %', required_path
@@ -3421,7 +3466,7 @@ begin
     required_path := array[required_key];
     invalid_operation := jsonb_set(target_operation, required_path, 'null'::jsonb);
     begin
-      perform public.execute_simulated_payment_provider_operation(
+      perform pg_temp.payment_execute(
         invalid_operation, 'succeeded'
       );
       raise exception 'provider accepted null required binding at %', required_path
@@ -3436,7 +3481,7 @@ $$;
 savepoint booking_request_provider_null_generation;
 select throws_ok(
   format(
-    'select public.execute_simulated_payment_provider_operation(%L::jsonb,%L)',
+    'select pg_temp.payment_execute(%L::jsonb,%L)',
     (select jsonb_set(operation, '{leaseGeneration}', 'null'::jsonb)::text
       from preexpiry_provider_operation),
     'succeeded'
@@ -3449,7 +3494,7 @@ rollback to savepoint booking_request_provider_null_generation;
 savepoint booking_request_provider_null_token;
 select throws_ok(
   format(
-    'select public.execute_simulated_payment_provider_operation(%L::jsonb,%L)',
+    'select pg_temp.payment_execute(%L::jsonb,%L)',
     (select jsonb_set(operation, '{leaseToken}', 'null'::jsonb)::text
       from preexpiry_provider_operation),
     'succeeded'
@@ -3462,7 +3507,7 @@ rollback to savepoint booking_request_provider_null_token;
 savepoint booking_request_provider_null_lease;
 select throws_ok(
   format(
-    'select public.execute_simulated_payment_provider_operation(%L::jsonb,%L)',
+    'select pg_temp.payment_execute(%L::jsonb,%L)',
     (select jsonb_set(
       jsonb_set(operation, '{leaseGeneration}', 'null'::jsonb),
       '{leaseToken}', 'null'::jsonb
@@ -3483,15 +3528,15 @@ select lives_ok(
 );
 select throws_ok(
   format(
-    'select public.execute_simulated_payment_provider_operation(%L::jsonb,null)',
+    'select pg_temp.payment_execute(%L::jsonb,null)',
     (select operation::text from preexpiry_provider_operation)
   ),
-  '22023', null,
-  'provider admission rejects a null requested outcome'
+  'RC409', null,
+  'provider evidence rejects a null proposed outcome'
 );
 reset role;
 select is(
-  (select count(*)::integer from public.simulated_payment_provider_operations),
+  (select count(*)::integer from public.payment_provider_operations),
   1,
   'null lifecycle release bindings persist no provider execution'
 );
@@ -3499,7 +3544,7 @@ select is(
 savepoint booking_request_reconcile_movement_invention;
 set local role service_role;
 create temporary table preexpiry_indeterminate_provider_result as
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
   operation, 'indeterminate'
 ) as result
 from preexpiry_provider_operation;
@@ -3537,7 +3582,7 @@ rollback to savepoint booking_request_reconcile_movement_invention;
 
 set local role service_role;
 create temporary table preexpiry_provider_result as
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
   operation, 'succeeded'
 ) as result
 from preexpiry_provider_operation;
@@ -3589,7 +3634,7 @@ select
       on attempts.booking_request_id = requests.id
     where attempts.id = snapshots.attempt_id) as commitment_row,
   (select to_jsonb(provider_operations)
-    from public.simulated_payment_provider_operations provider_operations
+    from public.payment_provider_operations provider_operations
     join public.booking_request_release_operations operations
       on operations.provider_idempotency_key = provider_operations.provider_idempotency_key
     where operations.work_id = snapshots.work_id) as provider_row
@@ -3696,7 +3741,7 @@ select results_eq(
       on requests.id = attempts.booking_request_id
     join public.cottage_booking_period_commitments commitments
       on commitments.id = requests.booking_period_commitment_id
-    join public.simulated_payment_provider_operations provider_operations
+    join public.payment_provider_operations provider_operations
       on provider_operations.provider_idempotency_key = operations.provider_idempotency_key$$,
   $$select attempt_row, work_row, operation_row, request_row, commitment_row, provider_row
     from preexpiry_release_state_before_invalid_evidence$$,
@@ -3843,7 +3888,7 @@ select results_eq(
 
 set local role service_role;
 create temporary table preexpiry_reconciled_result as
-select public.query_simulated_payment_provider_operation(
+select pg_temp.payment_query(
   jsonb_build_object(
     'providerIdentity', jsonb_build_object(
       'provider', 'fictional-payments', 'environment', 'local-test',
@@ -3903,7 +3948,7 @@ select results_eq(
     join public.booking_request_status_notifications notifications
       on notifications.booking_request_id = requests.id
     join public.booking_request_release_operations operations on operations.work_id = work.id
-    join public.simulated_payment_provider_operations provider
+    join public.payment_provider_operations provider
       on provider.payment_lifecycle_id = attempts.payment_lifecycle_id
       and provider.operation_kind = 'release'
     group by requests.status, work.state, commitments.status, attempts.payment_snapshot$$,
@@ -4423,7 +4468,7 @@ select throws_ok(
   'operation N plus one cannot start before N is durably retryable'
 );
 create temporary table failed_release_retry_provider_result as
-select public.execute_simulated_payment_provider_operation(
+select pg_temp.payment_execute(
   jsonb_build_object(
     'providerIdentity', jsonb_build_object(
       'provider', 'fictional-payments', 'environment', 'local-test',

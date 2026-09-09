@@ -1,3 +1,8 @@
+// SQL arrangement mirrors admission, isolated effect, and explicit recording.
+const paymentEvidenceSql =
+  "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
+  readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
+  "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -73,13 +78,14 @@ function verifyProviderResolution() {
     "  'successful authorization finalizes one Pending Booking Request'\n);";
   assert.ok(submission.includes(cutoff));
   const result = harness.runSql(
-    submission
-      .slice(0, submission.indexOf(cutoff) + cutoff.length)
-      .replace(
-        "begin;",
-        "begin; create extension if not exists pgtap with schema extensions; set local search_path=public,extensions;",
-      ) +
-      `
+    paymentEvidenceSql +
+      (submission
+        .slice(0, submission.indexOf(cutoff) + cutoff.length)
+        .replace(
+          "begin;",
+          "begin; create extension if not exists pgtap with schema extensions; set local search_path=public,extensions;",
+        ) +
+        `
     reset role;
     update public.account_contexts set role='platform_administrator' where user_id=(select customer_user_id from public.booking_requests);
     select set_config('request.jwt.claims',jsonb_build_object('sub',(select customer_user_id from public.booking_requests),'role','authenticated','aal','aal2')::text,true);
@@ -88,29 +94,29 @@ function verifyProviderResolution() {
     set local role authenticated;
     select 'RESOLVED:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
-    select 'SOURCE:'||jsonb_build_object('originalOutcome',original_outcome,'outcome',current_outcome,'executions',physical_execution_count,'physicalAttemptId',physical_attempt_id,'request',provider_request_id,'reference',provider_reference,'movement',movement_reference)::text from public.simulated_payment_provider_operations;
+    select 'SOURCE:'||jsonb_build_object('id',id,'originalOutcome',original_outcome,'outcome',current_outcome,'executions',(select physical_execution_count from public.simulated_payment_effects where operation_id=payment_provider_operations.id),'physicalAttemptId',physical_attempt_id,'request',provider_request_id,'reference',provider_reference,'movement',movement_reference)::text from public.payment_provider_operations;
     select 'RECEIPTS:'||count(*)::text from public.booking_request_payment_correction_observations;
     set local role service_role;
-    select 'REPEAT:'||(public.query_simulated_payment_provider_operation((select operation from simulated_authorization_operation),null,null,'succeeded')->>'outcome');
+    select 'REPEAT:'||(pg_temp.payment_query((select operation from simulated_authorization_operation),null,null,'succeeded')->>'outcome');
     reset role;
-    update public.simulated_payment_provider_operations set updated_at=updated_at+interval '1 second';
+    update public.payment_provider_operations set updated_at=updated_at+interval '1 second';
     set local role authenticated;
     select 'RESOLVED:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
     -- Controlled retained-source updates isolate each meaningful observation field.
-    update public.simulated_payment_provider_operations set authoritative_outcome_at='2099-01-01T00:00:00Z';
+    update public.payment_provider_operations set authoritative_outcome_at='2099-01-01T00:00:00Z';
     set local role authenticated;
     select 'EVIDENCE_TIME:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
-    update public.simulated_payment_provider_operations set movement_reference='sim-movement-1234567890abcdef1234567890abcdef';
+    update public.payment_provider_operations set movement_reference='sim-movement-1234567890abcdef1234567890abcdef';
     set local role authenticated;
     select 'EVIDENCE_MOVEMENT:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
-    update public.simulated_payment_provider_operations set movement_reference=movement_reference,authoritative_outcome_at=authoritative_outcome_at,updated_at=updated_at+interval '1 second';
+    update public.payment_provider_operations set movement_reference=movement_reference,authoritative_outcome_at=authoritative_outcome_at,updated_at=updated_at+interval '1 second';
     set local role authenticated;
     select 'EVIDENCE_MOVEMENT:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     rollback;
-  `,
+  `),
   );
   assert.doesNotMatch(
     result,
@@ -155,9 +161,18 @@ function verifyProviderResolution() {
   assert.equal(transitions[0].outcome, "succeeded");
   assert.equal(transitions[0].physicalAttemptId, source.physicalAttemptId);
   assert.equal(transitions[0].receivedAt, undefined);
-  assert.equal(transitions[0].providerRequestId, source.request);
-  assert.equal(transitions[0].providerReference, source.reference);
-  assert.equal(transitions[0].movementReference, source.movement);
+  assert.equal(
+    transitions[0].providerRequestId,
+    `internal-request:${source.id}`,
+  );
+  assert.equal(
+    transitions[0].providerReference,
+    `internal-reference:${source.id}`,
+  );
+  assert.equal(
+    transitions[0].movementReference,
+    `internal-movement:${source.id}`,
+  );
   assert.equal(
     before.events.filter((event) => event.kind === "receipt-observation")
       .length,
@@ -193,7 +208,7 @@ function verifyProviderResolution() {
   );
   assert.deepEqual(repeatedEvidence, movementEvidence);
   console.log(
-    "Public authorization query retains indeterminate-to-succeeded transition, original physical outcome, canonical compact references and one execution without receipts; repeat query and timestamp-only update retain identical AAL2 history.",
+    "Public authorization query retains indeterminate-to-succeeded transition, original physical outcome, safe internal support references and one execution without receipts; repeat query and timestamp-only update retain identical AAL2 history.",
   );
 }
 
@@ -233,13 +248,16 @@ async function verifyReleaseDependencies() {
   try {
     assert.equal(
       harness.runSql(
-        `select count(*) from public.booking_requests where id='${request}';`,
+        paymentEvidenceSql +
+          `select count(*) from public.booking_requests where id='${request}';`,
       ),
       "0",
     );
-    harness.runSql(`begin;${setup}commit;`);
+    harness.runSql(paymentEvidenceSql + `begin;${setup}commit;`);
     seeded = true;
-    const setupResult = harness.runSql(`begin;
+    const setupResult = harness.runSql(
+      paymentEvidenceSql +
+        `begin;
       set local role service_role;
       select public.claim_booking_request_action('10000000-0000-4000-8000-000000001432','${request}','withdraw',null,null);
       reset role;
@@ -259,7 +277,8 @@ async function verifyReleaseDependencies() {
       create temp table release_permit as select public.save_booking_request_release_snapshot(id,lease_generation,lease_token,snapshot,${literal(identity)}) permit from release_snapshot;
       select 'PERMIT:'||permit::text from release_permit;
       commit;
-    `);
+    `,
+    );
     const permit = JSON.parse(
       setupResult
         .split("\n")
@@ -276,9 +295,32 @@ async function verifyReleaseDependencies() {
       amountFils: 115000000,
       currency: "IQD",
     };
-    const querySql = `public.query_simulated_payment_provider_operation(${literal(operation)},null,null,'succeeded')`;
+    const execution = {
+      ...operation,
+      requestFingerprint: permit.requestFingerprint,
+      permitPurpose: permit.purpose,
+      idempotencyKey: permit.idempotencyKey,
+      notAfter: permit.notAfter,
+      claimId: null,
+      claimGeneration: null,
+      stateRevision: null,
+      cleanupAttemptId: null,
+      workId: permit.workId,
+      leaseGeneration: permit.leaseGeneration,
+      leaseToken: permit.leaseToken,
+      operationId: permit.operationId,
+      operationGeneration: permit.operationGeneration,
+    };
+    const admission = JSON.parse(
+      harness.runSql(
+        paymentEvidenceSql +
+          `begin; set local role service_role; select public.admit_booking_request_provider_operation(${literal(execution)}); commit;`,
+      ),
+    );
+    const querySql = `pg_temp.payment_query(${literal(operation)},null,null,'succeeded')`;
     holder = harness.startSession(
-      `begin; set application_name='history_release_holder'; select 'HOLDER_PID:'||pg_backend_pid(); select id from public.booking_requests where id='${request}' for update; select 'HOLDER_READY';`,
+      paymentEvidenceSql +
+        `begin; set application_name='history_release_holder'; select 'HOLDER_PID:'||pg_backend_pid(); select id from public.booking_requests where id='${request}' for update; select 'HOLDER_READY';`,
     );
     await harness.waitForMarker(holder, "HOLDER_READY");
     const holderPid = Number(
@@ -287,11 +329,13 @@ async function verifyReleaseDependencies() {
         .find((line) => line.startsWith("HOLDER_PID:"))
         .slice(11),
     );
-    query =
-      harness.startSession(`begin; set application_name='history_release_query'; select 'QUERY_PID:'||pg_backend_pid(); set local role service_role; select 'QUERY_RESULT:'||${querySql}::text; reset role;
+    query = harness.startSession(
+      paymentEvidenceSql +
+        `begin; set application_name='history_release_query'; select 'QUERY_PID:'||pg_backend_pid(); set local role service_role; select 'QUERY_RESULT:'||${querySql}::text; reset role;
       select 'QUERY_STATE:'||state from public.booking_request_release_operations where work_id='${permit.workId}';
       select 'QUERY_HISTORY:'||count(*) from public.booking_request_payment_history where payment_lifecycle_id='${lifecycle}' and source='release-operation' and to_state='retryable' and outcome='not_executed';
-      select 'QUERY_COMPLETE';`);
+      select 'QUERY_COMPLETE';`,
+    );
     await harness.waitForMarker(query, "QUERY_PID:");
     queryPid = Number(
       query.stdout
@@ -302,11 +346,13 @@ async function verifyReleaseDependencies() {
     const started = Date.now();
     while (!query.stdout.includes("QUERY_COMPLETE")) {
       const blocked = harness.runSql(
-        `select ${holderPid}=any(pg_blocking_pids(${queryPid}));`,
+        paymentEvidenceSql +
+          `select ${holderPid}=any(pg_blocking_pids(${queryPid}));`,
       );
       if (blocked === "t") {
         harness.runSql(
-          `select pg_cancel_backend(pid) from pg_stat_activity where pid=${queryPid} and application_name='history_release_query';`,
+          paymentEvidenceSql +
+            `select pg_cancel_backend(pid) from pg_stat_activity where pid=${queryPid} and application_name='history_release_query';`,
         );
         const cancelled = query;
         query = undefined;
@@ -326,7 +372,8 @@ async function verifyReleaseDependencies() {
     assert.match(query.stdout, /QUERY_STATE:retryable/);
     assert.match(query.stdout, /QUERY_HISTORY:1/);
     lease = harness.startSession(
-      `begin; set application_name='history_release_lease'; select 'LEASE_PID:'||pg_backend_pid(); set local role service_role; select 'LEASE_RESULT:'||public.claim_booking_request_action('10000000-0000-4000-8000-000000001432','${request}','withdraw',null,null)::text; select 'LEASE_COMPLETE';`,
+      paymentEvidenceSql +
+        `begin; set application_name='history_release_lease'; select 'LEASE_PID:'||pg_backend_pid(); set local role service_role; select 'LEASE_RESULT:'||public.claim_booking_request_action('10000000-0000-4000-8000-000000001432','${request}','withdraw',null,null)::text; select 'LEASE_COMPLETE';`,
     );
     await harness.waitForMarker(lease, "LEASE_PID:");
     const leasePid = Number(
@@ -338,7 +385,8 @@ async function verifyReleaseDependencies() {
     await harness.waitForLock("history_release_lease", lease);
     assert.equal(
       harness.runSql(
-        `select ${holderPid}=any(pg_blocking_pids(${leasePid})) and not ${queryPid}=any(pg_blocking_pids(${leasePid}));`,
+        paymentEvidenceSql +
+          `select ${holderPid}=any(pg_blocking_pids(${leasePid})) and not ${queryPid}=any(pg_blocking_pids(${leasePid}));`,
       ),
       "t",
       "Canonical lease waits only on the held request while query has completed holding release work",
@@ -351,35 +399,24 @@ async function verifyReleaseDependencies() {
     assert.match(lease.stdout, /LEASE_RESULT:.*"status": "processing"/);
     await harness.finishSession(lease, { action: "rollback" });
     lease = undefined;
-    const execution = {
-      ...operation,
-      requestFingerprint: permit.requestFingerprint,
-      permitPurpose: permit.purpose,
-      idempotencyKey: permit.idempotencyKey,
-      notAfter: permit.notAfter,
-      claimId: null,
-      claimGeneration: null,
-      stateRevision: null,
-      cleanupAttemptId: null,
-      workId: permit.workId,
-      leaseGeneration: permit.leaseGeneration,
-      leaseToken: permit.leaseToken,
-      operationId: permit.operationId,
-      operationGeneration: permit.operationGeneration,
-    };
+    // The inquiry fixture transaction rolled back its closure and recording.
+    // Resume the original admitted caller; a fresh admission would reconcile instead.
     const outcome = harness.runSql(
-      `begin; set local role service_role; select public.execute_simulated_payment_provider_operation(${literal(execution)},'succeeded')->>'outcome'; commit;`,
+      paymentEvidenceSql +
+        `begin; set local role service_role; select pg_temp.payment_fixture_result(${literal(admission)},'succeeded')->>'outcome'; commit;`,
     );
     assert.equal(outcome, "succeeded");
     assert.equal(
       harness.runSql(
-        `select sum(physical_execution_count) from public.simulated_payment_provider_operations where payment_lifecycle_id='${lifecycle}';`,
+        paymentEvidenceSql +
+          `select sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=payment_provider_operations.id)) from public.payment_provider_operations where payment_lifecycle_id='${lifecycle}';`,
       ),
       "1",
     );
     assert.equal(
       harness.runSql(
-        `select count(*) from public.booking_request_payment_history where payment_lifecycle_id='${lifecycle}' and kind='physical-attempt';`,
+        paymentEvidenceSql +
+          `select count(*) from public.booking_request_payment_history where payment_lifecycle_id='${lifecycle}' and kind='physical-attempt';`,
       ),
       "1",
     );
@@ -393,7 +430,8 @@ async function verifyReleaseDependencies() {
       if (query) {
         if (!query.exit && !query.stdout.includes("QUERY_COMPLETE")) {
           harness.runSql(
-            `select pg_cancel_backend(pid) from pg_stat_activity where pid=${queryPid ?? "null"} and application_name='history_release_query';`,
+            paymentEvidenceSql +
+              `select pg_cancel_backend(pid) from pg_stat_activity where pid=${queryPid ?? "null"} and application_name='history_release_query';`,
           );
           await harness.finishSession(query, { expectedState: "57014" });
         } else {
@@ -416,7 +454,7 @@ async function verifyReleaseDependencies() {
         } finally {
           if (seeded) {
             harness.guardDisposableLocalDatabase();
-            harness.runSql(cleanup);
+            harness.runSql(paymentEvidenceSql + cleanup);
           }
         }
       }
@@ -430,16 +468,19 @@ verifyProviderResolution();
 try {
   for (const index of [141, 142]) {
     const request = `60000000-0000-4000-8000-00000000${index}1`;
-    const session = harness.startSession(`begin;${fixtureFor(index)}
+    const session = harness.startSession(
+      paymentEvidenceSql +
+        `begin;${fixtureFor(index)}
       update public.account_contexts set role='platform_administrator' where user_id='10000000-0000-4000-8000-00000000${index}3';
       set request.jwt.claims='{"sub":"10000000-0000-4000-8000-00000000${index}3","role":"authenticated","aal":"aal2"}';
       set local role service_role;
       create temp table history_lease as select public.lease_booking_request_capture_work('${request}',${literal(identity)}) result;
-      create temp table history_execution as select public.execute_simulated_booking_request_capture((select result->'permit' from history_lease),'failed') result;
+      create temp table history_execution as select pg_temp.capture_execute((select result->'permit' from history_lease),'failed') result;
       reset role;
       ${historySql(index)}
       select 'HISTORY_READY';
-    `);
+    `,
+    );
     sessions.push({ index, request, session });
   }
   await Promise.all(

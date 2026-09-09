@@ -1,3 +1,4 @@
+import type { PaymentOperationExecution } from "@/payment/payment-operation-execution";
 import type {
   PaymentLifecycleSnapshot,
   PaymentProviderAdapter,
@@ -115,10 +116,12 @@ function validAction(input: BookingRequestAction): boolean {
 
 export function createBookingRequestLifecycle({
   repository,
+  operations,
   provider,
 }: {
   repository: BookingRequestLifecycleRepository;
   provider: PaymentProviderAdapter;
+  operations: PaymentOperationExecution;
 }): BookingRequestLifecycle {
   const finish = async (
     claimed: BookingRequestLifecycleResult | BookingRequestReleaseWork,
@@ -148,6 +151,7 @@ export function createBookingRequestLifecycle({
         claimed.paymentSnapshot,
         {
           save: (snapshot) => repository.savePaymentSnapshot(claimed, snapshot),
+          operations,
         },
       );
       const stored = payment.snapshot().release;

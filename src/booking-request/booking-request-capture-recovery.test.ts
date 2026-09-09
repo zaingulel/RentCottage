@@ -1,3 +1,4 @@
+import { withRecordedProviderResults } from "../../tests/fixtures/payment-operation-execution.fixtures";
 import { describe, expect, it, vi } from "vitest";
 import type {
   BookingRequestCaptureExecutionPermit,
@@ -172,14 +173,40 @@ function setup() {
     provider,
     confirmation,
     confirmed,
-    recovery: createBookingRequestCaptureRecovery({
-      repository,
-      provider,
-      confirmation,
-    }),
+    recovery: createBookingRequestCaptureRecovery(
+      withRecordedProviderResults({
+        repository,
+        provider,
+        confirmation,
+      }),
+    ),
   };
 }
 describe("Booking Request Capture recovery", () => {
+  it("reconciles an admitted capture with no recorded provider references", async () => {
+    const { recovery, provider, repository, confirmed } = setup();
+    repository.claimDue.mockResolvedValue([
+      {
+        status: "reconcile",
+        lease: {
+          ...lease,
+          providerResult: { providerRequestId: null, providerReference: null },
+        },
+      },
+    ]);
+    await expect(recovery.processDue()).resolves.toEqual([
+      { status: "confirmed", confirmation: confirmed },
+    ]);
+    expect(provider.query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: permit.capturePhysicalAttemptId,
+        providerRequestId: null,
+        providerReference: null,
+      }),
+    );
+    expect(provider.execute).not.toHaveBeenCalled();
+    expect(repository.complete).toHaveBeenCalledOnce();
+  });
   it("queries the original capture then completes and confirms through its reclaimed lease without another execution", async () => {
     const { recovery, provider, repository, confirmation, confirmed } = setup();
     await expect(recovery.processDue()).resolves.toEqual([

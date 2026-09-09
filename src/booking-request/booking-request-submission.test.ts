@@ -1,3 +1,4 @@
+import { withRecordedProviderResults } from "../../tests/fixtures/payment-operation-execution.fixtures";
 import { describe, expect, it, vi } from "vitest";
 
 import { PaymentSimulator } from "@/payment/payment-simulator";
@@ -122,10 +123,12 @@ describe("BookingRequestSubmission", () => {
       now: () => "2099-08-21T17:00:00.000Z",
       outcomes: ["succeeded"],
     });
-    const submission = createBookingRequestSubmission({
-      repository,
-      paymentProvider: provider,
-    });
+    const submission = createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository,
+        paymentProvider: provider,
+      }),
+    );
 
     await expect(submission.submit(input)).resolves.toEqual({
       status: "unavailable",
@@ -150,10 +153,12 @@ describe("BookingRequestSubmission", () => {
       });
 
       await expect(
-        createBookingRequestSubmission({
-          repository,
-          paymentProvider: provider,
-        }).submit(input),
+        createBookingRequestSubmission(
+          withRecordedProviderResults({
+            repository,
+            paymentProvider: provider,
+          }),
+        ).submit(input),
       ).resolves.toEqual({ status });
       expect(provider.requests).toHaveLength(0);
       expect(repository.savedSnapshots).toHaveLength(0);
@@ -175,10 +180,12 @@ describe("BookingRequestSubmission", () => {
       });
 
       await expect(
-        createBookingRequestSubmission({
-          repository,
-          paymentProvider: provider,
-        }).submit(input),
+        createBookingRequestSubmission(
+          withRecordedProviderResults({
+            repository,
+            paymentProvider: provider,
+          }),
+        ).submit(input),
       ).resolves.toEqual({ status });
       expect(provider.requests).toHaveLength(0);
     },
@@ -190,10 +197,12 @@ describe("BookingRequestSubmission", () => {
       now: () => "2099-08-21T17:00:00.000Z",
       outcomes: ["succeeded"],
     });
-    const submission = createBookingRequestSubmission({
-      repository,
-      paymentProvider: provider,
-    });
+    const submission = createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository,
+        paymentProvider: provider,
+      }),
+    );
 
     await expect(submission.submit(input)).resolves.toEqual({
       status: "pending",
@@ -216,10 +225,12 @@ describe("BookingRequestSubmission", () => {
       now: () => "2099-08-21T17:00:00.000Z",
       outcomes: ["indeterminate"],
     });
-    const firstSubmission = createBookingRequestSubmission({
-      repository,
-      paymentProvider: firstProvider,
-    });
+    const firstSubmission = createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository,
+        paymentProvider: firstProvider,
+      }),
+    );
 
     await expect(firstSubmission.submit(input)).resolves.toEqual({
       status: "reconciliation-required",
@@ -238,10 +249,12 @@ describe("BookingRequestSubmission", () => {
     });
 
     await expect(
-      createBookingRequestSubmission({
-        repository: retryRepository,
-        paymentProvider: retryProvider,
-      }).submit(input),
+      createBookingRequestSubmission(
+        withRecordedProviderResults({
+          repository: retryRepository,
+          paymentProvider: retryProvider,
+        }),
+      ).submit(input),
     ).resolves.toEqual({
       status: "pending",
       bookingRequestReference: "RC-REQ-20990821-0001",
@@ -262,10 +275,12 @@ describe("BookingRequestSubmission", () => {
       now: () => "2099-08-21T17:00:00.000Z",
       outcomes: ["indeterminate"],
     });
-    await createBookingRequestSubmission({
-      repository,
-      paymentProvider: firstProvider,
-    }).submit(input);
+    await createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository,
+        paymentProvider: firstProvider,
+      }),
+    ).submit(input);
     const markReconciliationRequired = vi.fn().mockResolvedValue(undefined);
     const retryRepository = {
       ...repositoryReturning({
@@ -285,11 +300,13 @@ describe("BookingRequestSubmission", () => {
     const record = vi.fn();
 
     await expect(
-      createBookingRequestSubmission({
-        repository: retryRepository,
-        paymentProvider: changedProvider,
-        diagnostics: { record },
-      }).submit(input),
+      createBookingRequestSubmission(
+        withRecordedProviderResults({
+          repository: retryRepository,
+          paymentProvider: changedProvider,
+          diagnostics: { record },
+        }),
+      ).submit(input),
     ).resolves.toEqual({ status: "reconciliation-required" });
     expect(changedProvider.requests).toHaveLength(0);
     expect(changedProvider.queries).toHaveLength(0);
@@ -310,10 +327,12 @@ describe("BookingRequestSubmission", () => {
     });
 
     await expect(
-      createBookingRequestSubmission({
-        repository,
-        paymentProvider: provider,
-      }).submit(input),
+      createBookingRequestSubmission(
+        withRecordedProviderResults({
+          repository,
+          paymentProvider: provider,
+        }),
+      ).submit(input),
     ).resolves.toEqual({ status: "reconciliation-required" });
     expect(provider.requests).toHaveLength(1);
     expect(provider.requests[0]?.kind).toBe("authorization");
@@ -324,14 +343,16 @@ describe("BookingRequestSubmission", () => {
     const repository = repositoryWithFinalizationFailure(async () => ({
       status: "unknown",
     }));
-    await createBookingRequestSubmission({
-      repository,
-      paymentProvider: new PaymentSimulator({
-        now: () => "2099-08-21T17:00:00.000Z",
-        outcomes: ["succeeded"],
+    await createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository,
+        paymentProvider: new PaymentSimulator({
+          now: () => "2099-08-21T17:00:00.000Z",
+          outcomes: ["succeeded"],
+        }),
+        diagnostics: { record },
       }),
-      diagnostics: { record },
-    }).submit(input);
+    ).submit(input);
 
     expect(record).toHaveBeenCalledWith({
       code: "booking_request_finalization_failed",
@@ -354,10 +375,12 @@ describe("BookingRequestSubmission", () => {
     });
 
     await expect(
-      createBookingRequestSubmission({
-        repository,
-        paymentProvider: provider,
-      }).submit(input),
+      createBookingRequestSubmission(
+        withRecordedProviderResults({
+          repository,
+          paymentProvider: provider,
+        }),
+      ).submit(input),
     ).resolves.toEqual({ status: "unavailable" });
     expect(provider.requests.map((request) => request.kind)).toEqual([
       "authorization",
@@ -377,10 +400,12 @@ describe("BookingRequestSubmission", () => {
     const provider = new PaymentSimulator({
       now: () => "2099-08-21T17:00:00.000Z",
     });
-    const submission = createBookingRequestSubmission({
-      repository,
-      paymentProvider: provider,
-    });
+    const submission = createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository,
+        paymentProvider: provider,
+      }),
+    );
     const inside48Hours = {
       ...input,
       displayedQuote: {
@@ -412,12 +437,14 @@ describe("BookingRequestSubmission", () => {
       responseDeadline: "2099-08-21T21:00:00.000Z",
     });
     const repository = { ...repositoryReturning(), prepare };
-    const submission = createBookingRequestSubmission({
-      repository,
-      paymentProvider: new PaymentSimulator({
-        now: () => "2099-08-22T00:00:00.000Z",
+    const submission = createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository,
+        paymentProvider: new PaymentSimulator({
+          now: () => "2099-08-22T00:00:00.000Z",
+        }),
       }),
-    });
+    );
 
     await expect(submission.submit(input)).resolves.toEqual({
       status: "pending",
