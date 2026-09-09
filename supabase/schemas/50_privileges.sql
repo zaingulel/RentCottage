@@ -717,6 +717,10 @@ REVOKE ALL ON FUNCTION "public"."get_booking_request_payment_recovery_confirmati
 
 GRANT ALL ON FUNCTION "public"."get_booking_request_payment_recovery_confirmation_evidence"("target_attempt_id" "uuid") TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."get_confirmed_booking_access"("target_reference" "text") FROM PUBLIC;
+
+GRANT ALL ON FUNCTION "public"."get_confirmed_booking_access"("target_reference" "text") TO "authenticated";
+
 REVOKE ALL ON FUNCTION "public"."get_cottage_translation_administration"() FROM PUBLIC;
 
 GRANT ALL ON FUNCTION "public"."get_cottage_translation_administration"() TO "authenticated";
