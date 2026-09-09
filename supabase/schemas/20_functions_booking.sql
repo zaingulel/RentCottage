@@ -4489,7 +4489,6 @@ declare authorization_logical text;
 declare authorization_physical text;
 declare predecessor text;
 declare predecessor_time timestamptz;
-declare permit jsonb;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Payment Required expiry preparation is unavailable' using errcode='42501'; end if;
   facts:=public.get_booking_request_payment_facts(target_booking_request_id);
