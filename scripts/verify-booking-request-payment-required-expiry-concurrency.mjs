@@ -4,6 +4,26 @@ const paymentEvidenceSql =
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
   "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import assert from "node:assert/strict";
+import { buildSync } from "esbuild";
+const policyBundle = buildSync({
+  stdin: {
+    contents: `export { selectPaymentRecovery } from './src/booking-request/booking-request-payment-recovery'; export { selectPaymentRequiredExpiry } from './src/booking-request/booking-request-payment-required-expiry'; export { selectPaymentObservation } from './src/booking-request/booking-request-payment-observation';`,
+    resolveDir: process.cwd(),
+  },
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  write: false,
+});
+const {
+  selectPaymentRecovery,
+  selectPaymentRequiredExpiry,
+  selectPaymentObservation,
+} = await import(
+  "data:text/javascript;base64," +
+    Buffer.from(policyBundle.outputFiles[0].contents).toString("base64")
+);
+
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
@@ -35,24 +55,127 @@ const delayedObservationSql = (permit, occurrence) => {
           `select pg_temp.seed_unobserved_payment_outcome(${literal(permit)},'succeeded',${occurrence});`),
     ),
   );
-  return `select public.observe_booking_request_payment_correction('${requestId}','${receipt.providerOperationId}',${literal(receipt)});`;
+  return `select pg_temp.correction_observe('${requestId}','${receipt.providerOperationId}',${literal(receipt)},'late_succeeded',null,'${receipt.providerOperationId}');`;
 };
 const serviceSql = (sql) => `set role service_role;${sql}`;
 const parsed = (sql) =>
   JSON.parse(harness.runSql(paymentEvidenceSql + serviceSql(sql)));
 const dueSql = (limit = 1) =>
   `select public.claim_due_booking_request_payment_required_expiries(${limit},${literal(identity)});`;
-const prepareSql = (id = requestId) =>
-  `select public.prepare_booking_request_payment_required_expiry('${id}',${literal(identity)});`;
+const prepareSql = (id = requestId, explicitCommand) => {
+  const current = facts(id);
+  let selected = selectPaymentRequiredExpiry(current);
+  // Contention fixtures may issue a chosen expiry command before the clock crosses D;
+  // the database must still check its actual post-lock clock before admitting it.
+  if (selected.status === "not-due")
+    selected = selectPaymentRequiredExpiry({
+      ...current,
+      observedAt: current.deadline,
+    });
+  let command = explicitCommand;
+  if (!command && selected.status === "prepare")
+    command = literal(selected.command);
+  if (
+    !command &&
+    (selected.status === "release" || selected.status === "refund")
+  ) {
+    const owned = current.expiryOperations.find(
+      (entry) => entry.id === selected.permit.expiryOperationId,
+    );
+    command = literal(
+      owned.kind === "refund"
+        ? { action: "refund", captureId: owned.captureId }
+        : {
+            action: "release",
+            authorizationLifecycleId: owned.authorizationLifecycleId,
+            recoveryOperationId:
+              current.operations.find(
+                (entry) => entry.id === owned.providerOperationId,
+              )?.recoveryOperationId ?? null,
+          },
+    );
+  }
+  if (
+    !command &&
+    ["quarantined", "confirmed", "expired"].includes(selected.status)
+  )
+    command = literal({
+      action: "release",
+      authorizationLifecycleId: current.originalLifecycleId,
+      recoveryOperationId: null,
+    });
+  if (command)
+    return `select pg_temp.expiry_prepare('${id}',${literal(identity)},${command});`;
+  if (["confirm", "ready"].includes(selected.status))
+    return `select public.finalize_booking_request_payment_required_expiry('${id}');`;
+  return `select ${literal(selected)} from public.get_booking_request_payment_facts('${id}') locked where locked is not null;`;
+};
 const finalizeSql = (id = requestId) =>
   `select public.finalize_booking_request_payment_required_expiry('${id}');`;
 const prepare = (id) => parsed(prepareSql(id));
-const releaseSql = (permit, outcome = "succeeded") =>
-  `select pg_temp.expiry_execute(${literal(permit)},'${outcome}');`;
-const recoverySql = (permit, outcome = "succeeded") =>
-  `select pg_temp.recovery_execute(${literal(permit)},'${outcome}');`;
-const lease = (id) =>
-  parsed(`select public.lease_booking_request_payment_recovery_step('${id}');`);
+const releaseSql = (permit, outcome = "succeeded") => {
+  const current = facts(permit.binding.bookingRequestId);
+  const owned = current.expiryOperations.find(
+    (entry) => entry.id === permit.expiryOperationId,
+  );
+  const operation = current.operations.find(
+    (entry) => entry.id === owned?.providerOperationId,
+  );
+  // A replay observes the stored provider outcome, regardless of the fixture's requested outcome.
+  const observed =
+    operation?.outcome && operation.outcome !== "indeterminate"
+      ? operation.outcome
+      : outcome;
+  return `select pg_temp.expiry_execute(${literal(permit)},'${outcome}',${observed === "succeeded" ? "null" : "'expiry-" + (permit.purpose === "booking-request-payment-required-corrective-refund" ? "refund" : "release") + "-" + observed + "'"});`;
+};
+const recoverySql = (permit, outcome = "succeeded") => {
+  const command = observationCommand(permit, outcome);
+  return `select pg_temp.recovery_execute(${literal(permit)},'${outcome}',${command.recoveryState ? "'" + command.recoveryState + "'" : "null"},${command.quarantineReason ? "'" + command.quarantineReason + "'" : "null"});`;
+};
+const facts = (id = requestId) =>
+  parsed(`select public.get_booking_request_payment_facts('${id}');`);
+const lease = (id) => {
+  const selected = selectPaymentRecovery(facts(), id);
+  return selected.status === "execute"
+    ? parsed(
+        `select public.lease_booking_request_payment_recovery_step('${id}','${selected.step}','${selected.expectedState}');`,
+      )
+    : selected;
+};
+// An integrity-race fixture names its expected result; production policy computes the consequences.
+const observationCommand = (permit, outcome) => {
+  const current = facts(permit.binding.bookingRequestId);
+  const operation = current.operations.find(
+    (entry) => entry.logicalOperationId === permit.operationId,
+  ) ?? {
+    id: permit.attemptId,
+    kind:
+      permit.step === "replacement-authorization"
+        ? "authorization"
+        : permit.step === "replacement-capture"
+          ? "capture"
+          : "release",
+    lifecycleId: permit.binding.paymentLifecycleId,
+    recoveryAttemptId: permit.attemptId,
+    recoveryStep: permit.step,
+    originalOutcome: null,
+    outcome: null,
+    permit,
+  };
+  const result = { outcome, evidence: { occurredAt: current.observedAt } };
+  return selectPaymentObservation(
+    {
+      ...current,
+      operations: [
+        ...current.operations.filter((entry) => entry.id !== operation.id),
+        operation,
+      ],
+    },
+    operation.id,
+    result,
+  );
+};
+
 const execute = (permit, outcome) => parsed(recoverySql(permit, outcome));
 const admitSql = (command = "81000000-0000-4000-8000-000000001001") =>
   `select public.claim_customer_booking_request_payment_recovery('${requestId}','${command}','simulated-replacement');`;
@@ -126,22 +249,25 @@ const seeded = new Set();
 const definitions = [];
 const signatures = [
   "claim_due_booking_request_payment_required_expiries(integer,jsonb)",
-  "prepare_booking_request_payment_required_expiry(uuid,jsonb)",
+  "prepare_booking_request_payment_required_expiry(uuid,jsonb,jsonb)",
   "persist_simulated_payment_effect(jsonb,jsonb)",
   "resolve_simulated_payment_effect(jsonb,text,jsonb)",
   "seal_simulated_payment_absence(jsonb)",
   "validate_payment_provider_observation(jsonb,uuid)",
   "accept_payment_provider_observation(uuid,jsonb)",
+  "get_booking_request_payment_facts(uuid)",
+  "record_booking_request_payment_observation(uuid,jsonb,jsonb)",
+  "booking_request_payment_expiry_is_safe(jsonb)",
   "admit_booking_request_payment_required_expiry(jsonb)",
   "reload_booking_request_payment_operation(jsonb,text,text)",
   "finalize_booking_request_payment_required_expiry(uuid)",
   "booking_request_payment_required_expiry_completed(uuid)",
   "claim_customer_booking_request_payment_recovery(uuid,uuid,text)",
-  "lease_booking_request_payment_recovery_step(uuid)",
+  "lease_booking_request_payment_recovery_step(uuid,text,text)",
   "admit_booking_request_payment_recovery(jsonb)",
   "reload_booking_request_payment_operation(jsonb,text,text)",
   "finalize_booking_request_confirmation(uuid,jsonb)",
-  "observe_booking_request_payment_correction(uuid,uuid,jsonb)",
+  "observe_booking_request_payment_correction(uuid,uuid,jsonb,jsonb)",
 ];
 const second = (sql) =>
   sql
@@ -338,14 +464,16 @@ function assertExpired(successfulCaptures = 0) {
   );
 }
 function drain() {
-  for (let count = 0; count < 4; count++) {
-    const prepared = prepare();
-    if (prepared.status === "release" || prepared.status === "refund")
-      parsed(releaseSql(prepared.permit));
+  for (let count = 0; count < 8; count++) {
+    prepare();
+    // Ownership adoption is durable progress, not a new provider dispatch.
+    const selected = selectPaymentRequiredExpiry(facts());
+    if (selected.status === "release" || selected.status === "refund")
+      parsed(releaseSql(selected.permit));
     else
       assert.ok(
-        ["ready", "expired"].includes(prepared.status),
-        `Unexpected safe-drain state ${prepared.status}`,
+        ["prepare", "ready", "expired"].includes(selected.status),
+        `Unexpected safe-drain state ${selected.status}`,
       );
     if (parsed(finalizeSql()).status === "expired") return;
   }
@@ -614,7 +742,7 @@ try {
   assert.equal(result(authorizedFirst[1]).status, "release");
   assert.equal(
     result(authorizedFirst[1]).permit.binding.authorizationPaymentLifecycleId,
-    authorizing,
+    "73000000-0000-4000-8000-000000001001",
   );
   drain();
   assertExpired();
@@ -664,17 +792,27 @@ try {
     atDeadline();
     const pair = expiryWins
       ? await race(
-          prepareSql(),
+          prepareSql(
+            requestId,
+            literal({
+              action: "release",
+              authorizationLifecycleId: attempt,
+              recoveryOperationId: null,
+            }),
+          ),
           recoverySql(recoveryRelease),
           "release_expiry_wins",
         )
       : await race(
           recoverySql(recoveryRelease),
-          prepareSql(),
+          prepareSql(
+            requestId,
+            `jsonb_build_object('action','release','authorizationLifecycleId','${attempt}','recoveryOperationId',(select entry->>'recoveryOperationId' from jsonb_array_elements(public.get_booking_request_payment_facts('${requestId}')->'operations') entry where entry->>'recoveryStep'='replacement-release'))`,
+          ),
           "release_recovery_wins",
         );
     if (expiryWins) assert.equal(result(pair[1]).outcome, "not-executed");
-    else assert.equal(result(pair[1]).status, "ready");
+    else assert.equal(result(pair[1]).status, "release");
     drain();
     assertExpired();
     assert.equal(
@@ -718,7 +856,7 @@ try {
       assert.equal(uncertainPermit.step, step);
       const entry = await race(
         recoverySql(uncertainPermit, "indeterminate"),
-        `select public.lease_booking_request_payment_recovery_step('${attempt}');`,
+        `select public.lease_booking_request_payment_recovery_step('${attempt}','${uncertainPermit.step}','${{ "original-release": "admitted", "replacement-authorization": "original_released", "replacement-capture": "replacement_authorized", "replacement-release": "capture_failed" }[uncertainPermit.step]}');`,
         `quarantine_${step}_${expiryWins}`,
       );
       assert.equal(result(entry[0]).outcome, "indeterminate");
@@ -787,7 +925,17 @@ try {
     atDeadline(offset);
     const pair = await race(
       observation,
-      prepareSql(),
+      prepareSql(
+        requestId,
+        literal({
+          action: "refund",
+          captureId: graph().ledger.find(
+            (entry) =>
+              entry.recovery_attempt_id === attempt &&
+              entry.operation_kind === "capture",
+          ).id,
+        }),
+      ),
       `late_capture_${offset ? "after" : "equal"}`,
     );
     assert.equal(result(pair[1]).status, "refund");
@@ -806,7 +954,7 @@ try {
       115000000,
     );
     assert.throws(() => parsed(confirmSql(attempt)));
-    const refund = prepare().permit;
+    const refund = result(pair[1]).permit;
     await race(
       releaseSql(refund),
       releaseSql(refund),
@@ -853,7 +1001,7 @@ try {
       outcome: "succeeded",
       occurredAt: capture.authoritative_outcome_at,
     };
-    return `select public.observe_booking_request_payment_correction('${requestId}','${capture.id}',${literal(payload)});`;
+    return `select pg_temp.correction_observe('${requestId}','${capture.id}',${literal(payload)},null,'conflicting-provider-observation');`;
   };
   for (const observationWins of [true, false]) {
     reset();
@@ -867,6 +1015,7 @@ try {
     );
     atDeadline();
     parsed(lateObservation);
+    prepare(); // Adopt the explicitly known original recovery release before selecting the outstanding refund.
     const refund = prepare();
     assert.equal(refund.status, "refund");
     const capture = graph().ledger.find(
@@ -982,6 +1131,7 @@ try {
   const generations = graph();
   atDeadline();
   await race(prepareSql(), finalizeSql(), "all_generations");
+  drain();
   assertExpired();
   assert.deepEqual(graph().attempts, generations.attempts);
   assert.deepEqual(graph().operations, generations.operations);

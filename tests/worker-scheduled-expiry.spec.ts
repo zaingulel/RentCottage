@@ -69,7 +69,7 @@ for (const { outcome, movement } of (
     );
     const signatures = [
       "claim_due_booking_request_payment_required_expiries(integer,jsonb)",
-      "prepare_booking_request_payment_required_expiry(uuid,jsonb)",
+      "prepare_booking_request_payment_required_expiry(uuid,jsonb,jsonb)",
       "persist_simulated_payment_effect(jsonb,jsonb)",
       "resolve_simulated_payment_effect(jsonb,text,jsonb)",
       "seal_simulated_payment_absence(jsonb)",
@@ -103,7 +103,7 @@ for (const { outcome, movement } of (
     );
     const recoveryDefinitions = [
       "claim_customer_booking_request_payment_recovery(uuid,uuid,text)",
-      "lease_booking_request_payment_recovery_step(uuid)",
+      "lease_booking_request_payment_recovery_step(uuid,text,text)",
       "admit_booking_request_payment_recovery(jsonb)",
       "persist_simulated_payment_effect(jsonb,jsonb)",
     ].map((signature) =>
@@ -209,18 +209,18 @@ for (const { outcome, movement } of (
         if (movement === "recovery-release") {
           harness.runSql(
             paymentEvidenceSql +
-              `set role service_role;select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','${outcome}');`,
+              `set role service_role;select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}','original-release','admitted')->'permit','${outcome}','blocked','unsafe-recovery-original-release-${outcome}');`,
           );
           expect(observe().expiry.state).toBe("quarantined");
         } else {
           harness.runSql(
             paymentEvidenceSql +
-              `set role service_role;select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');`,
+              `set role service_role;select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}','original-release','admitted')->'permit','succeeded','original_released');select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${admitted.attemptId}','replacement-authorization','original_released')->'permit','succeeded','replacement_authorized');`,
           );
           const permit = JSON.parse(
             harness.runSql(
               paymentEvidenceSql +
-                `set role service_role;select public.lease_booking_request_payment_recovery_step('${admitted.attemptId}');`,
+                `set role service_role;select public.lease_booking_request_payment_recovery_step('${admitted.attemptId}','replacement-capture','replacement_authorized');`,
             ),
           ).permit;
           const unobservedFixture = readFileSync(
@@ -239,7 +239,7 @@ for (const { outcome, movement } of (
           setPaymentClock("public.scheduled_payment_expiry_now()");
           harness.runSql(
             paymentEvidenceSql +
-              `set role service_role;select public.observe_booking_request_payment_correction('${id}','${receipt.providerOperationId}','${JSON.stringify(receipt)}'::jsonb);`,
+              `set role service_role;select pg_temp.correction_observe('${id}','${receipt.providerOperationId}','${JSON.stringify(receipt)}'::jsonb,'late_succeeded',null,'${receipt.providerOperationId}');`,
           );
         }
         for (const definition of recoveryDefinitions)
@@ -255,7 +255,7 @@ for (const { outcome, movement } of (
       if (outcome !== "succeeded" && movement !== "recovery-release")
         harness.runSql(
           paymentEvidenceSql +
-            `set role service_role;select pg_temp.expiry_execute(public.prepare_booking_request_payment_required_expiry('${id}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')->'permit','${outcome}');`,
+            `set role service_role;select pg_temp.expiry_execute(pg_temp.expiry_prepare('${id}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}',${movement === "refund" ? "jsonb_build_object('action','refund','captureId',(select entry->>'captureId' from jsonb_array_elements(public.get_booking_request_payment_facts('" + id + "')->'expiryOperations') entry where entry->>'kind'='refund'))" : "jsonb_build_object('action','release','authorizationLifecycleId',public.get_booking_request_payment_facts('" + id + "')->>'originalLifecycleId','recoveryOperationId',null)"})->'permit','${outcome}','expiry-${movement}-${outcome}');`,
         );
       if (outcome === "indeterminate") {
         const unresolvedQuery = clocked[3].replace(

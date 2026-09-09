@@ -1,7 +1,10 @@
 import { historicalProviderOperationSource } from "../tests/fixtures/payment-provider-history.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildSync } from "esbuild";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
@@ -15,10 +18,6 @@ const resetPriorArgs = [
 ];
 const resetCurrentArgs = ["db", "reset", "--local"];
 const harness = createLocalSupabaseConcurrencyHarness();
-const paymentEvidenceSql = readFileSync(
-  "supabase/fixtures/payment-evidence.sql",
-  "utf8",
-);
 let paymentEvidenceInstalled = false;
 
 function runSupabase(args) {
@@ -142,6 +141,80 @@ function snapshotPredecessorGraph() {
 let failure;
 
 harness.guardDisposableLocalDatabase();
+const workerDirectory = mkdtempSync(
+  join(tmpdir(), "rentcottage-payment-upgrade-"),
+);
+const workerBundle = join(workerDirectory, "worker.mjs");
+buildSync({
+  entryPoints: ["scripts/booking-request-capture-recovery-worker.ts"],
+  outfile: workerBundle,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+});
+function runPaymentWorker(mode, bookingRequestId, extra = {}) {
+  harness.guardDisposableLocalDatabase();
+  const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
+  const status = spawnSync(
+    "npx",
+    [
+      "supabase",
+      "status",
+      "--output",
+      "json",
+      ...(workdir ? ["--workdir", workdir] : []),
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+      env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: "1" },
+    },
+  );
+  let connection;
+  try {
+    connection = JSON.parse(status.stdout);
+    const origin = new URL(connection.API_URL);
+    if (
+      status.status !== 0 ||
+      origin.protocol !== "http:" ||
+      origin.hostname !== "127.0.0.1" ||
+      connection.API_URL !== origin.origin ||
+      typeof connection.SECRET_KEY !== "string" ||
+      !connection.SECRET_KEY
+    )
+      throw new Error();
+  } catch {
+    throw new Error(
+      "Unable to resolve the disposable Supabase connection for payment upgrade",
+    );
+  }
+  const result = spawnSync(process.execPath, [workerBundle], {
+    encoding: "utf8",
+    timeout: 30_000,
+    env: {
+      ...process.env,
+      CAPTURE_WORKER_MODE: mode,
+      CAPTURE_BOOKING_REQUEST_ID: bookingRequestId,
+      PAYMENT_WORKER_OUTPUT: "json",
+      ...extra,
+      SUPABASE_URL: connection.API_URL,
+      SUPABASE_SECRET_KEY: connection.SECRET_KEY,
+    },
+  });
+  const messages = result.stdout
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  if (result.status !== 0)
+    throw new Error(
+      `Payment upgrade worker failed: ${result.stderr}; ${JSON.stringify(messages)}`,
+    );
+  const complete = messages.find((message) => message.stage === "complete");
+  if (!complete) throw new Error("Payment upgrade worker returned no result");
+  return complete.result;
+}
 
 try {
   const resetPrior = runSupabase(resetPriorArgs);
@@ -1196,13 +1269,16 @@ try {
     "processing",
     "The existing owning Customer must be admitted after upgrade.",
   );
-  for (let step = 0; step < 3; step++)
-    harness.runSql(
-      paymentEvidenceSql +
-        `set role service_role;select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${recovery138Admission.attemptId}')->'permit','succeeded');`,
-    );
-  harness.runSql(
-    `set role service_role;select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',public.get_booking_request_payment_recovery_confirmation_evidence('${recovery138Admission.attemptId}'));`,
+  assertEqual(
+    runPaymentWorker(
+      "payment-recovery",
+      "60000000-0000-4000-8000-000000001001",
+      {
+        PAYMENT_RECOVERY_ATTEMPT_ID: recovery138Admission.attemptId,
+      },
+    ).status,
+    "succeeded",
+    "The upgraded request resumes through the complete application recovery service.",
   );
   assertEqual(
     harness.runSql(
@@ -1217,6 +1293,7 @@ try {
 } catch (error) {
   failure = error;
 } finally {
+  rmSync(workerDirectory, { recursive: true, force: true });
   const restored = runSupabase(resetCurrentArgs);
   if (restored.status !== 0) {
     const restoreFailure = commandFailure(resetCurrentArgs, restored);

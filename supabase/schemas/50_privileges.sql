@@ -783,9 +783,9 @@ REVOKE ALL ON FUNCTION "public"."lease_booking_request_capture_work"("target_boo
 
 GRANT ALL ON FUNCTION "public"."lease_booking_request_capture_work"("target_booking_request_id" "uuid", "target_provider_identity" "jsonb") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."lease_booking_request_payment_recovery_step"("target_attempt_id" "uuid") FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."lease_booking_request_payment_recovery_step"("target_attempt_id" "uuid", "target_step" "text", "target_expected_state" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."lease_booking_request_payment_recovery_step"("target_attempt_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."lease_booking_request_payment_recovery_step"("target_attempt_id" "uuid", "target_step" "text", "target_expected_state" "text") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."lease_booking_request_release_work"("target_work_id" "uuid") FROM PUBLIC;
 
@@ -821,9 +821,9 @@ REVOKE ALL ON FUNCTION "public"."mark_booking_request_reconciliation_required"("
 
 GRANT ALL ON FUNCTION "public"."mark_booking_request_reconciliation_required"("target_attempt_id" "uuid") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."observe_booking_request_payment_correction"("target_booking_request_id" "uuid", "target_provider_operation_id" "uuid", "target_receipt" "jsonb") FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."observe_booking_request_payment_correction"("target_booking_request_id" "uuid", "target_provider_operation_id" "uuid", "target_receipt" "jsonb", "target_command" "jsonb") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."observe_booking_request_payment_correction"("target_booking_request_id" "uuid", "target_provider_operation_id" "uuid", "target_receipt" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."observe_booking_request_payment_correction"("target_booking_request_id" "uuid", "target_provider_operation_id" "uuid", "target_receipt" "jsonb", "target_command" "jsonb") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."observe_booking_request_payment_history"() FROM PUBLIC;
 
@@ -849,9 +849,9 @@ REVOKE ALL ON FUNCTION "public"."owner_verification_kind_is_required"("applicant
 
 REVOKE ALL ON FUNCTION "public"."prepare_booking_request_corrective_refund"("target_booking_request_id" "uuid", "target_capture_id" "uuid") FROM PUBLIC;
 
-REVOKE ALL ON FUNCTION "public"."prepare_booking_request_payment_required_expiry"("target_booking_request_id" "uuid", "target_provider_identity" "jsonb") FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."prepare_booking_request_payment_required_expiry"("target_booking_request_id" "uuid", "target_provider_identity" "jsonb", "target_command" "jsonb") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."prepare_booking_request_payment_required_expiry"("target_booking_request_id" "uuid", "target_provider_identity" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."prepare_booking_request_payment_required_expiry"("target_booking_request_id" "uuid", "target_provider_identity" "jsonb", "target_command" "jsonb") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."prepare_booking_request_submission"("target_customer_user_id" "uuid", "target_idempotency_key" "uuid", "target_submission" "jsonb") FROM PUBLIC;
 
@@ -929,7 +929,6 @@ REVOKE ALL ON FUNCTION "public"."record_booking_request_capture_failure"("target
 
 GRANT ALL ON FUNCTION "public"."record_booking_request_capture_failure"("target_booking_request_id" "uuid", "target_lease_generation" bigint, "target_lease_token" "uuid", "target_provider_result" "jsonb") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."record_booking_request_recovery_outcome"("target_attempt_id" "uuid", "target_step" "text", "target_ledger" "public"."payment_provider_operations", "target_deadline" timestamp with time zone) FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION "public"."record_cottage_translation_usage"("target_reservation_id" "uuid", "actual_input_tokens" bigint, "actual_output_tokens" bigint, "actual_total_tokens" bigint, "actual_microusd" bigint) FROM PUBLIC;
 
@@ -1295,13 +1294,27 @@ GRANT EXECUTE ON FUNCTION public.record_booking_request_provider_operation_obser
 REVOKE ALL ON FUNCTION public.record_booking_request_capture_observation(uuid,jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_booking_request_capture_observation(uuid,jsonb) TO service_role;
 
-REVOKE ALL ON FUNCTION public.record_booking_request_payment_recovery_observation(uuid,jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.record_booking_request_payment_recovery_observation(uuid,jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.record_booking_request_payment_recovery_observation(uuid,jsonb,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_booking_request_payment_recovery_observation(uuid,jsonb,jsonb) TO service_role;
 
-REVOKE ALL ON FUNCTION public.record_booking_request_payment_required_expiry_observation(uuid,jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.record_booking_request_payment_required_expiry_observation(uuid,jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.record_booking_request_payment_required_expiry_observation(uuid,jsonb,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_booking_request_payment_required_expiry_observation(uuid,jsonb,jsonb) TO service_role;
 
 REVOKE ALL ON FUNCTION public.guard_payment_evidence() FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION public.pending_booking_request_authorization_observations() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pending_booking_request_authorization_observations() TO service_role;
+
+REVOKE ALL ON FUNCTION public.get_booking_request_payment_facts(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_booking_request_payment_facts(uuid) TO service_role;
+
+REVOKE ALL ON FUNCTION public.get_booking_request_payment_recovery_facts(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_booking_request_payment_recovery_facts(uuid) TO service_role;
+
+REVOKE ALL ON FUNCTION public.get_booking_request_payment_observation_facts(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_booking_request_payment_observation_facts(uuid) TO service_role;
+
+REVOKE ALL ON FUNCTION public.record_booking_request_payment_observation(uuid,jsonb,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_booking_request_payment_observation(uuid,jsonb,jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.booking_request_payment_expiry_is_safe(jsonb) FROM PUBLIC;

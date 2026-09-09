@@ -4,6 +4,22 @@ const paymentEvidenceSql =
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
   "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import assert from "node:assert/strict";
+import { buildSync } from "esbuild";
+const policyBundle = buildSync({
+  stdin: {
+    contents: `export { selectPaymentRecovery } from './src/booking-request/booking-request-payment-recovery'; export { selectPaymentObservation } from './src/booking-request/booking-request-payment-observation';`,
+    resolveDir: process.cwd(),
+  },
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  write: false,
+});
+const { selectPaymentRecovery, selectPaymentObservation } = await import(
+  "data:text/javascript;base64," +
+    Buffer.from(policyBundle.outputFiles[0].contents).toString("base64")
+);
+
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 import { withPaymentRecoveryCleanup } from "../tests/fixtures/payment-recovery-cleanup.mjs";
@@ -28,7 +44,7 @@ const delayedObservationSql = (permit, occurrence) => {
           `select pg_temp.seed_unobserved_payment_outcome(${sqlJson(permit)},'succeeded',${occurrence});`),
     ),
   );
-  return `select public.observe_booking_request_payment_correction('${requestId}','${receipt.providerOperationId}',${sqlJson(receipt)});`;
+  return `select pg_temp.correction_observe('${requestId}','${receipt.providerOperationId}',${sqlJson(receipt)},'late_succeeded',null,'${receipt.providerOperationId}');`;
 };
 const service = (sql) =>
   harness.runSql(paymentEvidenceSql + `set role service_role; ${sql}`);
@@ -44,10 +60,54 @@ const admit = (command = key) =>
       .split("\n")
       .at(-1),
   );
-const lease = (id) =>
-  parsed(`select public.lease_booking_request_payment_recovery_step('${id}');`);
-const executeSql = (permit, outcome = "succeeded") =>
-  `select pg_temp.recovery_execute(${sqlJson(permit)},'${outcome}');`;
+const facts = (id = requestId) =>
+  parsed(`select public.get_booking_request_payment_facts('${id}');`);
+const lease = (id) => {
+  const selected = selectPaymentRecovery(facts(), id);
+  return selected.status === "execute"
+    ? parsed(
+        `select public.lease_booking_request_payment_recovery_step('${id}','${selected.step}','${selected.expectedState}');`,
+      )
+    : selected;
+};
+// An integrity-race fixture names its expected result; production policy computes the consequences.
+const observationCommand = (permit, outcome) => {
+  const current = facts(permit.binding.bookingRequestId);
+  const operation = current.operations.find(
+    (entry) => entry.logicalOperationId === permit.operationId,
+  ) ?? {
+    id: permit.attemptId,
+    kind:
+      permit.step === "replacement-authorization"
+        ? "authorization"
+        : permit.step === "replacement-capture"
+          ? "capture"
+          : "release",
+    lifecycleId: permit.binding.paymentLifecycleId,
+    recoveryAttemptId: permit.attemptId,
+    recoveryStep: permit.step,
+    originalOutcome: null,
+    outcome: null,
+    permit,
+  };
+  const result = { outcome, evidence: { occurredAt: current.observedAt } };
+  return selectPaymentObservation(
+    {
+      ...current,
+      operations: [
+        ...current.operations.filter((entry) => entry.id !== operation.id),
+        operation,
+      ],
+    },
+    operation.id,
+    result,
+  );
+};
+
+const executeSql = (permit, outcome = "succeeded") => {
+  const command = observationCommand(permit, outcome);
+  return `select pg_temp.recovery_execute(${sqlJson(permit)},'${outcome}',${command.recoveryState ? "'" + command.recoveryState + "'" : "null"},${command.quarantineReason ? "'" + command.quarantineReason + "'" : "null"});`;
+};
 const execute = (permit, outcome) => parsed(executeSql(permit, outcome));
 const finalizeSql = (id) =>
   `select public.finalize_booking_request_confirmation('${requestId}',public.get_booking_request_payment_recovery_confirmation_evidence('${id}'));`;
@@ -76,7 +136,8 @@ async function finish(session, options) {
 }
 const result = (session) =>
   JSON.parse(session.stdout.split("\n").find((line) => line.startsWith("{")));
-async function duplicate(sql, label) {
+async function duplicate(command, label) {
+  const sql = typeof command === "function" ? command() : command;
   const held = start(
     `begin;set application_name='recovery_${label}_holder';set role service_role;${sql}select 'RECOVERY_HELD';`,
   );
@@ -87,9 +148,12 @@ async function duplicate(sql, label) {
   );
   await harness.waitForLock(`recovery_${label}_contender`, contender);
   await finish(held, { action: "commit" });
-  await finish(contender);
+  await finish(
+    contender,
+    typeof command === "function" ? { expectedState: "RC409" } : undefined,
+  );
   assert.deepEqual(
-    result(contender),
+    typeof command === "function" ? parsed(command()) : result(contender),
     result(held),
     `${label} must replay the same durable result`,
   );
@@ -97,17 +161,20 @@ async function duplicate(sql, label) {
 }
 const clockSignatures = [
   "claim_customer_booking_request_payment_recovery(uuid,uuid,text)",
-  "lease_booking_request_payment_recovery_step(uuid)",
+  "lease_booking_request_payment_recovery_step(uuid,text,text)",
   "persist_simulated_payment_effect(jsonb,jsonb)",
   "resolve_simulated_payment_effect(jsonb,text,jsonb)",
   "seal_simulated_payment_absence(jsonb)",
   "validate_payment_provider_observation(jsonb,uuid)",
   "accept_payment_provider_observation(uuid,jsonb)",
+  "get_booking_request_payment_facts(uuid)",
+  "record_booking_request_payment_observation(uuid,jsonb,jsonb)",
+  "booking_request_payment_expiry_is_safe(jsonb)",
   "admit_booking_request_payment_recovery(jsonb)",
   "reload_booking_request_payment_operation(jsonb,text,text)",
   "finalize_booking_request_confirmation(uuid,jsonb)",
   "booking_request_payment_recovery_status(public.booking_requests)",
-  "observe_booking_request_payment_correction(uuid,uuid,jsonb)",
+  "observe_booking_request_payment_correction(uuid,uuid,jsonb,jsonb)",
 ];
 const definitions = [];
 let seeded = false;
@@ -179,7 +246,7 @@ try {
   ]) {
     const work = lease(admission.attemptId);
     assert.equal(work.permit.step, step);
-    await duplicate(executeSql(work.permit), step);
+    await duplicate(() => executeSql(work.permit), step);
   }
   await duplicate(finalizeSql(admission.attemptId), "confirmation");
   const confirmed = snapshot();

@@ -45,13 +45,14 @@ async function invoke(
   url,
   statusUrl = "http://127.0.0.1:55331",
   statusExit = 0,
+  mode = "recover",
 ) {
   const child = fork(join(directory, "observe.mjs"), [], {
     execArgv: [],
     env: {
       ...process.env,
       PATH: `${directory}:${process.env.PATH}`,
-      CAPTURE_WORKER_MODE: "recover",
+      CAPTURE_WORKER_MODE: mode,
       SUPABASE_URL: url,
       SUPABASE_SECRET_KEY: "fixture-service-key",
       SUPABASE_LOCAL_WORKDIR: directory,
@@ -76,21 +77,35 @@ async function invoke(
 }
 
 describe("Capture recovery worker environment boundary", () => {
-  it("rejects an inherited remote API before transmitting the service key", async () => {
-    const result = await invoke("https://untrusted.example");
-    expect(
-      result.messages.filter((message) => message.stage === "http"),
-    ).toEqual([]);
-    expect(result.code).toBe(1);
-    expect(result.messages).toEqual([
-      {
-        stage: "error",
-        message:
-          "Capture worker API must match the disposable local Supabase origin",
-      },
-    ]);
-    expect(JSON.stringify(result)).not.toContain("fixture-service-key");
-  });
+  it.each([
+    "recover",
+    "payment-recovery",
+    "payment-expiry",
+    "payment-correction",
+    "payment-query",
+  ])(
+    "rejects an inherited remote API before transmitting the service key for %s",
+    async (mode) => {
+      const result = await invoke(
+        "https://untrusted.example",
+        "http://127.0.0.1:55331",
+        0,
+        mode,
+      );
+      expect(
+        result.messages.filter((message) => message.stage === "http"),
+      ).toEqual([]);
+      expect(result.code).toBe(1);
+      expect(result.messages).toEqual([
+        {
+          stage: "error",
+          message:
+            "Capture worker API must match the disposable local Supabase origin",
+        },
+      ]);
+      expect(JSON.stringify(result)).not.toContain("fixture-service-key");
+    },
+  );
   it("uses the exact origin reported by the guarded project without changing local recovery", async () => {
     const result = await invoke("http://127.0.0.1:55331");
     expect(result.code).toBe(0);

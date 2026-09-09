@@ -2,7 +2,10 @@ import { historicalProviderOperationSource } from "../tests/fixtures/payment-pro
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildSync } from "esbuild";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness();
@@ -142,6 +145,81 @@ function step(attempt, outcome) {
 }
 let failure;
 harness.guardDisposableLocalDatabase();
+const workerDirectory = mkdtempSync(
+  join(tmpdir(), "rentcottage-payment-upgrade-"),
+);
+const workerBundle = join(workerDirectory, "worker.mjs");
+buildSync({
+  entryPoints: ["scripts/booking-request-capture-recovery-worker.ts"],
+  outfile: workerBundle,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+});
+function runPaymentWorker(mode, bookingRequestId, extra = {}) {
+  harness.guardDisposableLocalDatabase();
+  const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
+  const status = spawnSync(
+    "npx",
+    [
+      "supabase",
+      "status",
+      "--output",
+      "json",
+      ...(workdir ? ["--workdir", workdir] : []),
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+      env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: "1" },
+    },
+  );
+  let connection;
+  try {
+    connection = JSON.parse(status.stdout);
+    const origin = new URL(connection.API_URL);
+    if (
+      status.status !== 0 ||
+      origin.protocol !== "http:" ||
+      origin.hostname !== "127.0.0.1" ||
+      connection.API_URL !== origin.origin ||
+      typeof connection.SECRET_KEY !== "string" ||
+      !connection.SECRET_KEY
+    )
+      throw new Error();
+  } catch {
+    throw new Error(
+      "Unable to resolve the disposable Supabase connection for payment upgrade",
+    );
+  }
+  const result = spawnSync(process.execPath, [workerBundle], {
+    encoding: "utf8",
+    timeout: 30_000,
+    env: {
+      ...process.env,
+      CAPTURE_WORKER_MODE: mode,
+      CAPTURE_BOOKING_REQUEST_ID: bookingRequestId,
+      PAYMENT_WORKER_OUTPUT: "json",
+      ...extra,
+      SUPABASE_URL: connection.API_URL,
+      SUPABASE_SECRET_KEY: connection.SECRET_KEY,
+    },
+  });
+  const messages = result.stdout
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  if (result.status !== 0)
+    throw new Error(
+      `Payment upgrade worker failed: ${result.stderr}; ${JSON.stringify(messages)}`,
+    );
+  const complete = messages.find((message) => message.stage === "complete");
+  if (!complete) throw new Error("Payment upgrade worker returned no result");
+  return complete.result;
+}
+
 try {
   runSupabase(["db", "reset", "--local", "--version", priorVersion]);
   assert.equal(
@@ -322,23 +400,12 @@ try {
     "0",
     "A lease with no provider outcome is not indeterminate evidence and is not quarantined",
   );
-  const elapsed = parsed(
-    `select public.prepare_booking_request_payment_required_expiry('${id("60", 11)}',${literal(identity)});`,
-  );
-  assert.equal(elapsed.status, "release");
-  parsed(
-    `select pg_temp.expiry_execute(${literal(elapsed.permit)},'succeeded');`,
-  );
   assert.equal(
-    parsed(
-      `select public.finalize_booking_request_payment_required_expiry('${id("60", 11)}');`,
-    ).status,
+    runPaymentWorker("payment-expiry", id("60", 11)).status,
     "expired",
   );
   assert.equal(
-    parsed(
-      `select public.prepare_booking_request_payment_required_expiry('${id("60", 12)}',${literal(identity)});`,
-    ).status,
+    runPaymentWorker("payment-expiry", id("60", 12)).status,
     "quarantined",
   );
   assert.equal(
@@ -348,24 +415,18 @@ try {
     "quarantined",
   );
   assert.equal(
-    parsed(
-      `select public.prepare_booking_request_payment_required_expiry('${id("60", 13)}',${literal(identity)});`,
-    ).status,
+    runPaymentWorker("payment-expiry", id("60", 13)).status,
     "confirmed",
   );
-  const corrective = parsed(
-    `select public.prepare_booking_request_payment_required_expiry('${id("60", 15)}',${literal(identity)});`,
-  );
-  assert.equal(corrective.status, "refund");
-  assert.equal(corrective.permit.binding.amountFils, 115000000);
-  parsed(
-    `select pg_temp.expiry_execute(${literal(corrective.permit)},'succeeded');`,
+  assert.equal(
+    runPaymentWorker("payment-expiry", id("60", 15)).status,
+    "expired",
   );
   assert.equal(
-    parsed(
-      `select public.finalize_booking_request_payment_required_expiry('${id("60", 15)}');`,
-    ).status,
-    "expired",
+    harness.runSql(
+      `select amount_fils from public.payment_provider_operations where claim_id='${id("72", 15)}' and operation_kind='refund';`,
+    ),
+    "115000000",
   );
   const after = snapshot();
   assert.deepEqual(
@@ -398,6 +459,7 @@ try {
 } catch (error) {
   failure = error;
 } finally {
+  rmSync(workerDirectory, { recursive: true, force: true });
   try {
     runSupabase(["db", "reset", "--local"]);
   } catch (error) {

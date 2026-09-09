@@ -1,3 +1,4 @@
+import { recoveryPredecessorStates } from "./booking-request-payment-observation";
 import { describe, expect, it, vi } from "vitest";
 import { SupabaseBookingRequestPaymentRecoveryRepository } from "./supabase-booking-request-payment-recovery";
 import { recoveryPermitFixture } from "../../tests/fixtures/payment-recovery.fixtures";
@@ -23,7 +24,9 @@ describe("Supabase Booking Request payment recovery", () => {
         {} as never,
         service as never,
       );
-      await expect(repository.lease(attemptId)).resolves.toMatchObject({
+      await expect(
+        repository.lease(attemptId, step, recoveryPredecessorStates[step]),
+      ).resolves.toMatchObject({
         status: "leased",
         binding: { kind },
       });
@@ -52,7 +55,9 @@ describe("Supabase Booking Request payment recovery", () => {
     await expect(
       repository.admit({ bookingRequestId: attemptId, commandKey: attemptId }),
     ).resolves.toMatchObject({ attemptId });
-    await expect(repository.lease(attemptId)).resolves.toEqual({
+    await expect(
+      repository.lease(attemptId, "original-release", "admitted"),
+    ).resolves.toEqual({
       status: "succeeded",
     });
     expect(customer.rpc).toHaveBeenCalledWith(
@@ -61,7 +66,11 @@ describe("Supabase Booking Request payment recovery", () => {
     );
     expect(service.rpc).toHaveBeenCalledWith(
       "lease_booking_request_payment_recovery_step",
-      { target_attempt_id: attemptId },
+      {
+        target_attempt_id: attemptId,
+        target_step: "original-release",
+        target_expected_state: "admitted",
+      },
     );
   });
 });

@@ -154,14 +154,26 @@ export function recordedPaymentResult(
 export function createPaymentOperationExecution({
   repository,
   provider,
+  observation,
 }: {
+  observation?: Pick<PaymentOperationExecutionRepository, "record">;
   repository: PaymentOperationExecutionRepository;
   provider: PaymentProviderAdapter;
 }): PaymentOperationExecution {
+  const needsPaymentObservation = (
+    purpose: PaymentOperationAdmission["purpose"],
+  ) =>
+    [
+      "booking-request-payment-recovery",
+      "booking-request-payment-required-expiry",
+      "booking-request-payment-required-corrective-refund",
+    ].includes(purpose);
   function validateAdmission(
     admission: PaymentOperationAdmission,
     request: ProviderOperationBinding,
   ) {
+    if (needsPaymentObservation(admission.purpose) && !observation)
+      throw new Error("Payment observation application is required");
     if (
       !paymentBindingMatches(admission.binding, request) ||
       !paymentIdentityMatches(admission.providerIdentity, provider.identity)
@@ -176,8 +188,11 @@ export function createPaymentOperationExecution({
   ): Promise<PaymentOperationExecutionResult> {
     if (result.outcome === "not-executed" && !result.evidence)
       return { status: "unresolved" };
-    const observation = validatedProviderResult(result, admission.operationId);
-    const accepted = await repository.record(admission, observation);
+    const received = validatedProviderResult(result, admission.operationId);
+    const recorder = needsPaymentObservation(admission.purpose)
+      ? observation!
+      : repository;
+    const accepted = await recorder.record(admission, received);
     return {
       status: "recorded",
       result: validatedProviderResult(accepted, admission.operationId),

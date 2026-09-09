@@ -1,7 +1,6 @@
 begin;
 -- BEGIN PAYMENT EVIDENCE FIXTURE
--- Test arrangement: admission, isolated effect, and explicit recording.
-create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text, target_command jsonb default null) returns jsonb language plpgsql as $$
 declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
 declare observed jsonb;
 declare proposed jsonb;
@@ -30,16 +29,20 @@ begin
     when 'booking-request-payment-required-expiry' then 'record_booking_request_payment_required_expiry_observation'
     when 'booking-request-payment-required-corrective-refund' then 'record_booking_request_payment_required_expiry_observation'
     else 'record_booking_request_provider_operation_observation' end;
-  execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed;
+  if recorder in ('record_booking_request_payment_recovery_observation','record_booking_request_payment_required_expiry_observation') then
+    if target_command is null then raise exception 'Fixture must name observation consequences'; end if;
+    execute format('select public.%I($1,$2,$3)',recorder) into observed using operation_id::uuid,observed,
+      target_command||jsonb_build_object('revision',public.get_booking_request_payment_observation_facts(operation_id::uuid)->>'revision');
+  else execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed; end if;
   return observed-'evidence';
 end;
 $$;
-create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text,target_command jsonb default null) returns jsonb language plpgsql as $$
 declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
 begin
   if prior_role='none' then perform set_config('role','service_role',true); end if;
   execute format('select public.%I($1)',routine) into admission using permit;
-  result:=pg_temp.payment_fixture_result(admission,outcome);
+  result:=pg_temp.payment_fixture_result(admission,outcome,target_command);
   perform set_config('role',prior_role,true);
   return result;
 end;
@@ -47,25 +50,40 @@ $$;
 create or replace function pg_temp.capture_execute(permit jsonb,outcome text default 'succeeded') returns jsonb language sql as $$
   select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
 $$;
-create or replace function pg_temp.recovery_execute(permit jsonb,outcome text) returns jsonb language sql as $$
-  select pg_temp.payment_fixture_execute('admit_booking_request_payment_recovery',permit,outcome);
+create or replace function pg_temp.recovery_execute(permit jsonb,outcome text,target_state text,target_quarantine text default null,target_capture uuid default null) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_recovery',permit,outcome,jsonb_build_object('recoveryState',target_state,'quarantineReason',target_quarantine,'correctiveCaptureId',target_capture));
 $$;
-create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text) returns jsonb language plpgsql as $$
+create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text,target_command jsonb default null) returns jsonb language plpgsql as $$
 declare prior_role text:=current_setting('role'); declare result jsonb;
 begin
   if prior_role='none' then perform set_config('role','service_role',true); end if;
-  result:=pg_temp.payment_fixture_result(public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],request_id,reference),outcome);
+  result:=pg_temp.payment_fixture_result(public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],request_id,reference),outcome,target_command);
   perform set_config('role',prior_role,true);
   return result;
 end;
 $$;
-create or replace function pg_temp.permit_query(permit jsonb,request_id text,reference text,outcome text) returns jsonb language sql as $$
+create or replace function pg_temp.permit_query(permit jsonb,request_id text,reference text,outcome text,target_state text default null,target_quarantine text default null,target_capture uuid default null) returns jsonb language sql as $$
   select pg_temp.payment_query(jsonb_build_object('providerIdentity',permit#>'{binding,providerIdentity}',
     'requestFingerprint',permit#>'{binding,requestFingerprint}','paymentLifecycleId',coalesce(permit#>'{binding,paymentLifecycleId}',permit#>'{binding,authorizationPaymentLifecycleId}'),
     'logicalOperationId',coalesce(permit#>'{binding,logicalOperationId}',permit#>'{binding,releaseLogicalOperationId}',permit#>'{binding,refundLogicalOperationId}'),'physicalAttemptId',coalesce(permit#>'{binding,physicalAttemptId}',permit#>'{binding,releasePhysicalAttemptId}',permit#>'{binding,refundPhysicalAttemptId}'),
     'operationKind',case permit->>'step' when 'replacement-authorization' then 'authorization' when 'replacement-capture' then 'capture'
       else case when permit->>'purpose'='booking-request-payment-required-corrective-refund' then 'refund' else 'release' end end,
-    'amountFils',permit#>'{binding,amountFils}','currency',permit#>'{binding,currency}'),request_id,reference,outcome);
+    'amountFils',permit#>'{binding,amountFils}','currency',permit#>'{binding,currency}'),request_id,reference,outcome,jsonb_build_object('recoveryState',target_state,'quarantineReason',target_quarantine,'correctiveCaptureId',target_capture));
+$$;
+create or replace function pg_temp.expiry_prepare(request_id uuid,identity jsonb,command jsonb) returns jsonb language plpgsql as $$
+declare result jsonb; declare target jsonb; declare prior_role text:=current_setting('role');
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  result:=public.prepare_booking_request_payment_required_expiry(request_id,identity,command||jsonb_build_object('revision',public.get_booking_request_payment_facts(request_id)->>'revision'));
+  if result->>'status'='prepared' then
+    select owned into target from jsonb_array_elements(public.get_booking_request_payment_facts(request_id)->'expiryOperations') owned
+      where (command->>'action'='release' and owned->>'authorizationLifecycleId'=command->>'authorizationLifecycleId')
+        or (command->>'action'='refund' and owned->>'captureId'=command->>'captureId');
+    result:=jsonb_build_object('status',command->>'action','permit',target->'permit','binding',target#>'{permit,binding}');
+  end if;
+  perform set_config('role',prior_role,true);
+  return result;
+end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
@@ -158,7 +176,7 @@ select public.record_booking_request_capture_failure(
 ) result;
 reset role;
 
-select plan(81);
+select plan(86);
 select has_table('public','booking_request_payment_recovery_attempts','recovery attempts are durable');
 select has_table('public','booking_request_payment_recovery_operations','recovery operations are durable');
 select function_privs_are('public','claim_customer_booking_request_payment_recovery',
@@ -217,6 +235,35 @@ select is((select (result->>'deadline')::timestamptz from admitted_recovery),
 select id::text as recovery_attempt_id
 from public.booking_request_payment_recovery_attempts \gset
 
+set local role service_role;
+select throws_ok(format('select public.lease_booking_request_payment_recovery_step(%L::uuid,%L,%L)',
+  :'recovery_attempt_id','replacement-capture','admitted'),
+  'RC409','Recovery step is invalid for current state',
+  'an explicitly requested capture cannot skip original release and replacement authorization');
+reset role;
+
+savepoint atomic_observation;
+set local role service_role;
+create temp table atomic_admission as select public.admit_booking_request_payment_recovery(
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit') admission;
+create temp table atomic_result as select public.persist_simulated_payment_effect(admission-array['purpose','binding','mode'],
+  jsonb_build_object('outcome','succeeded','providerRequestId','atomic-request','providerReference','atomic-reference','movementReference','atomic-release',
+    'evidence',jsonb_build_object('operationId',admission->>'operationId','eventId','atomic-release-event','provenance','fictional-provider',
+      'originalOutcome','succeeded','executedAt',clock_timestamp(),'occurredAt',clock_timestamp(),'closedAt',null))) result from atomic_admission;
+create temp table atomic_facts as select public.get_booking_request_payment_recovery_facts(:'recovery_attempt_id'::uuid) facts;
+reset role;
+create temp table atomic_before as select pg_temp.recovery_graph() graph;
+set local role service_role;
+select throws_ok(format('select public.record_booking_request_payment_observation(%L::uuid,%L::jsonb,%L::jsonb)',
+  (select admission->>'operationId' from atomic_admission),(select result from atomic_result),
+  jsonb_build_object('revision',(select facts->>'revision' from atomic_facts),'recoveryState','succeeded','quarantineReason',null,'correctiveCaptureId',null)),
+  'RC409','Selected recovery consequence is invalid','forged observation consequence cannot skip release and authorization');
+reset role;
+select is(pg_temp.recovery_graph(),(select graph from atomic_before),'rejected consequence rolls back canonical payment, recovery, history, inventory and receipt changes');
+select is((select count(*) from public.payment_provider_observations where event_id='atomic-release-event'),0::bigint,'rejected consequence commits no provider observation');
+select is((select count(*) from public.simulated_payment_effects where operation_id=(select (admission->>'operationId')::uuid from atomic_admission)),1::bigint,'independent provider effect survives rejected application recording for same-identity reconciliation');
+rollback to savepoint atomic_observation;
+
 create table public.recovery_expiry_test_clock(instant timestamptz not null);
 insert into public.recovery_expiry_test_clock
 select payment_required_deadline - interval '1 millisecond'
@@ -235,10 +282,13 @@ from (values
   ('public.validate_payment_provider_observation(jsonb,uuid)'),
   ('public.accept_payment_provider_observation(uuid,jsonb)'),
   ('public.claim_due_booking_request_payment_required_expiries(integer,jsonb)'),
-  ('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'),
+  ('public.prepare_booking_request_payment_required_expiry(uuid,jsonb,jsonb)'),
   ('public.claim_customer_booking_request_payment_recovery(uuid,uuid,text)'),
-  ('public.lease_booking_request_payment_recovery_step(uuid)'),
-  ('public.admit_booking_request_payment_recovery(jsonb)')
+  ('public.lease_booking_request_payment_recovery_step(uuid,text,text)'),
+  ('public.admit_booking_request_payment_recovery(jsonb)'),
+  ('public.get_booking_request_payment_facts(uuid)'),
+  ('public.booking_request_payment_expiry_is_safe(jsonb)'),
+  ('public.record_booking_request_payment_observation(uuid,jsonb,jsonb)')
 ) functions(signature);
 select replace(
   definition,
@@ -257,12 +307,12 @@ select is(
   'Payment Required expiry is not admitted one instant before the fixed deadline'
 );
 create temp table recovery_permit_before_expiry as
-select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid) result;
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted') result;
 select is(
-  public.prepare_booking_request_payment_required_expiry(
+  pg_temp.expiry_prepare(
     '60000000-0000-4000-8000-000000001001',
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-  )->>'status',
+  ,jsonb_build_object('action','release','authorizationLifecycleId','73000000-0000-4000-8000-000000001001','recoveryOperationId',null))->>'status',
   'not-due',
   'preparation rechecks database time before the fixed deadline'
 );
@@ -272,9 +322,9 @@ savepoint late_replacement_authorization;
 set local role service_role;
 select pg_temp.recovery_execute(
   (select result->'permit' from recovery_permit_before_expiry),'succeeded'
-);
+,'original_released');
 create temp table replacement_authorization_before_deadline as
-select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid) result;
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released') result;
 reset role;
 update public.recovery_expiry_test_clock set instant=(
   select payment_required_deadline from public.booking_request_capture_work
@@ -301,15 +351,15 @@ savepoint expiry_ownership_fence;
 set local role service_role;
 select pg_temp.recovery_execute(
   (select result->'permit' from recovery_permit_before_expiry),'succeeded'
-);
+,'original_released');
 select pg_temp.recovery_execute(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded'
-);
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released')->'permit','succeeded'
+,'replacement_authorized');
 select pg_temp.recovery_execute(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed'
-);
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-capture','replacement_authorized')->'permit','failed'
+,'capture_failed');
 create temp table replacement_release_before_expiry_ownership as
-select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid) result;
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-release','capture_failed') result;
 reset role;
 update public.recovery_expiry_test_clock set instant=(
   select payment_required_deadline from public.booking_request_capture_work
@@ -325,10 +375,10 @@ select is(
   'the exact fixed deadline admits due Payment Required expiry work'
 );
 select is(
-  public.prepare_booking_request_payment_required_expiry(
+  pg_temp.expiry_prepare(
     '60000000-0000-4000-8000-000000001001',
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-  )->>'status',
+  ,jsonb_build_object('action','release','authorizationLifecycleId',:'recovery_attempt_id','recoveryOperationId',null))->>'status',
   'release',
   'complete evidence creates one canonical expiry-owned original release target'
 );
@@ -371,9 +421,9 @@ rollback to savepoint expiry_ownership_fence;
 savepoint indeterminate_expiry_evidence;
 set local role service_role;
 select pg_temp.recovery_execute(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit',
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit',
   'indeterminate'
-);
+,'blocked','unsafe-recovery-original-release-indeterminate');
 reset role;
 update public.recovery_expiry_test_clock set instant=(
   select payment_required_deadline from public.booking_request_capture_work
@@ -381,10 +431,10 @@ update public.recovery_expiry_test_clock set instant=(
 );
 set local role service_role;
 select is(
-  public.prepare_booking_request_payment_required_expiry(
+  pg_temp.expiry_prepare(
     '60000000-0000-4000-8000-000000001001',
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-  )->>'status',
+  ,jsonb_build_object('action','release','authorizationLifecycleId',:'recovery_attempt_id','recoveryOperationId',null))->>'status',
   'quarantined',
   'indeterminate release evidence permanently retains inventory for review'
 );
@@ -400,17 +450,17 @@ rollback to savepoint indeterminate_expiry_evidence;
 savepoint all_generation_expiry_evidence;
 set local role service_role;
 select pg_temp.recovery_execute(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded'
-);
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit','succeeded'
+,'original_released');
 select pg_temp.recovery_execute(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded'
-);
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released')->'permit','succeeded'
+,'replacement_authorized');
 select pg_temp.recovery_execute(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed'
-);
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-capture','replacement_authorized')->'permit','failed'
+,'capture_failed');
 select pg_temp.recovery_execute(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded'
-);
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-release','capture_failed')->'permit','succeeded'
+,'safely_failed');
 reset role;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 set local role authenticated;
@@ -430,13 +480,15 @@ update public.recovery_expiry_test_clock set instant=(
 );
 set local role service_role;
 select is(
-  public.prepare_booking_request_payment_required_expiry(
+  pg_temp.expiry_prepare(
     '60000000-0000-4000-8000-000000001001',
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-  )->>'status',
-  'ready',
-  'complete evidence across all generations proves every Authorization released'
+  ,jsonb_build_object('action','release','authorizationLifecycleId','73000000-0000-4000-8000-000000001001','recoveryOperationId',(select (entry->>'recoveryOperationId')::uuid from jsonb_array_elements(public.get_booking_request_payment_facts('60000000-0000-4000-8000-000000001001')->'operations') entry where entry->>'recoveryStep'='original-release')))->>'status',
+  'release',
+  'complete evidence retains the requested original release ownership'
 );
+select pg_temp.expiry_prepare('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}',
+  jsonb_build_object('action','release','authorizationLifecycleId',:'recovery_attempt_id','recoveryOperationId',(select (entry->>'recoveryOperationId')::uuid from jsonb_array_elements(public.get_booking_request_payment_facts('60000000-0000-4000-8000-000000001001')->'operations') entry where entry->>'recoveryStep'='replacement-release')));
 reset role;
 select is(
   (select count(*) from public.booking_request_payment_required_expiry_operations
@@ -477,14 +529,14 @@ drop table public.recovery_expiry_test_clock;
 
 savepoint unsafe_original_release_failed;
 set local role service_role;
-create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
-create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'failed') result;
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit' permit;
+create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'failed','blocked','unsafe-recovery-original-release-failed') result;
 select is((select result->>'outcome' from unsafe_result),'failed','original-release preserves the provider failed result');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','failed original-release enters quarantine before expiry preparation');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'failed original-release retains every selected shift');
 set local role service_role;
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','failed original-release cannot lease automatic reconciliation');
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->>'status','quarantined','failed original-release cannot lease automatic reconciliation');
 select is(pg_temp.permit_query((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','failed original-release fences a stale provider query');
 select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'failed original-release is excluded from automatic recovery');
 reset role;
@@ -492,14 +544,14 @@ rollback to savepoint unsafe_original_release_failed;
 
 savepoint unsafe_original_release_indeterminate;
 set local role service_role;
-create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
-create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'indeterminate') result;
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit' permit;
+create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'indeterminate','blocked','unsafe-recovery-original-release-indeterminate') result;
 select is((select result->>'outcome' from unsafe_result),'indeterminate','original-release preserves the provider indeterminate result');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','indeterminate original-release enters quarantine before expiry preparation');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'indeterminate original-release retains every selected shift');
 set local role service_role;
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','indeterminate original-release cannot lease automatic reconciliation');
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->>'status','quarantined','indeterminate original-release cannot lease automatic reconciliation');
 select is(pg_temp.permit_query((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','indeterminate original-release fences a stale provider query');
 select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'indeterminate original-release is excluded from automatic recovery');
 reset role;
@@ -507,15 +559,15 @@ rollback to savepoint unsafe_original_release_indeterminate;
 
 savepoint unsafe_replacement_authorization_indeterminate;
 set local role service_role;
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
-create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
-create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'indeterminate') result;
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit','succeeded','original_released');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released')->'permit' permit;
+create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'indeterminate','blocked','unsafe-recovery-replacement-authorization-indeterminate') result;
 select is((select result->>'outcome' from unsafe_result),'indeterminate','replacement-authorization preserves the provider indeterminate result');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','indeterminate replacement-authorization enters quarantine before expiry preparation');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'indeterminate replacement-authorization retains every selected shift');
 set local role service_role;
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','indeterminate replacement-authorization cannot lease automatic reconciliation');
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released')->>'status','quarantined','indeterminate replacement-authorization cannot lease automatic reconciliation');
 select is(pg_temp.permit_query((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','indeterminate replacement-authorization fences a stale provider query');
 select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'indeterminate replacement-authorization is excluded from automatic recovery');
 reset role;
@@ -523,16 +575,16 @@ rollback to savepoint unsafe_replacement_authorization_indeterminate;
 
 savepoint unsafe_replacement_capture_indeterminate;
 set local role service_role;
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
-create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
-create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'indeterminate') result;
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit','succeeded','original_released');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released')->'permit','succeeded','replacement_authorized');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-capture','replacement_authorized')->'permit' permit;
+create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'indeterminate','blocked','unsafe-recovery-replacement-capture-indeterminate') result;
 select is((select result->>'outcome' from unsafe_result),'indeterminate','replacement-capture preserves the provider indeterminate result');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','indeterminate replacement-capture enters quarantine before expiry preparation');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'indeterminate replacement-capture retains every selected shift');
 set local role service_role;
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','indeterminate replacement-capture cannot lease automatic reconciliation');
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-capture','replacement_authorized')->>'status','quarantined','indeterminate replacement-capture cannot lease automatic reconciliation');
 select is(pg_temp.permit_query((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','indeterminate replacement-capture fences a stale provider query');
 select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'indeterminate replacement-capture is excluded from automatic recovery');
 reset role;
@@ -540,17 +592,17 @@ rollback to savepoint unsafe_replacement_capture_indeterminate;
 
 savepoint unsafe_replacement_release_failed;
 set local role service_role;
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed');
-create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
-create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'failed') result;
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit','succeeded','original_released');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released')->'permit','succeeded','replacement_authorized');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-capture','replacement_authorized')->'permit','failed','capture_failed');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-release','capture_failed')->'permit' permit;
+create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'failed','blocked','unsafe-recovery-replacement-release-failed') result;
 select is((select result->>'outcome' from unsafe_result),'failed','replacement-release preserves the provider failed result');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','failed replacement-release enters quarantine before expiry preparation');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'failed replacement-release retains every selected shift');
 set local role service_role;
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','failed replacement-release cannot lease automatic reconciliation');
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-release','capture_failed')->>'status','quarantined','failed replacement-release cannot lease automatic reconciliation');
 select is(pg_temp.permit_query((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','failed replacement-release fences a stale provider query');
 select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'failed replacement-release is excluded from automatic recovery');
 reset role;
@@ -558,17 +610,17 @@ rollback to savepoint unsafe_replacement_release_failed;
 
 savepoint unsafe_replacement_release_indeterminate;
 set local role service_role;
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','succeeded');
-select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed');
-create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit' permit;
-create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'indeterminate') result;
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted')->'permit','succeeded','original_released');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released')->'permit','succeeded','replacement_authorized');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-capture','replacement_authorized')->'permit','failed','capture_failed');
+create temp table unsafe_permit as select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-release','capture_failed')->'permit' permit;
+create temp table unsafe_result as select pg_temp.recovery_execute((select permit from unsafe_permit),'indeterminate','blocked','unsafe-recovery-replacement-release-indeterminate') result;
 select is((select result->>'outcome' from unsafe_result),'indeterminate','replacement-release preserves the provider indeterminate result');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','indeterminate replacement-release enters quarantine before expiry preparation');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'indeterminate replacement-release retains every selected shift');
 set local role service_role;
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status','quarantined','indeterminate replacement-release cannot lease automatic reconciliation');
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-release','capture_failed')->>'status','quarantined','indeterminate replacement-release cannot lease automatic reconciliation');
 select is(pg_temp.permit_query((select permit from unsafe_permit),(select result->>'providerRequestId' from unsafe_result),(select result->>'providerReference' from unsafe_result),'succeeded')->>'outcome','not-executed','indeterminate replacement-release fences a stale provider query');
 select is(public.due_booking_request_payment_recoveries(20),'[]'::jsonb,'indeterminate replacement-release is excluded from automatic recovery');
 reset role;
@@ -576,10 +628,9 @@ rollback to savepoint unsafe_replacement_release_indeterminate;
 
 set local role service_role;
 create temp table recovery_release as
-select public.lease_booking_request_payment_recovery_step(
-  :'recovery_attempt_id'::uuid) result;
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'original-release','admitted') result;
 select pg_temp.recovery_execute(
-  (select result->'permit' from recovery_release),'succeeded');
+  (select result->'permit' from recovery_release),'succeeded','original_released');
 savepoint forged_predecessor;
 reset role;
 -- Test-only corruption exercises the downstream binding check with the immutable guard restored.
@@ -588,27 +639,25 @@ update public.payment_provider_operations set amount_fils=115000001
 where recovery_attempt_id=:'recovery_attempt_id'::uuid;
 alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
 set local role service_role;
-select throws_ok(format('select public.lease_booking_request_payment_recovery_step(%L)',
+select throws_ok(format('select public.lease_booking_request_payment_recovery_step(%L,''replacement-authorization'',''original_released'')',
   :'recovery_attempt_id'::uuid),'RC409',null,'replacement authorization requires exactly bound original release evidence');
 rollback to savepoint forged_predecessor;
 create temp table recovery_authorize as
-select public.lease_booking_request_payment_recovery_step(
-  :'recovery_attempt_id'::uuid) result;
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-authorization','original_released') result;
 select pg_temp.recovery_execute(
-  (select result->'permit' from recovery_authorize),'succeeded');
+  (select result->'permit' from recovery_authorize),'succeeded','replacement_authorized');
 create temp table recovery_capture as
-select public.lease_booking_request_payment_recovery_step(
-  :'recovery_attempt_id'::uuid) result;
+select public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-capture','replacement_authorized') result;
 savepoint failed_cleanup;
 select pg_temp.recovery_execute(
-  (select result->'permit' from recovery_capture),'failed');
+  (select result->'permit' from recovery_capture),'failed','capture_failed');
 select pg_temp.recovery_execute(
-  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->'permit','failed');
-select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid)->>'status',
+  public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-release','capture_failed')->'permit','failed','blocked','unsafe-recovery-replacement-release-failed');
+select is(public.lease_booking_request_payment_recovery_step(:'recovery_attempt_id'::uuid,'replacement-release','capture_failed')->>'status',
   'quarantined','a failed replacement release never proves the authorization was released');
 rollback to savepoint failed_cleanup;
 select pg_temp.recovery_execute(
-  (select result->'permit' from recovery_capture),'succeeded');
+  (select result->'permit' from recovery_capture),'succeeded','succeeded');
 reset role;
 
 select results_eq(

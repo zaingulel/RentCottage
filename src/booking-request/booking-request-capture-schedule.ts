@@ -1,3 +1,5 @@
+import { createBookingRequestPaymentObservation } from "./booking-request-payment-observation";
+import { SupabaseBookingRequestPaymentObservationRepository } from "./supabase-booking-request-payment-observation";
 import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
 import {
   SupabasePaymentOperationExecutionRepository,
@@ -59,7 +61,12 @@ export async function runScheduledBookingRequestCapture(
     });
     const operations = createPaymentOperationExecution({
       repository: new SupabasePaymentOperationExecutionRepository(client),
-      provider: provider,
+      provider,
+      observation: createBookingRequestPaymentObservation({
+        repository: new SupabaseBookingRequestPaymentObservationRepository(
+          client,
+        ),
+      }),
     });
     processRecoveryDue = createBookingRequestPaymentRecovery({
       repository: new SupabaseBookingRequestPaymentRecoveryRepository(
@@ -68,6 +75,9 @@ export async function runScheduledBookingRequestCapture(
       ),
 
       operations,
+      confirmation: createBookingRequestConfirmation({
+        repository: new SupabaseBookingRequestConfirmationRepository(client),
+      }),
     }).processDue;
     processDue = createBookingRequestCaptureProcessing({
       repository: new SupabaseBookingRequestCaptureRepository(client),
