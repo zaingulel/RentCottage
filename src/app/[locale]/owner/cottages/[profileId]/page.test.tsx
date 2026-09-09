@@ -1,139 +1,138 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  createClient,
-  createCottageProfile,
-  createCottagePublication,
-  createCottageInventory,
-  createCottageShiftSchedule,
-  resolveContext,
-} = vi.hoisted(() => ({
-  createClient: vi.fn(),
-  createCottageProfile: vi.fn(),
-  createCottagePublication: vi.fn(),
-  createCottageInventory: vi.fn(),
-  createCottageShiftSchedule: vi.fn(),
-  resolveContext: vi.fn(),
-}));
+const { loadOwnerCottageEditor, notFound, unstableRethrow } = vi.hoisted(
+  () => ({
+    loadOwnerCottageEditor: vi.fn(),
+    notFound: vi.fn(),
+    unstableRethrow: vi.fn(),
+  }),
+);
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/access/supabase-server", () => ({
-  createRequestSupabaseClient: createClient,
-}));
-vi.mock("@/access/supabase-account-access", () => ({
-  SupabaseAccountContextStore: class {
-    resolve() {
-      return resolveContext();
-    }
-  },
-}));
-vi.mock("@/cottage-profile/request-cottage-profile", () => ({
-  createRequestCottageProfile: createCottageProfile,
-}));
-vi.mock("@/cottage-publication/request-cottage-publication", () => ({
-  createRequestCottagePublication: createCottagePublication,
-}));
-vi.mock("@/cottage-inventory/request-cottage-inventory", () => ({
-  createRequestCottageInventory: createCottageInventory,
-}));
-vi.mock("@/cottage-shift-schedule/request-cottage-shift-schedule", () => ({
-  createRequestCottageShiftSchedule: createCottageShiftSchedule,
+vi.mock("@/cottage-profile/owner-cottage-editor", () => ({
+  loadOwnerCottageEditor,
 }));
 vi.mock("next/navigation", () => ({
-  notFound: vi.fn(),
-  unstable_rethrow: vi.fn(),
+  notFound,
+  unstable_rethrow: unstableRethrow,
 }));
 
 import OwnerCottageProfilePage from "./page";
 
+const profileId = "70000000-0000-4000-8000-000000000203";
+const shiftId = "72000000-0000-4000-8000-000000000203";
+const bundleId = "73000000-0000-4000-8000-000000000203";
+
+const profile = {
+  id: profileId,
+  ownerUserId: "10000000-0000-4000-8000-000000000203",
+  applicationId: null,
+  currentPublicationId: null,
+  status: "draft" as const,
+  version: 1,
+  name: "Cottage",
+  governorate: "Erbil",
+  approximateLocation: "Shaqlawa",
+  exactAddress: "Private",
+  exactLatitude: null,
+  exactLongitude: null,
+  privateDirections: "",
+  capacity: 8,
+  bedrooms: 3,
+  bathrooms: 2,
+  amenities: ["garden"],
+  sourceLanguage: "en" as const,
+  description: "Description",
+  houseRules: "Rules",
+  photos: [],
+  submittedSourceRevision: null,
+  updatedAt: "2026-09-08T10:00:00.000Z",
+};
+
+const schedule = {
+  profileId,
+  scheduleRevisionId: "71000000-0000-4000-8000-000000000203",
+  revision: 1,
+  shifts: [
+    {
+      id: shiftId,
+      name: "Morning",
+      startTime: "08:00",
+      endTime: "12:00",
+      position: 1,
+      crossesMidnight: false,
+    },
+  ],
+  fullDayBundleId: bundleId,
+  fullDayShiftIds: [shiftId],
+  fullDayStartTime: "08:00",
+  fullDayEndTime: "12:00",
+  fullDayCrossesMidnight: false,
+};
+
+const pricing = {
+  profileId,
+  scheduleRevisionId: schedule.scheduleRevisionId,
+  serviceDay: null,
+  units: [
+    {
+      id: shiftId,
+      kind: "shift",
+      standardPriceIqd: 125000,
+      weekdayOverrides: [],
+      dateOverrides: [],
+    },
+    {
+      id: bundleId,
+      kind: "full_day_bundle",
+      standardPriceIqd: 220000,
+      weekdayOverrides: [],
+      dateOverrides: [],
+    },
+  ],
+};
+
+function ready(value = {}) {
+  return {
+    status: "ready" as const,
+    value: {
+      profile,
+      review: null,
+      schedule,
+      pricing: null,
+      editable: true,
+      ...value,
+    },
+  };
+}
+
 describe("Cottage Profile owner detail page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    createClient.mockResolvedValue({});
   });
 
-  it("directs a prospective owner back to their Owner Application", async () => {
-    resolveContext.mockResolvedValue({
-      role: "cottage_owner",
-      approvalState: "prospective",
-    });
+  it.each([
+    ["access_required", "Verify Cottage Owner access", "/en/owner/access"],
+    ["prospective", "Open Owner Application", "/en/owner/application"],
+  ] as const)("renders the %s owner fallback", async (status, name, href) => {
+    loadOwnerCottageEditor.mockResolvedValue({ status });
 
     render(
       await OwnerCottageProfilePage({
-        params: Promise.resolve({ locale: "en", profileId: "not-owned" }),
+        params: Promise.resolve({ locale: "en", profileId }),
       }),
     );
 
-    expect(
-      screen.getByText(
-        /Continue your first Cottage Profile in Owner Application/,
-      ),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("link", { name: "Open Owner Application" }),
-    ).toHaveAttribute("href", "/en/owner/application");
+    expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
   });
 
-  it("directs a non-owner to the dedicated owner access action", async () => {
-    resolveContext.mockResolvedValue({ role: "customer" });
-
-    render(
-      await OwnerCottageProfilePage({
-        params: Promise.resolve({ locale: "en", profileId: "not-owned" }),
-      }),
-    );
-
-    expect(
-      screen.getByRole("link", { name: "Verify Cottage Owner access" }),
-    ).toHaveAttribute("href", "/en/owner/access");
-    expect(
-      screen.queryByRole("link", { name: "Open Owner Application" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("loads the current Shift Schedule into a separate owner editor", async () => {
-    const profileId = "70000000-0000-4000-8000-000000000001";
-    resolveContext.mockResolvedValue({
-      role: "cottage_owner",
-      approvalState: "approved",
-    });
-    createCottageProfile.mockResolvedValue({
-      load: vi.fn().mockResolvedValue({
-        id: profileId,
-        ownerUserId: "10000000-0000-4000-8000-000000000701",
-        applicationId: null,
-        status: "draft",
-        version: 1,
-        name: "Cottage",
-        governorate: "Erbil",
-        approximateLocation: "Shaqlawa",
-        exactAddress: "Private",
-        exactLatitude: null,
-        exactLongitude: null,
-        privateDirections: "",
-        capacity: 8,
-        bedrooms: 3,
-        bathrooms: 2,
-        amenities: ["garden"],
-        sourceLanguage: "en",
-        description: "Description",
-        houseRules: "Rules",
-        photos: [],
-        submittedSourceRevision: null,
-        updatedAt: "2026-08-18T10:00:00.000Z",
-      }),
-    });
-    createCottagePublication.mockResolvedValue({
-      loadCurrentReview: vi.fn().mockResolvedValue(null),
-    });
-    const loadCurrent = vi.fn().mockResolvedValue({
-      status: "loaded",
-      schedule: null,
-    });
-    createCottageShiftSchedule.mockResolvedValue({ loadCurrent });
-    createCottageInventory.mockResolvedValue({
-      loadOwnerEditorState: vi.fn(),
+  it("renders unavailable data after allowing framework interrupts to escape", async () => {
+    const failure = new Error("editor data unavailable");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    loadOwnerCottageEditor.mockResolvedValue({
+      status: "unavailable",
+      error: failure,
     });
 
     render(
@@ -142,126 +141,51 @@ describe("Cottage Profile owner detail page", () => {
       }),
     );
 
-    expect(loadCurrent).toHaveBeenCalledWith(profileId);
+    expect(unstableRethrow).toHaveBeenCalledWith(failure);
+    expect(log).toHaveBeenCalledWith(
+      "Owner Cottage Profile editor load failed",
+      {
+        phase: "owner_cottage_profile_editor_load",
+        result: "unavailable",
+      },
+    );
     expect(
-      screen.getByRole("heading", { name: "Daily Shift Schedule" }),
+      screen.getByText(
+        "Cottage Profiles are temporarily unavailable. Please try again.",
+      ),
     ).toBeVisible();
+    log.mockRestore();
+  });
+
+  it("keeps owner navigation and draft editor controls", async () => {
+    loadOwnerCottageEditor.mockResolvedValue(ready());
+
+    render(
+      await OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Back to cottages" }),
+    ).toHaveAttribute("href", "/en/owner/cottages");
+    expect(screen.getByLabelText("Cottage name")).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Save Shift Schedule" }),
     ).toBeEnabled();
   });
 
-  it("keeps operational pricing editable during content review but blocks opening before publication", async () => {
-    const profileId = "70000000-0000-4000-8000-000000000002";
-    resolveContext.mockResolvedValue({
-      role: "cottage_owner",
-      approvalState: "approved",
-    });
-    createCottageProfile.mockResolvedValue({
-      load: vi.fn().mockResolvedValue({
-        id: profileId,
-        ownerUserId: "10000000-0000-4000-8000-000000000702",
-        applicationId: null,
-        currentPublicationId: null,
-        status: "submitted_for_content_approval",
-        version: 2,
-        name: "Submitted Cottage",
-        governorate: "Erbil",
-        approximateLocation: "Shaqlawa",
-        exactAddress: "Private",
-        exactLatitude: null,
-        exactLongitude: null,
-        privateDirections: "",
-        capacity: 8,
-        bedrooms: 3,
-        bathrooms: 2,
-        amenities: ["garden"],
-        sourceLanguage: "en",
-        description: "Description",
-        houseRules: "Rules",
-        photos: [],
-        submittedSourceRevision: {
-          revision: 1,
-          ownerUserId: "10000000-0000-0000-0000-000000000702",
-          sourceLanguage: "en",
-          description: "Description",
-          houseRules: "Rules",
-          submittedAt: "2026-08-18T10:00:00.000Z",
+  it("keeps price setup editable during review while publication opening stays blocked", async () => {
+    loadOwnerCottageEditor.mockResolvedValue(
+      ready({
+        profile: {
+          ...profile,
+          status: "submitted_for_content_approval",
+          currentPublicationId: null,
         },
-        updatedAt: "2026-08-18T10:00:00.000Z",
+        pricing,
       }),
-    });
-    createCottagePublication.mockResolvedValue({
-      loadCurrentReview: vi.fn().mockResolvedValue(null),
-    });
-    createCottageShiftSchedule.mockResolvedValue({
-      loadCurrent: vi.fn().mockResolvedValue({
-        status: "loaded",
-        schedule: {
-          profileId,
-          scheduleRevisionId: "71000000-0000-4000-8000-000000000002",
-          revision: 2,
-          shifts: [
-            {
-              id: "72000000-0000-4000-8000-000000000003",
-              name: "Morning",
-              startTime: "08:00",
-              endTime: "12:00",
-              position: 1,
-              crossesMidnight: false,
-            },
-            {
-              id: "72000000-0000-4000-8000-000000000004",
-              name: "Evening",
-              startTime: "18:00",
-              endTime: "22:00",
-              position: 2,
-              crossesMidnight: false,
-            },
-          ],
-          fullDayBundleId: "73000000-0000-4000-8000-000000000002",
-          fullDayShiftIds: [
-            "72000000-0000-4000-8000-000000000003",
-            "72000000-0000-4000-8000-000000000004",
-          ],
-          fullDayStartTime: "08:00",
-          fullDayEndTime: "22:00",
-          fullDayCrossesMidnight: false,
-        },
-      }),
-    });
-    const loadOwnerEditorState = vi.fn().mockResolvedValue({
-      status: "loaded",
-      state: {
-        profileId,
-        scheduleRevisionId: "71000000-0000-4000-8000-000000000002",
-        serviceDay: null,
-        units: [
-          {
-            id: "72000000-0000-4000-8000-000000000003",
-            kind: "shift",
-            standardPriceIqd: 125000,
-            weekdayOverrides: [{ weekday: 4, priceIqd: 160000 }],
-            dateOverrides: [{ serviceDay: "2099-08-20", priceIqd: 180000 }],
-          },
-          {
-            id: "72000000-0000-4000-8000-000000000004",
-            kind: "shift",
-            standardPriceIqd: 115000,
-            weekdayOverrides: [],
-            dateOverrides: [],
-          },
-          {
-            id: "73000000-0000-4000-8000-000000000002",
-            kind: "full_day_bundle",
-            standardPriceIqd: 220000,
-            weekdayOverrides: [],
-            dateOverrides: [],
-          },
-        ],
-      },
-    });
-    createCottageInventory.mockResolvedValue({ loadOwnerEditorState });
+    );
 
     render(
       await OwnerCottageProfilePage({
@@ -269,170 +193,98 @@ describe("Cottage Profile owner detail page", () => {
       }),
     );
 
-    expect(
-      screen.getByRole("heading", { name: "Pricing and availability" }),
-    ).toBeVisible();
-    expect(loadOwnerEditorState).toHaveBeenCalledWith(
-      profileId,
-      "71000000-0000-4000-8000-000000000002",
-    );
-    expect(
-      screen.queryByText(
-        "Pricing and availability are temporarily unavailable. Please try again.",
-      ),
-    ).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Shift 1 standard price in IQD")).toHaveValue(
-      125000,
-    );
-    expect(screen.getByLabelText("Shift 1 weekday override")).toHaveValue("4");
-    expect(
-      screen.getByLabelText("Shift 1 weekday override standard price in IQD"),
-    ).toHaveValue(160000);
-    expect(screen.getByLabelText("Shift 1 specific-date override")).toHaveValue(
-      "2099-08-20",
-    );
-    expect(
-      screen.getByLabelText(
-        "Shift 1 specific-date override standard price in IQD",
-      ),
-    ).toHaveValue(180000);
     expect(screen.getByLabelText("Cottage name")).toBeDisabled();
     expect(
-      screen.queryByRole("button", { name: "Save availability" }),
-    ).not.toBeInTheDocument();
+      screen.getByLabelText("Shift 1 standard price in IQD"),
+    ).toBeEnabled();
     expect(
       screen.getByText(/configure prices before publication/i),
     ).toBeVisible();
   });
 
-  it.each(["expired", "suspended"] as const)(
-    "renders persisted inventory read-only for an %s Cottage Owner",
-    async (approvalState) => {
-      const profileId = "70000000-0000-4000-8000-000000000003";
-      const scheduleRevisionId = "71000000-0000-4000-8000-000000000003";
-      const shiftId = "72000000-0000-4000-8000-000000000005";
-      const bundleId = "73000000-0000-4000-8000-000000000003";
-      resolveContext.mockResolvedValue({
-        role: "cottage_owner",
-        approvalState,
-      });
-      createCottageProfile.mockResolvedValue({
-        load: vi.fn().mockResolvedValue({
-          id: profileId,
-          ownerUserId: "10000000-0000-4000-8000-000000000703",
-          applicationId: null,
-          currentPublicationId: null,
-          status: "draft",
-          version: 1,
-          name: "Read-only Cottage",
-          governorate: "Erbil",
-          approximateLocation: "Shaqlawa",
-          exactAddress: "Private",
-          exactLatitude: null,
-          exactLongitude: null,
-          privateDirections: "",
-          capacity: 8,
-          bedrooms: 3,
-          bathrooms: 2,
-          amenities: ["garden"],
-          sourceLanguage: "en",
-          description: "Description",
-          houseRules: "Rules",
-          photos: [],
-          submittedSourceRevision: null,
-          updatedAt: "2026-08-18T10:00:00.000Z",
-        }),
-      });
-      createCottagePublication.mockResolvedValue({
-        loadCurrentReview: vi.fn().mockResolvedValue(null),
-      });
-      createCottageShiftSchedule.mockResolvedValue({
-        loadCurrent: vi.fn().mockResolvedValue({
-          status: "loaded",
-          schedule: {
-            profileId,
-            scheduleRevisionId,
-            revision: 1,
-            shifts: [
-              {
-                id: shiftId,
-                name: "Morning",
-                startTime: "08:00",
-                endTime: "12:00",
-                position: 1,
-                crossesMidnight: false,
-              },
-            ],
-            fullDayBundleId: bundleId,
-            fullDayShiftIds: [shiftId],
-            fullDayStartTime: "08:00",
-            fullDayEndTime: "12:00",
-            fullDayCrossesMidnight: false,
-          },
-        }),
-      });
-      const loadOwnerEditorState = vi.fn().mockResolvedValue({
-        status: "loaded",
-        state: {
-          profileId,
-          scheduleRevisionId,
-          serviceDay: null,
-          units: [
-            {
-              id: shiftId,
-              kind: "shift",
-              standardPriceIqd: 125000,
-              weekdayOverrides: [],
-              dateOverrides: [],
-            },
-            {
-              id: bundleId,
-              kind: "full_day_bundle",
-              standardPriceIqd: 220000,
-              weekdayOverrides: [],
-              dateOverrides: [],
-            },
-          ],
-        },
-      });
-      createCottageInventory.mockResolvedValue({ loadOwnerEditorState });
+  it("keeps editor controls disabled when the loaded editor is noneditable", async () => {
+    loadOwnerCottageEditor.mockResolvedValue(
+      ready({ pricing, editable: false }),
+    );
 
-      render(
-        await OwnerCottageProfilePage({
-          params: Promise.resolve({ locale: "en", profileId }),
-        }),
-      );
+    render(
+      await OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    );
 
-      expect(loadOwnerEditorState).toHaveBeenCalledWith(
-        profileId,
-        scheduleRevisionId,
-      );
-      expect(
-        screen.getByLabelText("Shift 1 standard price in IQD"),
-      ).toHaveValue(125000);
-      expect(
-        screen.getByLabelText("Shift 1 standard price in IQD"),
-      ).toBeDisabled();
-      expect(
-        screen.getByText(/pricing and availability are read-only/i),
-      ).toBeVisible();
-      expect(
-        screen.queryByRole("button", { name: "Save prices" }),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.getByLabelText(/Service Day/, { selector: "input" }),
-      ).toBeEnabled();
-      expect(
-        screen.getByRole("button", { name: "Load availability" }),
-      ).toBeEnabled();
-      expect(
-        screen.queryByRole("button", { name: "Save availability" }),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.queryByText(
-          "Pricing and availability are temporarily unavailable. Please try again.",
-        ),
-      ).not.toBeInTheDocument();
-    },
-  );
+    expect(screen.getByLabelText("Cottage name")).toBeDisabled();
+    expect(
+      screen.getByLabelText("Shift 1 standard price in IQD"),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Save availability" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps abandoned Cottage controls disabled", async () => {
+    loadOwnerCottageEditor.mockResolvedValue(
+      ready({ profile: { ...profile, status: "abandoned" }, pricing }),
+    );
+
+    render(
+      await OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    );
+
+    expect(screen.getByLabelText("Cottage name")).toBeDisabled();
+    expect(
+      screen.getByLabelText("Shift 1 standard price in IQD"),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Save availability" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("rethrows a framework interruption instead of rendering unavailable data", async () => {
+    const interruption = new Error("NEXT_HTTP_ERROR_FALLBACK;404");
+    loadOwnerCottageEditor.mockResolvedValue({
+      status: "unavailable",
+      error: interruption,
+    });
+    unstableRethrow.mockImplementation(() => {
+      throw interruption;
+    });
+
+    await expect(
+      OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    ).rejects.toBe(interruption);
+  });
+
+  it("leaves missing Cottage Profile navigation to Next.js after assembly", async () => {
+    const interruption = new Error("NEXT_HTTP_ERROR_FALLBACK;404");
+    loadOwnerCottageEditor.mockResolvedValue(ready({ profile: null }));
+    notFound.mockImplementation(() => {
+      throw interruption;
+    });
+
+    await expect(
+      OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    ).rejects.toBe(interruption);
+    expect(notFound).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an invalid locale before loading editor data", async () => {
+    const interruption = new Error("NEXT_HTTP_ERROR_FALLBACK;404");
+    notFound.mockImplementation(() => {
+      throw interruption;
+    });
+
+    await expect(
+      OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "fr", profileId }),
+      }),
+    ).rejects.toBe(interruption);
+    expect(loadOwnerCottageEditor).not.toHaveBeenCalled();
+  });
 });
