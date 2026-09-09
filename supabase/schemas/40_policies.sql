@@ -136,6 +136,12 @@ ALTER TABLE "public"."booking_requests" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."booking_snapshots" ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE "public"."booking_confirmation_notification_work" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."booking_confirmation_notification_attempts" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."fictional_booking_confirmation_notification_effects" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "public"."cottage_booking_period_commitments" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."cottage_booking_period_occupancies" ENABLE ROW LEVEL SECURITY;

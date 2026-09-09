@@ -792,6 +792,13 @@ export async function main(
       );
       if (paymentHistoryConcurrency.status !== 0)
         return paymentHistoryConcurrency.status;
+      const notificationConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-confirmation-notification-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (notificationConcurrency.status !== 0)
+        return notificationConcurrency.status;
       return (
         await execute(
           "node",

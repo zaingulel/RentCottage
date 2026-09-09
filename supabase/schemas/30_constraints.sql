@@ -41,6 +41,24 @@ ALTER TABLE ONLY "public"."booking_receipts"
 ALTER TABLE ONLY "public"."booking_receipts"
     ADD CONSTRAINT "booking_receipts_pkey" PRIMARY KEY ("id");
 
+ALTER TABLE ONLY "public"."booking_confirmation_notification_work"
+    ADD CONSTRAINT "booking_confirmation_notification_work_pkey" PRIMARY KEY ("receipt_id");
+
+ALTER TABLE ONLY "public"."booking_confirmation_notification_work"
+    ADD CONSTRAINT "booking_confirmation_notification_work_logical_id_key" UNIQUE ("logical_id");
+
+ALTER TABLE ONLY "public"."booking_confirmation_notification_attempts"
+    ADD CONSTRAINT "booking_confirmation_notification_attempts_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."fictional_booking_confirmation_notification_effects"
+    ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."fictional_booking_confirmation_notification_effects"
+    ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_identity_key" UNIQUE ("supplier", "environment", "logical_id");
+
+ALTER TABLE ONLY "public"."fictional_booking_confirmation_notification_effects"
+    ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_reference_key" UNIQUE ("supplier_delivery_reference");
+
 ALTER TABLE ONLY "public"."booking_request_authorization_claim_items"
     ADD CONSTRAINT "booking_request_authorization_claim_items_pkey" PRIMARY KEY ("claim_id", "service_day", "unit_kind", "unit_id");
 
@@ -496,6 +514,30 @@ ALTER TABLE ONLY "public"."booking_receipts"
 
 ALTER TABLE ONLY "public"."booking_receipts"
     ADD CONSTRAINT "booking_receipts_recipient_user_id_fkey" FOREIGN KEY ("recipient_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."booking_confirmation_notification_work"
+    ADD CONSTRAINT "booking_confirmation_notification_work_receipt_id_fkey" FOREIGN KEY ("receipt_id") REFERENCES "public"."booking_receipts"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."booking_confirmation_notification_work"
+    ADD CONSTRAINT "booking_confirmation_notification_work_booking_request_id_fkey" FOREIGN KEY ("booking_request_id") REFERENCES "public"."booking_requests"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."booking_confirmation_notification_work"
+    ADD CONSTRAINT "booking_confirmation_notification_work_recipient_user_id_fkey" FOREIGN KEY ("recipient_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."booking_confirmation_notification_attempts"
+    ADD CONSTRAINT "booking_confirmation_notification_attempts_receipt_id_fkey" FOREIGN KEY ("receipt_id") REFERENCES "public"."booking_confirmation_notification_work"("receipt_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."fictional_booking_confirmation_notification_effects"
+    ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_receipt_id_fkey" FOREIGN KEY ("receipt_id") REFERENCES "public"."booking_confirmation_notification_work"("receipt_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."fictional_booking_confirmation_notification_effects"
+    ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_booking_request_id_fkey" FOREIGN KEY ("booking_request_id") REFERENCES "public"."booking_requests"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."fictional_booking_confirmation_notification_effects"
+    ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_recipient_user_id_fkey" FOREIGN KEY ("recipient_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."booking_confirmation_notification_attempts"
+    ADD CONSTRAINT "booking_confirmation_notification_attempts_effect_id_fkey" FOREIGN KEY ("effect_id") REFERENCES "public"."fictional_booking_confirmation_notification_effects"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_authorization_claim_items"
     ADD CONSTRAINT "booking_request_authorization_claim_items_claim_id_fkey" FOREIGN KEY ("claim_id") REFERENCES "public"."booking_request_authorization_claims"("id") ON DELETE RESTRICT;

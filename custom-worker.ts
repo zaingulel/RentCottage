@@ -5,6 +5,8 @@ import handler from "./.open-next/worker.js";
 import { runScheduledBookingRequestExpiry } from "./src/booking-request/booking-request-expiry-schedule";
 
 import { runScheduledBookingRequestCapture } from "./src/booking-request/booking-request-capture-schedule";
+import { runScheduledPaidConfirmationNotifications } from "./src/notification/notification-schedule";
+import { bookingRequestTestRuntimeIsEnabled } from "./src/booking-request/booking-request-test-runtime-core";
 
 interface Environment {
   readonly APP_ENVIRONMENT?: string;
@@ -17,10 +19,15 @@ interface Environment {
 export default {
   fetch: handler.fetch,
   async scheduled(_controller, environment: Environment) {
-    const results = await Promise.allSettled([
+    const scheduledTasks: Promise<unknown>[] = [
       runScheduledBookingRequestExpiry(environment),
       runScheduledBookingRequestCapture(environment),
-    ]);
+    ];
+    if (bookingRequestTestRuntimeIsEnabled(environment))
+      scheduledTasks.push(
+        runScheduledPaidConfirmationNotifications(environment),
+      );
+    const results = await Promise.allSettled(scheduledTasks);
     if (results.some((result) => result.status === "rejected"))
       throw new Error("Scheduled booking-request processing is incomplete");
   },
