@@ -1315,16 +1315,93 @@ async function provePaymentOrchestration() {
     await worker.exited;
     workers.delete(worker);
   };
-  const concurrent = seed();
-  const competing = await Promise.all(
-    [0, 1].map(() =>
-      finishWorker(
-        startWorker("payment-recovery", requestId, {
-          PAYMENT_RECOVERY_ATTEMPT_ID: concurrent.attemptId,
-        }),
-      ),
-    ),
+  const inquiryFirst = seed();
+  const beforeInquiry = state();
+  const heldOccupancies = observeRecovery().occupancies;
+  const delayedExecutor = startWorker("payment-recovery", requestId, {
+    PAYMENT_RECOVERY_ATTEMPT_ID: inquiryFirst.attemptId,
+    PAYMENT_WORKER_PAUSE: "admitted",
+    PAYMENT_WORKER_PAUSE_KIND: "release",
+  });
+  await stage(delayedExecutor, "admitted-paused");
+  const inquiryResult = await finishWorker(
+    startWorker("payment-recovery", requestId, {
+      PAYMENT_RECOVERY_ATTEMPT_ID: inquiryFirst.attemptId,
+    }),
   );
+  delayedExecutor.child.send("continue");
+  const delayedResult = await finishWorker(delayedExecutor);
+  assert.deepEqual(
+    [inquiryResult.status, delayedResult.status],
+    ["blocked", "blocked"],
+  );
+  const closed = state();
+  assert.equal(closed.effects, 0);
+  assert.equal(closed.operations.length, 1);
+  const closedOperation = closed.operations[0];
+  assert.equal(closedOperation.operation_kind, "release");
+  assert.equal(closedOperation.current_outcome, "not-executed");
+  assert.equal(closedOperation.physical_execution_count, 0);
+  assert.deepEqual(
+    [
+      closedOperation.provider_request_id,
+      closedOperation.provider_reference,
+      closedOperation.movement_reference,
+    ],
+    [null, null, null],
+  );
+  const closedEffectSql = `select to_jsonb(effect) from public.simulated_payment_effects effect where operation_id='${closedOperation.id}';`;
+  const closedEffect = JSON.parse(harness.runSql(closedEffectSql));
+  assert.equal(closedEffect.state, "closed-not-executed");
+  assert.equal(closedEffect.physical_execution_count, 0);
+  assert.equal(closedEffect.result.outcome, "not-executed");
+  assert.ok(closedEffect.result.evidence.closedAt);
+  assert.equal(closedEffect.result.evidence.executedAt, null);
+  assert.equal(closedEffect.result.evidence.occurredAt, null);
+  for (const reference of [
+    "providerRequestId",
+    "providerReference",
+    "movementReference",
+  ]) {
+    assert.equal(reference in closedEffect.result, false);
+  }
+  assert.deepEqual(closed.attempts, beforeInquiry.attempts);
+  assert.equal(closed.attempts[0].state, "admitted");
+  assert.equal(closed.request, "accepted");
+  assert.equal(closed.active, 5);
+  assert.deepEqual(observeRecovery().occupancies, heldOccupancies);
+  assert.equal(closed.confirmations, 0);
+  assert.equal(closed.receipts, 0);
+  assert.equal(closed.expiry, null);
+  assert.deepEqual(closed.targets, []);
+  assert.equal(closed.notices, 0);
+  assert.equal(
+    (
+      await finishWorker(
+        startWorker("payment-recovery", requestId, {
+          PAYMENT_RECOVERY_ATTEMPT_ID: inquiryFirst.attemptId,
+        }),
+      )
+    ).status,
+    "blocked",
+  );
+  assert.deepEqual(state(), closed);
+  assert.deepEqual(JSON.parse(harness.runSql(closedEffectSql)), closedEffect);
+  clear();
+
+  const concurrent = seed();
+  const confirming = startWorker("payment-recovery", requestId, {
+    PAYMENT_RECOVERY_ATTEMPT_ID: concurrent.attemptId,
+    PAYMENT_WORKER_PAUSE: "confirmation",
+  });
+  await stage(confirming, "confirmation-paused");
+  const confirmationReplay = await finishWorker(
+    startWorker("payment-recovery", requestId, {
+      PAYMENT_RECOVERY_ATTEMPT_ID: concurrent.attemptId,
+    }),
+  );
+  confirming.child.send("continue");
+  const competing = [await finishWorker(confirming), confirmationReplay];
   assert.deepEqual(
     competing.map(({ status }) => status),
     ["succeeded", "succeeded"],
