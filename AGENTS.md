@@ -113,12 +113,12 @@ review only that repair delta and what it could break in each implicated lane. N
 adds no factual claim. After two non-converging repair-and-scoped-review cycles, stop and return to the owner to
 split, rescope, or stop.
 
-Documentation-only changes skip Greptile under `docs/agents/delivery.md`. For other changes, Greptile is the sole
-external reviewer and is best-effort: check current credits under `docs/agents/delivery.md`, request it explicitly
-on the finished draft when available, and settle the review or confirmed unavailability before
+`docs/agents/delivery.md` selects Greptile from the complete diff's risk and uncertainty, then records a one-sentence
+needed or skipped reason. When needed, it is the sole external reviewer and is best-effort: check current credits,
+request it explicitly on the finished draft when available, and settle the review or confirmed unavailability before
 marking ready for Continuous Integration (CI). `.greptile/config.json` disables automatic reviews. A changed head
-needs a fresh attempt when review is required; unchanged-head CI retries need none. An unavailable attempt does
-not replace local review, executable verification, required CI, conversation resolution, or ownership.
+is reassessed; unchanged-head CI retries need none. An unavailable attempt does not replace local review, executable
+verification, required CI, conversation resolution, or ownership.
 
 ## Delivery and CI
 
