@@ -53,7 +53,7 @@ Keep this manual-request configuration, documentation-only exception and review-
 ### Current allowance
 
 Before requesting a nonexempt review, read current usage from an authoritative provider surface, such as
-[Greptile Settings > Billing > Code Review](https://www.greptile.com/docs/code-review-bot/billing-seats).
+[Greptile's usage and billing dashboard](https://www.greptile.com/docs/code-review-bot/billing-seats).
 Record the source, observation time, and available or exhausted allowance for the intended review in the existing
 delivery packet. Use included or already purchased credits; this instruction does not authorize additional spend.
 Historical exhaustion or a reported top-up only guides the lookup. Check again for each later delivery or changed-head
