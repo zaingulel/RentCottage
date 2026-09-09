@@ -169,6 +169,7 @@ function OwnerBookingRequestCard({
         />
       ) : notification.status === "paid-confirmed" ? (
         <Link
+          prefetch={false}
           href={`/${locale}/owner/booking-requests/${notification.bookingRequestReference}`}
         >
           {copy.openConfirmedBooking}

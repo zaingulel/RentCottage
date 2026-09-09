@@ -226,6 +226,20 @@ test("a verified Customer double-submit creates one Pending request and one mini
     baseURL: new URL(page.url()).origin,
   });
   const ownerPage = await ownerContext.newPage();
+  const ownerPaidDetailPrefetches: string[] = [];
+  ownerPage.on("request", (request) => {
+    const headers = request.headers();
+    if (
+      new URL(ownerPage.url()).pathname === "/en/owner/cottages" &&
+      new URL(request.url()).pathname.startsWith(
+        "/en/owner/booking-requests/",
+      ) &&
+      (headers["next-router-prefetch"] ||
+        headers["next-router-segment-prefetch"])
+    ) {
+      ownerPaidDetailPrefetches.push(new URL(request.url()).pathname);
+    }
+  });
   await ownerPage.goto("/en/owner/access");
   await ownerPage.getByLabel("Iraqi phone number").fill(ownerPhone);
   await ownerPage
@@ -802,6 +816,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     expect(terminal.hold).toEqual(held.hold);
     expect(terminal.occupancies).toEqual(held.occupancies);
     expect(terminal.intentActive).toBe(true);
+    // The live owner list has refreshed through both capture outcomes. Paid
+    // access details are fetched on explicit navigation, not by list prefetch.
+    expect(ownerPaidDetailPrefetches).toEqual([]);
     await captureViews("payment-required-open", failureReference);
     expect((await page.request.get("/__scheduled")).ok()).toBe(true);
     expect(observeFailure()).toEqual(terminal);
