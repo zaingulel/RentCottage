@@ -80,20 +80,20 @@ function inspectProcessGroup(group) {
     child.once("error", (error) => finish(rejectInspection, error));
     child.once("close", (status) => {
       if (settled) return;
-      if (status !== 0) {
-        if (!processGroupExists(group)) {
-          finish(resolveInspection, []);
+      try {
+        if (status !== 0) {
+          if (!processGroupExists(group)) {
+            finish(resolveInspection, []);
+            return;
+          }
+          finish(
+            rejectInspection,
+            new Error(
+              `Unable to inspect owned process group ${group}: ${stderr}`,
+            ),
+          );
           return;
         }
-        finish(
-          rejectInspection,
-          new Error(
-            `Unable to inspect owned process group ${group}: ${stderr}`,
-          ),
-        );
-        return;
-      }
-      try {
         finish(
           resolveInspection,
           stdout
@@ -476,10 +476,15 @@ export async function main(
     await activeInvocation?.stopping;
     if (
       activeInvocation !== invocationBeforeRun &&
-      !activeInvocation.retentionError &&
-      !processGroupExists(activeInvocation.group)
+      !activeInvocation.retentionError
     ) {
-      activeInvocation = undefined;
+      try {
+        if (!processGroupExists(activeInvocation.group)) {
+          activeInvocation = undefined;
+        }
+      } catch (error) {
+        activeInvocation.retentionError = error;
+      }
     }
     if (interruptedSignal && !cleanup) {
       return {
@@ -498,7 +503,13 @@ export async function main(
         `Failed: ${command} ${commandArgs.join(" ")} (status ${result.status ?? 1}).`,
       );
     }
-    return { ...result, status: result.status ?? 1 };
+    return {
+      ...result,
+      status:
+        result.status === 0 && activeInvocation?.retentionError
+          ? 1
+          : (result.status ?? 1),
+    };
   };
 
   const databaseConcurrencyEnvironment = {

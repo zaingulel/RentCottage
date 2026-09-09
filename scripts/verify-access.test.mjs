@@ -376,6 +376,7 @@ async function observeInterruptedAccessVerification(
   signal,
   {
     descendantBehavior = "graceful",
+    completedCommandStatus,
     groupPermissionFailure = false,
     hangCleanup = false,
     inspectionFailure,
@@ -414,7 +415,7 @@ process.kill = (pid, signal) => {
       throw error;
     }
   }
-  if (pid < 0 && signal === 0 && process.env.ACCESS_GROUP_PERMISSION_FAILURE === "1" && existsSync(root + "/termination-attempt")) {
+  if (pid < 0 && signal === 0 && ((process.env.ACCESS_GROUP_PERMISSION_FAILURE === "1" && existsSync(root + "/termination-attempt")) || existsSync(root + "/command.completed") || (process.env.ACCESS_INSPECTION_FAILURE === "reidentify-permission" && existsSync(root + "/fail-inspection")))) {
     const error = new Error("kill EPERM");
     error.code = "EPERM";
     throw error;
@@ -540,6 +541,13 @@ if ((args[1] === "db" && args[2] === "reset") || (args[1] === "start" && (interr
     ppid: process.ppid,
     token,
   }));
+  if (process.env.ACCESS_COMPLETED_COMMAND_STATUS) {
+    await waitFor(() => existsSync(root + "/identity.ready") && existsSync(root + "/command.release"));
+    const status = Number(process.env.ACCESS_COMPLETED_COMMAND_STATUS);
+    if (status !== 0) process.stderr.write("Distinctive command failure before process probe\\n");
+    writeFileSync(root + "/command.completed", "completed");
+    process.exit(status);
+  }
   const finish = () => process.exit(0);
   process.on("SIGTERM", finish);
   process.on("SIGINT", finish);
@@ -581,7 +589,10 @@ if (args[1] === "status") {
     wrapper = spawn(
       process.execPath,
       [
-        ...(inspectionFailure || groupPermissionFailure || cleanupStage
+        ...(inspectionFailure ||
+        groupPermissionFailure ||
+        cleanupStage ||
+        completedCommandStatus !== undefined
           ? ["--import", inspectionBoundary]
           : []),
         resolve(process.cwd(), "scripts/verify-access.mjs"),
@@ -600,6 +611,10 @@ if (args[1] === "status") {
           ACCESS_INTERRUPTION_TOKEN: token,
           ACCESS_INSPECTION_FAILURE: inspectionFailure ?? "",
           ACCESS_GROUP_PERMISSION_FAILURE: groupPermissionFailure ? "1" : "0",
+          ACCESS_COMPLETED_COMMAND_STATUS:
+            completedCommandStatus === undefined
+              ? ""
+              : String(completedCommandStatus),
           PATH: `${fakeBin}:${process.env.PATH}`,
           SUPABASE_LOCAL_PROJECT: "rentcottage",
           TMPDIR: stateRoot,
@@ -686,7 +701,10 @@ if (args[1] === "status") {
     );
 
     if (inspectionFailure) {
-      if (inspectionFailure === "reidentify") {
+      if (
+        inspectionFailure === "reidentify" ||
+        inspectionFailure === "reidentify-permission"
+      ) {
         await waitForCondition(
           () => existsSync(join(stateRoot, "identity.ready")),
           "initial process inspection",
@@ -706,7 +724,9 @@ if (args[1] === "status") {
       expect(stderr.join("")).toContain(
         inspectionFailure === "initial-timeout"
           ? "Timed out inspecting owned process group"
-          : "controlled inspection unavailable",
+          : inspectionFailure === "reidentify-permission"
+            ? "Exact termination could not be confirmed: kill EPERM"
+            : "controlled inspection unavailable",
       );
       if (inspectionFailure === "overflow")
         expect(stderr.join("")).toContain("spawn output exceeded maxBuffer");
@@ -714,11 +734,56 @@ if (args[1] === "status") {
         `Retained command process group ${command.pid}`,
       );
       expect(stderr.join("")).not.toContain("at Timeout.");
+      expect(stderr.join("")).not.toContain("at processGroupExists");
       expect(processIsAlive(command.pid)).toBe(true);
       expect(processIsAlive(descendant.pid)).toBe(true);
       expect(processIsAlive(service.pid)).toBe(true);
       expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
       expect(existsSync(join(stateRoot, "stop.log"))).toBe(false);
+      return;
+    }
+
+    if (completedCommandStatus !== undefined) {
+      writeFileSync(join(stateRoot, "command.release"), "finish");
+      const wrapperExit = await waitForChildExit(
+        wrapper,
+        "completed command with unavailable group probe",
+      );
+      expect(wrapperExit, stderr.join("")).toEqual({
+        code: completedCommandStatus || 1,
+        signal: null,
+      });
+      expect(stderr.join("")).toContain(
+        `Retained command process group ${command.pid}`,
+      );
+      expect(stderr.join("")).toContain(
+        "Exact termination could not be confirmed: kill EPERM",
+      );
+      expect(stderr.join("")).not.toContain("at processGroupExists");
+      if (completedCommandStatus !== 0) {
+        expect(stderr.join("")).toContain(
+          "Distinctive command failure before process probe",
+        );
+        expect(stderr.join("")).toContain(
+          `(status ${completedCommandStatus}).`,
+        );
+      }
+      const retainedState = stderr
+        .join("")
+        .match(/temporary state ([^\n]+)\./)?.[1];
+      expect(retainedState).toBeTruthy();
+      expect(existsSync(retainedState)).toBe(true);
+      expect(processIsAlive(command.pid)).toBe(false);
+      expect(processIsAlive(descendant.pid)).toBe(true);
+      expect(processIsAlive(service.pid)).toBe(true);
+      expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
+      expect(existsSync(join(stateRoot, "stop.log"))).toBe(false);
+      expect(existsSync(join(stateRoot, "termination-attempt"))).toBe(false);
+      const invoked = readFileSync(join(stateRoot, "commands.log"), "utf8");
+      expect(invoked.trimEnd().split("\n").at(-1)).toBe(
+        "npx supabase db reset --local",
+      );
+      expect(invoked.match(/docker inspect/g)).toHaveLength(1);
       return;
     }
 
@@ -1106,6 +1171,12 @@ describe("access verification command", () => {
     });
   }, 15_000);
 
+  it("retains uncertain processes when process inspection and its group probe both fail", async () => {
+    await observeInterruptedAccessVerification("SIGTERM", {
+      inspectionFailure: "reidentify-permission",
+    });
+  }, 15_000);
+
   it("reports output overflow even when uncertain process identity prevents termination", async () => {
     await observeInterruptedAccessVerification(undefined, {
       inspectionFailure: "overflow",
@@ -1123,6 +1194,16 @@ describe("access verification command", () => {
       groupPermissionFailure: true,
     });
   }, 15_000);
+
+  it.each([0, 37])(
+    "reports process-group permission denial after command completion with status %s",
+    async (completedCommandStatus) => {
+      await observeInterruptedAccessVerification(undefined, {
+        completedCommandStatus,
+      });
+    },
+    15_000,
+  );
 
   it.each([
     { cleanupStage: "inspection", signal: "SIGTERM" },
