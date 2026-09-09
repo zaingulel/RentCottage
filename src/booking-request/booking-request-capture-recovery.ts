@@ -1,3 +1,5 @@
+import { recordedPaymentResult } from "@/payment/payment-operation-execution";
+import type { PaymentOperationExecution } from "@/payment/payment-operation-execution";
 import type {
   BookingRequestCapturePermitExpectation,
   BookingRequestCaptureProviderResultIdentity,
@@ -20,7 +22,8 @@ export type BookingRequestCaptureRecoveryLease =
     readonly recoveryOperationId: string;
     readonly providerResult:
       | BookingRequestCaptureProviderResultIdentity
-      | BookingRequestCaptureFailureProviderResultIdentity;
+      | BookingRequestCaptureFailureProviderResultIdentity
+      | { readonly providerRequestId: null; readonly providerReference: null };
   };
 export type BookingRequestCaptureRecoveryWork =
   | {
@@ -58,11 +61,13 @@ export type BookingRequestCaptureRecoveryResult =
 
 export function createBookingRequestCaptureRecovery({
   repository,
+  operations,
   provider,
   confirmation,
 }: {
   repository: BookingRequestCaptureRecoveryRepository;
   provider: PaymentProviderAdapter;
+  operations: PaymentOperationExecution;
   confirmation: BookingRequestConfirmation;
 }) {
   return {
@@ -90,16 +95,18 @@ export function createBookingRequestCaptureRecovery({
               )
             )
               throw new Error("Capture recovery provider does not match");
-            const result = await provider.query({
-              kind: "capture",
-              paymentLifecycleId: lease.paymentLifecycleId,
-              logicalOperationId: lease.captureLogicalOperationId,
-              attemptId: lease.capturePhysicalAttemptId,
-              amountFils: lease.amountFils,
-              currency: lease.currency,
-              providerRequestId: lease.providerResult.providerRequestId,
-              providerReference: lease.providerResult.providerReference,
-            });
+            const result = recordedPaymentResult(
+              await operations.query({
+                kind: "capture",
+                paymentLifecycleId: lease.paymentLifecycleId,
+                logicalOperationId: lease.captureLogicalOperationId,
+                attemptId: lease.capturePhysicalAttemptId,
+                amountFils: lease.amountFils,
+                currency: lease.currency,
+                providerRequestId: lease.providerResult.providerRequestId,
+                providerReference: lease.providerResult.providerReference,
+              }),
+            );
             if (result.outcome === "indeterminate") {
               results.push({ status: "processing" });
               continue;
@@ -111,8 +118,9 @@ export function createBookingRequestCaptureRecovery({
             if (
               Object.entries(lease.providerResult).some(
                 ([key, value]) =>
+                  value !== null &&
                   result[key as "providerRequestId" | "providerReference"] !==
-                  value,
+                    value,
               )
             )
               throw new Error(

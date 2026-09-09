@@ -1,3 +1,4 @@
+import { withRecordedProviderResults } from "../../tests/fixtures/payment-operation-execution.fixtures";
 import { describe, expect, it, vi } from "vitest";
 import type { PaymentProviderAdapter } from "@/payment/payment-contract";
 import { createBookingRequestCaptureProcessing } from "./booking-request-capture-processing";
@@ -26,11 +27,13 @@ function setup() {
   };
   return {
     repository,
-    processing: createBookingRequestCaptureProcessing({
-      repository,
-      provider,
-      confirmation: { execute: vi.fn() },
-    }),
+    processing: createBookingRequestCaptureProcessing(
+      withRecordedProviderResults({
+        repository,
+        provider,
+        confirmation: { execute: vi.fn() },
+      }),
+    ),
   };
 }
 describe("Booking Request capture processing", () => {

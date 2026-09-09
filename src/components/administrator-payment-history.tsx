@@ -215,7 +215,11 @@ export function AdministratorPaymentHistoryView({
                   ].map(([label, value]) =>
                     value ? (
                       <div key={label}>
-                        <dt>{label}</dt>
+                        <dt>
+                          {value.startsWith("internal-")
+                            ? copy.internalSupportReference
+                            : label}
+                        </dt>
                         <dd>
                           <bdi>
                             {value === "reference-unavailable"
@@ -252,7 +256,11 @@ export function AdministratorPaymentHistoryView({
                   ) : null}
                   {event.providerReference ? (
                     <div>
-                      <dt>{copy.providerReference}</dt>
+                      <dt>
+                        {event.providerReference.startsWith("internal-")
+                          ? copy.internalSupportReference
+                          : copy.providerReference}
+                      </dt>
                       <dd>
                         <bdi>
                           {event.providerReference === "reference-unavailable"

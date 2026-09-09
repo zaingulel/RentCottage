@@ -1,4 +1,9 @@
 import "server-only";
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
+import {
+  SupabasePaymentOperationExecutionRepository,
+  SupabaseSimulatorEffectRepository,
+} from "@/payment/supabase-payment-operation-execution";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -25,6 +30,27 @@ export async function createRequestBookingRequestSubmission() {
   const { DurablePaymentSimulator } =
     await import("@/payment/durable-payment-simulator");
   const client = getPrivilegedClient();
+  const paymentProvider = new DurablePaymentSimulator({
+    effects: new SupabaseSimulatorEffectRepository(client),
+    now: () => new Date().toISOString(),
+  });
+  const evidenceRepository = new SupabasePaymentOperationExecutionRepository(
+    client,
+  );
+  const operations = createPaymentOperationExecution({
+    repository: evidenceRepository,
+    provider: paymentProvider,
+  });
+  try {
+    for (const query of await evidenceRepository.pendingAuthorizationQueries(
+      paymentProvider.identity,
+    )) {
+      await operations.query(query);
+    }
+  } catch {
+    console.error("Booking Request provider inquiry selection failed");
+    return undefined;
+  }
   const expiration = await client.rpc(
     "expire_booking_request_authorization_claims",
   );
@@ -32,13 +58,10 @@ export async function createRequestBookingRequestSubmission() {
     console.error("Booking Request expiry reconciliation failed");
     return undefined;
   }
-  const paymentProvider = new DurablePaymentSimulator({
-    client,
-    now: () => new Date().toISOString(),
-  });
   return createBookingRequestSubmission({
     repository: new SupabaseBookingRequestSubmissionRepository(client),
     paymentProvider,
+    operations,
     diagnostics: {
       record: (event) =>
         console.error("Booking Request submission failed", event),

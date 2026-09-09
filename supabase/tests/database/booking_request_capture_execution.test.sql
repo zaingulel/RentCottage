@@ -1,5 +1,66 @@
 begin;
-select plan(213);
+-- BEGIN PAYMENT EVIDENCE FIXTURE
+-- Test arrangement: admission, isolated effect, and explicit recording.
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
+declare observed jsonb;
+declare proposed jsonb;
+declare recorder text;
+declare operation_id text:=admission->>'operationId';
+begin
+  if admission->>'status'='not-admitted' then return jsonb_build_object('outcome','not-executed'); end if;
+  if operation_id is null then return admission; end if;
+  proposed:=jsonb_build_object('outcome',outcome,'providerRequestId','fixture-request-'||operation_id,'providerReference','fixture-reference-'||operation_id,
+    'evidence',jsonb_build_object('operationId',operation_id,'eventId','fixture-'||operation_id||'-'||outcome,'provenance','fictional-provider',
+      'originalOutcome',outcome,'executedAt',clock_timestamp(),'occurredAt',case when outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
+    ||case when outcome='failed' then jsonb_build_object('retrySafe',false) else jsonb_build_object('movementReference','fixture-movement-'||operation_id) end;
+  if admission->>'mode'='execute' then observed:=public.persist_simulated_payment_effect(effect_binding,proposed);
+  else
+    observed:=public.seal_simulated_payment_absence(effect_binding);
+    if observed->>'outcome'='indeterminate' and outcome<>'indeterminate' then
+      proposed:=jsonb_set(proposed,'{evidence,originalOutcome}',observed#>'{evidence,originalOutcome}');
+      proposed:=jsonb_set(proposed,'{evidence,executedAt}',observed#>'{evidence,executedAt}');
+      proposed:=proposed||jsonb_build_object('providerRequestId',observed->>'providerRequestId','providerReference',observed->>'providerReference');
+      if outcome='succeeded' then proposed:=proposed||jsonb_build_object('movementReference',observed->>'movementReference'); end if;
+      observed:=public.resolve_simulated_payment_effect(effect_binding,observed#>>'{evidence,eventId}',proposed);
+    end if;
+  end if;
+  recorder:=case admission->>'purpose' when 'booking-request-capture' then 'record_booking_request_capture_observation'
+    when 'booking-request-payment-recovery' then 'record_booking_request_payment_recovery_observation'
+    when 'booking-request-payment-required-expiry' then 'record_booking_request_payment_required_expiry_observation'
+    when 'booking-request-payment-required-corrective-refund' then 'record_booking_request_payment_required_expiry_observation'
+    else 'record_booking_request_provider_operation_observation' end;
+  execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed;
+  return observed-'evidence';
+end;
+$$;
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  execute format('select public.%I($1)',routine) into admission using permit;
+  result:=pg_temp.payment_fixture_result(admission,outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.capture_execute(permit jsonb,outcome text default 'succeeded') returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
+$$;
+create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  result:=pg_temp.payment_fixture_result(public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],request_id,reference),outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.capture_query(operation jsonb,request_id text,reference text) returns jsonb language sql as $$
+  select pg_temp.payment_query(operation,request_id,reference,'succeeded');
+$$;
+-- END PAYMENT EVIDENCE FIXTURE
+select plan(235);
 
 -- BEGIN CAPTURE EXECUTION FIXTURE
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
@@ -248,30 +309,30 @@ values ('72000000-0000-4000-8000-000000001001',
 
 
 select ok((select prosecdef and proconfig = array['search_path=""'] from pg_proc where oid = signature::regprocedure), 'Capture RPC is security-definer with an empty search path: ' || signature)
-from (values ('public.lease_booking_request_capture_work(uuid,jsonb)'), ('public.execute_simulated_booking_request_capture(jsonb)'), ('public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'), ('public.lock_booking_request_capture_source(uuid)'), ('public.claim_due_booking_request_captures(integer,jsonb)'), ('public.query_simulated_booking_request_capture(jsonb,text,text)')) functions(signature);
+from (values ('public.lease_booking_request_capture_work(uuid,jsonb)'), ('public.admit_booking_request_capture(jsonb)'), ('public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'), ('public.lock_booking_request_capture_source(uuid)'), ('public.claim_due_booking_request_captures(integer,jsonb)'), ('public.reload_booking_request_payment_operation(jsonb,text,text)')) functions(signature);
 select ok(has_function_privilege(role_name, signature, 'EXECUTE') = (role_name = 'service_role'), role_name || ' has only the intended Capture entry-point privilege: ' || signature)
 from (values ('anon'), ('authenticated'), ('service_role')) roles(role_name)
-cross join (values ('public.lease_booking_request_capture_work(uuid,jsonb)'), ('public.execute_simulated_booking_request_capture(jsonb)'), ('public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'), ('public.claim_due_booking_request_captures(integer,jsonb)'), ('public.query_simulated_booking_request_capture(jsonb,text,text)')) functions(signature);
+cross join (values ('public.lease_booking_request_capture_work(uuid,jsonb)'), ('public.admit_booking_request_capture(jsonb)'), ('public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'), ('public.claim_due_booking_request_captures(integer,jsonb)'), ('public.reload_booking_request_payment_operation(jsonb,text,text)')) functions(signature);
 select ok(not has_function_privilege(role_name, 'public.lock_booking_request_capture_source(uuid)', 'EXECUTE'), role_name || ' cannot invoke the private locking helper') from (values ('anon'), ('authenticated'), ('service_role')) roles(role_name);
-select ok(not exists (select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) privileges where p.oid in ('public.lease_booking_request_capture_work(uuid,jsonb)'::regprocedure, 'public.execute_simulated_booking_request_capture(jsonb)'::regprocedure, 'public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'::regprocedure, 'public.lock_booking_request_capture_source(uuid)'::regprocedure, 'public.claim_due_booking_request_captures(integer,jsonb)'::regprocedure, 'public.query_simulated_booking_request_capture(jsonb,text,text)'::regprocedure) and privileges.grantee = 0), 'PUBLIC has no Capture execution privilege');
+select ok(not exists (select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) privileges where p.oid in ('public.lease_booking_request_capture_work(uuid,jsonb)'::regprocedure, 'public.admit_booking_request_capture(jsonb)'::regprocedure, 'public.complete_booking_request_capture(uuid,bigint,uuid,jsonb)'::regprocedure, 'public.lock_booking_request_capture_source(uuid)'::regprocedure, 'public.claim_due_booking_request_captures(integer,jsonb)'::regprocedure, 'public.reload_booking_request_payment_operation(jsonb,text,text)'::regprocedure) and privileges.grantee = 0), 'PUBLIC has no Capture execution privilege');
 set local role anon;
 select throws_ok($$select public.claim_due_booking_request_captures(20,null)$$, '42501', null, 'anon cannot reclaim Capture');
-select throws_ok($$select public.query_simulated_booking_request_capture(null,null,null)$$, '42501', null, 'anon cannot query Capture');
+select throws_ok($$select pg_temp.capture_query(null,null,null)$$, '42501', null, 'anon cannot query Capture');
 select throws_ok($$select public.lease_booking_request_capture_work(null, null)$$, '42501', null, 'anonymous callers cannot lease capture work');
-select throws_ok($$select public.execute_simulated_booking_request_capture(null)$$, '42501', null, 'anonymous callers cannot execute Capture');
+select throws_ok($$select public.admit_booking_request_capture(null)$$, '42501', null, 'anonymous callers cannot execute Capture');
 select throws_ok($$select public.complete_booking_request_capture(null, null, null, null)$$, '42501', null, 'anonymous callers cannot complete Capture');
 reset role;
 set local role authenticated;
 select throws_ok($$select public.claim_due_booking_request_captures(20,null)$$, '42501', null, 'authenticated cannot reclaim Capture');
-select throws_ok($$select public.query_simulated_booking_request_capture(null,null,null)$$, '42501', null, 'authenticated cannot query Capture');
+select throws_ok($$select pg_temp.capture_query(null,null,null)$$, '42501', null, 'authenticated cannot query Capture');
 select throws_ok($$select public.lease_booking_request_capture_work(null, null)$$, '42501', null, 'authenticated callers cannot lease capture work');
-select throws_ok($$select public.execute_simulated_booking_request_capture(null)$$, '42501', null, 'authenticated callers cannot execute Capture');
+select throws_ok($$select public.admit_booking_request_capture(null)$$, '42501', null, 'authenticated callers cannot execute Capture');
 select throws_ok($$select public.complete_booking_request_capture(null, null, null, null)$$, '42501', null, 'authenticated callers cannot complete Capture');
 reset role;
 
 set local role service_role;
 select is(public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000009999', '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'), '{"status":"unavailable"}'::jsonb, 'service role can call the private capture entry point');
-select throws_ok($$select public.query_simulated_payment_provider_operation('{"providerIdentity":{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"},"requestFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","paymentLifecycleId":"73000000-0000-4000-8000-000000001001","logicalOperationId":"73000000-0000-4000-8000-000000001001:capture","physicalAttemptId":"73000000-0000-4000-8000-000000001001:capture:attempt-2","operationKind":"capture","amountFils":115000000,"currency":"IQD"}', null, null, 'succeeded')$$, '22023', null, 'existing reconciliation RPC remains closed to Capture');
+select throws_ok($$select pg_temp.payment_query('{"providerIdentity":{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"},"requestFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","paymentLifecycleId":"73000000-0000-4000-8000-000000001001","logicalOperationId":"73000000-0000-4000-8000-000000001001:capture","physicalAttemptId":"73000000-0000-4000-8000-000000001001:capture:attempt-2","operationKind":"capture","amountFils":115000000,"currency":"IQD"}', null, null, 'succeeded')$$, 'RC409', null, 'shared inquiry requires a durable admitted Capture');
 reset role;
 
 select is(public.claim_due_booking_request_captures(20, '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'), '[]'::jsonb, 'queued Capture cannot be selected for recovery');
@@ -324,13 +385,13 @@ create temp table capture_lease as select public.lease_booking_request_capture_w
   '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
 ) as result;
 select is((select result ->> 'status' from capture_lease), 'leased', 'one seeded capture work is leased');
-select is((select count(*) from public.simulated_payment_provider_operations where operation_kind = 'capture'), 0::bigint, 'leasing does not execute the provider');
+select is((select count(*) from public.payment_provider_operations where operation_kind = 'capture'), 0::bigint, 'leasing does not execute the provider');
 
 select is((select state || ':' || lease_generation::text from public.booking_request_capture_work where booking_request_id = '60000000-0000-4000-8000-000000001001'), 'processing:1', 'lease is durably persisted once');
 select is((select result #>> '{permit,requestFingerprint}' from capture_lease), '6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d', 'permit carries the independently worked operation fingerprint');
 select is(public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000001001', (select result #> '{permit,providerIdentity}' from capture_lease)), '{"status":"processing"}'::jsonb, 'a repeated lease returns processing without another permit');
 select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), '{"outcome":"succeeded","providerRequestId":"forged","providerReference":"forged","movementReference":"forged"}'), 'RC409', null, 'completion refuses a supplied success with no provider ledger');
-select throws_ok(format('select public.execute_simulated_booking_request_capture(%L)', (select (result -> 'permit') || replacement from capture_lease)), 'RC409', null, 'provider rejects substituted ' || label)
+select throws_ok(format('select pg_temp.capture_execute(%L)', (select (result -> 'permit') || replacement from capture_lease)), 'RC409', null, 'provider rejects substituted ' || label)
 from (values
   ('Booking Request', '{"bookingRequestId":"60000000-0000-4000-8000-000000009999"}'::jsonb),
   ('submission attempt', '{"submissionAttemptId":"70000000-0000-4000-8000-000000009999"}'::jsonb),
@@ -348,21 +409,102 @@ from (values
 savepoint expired_capture;
 update public.booking_request_capture_work set lease_expires_at = '2026-02-01T12:00:30.000Z' where booking_request_id = '60000000-0000-4000-8000-000000001001';
 select is(public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000001001', (select result #> '{permit,providerIdentity}' from capture_lease)), '{"status":"expired"}'::jsonb, 'expired work stops without a new permit or lease renewal');
-select is(public.execute_simulated_booking_request_capture((select (result -> 'permit') || '{"notAfter":"2026-02-01T12:00:30.000Z"}' from capture_lease)), '{"outcome":"not-executed"}'::jsonb, 'provider admission after expiry creates no movement');
+select is(pg_temp.capture_execute((select (result -> 'permit') || '{"notAfter":"2026-02-01T12:00:30.000Z"}' from capture_lease)), '{"outcome":"not-executed"}'::jsonb, 'provider admission after expiry creates no movement');
 select is((select lease_generation from public.booking_request_capture_work where booking_request_id = '60000000-0000-4000-8000-000000001001'), 1::bigint, 'expired work is not renewed');
 rollback to savepoint expired_capture;
 
+savepoint missing_failure_ledger;
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
+  '{"outcome":"failed","providerRequestId":"missing-request","providerReference":"missing-reference","retrySafe":false}'::jsonb), 'RC409', null, 'a failed response without durable execution cannot open Payment Required');
+rollback to savepoint missing_failure_ledger;
+
+savepoint missing_recovery_evidence;
+update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z';
+select is(public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)), '[{"status":"unavailable"}]'::jsonb, 'missing execution evidence is visibly unavailable');
+select is((select lease_generation from public.booking_request_capture_work), 1::bigint, 'missing execution evidence cannot renew ownership');
+rollback to savepoint missing_recovery_evidence;
+
+savepoint explicit_capture_recording;
+create temp table observation_admission as select public.admit_booking_request_capture((select result->'permit' from capture_lease)) admission;
+select ok((select current_outcome is null and original_outcome is null and executed_at is null and recorded_at is null
+  and provider_request_id is null and provider_reference is null from public.payment_provider_operations where operation_kind='capture'),
+  'durable capture admission invents no result, references, execution or receipt');
+select is((select count(*) from public.simulated_payment_effects),0::bigint,'capture admission makes no fictional effect');
+select is((select count(*) from public.booking_request_payment_history where source='provider-operation'),0::bigint,'capture admission invents no physical execution history');
+create temp table observation_proposal as select jsonb_build_object('outcome','failed','providerRequestId','observed-request','providerReference','observed-reference','retrySafe',false,
+  'evidence',jsonb_build_object('operationId',admission->>'operationId','eventId','observed-event','provenance','fictional-provider','originalOutcome','failed',
+    'executedAt',clock_timestamp(),'occurredAt',clock_timestamp(),'closedAt',null)) result from observation_admission;
+grant select on observation_admission,observation_proposal to service_role;
+set local role service_role;
+create temp table isolated_observation as select public.persist_simulated_payment_effect(
+  (select admission-array['purpose','binding','mode'] from observation_admission),(select result from observation_proposal)) result;
+reset role;
+select ok((select current_outcome is null and recorded_at is null from public.payment_provider_operations where operation_kind='capture'),
+  'provider effect alone leaves shared admission unrecorded');
+select is((select state from public.booking_request_capture_work),'processing','provider effect alone cannot open Payment Required');
+update public.booking_request_capture_work set lease_expires_at=clock_timestamp()-interval '1 second';
+create temp table observation_recovery as select public.claim_due_booking_request_captures(20,(select admission->'providerIdentity' from observation_admission)) result;
+select is((select result#>>'{0,status}' from observation_recovery),'reconcile','fresh owner reclaims the admitted capture before response recording');
+select ok((select result#>'{0,lease,providerResult}'='{"providerRequestId":null,"providerReference":null}'::jsonb from observation_recovery),
+  'fresh owner inquiries use original admission with no known provider references');
+set local role service_role;
+select throws_ok($$select public.record_booking_request_provider_operation_observation((select (admission->>'operationId')::uuid from observation_admission),(select result from isolated_observation))$$,
+  'RC409',null,'a capture observation cannot use another purpose recorder');
+select throws_ok($$select public.record_booking_request_capture_observation((select (admission->>'operationId')::uuid from observation_admission),
+  (select jsonb_set(jsonb_set(result,'{evidence,executedAt}','"2020-01-01T00:00:00Z"'),'{evidence,occurredAt}','"2020-01-01T00:00:00Z"') from isolated_observation))$$,
+  'RC409',null,'provider evidence cannot invent a pre-admission execution time');
+select lives_ok($$select public.record_booking_request_capture_observation((select (admission->>'operationId')::uuid from observation_admission),(select result from isolated_observation))$$,
+  'late response records against original admission after ownership takeover');
+select lives_ok($$select public.record_booking_request_capture_observation((select (admission->>'operationId')::uuid from observation_admission),(select result from isolated_observation))$$,
+  'exact provider event duplicate is accepted idempotently');
+select throws_ok($$select public.record_booking_request_capture_observation((select (admission->>'operationId')::uuid from observation_admission),
+  (select result||'{"providerReference":"conflicting-reference"}'::jsonb from isolated_observation))$$,'RC409',null,
+  'same provider event cannot replace its accepted payload');
+reset role;
+select is((select count(*) from public.payment_provider_observations),1::bigint,'duplicate and conflict leave one accepted event');
+select ok((select original_outcome='failed' and current_outcome='failed' and provider_reference='observed-reference'
+  and executed_at=authoritative_outcome_at and recorded_at>=executed_at from public.payment_provider_operations where operation_kind='capture'),
+  'recording preserves original outcome and execution separately from receipt time');
+select is((select state from public.booking_request_capture_work),'processing','explicit evidence recording does not bypass Capture completion');
+select throws_ok($$update public.payment_provider_observations set result='{}'$$,'RC409',null,'accepted child observations are append-only');
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result#>>'{permit,leaseToken}' from capture_lease),(select result-'evidence' from isolated_observation)),
+  'RC409',null,'late evidence does not restore superseded worker authority');
+select is(public.record_booking_request_capture_failure('60000000-0000-4000-8000-000000001001',
+  (select lease_generation from public.booking_request_capture_work),(select lease_token from public.booking_request_capture_work),
+  (select result-'evidence' from isolated_observation))->>'status','payment-required','current recovery owner completes the one recorded effect');
+rollback to savepoint explicit_capture_recording;
+
+savepoint regressed_receipt_clock;
+-- Isolate receipt-clock regression through the column default; execution and
+-- provider occurrence retain the actual effect clock throughout this observer.
+alter table public.payment_provider_observations alter column received_at set default '2026-01-01T00:00:00Z'::timestamptz;
+create temp table initial_unknown_observation as select pg_temp.capture_execute((select result->'permit' from capture_lease),'indeterminate') result;
+alter table public.payment_provider_observations alter column received_at set default '2025-01-01T00:00:00Z'::timestamptz;
+select is(pg_temp.capture_query((select jsonb_build_object('providerIdentity',result#>'{permit,providerIdentity}',
+  'requestFingerprint',result#>'{permit,requestFingerprint}','paymentLifecycleId',result#>'{permit,paymentLifecycleId}',
+  'logicalOperationId',result#>'{permit,captureLogicalOperationId}','physicalAttemptId',result#>'{permit,capturePhysicalAttemptId}',
+  'operationKind','capture','amountFils',result#>'{permit,amountFils}','currency','IQD') from capture_lease),null,null)->>'outcome',
+  'succeeded','accepted terminal result survives a backwards recording clock');
+select ok((select original_outcome='indeterminate' and current_outcome='succeeded' and executed_at<=authoritative_outcome_at
+  and recorded_at='2025-01-01T00:00:00Z'::timestamptz from public.payment_provider_operations where operation_kind='capture'),
+  'resolution preserves original execution and authoritative occurrence independently of receipt ordering');
+select is((select physical_execution_count::integer from public.simulated_payment_effects),1,'receipt clock regression never repeats the provider effect');
+rollback to savepoint regressed_receipt_clock;
+
 savepoint payment_required_capture;
-create temp table failed_capture_result as select public.execute_simulated_booking_request_capture(
+create temp table failed_capture_result as select pg_temp.capture_execute(
   (select result -> 'permit' from capture_lease), 'failed'
 ) as result;
 select is((select result from failed_capture_result), jsonb_build_object(
-  'outcome','failed','providerRequestId',(select provider_request_id from public.simulated_payment_provider_operations where operation_kind='capture'),
-  'providerReference',(select provider_reference from public.simulated_payment_provider_operations where operation_kind='capture'),'retrySafe',false
+  'outcome','failed','providerRequestId',(select provider_request_id from public.payment_provider_operations where operation_kind='capture'),
+  'providerReference',(select provider_reference from public.payment_provider_operations where operation_kind='capture'),'retrySafe',false
 ), 'selected definitive failure returns movement-free provider evidence');
-select is(public.execute_simulated_booking_request_capture((select result -> 'permit' from capture_lease), 'succeeded'),
+select throws_ok($$delete from public.payment_provider_operations where operation_kind='capture'$$,'RC409',null,'accepted Capture evidence cannot be deleted');
+select is(pg_temp.capture_execute((select result -> 'permit' from capture_lease), 'succeeded'),
   (select result from failed_capture_result), 'provider replay cannot rewrite the first failed outcome');
-select is((select physical_execution_count::integer from public.simulated_payment_provider_operations where operation_kind='capture'), 1,
+select is((select (select effects.physical_execution_count from public.simulated_payment_effects effects where effects.operation_id=payment_provider_operations.id)::integer from public.payment_provider_operations where operation_kind='capture'), 1,
   'failed Capture has exactly one physical execution');
 
 savepoint failed_success_completion;
@@ -374,8 +516,11 @@ select throws_ok(format('select public.complete_booking_request_capture(%L,1,%L,
 rollback to savepoint failed_success_completion;
 
 savepoint replaced_failure_permit;
-update public.simulated_payment_provider_operations set capture_execution_permit =
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set capture_execution_permit =
   capture_execution_permit || jsonb_build_object('notAfter', '2099-01-01T00:00:00.000Z') where operation_kind='capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
   '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
   (select result from failed_capture_result)), 'RC409', null,
@@ -394,15 +539,13 @@ from (values
   ('retry authority', '{"retrySafe":true}'::jsonb)
 ) mutations(label,replacement);
 
-savepoint missing_failure_ledger;
-delete from public.simulated_payment_provider_operations where operation_kind='capture';
-select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
-  '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
-  (select result from failed_capture_result)), 'RC409', null, 'a failed response without durable execution cannot open Payment Required');
-rollback to savepoint missing_failure_ledger;
+
 
 savepoint indeterminate_failure_ledger;
-update public.simulated_payment_provider_operations set original_outcome='indeterminate',current_outcome='indeterminate' where operation_kind='capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set original_outcome='indeterminate',current_outcome='indeterminate',movement_reference='unknown-capture-movement',authoritative_outcome_at=null where operation_kind='capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
   '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
   (select result from failed_capture_result)), 'RC409', null, 'indeterminate provider evidence cannot open Payment Required');
@@ -410,14 +553,20 @@ select is((select state from public.booking_request_capture_work), 'processing',
 rollback to savepoint indeterminate_failure_ledger;
 
 savepoint late_failure_ledger;
-update public.simulated_payment_provider_operations set created_at=(capture_execution_permit->>'notAfter')::timestamptz where operation_kind='capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set executed_at=(capture_execution_permit->>'notAfter')::timestamptz where operation_kind='capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
   '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
   (select result from failed_capture_result)), 'RC409', null, 'failed execution at its original deadline cannot open Payment Required');
 rollback to savepoint late_failure_ledger;
 
 savepoint preauthorization_failure_ledger;
-update public.simulated_payment_provider_operations set created_at='2020-01-01T00:00:00Z' where operation_kind='capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set executed_at='2020-01-01T00:00:00Z' where operation_kind='capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
   '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
   (select result from failed_capture_result)), 'RC409', null, 'failed execution before Authorization cannot open Payment Required');
@@ -586,36 +735,48 @@ select is((select count(*) from public.booking_request_status_notifications wher
   'replay and scheduling retain exactly one recovery notification');
 select is((select count(*) from public.booking_receipts),0::bigint, 'Payment Required never creates paid receipts');
 savepoint conflicting_terminal_failure;
-update public.simulated_payment_provider_operations set original_outcome='succeeded',current_outcome='succeeded',movement_reference='conflicting-capture-movement' where operation_kind='capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set original_outcome='succeeded',current_outcome='succeeded',movement_reference='conflicting-capture-movement' where operation_kind='capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
   '60000000-0000-4000-8000-000000001001',(select result #>> '{permit,leaseToken}' from capture_lease),
   (select result from failed_capture_result)), 'RC409', null, 'terminal replay still rejects conflicting provider money movement');
 rollback to savepoint conflicting_terminal_failure;
 rollback to savepoint payment_required_capture;
 
-create temp table capture_result as select public.execute_simulated_booking_request_capture((select result -> 'permit' from capture_lease)) as result;
+create temp table capture_result as select pg_temp.capture_execute((select result -> 'permit' from capture_lease)) as result;
 select is((select result ->> 'outcome' from capture_result), 'succeeded', 'the durable simulator has one fixed successful outcome');
-select is((select capture_execution_permit from public.simulated_payment_provider_operations where operation_kind = 'capture'), (select result -> 'permit' from capture_lease), 'the provider ledger retains the exact durable admission permit');
-select is((select count(*) from public.simulated_payment_provider_operations where operation_kind = 'capture'), 1::bigint, 'one capture has one physical provider row');
+select is((select capture_execution_permit from public.payment_provider_operations where operation_kind = 'capture'), (select result -> 'permit' from capture_lease), 'the provider ledger retains the exact durable admission permit');
+select is((select count(*) from public.payment_provider_operations where operation_kind = 'capture'), 1::bigint, 'one capture has one physical provider row');
 
-select is(public.execute_simulated_booking_request_capture((select result -> 'permit' from capture_lease)), (select result from capture_result), 'exact provider replay returns byte-equivalent evidence');
-select is((select physical_execution_count::integer from public.simulated_payment_provider_operations where operation_kind = 'capture'), 1, 'provider replay retains one physical execution');
-select throws_ok(format('update public.simulated_payment_provider_operations set capture_execution_permit = %L where operation_kind = %L', replacement, 'capture'), '23514', null, 'capture receipt rejects malformed permit ' || label)
+select is(pg_temp.capture_execute((select result -> 'permit' from capture_lease)), (select result from capture_result), 'exact provider replay returns byte-equivalent evidence');
+select is((select (select effects.physical_execution_count from public.simulated_payment_effects effects where effects.operation_id=payment_provider_operations.id)::integer from public.payment_provider_operations where operation_kind = 'capture'), 1, 'provider replay retains one physical execution');
+select throws_ok(format('update public.payment_provider_operations set capture_execution_permit = %L where operation_kind = %L', replacement, 'capture'), 'RC409', null, 'capture admission is immutable against malformed permit ' || label)
 from (values ('null', 'null'::jsonb), ('array', '[]'::jsonb), ('missing purpose', '{}'::jsonb), ('null purpose', '{"purpose":null}'::jsonb), ('incomplete shape', '{"purpose":"booking-request-capture"}'::jsonb)) mutations(label, replacement);
 select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), (select result || '{"movementReference":"forged"}'::jsonb from capture_result)), 'RC409', null, 'completion verifies supplied success against authoritative ledger identity');
 
 
 savepoint late_completion;
 update public.booking_request_capture_work set lease_expires_at = '2026-02-01T12:00:30.000Z' where booking_request_id = '60000000-0000-4000-8000-000000001001';
-update public.simulated_payment_provider_operations set created_at = '2026-02-01T12:00:00.000Z', capture_execution_permit = capture_execution_permit || '{"notAfter":"2026-02-01T12:00:30.000Z"}' where operation_kind = 'capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set executed_at = '2026-02-01T12:00:00.000Z', capture_execution_permit = capture_execution_permit || '{"notAfter":"2026-02-01T12:00:30.000Z"}' where operation_kind = 'capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select is(public.complete_booking_request_capture('60000000-0000-4000-8000-000000001001', 1, (select (result #>> '{permit,leaseToken}')::uuid from capture_lease), (select result from capture_result)) #>> '{snapshot,movements,1,recordedAt}', '2026-02-01T12:00:00.000000Z', 'late completion accepts proven pre-expiry execution and preserves occurrence time');
 rollback to savepoint late_completion;
 
 savepoint exact_expiry;
 update public.booking_request_capture_work set lease_expires_at = '2026-02-01T12:00:30.000Z' where booking_request_id = '60000000-0000-4000-8000-000000001001';
-update public.simulated_payment_provider_operations set created_at = '2026-02-01T12:00:30.000Z', capture_execution_permit = capture_execution_permit || '{"notAfter":"2026-02-01T12:00:30.000Z"}' where operation_kind = 'capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set executed_at = '2026-02-01T12:00:30.000Z', capture_execution_permit = capture_execution_permit || '{"notAfter":"2026-02-01T12:00:30.000Z"}' where operation_kind = 'capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), (select result from capture_result)), 'RC409', null, 'provider occurrence exactly at expiry is rejected');
-update public.simulated_payment_provider_operations set created_at = '2026-02-01T12:00:30.000001Z' where operation_kind = 'capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set executed_at = '2026-02-01T12:00:30.000001Z' where operation_kind = 'capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), (select result from capture_result)), 'RC409', null, 'provider occurrence after expiry is rejected');
 select is((select count(*) from public.booking_request_provider_operation_identities where operation_kind = 'capture'), 0::bigint, 'expired evidence leaves no normalized Capture');
 select is((select state from public.booking_request_capture_work where booking_request_id = '60000000-0000-4000-8000-000000001001'), 'processing', 'expired evidence leaves work incomplete');
@@ -625,48 +786,49 @@ create temp table capture_query as select jsonb_build_object(
   'paymentLifecycleId', result #> '{permit,paymentLifecycleId}', 'logicalOperationId', result #> '{permit,captureLogicalOperationId}',
   'physicalAttemptId', result #> '{permit,capturePhysicalAttemptId}', 'operationKind', 'capture',
   'amountFils', result #> '{permit,amountFils}', 'currency', 'IQD') operation from capture_lease;
-select is(public.query_simulated_booking_request_capture((select operation from capture_query), (select result ->> 'providerRequestId' from capture_result), (select result ->> 'providerReference' from capture_result)), (select result from capture_result), 'query returns the original capture result');
-select throws_ok(format('select public.query_simulated_booking_request_capture(%L, %L, %L)', (select operation from capture_query), 'replaced-request', (select result ->> 'providerReference' from capture_result)), 'RC409', null, 'query refuses a replaced provider request');
-select throws_ok(format('select public.query_simulated_booking_request_capture(%L, %L, %L)', (select operation from capture_query), (select result ->> 'providerRequestId' from capture_result), 'replaced-reference'), 'RC409', null, 'query refuses a replaced provider reference');
-select throws_ok(format('select public.query_simulated_booking_request_capture(%L, %L, %L)', (select operation from capture_query) || replacement, (select result ->> 'providerRequestId' from capture_result), (select result ->> 'providerReference' from capture_result)), 'RC409', null, 'query validates ' || label)
+select is(pg_temp.capture_query((select operation from capture_query), (select result ->> 'providerRequestId' from capture_result), (select result ->> 'providerReference' from capture_result)), (select result from capture_result), 'query returns the original capture result');
+select throws_ok(format('select pg_temp.capture_query(%L, %L, %L)', (select operation from capture_query), 'replaced-request', (select result ->> 'providerReference' from capture_result)), 'RC409', null, 'query refuses a replaced provider request');
+select throws_ok(format('select pg_temp.capture_query(%L, %L, %L)', (select operation from capture_query), (select result ->> 'providerRequestId' from capture_result), 'replaced-reference'), 'RC409', null, 'query refuses a replaced provider reference');
+select throws_ok(format('select pg_temp.capture_query(%L, %L, %L)', (select operation from capture_query) || replacement, (select result ->> 'providerRequestId' from capture_result), (select result ->> 'providerReference' from capture_result)), 'RC409', null, 'query validates ' || label)
 from (values ('lifecycle', '{"paymentLifecycleId":"73000000-0000-4000-8000-000000009999"}'::jsonb),
 ('operation','{"logicalOperationId":"replaced"}'::jsonb), ('attempt','{"physicalAttemptId":"replaced"}'::jsonb),
 ('kind','{"operationKind":"release"}'::jsonb), ('amount','{"amountFils":1}'::jsonb), ('currency','{"currency":"USD"}'::jsonb),
 ('fingerprint','{"requestFingerprint":"replaced"}'::jsonb), ('provider','{"providerIdentity":{}}'::jsonb), ('extra fields','{"unexpected":true}'::jsonb)) mutations(label,replacement);
 
 savepoint invalid_query_generation;
-update public.simulated_payment_provider_operations set capture_execution_permit =
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set capture_execution_permit =
   capture_execution_permit || '{"leaseGeneration":0}'::jsonb where operation_kind='capture';
-select throws_ok(format('select public.query_simulated_booking_request_capture(%L,%L,%L)',
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
+select throws_ok(format('select pg_temp.capture_query(%L,%L,%L)',
   (select operation from capture_query),(select result ->> 'providerRequestId' from capture_result),
   (select result ->> 'providerReference' from capture_result)), 'RC409', null,
   'query rejects an original execution permit with no admitted generation');
 rollback to savepoint invalid_query_generation;
 
-savepoint missing_recovery_evidence;
-update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z';
-delete from public.simulated_payment_provider_operations where operation_kind = 'capture';
-select is(public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)), '[{"status":"unavailable"}]'::jsonb, 'missing execution evidence is visibly unavailable');
-select is((select lease_generation from public.booking_request_capture_work), 1::bigint, 'missing execution evidence cannot renew ownership');
-rollback to savepoint missing_recovery_evidence;
+
 
 savepoint recovery;
 update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z' where booking_request_id = '60000000-0000-4000-8000-000000001001';
 savepoint invalid_historical_execution;
-update public.simulated_payment_provider_operations set created_at = (capture_execution_permit ->> 'notAfter')::timestamptz where operation_kind = 'capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set executed_at = (capture_execution_permit ->> 'notAfter')::timestamptz where operation_kind = 'capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.claim_due_booking_request_captures(20, %L)', (select result #> '{permit,providerIdentity}' from capture_lease)), 'RC409', null, 'reclaim cannot legitimize capture at the original admission deadline');
 rollback to savepoint invalid_historical_execution;
 create temp table recovered as select public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)) result;
 select is((select result #>> '{0,status}' from recovered), 'reconcile', 'expired successful Capture is reclaimed for reconciliation');
 select is((select lease_generation from public.booking_request_capture_work), 2::bigint, 'recovery advances the ownership generation');
 select isnt((select lease_token::text from public.booking_request_capture_work), (select result #>> '{permit,leaseToken}' from capture_lease), 'recovery replaces the ownership token');
-select is((select capture_execution_permit from public.simulated_payment_provider_operations where operation_kind = 'capture'), (select result -> 'permit' from capture_lease), 'reclaim preserves the original execution permit exactly');
-select is((select recovery_operation_id from public.booking_request_capture_work), (select id from public.simulated_payment_provider_operations where operation_kind = 'capture'), 'recovery records the original physical operation');
+select is((select capture_execution_permit from public.payment_provider_operations where operation_kind = 'capture'), (select result -> 'permit' from capture_lease), 'reclaim preserves the original execution permit exactly');
+select is((select recovery_operation_id from public.booking_request_capture_work), (select id from public.payment_provider_operations where operation_kind = 'capture'), 'recovery records the original physical operation');
 select ok(not (select result #> '{0,lease}' ? 'purpose' from recovered), 'recovery lease carries no execution permit purpose');
 select is(public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)), '[]'::jsonb, 'an active recovery lease is excluded from another drain');
 select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), (select result from capture_result)), 'RC409', null, 'the original executor cannot complete reclaimed work');
-select throws_ok(format('select public.execute_simulated_booking_request_capture(%L)', (select result -> 'permit' from capture_lease)), 'RC409', null, 'recovery cannot use the original permit to execute again');
-select throws_ok(format('select public.execute_simulated_booking_request_capture(%L)', (select result #> '{0,lease}' from recovered)), 'RC409', null, 'a recovery lease cannot authorize provider execution');
+select throws_ok(format('select pg_temp.capture_execute(%L)', (select result -> 'permit' from capture_lease)), 'RC409', null, 'recovery cannot use the original permit to execute again');
+select throws_ok(format('select pg_temp.capture_execute(%L)', (select result #> '{0,lease}' from recovered)), 'RC409', null, 'a recovery lease cannot authorize provider execution');
 savepoint superseded_recovery;
 update public.booking_request_capture_work set lease_expires_at = '2026-02-01T00:00:00Z';
 select is(public.claim_due_booking_request_captures(20, (select result #> '{permit,providerIdentity}' from capture_lease)) #>> '{0,lease,leaseGeneration}', '3', 'an expired recovery owner can itself be reclaimed');
@@ -675,7 +837,10 @@ select is((select state from public.booking_request_capture_work), 'processing',
 rollback to savepoint superseded_recovery;
 select throws_ok(format('select public.complete_booking_request_capture(%L, 2, %L, %L)', '60000000-0000-4000-8000-000000001001', '80000000-0000-4000-8000-000000009999', (select result from capture_result)), 'RC409', null, 'the current recovery generation still requires its exact ownership token');
 savepoint invalid_recovered_occurrence;
-update public.simulated_payment_provider_operations set created_at = (capture_execution_permit ->> 'notAfter')::timestamptz where operation_kind = 'capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set executed_at = (capture_execution_permit ->> 'notAfter')::timestamptz where operation_kind = 'capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.complete_booking_request_capture(%L, 2, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{0,lease,leaseToken}' from recovered), (select result from capture_result)), 'RC409', null, 'completion independently checks the original execution deadline after recovery');
 rollback to savepoint invalid_recovered_occurrence;
 create temp table recovered_completion as select public.complete_booking_request_capture(
@@ -698,12 +863,15 @@ select throws_ok(format('select public.complete_booking_request_capture(%L, %s, 
 select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), (select result from capture_result)), 'RC409', null, 'old lease token cannot complete replaced work');
 rollback to savepoint replaced_lease;
 savepoint altered_ledger;
-update public.simulated_payment_provider_operations set amount_fils = 1 where operation_kind = 'capture';
+-- Deliberately corrupt superuser fixture evidence to exercise the completion boundary.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set amount_fils = 1 where operation_kind = 'capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
 select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), (select result from capture_result)), 'RC409', null, 'completion rejects an authoritative ledger bound to the wrong amount');
 rollback to savepoint altered_ledger;
 savepoint altered_authorization;
 update public.booking_request_submission_attempts set payment_snapshot = jsonb_set(payment_snapshot, '{authorization,providerReference}', '"wrong"') where id = '70000000-0000-4000-8000-000000001001';
-select throws_ok(format('select public.execute_simulated_booking_request_capture(%L)', (select result -> 'permit' from capture_lease)), 'RC409', null, 'provider revalidates Authorization on replay');
+select throws_ok(format('select pg_temp.capture_execute(%L)', (select result -> 'permit' from capture_lease)), 'RC409', null, 'provider revalidates Authorization on replay');
 select throws_ok(format('select public.complete_booking_request_capture(%L, 1, %L, %L)', '60000000-0000-4000-8000-000000001001', (select result #>> '{permit,leaseToken}' from capture_lease), (select result from capture_result)), 'RC409', null, 'completion revalidates Authorization evidence');
 rollback to savepoint altered_authorization;
 
@@ -732,9 +900,9 @@ select is((select to_jsonb(c) from public.cottage_booking_period_commitments c w
 select is((select jsonb_agg(to_jsonb(o)) from public.cottage_booking_period_occupancies o where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001'), (select occupancies from capture_preservation), 'capture preserves existing active occupancies byte-for-byte');
 select is((select payment_snapshot - array['capture','movements'] from public.booking_request_submission_attempts where id = '70000000-0000-4000-8000-000000001001'), (select payment - array['capture','movements'] from capture_preservation), 'capture preserves every unrelated payment field');
 select is((select payment_snapshot #> '{movements,0}' from public.booking_request_submission_attempts where id = '70000000-0000-4000-8000-000000001001'), (select payment #> '{movements,0}' from capture_preservation), 'Authorization movement identity and timestamp are preserved exactly');
-select is((select (result #>> '{snapshot,movements,1,recordedAt}')::timestamptz from capture_completion), (select created_at from public.simulated_payment_provider_operations where operation_kind = 'capture'), 'Capture occurrence is provider ledger time rather than completion time');
+select is((select (result #>> '{snapshot,movements,1,recordedAt}')::timestamptz from capture_completion), (select executed_at from public.payment_provider_operations where operation_kind = 'capture'), 'Capture occurrence is provider ledger time rather than completion time');
 select ok(not exists (select 1 from public.booking_request_status_notifications) and not exists (select 1 from public.owner_request_notifications) and not exists (select 1 from public.booking_request_release_work) and not exists (select 1 from public.booking_request_authorization_reconciliation_outbox), 'capture creates no notification, release or recovery work');
-select is((select count(*) from public.simulated_payment_provider_operations where operation_kind = 'capture'), 1::bigint, 'completion replay retains exactly one physical capture');
+select is((select count(*) from public.payment_provider_operations where operation_kind = 'capture'), 1::bigint, 'completion replay retains exactly one physical capture');
 select is((select jsonb_array_length(payment_snapshot -> 'movements') from public.booking_request_submission_attempts where id = '70000000-0000-4000-8000-000000001001'), 2, 'completion replay retains exactly one Capture movement');
 
 select * from finish();

@@ -1,3 +1,5 @@
+import { recordedPaymentResult } from "@/payment/payment-operation-execution";
+import type { PaymentOperationExecution } from "@/payment/payment-operation-execution";
 import type { BookingRequestPaymentRecoveryPermit } from "@/payment/booking-request-payment-recovery-contract";
 import type { BookingRequestPaymentRequiredExpiryPermit } from "@/payment/booking-request-payment-required-expiry-contract";
 import type {
@@ -34,15 +36,15 @@ export type PaymentRequiredExpiryPreparation =
       readonly status: "reconcile-expiry";
       readonly permit: BookingRequestPaymentRequiredExpiryPermit;
       readonly binding: ProviderOperationBinding;
-      readonly providerRequestId: string;
-      readonly providerReference: string;
+      readonly providerRequestId: string | null;
+      readonly providerReference: string | null;
     }
   | {
       readonly status: "reconcile-recovery";
       readonly permit: BookingRequestPaymentRecoveryPermit;
       readonly binding: ProviderOperationBinding;
-      readonly providerRequestId: string;
-      readonly providerReference: string;
+      readonly providerRequestId: string | null;
+      readonly providerReference: string | null;
     };
 
 export interface BookingRequestPaymentRequiredExpiryRepository {
@@ -59,10 +61,12 @@ export interface BookingRequestPaymentRequiredExpiryRepository {
 
 export function createBookingRequestPaymentRequiredExpiry({
   repository,
+  operations,
   provider,
 }: {
   repository: BookingRequestPaymentRequiredExpiryRepository;
   provider: PaymentProviderAdapter;
+  operations: PaymentOperationExecution;
 }) {
   return {
     async processDue(
@@ -89,24 +93,23 @@ export function createBookingRequestPaymentRequiredExpiry({
             preparation.status === "reconcile-expiry" ||
             preparation.status === "reconcile-recovery"
           ) {
-            if (
+            const execution =
               preparation.status === "release" ||
               preparation.status === "refund"
-            ) {
-              await provider.execute({
-                ...preparation.binding,
-                executionPermit: preparation.permit,
-              });
-            } else {
-              await provider.query({
-                ...preparation.binding,
-                ...(preparation.status === "reconcile-expiry"
-                  ? { expiryPermit: preparation.permit }
-                  : { recoveryPermit: preparation.permit }),
-                providerRequestId: preparation.providerRequestId,
-                providerReference: preparation.providerReference,
-              });
-            }
+                ? await operations.execute({
+                    ...preparation.binding,
+                    executionPermit: preparation.permit,
+                  })
+                : await operations.query({
+                    ...preparation.binding,
+                    ...(preparation.status === "reconcile-expiry"
+                      ? { expiryPermit: preparation.permit }
+                      : { recoveryPermit: preparation.permit }),
+                    providerRequestId: preparation.providerRequestId,
+                    providerReference: preparation.providerReference,
+                  });
+            if (execution.status !== "not-admitted")
+              recordedPaymentResult(execution);
             results.push(await repository.finalize(bookingRequestId));
           } else if (preparation.status === "ready") {
             results.push(await repository.finalize(bookingRequestId));

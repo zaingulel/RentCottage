@@ -1,3 +1,4 @@
+import type { PaymentOperationExecution } from "@/payment/payment-operation-execution";
 import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import type { Locale } from "@/i18n/routing";
 import {
@@ -191,11 +192,13 @@ function validInput(input: SubmissionInput): boolean {
 
 export function createBookingRequestSubmission({
   repository,
+  operations,
   paymentProvider,
   diagnostics,
 }: {
   repository: BookingRequestSubmissionRepository;
   paymentProvider: PaymentProviderAdapter;
+  operations: PaymentOperationExecution;
   diagnostics?: BookingRequestDiagnostics;
 }): BookingRequestSubmission {
   return {
@@ -243,6 +246,7 @@ export function createBookingRequestSubmission({
         return { status: "reconciliation-required" };
       }
       const persistence = {
+        operations,
         save: (snapshot: PaymentLifecycleSnapshot) =>
           repository.savePaymentSnapshot(
             prepared.attempt.id,

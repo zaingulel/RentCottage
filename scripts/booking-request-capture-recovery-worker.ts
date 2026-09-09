@@ -1,3 +1,8 @@
+import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
+import {
+  SupabasePaymentOperationExecutionRepository,
+  SupabaseSimulatorEffectRepository,
+} from "@/payment/supabase-payment-operation-execution";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { createBookingRequestCaptureProcessing } from "@/booking-request/booking-request-capture-processing";
@@ -66,10 +71,11 @@ async function main() {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const durable = new DurablePaymentSimulator({
-    client,
+    effects: new SupabaseSimulatorEffectRepository(client),
     now: () => new Date().toISOString(),
     executeOutcome: mode.includes("failure") ? "failed" : "succeeded",
   });
+  let responseLost = false;
   const lostResponse = new Error(
     "Capture response lost after durable execution",
   );
@@ -82,8 +88,10 @@ async function main() {
         mode === "lose-response" ||
         mode === "process-lose-response" ||
         mode === "failure-lose-response"
-      )
+      ) {
+        responseLost = true;
         throw lostResponse;
+      }
       return result;
     },
     async query(request) {
@@ -100,6 +108,10 @@ async function main() {
     },
     verifySignedEvent: () => false,
   };
+  const operations = createPaymentOperationExecution({
+    repository: new SupabasePaymentOperationExecutionRepository(client),
+    provider,
+  });
   const repository = new SupabaseBookingRequestCaptureRepository(client);
   const confirmation = createBookingRequestConfirmation({
     repository: new SupabaseBookingRequestConfirmationRepository(client),
@@ -114,6 +126,7 @@ async function main() {
     const result = await createBookingRequestCaptureProcessing({
       repository,
       provider,
+      operations,
       confirmation:
         mode === "process-interrupt-confirmation"
           ? {
@@ -133,10 +146,11 @@ async function main() {
       const result = await createBookingRequestCapture({
         repository,
         provider,
+        operations,
       }).execute(required("CAPTURE_BOOKING_REQUEST_ID"));
       send({ stage: "complete", result });
     } catch (error) {
-      if (error !== lostResponse) throw error;
+      if (!responseLost) throw error;
       send({ stage: "complete", result: "interrupted" });
     }
   } else if (
@@ -147,6 +161,7 @@ async function main() {
     const result = await createBookingRequestCaptureRecovery({
       repository,
       provider,
+      operations,
       confirmation,
     }).processDue();
     send({ stage: "complete", result });

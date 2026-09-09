@@ -195,11 +195,11 @@ REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."privileged_sign_i
 
 REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."privileged_sign_in_attempts" FROM "authenticated";
 
-REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."simulated_payment_provider_operations" FROM "anon";
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."payment_provider_operations" FROM "anon";
 
-REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."simulated_payment_provider_operations" FROM "authenticated";
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."payment_provider_operations" FROM "authenticated";
 
-REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."simulated_payment_provider_operations" FROM "service_role";
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."payment_provider_operations" FROM "service_role";
 
 REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."account_contexts" FROM "anon";
 
@@ -673,25 +673,15 @@ REVOKE ALL ON FUNCTION "public"."enforce_booking_request_payment_required"() FRO
 
 REVOKE ALL ON FUNCTION "public"."enforce_cottage_booking_period_commitment_transition"() FROM PUBLIC;
 
-REVOKE ALL ON FUNCTION "public"."execute_simulated_booking_request_capture"("target_permit" "jsonb") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."execute_simulated_booking_request_capture"("target_permit" "jsonb") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."execute_simulated_booking_request_capture"("target_permit" "jsonb", "target_outcome" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."execute_simulated_booking_request_capture"("target_permit" "jsonb", "target_outcome" "text") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."execute_simulated_booking_request_payment_recovery"("target_permit" "jsonb", "target_outcome" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."execute_simulated_booking_request_payment_recovery"("target_permit" "jsonb", "target_outcome" "text") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."execute_simulated_booking_request_payment_required_expiry"("target_permit" "jsonb", "target_outcome" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."execute_simulated_booking_request_payment_required_expiry"("target_permit" "jsonb", "target_outcome" "text") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."execute_simulated_payment_provider_operation"("target_operation" "jsonb", "target_outcome" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."execute_simulated_payment_provider_operation"("target_operation" "jsonb", "target_outcome" "text") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."expire_booking_request_authorization_claims"() FROM PUBLIC;
 
@@ -923,21 +913,13 @@ REVOKE ALL ON FUNCTION "public"."public_cottage_unit_is_available_without_author
 
 REVOKE ALL ON FUNCTION "public"."quarantine_booking_request_payment"("target_booking_request_id" "uuid", "target_reason" "text") FROM PUBLIC;
 
-REVOKE ALL ON FUNCTION "public"."query_simulated_booking_request_capture"("target_operation" "jsonb", "target_provider_request_id" "text", "target_provider_reference" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."query_simulated_booking_request_capture"("target_operation" "jsonb", "target_provider_request_id" "text", "target_provider_reference" "text") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."query_simulated_booking_request_payment_recovery"("target_permit" "jsonb", "target_provider_request_id" "text", "target_provider_reference" "text", "target_outcome" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."query_simulated_booking_request_payment_recovery"("target_permit" "jsonb", "target_provider_request_id" "text", "target_provider_reference" "text", "target_outcome" "text") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."query_simulated_booking_request_payment_required_expiry"("target_permit" "jsonb", "target_provider_request_id" "text", "target_provider_reference" "text", "target_outcome" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."query_simulated_booking_request_payment_required_expiry"("target_permit" "jsonb", "target_provider_request_id" "text", "target_provider_reference" "text", "target_outcome" "text") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."query_simulated_payment_provider_operation"("target_operation" "jsonb", "target_provider_request_id" "text", "target_provider_reference" "text", "target_outcome" "text") FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."query_simulated_payment_provider_operation"("target_operation" "jsonb", "target_provider_request_id" "text", "target_provider_reference" "text", "target_outcome" "text") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."reconcile_owner_verification_document_registration"("target_cleanup_id" "uuid") FROM PUBLIC;
 
@@ -947,7 +929,7 @@ REVOKE ALL ON FUNCTION "public"."record_booking_request_capture_failure"("target
 
 GRANT ALL ON FUNCTION "public"."record_booking_request_capture_failure"("target_booking_request_id" "uuid", "target_lease_generation" bigint, "target_lease_token" "uuid", "target_provider_result" "jsonb") TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."record_booking_request_recovery_outcome"("target_attempt_id" "uuid", "target_step" "text", "target_ledger" "public"."simulated_payment_provider_operations", "target_deadline" timestamp with time zone) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."record_booking_request_recovery_outcome"("target_attempt_id" "uuid", "target_step" "text", "target_ledger" "public"."payment_provider_operations", "target_deadline" timestamp with time zone) FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION "public"."record_cottage_translation_usage"("target_reservation_id" "uuid", "actual_input_tokens" bigint, "actual_output_tokens" bigint, "actual_total_tokens" bigint, "actual_microusd" bigint) FROM PUBLIC;
 
@@ -1256,3 +1238,70 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUN
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES FROM "anon", "authenticated", "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."payment_provider_observations" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."payment_provider_observations" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."payment_provider_observations" FROM "service_role";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."simulated_payment_effects" FROM "anon";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."simulated_payment_effects" FROM "authenticated";
+
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."simulated_payment_effects" FROM "service_role";
+
+REVOKE ALL ON FUNCTION public.payment_operation_admission(public.payment_provider_operations,boolean) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.validate_payment_provider_observation(jsonb,uuid) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.validate_simulated_payment_binding(jsonb) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.simulated_payment_absence_receipt(jsonb,timestamptz) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.persist_simulated_payment_effect(jsonb,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.persist_simulated_payment_effect(jsonb,jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.seal_simulated_payment_absence(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.seal_simulated_payment_absence(jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.resolve_simulated_payment_effect(jsonb,text,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.resolve_simulated_payment_effect(jsonb,text,jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.admit_booking_request_provider_operation(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admit_booking_request_provider_operation(jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.admit_booking_request_capture(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admit_booking_request_capture(jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.admit_booking_request_payment_recovery(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admit_booking_request_payment_recovery(jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.admit_booking_request_payment_required_expiry(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admit_booking_request_payment_required_expiry(jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.reload_booking_request_payment_operation(jsonb,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.reload_booking_request_payment_operation(jsonb,text,text) TO service_role;
+
+REVOKE ALL ON FUNCTION public.accept_payment_provider_observation(uuid,jsonb) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.payment_provider_recorded_result(public.payment_provider_operations) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.lock_payment_observation_source(uuid,text[]) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.record_booking_request_provider_operation_observation(uuid,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_booking_request_provider_operation_observation(uuid,jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.record_booking_request_capture_observation(uuid,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_booking_request_capture_observation(uuid,jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.record_booking_request_payment_recovery_observation(uuid,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_booking_request_payment_recovery_observation(uuid,jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.record_booking_request_payment_required_expiry_observation(uuid,jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_booking_request_payment_required_expiry_observation(uuid,jsonb) TO service_role;
+
+REVOKE ALL ON FUNCTION public.guard_payment_evidence() FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.pending_booking_request_authorization_observations() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.pending_booking_request_authorization_observations() TO service_role;

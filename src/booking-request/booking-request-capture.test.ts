@@ -1,3 +1,4 @@
+import { withRecordedProviderResults } from "../../tests/fixtures/payment-operation-execution.fixtures";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -150,7 +151,9 @@ function setup() {
     order,
     repository,
     provider,
-    capture: createBookingRequestCapture({ repository, provider }),
+    capture: createBookingRequestCapture(
+      withRecordedProviderResults({ repository, provider }),
+    ),
   };
 }
 

@@ -47,6 +47,33 @@ const history = {
   ],
 };
 
+it.each([
+  ["en", "Internal support reference"],
+  ["ar", "مرجع دعم داخلي"],
+  ["ckb", "سەرچاوەی ناوخۆیی پشتگیری"],
+] as const)("labels internal aliases explicitly in %s", (locale, label) => {
+  const id = "20000000-0000-4000-8000-000000000137";
+  render(
+    <AdministratorPaymentHistoryView
+      locale={locale}
+      history={{
+        ...history,
+        events: [
+          {
+            ...history.events[0],
+            providerOperationId: id,
+            providerRequestId: `internal-request:${id}`,
+            providerReference: `internal-reference:${id}`,
+            movementReference: `internal-movement:${id}`,
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getAllByText(label)).toHaveLength(3);
+  expect(screen.getByText(`internal-reference:${id}`)).toBeVisible();
+});
+
 it("renders ordered support evidence and distinct clocks accessibly in English", () => {
   render(<AdministratorPaymentHistoryView locale="en" history={history} />);
   expect(

@@ -33,6 +33,63 @@ it("accepts the closed support-safe wire shape with microsecond timestamps", () 
   expect(parseAdministratorPaymentHistory(history)).toEqual(history);
 });
 
+const operationId = "20000000-0000-4000-8000-000000000137";
+it.each([
+  ["providerRequestId", "request"],
+  ["providerReference", "reference"],
+  ["movementReference", "movement"],
+])(
+  "validates the exact operation-bound internal alias for %s",
+  (field, kind) => {
+    const value = {
+      ...event,
+      providerOperationId: operationId,
+      [field]: `internal-${kind}:${operationId}`,
+    };
+    expect(
+      parseAdministratorPaymentHistory({ ...history, events: [value] })
+        .events[0],
+    ).toEqual(value);
+    for (const invalid of [
+      `internal-${kind}:${operationId}-private`,
+      `internal-${kind}:secret`,
+      `internal-wrong:${operationId}`,
+      `internal-${kind}:${event.id}`,
+    ]) {
+      expect(() =>
+        parseAdministratorPaymentHistory({
+          ...history,
+          events: [{ ...value, [field]: invalid }],
+        }),
+      ).toThrow("invalid");
+    }
+    for (const invalid of [
+      "private-provider-token",
+      `sim-${kind}:${operationId}`,
+      `sim-${kind}-${operationId}-private`,
+    ]) {
+      expect(() =>
+        parseAdministratorPaymentHistory({
+          ...history,
+          events: [{ ...value, [field]: invalid }],
+        }),
+      ).toThrow("invalid");
+    }
+    for (const safe of [
+      "reference-unavailable",
+      `sim-${kind}-${operationId}`,
+      `sim-capture-${kind}-${operationId.replaceAll("-", "")}`,
+    ]) {
+      expect(
+        parseAdministratorPaymentHistory({
+          ...history,
+          events: [{ ...value, [field]: safe }],
+        }).events[0],
+      ).toEqual({ ...value, [field]: safe });
+    }
+  },
+);
+
 it.each([
   { ...history, simulated: false },
   { ...history, rawPayload: "must not enter the display model" },

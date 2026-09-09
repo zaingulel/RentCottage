@@ -226,4 +226,7 @@ ALTER TABLE "public"."owner_verification_documents" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."privileged_sign_in_attempts" ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE "public"."simulated_payment_provider_operations" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."payment_provider_operations" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."payment_provider_observations" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."simulated_payment_effects" ENABLE ROW LEVEL SECURITY;

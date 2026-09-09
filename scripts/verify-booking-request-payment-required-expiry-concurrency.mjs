@@ -1,3 +1,8 @@
+// SQL arrangement mirrors admission, isolated effect, and explicit recording.
+const paymentEvidenceSql =
+  "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
+  readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
+  "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -25,14 +30,16 @@ const unobservedRecoveryFixture = readFileSync(
 const delayedObservationSql = (permit, occurrence) => {
   const receipt = JSON.parse(
     harness.runSql(
-      unobservedRecoveryFixture +
-        `select pg_temp.seed_unobserved_recovery_outcome(${literal(permit)},'succeeded',${occurrence});`,
+      paymentEvidenceSql +
+        (unobservedRecoveryFixture +
+          `select pg_temp.seed_unobserved_payment_outcome(${literal(permit)},'succeeded',${occurrence});`),
     ),
   );
   return `select public.observe_booking_request_payment_correction('${requestId}','${receipt.providerOperationId}',${literal(receipt)});`;
 };
 const serviceSql = (sql) => `set role service_role;${sql}`;
-const parsed = (sql) => JSON.parse(harness.runSql(serviceSql(sql)));
+const parsed = (sql) =>
+  JSON.parse(harness.runSql(paymentEvidenceSql + serviceSql(sql)));
 const dueSql = (limit = 1) =>
   `select public.claim_due_booking_request_payment_required_expiries(${limit},${literal(identity)});`;
 const prepareSql = (id = requestId) =>
@@ -41,9 +48,9 @@ const finalizeSql = (id = requestId) =>
   `select public.finalize_booking_request_payment_required_expiry('${id}');`;
 const prepare = (id) => parsed(prepareSql(id));
 const releaseSql = (permit, outcome = "succeeded") =>
-  `select public.execute_simulated_booking_request_payment_required_expiry(${literal(permit)},'${outcome}');`;
+  `select pg_temp.expiry_execute(${literal(permit)},'${outcome}');`;
 const recoverySql = (permit, outcome = "succeeded") =>
-  `select public.execute_simulated_booking_request_payment_recovery(${literal(permit)},'${outcome}');`;
+  `select pg_temp.recovery_execute(${literal(permit)},'${outcome}');`;
 const lease = (id) =>
   parsed(`select public.lease_booking_request_payment_recovery_step('${id}');`);
 const execute = (permit, outcome) => parsed(recoverySql(permit, outcome));
@@ -54,12 +61,12 @@ const authenticated = (sql) =>
 const admit = (command) =>
   JSON.parse(
     harness
-      .runSql(authenticated(admitSql(command)))
+      .runSql(paymentEvidenceSql + authenticated(admitSql(command)))
       .split("\n")
       .at(-1),
   );
 const querySql = (permit, outcome, result) =>
-  `select public.query_simulated_booking_request_payment_recovery(${literal(permit)},'${result.providerRequestId}','${result.providerReference}','${outcome}');`;
+  `select pg_temp.permit_query(${literal(permit)},'${result.providerRequestId}','${result.providerReference}','${outcome}');`;
 const confirmSql = (id) =>
   `select public.finalize_booking_request_confirmation('${requestId}',public.get_booking_request_payment_recovery_confirmation_evidence('${id}'));`;
 const fixture = readFileSync(
@@ -120,14 +127,19 @@ const definitions = [];
 const signatures = [
   "claim_due_booking_request_payment_required_expiries(integer,jsonb)",
   "prepare_booking_request_payment_required_expiry(uuid,jsonb)",
-  "execute_simulated_booking_request_payment_required_expiry(jsonb,text)",
-  "query_simulated_booking_request_payment_required_expiry(jsonb,text,text,text)",
+  "persist_simulated_payment_effect(jsonb,jsonb)",
+  "resolve_simulated_payment_effect(jsonb,text,jsonb)",
+  "seal_simulated_payment_absence(jsonb)",
+  "validate_payment_provider_observation(jsonb,uuid)",
+  "accept_payment_provider_observation(uuid,jsonb)",
+  "admit_booking_request_payment_required_expiry(jsonb)",
+  "reload_booking_request_payment_operation(jsonb,text,text)",
   "finalize_booking_request_payment_required_expiry(uuid)",
   "booking_request_payment_required_expiry_completed(uuid)",
   "claim_customer_booking_request_payment_recovery(uuid,uuid,text)",
   "lease_booking_request_payment_recovery_step(uuid)",
-  "execute_simulated_booking_request_payment_recovery(jsonb,text)",
-  "query_simulated_booking_request_payment_recovery(jsonb,text,text,text)",
+  "admit_booking_request_payment_recovery(jsonb)",
+  "reload_booking_request_payment_operation(jsonb,text,text)",
   "finalize_booking_request_confirmation(uuid,jsonb)",
   "observe_booking_request_payment_correction(uuid,uuid,jsonb)",
 ];
@@ -161,36 +173,35 @@ function seed(id = requestId, merchantId = identity.merchantId) {
   }
   source = source.replaceAll(identity.merchantId, merchantId);
   if (merchantId !== identity.merchantId) {
-    // The simulator executes only its fixed identity. Seed normalized historical
-    // evidence for the foreign identity, then use the existing failure recorder.
+    // Arrange another provider through the shared admission/observation boundary;
+    // the fictional adapter remains restricted to its fixed provider identity.
     source = source.replace(
-      "create temp table confirmation_capture_result as select public.execute_simulated_booking_request_capture((select result->'permit' from confirmation_capture_lease),'failed') result;",
-      `reset role;
-insert into public.simulated_payment_provider_operations (
-  id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
-  provider_idempotency_key,request_fingerprint,payment_lifecycle_id,logical_operation_id,
-  physical_attempt_id,amount_fils,currency,original_outcome,current_outcome,
-  provider_request_id,provider_reference,capture_execution_permit,created_at,updated_at
-)
-select gen_random_uuid(),work.authorization_claim_id,work.authorization_claim_generation,'capture',
-  work.provider,work.environment,work.merchant_id,work.terminal_id,
-  work.provider_idempotency_key,work.request_fingerprint,work.payment_lifecycle_id,
-  work.capture_logical_operation_id,work.capture_physical_attempt_id,work.amount_fils,work.currency,
-  'failed','failed','foreign-capture-request-'||work.booking_request_id,'foreign-capture-reference-'||work.booking_request_id,
-  (select result->'permit' from confirmation_capture_lease),clock_timestamp(),clock_timestamp()
-from public.booking_request_capture_work work where work.booking_request_id='${id}';
-set local role service_role;
-create temp table confirmation_capture_result as select jsonb_build_object(
-  'outcome','failed','providerRequestId','foreign-capture-request-${id}',
-  'providerReference','foreign-capture-reference-${id}','retrySafe',false) result;`,
+      "create temp table confirmation_capture_result as select pg_temp.capture_execute((select result->'permit' from confirmation_capture_lease),'failed') result;",
+      `create temp table foreign_capture_admission as select public.admit_booking_request_capture((select result->'permit' from confirmation_capture_lease)) admission;
+create temp table foreign_capture_occurrence as select clock_timestamp() occurred_at;
+create temp table confirmation_capture_result as select public.record_booking_request_capture_observation(
+  (admission->>'operationId')::uuid, jsonb_build_object('outcome','failed','providerRequestId','foreign-capture-request-${id}',
+  'providerReference','foreign-capture-reference-${id}','retrySafe',false,
+  'evidence',jsonb_build_object('operationId',admission->>'operationId','eventId','foreign-capture-event-${id}',
+    'provenance','provider-event','originalOutcome','failed','executedAt',occurred_at,'occurredAt',occurred_at,'closedAt',null))) - 'evidence' result
+from foreign_capture_admission cross join foreign_capture_occurrence;`,
     );
   }
-  harness.runSql(`begin;${source}commit;`);
+  for (const definition of definitions)
+    harness.runSql(paymentEvidenceSql + definition);
+  harness.runSql(paymentEvidenceSql + `begin;${source}commit;`);
   seeded.add(id);
+  for (const definition of definitions)
+    harness.runSql(
+      paymentEvidenceSql +
+        definition.replaceAll("clock_timestamp()", "public.expiry_race_now()"),
+    );
 }
 function cleanup() {
   for (const id of seeded)
-    harness.runSql(id === requestId ? cleanupSql : second(cleanupSql));
+    harness.runSql(
+      paymentEvidenceSql + (id === requestId ? cleanupSql : second(cleanupSql)),
+    );
   seeded.clear();
 }
 function reset() {
@@ -200,11 +211,12 @@ function reset() {
 }
 function atDeadline(offset = "") {
   harness.runSql(
-    `update public.expiry_race_clock set instant=(select max(payment_required_deadline) ${offset} from public.booking_request_capture_work);`,
+    paymentEvidenceSql +
+      `update public.expiry_race_clock set instant=(select max(payment_required_deadline) ${offset} from public.booking_request_capture_work);`,
   );
 }
 function start(sql, close = false) {
-  const session = harness.startSession(sql, close);
+  const session = harness.startSession(paymentEvidenceSql + sql, close);
   sessions.add(session);
   return session;
 }
@@ -226,7 +238,8 @@ async function blockedBy(name, contender, holderName) {
   await harness.waitForLock(name, contender);
   assert.equal(
     harness.runSql(
-      `select count(*) from pg_stat_activity contender cross join pg_stat_activity holder where contender.application_name='${name}' and holder.application_name='${holderName}' and holder.pid=any(pg_blocking_pids(contender.pid));`,
+      paymentEvidenceSql +
+        `select count(*) from pg_stat_activity contender cross join pg_stat_activity holder where contender.application_name='${name}' and holder.application_name='${holderName}' and holder.pid=any(pg_blocking_pids(contender.pid));`,
     ),
     "1",
     "The named request owner must be the actual blocker",
@@ -262,19 +275,22 @@ async function race(
 }
 const graph = () =>
   JSON.parse(
-    harness.runSql(`select jsonb_build_object(
+    harness.runSql(
+      paymentEvidenceSql +
+        `select jsonb_build_object(
   'request',(select to_jsonb(r) from public.booking_requests r where id='${requestId}'),
   'capture',(select to_jsonb(w) from public.booking_request_capture_work w where booking_request_id='${requestId}'),
   'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by generation),'[]') from public.booking_request_payment_recovery_attempts a where booking_request_id='${requestId}'),
   'operations',(select coalesce(jsonb_agg(to_jsonb(o) order by o.id),'[]') from public.booking_request_payment_recovery_operations o join public.booking_request_payment_recovery_attempts a on a.id=o.recovery_attempt_id where a.booking_request_id='${requestId}'),
   'expiry',(select to_jsonb(w) from public.booking_request_payment_required_expiry_work w where booking_request_id='${requestId}'),
   'targets',(select coalesce(jsonb_agg(to_jsonb(o) order by o.id),'[]') from public.booking_request_payment_required_expiry_operations o where booking_request_id='${requestId}'),
-  'ledger',(select jsonb_agg(to_jsonb(o) order by o.id) from public.simulated_payment_provider_operations o where claim_id='72000000-0000-4000-8000-000000001001'),
+  'ledger',(select jsonb_agg(pg_temp.payment_fixture_operation_json(o) order by o.id) from public.payment_provider_operations o where claim_id='72000000-0000-4000-8000-000000001001'),
   'commitment',(select to_jsonb(c) from public.cottage_booking_period_commitments c where id='50000000-0000-4000-8000-000000001001'),
   'inventory',(select jsonb_agg(to_jsonb(i) order by id) from public.cottage_inventory_commitments i where booking_period_commitment_id='50000000-0000-4000-8000-000000001001'),
   'occupancies',(select jsonb_agg(to_jsonb(o) order by service_day,shift_id) from public.cottage_booking_period_occupancies o where booking_period_commitment_id='50000000-0000-4000-8000-000000001001'),
   'notifications',(select coalesce(jsonb_agg(to_jsonb(n) order by id),'[]') from public.booking_request_status_notifications n where booking_request_id='${requestId}'),
-  'confirmations',(select coalesce(jsonb_agg(to_jsonb(c) order by id),'[]') from public.booking_confirmations c where booking_request_id='${requestId}'))`),
+  'confirmations',(select coalesce(jsonb_agg(to_jsonb(c) order by id),'[]') from public.booking_confirmations c where booking_request_id='${requestId}'))`,
+    ),
   );
 function assertHeld() {
   const state = graph();
@@ -365,10 +381,10 @@ function assertOverlap(released) {
     insert into public.cottage_booking_period_occupancies(booking_period_commitment_id,schedule_revision_id,shift_id,service_day,active)
       values('50000000-0000-4000-8000-000000009999','30000000-0000-4000-8000-000000001001','32000000-0000-4000-8000-000000001003','2101-01-01',true);
     rollback;`;
-  if (released) harness.runSql(sql);
+  if (released) harness.runSql(paymentEvidenceSql + sql);
   else
     assert.throws(
-      () => harness.runSql(sql),
+      () => harness.runSql(paymentEvidenceSql + sql),
       /overlap|duplicate key|conflicting key/i,
       "The held cross-midnight shift must reject an overlapping occupancy",
     );
@@ -385,14 +401,17 @@ async function proveRequestFirst(sql, label) {
     true,
   );
   await blockedBy(contenderName, contender, holderName);
-  harness.runSql(`begin;
+  harness.runSql(
+    paymentEvidenceSql +
+      `begin;
     select 1 from public.booking_request_capture_work where booking_request_id='${requestId}' for update nowait;
     select 1 from public.booking_request_submission_attempts where booking_request_id='${requestId}' for update nowait;
     select 1 from public.booking_request_authorization_claims where id='72000000-0000-4000-8000-000000001001' for update nowait;
     select 1 from public.booking_request_payment_required_expiry_work where booking_request_id='${requestId}' for update nowait;
     select 1 from public.booking_request_payment_required_expiry_operations where booking_request_id='${requestId}' for update nowait;
     select 1 from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001' for update nowait;
-    rollback;`);
+    rollback;`,
+  );
   await finish(holder, { action: "rollback" });
   await finish(contender);
 }
@@ -403,15 +422,18 @@ try {
   for (const signature of signatures)
     definitions.push(
       harness.runSql(
-        `select pg_get_functiondef('public.${signature}'::regprocedure);`,
+        paymentEvidenceSql +
+          `select pg_get_functiondef('public.${signature}'::regprocedure);`,
       ),
     );
   harness.runSql(
-    "create table public.expiry_race_clock(instant timestamptz not null);insert into public.expiry_race_clock values(clock_timestamp());create function public.expiry_race_now() returns timestamptz language sql volatile security definer set search_path='' as $$select instant from public.expiry_race_clock$$;",
+    paymentEvidenceSql +
+      "create table public.expiry_race_clock(instant timestamptz not null);insert into public.expiry_race_clock values(clock_timestamp());create function public.expiry_race_now() returns timestamptz language sql volatile security definer set search_path='' as $$select instant from public.expiry_race_clock$$;",
   );
   for (const definition of definitions)
     harness.runSql(
-      definition.replaceAll("clock_timestamp()", "public.expiry_race_now()"),
+      paymentEvidenceSql +
+        definition.replaceAll("clock_timestamp()", "public.expiry_race_now()"),
     );
   const otherIdentity = { ...identity, merchantId: "fictional-other-merchant" };
   seed(secondRequestId, otherIdentity.merchantId);
@@ -758,11 +780,11 @@ try {
     execute(lease(attempt).permit);
     execute(lease(attempt).permit);
     const capturePermit = lease(attempt).permit;
-    atDeadline(offset);
     const observation = delayedObservationSql(
       capturePermit,
-      "public.expiry_race_now()",
+      `(select payment_required_deadline ${offset} from public.booking_request_capture_work where booking_request_id='${requestId}')`,
     );
+    atDeadline(offset);
     const pair = await race(
       observation,
       prepareSql(),
@@ -839,8 +861,12 @@ try {
     execute(lease(attempt).permit);
     execute(lease(attempt).permit);
     const permit = lease(attempt).permit;
+    const lateObservation = delayedObservationSql(
+      permit,
+      `(select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${requestId}')`,
+    );
     atDeadline();
-    parsed(delayedObservationSql(permit, "public.expiry_race_now()"));
+    parsed(lateObservation);
     const refund = prepare();
     assert.equal(refund.status, "refund");
     const capture = graph().ledger.find(
@@ -914,13 +940,15 @@ try {
     assert.equal(state.confirmations.length, observationWins ? 0 : 1);
     assert.equal(
       harness.runSql(
-        `select count(*) from public.booking_request_confirmation_invalidations where booking_request_id='${requestId}';`,
+        paymentEvidenceSql +
+          `select count(*) from public.booking_request_confirmation_invalidations where booking_request_id='${requestId}';`,
       ),
       observationWins ? "0" : "1",
     );
     assert.equal(
       harness.runSql(
-        `select public.booking_request_payment_status(requests) from public.booking_requests requests where requests.id='${requestId}';`,
+        paymentEvidenceSql +
+          `select public.booking_request_payment_status(requests) from public.booking_requests requests where requests.id='${requestId}';`,
       ),
       "payment-required",
     );
@@ -932,7 +960,8 @@ try {
     );
     assert.equal(
       harness.runSql(
-        `select count(*) from public.booking_request_payment_correction_observations where booking_request_id='${requestId}' and conflict;`,
+        paymentEvidenceSql +
+          `select count(*) from public.booking_request_payment_correction_observations where booking_request_id='${requestId}' and conflict;`,
       ),
       "1",
     );
@@ -970,10 +999,12 @@ try {
       session.child.stdin.end("rollback;\n");
     await session.exited;
   }
-  for (const definition of definitions) harness.runSql(definition);
+  for (const definition of definitions)
+    harness.runSql(paymentEvidenceSql + definition);
   if (definitions.length)
     harness.runSql(
-      "drop function if exists public.expiry_race_now();drop table if exists public.expiry_race_clock;",
+      paymentEvidenceSql +
+        "drop function if exists public.expiry_race_now();drop table if exists public.expiry_race_clock;",
     );
   cleanup();
 }

@@ -1,3 +1,4 @@
+import { historicalProviderOperationSource } from "../tests/fixtures/payment-provider-history.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -14,6 +15,11 @@ const resetPriorArgs = [
 ];
 const resetCurrentArgs = ["db", "reset", "--local"];
 const harness = createLocalSupabaseConcurrencyHarness();
+const paymentEvidenceSql = readFileSync(
+  "supabase/fixtures/payment-evidence.sql",
+  "utf8",
+);
+let paymentEvidenceInstalled = false;
 
 function runSupabase(args) {
   const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
@@ -30,6 +36,12 @@ function runSupabase(args) {
     throw new Error("Unable to execute the local Supabase CLI.", {
       cause: result.error,
     });
+  }
+  if (result.status === 0) {
+    if (args[0] === "migration" && args[1] === "up")
+      paymentEvidenceInstalled = true;
+    if (args[0] === "db" && args[1] === "reset")
+      paymentEvidenceInstalled = !args.includes("--version");
   }
   return result;
 }
@@ -85,7 +97,7 @@ function snapshot(table, orderBy, omitAddedColumns = true) {
         : "to_jsonb(rows)";
   return harness.runSql(`
     select coalesce(jsonb_agg(${projection} order by ${orderBy}), '[]'::jsonb)
-    from public.${table} rows;
+    from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} rows;
   `);
 }
 
@@ -615,7 +627,7 @@ try {
         ),
         'captureOperationCount', (
           select count(*)
-          from public.simulated_payment_provider_operations operations
+          from ${historicalProviderOperationSource(paymentEvidenceInstalled)} operations
           where operations.operation_kind = 'capture'
         ) + (
           select count(*)
@@ -815,7 +827,7 @@ try {
   );
   assertEqual(
     harness.runSql(
-      "select count(*) from public.simulated_payment_provider_operations where capture_execution_permit is not null or operation_kind = 'capture';",
+      `select count(*) from ${historicalProviderOperationSource(paymentEvidenceInstalled)} where capture_execution_permit is not null or operation_kind = 'capture';`,
     ),
     "0",
     "Capture execution migration must not backfill a permit or execute capture.",
@@ -844,7 +856,7 @@ try {
   );
   const confirmationSource = readFileSync(
     new URL(
-      "../supabase/tests/database/booking_request_confirmation.test.sql",
+      "../supabase/fixtures/legacy-booking_request_confirmation.sql",
       import.meta.url,
     ),
     "utf8",
@@ -863,7 +875,7 @@ try {
       'providerRequestId', provider_request_id,
       'providerReference', provider_reference,
       'movementReference', movement_reference)
-  ) from public.simulated_payment_provider_operations
+  ) from ${historicalProviderOperationSource(paymentEvidenceInstalled)}
   where operation_kind = 'capture'
     and payment_lifecycle_id = '73000000-0000-4000-8000-000000001001';`);
   const beforeConfirmation = {
@@ -956,7 +968,7 @@ try {
     '60000000-0000-4000-8000-000000001101', (capture_execution_permit ->> 'leaseGeneration')::bigint,
     (capture_execution_permit ->> 'leaseToken')::uuid, jsonb_build_object('outcome','succeeded',
       'providerRequestId',provider_request_id,'providerReference',provider_reference,'movementReference',movement_reference))
-    from public.simulated_payment_provider_operations where operation_kind = 'capture' and payment_lifecycle_id = '${secondLifecycle}';`);
+    from ${historicalProviderOperationSource(paymentEvidenceInstalled)} where operation_kind = 'capture' and payment_lifecycle_id = '${secondLifecycle}';`);
   const recoveryGraph = () => ({
     ...snapshotPredecessorGraph(),
     captureWork: snapshot(
@@ -1002,7 +1014,7 @@ try {
   );
   assertEqual(
     harness.runSql(
-      "select count(*) || ':' || sum(physical_execution_count) from public.simulated_payment_provider_operations where operation_kind = 'capture';",
+      `select count(*) || ':' || sum(physical_execution_count) from ${historicalProviderOperationSource(paymentEvidenceInstalled)} where operation_kind = 'capture';`,
     ),
     "2:2",
     "Migration must preserve exactly the two original Capture executions.",
@@ -1119,7 +1131,7 @@ try {
   }
   assertEqual(
     harness.runSql(
-      "select (select count(*) from public.booking_request_capture_work) || ':' || (select sum(physical_execution_count) from public.simulated_payment_provider_operations where operation_kind = 'capture') || ':' || (select count(*) from public.booking_confirmations) || ':' || (select count(*) from public.booking_receipts);",
+      `select (select count(*) from public.booking_request_capture_work) || ':' || (select sum(physical_execution_count) from ${historicalProviderOperationSource(paymentEvidenceInstalled)} where operation_kind = 'capture') || ':' || (select count(*) from public.booking_confirmations) || ':' || (select count(*) from public.booking_receipts);`,
     ),
     "4:3:1:2",
     "Admission migration must not infer capture, execution, confirmation, or receipts.",
@@ -1138,7 +1150,7 @@ try {
   if (recovery138Reset.status !== 0)
     throw commandFailure(recovery138ResetArgs, recovery138Reset);
   const paymentRequiredFixture = readFileSync(
-    "supabase/tests/database/booking_request_payment_recovery.test.sql",
+    "supabase/fixtures/legacy-booking_request_payment_recovery.sql",
     "utf8",
   )
     .split("select plan(")[0]
@@ -1150,7 +1162,7 @@ try {
       "select jsonb_agg(to_jsonb(work) order by booking_request_id) from public.booking_request_capture_work work;",
     ),
     ledger: harness.runSql(
-      "select jsonb_agg(to_jsonb(ledger)-'recovery_attempt_id'-'authoritative_outcome_at' order by id) from public.simulated_payment_provider_operations ledger;",
+      `select jsonb_agg(to_jsonb(ledger)-'recovery_attempt_id'-'authoritative_outcome_at' order by id) from ${historicalProviderOperationSource(paymentEvidenceInstalled)} ledger;`,
     ),
   });
   const before138 = recovery138Graph();
@@ -1165,7 +1177,7 @@ try {
     );
   assertEqual(
     harness.runSql(
-      "select (select count(*) from public.booking_request_payment_recovery_attempts)||':'||(select count(*) from public.booking_request_payment_recovery_operations)||':'||(select count(*) from public.simulated_payment_provider_operations where recovery_attempt_id is not null or authoritative_outcome_at is not null);",
+      `select (select count(*) from public.booking_request_payment_recovery_attempts)||':'||(select count(*) from public.booking_request_payment_recovery_operations)||':'||(select count(*) from ${historicalProviderOperationSource(paymentEvidenceInstalled)} where recovery_attempt_id is not null or authoritative_outcome_at is not null);`,
     ),
     "0:0:0",
     "Recovery migration cannot invent replacement work or authoritative outcomes.",
@@ -1186,7 +1198,8 @@ try {
   );
   for (let step = 0; step < 3; step++)
     harness.runSql(
-      `set role service_role;select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step('${recovery138Admission.attemptId}')->'permit','succeeded');`,
+      paymentEvidenceSql +
+        `set role service_role;select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${recovery138Admission.attemptId}')->'permit','succeeded');`,
     );
   harness.runSql(
     `set role service_role;select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',public.get_booking_request_payment_recovery_confirmation_evidence('${recovery138Admission.attemptId}'));`,

@@ -1,3 +1,8 @@
+// SQL arrangement mirrors admission, isolated effect, and explicit recording.
+const paymentEvidenceSql =
+  "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
+  readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
+  "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
@@ -18,13 +23,15 @@ const unobservedRecoveryFixture = readFileSync(
 const delayedObservationSql = (permit, occurrence) => {
   const receipt = JSON.parse(
     harness.runSql(
-      unobservedRecoveryFixture +
-        `select pg_temp.seed_unobserved_recovery_outcome(${sqlJson(permit)},'succeeded',${occurrence});`,
+      paymentEvidenceSql +
+        (unobservedRecoveryFixture +
+          `select pg_temp.seed_unobserved_payment_outcome(${sqlJson(permit)},'succeeded',${occurrence});`),
     ),
   );
   return `select public.observe_booking_request_payment_correction('${requestId}','${receipt.providerOperationId}',${sqlJson(receipt)});`;
 };
-const service = (sql) => harness.runSql(`set role service_role; ${sql}`);
+const service = (sql) =>
+  harness.runSql(paymentEvidenceSql + `set role service_role; ${sql}`);
 const parsed = (sql) => JSON.parse(service(sql));
 const admitSql = (command) =>
   `select public.claim_customer_booking_request_payment_recovery('${requestId}','${command}','simulated-replacement');`;
@@ -33,14 +40,14 @@ const authenticated = (sql) =>
 const admit = (command = key) =>
   JSON.parse(
     harness
-      .runSql(authenticated(admitSql(command)))
+      .runSql(paymentEvidenceSql + authenticated(admitSql(command)))
       .split("\n")
       .at(-1),
   );
 const lease = (id) =>
   parsed(`select public.lease_booking_request_payment_recovery_step('${id}');`);
 const executeSql = (permit, outcome = "succeeded") =>
-  `select public.execute_simulated_booking_request_payment_recovery(${sqlJson(permit)},'${outcome}');`;
+  `select pg_temp.recovery_execute(${sqlJson(permit)},'${outcome}');`;
 const execute = (permit, outcome) => parsed(executeSql(permit, outcome));
 const finalizeSql = (id) =>
   `select public.finalize_booking_request_confirmation('${requestId}',public.get_booking_request_payment_recovery_confirmation_evidence('${id}'));`;
@@ -59,7 +66,7 @@ const cleanup = withPaymentRecoveryCleanup(
 );
 const sessions = new Set();
 function start(sql, close = false) {
-  const session = harness.startSession(sql, close);
+  const session = harness.startSession(paymentEvidenceSql + sql, close);
   sessions.add(session);
   return session;
 }
@@ -91,8 +98,13 @@ async function duplicate(sql, label) {
 const clockSignatures = [
   "claim_customer_booking_request_payment_recovery(uuid,uuid,text)",
   "lease_booking_request_payment_recovery_step(uuid)",
-  "execute_simulated_booking_request_payment_recovery(jsonb,text)",
-  "query_simulated_booking_request_payment_recovery(jsonb,text,text,text)",
+  "persist_simulated_payment_effect(jsonb,jsonb)",
+  "resolve_simulated_payment_effect(jsonb,text,jsonb)",
+  "seal_simulated_payment_absence(jsonb)",
+  "validate_payment_provider_observation(jsonb,uuid)",
+  "accept_payment_provider_observation(uuid,jsonb)",
+  "admit_booking_request_payment_recovery(jsonb)",
+  "reload_booking_request_payment_operation(jsonb,text,text)",
   "finalize_booking_request_confirmation(uuid,jsonb)",
   "booking_request_payment_recovery_status(public.booking_requests)",
   "observe_booking_request_payment_correction(uuid,uuid,jsonb)",
@@ -101,28 +113,47 @@ const definitions = [];
 let seeded = false;
 const snapshot = () =>
   JSON.parse(
-    harness.runSql(`select jsonb_build_object(
+    harness.runSql(
+      paymentEvidenceSql +
+        `select jsonb_build_object(
   'original',(select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id='${requestId}'),
   'confirmation',(select to_jsonb(confirmation) from public.booking_confirmations confirmation where booking_request_id='${requestId}'),
   'receipts',(select jsonb_agg(to_jsonb(receipt) order by receipt.id) from public.booking_receipts receipt where booking_confirmation_id in (select id from public.booking_confirmations where booking_request_id='${requestId}')),
   'inventory',(select jsonb_agg(to_jsonb(inventory) order by inventory.id) from public.cottage_inventory_commitments inventory where booking_period_commitment_id in (select booking_period_commitment_id from public.booking_requests where id='${requestId}')),
   'occupancies',(select jsonb_agg(to_jsonb(occupancy) order by occupancy.shift_id,occupancy.service_day) from public.cottage_booking_period_occupancies occupancy where booking_period_commitment_id in (select booking_period_commitment_id from public.booking_requests where id='${requestId}')),
-  'physical',(select sum(physical_execution_count) from public.simulated_payment_provider_operations where recovery_attempt_id in (select id from public.booking_request_payment_recovery_attempts where booking_request_id='${requestId}')));`),
+  'physical',(select sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=payment_provider_operations.id)) from public.payment_provider_operations where recovery_attempt_id in (select id from public.booking_request_payment_recovery_attempts where booking_request_id='${requestId}')));`,
+    ),
   );
 const clock = (expression) =>
   harness.runSql(
-    `update public.recovery_test_clock set instant=${expression};`,
+    paymentEvidenceSql +
+      `update public.recovery_test_clock set instant=${expression};`,
   );
 const deadline = () =>
   harness.runSql(
-    `select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${requestId}';`,
+    paymentEvidenceSql +
+      `select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${requestId}';`,
   );
 const atDeadline = (offset = "") =>
   clock(`'${deadline()}'::timestamptz ${offset}`);
 async function resetFixture() {
-  if (seeded) harness.runSql(cleanup);
-  harness.runSql(`begin;${fixture}commit;`);
+  if (seeded) harness.runSql(paymentEvidenceSql + cleanup);
+  // Seed under the real source clock before restoring a controlled recovery clock.
+  for (const definition of definitions)
+    harness.runSql(paymentEvidenceSql + definition);
+  harness.runSql(paymentEvidenceSql + `begin;${fixture}commit;`);
   seeded = true;
+  if (definitions.length) {
+    clock("clock_timestamp()");
+    for (const definition of definitions)
+      harness.runSql(
+        paymentEvidenceSql +
+          definition.replaceAll(
+            "clock_timestamp()",
+            "public.recovery_test_now()",
+          ),
+      );
+  }
 }
 harness.guardDisposableLocalDatabase();
 try {
@@ -173,7 +204,8 @@ try {
   assert.equal(lease(retry.attemptId).permit.step, "replacement-authorization");
   assert.equal(
     harness.runSql(
-      `select count(*) from public.booking_request_payment_recovery_operations where step='original-release' and recovery_attempt_id in (select id from public.booking_request_payment_recovery_attempts where booking_request_id='${requestId}');`,
+      paymentEvidenceSql +
+        `select count(*) from public.booking_request_payment_recovery_operations where step='original-release' and recovery_attempt_id in (select id from public.booking_request_payment_recovery_attempts where booking_request_id='${requestId}');`,
     ),
     "1",
   );
@@ -186,15 +218,21 @@ try {
   for (const signature of clockSignatures)
     definitions.push(
       harness.runSql(
-        `select pg_get_functiondef('public.${signature}'::regprocedure);`,
+        paymentEvidenceSql +
+          `select pg_get_functiondef('public.${signature}'::regprocedure);`,
       ),
     );
   harness.runSql(
-    "create table public.recovery_test_clock(instant timestamptz not null);insert into public.recovery_test_clock values(clock_timestamp());create function public.recovery_test_now() returns timestamptz language plpgsql volatile as $$ begin return (select instant from public.recovery_test_clock); end; $$;",
+    paymentEvidenceSql +
+      "create table public.recovery_test_clock(instant timestamptz not null);insert into public.recovery_test_clock values(clock_timestamp());create function public.recovery_test_now() returns timestamptz language plpgsql volatile as $$ begin return (select instant from public.recovery_test_clock); end; $$;",
   );
   for (const definition of definitions)
     harness.runSql(
-      definition.replaceAll("clock_timestamp()", "public.recovery_test_now()"),
+      paymentEvidenceSql +
+        definition.replaceAll(
+          "clock_timestamp()",
+          "public.recovery_test_now()",
+        ),
     );
   atDeadline("- interval '1 second'");
   const deadlineHolder = start(
@@ -211,7 +249,8 @@ try {
   await finish(deadlineContender, { expectedState: "RC409" });
   assert.equal(
     harness.runSql(
-      `select count(*) from public.booking_request_payment_recovery_attempts where booking_request_id='${requestId}';`,
+      paymentEvidenceSql +
+        `select count(*) from public.booking_request_payment_recovery_attempts where booking_request_id='${requestId}';`,
     ),
     "0",
   );
@@ -224,7 +263,8 @@ try {
   atDeadline("+ interval '1 second'");
   assert.equal(
     harness.runSql(
-      `select public.booking_request_payment_recovery_status(requests)->>'status' from public.booking_requests requests where id='${requestId}';`,
+      paymentEvidenceSql +
+        `select public.booking_request_payment_recovery_status(requests)->>'status' from public.booking_requests requests where id='${requestId}';`,
     ),
     "processing",
     "Authoritative pre-deadline success must remain processing while local confirmation is pending",
@@ -245,11 +285,11 @@ try {
     execute(lease(late.attemptId).permit);
     const pending = lease(late.attemptId);
     assert.throws(() => admit("81000000-0000-4000-8000-000000001002"));
-    atDeadline(boundary);
     const observation = delayedObservationSql(
       pending.permit,
-      "public.recovery_test_now()",
+      `'${deadline()}'::timestamptz ${boundary}`,
     );
+    atDeadline(boundary);
     assert.equal(parsed(observation).status, "recorded");
     await duplicate(observation, `late_${boundary ? "after" : "equal"}`);
     assert.equal(lease(late.attemptId).status, "late-succeeded");
@@ -258,7 +298,8 @@ try {
     assert.equal(snapshot().physical, 3);
     assert.equal(
       harness.runSql(
-        `select count(*) from public.simulated_payment_provider_operations ledger join public.booking_request_capture_work work on work.booking_request_id='${requestId}' where ledger.recovery_attempt_id='${late.attemptId}' and operation_kind='capture' and ledger.authoritative_outcome_at >= work.payment_required_deadline and ledger.created_at < work.payment_required_deadline;`,
+        paymentEvidenceSql +
+          `select count(*) from public.payment_provider_operations ledger join public.booking_request_capture_work work on work.booking_request_id='${requestId}' where ledger.recovery_attempt_id='${late.attemptId}' and operation_kind='capture' and ledger.authoritative_outcome_at >= work.payment_required_deadline and ledger.created_at < work.payment_required_deadline;`,
       ),
       "1",
     );
@@ -272,10 +313,12 @@ try {
       session.child.stdin.end("rollback;\n");
     await session.exited;
   }
-  for (const definition of definitions) harness.runSql(definition);
+  for (const definition of definitions)
+    harness.runSql(paymentEvidenceSql + definition);
   if (definitions.length)
     harness.runSql(
-      "drop function public.recovery_test_now();drop table public.recovery_test_clock;",
+      paymentEvidenceSql +
+        "drop function public.recovery_test_now();drop table public.recovery_test_clock;",
     );
-  if (seeded) harness.runSql(cleanup);
+  if (seeded) harness.runSql(paymentEvidenceSql + cleanup);
 }

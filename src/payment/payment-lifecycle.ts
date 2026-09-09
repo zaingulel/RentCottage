@@ -1,3 +1,7 @@
+import {
+  recordedPaymentResult,
+  type PaymentOperationExecution,
+} from "./payment-operation-execution";
 import type {
   Fils,
   MoneyMovement,
@@ -9,6 +13,8 @@ import type {
   PaymentOperationSnapshot,
   PaymentProviderAdapter,
   ProviderExecutionPermit,
+  ProviderOperationRequest,
+  ProviderReconciliationQuery,
   ProviderEventApplication,
   ProviderOperationResult,
   RefundAllocation,
@@ -282,6 +288,7 @@ export function isAuthorizationPhasePaymentSnapshot(
 }
 
 export interface PaymentLifecyclePersistence {
+  readonly operations?: PaymentOperationExecution;
   save(
     snapshot: PaymentLifecycleSnapshot,
   ): Promise<ProviderExecutionPermit | void>;
@@ -504,7 +511,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
         "Only a reconciliation-required pending operation can be queried.",
       );
     }
-    const result = await this.#provider.query({
+    const request: ProviderReconciliationQuery = {
       kind: operation.kind,
       paymentLifecycleId: this.#input.paymentLifecycleId,
       logicalOperationId: operation.logicalOperationId,
@@ -513,7 +520,10 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       currency: "IQD",
       providerRequestId: operation.providerRequestId,
       providerReference: operation.providerReference,
-    });
+    };
+    const result = this.#persistence?.operations
+      ? recordedPaymentResult(await this.#persistence.operations.query(request))
+      : await this.#provider.query(request);
     if (result.outcome === "not-executed") {
       if (operation.kind !== "release") {
         throw new Error("invalid_provider_reconciliation_result");
@@ -897,7 +907,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
 
     let result: ProviderOperationResult;
     try {
-      result = await this.#provider.execute({
+      const request: ProviderOperationRequest = {
         kind,
         paymentLifecycleId: this.#input.paymentLifecycleId,
         logicalOperationId,
@@ -905,7 +915,12 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
         amountFils,
         currency: "IQD",
         executionPermit: executionPermit ?? null,
-      });
+      };
+      result = this.#persistence?.operations
+        ? recordedPaymentResult(
+            await this.#persistence.operations.execute(request),
+          )
+        : await this.#provider.execute(request);
     } catch {
       const indeterminate = Object.freeze({
         ...pending,

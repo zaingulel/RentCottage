@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS "public"."booking_request_payment_recovery_attempts" 
 
 ALTER TABLE "public"."booking_request_payment_recovery_attempts" OWNER TO "postgres";
 
-CREATE TABLE IF NOT EXISTS "public"."simulated_payment_provider_operations" (
+CREATE TABLE IF NOT EXISTS "public"."payment_provider_operations" (
     "id" "uuid" NOT NULL,
     "claim_id" "uuid" NOT NULL,
     "claim_generation" integer NOT NULL,
@@ -152,29 +152,36 @@ CREATE TABLE IF NOT EXISTS "public"."simulated_payment_provider_operations" (
     "physical_attempt_id" "text" NOT NULL,
     "amount_fils" bigint NOT NULL,
     "currency" "text" NOT NULL,
-    "original_outcome" "text" NOT NULL,
-    "current_outcome" "text" NOT NULL,
-    "provider_request_id" "text" NOT NULL,
-    "provider_reference" "text" NOT NULL,
+    "original_outcome" "text",
+    "current_outcome" "text",
+    "provider_request_id" "text",
+    "provider_reference" "text",
     "movement_reference" "text",
-    "physical_execution_count" smallint DEFAULT 1 NOT NULL,
     "created_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
     "capture_execution_permit" "jsonb",
+    "admission" "jsonb" NOT NULL,
+    "original_outcome_at" timestamp with time zone,
+    "executed_at" timestamp with time zone,
+    "recorded_at" timestamp with time zone,
+    "evidence_provenance" "text" NOT NULL,
     "recovery_attempt_id" "uuid",
     "authoritative_outcome_at" timestamp with time zone,
+    CONSTRAINT "payment_provider_admission_shape" CHECK ((jsonb_typeof(admission) = 'object' AND admission ?& array['purpose','permit','notBefore','notAfter'])),
+    CONSTRAINT "payment_provider_evidence_provenance" CHECK ((evidence_provenance IN ('admitted','fictional-provider','provider-event','legacy-simulated'))),
+    CONSTRAINT "payment_provider_pending_evidence" CHECK (((current_outcome IS NULL AND original_outcome IS NULL AND recorded_at IS NULL AND provider_request_id IS NULL AND provider_reference IS NULL AND movement_reference IS NULL AND authoritative_outcome_at IS NULL AND evidence_provenance='admitted') OR (current_outcome IS NOT NULL AND original_outcome IS NOT NULL AND recorded_at IS NOT NULL AND evidence_provenance<>'admitted'))),
+    CONSTRAINT "payment_provider_result_references" CHECK (((current_outcome IS NULL OR (current_outcome='not-executed' AND provider_request_id IS NULL AND provider_reference IS NULL AND movement_reference IS NULL AND authoritative_outcome_at IS NULL) OR (current_outcome IN ('succeeded','failed','indeterminate') AND length(provider_request_id)>0 AND length(provider_reference)>0 AND ((current_outcome='failed' AND movement_reference IS NULL) OR (current_outcome<>'failed' AND length(movement_reference)>0))))) IS TRUE),
     CONSTRAINT "simulated_capture_execution_permit_check" CHECK (((("operation_kind" = 'capture'::"text") AND ("capture_execution_permit" IS NOT NULL) AND ("jsonb_typeof"("capture_execution_permit") = 'object'::"text") AND ((("capture_execution_permit" @> '{"purpose": "booking-request-capture"}'::"jsonb") AND ("capture_execution_permit" ?& ARRAY['purpose'::"text", 'bookingRequestId'::"text", 'submissionAttemptId'::"text", 'authorizationClaimId'::"text", 'authorizationClaimGeneration'::"text", 'paymentLifecycleId'::"text", 'authorizationLogicalOperationId'::"text", 'authorizationPhysicalAttemptId'::"text", 'captureLogicalOperationId'::"text", 'capturePhysicalAttemptId'::"text", 'amountFils'::"text", 'currency'::"text", 'providerIdentity'::"text", 'idempotencyKey'::"text", 'requestFingerprint'::"text", 'workId'::"text", 'leaseGeneration'::"text", 'leaseToken'::"text", 'notAfter'::"text"]) AND (("capture_execution_permit" - ARRAY['purpose'::"text", 'bookingRequestId'::"text", 'submissionAttemptId'::"text", 'authorizationClaimId'::"text", 'authorizationClaimGeneration'::"text", 'paymentLifecycleId'::"text", 'authorizationLogicalOperationId'::"text", 'authorizationPhysicalAttemptId'::"text", 'captureLogicalOperationId'::"text", 'capturePhysicalAttemptId'::"text", 'amountFils'::"text", 'currency'::"text", 'providerIdentity'::"text", 'idempotencyKey'::"text", 'requestFingerprint'::"text", 'workId'::"text", 'leaseGeneration'::"text", 'leaseToken'::"text", 'notAfter'::"text"]) = '{}'::"jsonb") AND ("jsonb_strip_nulls"("capture_execution_permit") = "capture_execution_permit") AND ("jsonb_typeof"(("capture_execution_permit" -> 'providerIdentity'::"text")) = 'object'::"text") AND (("capture_execution_permit" -> 'providerIdentity'::"text") ?& ARRAY['provider'::"text", 'environment'::"text", 'merchantId'::"text", 'terminalId'::"text"]) AND ((("capture_execution_permit" -> 'providerIdentity'::"text") - ARRAY['provider'::"text", 'environment'::"text", 'merchantId'::"text", 'terminalId'::"text"]) = '{}'::"jsonb")) OR (("capture_execution_permit" @> '{"step": "replacement-capture", "purpose": "booking-request-payment-recovery"}'::"jsonb") AND ("capture_execution_permit" ?& ARRAY['purpose'::"text", 'attemptId'::"text", 'generation'::"text", 'step'::"text", 'operationId'::"text", 'idempotencyKey'::"text", 'notAfter'::"text", 'binding'::"text"]) AND (("capture_execution_permit" - ARRAY['purpose'::"text", 'attemptId'::"text", 'generation'::"text", 'step'::"text", 'operationId'::"text", 'idempotencyKey'::"text", 'notAfter'::"text", 'binding'::"text"]) = '{}'::"jsonb") AND ("jsonb_strip_nulls"("capture_execution_permit") = "capture_execution_permit")))) OR (("operation_kind" <> 'capture'::"text") AND ("capture_execution_permit" IS NULL)))),
-    CONSTRAINT "simulated_payment_provider_opera_physical_execution_count_check" CHECK (("physical_execution_count" = 1)),
     CONSTRAINT "simulated_payment_provider_operations_amount_fils_check" CHECK (("amount_fils" > 0)),
     CONSTRAINT "simulated_payment_provider_operations_currency_check" CHECK (("currency" = 'IQD'::"text")),
-    CONSTRAINT "simulated_payment_provider_operations_current_outcome_check" CHECK (("current_outcome" = ANY (ARRAY['succeeded'::"text", 'failed'::"text", 'indeterminate'::"text"]))),
-    CONSTRAINT "simulated_payment_provider_operations_environment_check" CHECK (("environment" = 'local-test'::"text")),
+    CONSTRAINT "simulated_payment_provider_operations_current_outcome_check" CHECK (("current_outcome" = ANY (ARRAY['succeeded'::"text", 'failed'::"text", 'indeterminate'::"text", 'not-executed'::"text"]))),
+    CONSTRAINT "simulated_payment_provider_operations_environment_check" CHECK ((length(btrim("environment")) > 0)),
     CONSTRAINT "simulated_payment_provider_operations_operation_kind_check" CHECK (("operation_kind" = ANY (ARRAY['authorization'::"text", 'capture'::"text", 'release'::"text", 'refund'::"text"]))),
-    CONSTRAINT "simulated_payment_provider_operations_original_outcome_check" CHECK (("original_outcome" = ANY (ARRAY['succeeded'::"text", 'failed'::"text", 'indeterminate'::"text"]))),
+    CONSTRAINT "simulated_payment_provider_operations_original_outcome_check" CHECK (("original_outcome" = ANY (ARRAY['succeeded'::"text", 'failed'::"text", 'indeterminate'::"text", 'not-executed'::"text"]))),
     CONSTRAINT "simulated_payment_provider_operations_request_fingerprint_check" CHECK (("request_fingerprint" ~ '^[0-9a-f]{64}$'::"text"))
 );
 
-ALTER TABLE "public"."simulated_payment_provider_operations" OWNER TO "postgres";
+ALTER TABLE "public"."payment_provider_operations" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."booking_request_payment_required_expiry_work" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -568,3 +575,37 @@ CREATE TABLE IF NOT EXISTS "public"."cottage_booking_period_occupancies" (
 );
 
 ALTER TABLE "public"."cottage_booking_period_occupancies" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."payment_provider_observations" (
+    "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+    "operation_id" uuid NOT NULL,
+    "provider" text NOT NULL,
+    "environment" text NOT NULL,
+    "merchant_id" text NOT NULL,
+    "terminal_id" text NOT NULL,
+    "event_id" text NOT NULL,
+    "result" jsonb NOT NULL,
+    "occurred_at" timestamp with time zone,
+    "received_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    "provenance" text NOT NULL,
+    CONSTRAINT "payment_provider_observation_identity" CHECK ((length(event_id) BETWEEN 1 AND 200 AND jsonb_typeof(result)='object' AND provenance IN ('fictional-provider','provider-event','legacy-simulated')))
+);
+ALTER TABLE "public"."payment_provider_observations" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."simulated_payment_effects" (
+    "operation_id" uuid NOT NULL,
+    "provider" text NOT NULL,
+    "environment" text NOT NULL,
+    "merchant_id" text NOT NULL,
+    "terminal_id" text NOT NULL,
+    "idempotency_key" text NOT NULL,
+    "binding" jsonb NOT NULL,
+    "state" text NOT NULL,
+    "result" jsonb,
+    "physical_execution_count" smallint NOT NULL,
+    "created_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT "simulated_payment_effect_scope" CHECK ((length(provider)>0 AND environment='local-test' AND length(merchant_id)>0 AND length(terminal_id)>0)),
+    CONSTRAINT "simulated_payment_effect_state" CHECK ((((state='reserved' AND result IS NULL AND physical_execution_count=0) OR (state='closed-not-executed' AND result->>'outcome'='not-executed' AND physical_execution_count=0) OR (state='executed' AND result->>'outcome' IN ('succeeded','failed','indeterminate') AND physical_execution_count=1))) IS TRUE)
+);
+ALTER TABLE "public"."simulated_payment_effects" OWNER TO "postgres";

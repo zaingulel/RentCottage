@@ -55,7 +55,7 @@ CREATE OR REPLACE TRIGGER "observe_payment_history_expiry_work" AFTER INSERT OR 
 
 CREATE OR REPLACE TRIGGER "observe_payment_history_invalidation" AFTER INSERT ON "public"."booking_request_confirmation_invalidations" FOR EACH ROW EXECUTE FUNCTION "public"."observe_booking_request_payment_history"();
 
-CREATE OR REPLACE TRIGGER "observe_payment_history_provider_operation" AFTER INSERT OR UPDATE ON "public"."simulated_payment_provider_operations" FOR EACH ROW EXECUTE FUNCTION "public"."observe_booking_request_payment_history"();
+CREATE OR REPLACE TRIGGER "observe_payment_history_provider_operation" AFTER INSERT OR UPDATE ON "public"."payment_provider_operations" FOR EACH ROW EXECUTE FUNCTION "public"."observe_booking_request_payment_history"();
 
 CREATE OR REPLACE TRIGGER "observe_payment_history_provider_receipt" AFTER INSERT ON "public"."booking_request_payment_correction_observations" FOR EACH ROW EXECUTE FUNCTION "public"."observe_booking_request_payment_history"();
 
@@ -208,3 +208,6 @@ CREATE OR REPLACE TRIGGER "resolve_cottage_translation_human_review" AFTER INSER
 CREATE OR REPLACE TRIGGER "supersede_human_review_after_publication_rejection" AFTER UPDATE OF "state" ON "public"."cottage_profile_review_cycles" FOR EACH ROW EXECUTE FUNCTION "public"."supersede_human_review_after_publication_rejection"();
 
 CREATE OR REPLACE TRIGGER "validate_cottage_shift_insert" BEFORE INSERT ON "public"."cottage_shifts" FOR EACH ROW EXECUTE FUNCTION "public"."validate_cottage_shift_insert"();
+
+CREATE OR REPLACE TRIGGER guard_payment_provider_admission BEFORE UPDATE OR DELETE ON public.payment_provider_operations FOR EACH ROW EXECUTE FUNCTION public.guard_payment_evidence();
+CREATE OR REPLACE TRIGGER guard_payment_provider_observation BEFORE UPDATE OR DELETE ON public.payment_provider_observations FOR EACH ROW EXECUTE FUNCTION public.guard_payment_evidence();

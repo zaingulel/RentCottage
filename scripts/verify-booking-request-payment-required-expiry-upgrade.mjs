@@ -1,3 +1,4 @@
+import { historicalProviderOperationSource } from "../tests/fixtures/payment-provider-history.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -5,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness();
+let paymentEvidenceInstalled = false;
 const priorVersion = "20260907120000";
 const identity = {
   provider: "fictional-payments",
@@ -15,15 +17,24 @@ const identity = {
 const literal = (value) =>
   `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
 const fixture = readFileSync(
-  "supabase/tests/database/booking_request_payment_recovery.test.sql",
+  "supabase/fixtures/legacy-booking_request_payment_recovery.sql",
   "utf8",
 )
   .split("select plan(")[0]
   .replace(/^begin;/, "");
 const id = (prefix, index, suffix = 1) =>
   `${prefix}000000-0000-4000-8000-00000000${index}0${suffix}`;
+const paymentEvidenceSql = readFileSync(
+  "supabase/fixtures/payment-evidence.sql",
+  "utf8",
+);
 const parsed = (sql) =>
-  JSON.parse(harness.runSql(`set role service_role;${sql}`));
+  JSON.parse(
+    harness.runSql(
+      (paymentEvidenceInstalled ? paymentEvidenceSql : "") +
+        `set role service_role;${sql}`,
+    ),
+  );
 function runSupabase(args) {
   const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
   const result = spawnSync(
@@ -107,7 +118,7 @@ function snapshot() {
       table,
       JSON.parse(
         harness.runSql(
-          `select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]') from public.${table} rows;`,
+          `select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]') from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} rows;`,
         ),
       ),
     ]),
@@ -191,7 +202,7 @@ try {
     ).permit;
     if (index === 23) {
       const unobserved = readFileSync(
-        "supabase/tests/database/booking_request_payment_correction.test.sql",
+        "supabase/fixtures/legacy-booking_request_payment_correction.sql",
         "utf8",
       )
         .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
@@ -269,6 +280,7 @@ try {
   );
   const before = snapshot();
   runSupabase(["migration", "up", "--local"]);
+  paymentEvidenceInstalled = true;
   assert.deepEqual(
     snapshot(),
     before,
@@ -315,7 +327,7 @@ try {
   );
   assert.equal(elapsed.status, "release");
   parsed(
-    `select public.execute_simulated_booking_request_payment_required_expiry(${literal(elapsed.permit)},'succeeded');`,
+    `select pg_temp.expiry_execute(${literal(elapsed.permit)},'succeeded');`,
   );
   assert.equal(
     parsed(
@@ -347,7 +359,7 @@ try {
   assert.equal(corrective.status, "refund");
   assert.equal(corrective.permit.binding.amountFils, 115000000);
   parsed(
-    `select public.execute_simulated_booking_request_payment_required_expiry(${literal(corrective.permit)},'succeeded');`,
+    `select pg_temp.expiry_execute(${literal(corrective.permit)},'succeeded');`,
   );
   assert.equal(
     parsed(

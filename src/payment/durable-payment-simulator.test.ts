@@ -1,455 +1,171 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
+import { DurablePaymentSimulator } from "./durable-payment-simulator-core";
+import type {
+  SimulatorEffectBinding,
+  SimulatorEffectRepository,
+} from "./durable-payment-simulator-core";
+import type { PaymentOperationAdmission } from "./payment-operation-execution";
+import type { ProviderOperationResult } from "./payment-contract";
 
-import { DurablePaymentSimulator } from "./durable-payment-simulator";
-
-vi.mock("server-only", () => ({}));
-
-const request = {
-  kind: "authorization" as const,
-  paymentLifecycleId: "11111111-1111-4111-8111-111111111111",
-  logicalOperationId: "11111111-1111-4111-8111-111111111111:authorization",
-  attemptId: "11111111-1111-4111-8111-111111111111:authorization:attempt-1",
-  amountFils: 105_003_000,
-  currency: "IQD" as const,
-  executionPermit: {
-    purpose: "booking-request-authorization" as const,
-    claimId: "22222222-2222-4222-8222-222222222222",
-    generation: 1,
-    idempotencyKey: "booking-request:22222222-2222-4222-8222-222222222222:1",
-    notAfter: "2099-08-22T00:00:00.000Z",
-  },
+const identity = {
+  provider: "fictional-payments",
+  environment: "local-test",
+  merchantId: "fictional-merchant",
+  terminalId: "fictional-terminal",
 };
-
-const releaseRequest = {
-  ...request,
+const binding = {
   kind: "release" as const,
-  logicalOperationId: `${request.paymentLifecycleId}:release`,
-  attemptId: `${request.paymentLifecycleId}:release:attempt-2`,
-  executionPermit: {
-    purpose: "booking-request-release" as const,
-    workId: "33333333-3333-4333-8333-333333333333",
-    leaseGeneration: 1,
-    leaseToken: "44444444-4444-4444-8444-444444444444",
-    operationId: "55555555-5555-4555-8555-555555555555",
-    operationGeneration: 1,
-    idempotencyKey:
-      "booking-request-release:33333333-3333-4333-8333-333333333333:1",
-    requestFingerprint:
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    notAfter: "2099-08-22T00:00:00.000Z",
-  },
+  paymentLifecycleId: "lifecycle",
+  logicalOperationId: "release",
+  attemptId: "attempt-1",
+  amountFils: 1000,
+  currency: "IQD" as const,
 };
-
-const cleanupRequest = {
-  ...releaseRequest,
-  executionPermit: {
-    purpose: "booking-request-submission-cleanup" as const,
-    attemptId: "66666666-6666-4666-8666-666666666666",
-    claimId: "77777777-7777-4777-8777-777777777777",
-    generation: 1,
-    stateRevision: 4,
-    idempotencyKey:
-      "booking-request-submission-cleanup:66666666-6666-4666-8666-666666666666:4",
-    requestFingerprint:
-      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    notAfter: "2099-08-22T00:00:00.000Z",
-  },
+const admission: PaymentOperationAdmission = {
+  purpose: "booking-request-release",
+  operationId: "operation-1",
+  providerIdentity: identity,
+  idempotencyKey: "original-key",
+  requestFingerprint: "a".repeat(64),
+  binding,
+  notBefore: null,
+  notAfter: "2099-01-01T00:00:00Z",
+  mode: "execute",
 };
-
-const captureRequest = {
-  ...request,
-  kind: "capture" as const,
-  logicalOperationId: `${request.paymentLifecycleId}:capture`,
-  attemptId: `${request.paymentLifecycleId}:capture:attempt-2`,
-  executionPermit: {
-    purpose: "booking-request-capture" as const,
-    bookingRequestId: "88888888-8888-4888-8888-888888888888",
-    submissionAttemptId: "99999999-9999-4999-8999-999999999999",
-    authorizationClaimId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    authorizationClaimGeneration: 1,
-    paymentLifecycleId: request.paymentLifecycleId,
-    authorizationLogicalOperationId: request.logicalOperationId,
-    authorizationPhysicalAttemptId: request.attemptId,
-    captureLogicalOperationId: `${request.paymentLifecycleId}:capture`,
-    capturePhysicalAttemptId: `${request.paymentLifecycleId}:capture:attempt-2`,
-    amountFils: request.amountFils,
-    currency: "IQD" as const,
-    providerIdentity: {
-      provider: "fictional-payments",
-      environment: "local-test",
-      merchantId: "fictional-merchant",
-      terminalId: "fictional-terminal",
-    },
-    idempotencyKey:
-      "booking-request-capture:88888888-8888-4888-8888-888888888888:1",
-    requestFingerprint:
-      "3f21b7db06c2aa8475f0c5a410354ed012bc4df2e628ec46cc15e3c9d5db1a0c",
-    workId: "88888888-8888-4888-8888-888888888888",
-    leaseGeneration: 2,
-    leaseToken: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-    notAfter: "2099-08-22T00:00:00.000Z",
-  },
-};
-
-describe("durable simulated payment provider", () => {
-  it("executes and reconciles through the service-role ledger without personal data", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValueOnce({
-        data: {
-          outcome: "indeterminate",
-          providerRequestId: "sim-request-1",
-          providerReference: "sim-reference-1",
-          movementReference: "sim-movement-1",
+function fixture() {
+  let stored: ProviderOperationResult | undefined;
+  const effects: SimulatorEffectRepository = {
+    executeOnce: vi.fn(async (_binding, proposed) => {
+      stored ??= proposed;
+      return stored!;
+    }),
+    queryAndSealAbsent: vi.fn(async (target) => {
+      stored ??= {
+        outcome: "not-executed",
+        evidence: {
+          operationId: target.operationId,
+          eventId: "closed-1",
+          provenance: "fictional-provider",
+          originalOutcome: null,
+          executedAt: null,
+          occurredAt: null,
+          closedAt: "2098-01-01T00:00:00Z",
         },
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: {
-          outcome: "succeeded",
-          providerRequestId: "sim-request-1",
-          providerReference: "sim-reference-1",
-          movementReference: "sim-movement-1",
-        },
-        error: null,
-      });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-21T17:00:00.000Z",
-      executeOutcome: "indeterminate",
-      reconciliationOutcome: "succeeded",
-    });
-
-    await expect(provider.execute(request)).resolves.toMatchObject({
-      outcome: "indeterminate",
-    });
-    await expect(
-      provider.query({
-        kind: request.kind,
-        paymentLifecycleId: request.paymentLifecycleId,
-        logicalOperationId: request.logicalOperationId,
-        attemptId: request.attemptId,
-        amountFils: request.amountFils,
-        currency: request.currency,
-        providerRequestId: null,
-        providerReference: null,
+      };
+      return stored!;
+    }),
+    resolve: vi.fn(async (_binding, _expected, proposed) => {
+      stored = proposed;
+      return stored!;
+    }),
+  };
+  return {
+    effects,
+    make: (outcome = "succeeded" as "succeeded" | "failed" | "indeterminate") =>
+      new DurablePaymentSimulator({
+        effects,
+        now: () => "2098-01-01T00:00:00Z",
+        executeOutcome: outcome,
+        reconciliationOutcome: "succeeded",
       }),
-    ).resolves.toMatchObject({ outcome: "succeeded" });
+  };
+}
+const execute = { ...binding, executionPermit: null, admission };
+const query = {
+  ...binding,
+  providerRequestId: null,
+  providerReference: null,
+  admission,
+};
 
-    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
-      "execute_simulated_payment_provider_operation",
-      "query_simulated_payment_provider_operation",
-    ]);
-    expect(rpc.mock.calls[1][1].target_operation.requestFingerprint).toBe(
-      rpc.mock.calls[0][1].target_operation.requestFingerprint,
-    );
-    expect(rpc.mock.calls[1][1]).toMatchObject({
-      target_provider_request_id: null,
-      target_provider_reference: null,
-    });
-    const serialized = JSON.stringify(rpc.mock.calls);
-    expect(serialized).not.toContain("customerName");
-    expect(serialized).not.toContain("phone");
-    expect(serialized).not.toContain("bookingNote");
-    expect(serialized).not.toContain("cottage");
-  });
-
-  it("refuses execution after the database permit expires without touching the ledger", async () => {
-    const rpc = vi.fn();
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-22T00:00:00.000Z",
-    });
-
-    await expect(provider.execute(request)).resolves.toEqual({
-      outcome: "not-executed",
-    });
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it("executes the exact Capture permit with the selected outcome without personal data", async () => {
-    const result = {
-      outcome: "succeeded",
-      providerRequestId: "sim-request-capture",
-      providerReference: "sim-reference-capture",
-      movementReference: "sim-movement-capture",
-    };
-    const rpc = vi.fn().mockResolvedValue({ data: result, error: null });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-21T17:00:00.000Z",
-      executeOutcome: "failed",
-    });
-
-    await expect(provider.execute(captureRequest)).resolves.toEqual(result);
-    expect(rpc).toHaveBeenCalledExactlyOnceWith(
-      "execute_simulated_booking_request_capture",
-      {
-        target_permit: captureRequest.executionPermit,
-        target_outcome: "failed",
-      },
-    );
-    const serialized = JSON.stringify(rpc.mock.calls);
-    for (const personalField of [
-      "customerName",
-      "phone",
-      "bookingNote",
-      "cottage",
-    ]) {
-      expect(serialized).not.toContain(personalField);
-    }
-  });
-
-  it("rejects failed Capture evidence that contains a money movement", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: {
-        outcome: "failed",
-        providerRequestId: "failed-request",
-        providerReference: "failed-reference",
-        movementReference: "conflicting-movement",
-        retrySafe: false,
-      },
-      error: null,
-    });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-21T17:00:00.000Z",
-      executeOutcome: "failed",
-    });
-    await expect(provider.execute(captureRequest)).rejects.toThrow(
-      "invalid result",
-    );
-  });
-
-  it("queries Capture evidence without an execution permit or outcome rewrite", async () => {
-    const result = {
-      outcome: "succeeded",
-      providerRequestId: "original-request",
-      providerReference: "original-reference",
-      movementReference: "original-movement",
-    };
-    const rpc = vi.fn().mockResolvedValue({ data: result, error: null });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-21T17:00:00.000Z",
-      reconciliationOutcome: "failed",
-    });
-    await expect(
-      provider.query({
-        kind: "capture",
-        paymentLifecycleId: captureRequest.paymentLifecycleId,
-        logicalOperationId: captureRequest.logicalOperationId,
-        attemptId: captureRequest.attemptId,
-        amountFils: captureRequest.amountFils,
-        currency: "IQD",
-        providerRequestId: result.providerRequestId,
-        providerReference: result.providerReference,
-      }),
-    ).resolves.toEqual(result);
-    expect(rpc).toHaveBeenCalledExactlyOnceWith(
-      "query_simulated_booking_request_capture",
-      {
-        target_operation: {
-          providerIdentity: provider.identity,
-          requestFingerprint: captureRequest.executionPermit.requestFingerprint,
-          paymentLifecycleId: captureRequest.paymentLifecycleId,
-          logicalOperationId: captureRequest.logicalOperationId,
-          physicalAttemptId: captureRequest.attemptId,
-          operationKind: "capture",
-          amountFils: captureRequest.amountFils,
-          currency: "IQD",
-        },
-        target_provider_request_id: result.providerRequestId,
-        target_provider_reference: result.providerReference,
-      },
-    );
-  });
-
-  it.each([
-    ["kind", { kind: "release" }],
-    ["Payment Lifecycle", { paymentLifecycleId: "another-lifecycle" }],
-    ["logical operation", { logicalOperationId: "another-operation" }],
-    ["physical attempt", { attemptId: "another-attempt" }],
-    ["Customer Total", { amountFils: 1 }],
-    ["currency", { currency: "USD" }],
-    [
-      "provider",
-      {
-        executionPermit: {
-          ...captureRequest.executionPermit,
-          providerIdentity: {
-            ...captureRequest.executionPermit.providerIdentity,
-            terminalId: "another-terminal",
-          },
-        },
-      },
-    ],
-    [
-      "fingerprint",
-      {
-        executionPermit: {
-          ...captureRequest.executionPermit,
-          requestFingerprint: "a".repeat(64),
-        },
-      },
-    ],
-    [
-      "expiry",
-      {
-        executionPermit: {
-          ...captureRequest.executionPermit,
-          notAfter: "2099-08-21T17:00:00.000Z",
-        },
-      },
-    ],
-    [
-      "invalid expiry",
-      {
-        executionPermit: {
-          ...captureRequest.executionPermit,
-          notAfter: "invalid",
-        },
-      },
-    ],
-  ])(
-    "refuses a Capture %s mismatch without touching the ledger",
-    async (_name, replacement) => {
-      const rpc = vi.fn();
-      const provider = new DurablePaymentSimulator({
-        client: { rpc } as unknown as SupabaseClient,
-        now: () => "2099-08-21T17:00:00.000Z",
-      });
-      await expect(
-        provider.execute({ ...captureRequest, ...replacement } as Parameters<
-          DurablePaymentSimulator["execute"]
-        >[0]),
-      ).resolves.toEqual({ outcome: "not-executed" });
-      expect(rpc).not.toHaveBeenCalled();
+describe("isolated durable fictional provider", () => {
+  it.each(["succeeded", "failed", "indeterminate"] as const)(
+    "generates %s evidence using only the narrow effect repository",
+    async (outcome) => {
+      const test = fixture();
+      const result = await test.make(outcome).execute(execute);
+      expect(result.outcome).toBe(outcome);
+      expect(result.evidence?.operationId).toBe(admission.operationId);
+      expect(test.effects.executeOnce).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operationId: "operation-1",
+          idempotencyKey: "original-key",
+          notAfter: admission.notAfter,
+        }),
+        expect.objectContaining({ outcome }),
+      );
+      expect(Object.keys(test.effects)).toEqual([
+        "executeOnce",
+        "queryAndSealAbsent",
+        "resolve",
+      ]);
     },
   );
-
-  it("refuses an unsupported permit purpose without touching the ledger", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: {
-        outcome: "succeeded",
-        providerRequestId: "must-not-execute",
-        providerReference: "must-not-execute",
-        movementReference: "must-not-execute",
-      },
-      error: null,
-    });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-21T17:00:00.000Z",
-    });
-    const unsupportedPurposeRequest = {
-      ...releaseRequest,
-      executionPermit: {
-        ...releaseRequest.executionPermit,
-        purpose: "unsupported-runtime-purpose",
-      },
-    } as unknown as Parameters<DurablePaymentSimulator["execute"]>[0];
-
-    await expect(provider.execute(unsupportedPurposeRequest)).resolves.toEqual({
-      outcome: "not-executed",
-    });
-    expect(rpc).not.toHaveBeenCalled();
+  it("fresh-instance inquiry with null references returns the same physical effect", async () => {
+    const test = fixture();
+    const first = await test.make().execute(execute);
+    expect(await test.make().query(query)).toEqual(first);
+    expect(test.effects.executeOnce).toHaveBeenCalledTimes(1);
   });
-
-  it("reports authoritative missing ledger evidence as not executed", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: { outcome: "not-executed" },
-      error: null,
-    });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-21T17:00:00.000Z",
-    });
-
-    await expect(
-      provider.query({
-        kind: "release",
-        paymentLifecycleId: request.paymentLifecycleId,
-        logicalOperationId: `${request.paymentLifecycleId}:release`,
-        attemptId: `${request.paymentLifecycleId}:release:attempt-2`,
-        amountFils: request.amountFils,
-        currency: request.currency,
-        providerRequestId: null,
-        providerReference: null,
-      }),
-    ).resolves.toEqual({ outcome: "not-executed" });
-    expect(rpc.mock.calls[0][1].target_operation.requestFingerprint).toBeNull();
+  it("a sealed absence wins against the original delayed executor", async () => {
+    const test = fixture();
+    const absent = await test.make().query(query);
+    expect(absent.outcome).toBe("not-executed");
+    expect(await test.make().execute(execute)).toEqual(absent);
+    expect(test.effects.resolve).not.toHaveBeenCalled();
   });
-
-  it("passes every fenced release-permit binding to the fictional provider RPC", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: {
-        outcome: "succeeded",
-        providerRequestId: "sim-request-release",
-        providerReference: "sim-reference-release",
-        movementReference: "sim-movement-release",
-      },
-      error: null,
-    });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-21T17:00:00.000Z",
-    });
-
-    await expect(provider.execute(releaseRequest)).resolves.toMatchObject({
+  it("resolves indeterminate evidence with the original movement and operation identity", async () => {
+    const test = fixture();
+    const initial = await test.make("indeterminate").execute(execute);
+    const resolved = await test.make().query(query);
+    expect(resolved).toMatchObject({
       outcome: "succeeded",
+      movementReference: "sim-movement-operation-1",
+      evidence: { operationId: "operation-1" },
     });
-    expect(rpc).toHaveBeenCalledWith(
-      "execute_simulated_payment_provider_operation",
-      expect.objectContaining({
-        target_operation: expect.objectContaining({
-          permitPurpose: "booking-request-release",
-          workId: releaseRequest.executionPermit.workId,
-          leaseGeneration: 1,
-          leaseToken: releaseRequest.executionPermit.leaseToken,
-          operationId: releaseRequest.executionPermit.operationId,
-          operationGeneration: 1,
-          idempotencyKey: releaseRequest.executionPermit.idempotencyKey,
-          requestFingerprint: releaseRequest.executionPermit.requestFingerprint,
-          notAfter: releaseRequest.executionPermit.notAfter,
-        }),
-      }),
+    expect(test.effects.executeOnce).toHaveBeenCalledTimes(1);
+    expect(test.effects.resolve).toHaveBeenCalledWith(
+      expect.anything(),
+      initial.evidence?.eventId,
+      expect.objectContaining({ outcome: "succeeded" }),
     );
   });
-
-  it("passes only the cleanup permit namespace for a pre-request release", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: {
-        outcome: "succeeded",
-        providerRequestId: "sim-request-cleanup",
-        providerReference: "sim-reference-cleanup",
-        movementReference: "sim-movement-cleanup",
-      },
-      error: null,
-    });
-    const provider = new DurablePaymentSimulator({
-      client: { rpc } as unknown as SupabaseClient,
-      now: () => "2099-08-21T17:00:00.000Z",
-    });
-
-    await provider.execute(cleanupRequest);
-
-    expect(rpc).toHaveBeenCalledWith(
-      "execute_simulated_payment_provider_operation",
-      expect.objectContaining({
-        target_operation: expect.objectContaining({
-          permitPurpose: "booking-request-submission-cleanup",
-          cleanupAttemptId: cleanupRequest.executionPermit.attemptId,
-          claimId: cleanupRequest.executionPermit.claimId,
-          claimGeneration: cleanupRequest.executionPermit.generation,
-          stateRevision: cleanupRequest.executionPermit.stateRevision,
-          requestFingerprint: cleanupRequest.executionPermit.requestFingerprint,
-          workId: null,
-          leaseToken: null,
-          operationId: null,
-        }),
-      }),
+  it.each([
+    undefined,
+    {
+      ...admission,
+      providerIdentity: { ...identity, environment: "production" },
+    },
+    { ...admission, binding: { ...binding, amountFils: 99 } },
+  ])(
+    "refuses missing or foreign admission without any effect-store access",
+    async (changed) => {
+      const test = fixture();
+      await expect(
+        test.make().execute({ ...execute, admission: changed }),
+      ).rejects.toThrow("admission");
+      expect(test.effects.executeOnce).not.toHaveBeenCalled();
+    },
+  );
+  it("never converts an unavailable inquiry into absence", async () => {
+    const test = fixture();
+    vi.mocked(test.effects.queryAndSealAbsent).mockRejectedValue(
+      new Error("database unavailable"),
     );
+    await expect(test.make().query(query)).rejects.toThrow("unavailable");
+  });
+  it("uses one stable binding for execution and inquiry", async () => {
+    const test = fixture();
+    await test.make().execute(execute);
+    await test
+      .make()
+      .query({ ...query, admission: { ...admission, mode: "reconcile" } });
+    const executedBinding = vi.mocked(test.effects.executeOnce).mock
+      .calls[0][0];
+    expect(vi.mocked(test.effects.queryAndSealAbsent).mock.calls[0][0]).toEqual(
+      executedBinding satisfies SimulatorEffectBinding,
+    );
+    expect(executedBinding).not.toHaveProperty("executionPermit");
+    expect(executedBinding).not.toHaveProperty("mode");
   });
 });

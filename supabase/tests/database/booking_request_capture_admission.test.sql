@@ -257,7 +257,7 @@ select is((select request_fingerprint from public.booking_request_capture_work),
   'Capture binding preserves the hand-worked provider fingerprint');
 select is((select provider_idempotency_key from public.booking_request_capture_work),
   'booking-request-capture:60000000-0000-4000-8000-000000001001:1', 'Capture has one stable replay identity');
-select is((select count(*)::integer from public.simulated_payment_provider_operations where operation_kind = 'capture'), 0,
+select is((select count(*)::integer from public.payment_provider_operations where operation_kind = 'capture'), 0,
   'Acceptance never executes a provider');
 select is(public.claim_booking_request_action(
   '10000000-0000-4000-8000-000000001001',

@@ -1,4 +1,53 @@
 begin;
+-- BEGIN PAYMENT EVIDENCE FIXTURE
+-- Test arrangement: admission, isolated effect, and explicit recording.
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
+declare observed jsonb;
+declare proposed jsonb;
+declare recorder text;
+declare operation_id text:=admission->>'operationId';
+begin
+  if admission->>'status'='not-admitted' then return jsonb_build_object('outcome','not-executed'); end if;
+  if operation_id is null then return admission; end if;
+  proposed:=jsonb_build_object('outcome',outcome,'providerRequestId','fixture-request-'||operation_id,'providerReference','fixture-reference-'||operation_id,
+    'evidence',jsonb_build_object('operationId',operation_id,'eventId','fixture-'||operation_id||'-'||outcome,'provenance','fictional-provider',
+      'originalOutcome',outcome,'executedAt',clock_timestamp(),'occurredAt',case when outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
+    ||case when outcome='failed' then jsonb_build_object('retrySafe',false) else jsonb_build_object('movementReference','fixture-movement-'||operation_id) end;
+  if admission->>'mode'='execute' then observed:=public.persist_simulated_payment_effect(effect_binding,proposed);
+  else
+    observed:=public.seal_simulated_payment_absence(effect_binding);
+    if observed->>'outcome'='indeterminate' and outcome<>'indeterminate' then
+      proposed:=jsonb_set(proposed,'{evidence,originalOutcome}',observed#>'{evidence,originalOutcome}');
+      proposed:=jsonb_set(proposed,'{evidence,executedAt}',observed#>'{evidence,executedAt}');
+      proposed:=proposed||jsonb_build_object('providerRequestId',observed->>'providerRequestId','providerReference',observed->>'providerReference');
+      if outcome='succeeded' then proposed:=proposed||jsonb_build_object('movementReference',observed->>'movementReference'); end if;
+      observed:=public.resolve_simulated_payment_effect(effect_binding,observed#>>'{evidence,eventId}',proposed);
+    end if;
+  end if;
+  recorder:=case admission->>'purpose' when 'booking-request-capture' then 'record_booking_request_capture_observation'
+    when 'booking-request-payment-recovery' then 'record_booking_request_payment_recovery_observation'
+    when 'booking-request-payment-required-expiry' then 'record_booking_request_payment_required_expiry_observation'
+    when 'booking-request-payment-required-corrective-refund' then 'record_booking_request_payment_required_expiry_observation'
+    else 'record_booking_request_provider_operation_observation' end;
+  execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed;
+  return observed-'evidence';
+end;
+$$;
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  execute format('select public.%I($1)',routine) into admission using permit;
+  result:=pg_temp.payment_fixture_result(admission,outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.capture_execute(permit jsonb,outcome text default 'succeeded') returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
+$$;
+-- END PAYMENT EVIDENCE FIXTURE
 select plan(40);
 
 -- BEGIN CONFIRMATION FIXTURE
@@ -75,7 +124,7 @@ values ('60000000-0000-4000-8000-000000001001','70000000-0000-4000-8000-00000000
 -- END CAPTURE RECOVERY SOURCE
 set local role service_role;
 create temp table confirmation_capture_lease as select public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result;
-create temp table confirmation_capture_result as select public.execute_simulated_booking_request_capture((select result->'permit' from confirmation_capture_lease)) result;
+create temp table confirmation_capture_result as select pg_temp.capture_execute((select result->'permit' from confirmation_capture_lease)) result;
 reset role;
 -- END CONFIRMATION FIXTURE
 
@@ -180,7 +229,7 @@ insert into public.cottage_booking_period_commitments (id,customer_user_id,profi
 select throws_ok($$insert into public.cottage_booking_period_occupancies (booking_period_commitment_id,schedule_revision_id,shift_id,service_day,active) values ('50000000-0000-4000-8000-000000001003','30000000-0000-4000-8000-000000001001','32000000-0000-4000-8000-000000001001','2101-01-01',true)$$,'23505',null,'confirmed Cottage Shift occupancy continues to reject competition');
 select is((select result->>'bookingReference' from confirmation_outcome),'CONFIRMATION-HOLD-1','existing unique booking reference is retained');
 select is((select result->>'capturePhysicalAttemptId' from confirmation_outcome),'73000000-0000-4000-8000-000000001001:capture:attempt-2','outcome returns authoritative Capture identity');
-select is((select result->>'captureMovementReference' from confirmation_outcome),(select movement_reference from public.simulated_payment_provider_operations where operation_kind='capture'),'outcome returns authoritative movement');
+select is((select result->>'captureMovementReference' from confirmation_outcome),(select movement_reference from public.payment_provider_operations where operation_kind='capture'),'outcome returns authoritative movement');
 set local role service_role;
 select is(public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',(select result->'snapshot' from confirmation_capture)),(select result from confirmation_outcome),'replay returns exact stored outcome');
 reset role;

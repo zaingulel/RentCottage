@@ -1,3 +1,4 @@
+import { withRecordedProviderResults } from "../../tests/fixtures/payment-operation-execution.fixtures";
 import { describe, expect, it, vi } from "vitest";
 
 import { createPaymentLifecycle } from "@/payment/payment-lifecycle";
@@ -60,7 +61,9 @@ describe("Booking Request lifecycle", () => {
       finalize,
       claimDue: vi.fn(),
     };
-    const lifecycle = createBookingRequestLifecycle({ repository, provider });
+    const lifecycle = createBookingRequestLifecycle(
+      withRecordedProviderResults({ repository, provider }),
+    );
 
     await expect(
       lifecycle.act({
@@ -113,7 +116,9 @@ describe("Booking Request lifecycle", () => {
     };
 
     await expect(
-      createBookingRequestLifecycle({ repository, provider }).act({
+      createBookingRequestLifecycle(
+        withRecordedProviderResults({ repository, provider }),
+      ).act({
         actor: "customer",
         actorUserId: actorId,
         bookingRequestId: requestId,
@@ -137,7 +142,9 @@ describe("Booking Request lifecycle", () => {
       now: () => "2026-08-22T10:00:00.000Z",
     });
     await expect(
-      createBookingRequestLifecycle({ repository, provider }).act({
+      createBookingRequestLifecycle(
+        withRecordedProviderResults({ repository, provider }),
+      ).act({
         actor: "owner",
         actorUserId: actorId,
         bookingRequestId: requestId,
@@ -187,7 +194,9 @@ describe("Booking Request lifecycle", () => {
     };
 
     await expect(
-      createBookingRequestLifecycle({ repository, provider }).act({
+      createBookingRequestLifecycle(
+        withRecordedProviderResults({ repository, provider }),
+      ).act({
         actor: "customer",
         actorUserId: actorId,
         bookingRequestId: requestId,
@@ -231,7 +240,9 @@ describe("Booking Request lifecycle", () => {
     };
 
     await expect(
-      createBookingRequestLifecycle({ repository, provider }).act({
+      createBookingRequestLifecycle(
+        withRecordedProviderResults({ repository, provider }),
+      ).act({
         actor: "customer",
         actorUserId: actorId,
         bookingRequestId: requestId,
@@ -302,7 +313,9 @@ describe("Booking Request lifecycle", () => {
       }),
       finalize,
     };
-    const lifecycle = createBookingRequestLifecycle({ repository, provider });
+    const lifecycle = createBookingRequestLifecycle(
+      withRecordedProviderResults({ repository, provider }),
+    );
 
     await expect(
       lifecycle.act({
@@ -387,7 +400,9 @@ describe("Booking Request lifecycle", () => {
       }),
       finalize,
     };
-    const lifecycle = createBookingRequestLifecycle({ repository, provider });
+    const lifecycle = createBookingRequestLifecycle(
+      withRecordedProviderResults({ repository, provider }),
+    );
 
     await expect(lifecycle.processDue()).resolves.toEqual([
       {

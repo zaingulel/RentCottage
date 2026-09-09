@@ -1,4 +1,8 @@
 begin;
+-- BEGIN PAYMENT EVIDENCE FIXTURE
+-- Test arrangement: admission, isolated effect, and explicit recording.
+
+-- END PAYMENT EVIDENCE FIXTURE
 select plan(10);
 
 select has_column('public','booking_request_capture_work','payment_required_recorded_at',
@@ -7,7 +11,7 @@ select has_column('public','booking_request_capture_work','payment_required_dead
   'capture work stores the fixed Payment Required deadline');
 select has_function('public','record_booking_request_capture_failure',array['uuid','bigint','uuid','jsonb'],
   'service boundary records definitive failure');
-select has_function('public','execute_simulated_booking_request_capture',array['jsonb','text'],
+select has_function('public','record_booking_request_capture_observation',array['uuid','jsonb'],
   'simulator exposes explicit selected Capture outcome without an ambiguous default');
 select function_privs_are('public','record_booking_request_capture_failure',array['uuid','bigint','uuid','jsonb'],
   'service_role',array['EXECUTE'], 'service role may record definitive failure');

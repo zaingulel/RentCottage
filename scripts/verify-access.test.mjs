@@ -189,6 +189,7 @@ if [ "$1" = "inspect" ]; then
   exit 0
 fi
 sql=$(cat)
+sql=$(printf '%s\\n' "$sql" | sed '/-- BEGIN PAYMENT EVIDENCE FIXTURE/,/-- END PAYMENT EVIDENCE FIXTURE/d')
 if [ "$FAIL_PROOF" = "1" ]; then
   case "$sql" in
     *"select max(version)"*|*"owner_application_cottage_profiles where owner_user_id"*)
@@ -202,9 +203,8 @@ case "$sql" in
   *"bool_and(name = 'Preserved private cottage'"*) printf '1|t|1|2\\n' ;;
   *"owner_application_cottage_profiles where owner_user_id"*) printf '21|Preserved private cottage|Private orchard gate|Turn after the old bridge|Preserved description|Preserved rules|1|2\\n' ;;
   *"begin_booking_request_authorization_claim"*) printf '%s\\n' '{"status":"ready","executionPermit":{"claimId":"96000000-0000-4000-8000-000000000633","generation":1,"idempotencyKey":"booking-request:96000000-0000-4000-8000-000000000633:1","notAfter":"2101-01-01T00:00:00.000Z","purpose":"booking-request-authorization"}}' ;;
-  *"query_simulated_payment_provider_operation"*"missing-request"*) printf 'RC409\\n' >&2; exit 1 ;;
-  *"query_simulated_payment_provider_operation"*) printf '%s\\n' '{"outcome":"not-executed"}' ;;
-  *"execute_simulated_payment_provider_operation"*) printf '%s\\n' '{"outcome":"succeeded","providerRequestId":"request","providerReference":"reference","movementReference":"movement","retrySafe":false}' ;;
+  *"reload_booking_request_payment_operation"*) printf 'RC409\\n' >&2; exit 1 ;;
+  *"pg_temp.payment_query"*|*"pg_temp.payment_execute"*) printf '%s\\n' '{"outcome":"succeeded","providerRequestId":"request","providerReference":"reference","movementReference":"movement"}' ;;
   *"VERBOSITY verbose"*"create_owner_cottage_profile_draft"*|*"VERBOSITY verbose"*"restore_administrator_cottage_profile_draft"*) printf 'RC420\\n' >&2; exit 1 ;;
 esac
 `,

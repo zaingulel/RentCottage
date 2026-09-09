@@ -1,4 +1,76 @@
 begin;
+-- BEGIN PAYMENT EVIDENCE FIXTURE
+-- Test arrangement: admission, isolated effect, and explicit recording.
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
+declare observed jsonb;
+declare proposed jsonb;
+declare recorder text;
+declare operation_id text:=admission->>'operationId';
+begin
+  if admission->>'status'='not-admitted' then return jsonb_build_object('outcome','not-executed'); end if;
+  if operation_id is null then return admission; end if;
+  proposed:=jsonb_build_object('outcome',outcome,'providerRequestId','fixture-request-'||operation_id,'providerReference','fixture-reference-'||operation_id,
+    'evidence',jsonb_build_object('operationId',operation_id,'eventId','fixture-'||operation_id||'-'||outcome,'provenance','fictional-provider',
+      'originalOutcome',outcome,'executedAt',clock_timestamp(),'occurredAt',case when outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
+    ||case when outcome='failed' then jsonb_build_object('retrySafe',false) else jsonb_build_object('movementReference','fixture-movement-'||operation_id) end;
+  if admission->>'mode'='execute' then observed:=public.persist_simulated_payment_effect(effect_binding,proposed);
+  else
+    observed:=public.seal_simulated_payment_absence(effect_binding);
+    if observed->>'outcome'='indeterminate' and outcome<>'indeterminate' then
+      proposed:=jsonb_set(proposed,'{evidence,originalOutcome}',observed#>'{evidence,originalOutcome}');
+      proposed:=jsonb_set(proposed,'{evidence,executedAt}',observed#>'{evidence,executedAt}');
+      proposed:=proposed||jsonb_build_object('providerRequestId',observed->>'providerRequestId','providerReference',observed->>'providerReference');
+      if outcome='succeeded' then proposed:=proposed||jsonb_build_object('movementReference',observed->>'movementReference'); end if;
+      observed:=public.resolve_simulated_payment_effect(effect_binding,observed#>>'{evidence,eventId}',proposed);
+    end if;
+  end if;
+  recorder:=case admission->>'purpose' when 'booking-request-capture' then 'record_booking_request_capture_observation'
+    when 'booking-request-payment-recovery' then 'record_booking_request_payment_recovery_observation'
+    when 'booking-request-payment-required-expiry' then 'record_booking_request_payment_required_expiry_observation'
+    when 'booking-request-payment-required-corrective-refund' then 'record_booking_request_payment_required_expiry_observation'
+    else 'record_booking_request_provider_operation_observation' end;
+  execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed;
+  return observed-'evidence';
+end;
+$$;
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  execute format('select public.%I($1)',routine) into admission using permit;
+  result:=pg_temp.payment_fixture_result(admission,outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.capture_execute(permit jsonb,outcome text default 'succeeded') returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
+$$;
+create or replace function pg_temp.recovery_execute(permit jsonb,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_recovery',permit,outcome);
+$$;
+create or replace function pg_temp.expiry_execute(permit jsonb,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_required_expiry',permit,outcome);
+$$;
+create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  result:=pg_temp.payment_fixture_result(public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],request_id,reference),outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.permit_query(permit jsonb,request_id text,reference text,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_query(jsonb_build_object('providerIdentity',permit#>'{binding,providerIdentity}',
+    'requestFingerprint',permit#>'{binding,requestFingerprint}','paymentLifecycleId',coalesce(permit#>'{binding,paymentLifecycleId}',permit#>'{binding,authorizationPaymentLifecycleId}'),
+    'logicalOperationId',coalesce(permit#>'{binding,logicalOperationId}',permit#>'{binding,releaseLogicalOperationId}',permit#>'{binding,refundLogicalOperationId}'),'physicalAttemptId',coalesce(permit#>'{binding,physicalAttemptId}',permit#>'{binding,releasePhysicalAttemptId}',permit#>'{binding,refundPhysicalAttemptId}'),
+    'operationKind',case permit->>'step' when 'replacement-authorization' then 'authorization' when 'replacement-capture' then 'capture'
+      else case when permit->>'purpose'='booking-request-payment-required-corrective-refund' then 'refund' else 'release' end end,
+    'amountFils',permit#>'{binding,amountFils}','currency',permit#>'{binding,currency}'),request_id,reference,outcome);
+$$;
+-- END PAYMENT EVIDENCE FIXTURE
 
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
@@ -74,7 +146,7 @@ values ('60000000-0000-4000-8000-000000001001','70000000-0000-4000-8000-00000000
 -- END CAPTURE RECOVERY SOURCE
 set local role service_role;
 create temp table confirmation_capture_lease as select public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result;
-create temp table confirmation_capture_result as select public.execute_simulated_booking_request_capture((select result->'permit' from confirmation_capture_lease),'failed') result;
+create temp table confirmation_capture_result as select pg_temp.capture_execute((select result->'permit' from confirmation_capture_lease),'failed') result;
 reset role;
 -- END CONFIRMATION FIXTURE
 
@@ -93,34 +165,28 @@ select no_plan();
 -- BEGIN UNOBSERVED RECOVERY FIXTURE
 -- A provider has completed a leased operation, but its response has not reached
 -- the recovery recorder. No indeterminate response or quarantine has occurred.
-create function pg_temp.seed_unobserved_recovery_outcome(permit jsonb, outcome text, occurred_at timestamptz)
+create function pg_temp.seed_unobserved_payment_outcome(permit jsonb, outcome text, occurred_at timestamptz, first_outcome text default 'indeterminate')
 returns jsonb language plpgsql as $$
-declare ledger public.simulated_payment_provider_operations;
-declare operation_id uuid := gen_random_uuid();
+declare admission jsonb;
+declare observed jsonb;
 declare binding jsonb := permit->'binding';
+declare prior_role text:=current_setting('role');
 begin
-  insert into public.simulated_payment_provider_operations(
-    id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
-    provider_idempotency_key,request_fingerprint,payment_lifecycle_id,logical_operation_id,
-    physical_attempt_id,amount_fils,currency,original_outcome,current_outcome,
-    provider_request_id,provider_reference,movement_reference,recovery_attempt_id,
-    authoritative_outcome_at,capture_execution_permit,created_at,updated_at)
-  values(operation_id,(binding->>'authorizationClaimId')::uuid,(binding->>'authorizationClaimGeneration')::integer,
-    case permit->>'step' when 'replacement-capture' then 'capture' when 'replacement-authorization' then 'authorization' else 'release' end,
-    binding#>>'{providerIdentity,provider}',binding#>>'{providerIdentity,environment}',binding#>>'{providerIdentity,merchantId}',binding#>>'{providerIdentity,terminalId}',
-    permit->>'idempotencyKey',binding->>'requestFingerprint',(binding->>'paymentLifecycleId')::uuid,
-    binding->>'logicalOperationId',binding->>'physicalAttemptId',(binding->>'amountFils')::bigint,binding->>'currency',outcome,outcome,
-    'inflight-request-'||operation_id,'inflight-reference-'||operation_id,
-    case when outcome='failed' then null else 'inflight-movement-'||operation_id end,(permit->>'attemptId')::uuid,
-    occurred_at,case when permit->>'step'='replacement-capture' then permit end,
-    (permit->>'notAfter')::timestamptz-interval '1 millisecond',clock_timestamp()) returning * into ledger;
-  insert into public.booking_request_payment_recovery_operations(recovery_attempt_id,step,provider_operation_id,outcome,authoritative_outcome_at,execution_permit)
-    values((permit->>'attemptId')::uuid,permit->>'step',ledger.id,outcome,occurred_at,permit);
-  return jsonb_build_object('receiptId','inflight-receipt-'||operation_id,'bookingRequestId',binding->>'bookingRequestId',
-    'providerOperationId',ledger.id,'providerIdentity',binding->'providerIdentity','paymentLifecycleId',ledger.payment_lifecycle_id,
-    'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,'kind',ledger.operation_kind,
-    'amountFils',ledger.amount_fils,'currency',ledger.currency,'providerRequestId',ledger.provider_request_id,
-    'providerReference',ledger.provider_reference,'movementReference',ledger.movement_reference,'outcome',outcome,'occurredAt',occurred_at);
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  admission:=case when permit->>'purpose'='booking-request-payment-recovery' then public.admit_booking_request_payment_recovery(permit) else public.admit_booking_request_payment_required_expiry(permit) end;
+  observed:=public.persist_simulated_payment_effect(admission-array['purpose','binding','mode'],
+    jsonb_build_object('outcome',first_outcome,'providerRequestId','inflight-request-'||(admission->>'operationId'),
+      'providerReference','inflight-reference-'||(admission->>'operationId'),
+      'evidence',jsonb_build_object('operationId',admission->>'operationId','eventId','inflight-'||(admission->>'operationId'),
+        'provenance','fictional-provider','originalOutcome',first_outcome,'executedAt',clock_timestamp(),'occurredAt',case when first_outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
+      ||case when first_outcome='failed' then jsonb_build_object('retrySafe',false) else jsonb_build_object('movementReference','inflight-movement-'||(admission->>'operationId')) end);
+  perform set_config('role',prior_role,true);
+  return jsonb_build_object('receiptId','inflight-receipt-'||(admission->>'operationId'),'bookingRequestId',binding->>'bookingRequestId',
+    'providerOperationId',admission->>'operationId','providerIdentity',admission->'providerIdentity','paymentLifecycleId',admission#>>'{binding,paymentLifecycleId}',
+    'logicalOperationId',admission#>>'{binding,logicalOperationId}','physicalAttemptId',admission#>>'{binding,attemptId}','kind',admission#>>'{binding,kind}',
+    'amountFils',binding->'amountFils','currency',binding->>'currency','providerRequestId',observed->>'providerRequestId',
+    'providerReference',observed->>'providerReference','movementReference',case when outcome<>'failed' then observed->>'movementReference' end,
+    'outcome',outcome,'occurredAt',occurred_at,'evidence',jsonb_set(observed->'evidence','{occurredAt}',coalesce(to_jsonb(occurred_at),'null'::jsonb)));
 end;
 $$;
 -- END UNOBSERVED RECOVERY FIXTURE
@@ -130,7 +196,7 @@ create function public.payment_correction_now() returns timestamptz language sql
 select replace(pg_get_functiondef(procedures.oid),'clock_timestamp()','public.payment_correction_now()')
 from pg_proc procedures join pg_namespace namespaces on namespaces.oid=procedures.pronamespace
 where namespaces.nspname='public' and procedures.prokind='f' and procedures.prosrc like '%clock_timestamp()%'
-  and procedures.proname like '%booking_request%' \gexec
+  and (procedures.proname like '%booking_request%' or procedures.proname in ('persist_simulated_payment_effect','seal_simulated_payment_absence','resolve_simulated_payment_effect','validate_payment_provider_observation','accept_payment_provider_observation','simulated_payment_absence_receipt')) \gexec
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 set local role authenticated;
 create temp table correction_attempt as select public.claim_customer_booking_request_payment_recovery(
@@ -138,17 +204,29 @@ create temp table correction_attempt as select public.claim_customer_booking_req
 reset role;
 grant select on correction_attempt to service_role;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from correction_attempt))->'permit','succeeded');
-select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from correction_attempt))->'permit','succeeded');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from correction_attempt))->'permit','succeeded');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from correction_attempt))->'permit','succeeded');
 create temp table correction_capture_permit as select public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from correction_attempt))->'permit' permit;
 reset role;
 savepoint before_capture;
-create temp table correction_capture_result as select pg_temp.seed_unobserved_recovery_outcome((select permit from correction_capture_permit),'succeeded',(select payment_required_deadline from public.booking_request_capture_work)) result;
+create temp table correction_capture_result as select pg_temp.seed_unobserved_payment_outcome((select permit from correction_capture_permit),'succeeded',(select payment_required_deadline from public.booking_request_capture_work)) result;
 update public.payment_correction_test_clock set instant=(select payment_required_deadline from public.booking_request_capture_work);
+select is((select current_outcome from public.payment_provider_operations where id=(select (result->>'providerOperationId')::uuid from correction_capture_result)),null::text,'unreceived correction evidence leaves the shared admission pending');
 grant select on correction_capture_result to service_role;
+savepoint malformed_nested_occurrence;
 set local role service_role;
-select public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',
- (select (result->>'providerOperationId')::uuid from correction_capture_result),(select result from correction_capture_result));
+select lives_ok($sql$select public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',
+ (select (result->>'providerOperationId')::uuid from correction_capture_result),
+ (select jsonb_set(result,'{evidence,occurredAt}','"malformed-provider-time"') from correction_capture_result))$sql$,
+ 'malformed nested provider occurrence follows correction audit and quarantine');
+reset role;
+select is((select count(*) from public.booking_request_payment_correction_observations where conflict),1::bigint,'malformed nested occurrence is retained as conflicting evidence');
+select is((select current_outcome from public.payment_provider_operations where id=(select (result->>'providerOperationId')::uuid from correction_capture_result)),null::text,'malformed occurrence leaves shared admission unrecorded');
+select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','malformed occurrence quarantines the payment case');
+rollback to malformed_nested_occurrence;
+set local role service_role;
+select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',
+ (select (result->>'providerOperationId')::uuid from correction_capture_result),(select result from correction_capture_result))->>'status','recorded','a first delayed provider receipt records its admitted operation');
 create temp table correction_prepared as select public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001',
  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}') result;
 select is((select result->>'status' from correction_prepared),'refund','capture at the fixed deadline creates a full corrective refund');
@@ -158,11 +236,11 @@ select is((select count(*) from public.booking_confirmations),0::bigint,'a late 
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'every selected Cottage Shift remains held before corrective refund proof');
 savepoint late_capture;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),'succeeded');
+select pg_temp.expiry_execute((select result->'permit' from correction_prepared),'succeeded');
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status','expired','exact refund and release of the uncaptured original authorization safely expire');
 reset role;
-select is((select count(*) from public.simulated_payment_provider_operations where operation_kind='refund'),1::bigint,'one refund physical effect');
-select is((select count(*) from public.simulated_payment_provider_operations where operation_kind='release'),1::bigint,'captured replacement authorization is consumed, never released after capture');
+select is((select count(*) from public.payment_provider_operations where operation_kind='refund'),1::bigint,'one refund physical effect');
+select is((select count(*) from public.payment_provider_operations where operation_kind='release'),1::bigint,'captured replacement authorization is consumed, never released after capture');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),0::bigint,'safe correction releases the full occupancy set');
 -- Late contradictory evidence after release changes money presentation, never inventory ownership.
 create temp table released_request as select to_jsonb(requests) snapshot from public.booking_requests requests;
@@ -173,7 +251,7 @@ create temp table contradictory_refund_receipt as select ledger.id,jsonb_build_o
   'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
   'kind','refund','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
   'movementReference',null,'outcome','failed','occurredAt',ledger.authoritative_outcome_at) payload
-from public.simulated_payment_provider_operations ledger where ledger.operation_kind='refund';
+from public.payment_provider_operations ledger where ledger.operation_kind='refund';
 grant select on contradictory_refund_receipt to service_role;
 set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from contradictory_refund_receipt),(select payload from contradictory_refund_receipt))->>'status','quarantined','contradictory evidence after safe expiry enters durable review');
@@ -185,29 +263,15 @@ set local role authenticated;
 select is(public.get_customer_booking_request('RC-REQ-0000000000001001')#>>'{paymentRequiredExpiry,status}','quarantined-released','released request exposes review without claiming inventory remains held');
 reset role;
 rollback to late_capture;
-create temp table passive_refund_id as select gen_random_uuid() id;
-insert into public.simulated_payment_provider_operations(
- id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
- provider_idempotency_key,request_fingerprint,payment_lifecycle_id,logical_operation_id,physical_attempt_id,
- amount_fils,currency,original_outcome,current_outcome,provider_request_id,provider_reference,movement_reference,authoritative_outcome_at,created_at,updated_at)
-select (select id from passive_refund_id),target.authorization_claim_id,target.authorization_claim_generation,'refund',
- target.provider,target.environment,target.merchant_id,target.terminal_id,target.provider_idempotency_key,
- target.request_fingerprint,target.authorization_payment_lifecycle_id,target.release_logical_operation_id,target.release_physical_attempt_id,
- target.amount_fils,target.currency,'failed','failed','passive-refund-request','passive-refund-reference',
- null,public.payment_correction_now(),public.payment_correction_now(),public.payment_correction_now()
-from public.booking_request_payment_required_expiry_operations target where target.operation_kind='refund';
-update public.booking_request_payment_required_expiry_operations set provider_operation_id=(select id from passive_refund_id) where operation_kind='refund';
-create temp table passive_refund_receipt as select ledger.id,jsonb_build_object(
- 'receiptId','passive-refund-receipt','bookingRequestId','60000000-0000-4000-8000-000000001001','providerOperationId',ledger.id,
- 'providerIdentity',jsonb_build_object('provider',ledger.provider,'environment',ledger.environment,'merchantId',ledger.merchant_id,'terminalId',ledger.terminal_id),
- 'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
- 'kind','refund','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
- 'movementReference',null,'outcome','failed','occurredAt',public.payment_correction_now()) payload
-from public.simulated_payment_provider_operations ledger where ledger.id=(select id from passive_refund_id);
+create temp table passive_refund_receipt as
+select (payload->>'providerOperationId')::uuid id,payload from (
+  select pg_temp.seed_unobserved_payment_outcome((select result->'permit' from correction_prepared),
+    'failed',public.payment_correction_now(),'failed') payload
+) observation;
 grant select on passive_refund_receipt to service_role;
 savepoint refund_query_unreceived;
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),(select payload->>'providerRequestId' from passive_refund_receipt),(select payload->>'providerReference' from passive_refund_receipt),'failed')->>'outcome','failed','refund query preserves the provider failure');
+select is(pg_temp.permit_query((select result->'permit' from correction_prepared),null,null,'failed')->>'outcome','failed','refund query preserves the provider failure');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','refund query failure quarantines before finalization');
 rollback to refund_query_unreceived;
@@ -216,37 +280,23 @@ set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from passive_refund_receipt),(select payload from passive_refund_receipt))->>'status','quarantined','passive failed refund from failed provider state quarantines before any expiry preparation');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','passive failed refund is durably quarantined');
-select is((select current_outcome from public.simulated_payment_provider_operations where id=(select id from passive_refund_receipt)),'failed','failed refund provider fact is retained');
+select is((select current_outcome from public.payment_provider_operations where id=(select id from passive_refund_receipt)),'failed','failed refund provider fact is retained');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'passive failed refund retains all selected shifts');
 rollback to late_capture;
-create temp table passive_refund_id as select gen_random_uuid() id;
-insert into public.simulated_payment_provider_operations(
- id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
- provider_idempotency_key,request_fingerprint,payment_lifecycle_id,logical_operation_id,physical_attempt_id,
- amount_fils,currency,original_outcome,current_outcome,provider_request_id,provider_reference,movement_reference,authoritative_outcome_at,created_at,updated_at)
-select (select id from passive_refund_id),target.authorization_claim_id,target.authorization_claim_generation,'refund',
- target.provider,target.environment,target.merchant_id,target.terminal_id,target.provider_idempotency_key,
- target.request_fingerprint,target.authorization_payment_lifecycle_id,target.release_logical_operation_id,target.release_physical_attempt_id,
- target.amount_fils,target.currency,'indeterminate','indeterminate','passive-refund-request','passive-refund-reference',
- 'passive-refund-movement',null,public.payment_correction_now(),public.payment_correction_now()
-from public.booking_request_payment_required_expiry_operations target where target.operation_kind='refund';
-update public.booking_request_payment_required_expiry_operations set provider_operation_id=(select id from passive_refund_id) where operation_kind='refund';
-create temp table passive_refund_receipt as select ledger.id,jsonb_build_object(
- 'receiptId','passive-refund-receipt','bookingRequestId','60000000-0000-4000-8000-000000001001','providerOperationId',ledger.id,
- 'providerIdentity',jsonb_build_object('provider',ledger.provider,'environment',ledger.environment,'merchantId',ledger.merchant_id,'terminalId',ledger.terminal_id),
- 'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
- 'kind','refund','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
- 'movementReference',null,'outcome','failed','occurredAt',public.payment_correction_now()) payload
-from public.simulated_payment_provider_operations ledger where ledger.id=(select id from passive_refund_id);
+create temp table passive_refund_receipt as
+select (payload->>'providerOperationId')::uuid id,payload from (
+  select pg_temp.seed_unobserved_payment_outcome((select result->'permit' from correction_prepared),
+    'failed',public.payment_correction_now(),'indeterminate') payload
+) observation;
 grant select on passive_refund_receipt to service_role;
 savepoint refund_query_unreceived;
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),(select payload->>'providerRequestId' from passive_refund_receipt),(select payload->>'providerReference' from passive_refund_receipt),'failed')->>'outcome','failed','refund query preserves the provider failure');
+select is(pg_temp.permit_query((select result->'permit' from correction_prepared),null,null,'failed')->>'outcome','failed','refund query preserves the provider failure');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','refund query failure quarantines before finalization');
 rollback to refund_query_unreceived;
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),(select payload->>'providerRequestId' from passive_refund_receipt),(select payload->>'providerReference' from passive_refund_receipt),'indeterminate')->>'outcome','indeterminate','refund query preserves unresolved provider money');
+select is(pg_temp.permit_query((select result->'permit' from correction_prepared),null,null,'indeterminate')->>'outcome','indeterminate','refund query preserves unresolved provider money');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','unchanged unresolved refund query quarantines immediately');
 rollback to refund_query_unreceived;
@@ -255,16 +305,16 @@ set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from passive_refund_receipt),(select payload from passive_refund_receipt))->>'status','quarantined','passive failed refund from indeterminate provider state quarantines before any expiry preparation');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','passive failed refund is durably quarantined');
-select is((select current_outcome from public.simulated_payment_provider_operations where id=(select id from passive_refund_receipt)),'failed','failed refund provider fact is retained');
+select is((select current_outcome from public.payment_provider_operations where id=(select id from passive_refund_receipt)),'failed','failed refund provider fact is retained');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'passive failed refund retains all selected shifts');
 rollback to late_capture;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),'indeterminate');
+select pg_temp.expiry_execute((select result->'permit' from correction_prepared),'indeterminate');
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status','quarantined','uncertain refund quarantines permanently');
 select is(public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001',
  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')->>'status','quarantined','scheduled retry cannot restart quarantine');
-select is(public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),'succeeded')->>'outcome','not-executed','stale refund execution is fenced');
-select is(public.query_simulated_booking_request_payment_recovery((select permit from correction_capture_permit),
+select is(pg_temp.expiry_execute((select result->'permit' from correction_prepared),'succeeded')->>'outcome','not-executed','stale refund execution is fenced');
+select is(pg_temp.permit_query((select permit from correction_capture_permit),
  (select result->>'providerRequestId' from correction_capture_result),(select result->>'providerReference' from correction_capture_result),'succeeded')->>'outcome','not-executed','stale recovery query is fenced');
 select is(public.claim_due_booking_request_payment_required_expiries(20,
  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'),'[]'::jsonb,'quarantine is omitted from scheduled expiry selection');
@@ -274,7 +324,7 @@ select throws_ok($sql$update public.booking_request_payment_required_expiry_work
 select throws_ok($sql$update public.booking_request_payment_required_expiry_work set state=state$sql$,'RC204',null,'even a no-op update cannot rewrite the first quarantine occurrence');
 rollback to before_capture;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_recovery((select permit from correction_capture_permit),'succeeded');
+select pg_temp.recovery_execute((select permit from correction_capture_permit),'succeeded');
 select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',
   public.get_booking_request_payment_recovery_confirmation_evidence((select (result->>'attemptId')::uuid from correction_attempt)));
 reset role;
@@ -286,7 +336,7 @@ create temp table observed_capture as select ledger.id,(select payment_required_
   'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
   'kind','capture','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
   'movementReference',ledger.movement_reference,'outcome','succeeded','occurredAt',to_char(ledger.authoritative_outcome_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) payload
-from public.simulated_payment_provider_operations ledger where ledger.operation_kind='capture' and ledger.recovery_attempt_id is not null;
+from public.payment_provider_operations ledger where ledger.operation_kind='capture' and ledger.recovery_attempt_id is not null;
 grant select on observed_capture to service_role;
 update public.payment_correction_test_clock set instant=(select payment_required_deadline+interval '1 second' from public.booking_request_capture_work);
 set local role service_role;
@@ -325,16 +375,12 @@ select is(public.finalize_booking_request_confirmation('60000000-0000-4000-8000-
 reset role;
 
 rollback to before_capture;
-select pg_temp.seed_unobserved_recovery_outcome((select permit from correction_capture_permit),'succeeded',(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work));
+create temp table delayed_observation as select (payload->>'providerOperationId')::uuid id,payload from (
+  select pg_temp.seed_unobserved_payment_outcome((select permit from correction_capture_permit),'succeeded',
+    (select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work)) payload
+) observation;
 select is((select count(*) from public.booking_request_payment_required_expiry_work),0::bigint,'the in-flight success has never entered quarantine');
 select is((select state from public.booking_request_payment_recovery_attempts),'replacement_authorized','the successful provider response is not yet recorded by recovery');
-create temp table delayed_observation as select ledger.id,jsonb_build_object(
-  'receiptId','delayed-provider-receipt','bookingRequestId','60000000-0000-4000-8000-000000001001','providerOperationId',ledger.id,
-  'providerIdentity',jsonb_build_object('provider',ledger.provider,'environment',ledger.environment,'merchantId',ledger.merchant_id,'terminalId',ledger.terminal_id),
-  'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
-  'kind','capture','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
-  'movementReference',ledger.movement_reference,'outcome','succeeded','occurredAt',(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work)) payload
-from public.simulated_payment_provider_operations ledger where ledger.operation_kind='capture' and ledger.recovery_attempt_id is not null;
 grant select on delayed_observation to service_role;
 update public.payment_correction_test_clock set instant=(select payment_required_deadline+interval '1 second' from public.booking_request_capture_work);
 savepoint unresolved_observation;
@@ -343,115 +389,103 @@ select is(public.observe_booking_request_payment_correction('60000000-0000-4000-
 select lives_ok($sql$select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',public.get_booking_request_payment_recovery_confirmation_evidence((select (result->>'attemptId')::uuid from correction_attempt)))$sql$,'C before D confirms despite receipt after D');
 reset role;
 select is((select count(*) from public.booking_confirmations),1::bigint,'delayed coherent success produces one confirmation');
-select is((select authoritative_outcome_at from public.simulated_payment_provider_operations where operation_kind='capture' and recovery_attempt_id is not null),(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work),'provider occurrence is retained independently of database receipt');
+select is((select authoritative_outcome_at from public.payment_provider_operations where operation_kind='capture' and recovery_attempt_id is not null),(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work),'provider occurrence is retained independently of database receipt');
 rollback to unresolved_observation;
 set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from delayed_observation),(select payload||'{"outcome":"indeterminate","occurredAt":null}' from delayed_observation))->>'status','quarantined','unresolved passive observation enters quarantine in its own transaction');
-select is(public.query_simulated_booking_request_payment_recovery((select permit from correction_capture_permit),
-  (select payload->>'providerRequestId' from delayed_observation),(select payload->>'providerReference' from delayed_observation),'succeeded')->>'outcome','not-executed','unresolved observation immediately fences stale provider reconciliation');
+select is(pg_temp.permit_query((select permit from correction_capture_permit),
+  null,null,'succeeded')->>'outcome','not-executed','unresolved observation immediately fences stale provider reconciliation');
 reset role;
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'unresolved observation retains every selected shift');
 rollback to before_capture;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_recovery((select permit from correction_capture_permit),'failed');
+select pg_temp.recovery_execute((select permit from correction_capture_permit),'failed');
 create temp table passive_release_permit as select public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from correction_attempt))->'permit' permit;
 reset role;
-create temp table passive_release_receipt as select pg_temp.seed_unobserved_recovery_outcome((select permit from passive_release_permit),'failed',(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work)) payload;
-update passive_release_receipt set payload=payload||jsonb_build_object('outcome','failed','movementReference',null,'occurredAt',(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work));
+create temp table passive_release_receipt as select pg_temp.seed_unobserved_payment_outcome((select permit from passive_release_permit),'failed',(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work),'failed') payload;
+update passive_release_receipt set payload=jsonb_set(payload||jsonb_build_object('outcome','failed','movementReference',null,'occurredAt',(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work)),
+  '{evidence,occurredAt}',to_jsonb((select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work)));
 grant select on passive_release_receipt,passive_release_permit to service_role;
 savepoint replay_release_unreceived;
 set local role service_role;
-select is(public.execute_simulated_booking_request_payment_recovery((select permit from passive_release_permit),'succeeded')->>'outcome','failed','execution replay preserves the unreceived failed release result');
+select is(pg_temp.recovery_execute((select permit from passive_release_permit),'succeeded')->>'outcome','failed','execution replay preserves the unreceived failed release result');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','execution replay of failed release quarantines');
 rollback to replay_release_unreceived;
 
 savepoint failed_release_unreceived;
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_recovery((select permit from passive_release_permit),(select payload->>'providerRequestId' from passive_release_receipt),(select payload->>'providerReference' from passive_release_receipt),'succeeded')->>'outcome','failed','query replay preserves an already-failed release outcome');
+select is(pg_temp.permit_query((select permit from passive_release_permit),null,null,'succeeded')->>'outcome','failed','query replay preserves an already-failed release outcome');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','query first observation of an already-failed release quarantines immediately');
 rollback to failed_release_unreceived;
 set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select (payload->>'providerOperationId')::uuid from passive_release_receipt),(select payload from passive_release_receipt))->>'status','quarantined','passive failed release from failed provider state immediately reports quarantine');
-select is(public.query_simulated_booking_request_payment_recovery((select permit from passive_release_permit),(select payload->>'providerRequestId' from passive_release_receipt),(select payload->>'providerReference' from passive_release_receipt),'succeeded')->>'outcome','not-executed','passive failed release fences stale query');
+select is(pg_temp.permit_query((select permit from passive_release_permit),null,null,'succeeded')->>'outcome','not-executed','passive failed release fences stale query');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','passive failed release persists sticky quarantine');
-select is((select current_outcome from public.simulated_payment_provider_operations where id=(select (payload->>'providerOperationId')::uuid from passive_release_receipt)),'failed','passive failed release retains the authoritative provider outcome');
+select is((select current_outcome from public.payment_provider_operations where id=(select (payload->>'providerOperationId')::uuid from passive_release_receipt)),'failed','passive failed release retains the authoritative provider outcome');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'passive failed release retains all selected shifts');
 rollback to before_capture;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_recovery((select permit from correction_capture_permit),'failed');
+select pg_temp.recovery_execute((select permit from correction_capture_permit),'failed');
 create temp table passive_release_permit as select public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from correction_attempt))->'permit' permit;
 reset role;
-create temp table passive_release_receipt as select pg_temp.seed_unobserved_recovery_outcome((select permit from passive_release_permit),'indeterminate',null) payload;
-update passive_release_receipt set payload=payload||jsonb_build_object('outcome','failed','movementReference',null,'occurredAt',(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work));
+create temp table passive_release_receipt as select pg_temp.seed_unobserved_payment_outcome((select permit from passive_release_permit),'indeterminate',null) payload;
+update passive_release_receipt set payload=jsonb_set(payload||jsonb_build_object('outcome','failed','movementReference',null,'occurredAt',(select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work)),
+  '{evidence,occurredAt}',to_jsonb((select payment_required_deadline-interval '1 millisecond' from public.booking_request_capture_work)));
 grant select on passive_release_receipt,passive_release_permit to service_role;
 savepoint replay_release_unreceived;
 set local role service_role;
-select is(public.execute_simulated_booking_request_payment_recovery((select permit from passive_release_permit),'succeeded')->>'outcome','indeterminate','execution replay preserves the unreceived indeterminate release result');
+select is(pg_temp.recovery_execute((select permit from passive_release_permit),'indeterminate')->>'outcome','indeterminate','dispatch records the still unresolved release result');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','execution replay of indeterminate release quarantines');
 rollback to replay_release_unreceived;
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_recovery((select permit from passive_release_permit),(select payload->>'providerRequestId' from passive_release_receipt),(select payload->>'providerReference' from passive_release_receipt),'failed')->>'outcome','failed','query retains newly resolved release failure');
+select is(pg_temp.permit_query((select permit from passive_release_permit),null,null,'failed')->>'outcome','failed','query retains newly resolved release failure');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','query resolving release failure quarantines in the same transaction');
 rollback to replay_release_unreceived;
 
 set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select (payload->>'providerOperationId')::uuid from passive_release_receipt),(select payload from passive_release_receipt))->>'status','quarantined','passive failed release from indeterminate provider state immediately reports quarantine');
-select is(public.query_simulated_booking_request_payment_recovery((select permit from passive_release_permit),(select payload->>'providerRequestId' from passive_release_receipt),(select payload->>'providerReference' from passive_release_receipt),'succeeded')->>'outcome','not-executed','passive failed release fences stale query');
+select is(pg_temp.permit_query((select permit from passive_release_permit),null,null,'succeeded')->>'outcome','not-executed','passive failed release fences stale query');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','passive failed release persists sticky quarantine');
-select is((select current_outcome from public.simulated_payment_provider_operations where id=(select (payload->>'providerOperationId')::uuid from passive_release_receipt)),'failed','passive failed release retains the authoritative provider outcome');
+select is((select current_outcome from public.payment_provider_operations where id=(select (payload->>'providerOperationId')::uuid from passive_release_receipt)),'failed','passive failed release retains the authoritative provider outcome');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'passive failed release retains all selected shifts');
 rollback to before_capture;
-create temp table pending_provider_receipt as select pg_temp.seed_unobserved_recovery_outcome((select permit from correction_capture_permit),'indeterminate',null) payload;
+create temp table pending_provider_receipt as select pg_temp.seed_unobserved_payment_outcome((select permit from correction_capture_permit),'indeterminate',null) payload;
 grant select on pending_provider_receipt to service_role;
 select is((select count(*) from public.booking_request_payment_required_expiry_work),0::bigint,'unreceived provider outcome has not yet entered quarantine');
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_recovery((select permit from correction_capture_permit),(select payload->>'providerRequestId' from pending_provider_receipt),(select payload->>'providerReference' from pending_provider_receipt),'indeterminate')->>'outcome','indeterminate','query preserves the first unresolved provider outcome');
+select is(pg_temp.permit_query((select permit from correction_capture_permit),null,null,'indeterminate')->>'outcome','indeterminate','query preserves the first unresolved provider outcome');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','query first observation of unresolved provider money quarantines immediately');
-select is((select authoritative_outcome_at from public.simulated_payment_provider_operations where id=(select (payload->>'providerOperationId')::uuid from pending_provider_receipt)),null::timestamptz,'query cannot manufacture a provider occurrence');
+select is((select authoritative_outcome_at from public.payment_provider_operations where id=(select (payload->>'providerOperationId')::uuid from pending_provider_receipt)),null::timestamptz,'query cannot manufacture a provider occurrence');
 rollback to before_capture;
-create temp table pending_provider_receipt as select pg_temp.seed_unobserved_recovery_outcome((select permit from correction_capture_permit),'indeterminate',null) payload;
+create temp table pending_provider_receipt as select pg_temp.seed_unobserved_payment_outcome((select permit from correction_capture_permit),'indeterminate',null) payload;
 grant select on pending_provider_receipt to service_role;
 select is((select count(*) from public.booking_request_payment_required_expiry_work),0::bigint,'unreceived provider outcome has not yet entered quarantine');
 set local role service_role;
-select is(public.execute_simulated_booking_request_payment_recovery((select permit from correction_capture_permit),'succeeded')->>'outcome','indeterminate','execute preserves the first unresolved provider outcome');
+select is(pg_temp.recovery_execute((select permit from correction_capture_permit),'indeterminate')->>'outcome','indeterminate','dispatch records the still unresolved provider outcome');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','execute first observation of unresolved provider money quarantines immediately');
-select is((select authoritative_outcome_at from public.simulated_payment_provider_operations where id=(select (payload->>'providerOperationId')::uuid from pending_provider_receipt)),null::timestamptz,'execute cannot manufacture a provider occurrence');
+select is((select authoritative_outcome_at from public.payment_provider_operations where id=(select (payload->>'providerOperationId')::uuid from pending_provider_receipt)),null::timestamptz,'execute cannot manufacture a provider occurrence');
 rollback to before_capture;
 update public.payment_correction_test_clock set instant=(select payment_required_deadline from public.booking_request_capture_work);
 set local role service_role;
 create temp table correction_prepared as select public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}') result;
 reset role;
-create temp table passive_release_id as select gen_random_uuid() id;
-insert into public.simulated_payment_provider_operations(
- id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
- provider_idempotency_key,request_fingerprint,payment_lifecycle_id,logical_operation_id,physical_attempt_id,
- amount_fils,currency,original_outcome,current_outcome,provider_request_id,provider_reference,movement_reference,authoritative_outcome_at,created_at,updated_at)
-select (select id from passive_release_id),target.authorization_claim_id,target.authorization_claim_generation,'release',
- target.provider,target.environment,target.merchant_id,target.terminal_id,target.provider_idempotency_key,
- target.request_fingerprint,target.authorization_payment_lifecycle_id,target.release_logical_operation_id,target.release_physical_attempt_id,
- target.amount_fils,target.currency,'failed','failed','passive-release-request','passive-release-reference',
- null,public.payment_correction_now(),public.payment_correction_now(),public.payment_correction_now()
-from public.booking_request_payment_required_expiry_operations target where target.operation_kind='release' and target.owner='expiry';
-update public.booking_request_payment_required_expiry_operations set provider_operation_id=(select id from passive_release_id) where operation_kind='release' and owner='expiry';
-create temp table passive_release_receipt as select ledger.id,jsonb_build_object(
- 'receiptId','passive-release-receipt','bookingRequestId','60000000-0000-4000-8000-000000001001','providerOperationId',ledger.id,
- 'providerIdentity',jsonb_build_object('provider',ledger.provider,'environment',ledger.environment,'merchantId',ledger.merchant_id,'terminalId',ledger.terminal_id),
- 'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
- 'kind','release','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
- 'movementReference',null,'outcome','failed','occurredAt',public.payment_correction_now()) payload
-from public.simulated_payment_provider_operations ledger where ledger.id=(select id from passive_release_id);
+create temp table passive_release_receipt as
+select (payload->>'providerOperationId')::uuid id,payload from (
+  select pg_temp.seed_unobserved_payment_outcome((select result->'permit' from correction_prepared),
+    'failed',public.payment_correction_now(),'failed') payload
+) observation;
 grant select on passive_release_receipt to service_role;
 savepoint release_query_unreceived;
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),(select payload->>'providerRequestId' from passive_release_receipt),(select payload->>'providerReference' from passive_release_receipt),'failed')->>'outcome','failed','release query preserves the provider failure');
+select is(pg_temp.permit_query((select result->'permit' from correction_prepared),null,null,'failed')->>'outcome','failed','release query preserves the provider failure');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','release query failure quarantines before finalization');
 rollback to release_query_unreceived;
@@ -460,41 +494,27 @@ set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from passive_release_receipt),(select payload from passive_release_receipt))->>'status','quarantined','passive failed release from failed provider state quarantines before any expiry preparation');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','passive failed release is durably quarantined');
-select is((select current_outcome from public.simulated_payment_provider_operations where id=(select id from passive_release_receipt)),'failed','failed release provider fact is retained');
+select is((select current_outcome from public.payment_provider_operations where id=(select id from passive_release_receipt)),'failed','failed release provider fact is retained');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'passive failed release retains all selected shifts');
 rollback to before_capture;
 update public.payment_correction_test_clock set instant=(select payment_required_deadline from public.booking_request_capture_work);
 set local role service_role;
 create temp table correction_prepared as select public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}') result;
 reset role;
-create temp table passive_release_id as select gen_random_uuid() id;
-insert into public.simulated_payment_provider_operations(
- id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
- provider_idempotency_key,request_fingerprint,payment_lifecycle_id,logical_operation_id,physical_attempt_id,
- amount_fils,currency,original_outcome,current_outcome,provider_request_id,provider_reference,movement_reference,authoritative_outcome_at,created_at,updated_at)
-select (select id from passive_release_id),target.authorization_claim_id,target.authorization_claim_generation,'release',
- target.provider,target.environment,target.merchant_id,target.terminal_id,target.provider_idempotency_key,
- target.request_fingerprint,target.authorization_payment_lifecycle_id,target.release_logical_operation_id,target.release_physical_attempt_id,
- target.amount_fils,target.currency,'indeterminate','indeterminate','passive-release-request','passive-release-reference',
- 'passive-release-movement',null,public.payment_correction_now(),public.payment_correction_now()
-from public.booking_request_payment_required_expiry_operations target where target.operation_kind='release' and target.owner='expiry';
-update public.booking_request_payment_required_expiry_operations set provider_operation_id=(select id from passive_release_id) where operation_kind='release' and owner='expiry';
-create temp table passive_release_receipt as select ledger.id,jsonb_build_object(
- 'receiptId','passive-release-receipt','bookingRequestId','60000000-0000-4000-8000-000000001001','providerOperationId',ledger.id,
- 'providerIdentity',jsonb_build_object('provider',ledger.provider,'environment',ledger.environment,'merchantId',ledger.merchant_id,'terminalId',ledger.terminal_id),
- 'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
- 'kind','release','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
- 'movementReference',null,'outcome','failed','occurredAt',public.payment_correction_now()) payload
-from public.simulated_payment_provider_operations ledger where ledger.id=(select id from passive_release_id);
+create temp table passive_release_receipt as
+select (payload->>'providerOperationId')::uuid id,payload from (
+  select pg_temp.seed_unobserved_payment_outcome((select result->'permit' from correction_prepared),
+    'failed',public.payment_correction_now(),'indeterminate') payload
+) observation;
 grant select on passive_release_receipt to service_role;
 savepoint release_query_unreceived;
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),(select payload->>'providerRequestId' from passive_release_receipt),(select payload->>'providerReference' from passive_release_receipt),'failed')->>'outcome','failed','release query preserves the provider failure');
+select is(pg_temp.permit_query((select result->'permit' from correction_prepared),null,null,'failed')->>'outcome','failed','release query preserves the provider failure');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','release query failure quarantines before finalization');
 rollback to release_query_unreceived;
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from correction_prepared),(select payload->>'providerRequestId' from passive_release_receipt),(select payload->>'providerReference' from passive_release_receipt),'indeterminate')->>'outcome','indeterminate','release query preserves unresolved provider money');
+select is(pg_temp.permit_query((select result->'permit' from correction_prepared),null,null,'indeterminate')->>'outcome','indeterminate','release query preserves unresolved provider money');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','unchanged unresolved release query quarantines immediately');
 rollback to release_query_unreceived;
@@ -503,7 +523,7 @@ set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from passive_release_receipt),(select payload from passive_release_receipt))->>'status','quarantined','passive failed release from indeterminate provider state quarantines before any expiry preparation');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined','passive failed release is durably quarantined');
-select is((select current_outcome from public.simulated_payment_provider_operations where id=(select id from passive_release_receipt)),'failed','failed release provider fact is retained');
+select is((select current_outcome from public.payment_provider_operations where id=(select id from passive_release_receipt)),'failed','failed release provider fact is retained');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'passive failed release retains all selected shifts');
 rollback to before_capture;
 reset role;
@@ -514,14 +534,14 @@ create temp table original_capture_conflict as select ledger.id,jsonb_build_obje
   'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
   'kind','capture','amountFils',115000000,'currency','IQD','providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,
   'movementReference','unexpected-late-original-capture','outcome','succeeded','occurredAt',(select payment_required_deadline from public.booking_request_capture_work)) payload
-from public.simulated_payment_provider_operations ledger where ledger.operation_kind='capture' and ledger.recovery_attempt_id is null;
+from public.payment_provider_operations ledger where ledger.operation_kind='capture' and ledger.recovery_attempt_id is null;
 grant select on original_capture_conflict to service_role;
 set local role service_role;
 select is(public.observe_booking_request_payment_correction('60000000-0000-4000-8000-000000001001',(select id from original_capture_conflict),(select payload from original_capture_conflict))->>'status','quarantined','original definitive failure followed by success is a contradiction, never an automatic refund');
 reset role;
-select is((select current_outcome from public.simulated_payment_provider_operations where id=(select id from original_capture_conflict)),'failed','original definitive failure remains immutable evidence');
+select is((select current_outcome from public.payment_provider_operations where id=(select id from original_capture_conflict)),'failed','original definitive failure remains immutable evidence');
 select is((select count(*) from public.booking_request_payment_correction_observations where conflict),1::bigint,'contradictory original success is retained alongside the failure');
-select is((select count(*) from public.simulated_payment_provider_operations where operation_kind='refund'),0::bigint,'contradictory original capture never creates a refund effect');
+select is((select count(*) from public.payment_provider_operations where operation_kind='refund'),0::bigint,'contradictory original capture never creates a refund effect');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'original conflict retains every selected shift');
 select * from finish();
 rollback;

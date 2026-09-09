@@ -458,19 +458,19 @@ ALTER TABLE ONLY "public"."privileged_sign_in_attempts"
 ALTER TABLE ONLY "public"."booking_request_payment_recovery_operations"
     ADD CONSTRAINT "recovery_operation_identity_unique" UNIQUE ("recovery_attempt_id", "step", "operation_generation");
 
-ALTER TABLE ONLY "public"."simulated_payment_provider_operations"
+ALTER TABLE ONLY "public"."payment_provider_operations"
     ADD CONSTRAINT "simulated_payment_provider_op_provider_environment_merchan_key1" UNIQUE ("provider", "environment", "merchant_id", "terminal_id", "provider_request_id");
 
-ALTER TABLE ONLY "public"."simulated_payment_provider_operations"
+ALTER TABLE ONLY "public"."payment_provider_operations"
     ADD CONSTRAINT "simulated_payment_provider_op_provider_environment_merchan_key2" UNIQUE ("provider", "environment", "merchant_id", "terminal_id", "provider_reference");
 
-ALTER TABLE ONLY "public"."simulated_payment_provider_operations"
+ALTER TABLE ONLY "public"."payment_provider_operations"
     ADD CONSTRAINT "simulated_payment_provider_op_provider_environment_merchan_key3" UNIQUE ("provider", "environment", "merchant_id", "terminal_id", "movement_reference");
 
-ALTER TABLE ONLY "public"."simulated_payment_provider_operations"
+ALTER TABLE ONLY "public"."payment_provider_operations"
     ADD CONSTRAINT "simulated_payment_provider_op_provider_environment_merchant_key" UNIQUE ("provider", "environment", "merchant_id", "terminal_id", "provider_idempotency_key");
 
-ALTER TABLE ONLY "public"."simulated_payment_provider_operations"
+ALTER TABLE ONLY "public"."payment_provider_operations"
     ADD CONSTRAINT "simulated_payment_provider_operations_pkey" PRIMARY KEY ("id");
 
 ALTER TABLE ONLY "public"."account_contexts"
@@ -486,7 +486,7 @@ ALTER TABLE ONLY "public"."booking_confirmations"
     ADD CONSTRAINT "booking_confirmations_booking_snapshot_id_fkey" FOREIGN KEY ("booking_snapshot_id") REFERENCES "public"."booking_snapshots"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_confirmations"
-    ADD CONSTRAINT "booking_confirmations_capture_operation_id_fkey" FOREIGN KEY ("capture_operation_id") REFERENCES "public"."simulated_payment_provider_operations"("id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "booking_confirmations_capture_operation_id_fkey" FOREIGN KEY ("capture_operation_id") REFERENCES "public"."payment_provider_operations"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_receipts"
     ADD CONSTRAINT "booking_receipts_booking_confirmation_id_fkey" FOREIGN KEY ("booking_confirmation_id") REFERENCES "public"."booking_confirmations"("id") ON DELETE RESTRICT;
@@ -534,10 +534,10 @@ ALTER TABLE ONLY "public"."booking_request_capture_work"
     ADD CONSTRAINT "booking_request_capture_work_booking_request_id_fkey" FOREIGN KEY ("booking_request_id") REFERENCES "public"."booking_requests"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_capture_work"
-    ADD CONSTRAINT "booking_request_capture_work_recovery_operation_id_fkey" FOREIGN KEY ("recovery_operation_id") REFERENCES "public"."simulated_payment_provider_operations"("id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "booking_request_capture_work_recovery_operation_id_fkey" FOREIGN KEY ("recovery_operation_id") REFERENCES "public"."payment_provider_operations"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_confirmation_invalidations"
-    ADD CONSTRAINT "booking_request_confirmation_invalid_provider_operation_id_fkey" FOREIGN KEY ("provider_operation_id") REFERENCES "public"."simulated_payment_provider_operations"("id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "booking_request_confirmation_invalid_provider_operation_id_fkey" FOREIGN KEY ("provider_operation_id") REFERENCES "public"."payment_provider_operations"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_confirmation_invalidations"
     ADD CONSTRAINT "booking_request_confirmation_invalidati_booking_request_id_fkey" FOREIGN KEY ("booking_request_id") REFERENCES "public"."booking_requests"("id") ON DELETE RESTRICT;
@@ -549,7 +549,7 @@ ALTER TABLE ONLY "public"."booking_request_confirmation_invalidations"
     ADD CONSTRAINT "booking_request_confirmation_invalidations_expiry_work_id_fkey" FOREIGN KEY ("expiry_work_id") REFERENCES "public"."booking_request_payment_required_expiry_work"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_payment_correction_observations"
-    ADD CONSTRAINT "booking_request_payment_correction_o_provider_operation_id_fkey" FOREIGN KEY ("provider_operation_id") REFERENCES "public"."simulated_payment_provider_operations"("id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "booking_request_payment_correction_o_provider_operation_id_fkey" FOREIGN KEY ("provider_operation_id") REFERENCES "public"."payment_provider_operations"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_payment_correction_observations"
     ADD CONSTRAINT "booking_request_payment_correction_obse_booking_request_id_fkey" FOREIGN KEY ("booking_request_id") REFERENCES "public"."booking_requests"("id") ON DELETE RESTRICT;
@@ -558,16 +558,16 @@ ALTER TABLE ONLY "public"."booking_request_payment_recovery_attempts"
     ADD CONSTRAINT "booking_request_payment_recovery_attemp_booking_request_id_fkey" FOREIGN KEY ("booking_request_id") REFERENCES "public"."booking_requests"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_payment_recovery_operations"
-    ADD CONSTRAINT "booking_request_payment_recovery_ope_provider_operation_id_fkey" FOREIGN KEY ("provider_operation_id") REFERENCES "public"."simulated_payment_provider_operations"("id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "booking_request_payment_recovery_ope_provider_operation_id_fkey" FOREIGN KEY ("provider_operation_id") REFERENCES "public"."payment_provider_operations"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_payment_recovery_operations"
     ADD CONSTRAINT "booking_request_payment_recovery_opera_recovery_attempt_id_fkey" FOREIGN KEY ("recovery_attempt_id") REFERENCES "public"."booking_request_payment_recovery_attempts"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_payment_required_expiry_operations"
-    ADD CONSTRAINT "booking_request_payment_requi_capture_provider_operation_i_fkey" FOREIGN KEY ("capture_provider_operation_id") REFERENCES "public"."simulated_payment_provider_operations"("id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "booking_request_payment_requi_capture_provider_operation_i_fkey" FOREIGN KEY ("capture_provider_operation_id") REFERENCES "public"."payment_provider_operations"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_payment_required_expiry_operations"
-    ADD CONSTRAINT "booking_request_payment_required_exp_provider_operation_id_fkey" FOREIGN KEY ("provider_operation_id") REFERENCES "public"."simulated_payment_provider_operations"("id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "booking_request_payment_required_exp_provider_operation_id_fkey" FOREIGN KEY ("provider_operation_id") REFERENCES "public"."payment_provider_operations"("id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_request_payment_required_expiry_operations"
     ADD CONSTRAINT "booking_request_payment_required_exp_recovery_operation_id_fkey" FOREIGN KEY ("recovery_operation_id") REFERENCES "public"."booking_request_payment_recovery_operations"("id") ON DELETE RESTRICT;
@@ -887,8 +887,14 @@ ALTER TABLE ONLY "public"."owner_verification_documents"
 ALTER TABLE ONLY "public"."privileged_sign_in_attempts"
     ADD CONSTRAINT "privileged_sign_in_attempts_actor_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
-ALTER TABLE ONLY "public"."simulated_payment_provider_operations"
+ALTER TABLE ONLY "public"."payment_provider_operations"
     ADD CONSTRAINT "simulated_payment_provider_opera_claim_id_claim_generation_fkey" FOREIGN KEY ("claim_id", "claim_generation") REFERENCES "public"."booking_request_authorization_claims"("id", "generation") ON DELETE RESTRICT;
 
-ALTER TABLE ONLY "public"."simulated_payment_provider_operations"
+ALTER TABLE ONLY "public"."payment_provider_operations"
     ADD CONSTRAINT "simulated_payment_provider_operations_recovery_attempt_id_fkey" FOREIGN KEY ("recovery_attempt_id") REFERENCES "public"."booking_request_payment_recovery_attempts"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_pkey" PRIMARY KEY (id);
+ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_operation_fkey" FOREIGN KEY (operation_id) REFERENCES public.payment_provider_operations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_event_key" UNIQUE (provider,environment,merchant_id,terminal_id,event_id);
+ALTER TABLE ONLY "public"."simulated_payment_effects" ADD CONSTRAINT "simulated_payment_effects_pkey" PRIMARY KEY (operation_id);
+ALTER TABLE ONLY "public"."simulated_payment_effects" ADD CONSTRAINT "simulated_payment_effects_idempotency_key" UNIQUE (provider,environment,merchant_id,terminal_id,idempotency_key);

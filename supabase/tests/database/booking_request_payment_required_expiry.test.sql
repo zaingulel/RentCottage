@@ -1,4 +1,76 @@
 begin;
+-- BEGIN PAYMENT EVIDENCE FIXTURE
+-- Test arrangement: admission, isolated effect, and explicit recording.
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
+declare observed jsonb;
+declare proposed jsonb;
+declare recorder text;
+declare operation_id text:=admission->>'operationId';
+begin
+  if admission->>'status'='not-admitted' then return jsonb_build_object('outcome','not-executed'); end if;
+  if operation_id is null then return admission; end if;
+  proposed:=jsonb_build_object('outcome',outcome,'providerRequestId','fixture-request-'||operation_id,'providerReference','fixture-reference-'||operation_id,
+    'evidence',jsonb_build_object('operationId',operation_id,'eventId','fixture-'||operation_id||'-'||outcome,'provenance','fictional-provider',
+      'originalOutcome',outcome,'executedAt',clock_timestamp(),'occurredAt',case when outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
+    ||case when outcome='failed' then jsonb_build_object('retrySafe',false) else jsonb_build_object('movementReference','fixture-movement-'||operation_id) end;
+  if admission->>'mode'='execute' then observed:=public.persist_simulated_payment_effect(effect_binding,proposed);
+  else
+    observed:=public.seal_simulated_payment_absence(effect_binding);
+    if observed->>'outcome'='indeterminate' and outcome<>'indeterminate' then
+      proposed:=jsonb_set(proposed,'{evidence,originalOutcome}',observed#>'{evidence,originalOutcome}');
+      proposed:=jsonb_set(proposed,'{evidence,executedAt}',observed#>'{evidence,executedAt}');
+      proposed:=proposed||jsonb_build_object('providerRequestId',observed->>'providerRequestId','providerReference',observed->>'providerReference');
+      if outcome='succeeded' then proposed:=proposed||jsonb_build_object('movementReference',observed->>'movementReference'); end if;
+      observed:=public.resolve_simulated_payment_effect(effect_binding,observed#>>'{evidence,eventId}',proposed);
+    end if;
+  end if;
+  recorder:=case admission->>'purpose' when 'booking-request-capture' then 'record_booking_request_capture_observation'
+    when 'booking-request-payment-recovery' then 'record_booking_request_payment_recovery_observation'
+    when 'booking-request-payment-required-expiry' then 'record_booking_request_payment_required_expiry_observation'
+    when 'booking-request-payment-required-corrective-refund' then 'record_booking_request_payment_required_expiry_observation'
+    else 'record_booking_request_provider_operation_observation' end;
+  execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed;
+  return observed-'evidence';
+end;
+$$;
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  execute format('select public.%I($1)',routine) into admission using permit;
+  result:=pg_temp.payment_fixture_result(admission,outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.capture_execute(permit jsonb,outcome text default 'succeeded') returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
+$$;
+create or replace function pg_temp.recovery_execute(permit jsonb,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_recovery',permit,outcome);
+$$;
+create or replace function pg_temp.expiry_execute(permit jsonb,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_required_expiry',permit,outcome);
+$$;
+create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text) returns jsonb language plpgsql as $$
+declare prior_role text:=current_setting('role'); declare result jsonb;
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  result:=pg_temp.payment_fixture_result(public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],request_id,reference),outcome);
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.permit_query(permit jsonb,request_id text,reference text,outcome text) returns jsonb language sql as $$
+  select pg_temp.payment_query(jsonb_build_object('providerIdentity',permit#>'{binding,providerIdentity}',
+    'requestFingerprint',permit#>'{binding,requestFingerprint}','paymentLifecycleId',coalesce(permit#>'{binding,paymentLifecycleId}',permit#>'{binding,authorizationPaymentLifecycleId}'),
+    'logicalOperationId',coalesce(permit#>'{binding,logicalOperationId}',permit#>'{binding,releaseLogicalOperationId}',permit#>'{binding,refundLogicalOperationId}'),'physicalAttemptId',coalesce(permit#>'{binding,physicalAttemptId}',permit#>'{binding,releasePhysicalAttemptId}',permit#>'{binding,refundPhysicalAttemptId}'),
+    'operationKind',case permit->>'step' when 'replacement-authorization' then 'authorization' when 'replacement-capture' then 'capture'
+      else case when permit->>'purpose'='booking-request-payment-required-corrective-refund' then 'refund' else 'release' end end,
+    'amountFils',permit#>'{binding,amountFils}','currency',permit#>'{binding,currency}'),request_id,reference,outcome);
+$$;
+-- END PAYMENT EVIDENCE FIXTURE
 
 select no_plan();
 
@@ -66,15 +138,15 @@ select ok(
 select function_privs_are('public',function_name,arguments,'anon',array[]::text[],
   'anonymous callers cannot run '||function_name)
 from (values
-  ('execute_simulated_booking_request_payment_required_expiry',array['jsonb','text']),
-  ('query_simulated_booking_request_payment_required_expiry',array['jsonb','text','text','text']),
+  ('admit_booking_request_payment_required_expiry',array['jsonb']),
+  ('record_booking_request_payment_required_expiry_observation',array['uuid','jsonb']),
   ('finalize_booking_request_payment_required_expiry',array['uuid'])
 ) functions(function_name,arguments);
 select function_privs_are('public',function_name,arguments,'authenticated',array[]::text[],
   'owning and unrelated participants cannot run '||function_name)
 from (values
-  ('execute_simulated_booking_request_payment_required_expiry',array['jsonb','text']),
-  ('query_simulated_booking_request_payment_required_expiry',array['jsonb','text','text','text']),
+  ('admit_booking_request_payment_required_expiry',array['jsonb']),
+  ('record_booking_request_payment_required_expiry_observation',array['uuid','jsonb']),
   ('finalize_booking_request_payment_required_expiry',array['uuid'])
 ) functions(function_name,arguments);
 
@@ -174,7 +246,7 @@ values ('60000000-0000-4000-8000-000000001001','70000000-0000-4000-8000-00000000
 -- END CAPTURE RECOVERY SOURCE
 set local role service_role;
 create temp table confirmation_capture_lease as select public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000001001','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result;
-create temp table confirmation_capture_result as select public.execute_simulated_booking_request_capture((select result->'permit' from confirmation_capture_lease),'failed') result;
+create temp table confirmation_capture_result as select pg_temp.capture_execute((select result->'permit' from confirmation_capture_lease),'failed') result;
 reset role;
 -- END CONFIRMATION FIXTURE
 
@@ -200,16 +272,21 @@ $$;
 create temp table expiry_original_functions as
 select signature,pg_get_functiondef(signature::regprocedure) definition
 from (values
+  ('public.persist_simulated_payment_effect(jsonb,jsonb)'),
+  ('public.seal_simulated_payment_absence(jsonb)'),
+  ('public.resolve_simulated_payment_effect(jsonb,text,jsonb)'),
+  ('public.validate_payment_provider_observation(jsonb,uuid)'),
+  ('public.accept_payment_provider_observation(uuid,jsonb)'),
   ('public.claim_due_booking_request_payment_required_expiries(integer,jsonb)'),
   ('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'),
-  ('public.execute_simulated_booking_request_payment_required_expiry(jsonb,text)'),
-  ('public.query_simulated_booking_request_payment_required_expiry(jsonb,text,text,text)'),
+  ('public.admit_booking_request_payment_required_expiry(jsonb)'),
+  ('public.reload_booking_request_payment_operation(jsonb,text,text)'),
   ('public.finalize_booking_request_payment_required_expiry(uuid)'),
   ('public.booking_request_payment_required_expiry_completed(uuid)'),
   ('public.claim_customer_booking_request_payment_recovery(uuid,uuid,text)'),
   ('public.lease_booking_request_payment_recovery_step(uuid)'),
-  ('public.execute_simulated_booking_request_payment_recovery(jsonb,text)'),
-  ('public.query_simulated_booking_request_payment_recovery(jsonb,text,text,text)'),
+  ('public.admit_booking_request_payment_recovery(jsonb)'),
+  ('public.reload_booking_request_payment_operation(jsonb,text,text)'),
   ('public.finalize_booking_request_confirmation(uuid,jsonb)')
 ) functions(signature);
 select replace(definition,'clock_timestamp()','public.payment_required_expiry_test_now()')
@@ -270,10 +347,10 @@ select is((select count(*) from public.cottage_booking_period_occupancies where 
   'the component shifts, cross-midnight shift and full-day bundle remain held before release');
 savepoint failed_release;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from prepared_expiry),'failed');
+select pg_temp.expiry_execute((select result->'permit' from prepared_expiry),'failed');
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
   'quarantined','a failed release never expires the request');
-select is(public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from prepared_expiry),'succeeded')->>'outcome',
+select is(pg_temp.expiry_execute((select result->'permit' from prepared_expiry),'succeeded')->>'outcome',
   'not-executed','a failed release cannot be retried under its existing physical identity');
 reset role;
 select is((select state from public.booking_request_payment_required_expiry_work),'quarantined',
@@ -296,16 +373,16 @@ select is((select count(*) from public.booking_request_status_notifications wher
 rollback to failed_release;
 
 set local role service_role;
-select throws_ok(format('select public.execute_simulated_booking_request_payment_required_expiry(%L::jsonb,%L)',
+select throws_ok(format('select pg_temp.expiry_execute(%L::jsonb,%L)',
   (select jsonb_set(result->'permit','{binding,predecessorMovementReference}','"foreign-authorization"'::jsonb) from prepared_expiry),'succeeded'),
   'RC409',null,'a substituted predecessor cannot dispatch a release');
-select throws_ok(format('select public.execute_simulated_booking_request_payment_required_expiry(%L::jsonb,%L)',
+select throws_ok(format('select pg_temp.expiry_execute(%L::jsonb,%L)',
   (select jsonb_set(result->'permit','{binding,amountFils}','110000000'::jsonb) from prepared_expiry),'succeeded'),
   'RC409',null,'a partial-amount permit cannot dispatch a release');
 reset role;
 savepoint uncertain_release;
 set local role service_role;
-create temp table expiry_release_result as select public.execute_simulated_booking_request_payment_required_expiry(
+create temp table expiry_release_result as select pg_temp.expiry_execute(
   (select result->'permit' from prepared_expiry),'indeterminate') result;
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
   'quarantined','an indeterminate release cannot expire the request');
@@ -319,18 +396,21 @@ select is((select count(*) from public.cottage_booking_period_occupancies where 
   'an uncertain release still blocks every held shift');
 update public.payment_required_expiry_test_clock set instant=instant+interval '1 second';
 set local role service_role;
-select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from prepared_expiry),
+select is(pg_temp.permit_query((select result->'permit' from prepared_expiry),
   (select result->>'providerRequestId' from expiry_release_result),(select result->>'providerReference' from expiry_release_result),'succeeded')->>'outcome',
   'not-executed','quarantine prevents provider queries even with a stale valid permit');
 reset role;
-select is((select authoritative_outcome_at from public.simulated_payment_provider_operations where operation_kind='release'),null::timestamptz,'quarantine cannot invent resolution time');
+select is((select authoritative_outcome_at from public.payment_provider_operations where operation_kind='release'),null::timestamptz,'quarantine cannot invent resolution time');
 rollback to uncertain_release;
 set local role service_role;
-create temp table expiry_release_result as select public.execute_simulated_booking_request_payment_required_expiry(
+create temp table expiry_release_result as select pg_temp.expiry_execute(
   (select result->'permit' from prepared_expiry),'succeeded') result;
 reset role;
 savepoint invalid_release_amount;
-update public.simulated_payment_provider_operations set amount_fils=110000000 where operation_kind='release';
+-- Test-only corruption reaches finalization with the production guard restored.
+alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
+update public.payment_provider_operations set amount_fils=110000000 where operation_kind='release';
+alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
 set local role service_role;
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
   'quarantined','finalization revalidates the complete amount in persisted provider release evidence');
@@ -365,7 +445,7 @@ set local role authenticated;
 select is(public.list_owner_booking_request_notifications()->0->'paymentRequiredExpiry',current_setting('expiry.expected_projection')::jsonb,'Owner receives only the expired expiry state and fixed deadline');
 reset role;
 
-select is((select count(*) from public.simulated_payment_provider_operations where operation_kind='capture' and current_outcome='succeeded'),0::bigint,
+select is((select count(*) from public.payment_provider_operations where operation_kind='capture' and current_outcome='succeeded'),0::bigint,
   'safe expiry creates no successful capture');
 select is((select count(*) from public.booking_request_status_notifications where status='expired' and recipient_user_id='10000000-0000-4000-8000-000000001002'),1::bigint,
   'the Customer receives exactly one expiry notification');
@@ -374,21 +454,21 @@ select is((select count(*) from public.booking_request_status_notifications wher
 create temp table terminal_expiry_graph as select jsonb_build_object(
   'request',(select to_jsonb(requests) from public.booking_requests requests),
   'work',(select to_jsonb(work) from public.booking_request_payment_required_expiry_work work),
-  'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.simulated_payment_provider_operations ledger),
+  'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.payment_provider_operations ledger),
   'notices',(select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices)) graph;
 set local role service_role;
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status','expired',
   'terminal finalization replay returns the completed expiry');
-select is(public.execute_simulated_booking_request_payment_required_expiry((select result->'permit' from prepared_expiry),'failed')->>'outcome','succeeded',
+select is(pg_temp.expiry_execute((select result->'permit' from prepared_expiry),'failed')->>'outcome','succeeded',
   'a delayed duplicate dispatch replays its terminal provider success');
-select is(public.query_simulated_booking_request_payment_required_expiry((select result->'permit' from prepared_expiry),
+select is(pg_temp.permit_query((select result->'permit' from prepared_expiry),
   (select result->>'providerRequestId' from expiry_release_result),(select result->>'providerReference' from expiry_release_result),'failed')->>'outcome','succeeded',
   'out-of-order terminal evidence cannot replace successful release');
 reset role;
 select is(jsonb_build_object(
   'request',(select to_jsonb(requests) from public.booking_requests requests),
   'work',(select to_jsonb(work) from public.booking_request_payment_required_expiry_work work),
-  'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.simulated_payment_provider_operations ledger),
+  'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.payment_provider_operations ledger),
   'notices',(select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices)),
   (select graph from terminal_expiry_graph),'terminal replays preserve all provider identities, times, expiry and notifications');
 reset role;
@@ -403,7 +483,7 @@ grant select on recovery_before_expiry to service_role;
 set local role service_role;
 create temp table recovery_release_permit as select public.lease_booking_request_payment_recovery_step(
   (select (result->>'attemptId')::uuid from recovery_before_expiry)) result;
-create temp table recovery_release_result as select public.execute_simulated_booking_request_payment_recovery(
+create temp table recovery_release_result as select pg_temp.recovery_execute(
   (select result->'permit' from recovery_release_permit),'succeeded') result;
 reset role;
 update public.payment_required_expiry_test_clock set instant=(select payment_required_deadline from public.booking_request_capture_work);
@@ -411,7 +491,7 @@ set local role service_role;
 select is(public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001',
   '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)->>'status',
   'ready','expiry reuses the existing successful recovery-owned release');
-select public.query_simulated_booking_request_payment_recovery((select result->'permit' from recovery_release_permit),
+select pg_temp.permit_query((select result->'permit' from recovery_release_permit),
   (select result->>'providerRequestId' from recovery_release_result),(select result->>'providerReference' from recovery_release_result),'succeeded');
 select is(public.finalize_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001')->>'status',
   'expired','resolved recovery-owned release permits safe expiry');
@@ -420,17 +500,17 @@ create temp table recovery_terminal_graph as select jsonb_build_object(
   'attempts',(select jsonb_agg(to_jsonb(attempts) order by id) from public.booking_request_payment_recovery_attempts attempts),
   'operations',(select jsonb_agg(to_jsonb(operations) order by id) from public.booking_request_payment_recovery_operations operations),
   'work',(select to_jsonb(work) from public.booking_request_payment_required_expiry_work work),
-  'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.simulated_payment_provider_operations ledger),
+  'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.payment_provider_operations ledger),
   'notices',(select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices)) graph;
 set local role service_role;
-select lives_ok(format('select public.query_simulated_booking_request_payment_recovery(%L::jsonb,%L,%L,%L)',
+select lives_ok(format('select pg_temp.permit_query(%L::jsonb,%L,%L,%L)',
   (select result->'permit' from recovery_release_permit),(select result->>'providerRequestId' from recovery_release_result),
   (select result->>'providerReference' from recovery_release_result),'failed'),
   'a delayed recovery query replays a terminal release after another worker completed expiry');
-select lives_ok(format('select public.execute_simulated_booking_request_payment_recovery(%L::jsonb,%L)',
+select lives_ok(format('select pg_temp.recovery_execute(%L::jsonb,%L)',
   (select result->'permit' from recovery_release_permit),'failed'),
   'a delayed recovery dispatch replays its stored terminal release after safe expiry');
-select throws_ok(format('select public.query_simulated_booking_request_payment_recovery(%L::jsonb,%L,%L,%L)',
+select throws_ok(format('select pg_temp.permit_query(%L::jsonb,%L,%L,%L)',
   (select result->'permit' from recovery_release_permit),'wrong-request',
   (select result->>'providerReference' from recovery_release_result),'succeeded'),
   'RC409',null,'completed-expiry recovery replay still rejects the wrong provider request');
@@ -441,7 +521,7 @@ select is(jsonb_build_object(
   'attempts',(select jsonb_agg(to_jsonb(attempts) order by id) from public.booking_request_payment_recovery_attempts attempts),
   'operations',(select jsonb_agg(to_jsonb(operations) order by id) from public.booking_request_payment_recovery_operations operations),
   'work',(select to_jsonb(work) from public.booking_request_payment_required_expiry_work work),
-  'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.simulated_payment_provider_operations ledger),
+  'ledger',(select jsonb_agg(to_jsonb(ledger) order by id) from public.payment_provider_operations ledger),
   'notices',(select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices)),
   (select graph from recovery_terminal_graph),'delayed recovery replay changes no operation, outcome time, expiry or notification');
 reset role;
@@ -455,9 +535,9 @@ create temp table confirming_attempt as select public.claim_customer_booking_req
 reset role;
 grant select on confirming_attempt to service_role;
 set local role service_role;
-select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
-select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
-select public.execute_simulated_booking_request_payment_recovery(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
+select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step((select (result->>'attemptId')::uuid from confirming_attempt))->'permit','succeeded');
 reset role;
 update public.payment_required_expiry_test_clock set instant=(select payment_required_deadline from public.booking_request_capture_work);
 set local role service_role;

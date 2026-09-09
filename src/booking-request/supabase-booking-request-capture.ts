@@ -131,10 +131,15 @@ function resultIdentityFrom(
 
 function recoveryResultIdentityFrom(
   value: unknown,
-):
-  | BookingRequestCaptureProviderResultIdentity
-  | BookingRequestCaptureFailureProviderResultIdentity {
+): import("./booking-request-capture-recovery").BookingRequestCaptureRecoveryLease["providerResult"] {
   const identity = record(value);
+  if (
+    identity &&
+    exactKeys(identity, ["providerRequestId", "providerReference"]) &&
+    identity.providerRequestId === null &&
+    identity.providerReference === null
+  )
+    return { providerRequestId: null, providerReference: null };
   if (
     !identity ||
     (!exactKeys(identity, ["providerRequestId", "providerReference"]) &&
@@ -407,7 +412,12 @@ export class SupabaseBookingRequestCaptureRepository
         target_booking_request_id: permit.bookingRequestId,
         target_lease_generation: permit.leaseGeneration,
         target_lease_token: permit.leaseToken,
-        target_provider_result: providerResult,
+        target_provider_result: {
+          outcome: providerResult.outcome,
+          providerRequestId: providerResult.providerRequestId,
+          providerReference: providerResult.providerReference,
+          movementReference: providerResult.movementReference,
+        },
       },
     );
     if (error) throw new Error("Capture completion is unavailable");
@@ -429,7 +439,12 @@ export class SupabaseBookingRequestCaptureRepository
         target_booking_request_id: permit.bookingRequestId,
         target_lease_generation: permit.leaseGeneration,
         target_lease_token: permit.leaseToken,
-        target_provider_result: providerResult,
+        target_provider_result: {
+          outcome: providerResult.outcome,
+          providerRequestId: providerResult.providerRequestId,
+          providerReference: providerResult.providerReference,
+          retrySafe: providerResult.retrySafe,
+        },
       },
     );
     if (error) throw new Error("Payment Required recording is unavailable");

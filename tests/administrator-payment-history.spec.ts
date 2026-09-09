@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
@@ -23,6 +23,51 @@ const fixture = readFileSync(
 )
   .split("-- BEGIN HISTORY BROWSER FIXTURE")[1]
   .split("-- END HISTORY BROWSER FIXTURE")[0];
+// The existing support journey also displays a real accepted non-simulator reference.
+const supportRequest = "60000000-0000-4000-8000-000000001511";
+const supportReference = "RC-REQ-0000000000001511";
+const supportLifecycle = "73000000-0000-4000-8000-000000001511";
+const supportProvider = {
+  provider: "fictional-payments",
+  environment: "local-test",
+  merchantId: "fictional-merchant",
+  terminalId: "fictional-terminal",
+};
+const supportFingerprint = createHash("sha256")
+  .update(
+    JSON.stringify({
+      provider: supportProvider,
+      kind: "capture",
+      paymentLifecycleId: supportLifecycle,
+      logicalOperationId: `${supportLifecycle}:capture`,
+      attemptId: `${supportLifecycle}:capture:attempt-2`,
+      amountFils: 115000000,
+      currency: "IQD",
+    }),
+  )
+  .digest("hex");
+const supportFixture = readFileSync(
+  "supabase/tests/database/booking_request_payment_history.test.sql",
+  "utf8",
+)
+  .split("-- BEGIN CAPTURE RECOVERY SOURCE")[1]
+  .split("-- END CAPTURE RECOVERY SOURCE")[0]
+  .replaceAll("00000000100", "00000000151")
+  .replaceAll("750000100", "750000151")
+  .replaceAll("confirmation-auth-", "support-auth-")
+  .replaceAll("CONFIRMATION-HOLD-1", "SUPPORT-HOLD-1511")
+  .replaceAll(
+    "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+    supportFingerprint,
+  );
+const supportCleanup = (
+  "begin;" +
+  readFileSync("scripts/verify-booking-request-capture-concurrency.mjs", "utf8")
+    .split("const cleanup = `begin;")[1]
+    .split("`;\n")[0]
+)
+  .replaceAll("${requestId}", supportRequest)
+  .replaceAll("00000000100", "00000000151");
 const fixtureCleanup = `begin;
   alter table public.booking_request_payment_history disable trigger reject_booking_request_payment_history_change;
   delete from public.booking_request_payment_history
@@ -56,8 +101,18 @@ test.beforeAll(() => {
     harness.runSql(`begin;${fixture}commit;`);
 });
 
+test.beforeAll(() => {
+  harness.guardDisposableLocalDatabase();
+  harness.runSql(supportCleanup);
+  harness.runSql(`begin;${readFileSync("supabase/fixtures/payment-evidence.sql", "utf8")}${supportFixture}
+    set local role service_role;
+    select pg_temp.capture_execute(public.lease_booking_request_capture_work('${supportRequest}','${JSON.stringify(supportProvider)}'::jsonb)->'permit','succeeded');
+    commit;`);
+});
+
 test.afterAll(() => {
   harness.guardDisposableLocalDatabase();
+  harness.runSql(supportCleanup);
   harness.runSql(fixtureCleanup);
 });
 
@@ -171,6 +226,29 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
     await expect(page.getByText("raw-provider-token")).toHaveCount(0);
     await page.screenshot({
       path: testInfo.outputPath(`${locale}-payment-history.png`),
+      fullPage: true,
+    });
+    await page.goto(`/${locale}/administrator/payments/${supportReference}`);
+    const supportLabel = {
+      en: "Internal support reference",
+      ar: "مرجع دعم داخلي",
+      ckb: "سەرچاوەی ناوخۆیی پشتگیری",
+    }[locale];
+    await expect(
+      page.getByText(supportLabel, { exact: true }).first(),
+    ).toBeVisible();
+    for (const kind of ["request", "reference", "movement"]) {
+      await expect(
+        page.getByText(new RegExp(`^internal-${kind}:[0-9a-f-]{36}$`)).first(),
+      ).toBeVisible();
+    }
+    await expect(page.locator("main")).not.toContainText(
+      /fixture-request-|fixture-reference-|fixture-movement-/,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `${locale}-payment-history-internal-support.png`,
+      ),
       fullPage: true,
     });
   }

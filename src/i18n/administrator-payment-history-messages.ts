@@ -1,5 +1,6 @@
 export const administratorPaymentHistoryMessages = {
   en: {
+    internalSupportReference: "Internal support reference",
     eventReference: "History event reference",
     provenance: "Evidence origin",
     fromState: "Previous state",
@@ -43,6 +44,7 @@ export const administratorPaymentHistoryMessages = {
     back: "New lookup",
   },
   ar: {
+    internalSupportReference: "مرجع دعم داخلي",
     eventReference: "مرجع حدث السجل",
     provenance: "مصدر الدليل",
     fromState: "الحالة السابقة",
@@ -84,6 +86,7 @@ export const administratorPaymentHistoryMessages = {
     back: "بحث جديد",
   },
   ckb: {
+    internalSupportReference: "سەرچاوەی ناوخۆیی پشتگیری",
     eventReference: "سەرچاوەی ڕووداوی مێژوو",
     provenance: "سەرچاوەی بەڵگە",
     fromState: "دۆخی پێشوو",

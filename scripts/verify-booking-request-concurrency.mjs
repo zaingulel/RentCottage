@@ -1,3 +1,9 @@
+// SQL arrangement mirrors admission, isolated effect, and explicit recording.
+const paymentEvidenceSql =
+  "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
+  readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
+  "\n-- END PAYMENT EVIDENCE FIXTURE\n";
+import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const customerId = "97000000-0000-4000-8000-000000000032";
@@ -21,7 +27,7 @@ const releaseRetryMarker = "RC_BOOKING_REQUEST_RELEASE_RETRY_LEASED";
 const {
   finishSession,
   guardDisposableLocalDatabase,
-  runSql,
+  runSql: rawRunSql,
   startSession: openSession,
   waitForLock,
   waitForMarker,
@@ -33,10 +39,11 @@ const {
       "The Supabase container does not belong to this disposable checkout.",
   },
 });
+const runSql = (sql) => rawRunSql(paymentEvidenceSql + sql);
 const activeSessions = new Set();
 
 function startSession(sql, closeInput) {
-  const session = openSession(sql, closeInput);
+  const session = openSession(paymentEvidenceSql + sql, closeInput);
   activeSessions.add(session);
   return session;
 }
@@ -291,7 +298,7 @@ function prepareBoundaryAttempt({
             ),
             'movements', jsonb_build_array()
           ),
-          '{"provider":"test-payments","environment":"local-test","merchantId":"concurrency-merchant","terminalId":"concurrency-terminal"}'::jsonb
+          '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
         ) as claim_result
       from authorized
     )
@@ -338,7 +345,7 @@ function prepareBoundaryAttempt({
     grant select on public.test_booking_request_boundary_durable_operation
       to service_role;
     set role service_role;
-    select public.execute_simulated_payment_provider_operation(
+    select pg_temp.payment_execute(
       operation, 'succeeded'
     )
     from public.test_booking_request_boundary_durable_operation;
@@ -347,7 +354,7 @@ function prepareBoundaryAttempt({
     select public.save_booking_request_payment_snapshot(
       fixture.attempt_id,
       fixture.payment_snapshot,
-      '{"provider":"test-payments","environment":"local-test","merchantId":"concurrency-merchant","terminalId":"concurrency-terminal"}'::jsonb
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
     )
     from public.test_booking_request_time_boundary_fixture fixture
     where fixture.label = '${label}';
@@ -456,12 +463,28 @@ async function verifyLockDelayedPreparationBoundary({
 
 function removeBoundaryAttempt(label) {
   runSql(`
-    delete from public.simulated_payment_provider_operations operations
+    do $payment_fixture_cleanup$ begin
+      alter table public.payment_provider_observations disable trigger guard_payment_provider_observation;
+      delete from public.payment_provider_observations where operation_id in (select operations.id from public.payment_provider_operations operations, public.booking_request_authorization_claims claims,
+      public.test_booking_request_time_boundary_fixture fixture
+    where fixture.label = '${label}'
+      and claims.attempt_id = fixture.attempt_id
+      and operations.claim_id = claims.id);
+      alter table public.payment_provider_observations enable trigger guard_payment_provider_observation;
+      delete from public.simulated_payment_effects where operation_id in (select operations.id from public.payment_provider_operations operations, public.booking_request_authorization_claims claims,
+      public.test_booking_request_time_boundary_fixture fixture
+    where fixture.label = '${label}'
+      and claims.attempt_id = fixture.attempt_id
+      and operations.claim_id = claims.id);
+      alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
+      delete from public.payment_provider_operations operations
     using public.booking_request_authorization_claims claims,
       public.test_booking_request_time_boundary_fixture fixture
     where fixture.label = '${label}'
       and claims.attempt_id = fixture.attempt_id
       and operations.claim_id = claims.id;
+      alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
+    end $payment_fixture_cleanup$;
     delete from public.booking_request_provider_operation_identities identities
     using public.test_booking_request_time_boundary_fixture fixture
     where fixture.label = '${label}'
@@ -618,7 +641,7 @@ function verifyCutoffExpiryRelease(label) {
       (work.result ->> 'stateRevision')::bigint,
       (work.result ->> 'leaseToken')::uuid,
       fixture.payment_snapshot,
-      '{"provider":"test-payments","environment":"local-test","merchantId":"concurrency-merchant","terminalId":"concurrency-terminal"}'::jsonb
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
     ) ->> 'status'
     from public.test_booking_request_cutoff_stale_work work
     cross join public.test_booking_request_time_boundary_fixture fixture
@@ -669,10 +692,22 @@ const cleanup = `begin;
   using public.booking_request_submission_attempts attempts
   where identities.attempt_id = attempts.id
     and attempts.customer_user_id = '${customerId}';
-  delete from public.simulated_payment_provider_operations operations
+  do $payment_fixture_cleanup$ begin
+      alter table public.payment_provider_observations disable trigger guard_payment_provider_observation;
+      delete from public.payment_provider_observations where operation_id in (select operations.id from public.payment_provider_operations operations, public.booking_request_authorization_claims claims
+  where claims.customer_user_id = '${customerId}'
+    and operations.claim_id = claims.id);
+      alter table public.payment_provider_observations enable trigger guard_payment_provider_observation;
+      delete from public.simulated_payment_effects where operation_id in (select operations.id from public.payment_provider_operations operations, public.booking_request_authorization_claims claims
+  where claims.customer_user_id = '${customerId}'
+    and operations.claim_id = claims.id);
+      alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
+      delete from public.payment_provider_operations operations
   using public.booking_request_authorization_claims claims
   where claims.customer_user_id = '${customerId}'
     and operations.claim_id = claims.id;
+      alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
+    end $payment_fixture_cleanup$;
   delete from public.booking_request_authorization_reconciliation_outbox outbox
   using public.booking_request_authorization_claims claims
   where claims.customer_user_id = '${customerId}' and outbox.claim_id = claims.id;
@@ -1092,7 +1127,7 @@ async function main() {
     set application_name = 'rc-booking-request-durable-execution-first';
     begin;
     set local role service_role;
-    select public.execute_simulated_payment_provider_operation(
+    select pg_temp.payment_execute(
       operation, 'succeeded'
     ) ->> 'outcome'
     from public.test_booking_request_durable_operation;
@@ -1107,7 +1142,7 @@ async function main() {
     set application_name = '${durableExecutionContenderName}';
     begin;
     set local role service_role;
-    select public.execute_simulated_payment_provider_operation(
+    select pg_temp.payment_execute(
       operation, 'succeeded'
     ) ->> 'outcome'
     from public.test_booking_request_durable_operation;
@@ -1121,14 +1156,14 @@ async function main() {
   const durableLedgerCounts = runSql(`
     select
       (select count(*)::integer
-        from public.simulated_payment_provider_operations operations
+        from public.payment_provider_operations operations
         join public.booking_request_authorization_claims claims
           on claims.id = operations.claim_id
         where claims.attempt_id = (
           select attempt_id from public.test_booking_request_concurrency_fixture
         )),
-      (select sum(physical_execution_count)::integer
-        from public.simulated_payment_provider_operations operations
+      (select sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=operations.id))::integer
+        from public.payment_provider_operations operations
         join public.booking_request_authorization_claims claims
           on claims.id = operations.claim_id
         where claims.attempt_id = (
@@ -1137,7 +1172,7 @@ async function main() {
   `);
   const durableReconciliationOutcome = runSql(`
     set role service_role;
-    select public.query_simulated_payment_provider_operation(
+    select pg_temp.payment_query(
       (select operation from public.test_booking_request_durable_operation),
       null, null, 'succeeded'
     ) ->> 'outcome';
@@ -1169,7 +1204,7 @@ async function main() {
         'recordedAt', '2099-01-01T00:00:00.000Z'
       ))
     )
-    from public.simulated_payment_provider_operations operations
+    from public.payment_provider_operations operations
     where operations.claim_id = (
       select claims.id
       from public.booking_request_authorization_claims claims
@@ -1322,7 +1357,7 @@ async function main() {
     cross join public.test_booking_request_cleanup_release_permit permit;
     set role service_role;
     insert into public.test_booking_request_failed_release_result
-    select public.execute_simulated_payment_provider_operation(
+    select pg_temp.payment_execute(
       operation, 'failed'
     ) from public.test_booking_request_failed_release_operation;
     reset role;
@@ -1402,7 +1437,7 @@ async function main() {
       claims.state::text,
       occupancies.active,
       outbox.state,
-      (select count(*) from public.simulated_payment_provider_operations operations
+      (select count(*) from public.payment_provider_operations operations
         where operations.claim_id = claims.id
           and operations.operation_kind = 'release'
           and operations.current_outcome = 'failed')
@@ -1439,12 +1474,28 @@ async function main() {
     );
   }
   runSql(`
-    delete from public.simulated_payment_provider_operations operations
+    do $payment_fixture_cleanup$ begin
+      alter table public.payment_provider_observations disable trigger guard_payment_provider_observation;
+      delete from public.payment_provider_observations where operation_id in (select operations.id from public.payment_provider_operations operations, public.booking_request_authorization_claims claims,
+      public.test_booking_request_release_retry_fixture fixture
+    where claims.attempt_id = fixture.attempt_id
+      and operations.claim_id = claims.id
+      and operations.operation_kind = 'release');
+      alter table public.payment_provider_observations enable trigger guard_payment_provider_observation;
+      delete from public.simulated_payment_effects where operation_id in (select operations.id from public.payment_provider_operations operations, public.booking_request_authorization_claims claims,
+      public.test_booking_request_release_retry_fixture fixture
+    where claims.attempt_id = fixture.attempt_id
+      and operations.claim_id = claims.id
+      and operations.operation_kind = 'release');
+      alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
+      delete from public.payment_provider_operations operations
     using public.booking_request_authorization_claims claims,
       public.test_booking_request_release_retry_fixture fixture
     where claims.attempt_id = fixture.attempt_id
       and operations.claim_id = claims.id
       and operations.operation_kind = 'release';
+      alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
+    end $payment_fixture_cleanup$;
     update public.booking_request_submission_attempts attempts
     set payment_snapshot = fixture.authorized_snapshot,
       state = 'authorized',
@@ -1781,7 +1832,7 @@ async function main() {
         where customer_user_id = '${customerId}'
           and exists (
             select 1
-            from public.simulated_payment_provider_operations operations
+            from public.payment_provider_operations operations
             join public.booking_request_authorization_claims claims
               on claims.id = operations.claim_id
             where claims.attempt_id =

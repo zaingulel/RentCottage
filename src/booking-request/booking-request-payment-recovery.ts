@@ -1,7 +1,6 @@
-import type {
-  PaymentProviderAdapter,
-  ProviderOperationBinding,
-} from "@/payment/payment-contract";
+import { recordedPaymentResult } from "@/payment/payment-operation-execution";
+import type { PaymentOperationExecution } from "@/payment/payment-operation-execution";
+import type { ProviderOperationBinding } from "@/payment/payment-contract";
 import type { BookingRequestPaymentRecoveryPermit } from "@/payment/booking-request-payment-recovery-contract";
 
 export type PaymentRecoveryStatus =
@@ -35,8 +34,8 @@ export type PaymentRecoveryLease =
       readonly status: "reconcile";
       readonly permit: BookingRequestPaymentRecoveryPermit;
       readonly binding: ProviderOperationBinding;
-      readonly providerRequestId: string;
-      readonly providerReference: string;
+      readonly providerRequestId: string | null;
+      readonly providerReference: string | null;
     };
 export interface BookingRequestPaymentRecoveryRepository {
   admit(input: {
@@ -49,10 +48,10 @@ export interface BookingRequestPaymentRecoveryRepository {
 }
 export function createBookingRequestPaymentRecovery({
   repository,
-  provider,
+  operations,
 }: {
   repository: BookingRequestPaymentRecoveryRepository;
-  provider: PaymentProviderAdapter;
+  operations: PaymentOperationExecution;
 }) {
   async function resume(
     attemptId: string,
@@ -63,18 +62,20 @@ export function createBookingRequestPaymentRecovery({
         if (leased.status === "succeeded") await repository.finalize(attemptId);
         return { status: leased.status };
       }
-      const outcome =
+      const execution =
         leased.status === "reconcile"
-          ? await provider.query({
+          ? await operations.query({
               ...leased.binding,
               recoveryPermit: leased.permit,
               providerRequestId: leased.providerRequestId,
               providerReference: leased.providerReference,
             })
-          : await provider.execute({
+          : await operations.execute({
               ...leased.binding,
               executionPermit: leased.permit,
             });
+      if (execution.status === "not-admitted") return { status: "blocked" };
+      const outcome = recordedPaymentResult(execution);
       if (
         outcome.outcome === "not-executed" ||
         outcome.outcome === "indeterminate"
