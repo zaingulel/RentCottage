@@ -476,6 +476,7 @@ export async function main(
     await activeInvocation?.stopping;
     if (
       activeInvocation !== invocationBeforeRun &&
+      !activeInvocation.retentionError &&
       !processGroupExists(activeInvocation.group)
     ) {
       activeInvocation = undefined;

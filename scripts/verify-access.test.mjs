@@ -376,6 +376,7 @@ async function observeInterruptedAccessVerification(
   signal,
   {
     descendantBehavior = "graceful",
+    groupPermissionFailure = false,
     hangCleanup = false,
     inspectionFailure,
     interruptStartup = false,
@@ -405,7 +406,19 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 const originalKill = process.kill;
 process.kill = (pid, signal) => {
-  if (pid < 0 && signal !== 0) writeFileSync(root + "/termination-attempt", String(pid));
+  if (pid < 0 && signal !== 0) {
+    writeFileSync(root + "/termination-attempt", String(pid));
+    if (process.env.ACCESS_GROUP_PERMISSION_FAILURE === "1") {
+      const error = new Error("kill EPERM");
+      error.code = "EPERM";
+      throw error;
+    }
+  }
+  if (pid < 0 && signal === 0 && process.env.ACCESS_GROUP_PERMISSION_FAILURE === "1" && existsSync(root + "/termination-attempt")) {
+    const error = new Error("kill EPERM");
+    error.code = "EPERM";
+    throw error;
+  }
   return originalKill.call(process, pid, signal);
 };
 let inspectCommand = false;
@@ -568,7 +581,7 @@ if (args[1] === "status") {
     wrapper = spawn(
       process.execPath,
       [
-        ...(inspectionFailure || cleanupStage
+        ...(inspectionFailure || groupPermissionFailure || cleanupStage
           ? ["--import", inspectionBoundary]
           : []),
         resolve(process.cwd(), "scripts/verify-access.mjs"),
@@ -586,6 +599,7 @@ if (args[1] === "status") {
           ACCESS_INTERRUPTION_ROOT: stateRoot,
           ACCESS_INTERRUPTION_TOKEN: token,
           ACCESS_INSPECTION_FAILURE: inspectionFailure ?? "",
+          ACCESS_GROUP_PERMISSION_FAILURE: groupPermissionFailure ? "1" : "0",
           PATH: `${fakeBin}:${process.env.PATH}`,
           SUPABASE_LOCAL_PROJECT: "rentcottage",
           TMPDIR: stateRoot,
@@ -730,6 +744,21 @@ if (args[1] === "status") {
         .match(/temporary state ([^\n]+)\./)?.[1];
       expect(retainedState).toBeTruthy();
       expect(existsSync(retainedState)).toBe(true);
+      return;
+    }
+    if (groupPermissionFailure) {
+      expect(wrapperExit, stderr.join("")).toEqual({
+        code: 143,
+        signal: null,
+      });
+      expect(stderr.join("")).toContain(
+        "Exact termination could not be confirmed: kill EPERM",
+      );
+      expect(processIsAlive(command.pid)).toBe(true);
+      expect(processIsAlive(descendant.pid)).toBe(true);
+      expect(processIsAlive(service.pid)).toBe(true);
+      expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
+      expect(existsSync(join(stateRoot, "stop.log"))).toBe(false);
       return;
     }
     await waitForCondition(
@@ -1086,6 +1115,12 @@ describe("access verification command", () => {
   it("retains and reports possible startup resources and temporary state when interrupted before ownership is established", async () => {
     await observeInterruptedAccessVerification("SIGTERM", {
       interruptStartup: true,
+    });
+  }, 15_000);
+
+  it("finishes cancellation reporting when process-group permission is denied", async () => {
+    await observeInterruptedAccessVerification("SIGTERM", {
+      groupPermissionFailure: true,
     });
   }, 15_000);
 
