@@ -20,22 +20,6 @@ const resetPriorArgs = [
 const resetCurrentArgs = ["db", "reset", "--local"];
 const harness = createLocalSupabaseConcurrencyHarness();
 let paymentEvidenceInstalled = false;
-const notificationFixtureSource = readFileSync(
-  "supabase/tests/database/booking_confirmation_access.test.sql",
-  "utf8",
-);
-const notificationFixtureStart = notificationFixtureSource.indexOf(
-  "set session_replication_role = replica;",
-);
-const notificationFixtureEnd =
-  notificationFixtureSource.indexOf(
-    "set session_replication_role = origin;",
-    notificationFixtureStart,
-  ) + "set session_replication_role = origin;".length;
-const notificationUpgradeFixture = notificationFixtureSource.slice(
-  notificationFixtureStart,
-  notificationFixtureEnd,
-);
 
 function runSupabase(args) {
   const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
@@ -1168,6 +1152,13 @@ try {
     "4:3:1:2",
     "Admission migration must not infer capture, execution, confirmation, or receipts.",
   );
+  assertEqual(
+    harness.runSql(
+      "set role service_role; select count(*) from public.list_due_booking_confirmation_notifications(10);",
+    ),
+    "2",
+    "Both byte-preserved receipt intents must become due notification candidates.",
+  );
   console.log(
     "Payment Required upgrade preserved pending, release-processing, historical accepted, queued, processing, completed and confirmed graphs byte-for-byte; both new terminal timestamps are null on every predecessor row and no provider or booking effect was inferred.",
   );
@@ -1248,66 +1239,6 @@ try {
   );
   console.log(
     "Customer recovery upgrade preserved a real pre-138 Payment Required graph and fixed deadline, started with empty recovery tables/null ledger additions, then allowed its owning Customer to confirm exactly once.",
-  );
-  const notificationPredecessor = "20260909204538";
-  const notificationReset = runSupabase([
-    "db",
-    "reset",
-    "--local",
-    "--version",
-    notificationPredecessor,
-  ]);
-  if (notificationReset.status !== 0)
-    throw commandFailure(
-      ["db", "reset", "--local", "--version", notificationPredecessor],
-      notificationReset,
-    );
-  harness.runSql(notificationUpgradeFixture);
-  harness.runSql(`set session_replication_role=replica;
-    insert into public.cottage_booking_period_occupancies(booking_period_commitment_id,schedule_revision_id,shift_id,service_day)
-    values('50000000-0000-4000-8000-000000003501','30000000-0000-4000-8000-000000003501','31000000-0000-4000-8000-000000003501','2101-01-01');
-    set session_replication_role=origin;`);
-  const notificationGraph = () => ({
-    requests: snapshot("booking_requests", "rows.id", false),
-    snapshots: snapshot("booking_snapshots", "rows.id", false),
-    commitments: snapshot(
-      "cottage_booking_period_commitments",
-      "rows.id",
-      false,
-    ),
-    occupancies: snapshot(
-      "cottage_booking_period_occupancies",
-      "rows.shift_id",
-      false,
-    ),
-    captureWork: snapshot(
-      "booking_request_capture_work",
-      "rows.booking_request_id",
-      false,
-    ),
-    confirmations: snapshot("booking_confirmations", "rows.id", false),
-    receipts: snapshot("booking_receipts", "rows.id", false),
-  });
-  const beforeNotifications = notificationGraph();
-  const notificationUpgrade = runSupabase(upgradeArgs);
-  if (notificationUpgrade.status !== 0)
-    throw commandFailure(upgradeArgs, notificationUpgrade);
-  const afterNotifications = notificationGraph();
-  for (const field of Object.keys(beforeNotifications))
-    assertEqual(
-      afterNotifications[field],
-      beforeNotifications[field],
-      `Notification migration changed confirmed ${field}.`,
-    );
-  assertEqual(
-    harness.runSql(
-      "set role service_role; select count(*) from public.list_due_booking_confirmation_notifications(10);",
-    ),
-    "2",
-    "Both preserved receipt intents must become due notification candidates.",
-  );
-  console.log(
-    "Notification upgrade preserved confirmed request, snapshot, payment, occupancy, confirmation and receipt rows byte-for-byte; both existing receipt intents are discoverable.",
   );
 } catch (error) {
   failure = error;

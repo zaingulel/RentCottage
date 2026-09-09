@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
@@ -141,14 +142,6 @@ function OwnerBookingRequestCard({
           <dt>{copy.houseRules}</dt>
           <dd>{notification.houseRules}</dd>
         </div>
-        <div>
-          <dt>{copy.bookingTerms}</dt>
-          <dd>{notification.bookingTermsVersion}</dd>
-        </div>
-        <div>
-          <dt>{copy.cancellationPolicy}</dt>
-          <dd>{notification.cancellationPolicyVersion}</dd>
-        </div>
         {notification.statusNotifications.map((receipt) => (
           <div key={receipt.id}>
             <dt>{copy.notification}</dt>
@@ -174,6 +167,12 @@ function OwnerBookingRequestCard({
             if (next !== "pending" && next !== "processing") refresh();
           }}
         />
+      ) : notification.status === "paid-confirmed" ? (
+        <Link
+          href={`/${locale}/owner/booking-requests/${notification.bookingRequestReference}`}
+        >
+          {copy.openConfirmedBooking}
+        </Link>
       ) : null}
     </article>
   );

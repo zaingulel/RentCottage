@@ -19,8 +19,7 @@ export const ownerBookingRequestMessages: Record<
     commission: string;
     ownerNet: string;
     houseRules: string;
-    bookingTerms: string;
-    cancellationPolicy: string;
+    openConfirmedBooking: string;
     notification: string;
     shift: string;
     fullDay: string;
@@ -46,8 +45,7 @@ export const ownerBookingRequestMessages: Record<
     commission: "Marketplace commission",
     ownerNet: "Expected net amount",
     houseRules: "House Rules",
-    bookingTerms: "Marketplace terms version",
-    cancellationPolicy: "Cancellation policy version",
+    openConfirmedBooking: "Open confirmed booking",
     notification: "Status notification",
     shift: "Cottage Shift",
     fullDay: "Full-Day Bundle",
@@ -71,8 +69,7 @@ export const ownerBookingRequestMessages: Record<
     commission: "عمولة المنصة",
     ownerNet: "صافي المبلغ المتوقع",
     houseRules: "قواعد البيت",
-    bookingTerms: "إصدار شروط المنصة",
-    cancellationPolicy: "إصدار سياسة الإلغاء",
+    openConfirmedBooking: "فتح الحجز المؤكد",
     notification: "إشعار الحالة",
     shift: "فترة البيت",
     fullDay: "باقة اليوم الكامل",
@@ -97,8 +94,7 @@ export const ownerBookingRequestMessages: Record<
     commission: "کۆمسیۆنی پلاتفۆرم",
     ownerNet: "بڕی چاوەڕوانکراوی خاوەن",
     houseRules: "یاساکانی کۆتێج",
-    bookingTerms: "وەشانی مەرجەکانی پلاتفۆرم",
-    cancellationPolicy: "وەشانی سیاسەتی هەڵوەشاندنەوە",
+    openConfirmedBooking: "کردنەوەی حجزی پشتڕاستکراو",
     notification: "ئاگادارکردنەوەی دۆخ",
     shift: "شەفتی کۆتێج",
     fullDay: "پاکێجی ڕۆژی تەواو",

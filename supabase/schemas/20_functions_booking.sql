@@ -1006,13 +1006,26 @@ end $$;
 
 CREATE OR REPLACE FUNCTION public.get_booking_confirmation_notification_status(target_receipt_id uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-declare q public.booking_requests; declare w public.booking_confirmation_notification_work; declare role public.account_contexts; declare actor uuid:=(select auth.uid());
+declare q public.booking_requests; declare w public.booking_confirmation_notification_work; declare r public.booking_receipts; declare role public.account_contexts; declare actor uuid:=(select auth.uid());
 begin
   select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id;
-  select * into q from public.booking_requests where id=w.booking_request_id;
+  select * into r from public.booking_receipts where id=target_receipt_id;
+  select requests.* into q from public.booking_requests requests join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id where confirmations.id=r.booking_confirmation_id;
   select * into role from public.account_contexts where user_id=actor;
-  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or w.receipt_id is null or w.recipient_user_id is distinct from actor or role.role::text is distinct from w.recipient_role or (w.recipient_role='cottage_owner' and role.owner_approval_state::text is distinct from 'approved') then raise exception 'Notification status unavailable' using errcode='42501'; end if;
+  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or r.id is null or r.recipient_user_id is distinct from actor or role.role::text is distinct from r.recipient_role or (r.recipient_role='cottage_owner' and role.owner_approval_state::text is distinct from 'approved') or (w.receipt_id is null and public.booking_request_payment_status(q) is distinct from 'paid-confirmed') then raise exception 'Notification status unavailable' using errcode='42501'; end if;
+  if w.receipt_id is null then return jsonb_build_object('receiptId',r.id,'state','pending','lastOutcome',null,'supplierDeliveryReference',null,'deliveredAt',null,'suppressedAt',null,'historical',false); end if;
   return jsonb_build_object('receiptId',w.receipt_id,'state',w.state,'lastOutcome',w.last_outcome,'supplierDeliveryReference',w.supplier_delivery_reference,'deliveredAt',w.delivered_at,'suppressedAt',w.suppressed_at,'historical',w.state='delivered' and public.booking_request_payment_status(q)<>'paid-confirmed');
+end $$;
+
+CREATE OR REPLACE FUNCTION public.list_confirmed_booking_history() RETURNS SETOF jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare actor uuid:=(select auth.uid()); declare context public.account_contexts;
+begin
+  select * into context from public.account_contexts where user_id=actor;
+  if actor is null or context.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or (context.role='cottage_owner' and context.owner_approval_state::text is distinct from 'approved') then raise exception 'Booking History unavailable' using errcode='42501'; end if;
+  return query select jsonb_build_object('receiptId',receipts.id,'bookingRequestReference',requests.booking_request_reference,'bookingReference',commitments.commitment_reference,'cottageName',snapshots.quote_payload->>'cottageName','confirmedAt',confirmations.confirmed_at,'actorRole',receipts.recipient_role)
+  from public.booking_receipts receipts join public.booking_confirmations confirmations on confirmations.id=receipts.booking_confirmation_id join public.booking_requests requests on requests.id=confirmations.booking_request_id join public.booking_snapshots snapshots on snapshots.id=receipts.booking_snapshot_id join public.cottage_booking_period_commitments commitments on commitments.id=confirmations.booking_period_commitment_id
+  where receipts.recipient_user_id=actor and receipts.recipient_role=context.role::text and public.booking_request_payment_status(requests)='paid-confirmed' order by confirmations.confirmed_at desc,receipts.id;
 end $$;
 
 CREATE OR REPLACE FUNCTION public.retry_booking_confirmation_notification(target_receipt_id uuid) RETURNS jsonb
@@ -3645,6 +3658,7 @@ CREATE OR REPLACE FUNCTION "public"."get_confirmed_booking_access"("target_refer
     end,
     'houseRules', snapshots.quote_payload ->> 'houseRules',
     'bookingTermsVersion', snapshots.booking_terms_version,
+    'bookingTermsBody', snapshots.booking_terms_body,
     'cancellationPolicyVersion', snapshots.cancellation_policy_version,
     'exactAddress', nullif(btrim(profiles.exact_address), ''),
     'privateDirections', nullif(btrim(profiles.private_directions), ''),
@@ -3657,9 +3671,17 @@ CREATE OR REPLACE FUNCTION "public"."get_confirmed_booking_access"("target_refer
       else null
     end,
     'customerPhone', case when customer_user.phone_confirmed_at is not null
-      then nullif(btrim(customer_user.phone), '') end,
+      then case
+        when btrim(customer_user.phone) ~ '^[1-9][0-9]{7,14}$'
+          then '+' || btrim(customer_user.phone)
+        else nullif(btrim(customer_user.phone), '')
+      end end,
     'ownerPhone', case when owner_user.phone_confirmed_at is not null
-      then nullif(btrim(owner_user.phone), '') end
+      then case
+        when btrim(owner_user.phone) ~ '^[1-9][0-9]{7,14}$'
+          then '+' || btrim(owner_user.phone)
+        else nullif(btrim(owner_user.phone), '')
+      end end
   )
   from public.booking_requests requests
   join actor on true

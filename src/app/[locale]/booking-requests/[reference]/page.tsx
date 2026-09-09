@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
 import { loadCustomerBookingRequest } from "@/booking-request/request-customer-booking-request";
+import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-booking-access";
 import { CustomerBookingRequestStatus } from "@/components/customer-booking-request-status";
+import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { isLocale } from "@/i18n/routing";
 
 const unavailableCopy = {
@@ -24,6 +26,18 @@ export default async function CustomerBookingRequestPage({
 }) {
   const { locale, reference } = await params;
   if (!isLocale(locale) || !/^RC-REQ-[A-F0-9]{16}$/.test(reference)) notFound();
+  const confirmed = await loadConfirmedBookingAccess(reference);
+  if (
+    confirmed?.access.actorRole !== undefined &&
+    confirmed.access.actorRole !== "customer"
+  )
+    notFound();
+  if (confirmed)
+    return (
+      <main className="results-page">
+        <ConfirmedBookingDetails locale={locale} {...confirmed} />
+      </main>
+    );
   let request;
   try {
     request = await loadCustomerBookingRequest(reference);

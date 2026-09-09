@@ -25,6 +25,7 @@ const sharedKeys = new Set([
   "pricing",
   "houseRules",
   "bookingTermsVersion",
+  "bookingTermsBody",
   "cancellationPolicyVersion",
   "exactAddress",
   "privateDirections",
@@ -44,6 +45,7 @@ interface ConfirmedBookingAccessBase {
   readonly partySize: number;
   readonly houseRules: string;
   readonly bookingTermsVersion: string;
+  readonly bookingTermsBody: string;
   readonly cancellationPolicyVersion: string;
   readonly exactAddress: string | null;
   readonly privateDirections: string | null;
@@ -217,6 +219,8 @@ function confirmedBookingAccessFrom(
     !access.houseRules.trim() ||
     typeof access.bookingTermsVersion !== "string" ||
     !access.bookingTermsVersion.trim() ||
+    typeof access.bookingTermsBody !== "string" ||
+    !access.bookingTermsBody.trim() ||
     typeof access.cancellationPolicyVersion !== "string" ||
     !access.cancellationPolicyVersion.trim() ||
     !isOptionalNonEmptyText(access.exactAddress) ||
@@ -244,6 +248,7 @@ function confirmedBookingAccessFrom(
     partySize: access.partySize as number,
     houseRules: access.houseRules,
     bookingTermsVersion: access.bookingTermsVersion,
+    bookingTermsBody: access.bookingTermsBody,
     cancellationPolicyVersion: access.cancellationPolicyVersion,
     exactAddress: access.exactAddress,
     privateDirections: access.privateDirections,

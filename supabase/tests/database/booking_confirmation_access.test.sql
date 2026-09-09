@@ -1,5 +1,5 @@
 begin;
-select plan(26);
+select plan(34);
 
 select has_function(
   'public',
@@ -16,6 +16,11 @@ select ok(
   'paid access projection is security-definer with an empty search path'
 );
 select ok(
+  has_function_privilege('authenticated', 'public.list_confirmed_booking_history()', 'execute')
+    and not has_function_privilege('anon', 'public.list_confirmed_booking_history()', 'execute'),
+  'only authenticated actors can list their minimal paid Booking History'
+);
+select ok(
   has_function_privilege('authenticated', 'public.get_confirmed_booking_access(text)', 'execute')
     and not has_function_privilege('anon', 'public.get_confirmed_booking_access(text)', 'execute')
     and not has_function_privilege('service_role', 'public.get_confirmed_booking_access(text)', 'execute'),
@@ -26,8 +31,8 @@ select ok(
 -- confirmation test owns the full transition, foreign-key, trigger and replay proof.
 set session_replication_role = replica;
 insert into auth.users (id, aud, role, phone, phone_confirmed_at) values
-  ('10000000-0000-4000-8000-000000003501', 'authenticated', 'authenticated', '+9647500003501', now()),
-  ('10000000-0000-4000-8000-000000003502', 'authenticated', 'authenticated', '+9647500003502', now()),
+  ('10000000-0000-4000-8000-000000003501', 'authenticated', 'authenticated', '9647500003501', now()),
+  ('10000000-0000-4000-8000-000000003502', 'authenticated', 'authenticated', '9647500003502', now()),
   ('10000000-0000-4000-8000-000000003503', 'authenticated', 'authenticated', '+9647500003503', now());
 insert into public.account_contexts (user_id, role, owner_approval_state) values
   ('10000000-0000-4000-8000-000000003501', 'cottage_owner', 'approved'),
@@ -147,6 +152,7 @@ select is((select result->>'receiptId' from customer_access), '82000000-0000-400
 select is((select result->>'bookingReference' from customer_access), 'CONFIRMED-BOOKING-35', 'the stable commitment reference is retained');
 select is((select result->>'cottageName' from customer_access), 'Preserved Cottage name', 'commercial Cottage facts come from the immutable snapshot');
 select is((select result->>'houseRules' from customer_access), 'Preserved House Rules', 'House Rules come from the immutable snapshot');
+select is((select result->>'bookingTermsBody' from customer_access), 'Fictional terms', 'readable Booking Terms come from the immutable snapshot');
 select is((select result#>>'{pricing,customerTotalIqd}' from customer_access), '115000', 'the Customer receives preserved Customer pricing');
 select ok(not ((select result from customer_access)->'pricing' ? 'ownerNetFils'), 'the Customer does not receive Cottage Owner commercial data');
 select is((select result->>'exactAddress' from customer_access), 'Current private address', 'private address comes from the current Cottage Profile');
@@ -154,6 +160,8 @@ select is((select result#>>'{mapPin,latitude}' from customer_access), '33.315241
 select is((select result->>'customerPhone' from customer_access), '+9647500003502', 'the verified Customer phone is released');
 select is((select result->>'ownerPhone' from customer_access), '+9647500003501', 'the verified Cottage Owner phone is released');
 select is(public.get_confirmed_booking_access('82000000-0000-4000-8000-000000003502'), null, 'receipt possession does not authorize access');
+select is(public.get_booking_confirmation_notification_status('82000000-0000-4000-8000-000000003502')->>'state', 'pending', 'paid details remain available with truthful pending notice status before first drain');
+select is((select count(*)::text from public.list_confirmed_booking_history()), '1', 'the Customer history contains only their paid receipt');
 reset role;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003501', true);
@@ -161,11 +169,13 @@ set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')->>'actorRole', 'cottage_owner', 'the approved actual Cottage Owner receives Owner access');
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')#>>'{pricing,ownerNetFils}', '99000000', 'the Cottage Owner receives preserved Owner pricing');
 select ok(not (public.get_confirmed_booking_access('RC-REQ-0000000000003501')->'pricing' ? 'customerTotalIqd'), 'the Cottage Owner does not receive Customer fee data');
+select is((select value->>'actorRole' from public.list_confirmed_booking_history() value), 'cottage_owner', 'the Cottage Owner history links through the Owner role');
 reset role;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003503', true);
 set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'an authenticated non-participant receives no private facts');
+select is((select count(*)::text from public.list_confirmed_booking_history()), '0', 'an authenticated non-participant has no paid history rows');
 reset role;
 
 set session_replication_role = replica;
@@ -214,6 +224,7 @@ set session_replication_role = origin;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003502', true);
 set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'an invalidated confirmation releases nothing');
+select is((select count(*)::text from public.list_confirmed_booking_history()), '0', 'an invalidated confirmation leaves paid Booking History');
 reset role;
 set session_replication_role = replica;
 delete from public.booking_request_confirmation_invalidations
@@ -235,6 +246,7 @@ set session_replication_role = origin;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003502', true);
 set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'a quarantined payment releases nothing');
+select is((select count(*)::text from public.list_confirmed_booking_history()), '0', 'a quarantined payment leaves paid Booking History');
 reset role;
 set session_replication_role = replica;
 delete from public.booking_request_payment_required_expiry_work

@@ -26,6 +26,7 @@ const shared = {
   partySize: 4,
   houseRules: "No smoking",
   bookingTermsVersion: "rentcottage-mvp-2026-08-04",
+  bookingTermsBody: "Preserved readable booking terms.",
   cancellationPolicyVersion: "rentcottage-cancellation-2026-08-04",
   exactAddress: "Fictional street 35",
   privateDirections: "Turn after the fictional bridge.",
