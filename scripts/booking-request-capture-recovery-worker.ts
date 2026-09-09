@@ -73,7 +73,11 @@ async function main() {
   const durable = new DurablePaymentSimulator({
     effects: new SupabaseSimulatorEffectRepository(client),
     now: () => new Date().toISOString(),
-    executeOutcome: mode.includes("failure") ? "failed" : "succeeded",
+    executeOutcome: mode.includes("indeterminate")
+      ? "indeterminate"
+      : mode.includes("failure")
+        ? "failed"
+        : "succeeded",
   });
   let responseLost = false;
   const lostResponse = new Error(
@@ -104,7 +108,9 @@ async function main() {
               : reject(new Error("Invalid continuation")),
           );
         });
-      return durable.query(request);
+      const result = await durable.query(request);
+      send({ stage: "query-result", result });
+      return result;
     },
     verifySignedEvent: () => false,
   };
@@ -140,6 +146,7 @@ async function main() {
   } else if (
     mode === "lose-response" ||
     mode === "capture-only" ||
+    mode === "indeterminate-capture" ||
     mode === "failure-lose-response"
   ) {
     try {
@@ -150,11 +157,21 @@ async function main() {
       }).execute(required("CAPTURE_BOOKING_REQUEST_ID"));
       send({ stage: "complete", result });
     } catch (error) {
+      if (
+        mode === "indeterminate-capture" &&
+        error instanceof Error &&
+        error.message ===
+          "Booking Request Capture did not return successful provider evidence"
+      ) {
+        send({ stage: "complete", result: "indeterminate" });
+        return;
+      }
       if (!responseLost) throw error;
       send({ stage: "complete", result: "interrupted" });
     }
   } else if (
     mode === "recover" ||
+    mode === "recover-indeterminate" ||
     mode === "recover-failure" ||
     mode === "pause-query"
   ) {

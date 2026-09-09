@@ -349,7 +349,7 @@ begin
       'notAfter', to_char(work.lease_expires_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
       'recoveryOperationId', work.recovery_operation_id,
       'providerResult', jsonb_build_object('providerRequestId', ledger.provider_request_id,
-        'providerReference', ledger.provider_reference) || case when ledger.original_outcome = 'succeeded'
+        'providerReference', ledger.provider_reference) || case when ledger.current_outcome = 'succeeded'
           then jsonb_build_object('movementReference', ledger.movement_reference) else '{}'::jsonb end
     )));
   end loop;
@@ -379,9 +379,10 @@ begin
   work := source.work;
   ledger := source.ledger;
   if ledger.id is null then raise exception 'Booking Request capture provider evidence is missing' using errcode = 'RC409'; end if;
-  if ledger.original_outcome is distinct from 'succeeded'
+  if (ledger.original_outcome in ('succeeded', 'indeterminate')) is not true
     or ledger.current_outcome is distinct from 'succeeded'
-    or ledger.movement_reference is null then
+    or ledger.movement_reference is null
+    or (ledger.original_outcome = 'indeterminate' and ledger.authoritative_outcome_at is null) then
     raise exception 'Booking Request successful Capture evidence is invalid' using errcode = 'RC409';
   end if;
   expected_result := jsonb_build_object('outcome', 'succeeded',
@@ -424,7 +425,9 @@ begin
     or ledger.executed_at < (source.payment_snapshot #>> '{movements,0,recordedAt}')::timestamptz then
     raise exception 'Booking Request capture occurrence is invalid' using errcode = 'RC409';
   end if;
-  captured_at := to_char(ledger.executed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"');
+  captured_at := to_char((case when ledger.original_outcome = 'indeterminate'
+    then ledger.authoritative_outcome_at else ledger.executed_at end)
+    at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"');
   capture_operation := jsonb_build_object(
     'paymentLifecycleId', work.payment_lifecycle_id, 'kind', 'capture',
     'logicalOperationId', work.capture_logical_operation_id,
@@ -1327,14 +1330,18 @@ begin
       (work.authorization_claim_id, work.authorization_claim_generation, 'capture'::text,
       work.payment_lifecycle_id, work.capture_logical_operation_id, work.capture_physical_attempt_id,
       work.amount_fils, work.currency, work.request_fingerprint)
-    or not (
-      (ledger.current_outcome is null and ledger.evidence_provenance='admitted')
-      or (ledger.current_outcome='not-executed')
-      or (ledger.original_outcome = 'succeeded' and ledger.current_outcome = 'succeeded'
-        and ledger.movement_reference is not null)
-      or (ledger.original_outcome = 'failed' and ledger.current_outcome = 'failed'
+    or (
+      (ledger.original_outcome is null and ledger.current_outcome is null
+        and ledger.evidence_provenance = 'admitted' and ledger.movement_reference is null)
+      or (ledger.original_outcome = 'not-executed' and ledger.current_outcome = 'not-executed'
         and ledger.movement_reference is null)
-    )
+      or (ledger.original_outcome in ('succeeded', 'indeterminate') and ledger.current_outcome = 'succeeded'
+        and ledger.movement_reference is not null)
+      or (ledger.original_outcome in ('failed', 'indeterminate') and ledger.current_outcome = 'failed'
+        and ledger.movement_reference is null)
+      or (ledger.original_outcome = 'indeterminate' and ledger.current_outcome = 'indeterminate'
+        and ledger.movement_reference is not null)
+    ) is not true
     or ledger.capture_execution_permit - array['purpose', 'workId', 'leaseGeneration', 'leaseToken', 'notAfter']
       is distinct from binding
     or ledger.capture_execution_permit ->> 'purpose' is distinct from 'booking-request-capture'
@@ -1744,7 +1751,7 @@ begin
   elsif (source.ledger).id is null or (source.ledger).operation_kind <> 'capture'
     or (source.ledger).current_outcome <> 'failed'
     or (source.ledger).movement_reference is not null
-    or (source.ledger).original_outcome <> 'failed' then
+    or ((source.ledger).original_outcome in ('failed', 'indeterminate')) is not true then
     unresolved_reason := 'original-capture-unresolved';
   end if;
 
@@ -2072,7 +2079,7 @@ begin
   where occupancies.booking_period_commitment_id = target_commitment.id
   order by occupancies.service_day, occupancies.shift_id for update of occupancies;
 
-  if ledger.id is null or ledger.original_outcome is distinct from 'failed'
+  if ledger.id is null or (ledger.original_outcome in ('failed', 'indeterminate')) is not true
     or ledger.current_outcome is distinct from 'failed' or ledger.movement_reference is not null
     or (ledger.capture_execution_permit->>'leaseGeneration')::bigint < 1
     or (ledger.capture_execution_permit->>'leaseToken')::uuid is null

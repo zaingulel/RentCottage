@@ -60,7 +60,7 @@ create or replace function pg_temp.capture_query(operation jsonb,request_id text
   select pg_temp.payment_query(operation,request_id,reference,'succeeded');
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
-select plan(235);
+select plan(263);
 
 -- BEGIN CAPTURE EXECUTION FIXTURE
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
@@ -475,6 +475,104 @@ select is(public.record_booking_request_capture_failure('60000000-0000-4000-8000
   (select lease_generation from public.booking_request_capture_work),(select lease_token from public.booking_request_capture_work),
   (select result-'evidence' from isolated_observation))->>'status','payment-required','current recovery owner completes the one recorded effect');
 rollback to savepoint explicit_capture_recording;
+
+savepoint indeterminate_capture_succeeded;
+create temp table unknown_capture_result as select pg_temp.capture_execute((select result->'permit' from capture_lease),'indeterminate') result;
+select lives_ok($$select public.lock_booking_request_capture_source('60000000-0000-4000-8000-000000001001')$$,
+  'recorded unknown Capture remains valid source evidence before succeeded resolution');
+select is((select state from public.booking_request_capture_work),'processing','unknown Capture retains processing before succeeded resolution');
+select is((select count(*) from public.booking_request_provider_operation_identities where operation_kind='capture'),0::bigint,'unknown Capture creates no business identity before succeeded resolution');
+update public.booking_request_capture_work set lease_expires_at=clock_timestamp()-interval '1 second';
+create temp table unknown_capture_recovery as select public.claim_due_booking_request_captures(20,(select result#>'{permit,providerIdentity}' from capture_lease)) result;
+select ok((select result#>'{0,lease,providerResult}' ? 'movementReference' is false from unknown_capture_recovery),
+  'unresolved Capture inquiry excludes provisional movement before succeeded resolution');
+select throws_ok($$select public.complete_booking_request_capture('60000000-0000-4000-8000-000000001001',null,null,null)$$,
+  'RC409',null,'unknown Capture grants no successful receipt before succeeded resolution');
+-- A receipt clock distinct from both actual execution and success occurrence cannot date the movement.
+alter table public.payment_provider_observations alter column received_at set default '2025-01-01T00:00:00Z'::timestamptz;
+create temp table resolved_capture_result as select pg_temp.payment_query((select jsonb_build_object('providerIdentity',result#>'{permit,providerIdentity}',
+  'requestFingerprint',result#>'{permit,requestFingerprint}','paymentLifecycleId',result#>'{permit,paymentLifecycleId}',
+  'logicalOperationId',result#>'{permit,captureLogicalOperationId}','physicalAttemptId',result#>'{permit,capturePhysicalAttemptId}',
+  'operationKind','capture','amountFils',result#>'{permit,amountFils}','currency','IQD') from capture_lease),
+  (select result->>'providerRequestId' from unknown_capture_result),(select result->>'providerReference' from unknown_capture_result),'succeeded') result;
+select is((select original_outcome||':'||current_outcome from public.payment_provider_operations where operation_kind='capture'),'indeterminate:succeeded',
+  'Capture succeeded resolution preserves immutable original unknown outcome');
+select is((select physical_execution_count::integer from public.simulated_payment_effects),1,'Capture succeeded resolution retains one physical execution');
+select is((select count(*) from public.payment_provider_observations),2::bigint,'Capture succeeded resolution appends one accepted observation');
+select throws_ok(format('select public.complete_booking_request_capture(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result#>>'{permit,leaseToken}' from capture_lease),(select result from resolved_capture_result)),
+  'RC409',null,'original superseded Capture owner cannot complete after succeeded resolution');
+update public.booking_request_capture_work set lease_expires_at=clock_timestamp()-interval '1 second';
+create temp table resolved_capture_reclaim as select public.claim_due_booking_request_captures(20,(select result#>'{permit,providerIdentity}' from capture_lease)) result;
+select is((select result#>>'{0,lease,providerResult,movementReference}' from resolved_capture_reclaim),
+  (select movement_reference from public.payment_provider_operations where operation_kind='capture'),
+  'reclaim of already-resolved unknown Capture success includes its accepted movement');
+savepoint missing_capture_success_occurrence;
+-- Deliberate superuser fixture corruption isolates the successful receipt boundary;
+-- restore the guard before observing rejection and roll the fixture change back.
+ALTER TABLE public.payment_provider_operations DISABLE TRIGGER guard_payment_provider_admission;
+update public.payment_provider_operations set authoritative_outcome_at=null where operation_kind='capture';
+ALTER TABLE public.payment_provider_operations ENABLE TRIGGER guard_payment_provider_admission;
+select throws_ok(format('select public.complete_booking_request_capture(%L,%L,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select lease_generation from public.booking_request_capture_work),
+  (select lease_token from public.booking_request_capture_work),(select result from resolved_capture_result)),
+  'RC409',null,'resolved unknown Capture cannot invent a missing authoritative success occurrence');
+rollback to savepoint missing_capture_success_occurrence;
+create temp table resolved_capture_completion as select public.complete_booking_request_capture('60000000-0000-4000-8000-000000001001',
+  (select lease_generation from public.booking_request_capture_work),(select lease_token from public.booking_request_capture_work),
+  (select result from resolved_capture_result)) result;
+select is((select result->>'status' from resolved_capture_completion),'complete','current owner completes resolved unknown Capture success');
+select is((select (result#>>'{snapshot,movements,1,recordedAt}')::timestamptz from resolved_capture_completion),
+  (select authoritative_outcome_at from public.payment_provider_operations where operation_kind='capture'),'successful Capture movement uses authoritative success occurrence');
+select is((select (result#>>'{expectation,captureRecordedAt}')::timestamptz from resolved_capture_completion),
+  (select authoritative_outcome_at from public.payment_provider_operations where operation_kind='capture'),'Capture confirmation expectation preserves authoritative success occurrence');
+select ok((select authoritative_outcome_at>executed_at and authoritative_outcome_at<>recorded_at
+  and recorded_at='2025-01-01T00:00:00Z'::timestamptz from public.payment_provider_operations where operation_kind='capture'),
+  'success occurrence is distinct from original unknown execution and query receipt clock');
+select is(public.complete_booking_request_capture('60000000-0000-4000-8000-000000001001',null,null,null),
+  (select result from resolved_capture_completion),'resolved unknown Capture completion replays its exact accepted snapshot');
+rollback to savepoint indeterminate_capture_succeeded;
+
+savepoint indeterminate_capture_failed;
+create temp table unknown_capture_result as select pg_temp.capture_execute((select result->'permit' from capture_lease),'indeterminate') result;
+select lives_ok($$select public.lock_booking_request_capture_source('60000000-0000-4000-8000-000000001001')$$,
+  'recorded unknown Capture remains valid source evidence before failed resolution');
+select is((select state from public.booking_request_capture_work),'processing','unknown Capture retains processing before failed resolution');
+select is((select count(*) from public.booking_request_provider_operation_identities where operation_kind='capture'),0::bigint,'unknown Capture creates no business identity before failed resolution');
+update public.booking_request_capture_work set lease_expires_at=clock_timestamp()-interval '1 second';
+create temp table unknown_capture_recovery as select public.claim_due_booking_request_captures(20,(select result#>'{permit,providerIdentity}' from capture_lease)) result;
+select ok((select result#>'{0,lease,providerResult}' ? 'movementReference' is false from unknown_capture_recovery),
+  'unresolved Capture inquiry excludes provisional movement before failed resolution');
+select throws_ok($$select public.complete_booking_request_capture('60000000-0000-4000-8000-000000001001',null,null,null)$$,
+  'RC409',null,'unknown Capture grants no successful receipt before failed resolution');
+create temp table resolved_capture_result as select pg_temp.payment_query((select jsonb_build_object('providerIdentity',result#>'{permit,providerIdentity}',
+  'requestFingerprint',result#>'{permit,requestFingerprint}','paymentLifecycleId',result#>'{permit,paymentLifecycleId}',
+  'logicalOperationId',result#>'{permit,captureLogicalOperationId}','physicalAttemptId',result#>'{permit,capturePhysicalAttemptId}',
+  'operationKind','capture','amountFils',result#>'{permit,amountFils}','currency','IQD') from capture_lease),
+  (select result->>'providerRequestId' from unknown_capture_result),(select result->>'providerReference' from unknown_capture_result),'failed') result;
+select is((select original_outcome||':'||current_outcome from public.payment_provider_operations where operation_kind='capture'),'indeterminate:failed',
+  'Capture failed resolution preserves immutable original unknown outcome');
+select is((select physical_execution_count::integer from public.simulated_payment_effects),1,'Capture failed resolution retains one physical execution');
+select is((select count(*) from public.payment_provider_observations),2::bigint,'Capture failed resolution appends one accepted observation');
+select throws_ok(format('select public.record_booking_request_capture_failure(%L,1,%L,%L)',
+  '60000000-0000-4000-8000-000000001001',(select result#>>'{permit,leaseToken}' from capture_lease),(select result from resolved_capture_result)),
+  'RC409',null,'original superseded Capture owner cannot record failure after failed resolution');
+create temp table resolved_capture_failure as select public.record_booking_request_capture_failure('60000000-0000-4000-8000-000000001001',
+  (select lease_generation from public.booking_request_capture_work),(select lease_token from public.booking_request_capture_work),
+  (select result from resolved_capture_result)) result;
+select is((select result->>'status' from resolved_capture_failure),'payment-required','current owner records definitive failure after original unknown Capture');
+select is(public.record_booking_request_capture_failure('60000000-0000-4000-8000-000000001001',
+  (select lease_generation from public.booking_request_capture_work),(select lease_token from public.booking_request_capture_work),
+  (select result from resolved_capture_result)),(select result from resolved_capture_failure),'resolved unknown Capture failure replays one fixed window');
+create function pg_temp.unknown_capture_expiry_now() returns timestamptz language sql as $$select payment_required_deadline from public.booking_request_capture_work$$;
+do $$begin execute replace(pg_get_functiondef('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'::regprocedure),
+  'clock_timestamp()','pg_temp.unknown_capture_expiry_now()');end$$;
+grant select on capture_lease to service_role;
+set local role service_role;
+select is(public.prepare_booking_request_payment_required_expiry('60000000-0000-4000-8000-000000001001',
+  (select result#>'{permit,providerIdentity}' from capture_lease))->>'status','release','resolved unknown Capture failure remains safely eligible for expiry release');
+reset role;
+rollback to savepoint indeterminate_capture_failed;
 
 savepoint regressed_receipt_clock;
 -- Isolate receipt-clock regression through the column default; execution and

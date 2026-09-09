@@ -181,14 +181,14 @@ const temporaryDirectory = mkdtempSync(
   join(tmpdir(), "rentcottage-capture-workers-"),
 );
 const workerBundle = join(temporaryDirectory, "worker.mjs");
-function startWorker(mode) {
+function startWorker(mode, bookingRequestId = requestId) {
   for (const key of ["SUPABASE_URL", "SUPABASE_SECRET_KEY"])
     assert.ok(process.env[key], `${key} is required for Capture recovery`);
   const child = spawn(process.execPath, [workerBundle], {
     env: {
       ...process.env,
       CAPTURE_WORKER_MODE: mode,
-      CAPTURE_BOOKING_REQUEST_ID: requestId,
+      CAPTURE_BOOKING_REQUEST_ID: bookingRequestId,
     },
     stdio: ["ignore", "ignore", "pipe", "ipc"],
   });
@@ -649,6 +649,191 @@ async function proveFailureRecording(source) {
   }
   console.log(
     "Direct failed-Capture finalizers returned one identical period under contention and refused an expired fence after a blocked hold lock, retaining every original occupancy.",
+  );
+}
+
+async function proveIndeterminateCaptureRecovery(source) {
+  const other = (sql) =>
+    sql
+      .replaceAll("00000000100", "00000000110")
+      .replaceAll("750000100", "750000110")
+      .replaceAll("confirmation-auth-", "unknown-other-auth-")
+      .replaceAll("CONFIRMATION-HOLD-1", "UNKNOWN-OTHER-HOLD-1");
+  const otherId = other(requestId);
+  for (const outcome of ["succeeded", "failed"]) {
+    const traceStart = providerTrace.length;
+    harness.runSql(paymentEvidenceSql + `begin; ${source} commit;`);
+    seeded = true;
+    const initial = startWorker("indeterminate-capture");
+    assert.equal(await finishWorker(initial), "indeterminate");
+    const unknown = observeRecovery();
+    assert.equal(unknown.ledger.length, 1);
+    assert.equal(unknown.ledger[0].original_outcome, "indeterminate");
+    assert.equal(unknown.ledger[0].current_outcome, "indeterminate");
+    assert.ok(unknown.ledger[0].movement_reference);
+    assert.equal(unknown.ledger[0].physical_execution_count, 1);
+    assert.equal(unknown.work.state, "processing");
+    assert.equal(unknown.commitment.status, "pending_hold");
+    assert.equal(unknown.confirmations.length, 0);
+    assert.equal(unknown.receipts.length, 0);
+    const initialObservation = harness.runSql(
+      `select to_jsonb(observation) from public.payment_provider_observations observation where operation_id='${unknown.ledger[0].id}';`,
+    );
+    let otherSeeded = false;
+    try {
+      harness.runSql(
+        paymentEvidenceSql +
+          `begin; ${other(pendingSource(source))} ${other(acceptSql)} commit;`,
+      );
+      otherSeeded = true;
+      assert.equal(
+        (await finishWorker(startWorker("capture-only", otherId))).status,
+        "complete",
+      );
+      expireCaptureLease();
+      const waiting = startWorker("recover-indeterminate");
+      const pending = await finishWorker(waiting);
+      assert.equal(
+        pending.filter((result) => result.status === "processing").length,
+        1,
+        "Unknown Capture remains processing through a fresh inquiry",
+      );
+      assert.equal(
+        pending.filter((result) => result.status === "confirmed").length,
+        1,
+        "The same batch confirms unrelated eligible work despite valid unknown Capture",
+      );
+      const query = waiting.messages.find(
+        (message) => message.stage === "query",
+      );
+      assert.equal(query.request.admission.operationId, unknown.ledger[0].id);
+      assert.equal(
+        query.request.admission.idempotencyKey,
+        unknown.ledger[0].provider_idempotency_key,
+      );
+      assert.equal(query.request.admission.mode, "reconcile");
+      assert.equal(
+        waiting.messages.find((message) => message.stage === "query-result")
+          .result.outcome,
+        "indeterminate",
+      );
+      assert.equal(
+        waiting.messages.filter((message) => message.stage === "execute")
+          .length,
+        0,
+      );
+    } finally {
+      if (otherSeeded) harness.runSql(paymentEvidenceSql + other(cleanup));
+    }
+    const stillUnknown = observeRecovery();
+    assert.deepEqual(stillUnknown.ledger, unknown.ledger);
+    assert.deepEqual(stillUnknown.effects, unknown.effects);
+    assert.deepEqual(stillUnknown.occupancies, unknown.occupancies);
+    assert.equal(stillUnknown.confirmations.length, 0);
+    assert.equal(stillUnknown.receipts.length, 0);
+    assert.equal(stillUnknown.commitment.status, "pending_hold");
+    assert.equal(stillUnknown.snapshot.capture, null);
+    expireCaptureLease();
+    const terminalWorker = startWorker(
+      outcome === "failed" ? "recover-failure" : "recover",
+    );
+    const terminalResult = await finishWorker(terminalWorker);
+    assert.equal(
+      terminalResult[0].status,
+      outcome === "failed" ? "payment-required" : "confirmed",
+    );
+    const terminal = observeRecovery();
+    assert.equal(terminal.ledger.length, 1);
+    assert.equal(terminal.ledger[0].id, unknown.ledger[0].id);
+    assert.deepEqual(terminal.ledger[0].admission, unknown.ledger[0].admission);
+    assert.equal(terminal.ledger[0].original_outcome, "indeterminate");
+    assert.equal(terminal.ledger[0].current_outcome, outcome);
+    assert.equal(terminal.ledger[0].executed_at, unknown.ledger[0].executed_at);
+    assert.equal(terminal.ledger[0].original_outcome_at, null);
+    assert.equal(terminal.ledger[0].physical_execution_count, 1);
+    assert.equal(
+      harness.runSql(
+        `select to_jsonb(observation) from public.payment_provider_observations observation where operation_id='${unknown.ledger[0].id}' and event_id='${unknown.effects[0].result.evidence.eventId}';`,
+      ),
+      initialObservation,
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.payment_provider_observations where operation_id='${unknown.ledger[0].id}';`,
+      ),
+      "2",
+    );
+    assert.deepEqual(terminal.inventory, unknown.inventory);
+    assert.deepEqual(terminal.occupancies, unknown.occupancies);
+    assert.equal(terminal.releases, 0);
+    if (outcome === "succeeded") {
+      assert.equal(terminal.work.state, "complete");
+      assert.equal(terminal.confirmations.length, 1);
+      assert.equal(terminal.receipts.length, 2);
+      assert.equal(terminal.commitment.status, "confirmed_booking");
+      assert.equal(
+        terminal.ledger[0].movement_reference,
+        unknown.ledger[0].movement_reference,
+      );
+      assert.equal(
+        Date.parse(terminal.snapshot.movements[1].recordedAt),
+        Date.parse(terminal.ledger[0].authoritative_outcome_at),
+        "Confirmation records authoritative success occurrence, not initial unknown execution or receipt time",
+      );
+      assert.ok(
+        Date.parse(terminal.ledger[0].authoritative_outcome_at) >
+          Date.parse(terminal.ledger[0].executed_at),
+      );
+    } else {
+      assert.equal(terminal.work.state, "payment_required");
+      assert.equal(terminal.ledger[0].movement_reference, null);
+      assert.equal(terminal.notifications.length, 1);
+      assert.equal(terminal.confirmations.length, 0);
+      assert.equal(terminal.receipts.length, 0);
+      assert.equal(terminal.commitment.status, "pending_hold");
+      assert.equal(
+        Date.parse(terminal.work.payment_required_deadline) -
+          Date.parse(terminal.work.payment_required_recorded_at),
+        1200000,
+      );
+      const prepared = JSON.parse(
+        harness.runSql(
+          paymentEvidenceSql +
+            `begin;
+        create function public.unknown_capture_expiry_now() returns timestamptz language sql as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${requestId}'$$;
+        do $$begin execute replace(pg_get_functiondef('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'::regprocedure),'clock_timestamp()','public.unknown_capture_expiry_now()');end$$;
+        set local role service_role; select public.prepare_booking_request_payment_required_expiry('${requestId}',${literal(providerIdentity)}); rollback;`,
+        ),
+      );
+      assert.equal(
+        prepared.status,
+        "release",
+        "Resolved unknown Capture failure remains safely eligible for expiry preparation",
+      );
+    }
+    const repeat = await finishWorker(
+      startWorker(outcome === "failed" ? "recover-failure" : "recover"),
+    );
+    assert.ok(repeat.every((result) => result.status === "confirmed"));
+    assert.deepEqual(
+      observeRecovery(),
+      terminal,
+      "Terminal replay preserves the accepted snapshot/window and receipts",
+    );
+    const trace = providerTrace
+      .slice(traceStart)
+      .filter(
+        (call) =>
+          call.request.paymentLifecycleId ===
+          unknown.ledger[0].payment_lifecycle_id,
+      );
+    assert.equal(trace.filter((call) => call.stage === "execute").length, 1);
+    assert.equal(trace.filter((call) => call.stage === "query").length, 2);
+    harness.runSql(paymentEvidenceSql + cleanup);
+    seeded = false;
+  }
+  console.log(
+    "Original indeterminate Capture survives fresh unknown inquiry, unrelated eligible work, and same-identity success/failure resolution: one execution, immutable original evidence, exact success occurrence, one confirmation or fixed Payment Required window, safe expiry preparation, and terminal replay.",
   );
 }
 
@@ -1308,6 +1493,7 @@ try {
   await proveFailureRecording(recoverySource);
   await proveApplicationFailureRecovery(recoverySource);
   await proveCaptureProcessing(recoverySource);
+  await proveIndeterminateCaptureRecovery(recoverySource);
 } finally {
   for (const worker of workers) worker.child.kill("SIGTERM");
   await Promise.all([...workers].map((worker) => worker.exited));
