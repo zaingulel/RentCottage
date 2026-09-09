@@ -194,42 +194,48 @@ export function ConfirmedBookingDetails({
         )}
         <div>
           <dt>{c.rules}</dt>
-          <dd>{access.houseRules}</dd>
+          <dd dir="auto">{access.houseRules}</dd>
         </div>
         <div>
           <dt>{c.terms}</dt>
-          <dd>{access.bookingTermsBody}</dd>
+          <dd dir="auto">{access.bookingTermsBody}</dd>
         </div>
         {access.exactAddress ? (
           <div>
             <dt>{c.address}</dt>
-            <dd>{access.exactAddress}</dd>
+            <dd dir="auto">{access.exactAddress}</dd>
           </div>
         ) : null}
         {access.privateDirections ? (
           <div>
             <dt>{c.directions}</dt>
-            <dd>{access.privateDirections}</dd>
+            <dd dir="auto">{access.privateDirections}</dd>
           </div>
         ) : null}
         {access.mapPin ? (
           <div>
             <dt>{c.map}</dt>
             <dd>
-              {access.mapPin.latitude}, {access.mapPin.longitude}
+              <bdi dir="ltr">
+                {access.mapPin.latitude}, {access.mapPin.longitude}
+              </bdi>
             </dd>
           </div>
         ) : null}
         {access.customerPhone ? (
           <div>
             <dt>{c.customerPhone}</dt>
-            <dd>{access.customerPhone}</dd>
+            <dd>
+              <bdi dir="ltr">{access.customerPhone}</bdi>
+            </dd>
           </div>
         ) : null}
         {access.ownerPhone ? (
           <div>
             <dt>{c.ownerPhone}</dt>
-            <dd>{access.ownerPhone}</dd>
+            <dd>
+              <bdi dir="ltr">{access.ownerPhone}</bdi>
+            </dd>
           </div>
         ) : null}
         <div>

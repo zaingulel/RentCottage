@@ -522,6 +522,21 @@ test("a verified Customer double-submit creates one Pending request and one mini
           await expect(
             ownerView.getByText(bookingTermsFixture("en").body),
           ).toBeVisible();
+          for (const surface of [customerView, ownerView]) {
+            for (const value of [
+              customerPhone,
+              ownerPhone,
+              "36.408333, 44.385834",
+            ]) {
+              await expect(surface.getByText(value, { exact: true })).toHaveCSS(
+                "direction",
+                "ltr",
+              );
+            }
+            await expect(
+              surface.getByText(bookingTermsFixture("en").body),
+            ).toHaveCSS("direction", "ltr");
+          }
         }
         if (state === "payment-required-elapsed") {
           await expect(customerView.getByRole("status")).toContainText(
