@@ -1,6 +1,6 @@
 -- Database test arrangement only. Production executes its fictional provider in TypeScript.
 -- Each fixture call visibly composes durable admission, isolated effect, and trusted recording.
-create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text, target_command jsonb default null) returns jsonb language plpgsql as $$
 declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
 declare observed jsonb;
 declare proposed jsonb;
@@ -29,16 +29,20 @@ begin
     when 'booking-request-payment-required-expiry' then 'record_booking_request_payment_required_expiry_observation'
     when 'booking-request-payment-required-corrective-refund' then 'record_booking_request_payment_required_expiry_observation'
     else 'record_booking_request_provider_operation_observation' end;
-  execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed;
+  if recorder in ('record_booking_request_payment_recovery_observation','record_booking_request_payment_required_expiry_observation') then
+    if target_command is null then raise exception 'Fixture must name observation consequences'; end if;
+    execute format('select public.%I($1,$2,$3)',recorder) into observed using operation_id::uuid,observed,
+      target_command||jsonb_build_object('revision',public.get_booking_request_payment_observation_facts(operation_id::uuid)->>'revision');
+  else execute format('select public.%I($1,$2)',recorder) into observed using operation_id::uuid,observed; end if;
   return observed-'evidence';
 end;
 $$;
-create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text,target_command jsonb default null) returns jsonb language plpgsql as $$
 declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
 begin
   if prior_role='none' then perform set_config('role','service_role',true); end if;
   execute format('select public.%I($1)',routine) into admission using permit;
-  result:=pg_temp.payment_fixture_result(admission,outcome);
+  result:=pg_temp.payment_fixture_result(admission,outcome,target_command);
   perform set_config('role',prior_role,true);
   return result;
 end;
@@ -49,17 +53,17 @@ $$;
 create or replace function pg_temp.capture_execute(permit jsonb,outcome text default 'succeeded') returns jsonb language sql as $$
   select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
 $$;
-create or replace function pg_temp.recovery_execute(permit jsonb,outcome text) returns jsonb language sql as $$
-  select pg_temp.payment_fixture_execute('admit_booking_request_payment_recovery',permit,outcome);
+create or replace function pg_temp.recovery_execute(permit jsonb,outcome text,target_state text,target_quarantine text default null,target_capture uuid default null) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_recovery',permit,outcome,jsonb_build_object('recoveryState',target_state,'quarantineReason',target_quarantine,'correctiveCaptureId',target_capture));
 $$;
-create or replace function pg_temp.expiry_execute(permit jsonb,outcome text) returns jsonb language sql as $$
-  select pg_temp.payment_fixture_execute('admit_booking_request_payment_required_expiry',permit,outcome);
+create or replace function pg_temp.expiry_execute(permit jsonb,outcome text,target_quarantine text default null) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_payment_required_expiry',permit,outcome,jsonb_build_object('recoveryState',null,'quarantineReason',target_quarantine,'correctiveCaptureId',null));
 $$;
-create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text) returns jsonb language plpgsql as $$
+create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text,target_command jsonb default null) returns jsonb language plpgsql as $$
 declare prior_role text:=current_setting('role'); declare result jsonb;
 begin
   if prior_role='none' then perform set_config('role','service_role',true); end if;
-  result:=pg_temp.payment_fixture_result(public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],request_id,reference),outcome);
+  result:=pg_temp.payment_fixture_result(public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],request_id,reference),outcome,target_command);
   perform set_config('role',prior_role,true);
   return result;
 end;
@@ -67,15 +71,35 @@ $$;
 create or replace function pg_temp.capture_query(operation jsonb,request_id text,reference text) returns jsonb language sql as $$
   select pg_temp.payment_query(operation,request_id,reference,'succeeded');
 $$;
-create or replace function pg_temp.permit_query(permit jsonb,request_id text,reference text,outcome text) returns jsonb language sql as $$
+create or replace function pg_temp.permit_query(permit jsonb,request_id text,reference text,outcome text,target_state text default null,target_quarantine text default null,target_capture uuid default null) returns jsonb language sql as $$
   select pg_temp.payment_query(jsonb_build_object('providerIdentity',permit#>'{binding,providerIdentity}',
     'requestFingerprint',permit#>'{binding,requestFingerprint}','paymentLifecycleId',coalesce(permit#>'{binding,paymentLifecycleId}',permit#>'{binding,authorizationPaymentLifecycleId}'),
     'logicalOperationId',coalesce(permit#>'{binding,logicalOperationId}',permit#>'{binding,releaseLogicalOperationId}',permit#>'{binding,refundLogicalOperationId}'),'physicalAttemptId',coalesce(permit#>'{binding,physicalAttemptId}',permit#>'{binding,releasePhysicalAttemptId}',permit#>'{binding,refundPhysicalAttemptId}'),
     'operationKind',case permit->>'step' when 'replacement-authorization' then 'authorization' when 'replacement-capture' then 'capture'
       else case when permit->>'purpose'='booking-request-payment-required-corrective-refund' then 'refund' else 'release' end end,
-    'amountFils',permit#>'{binding,amountFils}','currency',permit#>'{binding,currency}'),request_id,reference,outcome);
+    'amountFils',permit#>'{binding,amountFils}','currency',permit#>'{binding,currency}'),request_id,reference,outcome,jsonb_build_object('recoveryState',target_state,'quarantineReason',target_quarantine,'correctiveCaptureId',target_capture));
 $$;
 create or replace function pg_temp.payment_fixture_operation_json(operation public.payment_provider_operations) returns jsonb language sql as $$
   select to_jsonb(operation)||jsonb_build_object('physical_execution_count',
     coalesce((select physical_execution_count from public.simulated_payment_effects where operation_id=operation.id),0));
+$$;
+
+create or replace function pg_temp.expiry_prepare(request_id uuid,identity jsonb,command jsonb) returns jsonb language plpgsql as $$
+declare result jsonb; declare target jsonb; declare prior_role text:=current_setting('role');
+begin
+  if prior_role='none' then perform set_config('role','service_role',true); end if;
+  result:=public.prepare_booking_request_payment_required_expiry(request_id,identity,command||jsonb_build_object('revision',public.get_booking_request_payment_facts(request_id)->>'revision'));
+  if result->>'status'='prepared' then
+    select owned into target from jsonb_array_elements(public.get_booking_request_payment_facts(request_id)->'expiryOperations') owned
+      where (command->>'action'='release' and owned->>'authorizationLifecycleId'=command->>'authorizationLifecycleId')
+        or (command->>'action'='refund' and owned->>'captureId'=command->>'captureId');
+    result:=jsonb_build_object('status',command->>'action','permit',target->'permit','binding',target#>'{permit,binding}');
+  end if;
+  perform set_config('role',prior_role,true);
+  return result;
+end;
+$$;
+create or replace function pg_temp.correction_observe(request_id uuid,operation_id uuid,receipt jsonb,target_state text,target_quarantine text,target_capture uuid default null) returns jsonb language sql as $$
+  select public.observe_booking_request_payment_correction(request_id,operation_id,receipt,jsonb_build_object('revision',public.get_booking_request_payment_observation_facts(operation_id)->>'revision',
+    'recoveryState',target_state,'quarantineReason',target_quarantine,'correctiveCaptureId',target_capture));
 $$;

@@ -77,15 +77,16 @@ function verifyProviderResolution() {
   const cutoff =
     "  'successful authorization finalizes one Pending Booking Request'\n);";
   assert.ok(submission.includes(cutoff));
+  // This self-contained submission source supplies its ordinary authorization helpers.
+  // Prepending the recovery/expiry helper overloads would make those calls ambiguous.
   const result = harness.runSql(
-    paymentEvidenceSql +
-      (submission
-        .slice(0, submission.indexOf(cutoff) + cutoff.length)
-        .replace(
-          "begin;",
-          "begin; create extension if not exists pgtap with schema extensions; set local search_path=public,extensions;",
-        ) +
-        `
+    submission
+      .slice(0, submission.indexOf(cutoff) + cutoff.length)
+      .replace(
+        "begin;",
+        "begin; create extension if not exists pgtap with schema extensions; set local search_path=public,extensions;",
+      ) +
+      `
     reset role;
     update public.account_contexts set role='platform_administrator' where user_id=(select customer_user_id from public.booking_requests);
     select set_config('request.jwt.claims',jsonb_build_object('sub',(select customer_user_id from public.booking_requests),'role','authenticated','aal','aal2')::text,true);
@@ -116,7 +117,7 @@ function verifyProviderResolution() {
     set local role authenticated;
     select 'EVIDENCE_MOVEMENT:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     rollback;
-  `),
+  `,
   );
   assert.doesNotMatch(
     result,

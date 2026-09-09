@@ -2980,14 +2980,12 @@ begin
     raise exception 'Expiry finalization is unavailable' using errcode='42501'; end if;
   if public.booking_request_payment_required_expiry_completed(target_booking_request_id) then
     return jsonb_build_object('status','expired','bookingRequestId',target_booking_request_id); end if;
+  prepared:=public.get_booking_request_payment_facts(target_booking_request_id);
+  if (prepared->>'quarantined')::boolean then return jsonb_build_object('status','quarantined','bookingRequestId',target_booking_request_id); end if;
+  if (prepared->>'confirmationValid')::boolean then return jsonb_build_object('status','confirmed','bookingRequestId',target_booking_request_id); end if;
   select * into work from public.booking_request_capture_work capture_work where capture_work.booking_request_id=target_booking_request_id;
-  prepared := public.prepare_booking_request_payment_required_expiry(target_booking_request_id,
-    jsonb_build_object('provider',work.provider,'environment',work.environment,'merchantId',work.merchant_id,'terminalId',work.terminal_id));
-  if prepared->>'status' <> 'ready' then
-    return jsonb_build_object('status',case when prepared->>'status' in ('release','refund') then 'processing'
-      when prepared->>'status' in ('reconcile-expiry','reconcile-recovery') then 'attention-required'
-      else prepared->>'status' end,'bookingRequestId',target_booking_request_id);
-  end if;
+  if clock_timestamp()<work.payment_required_deadline then return jsonb_build_object('status','not-due','bookingRequestId',target_booking_request_id); end if;
+  if not public.booking_request_payment_expiry_is_safe(prepared) then return jsonb_build_object('status','processing','bookingRequestId',target_booking_request_id); end if;
   select * into request from public.booking_requests requests where requests.id=target_booking_request_id;
   select * into claim from public.booking_request_authorization_claims claims where claims.id=work.authorization_claim_id;
   select * into attempt from public.booking_request_submission_attempts attempts where attempts.id=work.attempt_id;
@@ -3660,68 +3658,42 @@ $$;
 
 ALTER FUNCTION "public"."lease_booking_request_capture_work"("target_booking_request_id" "uuid", "target_provider_identity" "jsonb") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."lease_booking_request_payment_recovery_step"("target_attempt_id" "uuid") RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO ''
-    AS $$
+CREATE OR REPLACE FUNCTION public.lease_booking_request_payment_recovery_step(target_attempt_id uuid,target_step text,target_expected_state text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare source record;
-declare attempt public.booking_request_payment_recovery_attempts;
-declare previous public.booking_request_payment_recovery_operations;
-declare ledger public.payment_provider_operations;
-declare step text;
 declare permit jsonb;
+declare ledger public.payment_provider_operations;
 begin
+  if current_setting('role',true)<>'service_role' then raise exception 'Recovery processing is unavailable' using errcode='42501'; end if;
   if public.booking_request_payment_quarantined((select attempts.booking_request_id from public.booking_request_payment_recovery_attempts attempts where attempts.id=target_attempt_id)) then return jsonb_build_object('status','quarantined'); end if;
-  if current_setting('role',true) <> 'service_role' then
-    raise exception 'Recovery processing is unavailable' using errcode='42501'; end if;
-  if public.booking_request_payment_required_expiry_completed((
-    select attempts.booking_request_id from public.booking_request_payment_recovery_attempts attempts
-      where attempts.id=target_attempt_id
-  )) then return jsonb_build_object('status','deadline-elapsed'); end if;
+  if public.booking_request_payment_required_expiry_completed((select attempts.booking_request_id from public.booking_request_payment_recovery_attempts attempts where attempts.id=target_attempt_id)) then return jsonb_build_object('status','deadline-elapsed'); end if;
   select * into source from public.lock_booking_request_payment_recovery_source(target_attempt_id);
-  attempt := source.attempt;
-  select * into ledger from public.payment_provider_operations operations where operations.recovery_attempt_id=attempt.id
-    and operations.current_outcome is null order by operations.created_at,operations.id for update of operations limit 1;
-  if found then
-    permit:=ledger.admission->'permit';
-    return jsonb_build_object('status','reconcile','permit',permit,'binding',permit->'binding',
-      'providerRequestId',null,'providerReference',null);
-  end if;
-  if attempt.state='blocked' then
-    select * into previous from public.booking_request_payment_recovery_operations operations
-      where operations.recovery_attempt_id=attempt.id and operations.outcome='indeterminate';
-    if previous.id is null then return jsonb_build_object('status','blocked'); end if;
-    permit := public.booking_request_recovery_execution_permit(attempt,source.work,source.payment_snapshot,previous.step);
-    ledger := public.validate_booking_request_recovery_operation(previous,permit);
+  if (source.attempt).state is distinct from target_expected_state then return jsonb_build_object('status','stale'); end if;
+  if not ((target_step='original-release' and target_expected_state='admitted')
+    or (target_step='replacement-authorization' and target_expected_state='original_released')
+    or (target_step='replacement-capture' and target_expected_state='replacement_authorized')
+    or (target_step='replacement-release' and target_expected_state='capture_failed')) then
+    raise exception 'Recovery step is invalid for current state' using errcode='RC409'; end if;
+  permit:=public.booking_request_recovery_execution_permit(source.attempt,source.work,source.payment_snapshot,target_step);
+  if exists(select 1 from public.booking_request_payment_required_expiry_operations owned
+    where owned.booking_request_id=(source.work).booking_request_id and owned.owner='expiry'
+      and owned.authorization_payment_lifecycle_id=(permit#>>'{binding,paymentLifecycleId}')::uuid
+      and owned.predecessor_movement_reference=permit#>>'{binding,predecessorMovementReference}') then
+    return jsonb_build_object('status','deadline-elapsed'); end if;
+  select * into ledger from public.payment_provider_operations operations where operations.recovery_attempt_id=target_attempt_id
+    and operations.logical_operation_id=permit->>'operationId' for update of operations;
+  if ledger.id is not null then
+    if ledger.admission->'permit' is distinct from permit then raise exception 'Recovery admission binding changed' using errcode='RC409'; end if;
     return jsonb_build_object('status','reconcile','permit',permit,'binding',permit->'binding',
       'providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference);
   end if;
-  if attempt.state in ('safely_failed','succeeded','late_succeeded') then
-    return jsonb_build_object('status',case when attempt.state='safely_failed' then 'retryable'
-      else replace(attempt.state,'_','-') end);
-  end if;
-  step := case attempt.state when 'admitted' then 'original-release'
-    when 'original_released' then 'replacement-authorization'
-    when 'replacement_authorized' then 'replacement-capture'
-    when 'capture_failed' then 'replacement-release' end;
-  permit := public.booking_request_recovery_execution_permit(attempt,source.work,source.payment_snapshot,step);
-  if exists(
-    select 1 from public.booking_request_payment_required_expiry_operations expiry_operations
-    where expiry_operations.booking_request_id=attempt.booking_request_id
-      and expiry_operations.owner='expiry'
-      and expiry_operations.authorization_payment_lifecycle_id=
-        (permit#>>'{binding,paymentLifecycleId}')::uuid
-      and expiry_operations.predecessor_movement_reference=
-        permit#>>'{binding,predecessorMovementReference}'
-  ) then return jsonb_build_object('status','deadline-elapsed'); end if;
-  -- Check the clock after every source, recovery and expiry-ownership lock.
-  if step <> 'replacement-release' and clock_timestamp() >= (source.work).payment_required_deadline then
+  if exists(select 1 from public.payment_provider_operations operations where operations.recovery_attempt_id=target_attempt_id
+    and operations.current_outcome is null) then return jsonb_build_object('status','stale'); end if;
+  if target_step<>'replacement-release' and clock_timestamp()>=(source.work).payment_required_deadline then
     return jsonb_build_object('status','deadline-elapsed'); end if;
   return jsonb_build_object('status','leased','permit',permit,'binding',permit->'binding');
 end;
 $$;
-
-ALTER FUNCTION "public"."lease_booking_request_payment_recovery_step"("target_attempt_id" "uuid") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."lease_booking_request_release_work"("target_work_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -4193,7 +4165,7 @@ $$;
 
 ALTER FUNCTION "public"."mark_booking_request_reconciliation_required"("target_attempt_id" "uuid") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."observe_booking_request_payment_correction"("target_booking_request_id" "uuid", "target_provider_operation_id" "uuid", "target_receipt" "jsonb") RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."observe_booking_request_payment_correction"("target_booking_request_id" "uuid", "target_provider_operation_id" "uuid", "target_receipt" "jsonb", "target_command" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
@@ -4203,6 +4175,8 @@ declare expected jsonb;
 declare conflicting boolean;
 declare observed_at timestamptz;
 declare provider_result jsonb;
+declare facts jsonb;
+declare recorded jsonb;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Payment observation unavailable' using errcode='42501'; end if;
   select * into work from public.booking_request_capture_work capture where capture.booking_request_id=target_booking_request_id;
@@ -4211,6 +4185,8 @@ begin
   ledger:=public.lock_payment_observation_source(target_provider_operation_id,
     array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund']);
   select * into work from public.booking_request_capture_work capture where capture.booking_request_id=target_booking_request_id for update of capture;
+  facts:=public.get_booking_request_payment_observation_facts(ledger.id);
+  if facts->>'revision' is distinct from target_command->>'revision' then return jsonb_build_object('status','stale'); end if;
   if work.payment_required_deadline is null or ledger.id is null or ledger.operation_kind not in ('capture','release','refund')
     or ledger.claim_id is distinct from work.authorization_claim_id then raise exception 'Payment observation source is invalid' using errcode='RC409'; end if;
   if target_receipt is null or jsonb_typeof(target_receipt)<>'object'
@@ -4232,7 +4208,8 @@ begin
       target_amount_fils => ledger.amount_fils,
       target_received_at => clock_timestamp()
     );
-    return public.quarantine_booking_request_payment(target_booking_request_id,'malformed-provider-observation'); end if;
+    if target_command->>'quarantineReason' is distinct from 'malformed-provider-observation' then raise exception 'Selected receipt consequence is invalid' using errcode='RC409'; end if;
+    return public.quarantine_booking_request_payment(target_booking_request_id,target_command->>'quarantineReason'); end if;
   if exists(select 1 from public.booking_request_payment_correction_observations observations
     where observations.provider_operation_id=ledger.id and observations.receipt_identity=target_receipt->>'receiptId' and observations.payload=target_receipt) then
     perform public.append_booking_request_payment_history(
@@ -4283,32 +4260,23 @@ begin
       perform public.validate_payment_provider_observation(provider_result,ledger.id);
       if (provider_result#>>'{evidence,occurredAt}')::timestamptz is distinct from observed_at then
         raise exception 'Correction occurrence conflicts with provider evidence' using errcode='RC409'; end if;
-      case ledger.admission->>'purpose'
-        when 'booking-request-payment-recovery' then perform public.record_booking_request_payment_recovery_observation(ledger.id,provider_result);
-        when 'booking-request-capture' then perform public.record_booking_request_capture_observation(ledger.id,provider_result);
-        else perform public.record_booking_request_payment_required_expiry_observation(ledger.id,provider_result);
-      end case;
+      recorded:=public.record_booking_request_payment_observation(ledger.id,provider_result,target_command);
+      if recorded->>'status'='stale' then return recorded; end if;
       select * into ledger from public.payment_provider_operations operations where operations.id=ledger.id;
     exception when sqlstate 'RC409' then conflicting:=true;
     end;
   end if;
   insert into public.booking_request_payment_correction_observations(booking_request_id,provider_operation_id,receipt_identity,payload,conflict)
     values(target_booking_request_id,ledger.id,target_receipt->>'receiptId',target_receipt,coalesce(conflicting,true));
-  if conflicting is not false then return public.quarantine_booking_request_payment(target_booking_request_id,'conflicting-provider-observation'); end if;
-  if target_receipt->>'outcome'='indeterminate' then return public.quarantine_booking_request_payment(target_booking_request_id,'unresolved-provider-observation'); end if;
+  if conflicting is not false then
+    if target_command->>'quarantineReason' is distinct from 'conflicting-provider-observation' then raise exception 'Selected receipt consequence is invalid' using errcode='RC409'; end if;
+    return public.quarantine_booking_request_payment(target_booking_request_id,target_command->>'quarantineReason'); end if;
   if public.booking_request_payment_quarantined(target_booking_request_id) then return jsonb_build_object('status','quarantined'); end if;
-  if ledger.operation_kind in ('release','refund') and ledger.current_outcome='failed' then
-    return public.quarantine_booking_request_payment(target_booking_request_id,'failed-'||ledger.operation_kind||'-observation'); end if;
-  if ledger.operation_kind='capture' and ledger.current_outcome='succeeded' and observed_at >= work.payment_required_deadline then
-    insert into public.booking_request_payment_required_expiry_work(booking_request_id,payment_required_deadline)
-      values(work.booking_request_id,work.payment_required_deadline) on conflict do nothing;
-    perform public.invalidate_booking_request_payment_confirmation(work.booking_request_id,ledger.id,'late-capture');
-  end if;
   return jsonb_build_object('status','recorded');
 end;
 $$;
 
-ALTER FUNCTION "public"."observe_booking_request_payment_correction"("target_booking_request_id" "uuid", "target_provider_operation_id" "uuid", "target_receipt" "jsonb") OWNER TO "postgres";
+ALTER FUNCTION "public"."observe_booking_request_payment_correction"("target_booking_request_id" "uuid", "target_provider_operation_id" "uuid", "target_receipt" "jsonb", "target_command" "jsonb") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."observe_booking_request_payment_history"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -4461,7 +4429,10 @@ begin
   select * into source from public.lock_booking_request_capture_source(target_booking_request_id);
   select * into expiry from public.booking_request_payment_required_expiry_work work where work.booking_request_id=target_booking_request_id for update of work;
   select * into capture from public.payment_provider_operations ledger where ledger.id=target_capture_id for update of ledger;
-  if capture.operation_kind is distinct from 'capture' or capture.current_outcome is distinct from 'succeeded'
+  if expiry.id is null or expiry.state in ('complete','quarantined')
+    or (capture.claim_id,capture.claim_generation,capture.provider,capture.environment,capture.merchant_id,capture.terminal_id,capture.amount_fils,capture.currency)
+      is distinct from ((source.work).authorization_claim_id,(source.work).authorization_claim_generation,(source.work).provider,(source.work).environment,(source.work).merchant_id,(source.work).terminal_id,(source.work).amount_fils,(source.work).currency)
+    or capture.operation_kind is distinct from 'capture' or capture.current_outcome is distinct from 'succeeded'
     or capture.authoritative_outcome_at is null or capture.authoritative_outcome_at < (source.work).payment_required_deadline
     or capture.original_outcome='failed' or capture.amount_fils<>(source.work).amount_fils
     or capture.currency<>(source.work).currency or capture.claim_id<>(source.work).authorization_claim_id
@@ -4502,377 +4473,92 @@ $$;
 
 ALTER FUNCTION "public"."prepare_booking_request_corrective_refund"("target_booking_request_id" "uuid", "target_capture_id" "uuid") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."prepare_booking_request_payment_required_expiry"("target_booking_request_id" "uuid", "target_provider_identity" "jsonb") RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO ''
-    AS $$
+CREATE OR REPLACE FUNCTION public.prepare_booking_request_payment_required_expiry(target_booking_request_id uuid,target_provider_identity jsonb,target_command jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare facts jsonb;
 declare source record;
 declare expiry public.booking_request_payment_required_expiry_work;
-declare recovery record;
-declare recovery_attempt public.booking_request_payment_recovery_attempts;
-declare release_operation public.booking_request_payment_recovery_operations;
-declare release_ledger public.payment_provider_operations;
-declare authorization_ledger public.payment_provider_operations;
-declare expected_permit jsonb;
-declare unresolved_reason text;
 declare target public.booking_request_payment_required_expiry_operations;
-declare instruction jsonb;
-declare request public.booking_requests;
-declare capture_work public.booking_request_capture_work;
-declare captured record;
+declare recovery public.booking_request_payment_recovery_attempts;
+declare authorization_ledger public.payment_provider_operations;
+declare released public.payment_provider_operations;
+declare recovery_operation public.booking_request_payment_recovery_operations;
+declare lifecycle uuid:=(target_command->>'authorizationLifecycleId')::uuid;
+declare logical_identity text;
+declare authorization_logical text;
+declare authorization_physical text;
+declare predecessor text;
+declare predecessor_time timestamptz;
 begin
-  if current_setting('role',true) <> 'service_role' or target_booking_request_id is null then
-    raise exception 'Payment Required expiry preparation is unavailable' using errcode='42501';
+  if current_setting('role',true)<>'service_role' then raise exception 'Payment Required expiry preparation is unavailable' using errcode='42501'; end if;
+  facts:=public.get_booking_request_payment_facts(target_booking_request_id);
+  if facts->>'revision' is distinct from target_command->>'revision' then return jsonb_build_object('status','stale'); end if;
+  if facts->'providerIdentity' is distinct from target_provider_identity then raise exception 'Payment Required expiry provider is invalid' using errcode='RC409'; end if;
+  if (facts->>'quarantined')::boolean then return jsonb_build_object('status','quarantined'); end if;
+  if (facts->>'expired')::boolean then return jsonb_build_object('status','expired'); end if;
+  if target_command->>'action'='quarantine' then
+    if target_command->>'reason' is null then raise exception 'Quarantine reason is required' using errcode='RC409'; end if;
+    return public.quarantine_booking_request_payment(target_booking_request_id,target_command->>'reason');
   end if;
-  if public.booking_request_payment_quarantined(target_booking_request_id) then return jsonb_build_object('status','quarantined'); end if;
-  if public.booking_request_payment_required_expiry_completed(target_booking_request_id) then
-    return jsonb_build_object('status','expired','bookingRequestId',target_booking_request_id);
-  end if;
-  select * into request from public.booking_requests requests where requests.id=target_booking_request_id;
-  select * into capture_work from public.booking_request_capture_work work where work.booking_request_id=target_booking_request_id;
-  if request.status is distinct from 'accepted' or capture_work.state is distinct from 'payment_required'
-    or public.booking_request_payment_required_expiry_provider_matches(capture_work,target_provider_identity) is not true then
-    raise exception 'Payment Required expiry source is invalid' using errcode='RC409'; end if;
-  begin
-    select * into source from public.lock_booking_request_capture_source(target_booking_request_id);
-  exception when sqlstate 'RC409' or invalid_text_representation or numeric_value_out_of_range then
-    if clock_timestamp() < capture_work.payment_required_deadline then
-      return jsonb_build_object('status','not-due'); end if;
-    insert into public.booking_request_payment_required_expiry_work(booking_request_id,payment_required_deadline,
-      state,diagnostic_reason) values(target_booking_request_id,capture_work.payment_required_deadline,
-        'attention_required','source-evidence-invalid')
-      on conflict(booking_request_id) do update set state='attention_required',
-        diagnostic_reason='source-evidence-invalid',last_evaluated_at=clock_timestamp();
-    return public.quarantine_booking_request_payment(target_booking_request_id,'source-evidence-invalid');
-  end;
-  if not found or (source.work).state <> 'payment_required'
-    or not public.booking_request_payment_required_expiry_provider_matches(source.work,target_provider_identity) then
-    raise exception 'Payment Required expiry source is invalid' using errcode='RC409';
-  end if;
-  for captured in select operations.* from public.payment_provider_operations operations
-    where operations.claim_id=(source.work).authorization_claim_id and operations.current_outcome is null
-      and operations.admission->>'purpose' in ('booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund')
-    order by operations.created_at,operations.id for update of operations
-  loop
-    expected_permit:=captured.admission->'permit';
-    return jsonb_build_object('status',case when captured.admission->>'purpose'='booking-request-payment-recovery' then 'reconcile-recovery' else 'reconcile-expiry' end,
-      'permit',expected_permit,'binding',expected_permit->'binding','providerRequestId',null,'providerReference',null);
-  end loop;
-  for captured in select ledger.* from public.payment_provider_operations ledger
-    where ledger.claim_id=(source.work).authorization_claim_id and ledger.operation_kind='capture' and ledger.current_outcome='succeeded'
-    order by ledger.created_at,ledger.id
-  loop
-    if captured.authoritative_outcome_at is null then
-      return public.quarantine_booking_request_payment(target_booking_request_id,'capture-occurrence-unknown');
-    elsif captured.authoritative_outcome_at >= (source.work).payment_required_deadline then
-      insert into public.booking_request_payment_required_expiry_work(booking_request_id,payment_required_deadline)
-        values(target_booking_request_id,(source.work).payment_required_deadline) on conflict do nothing;
-      perform public.invalidate_booking_request_payment_confirmation(target_booking_request_id,captured.id,'late-capture');
-    end if;
-  end loop;
-  if exists(select 1 from public.booking_confirmations confirmations
-    where confirmations.booking_request_id=target_booking_request_id and not exists(select 1 from public.booking_request_confirmation_invalidations invalidation where invalidation.booking_request_id=target_booking_request_id)) then
-    return jsonb_build_object('status','confirmed');
-  end if;
-  if clock_timestamp() < (source.work).payment_required_deadline then
-    return jsonb_build_object('status','not-due','deadline',
-      to_char((source.work).payment_required_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'));
-  end if;
-  insert into public.booking_request_payment_required_expiry_work(
-    booking_request_id,payment_required_deadline
-  ) values(target_booking_request_id,(source.work).payment_required_deadline)
-  on conflict(booking_request_id) do nothing;
-  select * into expiry from public.booking_request_payment_required_expiry_work work
-    where work.booking_request_id=target_booking_request_id for update of work;
-  if expiry.payment_required_deadline is distinct from (source.work).payment_required_deadline then
-    raise exception 'Payment Required expiry deadline binding is invalid' using errcode='RC409';
-  end if;
-  if expiry.state='complete' then
-    return jsonb_build_object('status','expired','expiryWorkId',expiry.id);
-  end if;
-
-  if (source.ledger).current_outcome='succeeded' and (source.ledger).original_outcome<>'failed'
-    and (source.ledger).authoritative_outcome_at >= (source.work).payment_required_deadline then
-    perform public.prepare_booking_request_corrective_refund(target_booking_request_id,(source.ledger).id);
-  elsif (source.ledger).id is null or (source.ledger).operation_kind <> 'capture'
-    or (source.ledger).current_outcome <> 'failed'
-    or (source.ledger).movement_reference is not null
-    or ((source.ledger).original_outcome in ('failed', 'indeterminate')) is not true then
-    unresolved_reason := 'original-capture-unresolved';
-  end if;
-
-  if unresolved_reason is null then
-    for recovery in
-      select attempts as attempt,operations as operation
-      from public.booking_request_payment_recovery_attempts attempts
-      join public.booking_request_payment_recovery_operations operations
-        on operations.recovery_attempt_id=attempts.id
-      where attempts.booking_request_id=target_booking_request_id
-      order by attempts.generation,
-        case operations.step when 'original-release' then 1
-          when 'replacement-authorization' then 2 when 'replacement-capture' then 3 else 4 end
-    loop
-      begin
-        expected_permit := public.booking_request_recovery_execution_permit(
-          recovery.attempt,source.work,source.payment_snapshot,(recovery.operation).step
-        );
-        perform public.validate_booking_request_recovery_operation(
-          recovery.operation,expected_permit
-        );
-      exception when sqlstate 'RC409' then
-        unresolved_reason := 'recovery-evidence-invalid';
-      end;
-      exit when unresolved_reason is not null;
-    end loop;
-  end if;
-
-  if unresolved_reason is null and exists(
-    select 1
-    from public.payment_provider_operations ledger
-    join public.booking_request_payment_recovery_attempts attempts
-      on attempts.id=ledger.recovery_attempt_id
-    where attempts.booking_request_id=target_booking_request_id
-      and not exists(
-        select 1 from public.booking_request_payment_recovery_operations operations
-        where operations.provider_operation_id=ledger.id
-          and operations.recovery_attempt_id=attempts.id
-      )
-  ) then unresolved_reason := 'unexplained-recovery-provider-operation'; end if;
-
-  if unresolved_reason is null and exists(
-    select 1 from public.booking_request_payment_recovery_operations operations
-    join public.booking_request_payment_recovery_attempts attempts
-      on attempts.id=operations.recovery_attempt_id
-    where attempts.booking_request_id=target_booking_request_id
-      and operations.step in ('replacement-authorization','replacement-capture')
-      and operations.outcome='indeterminate'
-  ) then unresolved_reason := 'recovery-operation-indeterminate'; end if;
-
-  if unresolved_reason is null then
-    for captured in select ledger.* from public.booking_request_payment_recovery_operations operations
-      join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id
-      join public.payment_provider_operations ledger on ledger.id=operations.provider_operation_id
-      where attempts.booking_request_id=target_booking_request_id and operations.step='replacement-capture' and ledger.current_outcome='succeeded'
-      order by attempts.generation,ledger.id
-    loop
-      if captured.authoritative_outcome_at is null then unresolved_reason:='capture-occurrence-unknown'; exit;
-      elsif captured.authoritative_outcome_at < (source.work).payment_required_deadline then
-        return jsonb_build_object('status','processing');
-      else
-        begin perform public.prepare_booking_request_corrective_refund(target_booking_request_id,captured.id);
-        exception when sqlstate 'RC409' then unresolved_reason:='corrective-capture-invalid'; end;
-      end if;
-    end loop;
-  end if;
-
-  if unresolved_reason is null and exists(
-    select 1 from public.payment_provider_operations ledger
-    where (ledger.claim_id=(source.work).authorization_claim_id
-      or ledger.payment_lifecycle_id=(source.work).payment_lifecycle_id
-      or exists(select 1 from public.booking_request_payment_recovery_attempts attempts
-        where attempts.booking_request_id=target_booking_request_id and attempts.id=ledger.payment_lifecycle_id))
-      and ledger.id is distinct from (source.ledger).id
-      and not exists(select 1 from public.booking_request_payment_recovery_operations operations
-        join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id
-        where attempts.booking_request_id=target_booking_request_id and operations.provider_operation_id=ledger.id)
-      and ledger.current_outcome is distinct from 'not-executed'
-      and ledger.operation_kind in ('authorization','capture','release','refund','settlement')
-      and not exists(select 1 from public.booking_request_payment_required_expiry_operations owned
-        where owned.expiry_work_id=expiry.id and owned.provider_operation_id=ledger.id)
-      and not (ledger.operation_kind='authorization'
-        and (ledger.payment_lifecycle_id,ledger.logical_operation_id,ledger.physical_attempt_id,
-          ledger.provider,ledger.environment,ledger.merchant_id,ledger.terminal_id,
-          ledger.amount_fils,ledger.currency,ledger.provider_request_id,ledger.provider_reference,ledger.movement_reference)
-          is not distinct from
-        ((source.work).payment_lifecycle_id,(source.work).authorization_logical_operation_id,
-          (source.work).authorization_physical_attempt_id,(source.work).provider,(source.work).environment,
-          (source.work).merchant_id,(source.work).terminal_id,(source.work).amount_fils,(source.work).currency,
-          source.payment_snapshot#>>'{authorization,providerRequestId}',
-          source.payment_snapshot#>>'{authorization,providerReference}',
-          source.payment_snapshot#>>'{authorization,movementReference}')
-        and ledger.current_outcome='succeeded' and ledger.original_outcome in ('succeeded','indeterminate')
-        and ledger.recorded_at is not null)
-  ) then unresolved_reason := 'unexplained-provider-operation'; end if;
-
-  if unresolved_reason is null and not exists(select 1 from public.booking_request_payment_required_expiry_operations owned
-    where owned.expiry_work_id=expiry.id and owned.authorization_payment_lifecycle_id=(source.work).payment_lifecycle_id and owned.operation_kind='refund') then
-    select operations.* into release_operation
-    from public.booking_request_payment_recovery_operations operations
-    join public.booking_request_payment_recovery_attempts attempts
-      on attempts.id=operations.recovery_attempt_id
-    where attempts.booking_request_id=target_booking_request_id
-      and operations.step='original-release'
-    order by attempts.generation limit 1;
-    if release_operation.id is not null then
-      select * into recovery_attempt
-      from public.booking_request_payment_recovery_attempts attempts
-      where attempts.id=release_operation.recovery_attempt_id;
-      expected_permit := public.booking_request_recovery_execution_permit(
-        recovery_attempt,source.work,source.payment_snapshot,'original-release'
-      );
-      release_ledger := public.validate_booking_request_recovery_operation(
-        release_operation,expected_permit
-      );
-      insert into public.booking_request_payment_required_expiry_operations(
-        expiry_work_id,booking_request_id,owner,recovery_operation_id,provider_operation_id,
-        authorization_claim_id,authorization_claim_generation,
-        authorization_payment_lifecycle_id,authorization_logical_operation_id,
-        authorization_physical_attempt_id,predecessor_movement_reference,
-        predecessor_outcome_at,release_logical_operation_id,release_physical_attempt_id,
-        provider_idempotency_key,amount_fils,currency,provider,environment,merchant_id,terminal_id,
-        request_fingerprint
-      ) values(expiry.id,target_booking_request_id,'recovery',release_operation.id,release_ledger.id,
-        (source.work).authorization_claim_id,(source.work).authorization_claim_generation,
-        (source.work).payment_lifecycle_id,(source.work).authorization_logical_operation_id,
-        (source.work).authorization_physical_attempt_id,
-        source.payment_snapshot#>>'{authorization,movementReference}',
-        (source.payment_snapshot#>>'{movements,0,recordedAt}')::timestamptz,
-        release_ledger.logical_operation_id,release_ledger.physical_attempt_id,
-        release_ledger.provider_idempotency_key,(source.work).amount_fils,(source.work).currency,
-        (source.work).provider,(source.work).environment,(source.work).merchant_id,
-        (source.work).terminal_id,(source.work).request_fingerprint)
-      on conflict do nothing;
-      if release_ledger.current_outcome <> 'succeeded' then
-        unresolved_reason := case when release_ledger.current_outcome='indeterminate'
-          then 'original-release-indeterminate' else 'original-release-failed' end;
-      end if;
+  select * into source from public.lock_booking_request_capture_source(target_booking_request_id);
+  if (source.work).state<>'payment_required' or clock_timestamp()<(source.work).payment_required_deadline then return jsonb_build_object('status','not-due'); end if;
+  if (facts->>'confirmationValid')::boolean then return jsonb_build_object('status','confirmed'); end if;
+  insert into public.booking_request_payment_required_expiry_work(booking_request_id,payment_required_deadline)
+    values(target_booking_request_id,(source.work).payment_required_deadline) on conflict do nothing;
+  select * into expiry from public.booking_request_payment_required_expiry_work work where work.booking_request_id=target_booking_request_id for update of work;
+  if expiry.payment_required_deadline is distinct from (source.work).payment_required_deadline then raise exception 'Payment Required expiry deadline binding is invalid' using errcode='RC409'; end if;
+  if target_command->>'action'='refund' then
+    perform public.prepare_booking_request_corrective_refund(target_booking_request_id,(target_command->>'captureId')::uuid);
+    select * into target from public.booking_request_payment_required_expiry_operations owned where owned.expiry_work_id=expiry.id and owned.capture_provider_operation_id=(target_command->>'captureId')::uuid;
+  elsif target_command->>'action'='release' then
+    if lifecycle is null or exists(select 1 from public.payment_provider_operations ledger where ledger.claim_id=(source.work).authorization_claim_id
+      and ledger.operation_kind='capture' and (ledger.current_outcome is null or ledger.current_outcome in ('succeeded','indeterminate'))
+      and ledger.payment_lifecycle_id=lifecycle) then raise exception 'Captured or unresolved authorization cannot be released' using errcode='RC409'; end if;
+    if lifecycle=(source.work).payment_lifecycle_id then
+      if (source.ledger).current_outcome is distinct from 'failed' or (source.ledger).movement_reference is not null then raise exception 'Original capture is unresolved' using errcode='RC409'; end if;
+      authorization_logical:=(source.work).authorization_logical_operation_id;
+      authorization_physical:=(source.work).authorization_physical_attempt_id;
+      predecessor:=source.payment_snapshot#>>'{authorization,movementReference}';
+      predecessor_time:=(source.payment_snapshot#>>'{movements,0,recordedAt}')::timestamptz;
+      logical_identity:=expiry.id::text||':original-release';
     else
-      insert into public.booking_request_payment_required_expiry_operations(
-        expiry_work_id,booking_request_id,owner,
-        authorization_claim_id,authorization_claim_generation,
-        authorization_payment_lifecycle_id,authorization_logical_operation_id,
-        authorization_physical_attempt_id,predecessor_movement_reference,
-        predecessor_outcome_at,release_logical_operation_id,release_physical_attempt_id,
-        provider_idempotency_key,amount_fils,currency,provider,environment,merchant_id,terminal_id,
-        request_fingerprint
-      ) values(
-        expiry.id,target_booking_request_id,'expiry',(source.work).authorization_claim_id,
-        (source.work).authorization_claim_generation,(source.work).payment_lifecycle_id,
-        (source.work).authorization_logical_operation_id,(source.work).authorization_physical_attempt_id,
-        source.payment_snapshot#>>'{authorization,movementReference}',
-        (source.payment_snapshot#>>'{movements,0,recordedAt}')::timestamptz,
-        expiry.id::text||':original-release',expiry.id::text||':original-release:1',
-        expiry.id::text||':original-release:1',(source.work).amount_fils,(source.work).currency,
-        (source.work).provider,(source.work).environment,(source.work).merchant_id,(source.work).terminal_id,
-        (source.work).request_fingerprint
-      ) on conflict do nothing;
+      select * into recovery from public.booking_request_payment_recovery_attempts attempts where attempts.id=lifecycle and attempts.booking_request_id=target_booking_request_id for update of attempts;
+      select * into recovery_operation from public.booking_request_payment_recovery_operations owned where owned.recovery_attempt_id=recovery.id and owned.step='replacement-authorization';
+      authorization_ledger:=public.validate_booking_request_recovery_operation(recovery_operation,public.booking_request_recovery_execution_permit(recovery,source.work,source.payment_snapshot,'replacement-authorization'));
+      if authorization_ledger.current_outcome is distinct from 'succeeded' then raise exception 'Expiry authorization is invalid' using errcode='RC409'; end if;
+      authorization_logical:=authorization_ledger.logical_operation_id; authorization_physical:=authorization_ledger.physical_attempt_id;
+      predecessor:=authorization_ledger.movement_reference; predecessor_time:=authorization_ledger.authoritative_outcome_at;
+      logical_identity:=expiry.id::text||':replacement-release:'||recovery.generation::text;
     end if;
+    select * into recovery_operation from public.booking_request_payment_recovery_operations owned
+      where owned.id=(target_command->>'recoveryOperationId')::uuid;
+    if recovery_operation.id is not null then
+      select * into recovery from public.booking_request_payment_recovery_attempts attempts where attempts.id=recovery_operation.recovery_attempt_id and attempts.booking_request_id=target_booking_request_id;
+      if recovery.id is null or recovery_operation.step is distinct from (case when lifecycle=(source.work).payment_lifecycle_id then 'original-release' else 'replacement-release' end)
+        or (lifecycle<>(source.work).payment_lifecycle_id and recovery.id<>lifecycle) then raise exception 'Expiry release owner is invalid' using errcode='RC409'; end if;
+      released:=public.validate_booking_request_recovery_operation(recovery_operation,public.booking_request_recovery_execution_permit(recovery,source.work,source.payment_snapshot,recovery_operation.step));
+      if released.current_outcome is distinct from 'succeeded' then raise exception 'Recovery release is unresolved' using errcode='RC409'; end if;
+      logical_identity:=released.logical_operation_id;
+    elsif target_command->>'recoveryOperationId' is not null or exists(select 1 from public.payment_provider_operations ledger
+      where ledger.recovery_attempt_id is not null and ledger.payment_lifecycle_id=lifecycle and ledger.operation_kind='release'
+      and ledger.current_outcome is distinct from 'not-executed') then raise exception 'Recovery already owns authorization release' using errcode='RC409'; end if;
+    insert into public.booking_request_payment_required_expiry_operations(expiry_work_id,booking_request_id,owner,recovery_operation_id,provider_operation_id,
+      authorization_claim_id,authorization_claim_generation,authorization_payment_lifecycle_id,authorization_logical_operation_id,authorization_physical_attempt_id,
+      predecessor_movement_reference,predecessor_outcome_at,release_logical_operation_id,release_physical_attempt_id,provider_idempotency_key,amount_fils,currency,
+      provider,environment,merchant_id,terminal_id,request_fingerprint)
+    values(expiry.id,target_booking_request_id,case when recovery_operation.id is null then 'expiry' else 'recovery' end,recovery_operation.id,released.id,
+      (source.work).authorization_claim_id,(source.work).authorization_claim_generation,lifecycle,authorization_logical,authorization_physical,
+      predecessor,predecessor_time,logical_identity,coalesce(released.physical_attempt_id,logical_identity||':1'),coalesce(released.provider_idempotency_key,logical_identity||':1'),(source.work).amount_fils,(source.work).currency,
+      (source.work).provider,(source.work).environment,(source.work).merchant_id,(source.work).terminal_id,(source.work).request_fingerprint) on conflict do nothing;
+    select * into target from public.booking_request_payment_required_expiry_operations owned where owned.expiry_work_id=expiry.id and owned.authorization_payment_lifecycle_id=lifecycle;
+    if target.operation_kind<>'release' or target.recovery_operation_id is distinct from recovery_operation.id then raise exception 'Expiry release ownership changed' using errcode='RC409'; end if;
+  else raise exception 'Explicit expiry action is invalid' using errcode='RC409';
   end if;
-
-  if unresolved_reason is null then
-    for recovery in
-      select attempts as attempt,operations as operation
-      from public.booking_request_payment_recovery_attempts attempts
-      join public.booking_request_payment_recovery_operations operations
-        on operations.recovery_attempt_id=attempts.id
-      where attempts.booking_request_id=target_booking_request_id
-        and operations.step='replacement-authorization'
-        and operations.outcome='succeeded'
-        and not exists(select 1 from public.booking_request_payment_required_expiry_operations owned where owned.expiry_work_id=expiry.id and owned.authorization_payment_lifecycle_id=attempts.id and owned.operation_kind='refund')
-      order by attempts.generation
-    loop
-      expected_permit := public.booking_request_recovery_execution_permit(
-        recovery.attempt,source.work,source.payment_snapshot,'replacement-authorization'
-      );
-      authorization_ledger := public.validate_booking_request_recovery_operation(
-        recovery.operation,expected_permit
-      );
-      if authorization_ledger.current_outcome <> 'succeeded' then
-        unresolved_reason := 'replacement-authorization-invalid';
-        exit;
-      end if;
-      select operations.* into release_operation
-      from public.booking_request_payment_recovery_operations operations
-      where operations.recovery_attempt_id=(recovery.attempt).id
-        and operations.step='replacement-release';
-      if release_operation.id is not null then
-        expected_permit := public.booking_request_recovery_execution_permit(
-          recovery.attempt,source.work,source.payment_snapshot,'replacement-release'
-        );
-        release_ledger := public.validate_booking_request_recovery_operation(
-          release_operation,expected_permit
-        );
-        insert into public.booking_request_payment_required_expiry_operations(
-          expiry_work_id,booking_request_id,owner,recovery_operation_id,provider_operation_id,
-          authorization_claim_id,authorization_claim_generation,
-          authorization_payment_lifecycle_id,authorization_logical_operation_id,
-          authorization_physical_attempt_id,predecessor_movement_reference,
-          predecessor_outcome_at,release_logical_operation_id,release_physical_attempt_id,
-          provider_idempotency_key,amount_fils,currency,provider,environment,merchant_id,terminal_id,
-          request_fingerprint
-        ) values(expiry.id,target_booking_request_id,'recovery',release_operation.id,release_ledger.id,
-          authorization_ledger.claim_id,authorization_ledger.claim_generation,
-          authorization_ledger.payment_lifecycle_id,authorization_ledger.logical_operation_id,
-          authorization_ledger.physical_attempt_id,authorization_ledger.movement_reference,
-          authorization_ledger.authoritative_outcome_at,release_ledger.logical_operation_id,
-          release_ledger.physical_attempt_id,release_ledger.provider_idempotency_key,
-          authorization_ledger.amount_fils,authorization_ledger.currency,
-          authorization_ledger.provider,authorization_ledger.environment,
-          authorization_ledger.merchant_id,authorization_ledger.terminal_id,
-          authorization_ledger.request_fingerprint)
-        on conflict do nothing;
-        if release_ledger.current_outcome <> 'succeeded' then
-          unresolved_reason := case when release_ledger.current_outcome='indeterminate'
-            then 'replacement-release-indeterminate' else 'replacement-release-failed' end;
-          exit;
-        end if;
-      else
-        insert into public.booking_request_payment_required_expiry_operations(
-          expiry_work_id,booking_request_id,owner,
-          authorization_claim_id,authorization_claim_generation,
-          authorization_payment_lifecycle_id,authorization_logical_operation_id,
-          authorization_physical_attempt_id,predecessor_movement_reference,
-          predecessor_outcome_at,release_logical_operation_id,release_physical_attempt_id,
-          provider_idempotency_key,amount_fils,currency,provider,environment,merchant_id,terminal_id,
-          request_fingerprint
-        ) values(expiry.id,target_booking_request_id,'expiry',authorization_ledger.claim_id,
-          authorization_ledger.claim_generation,authorization_ledger.payment_lifecycle_id,
-          authorization_ledger.logical_operation_id,authorization_ledger.physical_attempt_id,
-          authorization_ledger.movement_reference,authorization_ledger.authoritative_outcome_at,
-          expiry.id::text||':replacement-release:'||(recovery.attempt).generation::text,
-          expiry.id::text||':replacement-release:'||(recovery.attempt).generation::text||':1',
-          expiry.id::text||':replacement-release:'||(recovery.attempt).generation::text||':1',
-          authorization_ledger.amount_fils,authorization_ledger.currency,
-          authorization_ledger.provider,authorization_ledger.environment,
-          authorization_ledger.merchant_id,authorization_ledger.terminal_id,
-          authorization_ledger.request_fingerprint)
-        on conflict do nothing;
-      end if;
-    end loop;
-  end if;
-
-  if unresolved_reason is null then
-    for target in select operations.* from public.booking_request_payment_required_expiry_operations operations
-      where operations.expiry_work_id=expiry.id order by operations.created_at,operations.id
-    loop
-      begin
-        release_ledger := public.validate_booking_request_payment_required_expiry_target(target,source.work,source.payment_snapshot);
-      exception when sqlstate 'RC409' then unresolved_reason := 'expiry-evidence-invalid'; end;
-      exit when unresolved_reason is not null;
-      if release_ledger.id is null then
-        if instruction is null then
-          expected_permit := public.booking_request_payment_required_expiry_permit(target,expiry.payment_required_deadline);
-          instruction := jsonb_build_object('status',case target.operation_kind when 'refund' then 'refund' else 'release' end,'permit',expected_permit,'binding',expected_permit->'binding');
-        end if;
-      elsif release_ledger.current_outcome='failed' then
-        unresolved_reason := 'expiry-release-failed'; exit;
-      elsif release_ledger.current_outcome='indeterminate' then
-        unresolved_reason := 'expiry-release-indeterminate';
-        exit;
-      end if;
-    end loop;
-  end if;
-  if unresolved_reason is not null then
-    return public.quarantine_booking_request_payment(target_booking_request_id,unresolved_reason);
-  end if;
-  update public.booking_request_payment_required_expiry_work set state='processing',diagnostic_reason=null,last_evaluated_at=clock_timestamp()
-    where id=expiry.id;
-  return coalesce(instruction,jsonb_build_object('status','ready'));
-
+  perform public.validate_booking_request_payment_required_expiry_target(target,source.work,source.payment_snapshot);
+  update public.booking_request_payment_required_expiry_work set last_evaluated_at=clock_timestamp() where id=expiry.id;
+  return jsonb_build_object('status','prepared');
 end;
 $$;
-
-ALTER FUNCTION "public"."prepare_booking_request_payment_required_expiry"("target_booking_request_id" "uuid", "target_provider_identity" "jsonb") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."prepare_booking_request_submission"("target_customer_user_id" "uuid", "target_idempotency_key" "uuid", "target_submission" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -5430,40 +5116,7 @@ $$;
 
 ALTER FUNCTION "public"."record_booking_request_capture_failure"("target_booking_request_id" "uuid", "target_lease_generation" bigint, "target_lease_token" "uuid", "target_provider_result" "jsonb") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."record_booking_request_recovery_outcome"("target_attempt_id" "uuid", "target_step" "text", "target_ledger" "public"."payment_provider_operations", "target_deadline" timestamp with time zone) RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO ''
-    AS $$
-declare next_state text;
-declare request_id uuid;
-begin
-  select attempts.booking_request_id into request_id from public.booking_request_payment_recovery_attempts attempts where attempts.id=target_attempt_id;
-  perform 1 from public.booking_requests requests where requests.id=request_id for update of requests;
-  next_state := case
-    when target_ledger.current_outcome='indeterminate' then 'blocked'
-    when target_step='original-release' and target_ledger.current_outcome='succeeded' then 'original_released'
-    when target_step='original-release' then 'blocked'
-    when target_step='replacement-authorization' and target_ledger.current_outcome='succeeded' then 'replacement_authorized'
-    when target_step='replacement-authorization' then 'safely_failed'
-    when target_step='replacement-capture' and target_ledger.current_outcome='succeeded'
-      and target_ledger.authoritative_outcome_at < target_deadline then 'succeeded'
-    when target_step='replacement-capture' and target_ledger.current_outcome='succeeded' then 'late_succeeded'
-    when target_step='replacement-capture' then 'capture_failed'
-    when target_step='replacement-release' and target_ledger.current_outcome='succeeded' then 'safely_failed'
-    else 'blocked' end;
-  update public.booking_request_payment_recovery_attempts attempts set state=next_state,updated_at=clock_timestamp()
-    where attempts.id=target_attempt_id;
-  if target_ledger.current_outcome='indeterminate'
-    or (target_step in ('original-release','replacement-release') and target_ledger.current_outcome='failed') then
-    perform public.quarantine_booking_request_payment(request_id,'unsafe-recovery-'||target_step||'-'||target_ledger.current_outcome);
-  end if;
-  return jsonb_strip_nulls(jsonb_build_object('outcome',target_ledger.current_outcome,
-    'providerRequestId',target_ledger.provider_request_id,'providerReference',target_ledger.provider_reference,
-    'movementReference',target_ledger.movement_reference,'retrySafe',next_state='safely_failed'));
-end;
-$$;
 
-ALTER FUNCTION "public"."record_booking_request_recovery_outcome"("target_attempt_id" "uuid", "target_step" "text", "target_ledger" "public"."payment_provider_operations", "target_deadline" timestamp with time zone) OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."reject_booking_confirmation_change"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -7124,7 +6777,7 @@ CREATE OR REPLACE FUNCTION public.admit_booking_request_payment_recovery(target_
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare source record;
 declare expected jsonb;
-declare dispatched jsonb;
+
 declare ledger public.payment_provider_operations;
 declare operation_id uuid:=gen_random_uuid();
 declare recovery_step text:=target_permit->>'step';
@@ -7154,8 +6807,11 @@ begin
         and operations.authorization_payment_lifecycle_id=(expected#>>'{binding,paymentLifecycleId}')::uuid
         and operations.predecessor_movement_reference=expected#>>'{binding,predecessorMovementReference}') then
     return jsonb_build_object('status','not-admitted'); end if;
-  dispatched:=public.lease_booking_request_payment_recovery_step((source.attempt).id);
-  if dispatched->>'status'<>'leased' or dispatched->'permit' is distinct from expected
+  if not ((recovery_step='original-release' and (source.attempt).state='admitted')
+    or (recovery_step='replacement-authorization' and (source.attempt).state='original_released')
+    or (recovery_step='replacement-capture' and (source.attempt).state='replacement_authorized')
+    or (recovery_step='replacement-release' and (source.attempt).state='capture_failed'))
+    or exists(select 1 from public.payment_provider_operations operations where operations.recovery_attempt_id=(source.attempt).id and operations.current_outcome is null)
     or (recovery_step<>'replacement-release' and clock_timestamp()>=(source.work).payment_required_deadline) then
     return jsonb_build_object('status','not-admitted'); end if;
   insert into public.payment_provider_operations(id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
@@ -7179,7 +6835,6 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare source record;
 declare target public.booking_request_payment_required_expiry_operations;
 declare expected jsonb;
-declare prepared jsonb;
 declare ledger public.payment_provider_operations;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Expiry admission unavailable' using errcode='42501'; end if;
@@ -7199,8 +6854,12 @@ begin
   end if;
   if public.booking_request_payment_quarantined((source.work).booking_request_id) or (source.expiry).state='complete'
     or clock_timestamp()<(source.work).payment_required_deadline then raise exception 'Expiry admission is not allowed' using errcode='RC409'; end if;
-  prepared:=public.prepare_booking_request_payment_required_expiry((source.work).booking_request_id,expected#>'{binding,providerIdentity}');
-  if prepared->>'status' not in ('release','refund') or prepared->'permit' is distinct from expected then raise exception 'Expiry admission has lost ownership' using errcode='RC409'; end if;
+  if exists(select 1 from public.booking_confirmations confirmations where confirmations.booking_request_id=(source.work).booking_request_id
+    and not exists(select 1 from public.booking_request_confirmation_invalidations invalidations where invalidations.booking_request_id=(source.work).booking_request_id))
+    or (target.operation_kind='release' and exists(select 1 from public.payment_provider_operations captures
+      where captures.claim_id=target.authorization_claim_id and captures.payment_lifecycle_id=target.authorization_payment_lifecycle_id
+        and captures.operation_kind='capture' and (captures.current_outcome is null or captures.current_outcome in ('succeeded','indeterminate'))))
+    then raise exception 'Expiry admission has lost ownership' using errcode='RC409'; end if;
   insert into public.payment_provider_operations(id,claim_id,claim_generation,operation_kind,provider,environment,merchant_id,terminal_id,
     provider_idempotency_key,request_fingerprint,payment_lifecycle_id,logical_operation_id,physical_attempt_id,amount_fils,currency,admission,evidence_provenance)
   values(gen_random_uuid(),target.authorization_claim_id,target.authorization_claim_generation,target.operation_kind,target.provider,target.environment,target.merchant_id,target.terminal_id,
@@ -7435,59 +7094,19 @@ begin
 end;
 $$;
 
-CREATE OR REPLACE FUNCTION public.record_booking_request_payment_recovery_observation(target_operation_id uuid,target_result jsonb) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.record_booking_request_payment_recovery_observation(target_operation_id uuid,target_result jsonb,target_command jsonb) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-declare ledger public.payment_provider_operations;
-declare attempt public.booking_request_payment_recovery_attempts;
-declare work public.booking_request_capture_work;
-declare recovery_step text;
-declare result jsonb;
 begin
-  ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-payment-recovery']);
-  ledger:=public.accept_payment_provider_observation(ledger.id,target_result);
-  select * into attempt from public.booking_request_payment_recovery_attempts attempts where attempts.id=ledger.recovery_attempt_id;
-  select * into work from public.booking_request_capture_work capture_work where capture_work.booking_request_id=attempt.booking_request_id;
-  recovery_step:=ledger.admission#>>'{permit,step}';
-  -- A closed admission is evidence, not an executed recovery operation.
-  if ledger.current_outcome<>'not-executed' then
-    insert into public.booking_request_payment_recovery_operations(recovery_attempt_id,step,provider_operation_id,outcome,authoritative_outcome_at,execution_permit)
-      values(attempt.id,recovery_step,ledger.id,ledger.current_outcome,ledger.authoritative_outcome_at,ledger.admission->'permit')
-      on conflict(recovery_attempt_id,step,operation_generation) do update set outcome=excluded.outcome,authoritative_outcome_at=excluded.authoritative_outcome_at,updated_at=clock_timestamp()
-        where booking_request_payment_recovery_operations.provider_operation_id=excluded.provider_operation_id
-          and (booking_request_payment_recovery_operations.outcome,booking_request_payment_recovery_operations.authoritative_outcome_at)
-            is distinct from (excluded.outcome,excluded.authoritative_outcome_at);
-    if not exists(select 1 from public.booking_request_payment_recovery_operations operations
-      where operations.recovery_attempt_id=attempt.id and operations.step=recovery_step and operations.operation_generation=1 and operations.provider_operation_id=ledger.id) then
-      raise exception 'Recovery observation targets another operation' using errcode='RC409'; end if;
-    if not public.booking_request_payment_quarantined(work.booking_request_id) and (attempt.state='blocked' or attempt.state=(case recovery_step when 'original-release' then 'admitted'
-      when 'replacement-authorization' then 'original_released' when 'replacement-capture' then 'replacement_authorized' when 'replacement-release' then 'capture_failed' end)) then
-      perform public.record_booking_request_recovery_outcome(attempt.id,recovery_step,ledger,work.payment_required_deadline);
-    end if;
-    if ledger.operation_kind='capture' and ledger.current_outcome='succeeded' and ledger.authoritative_outcome_at>=work.payment_required_deadline then
-      perform public.invalidate_booking_request_payment_confirmation(work.booking_request_id,ledger.id,'late-capture');
-    end if;
-  end if;
-  result:=public.payment_provider_recorded_result(ledger);
-  if ledger.current_outcome='failed' then result:=result||jsonb_build_object('retrySafe',exists(select 1 from public.booking_request_payment_recovery_attempts attempts where attempts.id=attempt.id and attempts.state='safely_failed')); end if;
-  return result;
+  perform public.lock_payment_observation_source(target_operation_id,array['booking-request-payment-recovery']);
+  return public.record_booking_request_payment_observation(target_operation_id,target_result,target_command);
 end;
 $$;
 
-CREATE OR REPLACE FUNCTION public.record_booking_request_payment_required_expiry_observation(target_operation_id uuid,target_result jsonb) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.record_booking_request_payment_required_expiry_observation(target_operation_id uuid,target_result jsonb,target_command jsonb) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-declare ledger public.payment_provider_operations;
-declare target public.booking_request_payment_required_expiry_operations;
 begin
-  ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund']);
-  select * into target from public.booking_request_payment_required_expiry_operations operations where operations.id=(ledger.admission#>>'{permit,expiryOperationId}')::uuid;
-  if target.id is null or (target.provider_operation_id is not null and target.provider_operation_id<>ledger.id) then
-    raise exception 'Expiry observation targets another operation' using errcode='RC409'; end if;
-  ledger:=public.accept_payment_provider_observation(ledger.id,target_result);
-  update public.booking_request_payment_required_expiry_operations operations set provider_operation_id=ledger.id where operations.id=target.id;
-  if ledger.current_outcome<>'succeeded' then
-    perform public.quarantine_booking_request_payment(target.booking_request_id,'expiry-'||target.operation_kind||'-'||ledger.current_outcome);
-  end if;
-  return public.payment_provider_recorded_result(ledger);
+  perform public.lock_payment_observation_source(target_operation_id,array['booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund']);
+  return public.record_booking_request_payment_observation(target_operation_id,target_result,target_command);
 end;
 $$;
 
@@ -7539,9 +7158,9 @@ ALTER FUNCTION public.record_booking_request_provider_operation_observation(uuid
 
 ALTER FUNCTION public.record_booking_request_capture_observation(uuid,jsonb) OWNER TO postgres;
 
-ALTER FUNCTION public.record_booking_request_payment_recovery_observation(uuid,jsonb) OWNER TO postgres;
+ALTER FUNCTION public.record_booking_request_payment_recovery_observation(uuid,jsonb,jsonb) OWNER TO postgres;
 
-ALTER FUNCTION public.record_booking_request_payment_required_expiry_observation(uuid,jsonb) OWNER TO postgres;
+ALTER FUNCTION public.record_booking_request_payment_required_expiry_observation(uuid,jsonb,jsonb) OWNER TO postgres;
 
 ALTER FUNCTION public.guard_payment_evidence() OWNER TO postgres;
 
@@ -7559,3 +7178,216 @@ begin
 end;
 $$;
 ALTER FUNCTION public.pending_booking_request_authorization_observations() OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.get_booking_request_payment_facts(target_booking_request_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare request public.booking_requests;
+declare work public.booking_request_capture_work;
+declare submission public.booking_request_submission_attempts;
+declare source record;
+declare source_valid boolean:=true;
+declare evidence_valid boolean;
+declare operation public.payment_provider_operations;
+declare recovery_operation public.booking_request_payment_recovery_operations;
+declare recovery public.booking_request_payment_recovery_attempts;
+declare expiry_operation public.booking_request_payment_required_expiry_operations;
+declare projected jsonb;
+declare operations_json jsonb:='[]';
+declare expiry_json jsonb:='[]';
+declare capture_id uuid;
+declare authorization_id uuid;
+begin
+  if current_setting('role',true)<>'service_role' then raise exception 'Payment facts unavailable' using errcode='42501'; end if;
+  select * into request from public.booking_requests requests where requests.id=target_booking_request_id for update of requests;
+  select * into work from public.booking_request_capture_work capture where capture.booking_request_id=request.id for update of capture;
+  if request.id is null or work.payment_required_deadline is null then raise exception 'Payment facts source is invalid' using errcode='RC409'; end if;
+  select * into submission from public.booking_request_submission_attempts attempts where attempts.id=work.attempt_id;
+  if not public.booking_request_payment_required_expiry_completed(request.id) then
+    begin
+      select * into source from public.lock_booking_request_capture_source(request.id);
+      source_valid:=found;
+      capture_id:=(source.ledger).id;
+    exception when sqlstate 'RC409' or invalid_text_representation or numeric_value_out_of_range then source_valid:=false;
+    end;
+  end if;
+  select ledger.id into authorization_id from public.payment_provider_operations ledger
+    where (ledger.claim_id,ledger.claim_generation,ledger.payment_lifecycle_id,ledger.logical_operation_id,ledger.physical_attempt_id,
+      ledger.provider,ledger.environment,ledger.merchant_id,ledger.terminal_id,ledger.amount_fils,ledger.currency,
+      ledger.provider_request_id,ledger.provider_reference,ledger.movement_reference) is not distinct from
+      (work.authorization_claim_id,work.authorization_claim_generation,work.payment_lifecycle_id,work.authorization_logical_operation_id,work.authorization_physical_attempt_id,
+      work.provider,work.environment,work.merchant_id,work.terminal_id,work.amount_fils,work.currency,
+      submission.payment_snapshot#>>'{authorization,providerRequestId}',submission.payment_snapshot#>>'{authorization,providerReference}',submission.payment_snapshot#>>'{authorization,movementReference}')
+      and ledger.operation_kind='authorization' and ledger.current_outcome='succeeded' and ledger.original_outcome in ('succeeded','indeterminate') and ledger.recorded_at is not null;
+  perform 1 from public.booking_request_payment_recovery_attempts attempts where attempts.booking_request_id=request.id order by attempts.generation for update of attempts;
+  perform 1 from public.booking_request_payment_required_expiry_work expiry where expiry.booking_request_id=request.id for update of expiry;
+  for operation in select ledger.* from public.payment_provider_operations ledger
+    where ledger.claim_id=work.authorization_claim_id or ledger.payment_lifecycle_id=work.payment_lifecycle_id
+      or exists(select 1 from public.booking_request_payment_recovery_attempts attempts where attempts.booking_request_id=request.id and attempts.id=ledger.payment_lifecycle_id)
+    order by ledger.created_at,ledger.id for update of ledger
+  loop
+    select * into recovery_operation from public.booking_request_payment_recovery_operations owned where owned.provider_operation_id=operation.id;
+    evidence_valid:=true;
+    if recovery_operation.id is not null then
+      select * into recovery from public.booking_request_payment_recovery_attempts attempts where attempts.id=recovery_operation.recovery_attempt_id;
+      begin
+        perform public.validate_booking_request_recovery_operation(recovery_operation,
+          public.booking_request_recovery_execution_permit(recovery,work,submission.payment_snapshot,recovery_operation.step));
+      exception when sqlstate 'RC409' then evidence_valid:=false;
+      end;
+    end if;
+    operations_json:=operations_json||jsonb_build_object('id',operation.id,'kind',operation.operation_kind,'lifecycleId',operation.payment_lifecycle_id,
+      'logicalOperationId',operation.logical_operation_id,'physicalAttemptId',operation.physical_attempt_id,
+      'outcome',operation.current_outcome,'originalOutcome',operation.original_outcome,'occurredAt',operation.authoritative_outcome_at,
+      'executedAt',operation.executed_at,'recordedAt',operation.recorded_at,'provenance',operation.evidence_provenance,'movementReference',operation.movement_reference,
+      'providerRequestId',operation.provider_request_id,'providerReference',operation.provider_reference,
+      'recoveryAttemptId',operation.recovery_attempt_id,'recoveryOperationId',recovery_operation.id,
+      'recoveryStep',coalesce(recovery_operation.step,operation.admission#>>'{permit,step}'),'valid',evidence_valid,
+      'permit',case when operation.admission->>'purpose' in ('booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund') then operation.admission->'permit' end);
+  end loop;
+  for expiry_operation in select owned.* from public.booking_request_payment_required_expiry_operations owned
+    where owned.booking_request_id=request.id order by owned.created_at,owned.id for update of owned
+  loop
+    evidence_valid:=true;
+    begin perform public.validate_booking_request_payment_required_expiry_target(expiry_operation,work,submission.payment_snapshot);
+    exception when sqlstate 'RC409' then evidence_valid:=false; end;
+    expiry_json:=expiry_json||jsonb_build_object('id',expiry_operation.id,'owner',expiry_operation.owner,
+      'authorizationLifecycleId',expiry_operation.authorization_payment_lifecycle_id,'kind',expiry_operation.operation_kind,
+      'captureId',expiry_operation.capture_provider_operation_id,'providerOperationId',expiry_operation.provider_operation_id,
+      'valid',evidence_valid,'permit',public.booking_request_payment_required_expiry_permit(expiry_operation,work.payment_required_deadline));
+  end loop;
+  projected:=jsonb_build_object('bookingRequestId',request.id,'deadline',work.payment_required_deadline,'amountFils',work.amount_fils,
+    'providerIdentity',jsonb_build_object('provider',work.provider,'environment',work.environment,'merchantId',work.merchant_id,'terminalId',work.terminal_id),
+    'sourceValid',source_valid,'quarantined',public.booking_request_payment_quarantined(request.id),
+    'expired',public.booking_request_payment_required_expiry_completed(request.id),
+    'confirmationValid',exists(select 1 from public.booking_confirmations confirmations where confirmations.booking_request_id=request.id
+      and not exists(select 1 from public.booking_request_confirmation_invalidations invalidation where invalidation.booking_request_id=request.id)),
+    'originalLifecycleId',work.payment_lifecycle_id,'originalAuthorizationId',authorization_id,'originalCaptureId',capture_id,
+    'attempts',(select coalesce(jsonb_agg(jsonb_build_object('id',attempts.id,'generation',attempts.generation,'state',attempts.state) order by attempts.generation),'[]') from public.booking_request_payment_recovery_attempts attempts where attempts.booking_request_id=request.id),
+    'operations',operations_json,'expiryOperations',expiry_json,
+    'receipts',(select coalesce(jsonb_agg(jsonb_build_object('operationId',observations.provider_operation_id,'receiptId',observations.receipt_identity,'payload',observations.payload) order by observations.id),'[]') from public.booking_request_payment_correction_observations observations where observations.booking_request_id=request.id));
+  return projected||jsonb_build_object('revision',md5(projected::text),'observedAt',clock_timestamp());
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_booking_request_payment_recovery_facts(target_attempt_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  return public.get_booking_request_payment_facts((select attempts.booking_request_id from public.booking_request_payment_recovery_attempts attempts where attempts.id=target_attempt_id));
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_booking_request_payment_observation_facts(target_operation_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  return public.get_booking_request_payment_facts((select work.booking_request_id from public.booking_request_capture_work work
+    join public.payment_provider_operations ledger on ledger.claim_id=work.authorization_claim_id where ledger.id=target_operation_id));
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.booking_request_payment_expiry_is_safe(facts jsonb) RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare operation jsonb;
+declare owned jsonb;
+begin
+  if (facts->>'sourceValid')::boolean is not true or (facts->>'quarantined')::boolean or (facts->>'confirmationValid')::boolean
+    or clock_timestamp()<(facts->>'deadline')::timestamptz then return false; end if;
+  if not exists(select 1 from jsonb_array_elements(facts->'expiryOperations') entry where entry->>'authorizationLifecycleId'=facts->>'originalLifecycleId') then return false; end if;
+  for operation in select * from jsonb_array_elements(facts->'operations') loop
+    if (operation->>'valid')::boolean is not true or operation->>'outcome' is null or operation->>'outcome'='indeterminate' then return false; end if;
+    if operation->>'outcome'='not-executed' then continue; end if;
+    if operation->>'id' is distinct from facts->>'originalAuthorizationId' and operation->>'id' is distinct from facts->>'originalCaptureId'
+      and operation->>'recoveryOperationId' is null and not exists(select 1 from jsonb_array_elements(facts->'expiryOperations') entry where entry->>'providerOperationId'=operation->>'id') then return false; end if;
+    if operation->>'kind'='capture' and operation->>'outcome'='succeeded' then
+      if operation->>'occurredAt' is null or (operation->>'occurredAt')::timestamptz<(facts->>'deadline')::timestamptz
+        or operation->>'originalOutcome'='failed' or not exists(select 1 from jsonb_array_elements(facts->'expiryOperations') entry
+          where entry->>'captureId'=operation->>'id' and entry->>'kind'='refund') then return false; end if;
+    end if;
+    if operation->>'kind'='authorization' and operation->>'outcome'='succeeded' and not exists(select 1 from jsonb_array_elements(facts->'expiryOperations') entry
+      where entry->>'authorizationLifecycleId'=operation->>'lifecycleId') then return false; end if;
+    if operation->>'kind' in ('release','refund') and operation->>'outcome'<>'succeeded' then return false; end if;
+  end loop;
+  if facts->>'originalCaptureId' is null then return false; end if;
+  for owned in select * from jsonb_array_elements(facts->'expiryOperations') loop
+    if (owned->>'valid')::boolean is not true or not exists(select 1 from jsonb_array_elements(facts->'operations') entry
+      where entry->>'id'=owned->>'providerOperationId' and entry->>'outcome'='succeeded') then return false; end if;
+  end loop;
+  return true;
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_booking_request_payment_observation(target_operation_id uuid,target_result jsonb,target_command jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare ledger public.payment_provider_operations;
+declare attempt public.booking_request_payment_recovery_attempts;
+declare work public.booking_request_capture_work;
+declare target public.booking_request_payment_required_expiry_operations;
+declare facts jsonb;
+declare recovery_step text;
+declare next_state text:=target_command->>'recoveryState';
+declare quarantine_reason text:=target_command->>'quarantineReason';
+declare corrective_capture uuid:=(target_command->>'correctiveCaptureId')::uuid;
+declare transition_required boolean;
+declare quarantine_required boolean;
+declare late_capture boolean;
+declare result jsonb;
+begin
+  ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund']);
+  facts:=public.get_booking_request_payment_observation_facts(ledger.id);
+  if facts->>'revision' is distinct from target_command->>'revision' then return jsonb_build_object('status','stale'); end if;
+  select * into work from public.booking_request_capture_work capture where capture.booking_request_id=(facts->>'bookingRequestId')::uuid;
+  select * into attempt from public.booking_request_payment_recovery_attempts attempts where attempts.id=ledger.recovery_attempt_id;
+  recovery_step:=ledger.admission#>>'{permit,step}';
+  if ledger.admission->>'purpose' in ('booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund') then
+    select * into target from public.booking_request_payment_required_expiry_operations owned where owned.id=(ledger.admission#>>'{permit,expiryOperationId}')::uuid for update of owned;
+    if target.id is null or target.owner<>'expiry' or target.booking_request_id<>work.booking_request_id or (target.provider_operation_id is not null and target.provider_operation_id<>ledger.id)
+      or ledger.admission->'permit' is distinct from public.booking_request_payment_required_expiry_permit(target,work.payment_required_deadline) then
+      raise exception 'Expiry observation targets another operation' using errcode='RC409'; end if;
+  end if;
+  ledger:=public.accept_payment_provider_observation(ledger.id,target_result);
+  transition_required:=recovery_step is not null and ledger.current_outcome<>'not-executed' and not (facts->>'quarantined')::boolean
+    and (attempt.state='blocked' or (recovery_step='original-release' and attempt.state='admitted')
+      or (recovery_step='replacement-authorization' and attempt.state='original_released')
+      or (recovery_step='replacement-capture' and attempt.state='replacement_authorized')
+      or (recovery_step='replacement-release' and attempt.state='capture_failed'));
+  if transition_required then
+    if next_state is null or not (
+      (next_state='blocked' and (ledger.current_outcome='indeterminate' or (recovery_step in ('original-release','replacement-release') and ledger.current_outcome='failed')))
+      or (next_state='original_released' and recovery_step='original-release' and ledger.current_outcome='succeeded')
+      or (next_state='replacement_authorized' and recovery_step='replacement-authorization' and ledger.current_outcome='succeeded')
+      or (next_state='safely_failed' and ((recovery_step='replacement-authorization' and ledger.current_outcome='failed') or (recovery_step='replacement-release' and ledger.current_outcome='succeeded')))
+      or (next_state='capture_failed' and recovery_step='replacement-capture' and ledger.current_outcome='failed')
+      or (next_state='succeeded' and recovery_step='replacement-capture' and ledger.current_outcome='succeeded' and ledger.authoritative_outcome_at<work.payment_required_deadline)
+      or (next_state='late_succeeded' and recovery_step='replacement-capture' and ledger.current_outcome='succeeded' and (ledger.authoritative_outcome_at>=work.payment_required_deadline or ledger.authoritative_outcome_at is null))
+    ) then raise exception 'Selected recovery consequence is invalid' using errcode='RC409'; end if;
+  elsif next_state is not null then raise exception 'Selected recovery consequence is stale' using errcode='RC409'; end if;
+  quarantine_required:=(recovery_step is not null and (ledger.current_outcome='indeterminate' or (recovery_step in ('original-release','replacement-release') and ledger.current_outcome='failed')))
+    or (target.id is not null and ledger.current_outcome<>'succeeded')
+    or (ledger.operation_kind='capture' and ledger.current_outcome='succeeded' and ledger.authoritative_outcome_at is null);
+  late_capture:=ledger.operation_kind='capture' and ledger.current_outcome='succeeded' and ledger.authoritative_outcome_at>=work.payment_required_deadline;
+  if quarantine_required and quarantine_reason is null then raise exception 'Payment observation requires quarantine' using errcode='RC409'; end if;
+  if quarantine_reason is not null and not quarantine_required and not late_capture then raise exception 'Selected quarantine consequence is invalid' using errcode='RC409'; end if;
+  if corrective_capture is not null and (not late_capture or corrective_capture<>ledger.id or ledger.original_outcome='failed') then raise exception 'Selected corrective capture is invalid' using errcode='RC409'; end if;
+  if late_capture and not (facts->>'quarantined')::boolean and quarantine_reason is null and corrective_capture is distinct from ledger.id then
+    raise exception 'Late capture requires atomic correction ownership' using errcode='RC409'; end if;
+  if recovery_step is not null and ledger.current_outcome<>'not-executed' then
+    insert into public.booking_request_payment_recovery_operations(recovery_attempt_id,step,provider_operation_id,outcome,authoritative_outcome_at,execution_permit)
+      values(attempt.id,recovery_step,ledger.id,ledger.current_outcome,ledger.authoritative_outcome_at,ledger.admission->'permit')
+      on conflict(recovery_attempt_id,step,operation_generation) do update set outcome=excluded.outcome,authoritative_outcome_at=excluded.authoritative_outcome_at,updated_at=clock_timestamp()
+        where booking_request_payment_recovery_operations.provider_operation_id=excluded.provider_operation_id
+          and (booking_request_payment_recovery_operations.outcome,booking_request_payment_recovery_operations.authoritative_outcome_at) is distinct from (excluded.outcome,excluded.authoritative_outcome_at);
+    if not exists(select 1 from public.booking_request_payment_recovery_operations owned where owned.recovery_attempt_id=attempt.id and owned.step=recovery_step and owned.operation_generation=1 and owned.provider_operation_id=ledger.id) then
+      raise exception 'Recovery observation targets another operation' using errcode='RC409'; end if;
+  end if;
+  if transition_required then update public.booking_request_payment_recovery_attempts set state=next_state,updated_at=clock_timestamp() where id=attempt.id; end if;
+  if target.id is not null then update public.booking_request_payment_required_expiry_operations set provider_operation_id=ledger.id where id=target.id; end if;
+  if quarantine_reason is not null then perform public.quarantine_booking_request_payment(work.booking_request_id,quarantine_reason); end if;
+  if corrective_capture is not null and quarantine_reason is null and not (facts->>'quarantined')::boolean then
+    insert into public.booking_request_payment_required_expiry_work(booking_request_id,payment_required_deadline) values(work.booking_request_id,work.payment_required_deadline) on conflict do nothing;
+    perform public.prepare_booking_request_corrective_refund(work.booking_request_id,corrective_capture);
+  end if;
+  if late_capture then perform public.invalidate_booking_request_payment_confirmation(work.booking_request_id,ledger.id,'late-capture'); end if;
+  result:=public.payment_provider_recorded_result(ledger);
+  if ledger.current_outcome='failed' and recovery_step is not null then result:=result||jsonb_build_object('retrySafe',exists(select 1 from public.booking_request_payment_recovery_attempts attempts where attempts.id=attempt.id and attempts.state='safely_failed')); end if;
+  return result;
+end;
+$$;

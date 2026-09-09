@@ -1,75 +1,17 @@
-import { paymentQueryReferencesAreValid } from "@/payment/payment-operation-execution";
 import type { SupabaseClient } from "@supabase/supabase-js";
-
-import {
-  paymentRequiredExpiryPermitFrom,
-  type BookingRequestPaymentRequiredExpiryPermit,
-} from "@/payment/booking-request-payment-required-expiry-contract";
-import {
-  paymentRecoveryOperationKinds,
-  recoveryPermitFrom,
-} from "@/payment/booking-request-payment-recovery-contract";
-import type {
-  PaymentProviderIdentity,
-  ProviderOperationBinding,
-} from "@/payment/payment-contract";
+import type { PaymentProviderIdentity } from "@/payment/payment-contract";
 import type {
   BookingRequestPaymentRequiredExpiryRepository,
-  PaymentRequiredExpiryPreparation,
+  PaymentRequiredExpiryCommand,
   PaymentRequiredExpiryResult,
 } from "./booking-request-payment-required-expiry";
-
+import { bookingRequestPaymentFactsFrom } from "./supabase-booking-request-payment-observation";
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
-const terminal = [
-  "processing",
-  "attention-required",
-  "quarantined",
-  "expired",
-  "confirmed",
-  "not-due",
-  "unavailable",
-] as const;
-
-function bindingMatches(expected: object, value: unknown): boolean {
-  const raw = record(value);
-  return (
-    !!raw &&
-    Object.keys(raw).length === Object.keys(expected).length &&
-    Object.entries(expected).every(([key, entry]) =>
-      entry !== null && typeof entry === "object"
-        ? bindingMatches(entry, raw[key])
-        : raw[key] === entry,
-    )
-  );
-}
-
-function expiryBinding(
-  permit: BookingRequestPaymentRequiredExpiryPermit,
-): ProviderOperationBinding {
-  if (permit.purpose === "booking-request-payment-required-corrective-refund")
-    return {
-      kind: "refund",
-      paymentLifecycleId: permit.binding.paymentLifecycleId,
-      logicalOperationId: permit.binding.refundLogicalOperationId,
-      attemptId: permit.binding.refundPhysicalAttemptId,
-      amountFils: permit.binding.amountFils,
-      currency: "IQD",
-    };
-  return {
-    kind: "release",
-    paymentLifecycleId: permit.binding.authorizationPaymentLifecycleId,
-    logicalOperationId: permit.binding.releaseLogicalOperationId,
-    attemptId: permit.binding.releasePhysicalAttemptId,
-    amountFils: permit.binding.amountFils,
-    currency: "IQD",
-  };
-}
-
 export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements BookingRequestPaymentRequiredExpiryRepository {
   constructor(private readonly serviceClient: SupabaseClient) {}
 
@@ -92,88 +34,47 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
     return ids as string[];
   }
 
+  async facts(bookingRequestId: string) {
+    const { data, error } = await this.serviceClient.rpc(
+      "get_booking_request_payment_facts",
+      { target_booking_request_id: bookingRequestId },
+    );
+    if (error) throw new Error("Payment Required expiry facts are unavailable");
+    const facts = bookingRequestPaymentFactsFrom(data);
+    if (facts.bookingRequestId !== bookingRequestId)
+      throw new Error("Expiry facts belong to another Booking Request");
+    return facts;
+  }
   async prepare(
     bookingRequestId: string,
     providerIdentity: PaymentProviderIdentity,
-  ): Promise<PaymentRequiredExpiryPreparation> {
+    command: PaymentRequiredExpiryCommand,
+  ): Promise<
+    | { readonly status: "prepared" }
+    | { readonly status: "stale" }
+    | PaymentRequiredExpiryResult
+  > {
     const { data, error } = await this.serviceClient.rpc(
       "prepare_booking_request_payment_required_expiry",
       {
         target_booking_request_id: bookingRequestId,
         target_provider_identity: providerIdentity,
+        target_command: command,
       },
     );
-    const value = record(data);
-    if (error || !value)
-      throw new Error("Payment Required expiry data is invalid");
-    if (terminal.includes(value.status as (typeof terminal)[number]))
-      return { status: value.status } as PaymentRequiredExpiryResult;
-    if (value.status === "ready") return { status: "ready" };
     if (
-      value.status === "release" ||
-      value.status === "refund" ||
-      value.status === "reconcile-expiry"
-    ) {
-      let permit: BookingRequestPaymentRequiredExpiryPermit;
-      try {
-        permit = paymentRequiredExpiryPermitFrom(value.permit);
-      } catch {
-        throw new Error("Payment Required expiry data is invalid");
-      }
-      if (
-        permit.binding.bookingRequestId !== bookingRequestId ||
-        (value.status === "refund" &&
-          permit.purpose !==
-            "booking-request-payment-required-corrective-refund") ||
-        (value.status === "release" &&
-          permit.purpose !== "booking-request-payment-required-expiry") ||
-        !bindingMatches(permit.binding, value.binding) ||
-        !bindingMatches(providerIdentity, permit.binding.providerIdentity) ||
-        (value.status === "reconcile-expiry" &&
-          !paymentQueryReferencesAreValid(
-            value.providerRequestId,
-            value.providerReference,
-          ))
-      )
-        throw new Error("Payment Required expiry data is invalid");
-      return value.status === "release" || value.status === "refund"
-        ? { status: value.status, permit, binding: expiryBinding(permit) }
-        : {
-            status: "reconcile-expiry",
-            permit,
-            binding: expiryBinding(permit),
-            providerRequestId: value.providerRequestId as string | null,
-            providerReference: value.providerReference as string | null,
-          };
-    }
-    if (value.status === "reconcile-recovery") {
-      const permit = recoveryPermitFrom(value.permit);
-      if (
-        permit.binding.bookingRequestId !== bookingRequestId ||
-        !bindingMatches(permit.binding, value.binding) ||
-        !bindingMatches(providerIdentity, permit.binding.providerIdentity) ||
-        !paymentQueryReferencesAreValid(
-          value.providerRequestId,
-          value.providerReference,
-        )
-      )
-        throw new Error("Payment Required expiry data is invalid");
-      return {
-        status: "reconcile-recovery",
-        permit,
-        binding: {
-          kind: paymentRecoveryOperationKinds[permit.step],
-          paymentLifecycleId: permit.binding.paymentLifecycleId,
-          logicalOperationId: permit.binding.logicalOperationId,
-          attemptId: permit.binding.physicalAttemptId,
-          amountFils: permit.binding.amountFils,
-          currency: "IQD",
-        },
-        providerRequestId: value.providerRequestId as string | null,
-        providerReference: value.providerReference as string | null,
-      };
-    }
-    throw new Error("Payment Required expiry data is invalid");
+      error ||
+      ![
+        "prepared",
+        "stale",
+        "quarantined",
+        "expired",
+        "confirmed",
+        "not-due",
+      ].includes(data?.status)
+    )
+      throw new Error("Payment Required expiry preparation is unavailable");
+    return { status: data.status };
   }
 
   async finalize(

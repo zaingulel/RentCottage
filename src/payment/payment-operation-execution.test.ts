@@ -227,3 +227,59 @@ describe("explicit durable payment operation execution", () => {
     expect(test.recorded[0].evidence?.occurredAt).toBeNull();
   });
 });
+
+describe("application-owned recovery and expiry recording", () => {
+  it.each([
+    "booking-request-payment-recovery",
+    "booking-request-payment-required-expiry",
+    "booking-request-payment-required-corrective-refund",
+  ] as const)(
+    "%s commits consequences through the same application seam for execution and inquiry",
+    async (purpose) => {
+      const test = fixture();
+      const owned = { ...admission, purpose };
+      vi.mocked(test.repository.admit).mockResolvedValue(owned);
+      vi.mocked(test.repository.reload).mockResolvedValue({
+        ...owned,
+        mode: "reconcile",
+      });
+      const observation = {
+        record: vi.fn(
+          async (
+            _admission: PaymentOperationAdmission,
+            result: ProviderOperationResult,
+          ) => result,
+        ),
+      };
+      const operations = createPaymentOperationExecution({
+        repository: test.repository,
+        provider: test.provider,
+        observation,
+      });
+      expect((await operations.execute(request)).status).toBe("recorded");
+      expect(
+        (
+          await operations.query({
+            ...request,
+            providerRequestId: null,
+            providerReference: null,
+          })
+        ).status,
+      ).toBe("recorded");
+      expect(observation.record).toHaveBeenCalledTimes(2);
+      expect(test.repository.record).not.toHaveBeenCalled();
+    },
+  );
+  it("refuses dispatch before a provider effect when required application recording is absent", async () => {
+    const test = fixture();
+    vi.mocked(test.repository.admit).mockResolvedValue({
+      ...admission,
+      purpose: "booking-request-payment-recovery",
+    });
+    expect(await test.operations.execute(request)).toEqual({
+      status: "unavailable",
+    });
+    expect(test.provider.execute).not.toHaveBeenCalled();
+    expect(test.repository.record).not.toHaveBeenCalled();
+  });
+});

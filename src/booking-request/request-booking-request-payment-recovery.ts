@@ -1,3 +1,7 @@
+import { createBookingRequestConfirmation } from "./booking-request-confirmation";
+import { SupabaseBookingRequestConfirmationRepository } from "./supabase-booking-request-confirmation";
+import { createBookingRequestPaymentObservation } from "./booking-request-payment-observation";
+import { SupabaseBookingRequestPaymentObservationRepository } from "./supabase-booking-request-payment-observation";
 import "server-only";
 import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
 import {
@@ -26,7 +30,12 @@ export async function createRequestBookingRequestPaymentRecovery() {
   });
   const operations = createPaymentOperationExecution({
     repository: new SupabasePaymentOperationExecutionRepository(serviceClient),
-    provider: provider,
+    provider,
+    observation: createBookingRequestPaymentObservation({
+      repository: new SupabaseBookingRequestPaymentObservationRepository(
+        serviceClient,
+      ),
+    }),
   });
   return createBookingRequestPaymentRecovery({
     repository: new SupabaseBookingRequestPaymentRecoveryRepository(
@@ -35,5 +44,10 @@ export async function createRequestBookingRequestPaymentRecovery() {
     ),
 
     operations,
+    confirmation: createBookingRequestConfirmation({
+      repository: new SupabaseBookingRequestConfirmationRepository(
+        serviceClient,
+      ),
+    }),
   });
 }

@@ -1,8 +1,8 @@
+import { bookingRequestPaymentFactsFrom } from "./supabase-booking-request-payment-observation";
+import type { RecoveryState } from "./booking-request-payment-observation";
+import type { PaymentRecoveryStep } from "@/payment/booking-request-payment-recovery-contract";
 import { paymentQueryReferencesAreValid } from "@/payment/payment-operation-execution";
-import {
-  recoveryConfirmationEvidenceFrom,
-  SupabaseBookingRequestConfirmationRepository,
-} from "./supabase-booking-request-confirmation";
+import { recoveryConfirmationEvidenceFrom } from "./supabase-booking-request-confirmation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   paymentRecoveryOperationKinds,
@@ -24,6 +24,7 @@ const terminalStatuses = [
   "blocked",
   "quarantined",
   "unavailable",
+  "stale",
 ] as const;
 
 export class SupabaseBookingRequestPaymentRecoveryRepository implements BookingRequestPaymentRecoveryRepository {
@@ -63,10 +64,29 @@ export class SupabaseBookingRequestPaymentRecoveryRepository implements BookingR
     return value as PaymentRecoveryAdmission;
   }
 
-  async lease(attemptId: string): Promise<PaymentRecoveryLease> {
+  async facts(attemptId: string) {
+    const { data, error } = await this.serviceClient.rpc(
+      "get_booking_request_payment_recovery_facts",
+      { target_attempt_id: attemptId },
+    );
+    if (error) throw new Error("Recovery facts are unavailable");
+    const facts = bookingRequestPaymentFactsFrom(data);
+    if (!facts.attempts.some((entry) => entry.id === attemptId))
+      throw new Error("Recovery facts belong to another attempt");
+    return facts;
+  }
+  async lease(
+    attemptId: string,
+    step: PaymentRecoveryStep,
+    expectedState: RecoveryState,
+  ): Promise<PaymentRecoveryLease> {
     const { data, error } = await this.serviceClient.rpc(
       "lease_booking_request_payment_recovery_step",
-      { target_attempt_id: attemptId },
+      {
+        target_attempt_id: attemptId,
+        target_step: step,
+        target_expected_state: expectedState,
+      },
     );
     if (error)
       throw new Error("Booking Request payment recovery is unavailable");
@@ -132,16 +152,13 @@ export class SupabaseBookingRequestPaymentRecoveryRepository implements BookingR
     return data;
   }
 
-  async finalize(attemptId: string): Promise<void> {
+  async confirmationEvidence(attemptId: string) {
     const { data, error } = await this.serviceClient.rpc(
       "get_booking_request_payment_recovery_confirmation_evidence",
       { target_attempt_id: attemptId },
     );
     if (error)
       throw new Error("Booking Request recovery confirmation is unavailable");
-    const evidence = recoveryConfirmationEvidenceFrom(data, attemptId);
-    await new SupabaseBookingRequestConfirmationRepository(
-      this.serviceClient,
-    ).finalize(evidence.bookingRequestId, evidence);
+    return recoveryConfirmationEvidenceFrom(data, attemptId);
   }
 }

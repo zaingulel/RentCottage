@@ -285,6 +285,14 @@ export class SupabasePaymentOperationExecutionRepository implements PaymentOpera
     admission: PaymentOperationAdmission,
     result: ProviderOperationResult,
   ): Promise<ProviderOperationResult> {
+    if (
+      [
+        "booking-request-payment-recovery",
+        "booking-request-payment-required-expiry",
+        "booking-request-payment-required-corrective-refund",
+      ].includes(admission.purpose)
+    )
+      throw new Error("Payment observation requires application consequences");
     const { data, error } = await this.client.rpc(
       `record_${purposeRoutine(admission.purpose)}_observation`,
       {

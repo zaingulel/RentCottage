@@ -2,8 +2,12 @@ import { historicalProviderOperationSource } from "../tests/fixtures/payment-pro
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildSync } from "esbuild";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { createBookingRequestPaymentUpgradeWorker } from "./lib/booking-request-payment-upgrade-worker.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness();
 let paymentEvidenceInstalled = false;
@@ -142,6 +146,23 @@ function step(attempt, outcome) {
 }
 let failure;
 harness.guardDisposableLocalDatabase();
+const workerDirectory = mkdtempSync(
+  join(tmpdir(), "rentcottage-payment-upgrade-"),
+);
+const workerBundle = join(workerDirectory, "worker.mjs");
+buildSync({
+  entryPoints: ["scripts/booking-request-capture-recovery-worker.ts"],
+  outfile: workerBundle,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+});
+const runPaymentWorker = createBookingRequestPaymentUpgradeWorker({
+  guardDisposableLocalDatabase: harness.guardDisposableLocalDatabase,
+  workerBundle,
+});
+
 try {
   runSupabase(["db", "reset", "--local", "--version", priorVersion]);
   assert.equal(
@@ -322,23 +343,12 @@ try {
     "0",
     "A lease with no provider outcome is not indeterminate evidence and is not quarantined",
   );
-  const elapsed = parsed(
-    `select public.prepare_booking_request_payment_required_expiry('${id("60", 11)}',${literal(identity)});`,
-  );
-  assert.equal(elapsed.status, "release");
-  parsed(
-    `select pg_temp.expiry_execute(${literal(elapsed.permit)},'succeeded');`,
-  );
   assert.equal(
-    parsed(
-      `select public.finalize_booking_request_payment_required_expiry('${id("60", 11)}');`,
-    ).status,
+    runPaymentWorker("payment-expiry", id("60", 11)).status,
     "expired",
   );
   assert.equal(
-    parsed(
-      `select public.prepare_booking_request_payment_required_expiry('${id("60", 12)}',${literal(identity)});`,
-    ).status,
+    runPaymentWorker("payment-expiry", id("60", 12)).status,
     "quarantined",
   );
   assert.equal(
@@ -348,24 +358,18 @@ try {
     "quarantined",
   );
   assert.equal(
-    parsed(
-      `select public.prepare_booking_request_payment_required_expiry('${id("60", 13)}',${literal(identity)});`,
-    ).status,
+    runPaymentWorker("payment-expiry", id("60", 13)).status,
     "confirmed",
   );
-  const corrective = parsed(
-    `select public.prepare_booking_request_payment_required_expiry('${id("60", 15)}',${literal(identity)});`,
-  );
-  assert.equal(corrective.status, "refund");
-  assert.equal(corrective.permit.binding.amountFils, 115000000);
-  parsed(
-    `select pg_temp.expiry_execute(${literal(corrective.permit)},'succeeded');`,
+  assert.equal(
+    runPaymentWorker("payment-expiry", id("60", 15)).status,
+    "expired",
   );
   assert.equal(
-    parsed(
-      `select public.finalize_booking_request_payment_required_expiry('${id("60", 15)}');`,
-    ).status,
-    "expired",
+    harness.runSql(
+      `select amount_fils from public.payment_provider_operations where claim_id='${id("72", 15)}' and operation_kind='refund';`,
+    ),
+    "115000000",
   );
   const after = snapshot();
   assert.deepEqual(
@@ -398,6 +402,7 @@ try {
 } catch (error) {
   failure = error;
 } finally {
+  rmSync(workerDirectory, { recursive: true, force: true });
   try {
     runSupabase(["db", "reset", "--local"]);
   } catch (error) {

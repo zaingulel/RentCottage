@@ -1,9 +1,13 @@
 import { historicalProviderOperationSource } from "../tests/fixtures/payment-provider-history.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildSync } from "esbuild";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { createBookingRequestPaymentUpgradeWorker } from "./lib/booking-request-payment-upgrade-worker.mjs";
 
 const priorMigrationVersion = "20260822180004";
 const resetPriorArgs = [
@@ -15,10 +19,6 @@ const resetPriorArgs = [
 ];
 const resetCurrentArgs = ["db", "reset", "--local"];
 const harness = createLocalSupabaseConcurrencyHarness();
-const paymentEvidenceSql = readFileSync(
-  "supabase/fixtures/payment-evidence.sql",
-  "utf8",
-);
 let paymentEvidenceInstalled = false;
 
 function runSupabase(args) {
@@ -142,6 +142,22 @@ function snapshotPredecessorGraph() {
 let failure;
 
 harness.guardDisposableLocalDatabase();
+const workerDirectory = mkdtempSync(
+  join(tmpdir(), "rentcottage-payment-upgrade-"),
+);
+const workerBundle = join(workerDirectory, "worker.mjs");
+buildSync({
+  entryPoints: ["scripts/booking-request-capture-recovery-worker.ts"],
+  outfile: workerBundle,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+});
+const runPaymentWorker = createBookingRequestPaymentUpgradeWorker({
+  guardDisposableLocalDatabase: harness.guardDisposableLocalDatabase,
+  workerBundle,
+});
 
 try {
   const resetPrior = runSupabase(resetPriorArgs);
@@ -1196,13 +1212,16 @@ try {
     "processing",
     "The existing owning Customer must be admitted after upgrade.",
   );
-  for (let step = 0; step < 3; step++)
-    harness.runSql(
-      paymentEvidenceSql +
-        `set role service_role;select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${recovery138Admission.attemptId}')->'permit','succeeded');`,
-    );
-  harness.runSql(
-    `set role service_role;select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',public.get_booking_request_payment_recovery_confirmation_evidence('${recovery138Admission.attemptId}'));`,
+  assertEqual(
+    runPaymentWorker(
+      "payment-recovery",
+      "60000000-0000-4000-8000-000000001001",
+      {
+        PAYMENT_RECOVERY_ATTEMPT_ID: recovery138Admission.attemptId,
+      },
+    ).status,
+    "succeeded",
+    "The upgraded request resumes through the complete application recovery service.",
   );
   assertEqual(
     harness.runSql(
@@ -1217,6 +1236,7 @@ try {
 } catch (error) {
   failure = error;
 } finally {
+  rmSync(workerDirectory, { recursive: true, force: true });
   const restored = runSupabase(resetCurrentArgs);
   if (restored.status !== 0) {
     const restoreFailure = commandFailure(resetCurrentArgs, restored);

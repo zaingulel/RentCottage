@@ -1,3 +1,9 @@
+import { createBookingRequestPaymentRecovery } from "./booking-request-payment-recovery";
+import { SupabaseBookingRequestPaymentRecoveryRepository } from "./supabase-booking-request-payment-recovery";
+import { createBookingRequestConfirmation } from "./booking-request-confirmation";
+import { SupabaseBookingRequestConfirmationRepository } from "./supabase-booking-request-confirmation";
+import { createBookingRequestPaymentObservation } from "./booking-request-payment-observation";
+import { SupabaseBookingRequestPaymentObservationRepository } from "./supabase-booking-request-payment-observation";
 import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
 import {
   SupabasePaymentOperationExecutionRepository,
@@ -61,7 +67,12 @@ export async function runScheduledBookingRequestExpiry(
     });
     const operations = createPaymentOperationExecution({
       repository: new SupabasePaymentOperationExecutionRepository(client),
-      provider: provider,
+      provider,
+      observation: createBookingRequestPaymentObservation({
+        repository: new SupabaseBookingRequestPaymentObservationRepository(
+          client,
+        ),
+      }),
     });
     processDue ??= createBookingRequestLifecycle({
       repository: new SupabaseBookingRequestLifecycleRepository(
@@ -77,6 +88,16 @@ export async function runScheduledBookingRequestExpiry(
       ),
       provider,
       operations,
+      recovery: createBookingRequestPaymentRecovery({
+        repository: new SupabaseBookingRequestPaymentRecoveryRepository(
+          client,
+          client,
+        ),
+        operations,
+        confirmation: createBookingRequestConfirmation({
+          repository: new SupabaseBookingRequestConfirmationRepository(client),
+        }),
+      }),
     }).processDue;
   }
   const drains = await Promise.allSettled([

@@ -1,3 +1,9 @@
+import { createBookingRequestPaymentRecovery } from "@/booking-request/booking-request-payment-recovery";
+import { SupabaseBookingRequestPaymentRecoveryRepository } from "@/booking-request/supabase-booking-request-payment-recovery";
+import { createBookingRequestPaymentRequiredExpiry } from "@/booking-request/booking-request-payment-required-expiry";
+import { SupabaseBookingRequestPaymentRequiredExpiryRepository } from "@/booking-request/supabase-booking-request-payment-required-expiry";
+import { createBookingRequestPaymentObservation } from "@/booking-request/booking-request-payment-observation";
+import { SupabaseBookingRequestPaymentObservationRepository } from "@/booking-request/supabase-booking-request-payment-observation";
 import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
 import {
   SupabasePaymentOperationExecutionRepository,
@@ -62,8 +68,10 @@ function localApiUrl(): string {
   }
 }
 function send(message: object) {
-  if (!process.send) throw new Error("Capture worker requires an IPC parent");
-  process.send(message);
+  if (process.send) process.send(message);
+  else if (process.env.PAYMENT_WORKER_OUTPUT === "json")
+    process.stdout.write(JSON.stringify(message) + "\n");
+  else throw new Error("Capture worker requires an IPC parent");
 }
 async function main() {
   const mode = required("CAPTURE_WORKER_MODE");
@@ -72,13 +80,33 @@ async function main() {
   });
   const durable = new DurablePaymentSimulator({
     effects: new SupabaseSimulatorEffectRepository(client),
-    now: () => new Date().toISOString(),
+    now: () => process.env.PAYMENT_WORKER_NOW ?? new Date().toISOString(),
     executeOutcome: mode.includes("indeterminate")
       ? "indeterminate"
       : mode.includes("failure")
         ? "failed"
         : "succeeded",
   });
+  let paused = false;
+  async function checkpoint(stage: string, kind?: string) {
+    send({ stage, kind });
+    if (
+      !paused &&
+      process.env.PAYMENT_WORKER_PAUSE === stage &&
+      (!process.env.PAYMENT_WORKER_PAUSE_KIND ||
+        process.env.PAYMENT_WORKER_PAUSE_KIND === kind)
+    ) {
+      paused = true;
+      send({ stage: stage + "-paused", kind });
+      await new Promise<void>((resolve, reject) =>
+        process.once("message", (message) =>
+          message === "continue"
+            ? resolve()
+            : reject(new Error("Invalid payment continuation")),
+        ),
+      );
+    }
+  }
   let responseLost = false;
   const lostResponse = new Error(
     "Capture response lost after durable execution",
@@ -88,6 +116,7 @@ async function main() {
     async execute(request) {
       const result = await durable.execute(request);
       send({ stage: "execute", request, result });
+      await checkpoint("effect", request.kind);
       if (
         mode === "lose-response" ||
         mode === "process-lose-response" ||
@@ -114,15 +143,86 @@ async function main() {
     },
     verifySignedEvent: () => false,
   };
+  const executionRepository = new SupabasePaymentOperationExecutionRepository(
+    client,
+  );
+  const observation = createBookingRequestPaymentObservation({
+    repository: new SupabaseBookingRequestPaymentObservationRepository(client),
+  });
   const operations = createPaymentOperationExecution({
-    repository: new SupabasePaymentOperationExecutionRepository(client),
+    repository: {
+      async admit(request, identity) {
+        const admission = await executionRepository.admit(request, identity);
+        if (!("status" in admission))
+          await checkpoint("admitted", admission.binding.kind);
+        return admission;
+      },
+      reload: (query, identity) => executionRepository.reload(query, identity),
+      record: (admission, result) =>
+        executionRepository.record(admission, result),
+    },
+    observation: {
+      async record(admission, result) {
+        const accepted = await observation.record(admission, result);
+        await checkpoint("recorded", admission.binding.kind);
+        return accepted;
+      },
+    },
     provider,
   });
   const repository = new SupabaseBookingRequestCaptureRepository(client);
   const confirmation = createBookingRequestConfirmation({
     repository: new SupabaseBookingRequestConfirmationRepository(client),
   });
-  if (
+  const recovery = createBookingRequestPaymentRecovery({
+    repository: new SupabaseBookingRequestPaymentRecoveryRepository(
+      client,
+      client,
+    ),
+    operations,
+    confirmation: {
+      async execute(...args) {
+        await checkpoint("confirmation");
+        return confirmation.execute(...args);
+      },
+    },
+  });
+  if (mode === "payment-recovery") {
+    send({
+      stage: "complete",
+      result: await recovery.resume(required("PAYMENT_RECOVERY_ATTEMPT_ID")),
+    });
+  } else if (mode === "payment-expiry") {
+    const expiry = createBookingRequestPaymentRequiredExpiry({
+      repository: new SupabaseBookingRequestPaymentRequiredExpiryRepository(
+        client,
+      ),
+      operations,
+      provider,
+      recovery,
+    });
+    send({
+      stage: "complete",
+      result: await expiry.resume(required("CAPTURE_BOOKING_REQUEST_ID")),
+    });
+  } else if (mode === "payment-query") {
+    send({
+      stage: "complete",
+      result: await operations.query(
+        JSON.parse(required("PAYMENT_OPERATION_QUERY")),
+      ),
+    });
+  } else if (mode === "payment-correction") {
+    const receipt = JSON.parse(required("PAYMENT_CORRECTION_RECEIPT"));
+    send({
+      stage: "complete",
+      result: await observation.correct(
+        required("CAPTURE_BOOKING_REQUEST_ID"),
+        receipt.providerOperationId,
+        receipt,
+      ),
+    });
+  } else if (
     [
       "process",
       "process-lose-response",

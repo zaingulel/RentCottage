@@ -195,7 +195,7 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
     harness.runSql(
       paymentEvidenceSql +
         `set role service_role;select pg_temp.recovery_execute(
-      public.lease_booking_request_payment_recovery_step('${admitted.attemptId}')->'permit','succeeded');`,
+      public.lease_booking_request_payment_recovery_step('${admitted.attemptId}','original-release','admitted')->'permit','succeeded','original_released');`,
     );
     const originalReleased = observe();
     expect(originalReleased.recoveryAttempt.state).toBe("original_released");

@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
+import { withPaymentRecoveryCleanup } from "../tests/fixtures/payment-recovery-cleanup.mjs";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
@@ -181,7 +182,7 @@ const temporaryDirectory = mkdtempSync(
   join(tmpdir(), "rentcottage-capture-workers-"),
 );
 const workerBundle = join(temporaryDirectory, "worker.mjs");
-function startWorker(mode, bookingRequestId = requestId) {
+function startWorker(mode, bookingRequestId = requestId, extraEnv = {}) {
   for (const key of ["SUPABASE_URL", "SUPABASE_SECRET_KEY"])
     assert.ok(process.env[key], `${key} is required for Capture recovery`);
   const child = spawn(process.execPath, [workerBundle], {
@@ -189,6 +190,7 @@ function startWorker(mode, bookingRequestId = requestId) {
       ...process.env,
       CAPTURE_WORKER_MODE: mode,
       CAPTURE_BOOKING_REQUEST_ID: bookingRequestId,
+      ...extraEnv,
     },
     stdio: ["ignore", "ignore", "pipe", "ipc"],
   });
@@ -801,8 +803,8 @@ async function proveIndeterminateCaptureRecovery(source) {
           paymentEvidenceSql +
             `begin;
         create function public.unknown_capture_expiry_now() returns timestamptz language sql as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${requestId}'$$;
-        do $$begin execute replace(pg_get_functiondef('public.prepare_booking_request_payment_required_expiry(uuid,jsonb)'::regprocedure),'clock_timestamp()','public.unknown_capture_expiry_now()');end$$;
-        set local role service_role; select public.prepare_booking_request_payment_required_expiry('${requestId}',${literal(providerIdentity)}); rollback;`,
+        do $$begin execute replace(pg_get_functiondef('public.prepare_booking_request_payment_required_expiry(uuid,jsonb,jsonb)'::regprocedure),'clock_timestamp()','public.unknown_capture_expiry_now()');end$$;
+        set local role service_role; select pg_temp.expiry_prepare('${requestId}',${literal(providerIdentity)},jsonb_build_object('action','release','authorizationLifecycleId',public.get_booking_request_payment_facts('${requestId}')->>'originalLifecycleId','recoveryOperationId',null)); rollback;`,
         ),
       );
       assert.equal(
@@ -1267,6 +1269,339 @@ async function proveCaptureProcessing(source) {
   );
 }
 
+async function provePaymentOrchestration() {
+  const source = readFileSync(
+    "supabase/tests/database/booking_request_payment_recovery.test.sql",
+    "utf8",
+  )
+    .split("select plan(")[0]
+    .replace(/^begin;/, "");
+  const recoveryCleanup = withPaymentRecoveryCleanup(cleanup, requestId);
+  const seed = () => {
+    harness.runSql(paymentEvidenceSql + `begin;${source}commit;`);
+    seeded = true;
+    paymentRecoverySeeded = true;
+    return JSON.parse(
+      harness.runSql(
+        `set request.jwt.claim.sub='10000000-0000-4000-8000-000000001002';set role authenticated;select public.claim_customer_booking_request_payment_recovery('${requestId}','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
+      ),
+    );
+  };
+  const clear = () => {
+    harness.runSql(paymentEvidenceSql + recoveryCleanup);
+    seeded = false;
+    paymentRecoverySeeded = false;
+  };
+  const state = () =>
+    JSON.parse(
+      harness.runSql(
+        paymentEvidenceSql +
+          `select jsonb_build_object(
+    'attempts',(select jsonb_agg(to_jsonb(v) order by generation) from public.booking_request_payment_recovery_attempts v),
+    'operations',(select jsonb_agg(pg_temp.payment_fixture_operation_json(v) order by created_at,id) from public.payment_provider_operations v where recovery_attempt_id is not null or operation_kind='refund'),
+    'effects',(select coalesce(sum(e.physical_execution_count),0) from public.simulated_payment_effects e join public.payment_provider_operations l on l.id=e.operation_id where l.recovery_attempt_id is not null or l.operation_kind='refund'),
+    'active',(select count(*) from public.cottage_booking_period_occupancies where active),
+    'confirmations',(select count(*) from public.booking_confirmations),
+    'receipts',(select count(*) from public.booking_receipts),
+    'invalidations',(select count(*) from public.booking_request_confirmation_invalidations),
+    'request',(select status from public.booking_requests where id='${requestId}'),
+    'expiry',(select state from public.booking_request_payment_required_expiry_work where booking_request_id='${requestId}'),
+    'targets',(select coalesce(jsonb_agg(to_jsonb(v) order by id),'[]') from public.booking_request_payment_required_expiry_operations v),
+    'notices',(select count(*) from public.booking_request_status_notifications where status='expired'));`,
+      ),
+    );
+  const stop = async (worker) => {
+    worker.child.kill("SIGTERM");
+    await worker.exited;
+    workers.delete(worker);
+  };
+  const concurrent = seed();
+  const competing = await Promise.all(
+    [0, 1].map(() =>
+      finishWorker(
+        startWorker("payment-recovery", requestId, {
+          PAYMENT_RECOVERY_ATTEMPT_ID: concurrent.attemptId,
+        }),
+      ),
+    ),
+  );
+  assert.deepEqual(
+    competing.map(({ status }) => status),
+    ["succeeded", "succeeded"],
+  );
+  const converged = state();
+  assert.equal(converged.effects, 3);
+  assert.equal(converged.confirmations, 1);
+  assert.equal(converged.receipts, 2);
+  assert.equal(converged.active, 5);
+  assert.ok(
+    converged.operations.every(
+      ({ physical_execution_count }) => physical_execution_count === 1,
+    ),
+  );
+  const capture = converged.operations.find(
+    ({ operation_kind }) => operation_kind === "capture",
+  );
+  const conflicting = {
+    receiptId: "runtime-conflicting-amount",
+    bookingRequestId: requestId,
+    providerOperationId: capture.id,
+    providerIdentity,
+    paymentLifecycleId: capture.payment_lifecycle_id,
+    logicalOperationId: capture.logical_operation_id,
+    physicalAttemptId: capture.physical_attempt_id,
+    kind: "capture",
+    amountFils: 110000000,
+    currency: "IQD",
+    providerRequestId: capture.provider_request_id,
+    providerReference: capture.provider_reference,
+    movementReference: capture.movement_reference,
+    outcome: "succeeded",
+    occurredAt: capture.authoritative_outcome_at,
+  };
+  assert.equal(
+    (
+      await finishWorker(
+        startWorker("payment-correction", requestId, {
+          PAYMENT_CORRECTION_RECEIPT: JSON.stringify(conflicting),
+        }),
+      )
+    ).status,
+    "quarantined",
+  );
+  const invalidated = state();
+  assert.equal(invalidated.invalidations, 1);
+  assert.equal(invalidated.confirmations, 1);
+  assert.equal(invalidated.receipts, 2);
+  assert.equal(invalidated.active, 5);
+  assert.equal(invalidated.effects, 3);
+  assert.deepEqual(invalidated.operations, converged.operations);
+  clear();
+  for (const interruption of [
+    "admitted",
+    "effect",
+    "recorded",
+    "confirmation",
+  ]) {
+    const admission = seed();
+    const env = { PAYMENT_RECOVERY_ATTEMPT_ID: admission.attemptId };
+    const first = startWorker("payment-recovery", requestId, {
+      ...env,
+      PAYMENT_WORKER_PAUSE: interruption,
+      PAYMENT_WORKER_PAUSE_KIND:
+        interruption === "confirmation" ? "" : "capture",
+    });
+    await stage(
+      first,
+      interruption === "confirmation"
+        ? "confirmation"
+        : interruption + "-paused",
+    );
+    const interrupted = state();
+    assert.equal(interrupted.confirmations, 0);
+    assert.equal(interrupted.active, 5);
+    await stop(first);
+    const result = await finishWorker(
+      startWorker("payment-recovery", requestId, env),
+    );
+    const recovered = state();
+    assert.equal(
+      result.status,
+      interruption === "admitted" ? "blocked" : "succeeded",
+    );
+    assert.equal(recovered.active, 5);
+    assert.equal(recovered.confirmations, interruption === "admitted" ? 0 : 1);
+    assert.equal(recovered.receipts, interruption === "admitted" ? 0 : 2);
+    assert.equal(recovered.effects, interruption === "admitted" ? 2 : 3);
+    assert.deepEqual(
+      recovered.operations.map(({ id }) => id).sort(),
+      interrupted.operations.map(({ id }) => id).sort(),
+    );
+    if (interruption === "admitted")
+      assert.equal(
+        recovered.operations.find(
+          ({ operation_kind }) => operation_kind === "capture",
+        ).current_outcome,
+        "not-executed",
+      );
+    else {
+      assert.equal(
+        (await finishWorker(startWorker("payment-recovery", requestId, env)))
+          .status,
+        "succeeded",
+      );
+      assert.deepEqual(state(), recovered);
+    }
+    clear();
+  }
+  console.log(
+    "Production recovery resumes across admission, effect, recording and confirmation interruptions: the same operation identities, definitive absence versus success, at most three effects, one confirmation and two receipts.",
+  );
+
+  const definitions = [];
+  const unobserved = readFileSync(
+    "supabase/tests/database/booking_request_payment_correction.test.sql",
+    "utf8",
+  )
+    .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
+    .split("-- END UNOBSERVED RECOVERY FIXTURE")[0];
+  try {
+    for (const interruption of ["admitted", "effect", "recorded"]) {
+      const admission = seed();
+      // Arrange only two explicitly selected predecessor operations; the passive and expiry journeys use production services.
+      harness.runSql(
+        paymentEvidenceSql +
+          `set role service_role;
+        select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${admission.attemptId}','original-release','admitted')->'permit','succeeded','original_released');
+        select pg_temp.recovery_execute(public.lease_booking_request_payment_recovery_step('${admission.attemptId}','replacement-authorization','original_released')->'permit','succeeded','replacement_authorized');`,
+      );
+      const permit = JSON.parse(
+        harness.runSql(
+          `set role service_role;select public.lease_booking_request_payment_recovery_step('${admission.attemptId}','replacement-capture','replacement_authorized')->'permit';`,
+        ),
+      );
+      if (!definitions.length) {
+        const result = JSON.parse(
+          harness.runSql(
+            `select jsonb_agg(pg_get_functiondef(p.oid)) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f' and p.prosrc like '%clock_timestamp()%' and (p.proname like '%booking_request%' or p.proname in ('persist_simulated_payment_effect','seal_simulated_payment_absence','resolve_simulated_payment_effect','validate_payment_provider_observation','accept_payment_provider_observation','simulated_payment_absence_receipt'));`,
+          ),
+        );
+        definitions.push(...result);
+      }
+      const receipt = JSON.parse(
+        harness.runSql(
+          paymentEvidenceSql +
+            unobserved +
+            `select pg_temp.seed_unobserved_payment_outcome(${literal(permit)},'succeeded','${admission.deadline}'::timestamptz);`,
+        ),
+      );
+      for (const definition of definitions)
+        harness.runSql(
+          definition.replaceAll(
+            "clock_timestamp()",
+            `'${admission.deadline}'::timestamptz`,
+          ),
+        );
+      const now = admission.deadline;
+      assert.equal(
+        (
+          await finishWorker(
+            startWorker("payment-correction", requestId, {
+              PAYMENT_CORRECTION_RECEIPT: JSON.stringify(receipt),
+              PAYMENT_WORKER_NOW: now,
+            }),
+          )
+        ).status,
+        "recorded",
+      );
+      const owned = state();
+      assert.equal(owned.confirmations, 0);
+      assert.equal(
+        owned.targets.filter(
+          ({ operation_kind }) => operation_kind === "refund",
+        ).length,
+        1,
+      );
+      assert.equal(owned.active, 5);
+      const first = startWorker("payment-expiry", requestId, {
+        PAYMENT_WORKER_NOW: now,
+        PAYMENT_WORKER_PAUSE: interruption,
+        PAYMENT_WORKER_PAUSE_KIND: "refund",
+      });
+      await stage(first, interruption + "-paused");
+      const interrupted = state();
+      await stop(first);
+      const finished = await finishWorker(
+        startWorker("payment-expiry", requestId, { PAYMENT_WORKER_NOW: now }),
+      );
+      const after = state();
+      assert.equal(
+        after.operations.filter(
+          ({ operation_kind }) => operation_kind === "refund",
+        ).length,
+        1,
+      );
+      assert.equal(
+        after.operations.filter(
+          ({ operation_kind }) => operation_kind === "release",
+        ).length,
+        1,
+      );
+      if (interruption === "admitted") {
+        assert.equal(finished.status, "quarantined");
+        assert.equal(after.active, 5);
+        assert.equal(after.effects, 3);
+        assert.equal(
+          after.operations.find(
+            ({ operation_kind }) => operation_kind === "refund",
+          ).current_outcome,
+          "not-executed",
+        );
+      } else {
+        assert.equal(finished.status, "expired");
+        assert.equal(after.active, 0);
+        assert.equal(after.notices, 2);
+        assert.equal(after.effects, 4);
+        assert.deepEqual(
+          after.targets.map(({ id }) => id).sort(),
+          interrupted.targets.map(({ id }) => id).sort(),
+        );
+        assert.equal(
+          (
+            await finishWorker(
+              startWorker("payment-expiry", requestId, {
+                PAYMENT_WORKER_NOW: now,
+              }),
+            )
+          ).status,
+          "expired",
+        );
+        assert.deepEqual(state(), after);
+      }
+      for (const definition of definitions) harness.runSql(definition);
+      clear();
+    }
+    const invalid = seed();
+    for (const definition of definitions)
+      harness.runSql(
+        definition.replaceAll(
+          "clock_timestamp()",
+          `'${invalid.deadline}'::timestamptz`,
+        ),
+      );
+    harness.runSql(
+      paymentEvidenceSql +
+        `set role service_role;
+      select pg_temp.expiry_execute(pg_temp.expiry_prepare('${requestId}',${literal(providerIdentity)},
+        '{"action":"release","authorizationLifecycleId":"73000000-0000-4000-8000-000000001001","recoveryOperationId":null}')->'permit','succeeded');
+      reset role;alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
+      update public.payment_provider_operations set amount_fils=110000000 where operation_kind='release';
+      alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;`,
+    );
+    assert.equal(
+      (
+        await finishWorker(
+          startWorker("payment-expiry", requestId, {
+            PAYMENT_WORKER_NOW: invalid.deadline,
+          }),
+        )
+      ).status,
+      "quarantined",
+    );
+    assert.equal(state().expiry, "quarantined");
+    assert.equal(state().active, 5);
+    assert.equal(state().notices, 0);
+    for (const definition of definitions) harness.runSql(definition);
+    clear();
+  } finally {
+    for (const definition of definitions) harness.runSql(definition);
+  }
+  console.log(
+    "Production passive correction atomically owns the late-capture refund; expiry resumes across refund admission, effect and recording interruptions with one refund identity, no captured-authorization release, and inventory released only after proof.",
+  );
+}
+
+let paymentRecoverySeeded = false;
 let seeded = false;
 const cleanup = `begin;
   alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
@@ -1494,6 +1829,7 @@ try {
   await proveApplicationFailureRecovery(recoverySource);
   await proveCaptureProcessing(recoverySource);
   await proveIndeterminateCaptureRecovery(recoverySource);
+  await provePaymentOrchestration();
 } finally {
   for (const worker of workers) worker.child.kill("SIGTERM");
   await Promise.all([...workers].map((worker) => worker.exited));
@@ -1503,5 +1839,11 @@ try {
       session.child.stdin.end("rollback;\n");
   }
   await Promise.all([...sessions].map((session) => session.exited));
-  if (seeded) harness.runSql(paymentEvidenceSql + cleanup);
+  if (seeded)
+    harness.runSql(
+      paymentEvidenceSql +
+        (paymentRecoverySeeded
+          ? withPaymentRecoveryCleanup(cleanup, requestId)
+          : cleanup),
+    );
 }

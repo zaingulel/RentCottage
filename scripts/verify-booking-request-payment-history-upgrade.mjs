@@ -2,9 +2,13 @@ import { historicalProviderOperationSource } from "../tests/fixtures/payment-pro
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildSync } from "esbuild";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { createBookingRequestPaymentUpgradeWorker } from "./lib/booking-request-payment-upgrade-worker.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness();
 let paymentEvidenceInstalled = false;
@@ -167,11 +171,15 @@ function verifyProviderEvidenceCutover() {
     from public.simulated_payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001' and operation_kind='capture';`),
   );
   const observe = (value) =>
-    JSON.parse(
-      harness.runSql(
-        `set role service_role; select public.observe_booking_request_payment_correction('${value.bookingRequestId}','${value.providerOperationId}',${literal(value)});`,
-      ),
-    );
+    paymentEvidenceInstalled
+      ? runPaymentWorker("payment-correction", value.bookingRequestId, {
+          PAYMENT_CORRECTION_RECEIPT: JSON.stringify(value),
+        })
+      : JSON.parse(
+          harness.runSql(
+            `set role service_role; select public.observe_booking_request_payment_correction('${value.bookingRequestId}','${value.providerOperationId}',${literal(value)});`,
+          ),
+        );
   assert.equal(
     observe(receipt).status,
     "recorded",
@@ -299,10 +307,21 @@ function verifyProviderEvidenceCutover() {
     "legacy-simulated",
   );
   const pending = recovery[0];
-  const continued = JSON.parse(
-    harness.runSql(`${readFileSync("supabase/fixtures/payment-evidence.sql", "utf8")}
-    set role service_role; select pg_temp.permit_query(${literal(pending.permit)},null,null,'succeeded');`),
-  );
+  const inquiry = runPaymentWorker("payment-query", pending.requestId, {
+    PAYMENT_OPERATION_QUERY: JSON.stringify({
+      kind: "release",
+      paymentLifecycleId: pending.permit.binding.paymentLifecycleId,
+      logicalOperationId: pending.permit.operationId,
+      attemptId: pending.permit.idempotencyKey,
+      amountFils: pending.permit.binding.amountFils,
+      currency: "IQD",
+      recoveryPermit: pending.permit,
+      providerRequestId: null,
+      providerReference: null,
+    }),
+  });
+  assert.equal(inquiry.status, "recorded");
+  const continued = inquiry.result;
   assert.equal(
     continued.outcome,
     "succeeded",
@@ -337,6 +356,136 @@ function verifyProviderEvidenceCutover() {
 
 let failure;
 harness.guardDisposableLocalDatabase();
+function verifyOrchestrationCutover() {
+  supabase(["db", "reset", "--local", "--version", "20260908235322"]);
+  paymentEvidenceInstalled = true;
+  const source = readFileSync(
+    "supabase/tests/database/booking_request_payment_recovery.test.sql",
+    "utf8",
+  )
+    .split("select plan(")[0]
+    .replace(/^begin;/, "");
+  harness.runSql(`begin;${source}commit;`);
+  const requestId = "60000000-0000-4000-8000-000000001001";
+  const attempt = JSON.parse(
+    harness.runSql(
+      `set request.jwt.claim.sub='10000000-0000-4000-8000-000000001002';set role authenticated;select public.claim_customer_booking_request_payment_recovery('${requestId}','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
+    ),
+  );
+  const permit = JSON.parse(
+    harness.runSql(
+      `set role service_role;select public.lease_booking_request_payment_recovery_step('${attempt.attemptId}')->'permit';`,
+    ),
+  );
+  const unobserved = readFileSync(
+    "supabase/tests/database/booking_request_payment_correction.test.sql",
+    "utf8",
+  )
+    .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
+    .split("-- END UNOBSERVED RECOVERY FIXTURE")[0];
+  const receipt = JSON.parse(
+    harness.runSql(
+      unobserved +
+        `select pg_temp.seed_unobserved_payment_outcome('${JSON.stringify(permit)}'::jsonb,'succeeded',clock_timestamp(),'succeeded');`,
+    ),
+  );
+  const retainedTables = [
+    "payment_provider_operations",
+    "payment_provider_observations",
+    "simulated_payment_effects",
+    "booking_request_payment_recovery_attempts",
+    "booking_request_payment_recovery_operations",
+    "booking_request_capture_work",
+    "booking_request_payment_history",
+    "booking_confirmations",
+    "booking_receipts",
+    "cottage_booking_period_occupancies",
+  ];
+  const rows = () =>
+    Object.fromEntries(
+      retainedTables.map((table) => [
+        table,
+        harness.runSql(
+          `select coalesce(jsonb_agg(to_jsonb(v) order by to_jsonb(v)::text),'[]') from public.${table} v;`,
+        ),
+      ]),
+    );
+  const before = rows();
+  assert.equal(
+    harness.runSql(
+      `select current_outcome is null from public.payment_provider_operations where id='${receipt.providerOperationId}';`,
+    ),
+    "t",
+  );
+  assert.equal(
+    harness.runSql(
+      `select physical_execution_count from public.simulated_payment_effects where operation_id='${receipt.providerOperationId}';`,
+    ),
+    "1",
+  );
+  supabase(["migration", "up", "--local"]);
+  assert.deepEqual(
+    rows(),
+    before,
+    "The #201-to-#202 command cutover must preserve every seeded row, clock, identity, provenance and history event",
+  );
+  assert.equal(
+    runPaymentWorker("payment-recovery", requestId, {
+      PAYMENT_RECOVERY_ATTEMPT_ID: attempt.attemptId,
+    }).status,
+    "succeeded",
+  );
+  assert.equal(
+    harness.runSql(
+      `select physical_execution_count from public.simulated_payment_effects where operation_id='${receipt.providerOperationId}';`,
+    ),
+    "1",
+  );
+  assert.equal(
+    harness.runSql(
+      `select (select count(*) from public.payment_provider_operations where recovery_attempt_id='${attempt.attemptId}')||':'||(select count(*) from public.booking_confirmations)||':'||(select count(*) from public.booking_receipts);`,
+    ),
+    "3:1:2",
+  );
+  assert.equal(
+    rows().booking_request_capture_work,
+    before.booking_request_capture_work,
+    "Continuation retains the original Payment Required work and fixed deadline",
+  );
+  const completed = rows();
+  assert.equal(
+    runPaymentWorker("payment-recovery", requestId, {
+      PAYMENT_RECOVERY_ATTEMPT_ID: attempt.attemptId,
+    }).status,
+    "succeeded",
+  );
+  assert.deepEqual(
+    rows(),
+    completed,
+    "Current application replay after upgrade cannot repeat effects, confirmation or history",
+  );
+  console.log(
+    "The exact #201-to-#202 upgrade preserves an admitted unreceived provider effect byte for byte, then production recovery queries that identity and completes once with three recovery operations, one confirmation and two receipts.",
+  );
+}
+
+const workerDirectory = mkdtempSync(
+  join(tmpdir(), "rentcottage-payment-upgrade-"),
+);
+const workerBundle = join(workerDirectory, "worker.mjs");
+buildSync({
+  entryPoints: ["scripts/booking-request-capture-recovery-worker.ts"],
+  outfile: workerBundle,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+});
+const runPaymentWorker = createBookingRequestPaymentUpgradeWorker({
+  guardDisposableLocalDatabase: harness.guardDisposableLocalDatabase,
+  workerBundle,
+});
+
 try {
   supabase(["db", "reset", "--local", "--version", priorVersion]);
   assert.equal(
@@ -518,9 +667,11 @@ try {
     "Upgrade preserves all selected source hashes and exact imported facts/clocks through AAL2; pre-installation roots without provider evidence remain partial and subsequent real recovery events append without rewriting imports.",
   );
   verifyProviderEvidenceCutover();
+  verifyOrchestrationCutover();
 } catch (error) {
   failure = error;
 } finally {
+  rmSync(workerDirectory, { recursive: true, force: true });
   try {
     supabase(["db", "reset", "--local"]);
   } catch (restoreError) {
