@@ -44,11 +44,32 @@ active work excluded from cleanup. A historical cleanup decision does not preven
 After ownership and board classification narrow the shortlist, fetch bodies and attributed comments for at most
 three credible issues in one aliased GraphQL query using the procedure in `docs/agents/issue-tracker.md`.
 An incomplete candidate stays out of recommendations until its named missing evidence is fetched.
+
+Before recommending implementation, judge the whole acceptance contract against shipped code, current domain
+rules and recent owner decisions. Trace required states, records, interfaces and supplier capabilities to their
+producers; inspect the relevant code and related tickets when those prerequisites are uncertain. Board readiness
+is a structural check, not proof that the outcome is implementable. Distinguish a deliverable implementation from
+research/design that still needs an owner decision. A partial first slice does not make the whole issue ready.
+
+Rank credible work using the owner's current objective and the Project's recorded development rationale, then
+weigh dependency reach, complete user journeys, risk reduction, likely rework from unsettled upstream decisions,
+and external lead times. Explain why the recommendation should come next; issue number, item position and a
+ready label alone are insufficient. Keep hard prerequisites separate from preferred order and parallel capacity.
+
+When missing producers, circular acceptance requirements, stale scope or launch-gate gaps invalidate the next
+work choice, recommend a concrete board repair first: name the affected issues, evidence, proposed scope/edge
+changes and any genuinely missing ticket. Preserve complete outcomes; prefer correcting existing tickets over
+silently narrowing acceptance or inventing infrastructure. Follow only the affected dependency chain unless the
+owner requests a wider audit or findings show a systemic problem. Fetch related issue bodies/comments as needed;
+the three-candidate shortlist limit does not cap investigation. Apply repairs only under owner authority, then
+reverify the board before selection. Unrelated sound work may remain an option with the limitation explained.
+
 Present the options in a concise Markdown table with one issue per row and columns: Issue, Outcome,
 Dependencies / owner, Risk, and Builder route. Link each issue, put the recommended option first, and mark it
 **Recommended**. Keep cells short for scanning; give the recommendation's reason and the current branch/worktree,
 verification result, and safe parallel capacity in brief prose outside the table.
-End with a question naming the recommended issue and stop for the owner's choice. A yes to that question
+End with a question naming the recommended issue or concrete board repair and stop for the owner's choice.
+For implementation, a yes to that question
 approves the named issue's stated outcome and acceptance criteria; follow the [Work selection gate](../../../AGENTS.md#owner-gates)
 for its authorization effect.
 
