@@ -215,8 +215,8 @@ Record these facts after the recording and normal-browser rehearsal succeed:
 - retained Supabase project/workdir and Worker origin left available for the meeting.
 
 The rehearsal completed on 10 September 2026 against merged application commit
-`ef8904279186ad988a52986a562285944141c1c3`. The automated walkthrough passed against the real local Worker and
-reserved 16 October for its recording, 17 October for rehearsal, and 18 October for the meeting. The normal-browser
+`ef8904279186ad988a52986a562285944141c1c3`. The repaired automated walkthrough passed against the real local Worker
+and reserved 19 October for its recording, 20 October for rehearsal, and 21 October for the meeting. The normal-browser
 rehearsal used 11 October and request `RC-REQ-6121747CF9B64EAF`; its Customer and Owner views both reached the paid
 Confirmed Booking with the expected period, prices, synthetic contacts, and private access details. The dedicated
 `rentcottage-demo` Supabase project in `/Users/zain/Developer/Codex/RentCottage/.demo` and the Worker at

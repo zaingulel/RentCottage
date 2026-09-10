@@ -550,9 +550,15 @@ async function verifyPhone(page: Page, phone: string) {
   await page.getByLabel("Iraqi phone number").fill(phone);
   await page.getByRole("button", { name: "Send verification code" }).click();
   await expect(page.getByLabel("Verification code")).toBeVisible();
+  const securePhoneCover = await coverPrivateTransition(
+    page,
+    "Phone verification",
+  );
   await page.screencast.hideActions();
   await page.getByLabel("Verification code").fill(verificationCode);
   await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(page.getByLabel("Verification code")).toHaveCount(0);
+  await securePhoneCover.dispose();
   await page.screencast.showActions({ duration: 900, fontSize: 28 });
 }
 
@@ -897,6 +903,19 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     ]) {
       await expect(customerDetails).toContainText(value);
     }
+    await detailValue(
+      customerDetails,
+      "Exact address",
+    ).scrollIntoViewIfNeeded();
+    await expectScene(detailValue(customerDetails, "Exact address"));
+    await detailValue(
+      customerDetails,
+      "Cottage Owner phone",
+    ).scrollIntoViewIfNeeded();
+    await expectScene(
+      detailValue(customerDetails, "Cottage Owner phone"),
+      2_000,
+    );
 
     await page.context().clearCookies();
     await page.context().addCookies(ownerCookies);
@@ -943,6 +962,13 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     ]) {
       await expect(ownerDetails).toContainText(value);
     }
+    await detailValue(ownerDetails, "Exact address").scrollIntoViewIfNeeded();
+    await expectScene(detailValue(ownerDetails, "Exact address"));
+    await detailValue(
+      ownerDetails,
+      "Cottage Owner phone",
+    ).scrollIntoViewIfNeeded();
+    await expectScene(detailValue(ownerDetails, "Cottage Owner phone"), 2_000);
   } catch (error) {
     journeyError = error;
   } finally {
