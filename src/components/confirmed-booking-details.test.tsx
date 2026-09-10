@@ -122,6 +122,33 @@ describe("confirmed booking details", () => {
       "Delivery status is temporarily unavailable",
     );
   });
+  it.each([
+    ["en", "Some practical access or contact details are unavailable."],
+    ["ar", "بعض تفاصيل الوصول أو الاتصال غير متاحة."],
+    ["ckb", "هەندێک وردەکاری گەیشتن یان پەیوەندی بەردەست نییە."],
+  ] as const)(
+    "truthfully identifies incomplete practical details in %s",
+    (locale, incomplete) => {
+      render(
+        <ConfirmedBookingDetails
+          locale={locale}
+          access={{
+            ...base,
+            exactAddress: null,
+            privateDirections: null,
+            mapPin: null,
+            customerPhone: null,
+            ownerPhone: null,
+          }}
+          notification={pending}
+        />,
+      );
+      expect(screen.getByRole("status", { name: incomplete })).toBeVisible();
+      expect(
+        screen.queryByText("Current private address"),
+      ).not.toBeInTheDocument();
+    },
+  );
   it("keeps paid details visible and explains a failed retry", async () => {
     retryAction.mockResolvedValue({ status: "failed" });
     render(

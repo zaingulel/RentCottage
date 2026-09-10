@@ -20,6 +20,38 @@ const uuid = (v: unknown): v is string =>
     v,
   );
 const text = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+const payloadKeys = new Set([
+  "kind",
+  "title",
+  "body",
+  "bookingReference",
+  "detailsPath",
+  "linkLabel",
+  "fictional",
+]);
+
+function validPayload(
+  payload: Row | null,
+  base: NotificationCandidate,
+): payload is Row & NotificationBinding["payload"] {
+  const expectedPath = `/${base.locale}/${
+    base.recipientRole === "customer"
+      ? "booking-requests"
+      : "owner/booking-requests"
+  }/${base.bookingRequestReference}`;
+  return (
+    payload !== null &&
+    Object.keys(payload).length === payloadKeys.size &&
+    Object.keys(payload).every((key) => payloadKeys.has(key)) &&
+    payload.kind === "paid-confirmation" &&
+    text(payload.title) &&
+    text(payload.body) &&
+    payload.bookingReference === base.bookingReference &&
+    payload.detailsPath === expectedPath &&
+    text(payload.linkLabel) &&
+    payload.fictional === true
+  );
+}
 
 function parseCandidate(value: unknown): NotificationCandidate {
   const v = row(value);
@@ -50,10 +82,9 @@ function parseLease(value: unknown): NotificationLease {
     !v ||
     v.logicalId !== `paid-confirmation:${base.receiptId}` ||
     v.templateVersion !== "paid-confirmation-v1" ||
-    !payload ||
-    payload.kind !== "paid-confirmation" ||
-    payload.fictional !== true ||
-    !text(v.payloadSha256) ||
+    !validPayload(payload, base) ||
+    typeof v.payloadSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(v.payloadSha256) ||
     !Number.isSafeInteger(v.leaseGeneration) ||
     (v.leaseGeneration as number) < 1 ||
     !uuid(v.leaseToken) ||
@@ -65,7 +96,7 @@ function parseLease(value: unknown): NotificationLease {
     ...base,
     logicalId: v.logicalId,
     templateVersion: v.templateVersion,
-    payload: payload as unknown as NotificationBinding["payload"],
+    payload,
     payloadSha256: v.payloadSha256,
     leaseGeneration: v.leaseGeneration as number,
     leaseToken: v.leaseToken,

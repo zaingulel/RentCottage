@@ -418,6 +418,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         pending: "Payment confirmation pending",
         confirmed: "Booking confirmed",
         paidHeading: "Confirmed booking",
+        incomplete: "Some practical access or contact details are unavailable.",
         noticePending: "Pending",
         noticeDelivered: "Delivered",
         required: "Payment Required",
@@ -432,6 +433,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         pending: "بانتظار تأكيد الدفع",
         confirmed: "تم تأكيد الحجز",
         paidHeading: "حجز مؤكد",
+        incomplete: "بعض تفاصيل الوصول أو الاتصال غير متاحة.",
         noticePending: "قيد الانتظار",
         noticeDelivered: "تم التسليم",
         required: "الدفع مطلوب",
@@ -446,6 +448,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         pending: "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
         confirmed: "حجز پشتڕاست کراوەتەوە",
         paidHeading: "حجزی پشتڕاستکراو",
+        incomplete: "هەندێک وردەکاری گەیشتن یان پەیوەندی بەردەست نییە.",
         noticePending: "چاوەڕێ",
         noticeDelivered: "گەیەنرا",
         required: "پارەدان پێویستە",
@@ -460,6 +463,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       state:
         | "capture-processing"
         | "paid-confirmed"
+        | "paid-confirmed-incomplete"
         | "payment-required-open"
         | "payment-required-elapsed"
         | "payment-expiry-quarantined",
@@ -488,16 +492,24 @@ test("a verified Customer double-submit creates one Pending request and one mini
             ? copy.pending
             : state === "payment-expiry-quarantined"
               ? copy.quarantined
-              : state === "paid-confirmed"
+              : state === "paid-confirmed" ||
+                  state === "paid-confirmed-incomplete"
                 ? copy.confirmed
                 : copy.required;
-        if (state === "paid-confirmed") {
+        if (
+          state === "paid-confirmed" ||
+          state === "paid-confirmed-incomplete"
+        ) {
           await expect(
             customerView.getByRole("heading", { name: copy.paidHeading }),
           ).toBeVisible();
-          await expect(customerView.getByRole("status")).toContainText(
-            new RegExp(`${copy.noticePending}|${copy.noticeDelivered}`),
-          );
+          await expect(
+            customerView.getByRole("status").filter({
+              hasText: new RegExp(
+                `${copy.noticePending}|${copy.noticeDelivered}`,
+              ),
+            }),
+          ).toBeVisible();
           await expect(customerView.getByText(exactAddress)).toBeVisible();
           await expect(customerView.getByText(customerPhone)).toBeVisible();
           await expect(customerView.getByText(ownerPhone)).toBeVisible();
@@ -520,16 +532,23 @@ test("a verified Customer double-submit creates one Pending request and one mini
         await expect(currentOwnerNotice.getByRole("status")).toContainText(
           expectedStatus,
         );
-        if (state === "paid-confirmed") {
+        if (
+          state === "paid-confirmed" ||
+          state === "paid-confirmed-incomplete"
+        ) {
           await currentOwnerNotice
             .getByRole("link", { name: ownerBookingLink[copy.locale] })
             .click();
           await expect(
             ownerView.getByRole("heading", { name: copy.paidHeading }),
           ).toBeVisible();
-          await expect(ownerView.getByRole("status")).toContainText(
-            new RegExp(`${copy.noticePending}|${copy.noticeDelivered}`),
-          );
+          await expect(
+            ownerView.getByRole("status").filter({
+              hasText: new RegExp(
+                `${copy.noticePending}|${copy.noticeDelivered}`,
+              ),
+            }),
+          ).toBeVisible();
           await expect(ownerView.getByText(exactAddress)).toBeVisible();
           await expect(ownerView.getByText(customerPhone)).toBeVisible();
           await expect(ownerView.getByText(ownerPhone)).toBeVisible();
@@ -537,6 +556,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
             ownerView.getByText(bookingTermsFixture("en").body),
           ).toBeVisible();
           for (const surface of [customerView, ownerView]) {
+            if (state === "paid-confirmed-incomplete") {
+              await expect(
+                surface.getByRole("status", { name: copy.incomplete }),
+              ).toBeVisible();
+            }
             for (const value of [
               customerPhone,
               ownerPhone,
@@ -578,7 +602,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
             /providerReference|diagnostic_reason|idempotency/i,
           );
         }
-        if (state !== "paid-confirmed")
+        if (state !== "paid-confirmed" && state !== "paid-confirmed-incomplete")
           await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
         for (const viewport of [
           { name: "mobile", width: 390, height: 844 },
@@ -645,6 +669,25 @@ test("a verified Customer double-submit creates one Pending request and one mini
     ).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole("status")).toContainText("Pending");
     await captureViews("paid-confirmed");
+    const originalPrivateDirections = JSON.parse(
+      harness.runSql(
+        `select to_jsonb(private_directions) from public.owner_application_cottage_profiles where id='${profile.id}';`,
+      ),
+    ) as string | null;
+    try {
+      harness.runSql(
+        `update public.owner_application_cottage_profiles set private_directions=null where id='${profile.id}';`,
+      );
+      await captureViews("paid-confirmed-incomplete");
+    } finally {
+      const restoredPrivateDirections =
+        originalPrivateDirections === null
+          ? "null"
+          : `'${originalPrivateDirections.replaceAll("'", "''")}'`;
+      harness.runSql(
+        `update public.owner_application_cottage_profiles set private_directions=${restoredPrivateDirections} where id='${profile.id}';`,
+      );
+    }
     const paidIdentity = () =>
       JSON.parse(
         harness.runSql(

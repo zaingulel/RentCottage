@@ -26,7 +26,23 @@ export default async function CustomerBookingRequestPage({
 }) {
   const { locale, reference } = await params;
   if (!isLocale(locale) || !/^RC-REQ-[A-F0-9]{16}$/.test(reference)) notFound();
-  const confirmed = await loadConfirmedBookingAccess(reference);
+  let confirmed;
+  try {
+    confirmed = await loadConfirmedBookingAccess(reference);
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Customer confirmed Booking load failed", {
+      code: "customer_confirmed_booking_failed",
+    });
+    return (
+      <main className="results-page">
+        <section role="alert">
+          <h1>{unavailableCopy[locale].title}</h1>
+          <Link href={`/${locale}`}>{unavailableCopy[locale].home}</Link>
+        </section>
+      </main>
+    );
+  }
   if (
     confirmed?.access.actorRole !== undefined &&
     confirmed.access.actorRole !== "customer"

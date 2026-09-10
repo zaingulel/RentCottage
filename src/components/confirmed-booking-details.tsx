@@ -40,6 +40,7 @@ const messages = {
     uncertain: "Checking delivery",
     suppressed: "Suppressed",
     unavailable: "Delivery status is temporarily unavailable",
+    incomplete: "Some practical access or contact details are unavailable.",
   },
   ar: {
     title: "حجز مؤكد",
@@ -73,6 +74,7 @@ const messages = {
     uncertain: "جارٍ التحقق من التسليم",
     suppressed: "تم الإيقاف",
     unavailable: "حالة التسليم غير متاحة مؤقتاً",
+    incomplete: "بعض تفاصيل الوصول أو الاتصال غير متاحة.",
   },
   ckb: {
     title: "حجزی پشتڕاستکراو",
@@ -108,6 +110,7 @@ const messages = {
     uncertain: "گەیاندن پشکنین دەکرێت",
     suppressed: "وەستێنرا",
     unavailable: "دۆخی گەیاندن کاتێک بەردەست نییە",
+    incomplete: "هەندێک وردەکاری گەیشتن یان پەیوەندی بەردەست نییە.",
   },
 } as const;
 
@@ -121,6 +124,12 @@ export function ConfirmedBookingDetails({
   notification: PaidConfirmationNotificationPresentationStatus;
 }) {
   const c = messages[locale];
+  const practicalDetailsIncomplete =
+    access.exactAddress === null ||
+    access.privateDirections === null ||
+    access.mapPin === null ||
+    access.customerPhone === null ||
+    access.ownerPhone === null;
   return (
     <section
       className="confirmed-booking-details"
@@ -134,6 +143,11 @@ export function ConfirmedBookingDetails({
         </div>
         <Link href={`/${locale}/bookings`}>{c.history}</Link>
       </header>
+      {practicalDetailsIncomplete ? (
+        <p role="status" aria-label={c.incomplete}>
+          {c.incomplete}
+        </p>
+      ) : null}
       <dl>
         <div>
           <dt>{c.reference}</dt>
