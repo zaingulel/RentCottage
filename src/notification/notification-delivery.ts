@@ -137,8 +137,19 @@ export function createPaidConfirmationNotificationDelivery({
     async processDue(limit: number): Promise<NotificationDeliveryResult[]> {
       const candidates = await repository.listCandidates(limit);
       const results: NotificationDeliveryResult[] = [];
-      for (const candidate of candidates)
-        results.push(await processCandidate(candidate));
+      const failures: unknown[] = [];
+      for (const candidate of candidates) {
+        try {
+          results.push(await processCandidate(candidate));
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (failures.length > 0)
+        throw new AggregateError(
+          failures,
+          "Paid-confirmation notification batch failed",
+        );
       return results;
     },
   };

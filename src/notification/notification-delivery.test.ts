@@ -2,12 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createPaidConfirmationNotificationDelivery } from "./notification-delivery";
 import type {
+  NotificationCandidate,
   NotificationDeliveryAdapter,
   NotificationDeliveryRepository,
   NotificationLease,
 } from "./notification-delivery";
 
-const candidate = {
+const candidate: NotificationCandidate = {
   receiptId: "00000000-0000-4000-8000-000000000035",
   recipientUserId: "00000000-0000-4000-8000-000000000036",
   recipientRole: "customer" as const,
@@ -33,12 +34,33 @@ const lease: NotificationLease = {
   leaseToken: "00000000-0000-4000-8000-000000000037",
   leaseExpiresAt: "2099-08-21T10:05:00.000Z",
 };
+const secondCandidate = {
+  ...candidate,
+  receiptId: "00000000-0000-4000-8000-000000000045",
+  recipientUserId: "00000000-0000-4000-8000-000000000046",
+  recipientRole: "cottage_owner" as const,
+};
+const secondLease: NotificationLease = {
+  ...lease,
+  ...secondCandidate,
+  logicalId: `paid-confirmation:${secondCandidate.receiptId}`,
+  payload: {
+    ...lease.payload,
+    detailsPath: `/en/owner/booking-requests/${secondCandidate.bookingRequestReference}`,
+  },
+  leaseGeneration: 2,
+  leaseToken: "00000000-0000-4000-8000-000000000047",
+};
 
-function setup() {
+function setup(candidates = [candidate]) {
   const repository: NotificationDeliveryRepository = {
-    listCandidates: vi.fn().mockResolvedValue([candidate]),
+    listCandidates: vi.fn().mockResolvedValue(candidates),
     prepare: vi.fn().mockResolvedValue(undefined),
-    lease: vi.fn().mockResolvedValue(lease),
+    lease: vi
+      .fn()
+      .mockImplementation(async (receiptId) =>
+        receiptId === candidate.receiptId ? lease : secondLease,
+      ),
     completeDelivered: vi.fn().mockResolvedValue({
       status: "delivered",
       historical: false,
@@ -147,24 +169,137 @@ describe("paid confirmation notification delivery", () => {
     "records an uncertain lease and surfaces a %s interruption",
     async (operation) => {
       const { repository, adapter } = setup();
+      const interruption = new Error(
+        `${operation === "query" ? "query" : "completion"} interrupted`,
+      );
       if (operation === "query")
-        vi.mocked(adapter.query).mockRejectedValue(
-          new Error("query interrupted"),
-        );
+        vi.mocked(adapter.query).mockRejectedValue(interruption);
       else
-        vi.mocked(repository.completeDelivered).mockRejectedValue(
-          new Error("completion interrupted"),
-        );
+        vi.mocked(repository.completeDelivered).mockRejectedValue(interruption);
 
       await expect(
         createPaidConfirmationNotificationDelivery({
           repository,
           adapter,
         }).processDue(10),
-      ).rejects.toThrow(
-        `${operation === "query" ? "query" : "completion"} interrupted`,
+      ).rejects.toEqual(
+        expect.objectContaining({
+          name: "AggregateError",
+          message: "Paid-confirmation notification batch failed",
+          errors: [interruption],
+        }),
       );
       expect(repository.recordUnknown).toHaveBeenCalledExactlyOnceWith(lease);
     },
   );
+
+  it.each(["query", "complete"] as const)(
+    "records an uncertain first lease, delivers the next notice, then surfaces the %s interruption",
+    async (operation) => {
+      const { repository, adapter } = setup([candidate, secondCandidate]);
+      const interruption = new Error(`${operation} interrupted`);
+      if (operation === "query")
+        vi.mocked(adapter.query).mockRejectedValueOnce(interruption);
+      else
+        vi.mocked(repository.completeDelivered).mockRejectedValueOnce(
+          interruption,
+        );
+
+      const processing = createPaidConfirmationNotificationDelivery({
+        repository,
+        adapter,
+      }).processDue(10);
+
+      await expect(processing).rejects.toEqual(
+        expect.objectContaining({
+          name: "AggregateError",
+          errors: [interruption],
+        }),
+      );
+      expect(repository.recordUnknown).toHaveBeenCalledExactlyOnceWith(lease);
+      expect(adapter.execute).toHaveBeenCalledWith(secondLease);
+      expect(repository.completeDelivered).toHaveBeenCalledWith(
+        secondLease,
+        expect.objectContaining({ status: "delivered" }),
+      );
+    },
+  );
+
+  it.each(["prepare", "lease", "recordUnknown"] as const)(
+    "does not let a first candidate %s failure block a later notice",
+    async (operation) => {
+      const { repository, adapter } = setup([candidate, secondCandidate]);
+      const failure = new Error(`${operation} failed`);
+      if (operation === "prepare")
+        vi.mocked(repository.prepare).mockRejectedValueOnce(failure);
+      else if (operation === "lease")
+        vi.mocked(repository.lease).mockRejectedValueOnce(failure);
+      else {
+        vi.mocked(adapter.query).mockRejectedValueOnce(
+          new Error("query interrupted"),
+        );
+        vi.mocked(repository.recordUnknown).mockRejectedValueOnce(failure);
+      }
+
+      const processing = createPaidConfirmationNotificationDelivery({
+        repository,
+        adapter,
+      }).processDue(10);
+
+      await expect(processing).rejects.toEqual(
+        expect.objectContaining({
+          name: "AggregateError",
+          errors: [failure],
+        }),
+      );
+      expect(adapter.execute).toHaveBeenCalledExactlyOnceWith(secondLease);
+      expect(repository.completeDelivered).toHaveBeenCalledExactlyOnceWith(
+        secondLease,
+        expect.objectContaining({ status: "delivered" }),
+      );
+    },
+  );
+
+  it("reconciles one candidate without a second effect and still delivers the next notice", async () => {
+    const { repository, adapter } = setup([candidate, secondCandidate]);
+    vi.mocked(adapter.query)
+      .mockResolvedValueOnce({
+        status: "found",
+        effectId: "00000000-0000-4000-8000-000000000038",
+        supplierDeliveryReference: "fictional-notice-35",
+        executedAt: "2099-08-21T10:00:00.000Z",
+      })
+      .mockResolvedValueOnce({ status: "not-found" });
+
+    await expect(
+      createPaidConfirmationNotificationDelivery({
+        repository,
+        adapter,
+      }).processDue(10),
+    ).resolves.toEqual([
+      { status: "delivered", historical: false },
+      { status: "delivered", historical: false },
+    ]);
+    expect(adapter.execute).toHaveBeenCalledExactlyOnceWith(secondLease);
+    expect(repository.completeDelivered).toHaveBeenNthCalledWith(
+      1,
+      lease,
+      expect.objectContaining({ status: "found" }),
+    );
+  });
+
+  it("preserves an empty batch and a candidate-listing failure", async () => {
+    const { repository, adapter } = setup([]);
+    const delivery = createPaidConfirmationNotificationDelivery({
+      repository,
+      adapter,
+    });
+
+    await expect(delivery.processDue(10)).resolves.toEqual([]);
+    expect(repository.prepare).not.toHaveBeenCalled();
+
+    const listingFailure = new Error("candidate listing failed");
+    vi.mocked(repository.listCandidates).mockRejectedValueOnce(listingFailure);
+    await expect(delivery.processDue(10)).rejects.toBe(listingFailure);
+  });
 });
