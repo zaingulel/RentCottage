@@ -381,6 +381,7 @@ async function observeInterruptedAccessVerification(
   {
     descendantBehavior = "graceful",
     completedCommandStatus,
+    exitedGroupState,
     groupPermissionFailure = false,
     hangCleanup = false,
     inspectionFailure,
@@ -403,13 +404,14 @@ async function observeInterruptedAccessVerification(
     `
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const originalSpawn = childProcess.spawn;
 const root = process.env.ACCESS_INTERRUPTION_ROOT;
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => setImmediate(() => writeFileSync(root + "/signal.handled", signal)));
 }
 const originalKill = process.kill;
+let exitedGroup;
 process.kill = (pid, signal) => {
   if (pid < 0 && signal !== 0) {
     writeFileSync(root + "/termination-attempt", String(pid));
@@ -417,6 +419,18 @@ process.kill = (pid, signal) => {
       const error = new Error("kill EPERM");
       error.code = "EPERM";
       throw error;
+    }
+  }
+  if (pid < 0 && signal === 0 && process.env.ACCESS_EXITED_GROUP_STATE && existsSync(root + "/termination-attempt") && Number(readFileSync(root + "/termination-attempt", "utf8")) === pid) {
+    try {
+      originalKill.call(process, pid, signal);
+    } catch (error) {
+      if (error.code !== "ESRCH" && error.code !== "EPERM") throw error;
+      exitedGroup = -pid;
+      writeFileSync(root + "/exited-group-observed", String(exitedGroup));
+      const denied = new Error("kill EPERM");
+      denied.code = "EPERM";
+      throw denied;
     }
   }
   if (pid < 0 && signal === 0 && ((process.env.ACCESS_GROUP_PERMISSION_FAILURE === "1" && existsSync(root + "/termination-attempt")) || existsSync(root + "/command.completed") || (process.env.ACCESS_INSPECTION_FAILURE === "reidentify-permission" && existsSync(root + "/fail-inspection")))) {
@@ -428,6 +442,12 @@ process.kill = (pid, signal) => {
 };
 let inspectCommand = false;
 childProcess.spawn = (command, args, options) => {
+  if (command === "/bin/ps" && exitedGroup) {
+    return originalSpawn(process.execPath, ["-e",
+      "const { spawnSync } = require('node:child_process'); const result = spawnSync('/bin/ps', " + JSON.stringify(args) + ", { encoding: 'utf8' }); process.stdout.write(result.stdout); process.stderr.write(result.stderr); if (result.status !== 0) process.exit(result.status); " +
+      (process.env.ACCESS_EXITED_GROUP_STATE === "zombie" ? "process.stdout.write(" + JSON.stringify(exitedGroup + " " + exitedGroup + " Z Thu Sep 10 11:17:15 2026 <defunct>\\n") + ");" : "")
+    ], options);
+  }
   if (command === "npx" && (process.env.ACCESS_INSPECTION_FAILURE === "overflow"
     ? args[1] === "start" : args[1] === "db" && args[2] === "reset")) inspectCommand = true;
   if (command === "/bin/ps" && inspectCommand) {
@@ -593,7 +613,8 @@ if (args[1] === "status") {
     wrapper = spawn(
       process.execPath,
       [
-        ...(inspectionFailure ||
+        ...(exitedGroupState ||
+        inspectionFailure ||
         groupPermissionFailure ||
         cleanupStage ||
         completedCommandStatus !== undefined
@@ -619,6 +640,7 @@ if (args[1] === "status") {
             completedCommandStatus === undefined
               ? ""
               : String(completedCommandStatus),
+          ACCESS_EXITED_GROUP_STATE: exitedGroupState ?? "",
           PATH: `${fakeBin}:${process.env.PATH}`,
           SUPABASE_LOCAL_PROJECT: "rentcottage",
           TMPDIR: stateRoot,
@@ -798,6 +820,11 @@ if (args[1] === "status") {
       "access wrapper exit",
       descendantBehavior === "ignore" ? 9_000 : 4_000,
     );
+    if (exitedGroupState) {
+      expect(
+        readFileSync(join(stateRoot, "exited-group-observed"), "utf8"),
+      ).toBe(String(command.pid));
+    }
     if (interruptStartup) {
       expect(wrapperExit, stderr.join("")).toEqual({ code: 143, signal: null });
       expect(processIsAlive(command.pid)).toBe(false);
@@ -1233,6 +1260,16 @@ describe("access verification command", () => {
       descendantBehavior: "ignore",
     });
   }, 20_000);
+
+  it.each(["zombie", "absent"])(
+    "finishes cancellation cleanup when a complete inspection proves an EPERM group is %s",
+    async (exitedGroupState) => {
+      await observeInterruptedAccessVerification("SIGTERM", {
+        exitedGroupState,
+      });
+    },
+    15_000,
+  );
 
   it("bounds a hung cleanup command and reports the retained owned service", async () => {
     await observeInterruptedAccessVerification(undefined, {

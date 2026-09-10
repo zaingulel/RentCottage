@@ -28,7 +28,7 @@ const FORCED_EXIT_LIMIT_MS = 2_000;
 const MAX_CAPTURE_BYTES = 1024 * 1024;
 const CLEANUP_COMMAND_LIMIT_MS = 30_000;
 
-function processGroupExists(group) {
+function probeProcessGroup(group) {
   if (!Number.isInteger(group) || group <= 1) return false;
   try {
     process.kill(-group, 0);
@@ -39,12 +39,30 @@ function processGroupExists(group) {
   }
 }
 
+async function processGroupExists(group) {
+  try {
+    return probeProcessGroup(group);
+  } catch (error) {
+    if (error.code !== "EPERM") throw error;
+    // Darwin reports EPERM for zombie-only groups until their parent reaps them.
+    const members = await inspectProcessGroup(group);
+    if (members.every((member) => /^Z[<N+Ls-]*$/.test(member.state))) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 function inspectProcessGroup(group) {
   return new Promise((resolveInspection, rejectInspection) => {
-    const child = spawn("/bin/ps", ["-axo", "pid=,pgid=,lstart=,command="], {
-      env: { ...process.env, LANG: "C", LC_ALL: "C" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const child = spawn(
+      "/bin/ps",
+      ["-axo", "pid=,pgid=,stat=,lstart=,command="],
+      {
+        env: { ...process.env, LANG: "C", LC_ALL: "C" },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     let stdout = "";
     let stderr = "";
     let outputBytes = 0;
@@ -82,7 +100,7 @@ function inspectProcessGroup(group) {
       if (settled) return;
       try {
         if (status !== 0) {
-          if (!processGroupExists(group)) {
+          if (!probeProcessGroup(group)) {
             finish(resolveInspection, []);
             return;
           }
@@ -101,17 +119,20 @@ function inspectProcessGroup(group) {
             .split("\n")
             .filter(Boolean)
             .map((line) => {
-              const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.{24})\s+(.+)$/);
+              const match = line.match(
+                /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.{24})\s+(.+)$/,
+              );
               if (!match) {
                 throw new Error(
                   `Unable to parse owned process group ${group} identity.`,
                 );
               }
               return {
-                command: match[4],
+                command: match[5],
                 group: Number(match[2]),
                 pid: Number(match[1]),
-                started: match[3],
+                state: match[3],
+                started: match[4],
               };
             })
             .filter((member) => member.group === group),
@@ -133,7 +154,10 @@ function sameProcessIdentity(left, right) {
 
 async function captureLeaderIdentity(invocation) {
   const deadline = Date.now() + 500;
-  while (Date.now() < deadline && processGroupExists(invocation.group)) {
+  while (
+    Date.now() < deadline &&
+    (await processGroupExists(invocation.group))
+  ) {
     const members = await inspectProcessGroup(invocation.group);
     const leader = members.find(
       (member) =>
@@ -160,10 +184,10 @@ async function refreshOwnedProcessGroup(invocation) {
 
 async function waitForProcessGroupExit(group, limit) {
   const deadline = Date.now() + limit;
-  while (processGroupExists(group) && Date.now() < deadline) {
+  while ((await processGroupExists(group)) && Date.now() < deadline) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 20));
   }
-  return !processGroupExists(group);
+  return !(await processGroupExists(group));
 }
 
 async function stopProcessGroup(invocation, signal) {
@@ -479,7 +503,7 @@ export async function main(
       !activeInvocation.retentionError
     ) {
       try {
-        if (!processGroupExists(activeInvocation.group)) {
+        if (!(await processGroupExists(activeInvocation.group))) {
           activeInvocation = undefined;
         }
       } catch (error) {
