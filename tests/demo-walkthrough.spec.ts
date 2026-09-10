@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
 
@@ -44,9 +44,6 @@ const customerPhone = "+9647520000001";
 const fixturePassword = "Local-test-password-2026";
 const verificationCode = "123456";
 const demoOutputDirectory = resolve("test-results/demo");
-const administratorCredentialPath = resolve(
-  ".env.demo-administrator.local.json",
-);
 const canonicalVideoPath = resolve(
   demoOutputDirectory,
   "rentcottage-mvp-walkthrough.webm",
@@ -64,18 +61,32 @@ function serviceDay(offset: number) {
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
+function expectedMorningPeriod(day: string) {
+  const format = new Intl.DateTimeFormat("en-IQ", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Baghdad",
+  });
+  return `Morning · ${format.format(new Date(`${day}T08:00:00+03:00`))} – ${format.format(new Date(`${day}T12:00:00+03:00`))}`;
+}
+
 function requireIsolatedLocalDemo() {
   const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
+  const localWorkdir = process.env.SUPABASE_LOCAL_WORKDIR;
   if (
     process.env.APP_ENVIRONMENT !== "test" ||
+    process.env.SUPABASE_LOCAL_PROJECT !== "rentcottage-demo" ||
+    !localWorkdir ||
+    !isAbsolute(localWorkdir) ||
     process.env.SUPABASE_PROJECT_REF !== "local-test" ||
     target.protocol !== "http:" ||
     target.hostname !== "127.0.0.1"
   ) {
     throw new Error(
-      "The demo walkthrough requires the isolated local test environment",
+      "The demo walkthrough requires the dedicated preserved local demo environment",
     );
   }
+  return resolve(localWorkdir);
 }
 
 async function expectScene(locator: Locator, milliseconds = 1_200) {
@@ -152,7 +163,9 @@ function isDemoAdministratorCredential(
   );
 }
 
-async function readDemoAdministratorCredential() {
+async function readDemoAdministratorCredential(
+  administratorCredentialPath: string,
+) {
   try {
     const credential = JSON.parse(
       await readFile(administratorCredentialPath, "utf8"),
@@ -172,11 +185,14 @@ async function prepareDemoAdministrator(
   url: string,
   publishableKey: string,
   secretKey: string,
+  administratorCredentialPath: string,
 ) {
   const privileged = createClient(url, secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  let credential = await readDemoAdministratorCredential();
+  let credential = await readDemoAdministratorCredential(
+    administratorCredentialPath,
+  );
   let administrator;
   if (credential) {
     const existing = await privileged.auth.admin.getUserById(credential.userId);
@@ -312,6 +328,7 @@ async function prepareDemoAdministrator(
 }
 
 async function prepareDemoState() {
+  const localWorkdir = requireIsolatedLocalDemo();
   const fixture = accessBrowserFixture("desktop");
   const url = process.env.SUPABASE_URL ?? "";
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? "";
@@ -321,6 +338,7 @@ async function prepareDemoState() {
     url,
     publishableKey,
     secretKey,
+    resolve(localWorkdir, ".env.demo-administrator.local.json"),
   );
   const privileged = createClient(url, secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -336,7 +354,9 @@ async function prepareDemoState() {
   if (ownerSignIn.error) throw ownerSignIn.error;
   const profile = await owner
     .from("owner_application_cottage_profiles")
-    .select("id,name,current_publication_id,current_shift_schedule_id")
+    .select(
+      "id,name,current_publication_id,current_shift_schedule_id,exact_address,exact_latitude,exact_longitude,private_directions",
+    )
     .eq("name", fixture.bookingCottageName)
     .single();
   if (
@@ -347,6 +367,30 @@ async function prepareDemoState() {
     throw new Error(
       "The exact published synthetic demo cottage is incompatible",
     );
+  }
+  if (
+    profile.data.exact_address !== "Synthetic private fixture address" ||
+    profile.data.private_directions !== "Synthetic private directions." ||
+    profile.data.exact_latitude !== 36.408333 ||
+    profile.data.exact_longitude !== 44.385834
+  ) {
+    throw new Error(
+      "The synthetic demo cottage private access fields are incompatible",
+    );
+  }
+  const participantUsers = await privileged.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (
+    participantUsers.error ||
+    ![fixture.bookingOwnerPhone, customerPhone].every((phone) =>
+      participantUsers.data.users.some(
+        (user) => user.phone?.replace(/^\+/, "") === phone.replace(/^\+/, ""),
+      ),
+    )
+  ) {
+    throw new Error("The synthetic demo participant phones are incompatible");
   }
   await refreshAccessBrowserFixturePhoto({
     project: "desktop",
@@ -369,10 +413,15 @@ async function prepareDemoState() {
         houseRules?: unknown;
       }) =>
         request.cottageName !== fixture.bookingCottageName ||
-        !["Demo Customer", "Browser Customer"].includes(
-          request.customerName as string,
+        !(
+          (["Demo Customer", "Browser Customer"].includes(
+            request.customerName as string,
+          ) &&
+            request.bookingNote === null) ||
+          (request.customerName === "Live Demo Customer" &&
+            request.bookingNote ===
+              "Weekly live rehearsal with synthetic data.")
         ) ||
-        request.bookingNote !== null ||
         request.houseRules !== "Synthetic fixture only. Respect neighbours." ||
         !Array.isArray(request.bookingPeriod) ||
         request.bookingPeriod.length !== 1 ||
@@ -419,7 +468,7 @@ async function prepareDemoState() {
     throw new Error("The synthetic demo cottage schedule is incompatible");
   }
   const selectedDays: string[] = [];
-  for (let offset = 30; offset <= 760 && selectedDays.length < 2; offset += 1) {
+  for (let offset = 30; offset <= 760 && selectedDays.length < 3; offset += 1) {
     const day = serviceDay(offset);
     const state = await owner.rpc("resolve_cottage_inventory_owner_calendar", {
       target_profile_id: profile.data.id,
@@ -445,11 +494,11 @@ async function prepareDemoState() {
     }
     selectedDays.push(day);
   }
-  if (selectedDays.length !== 2) {
-    throw new Error("Two unused future Service Days are not available");
+  if (selectedDays.length !== 3) {
+    throw new Error("Three unused future Service Days are not available");
   }
-  const [recordedDay, liveDemoDay] = selectedDays;
-  for (const day of [recordedDay, liveDemoDay]) {
+  const [recordedDay, rehearsalDay, meetingDay] = selectedDays;
+  for (const day of [recordedDay, rehearsalDay, meetingDay]) {
     const availability = await owner.rpc("set_cottage_inventory_availability", {
       target_profile_id: profile.data.id,
       target_schedule_revision_id: profile.data.current_shift_schedule_id,
@@ -490,9 +539,10 @@ async function prepareDemoState() {
   return {
     administrator,
     cottageName: fixture.bookingCottageName,
-    liveDemoDay,
+    meetingDay,
     ownerPhone: fixture.bookingOwnerPhone,
     recordedDay,
+    rehearsalDay,
   };
 }
 
@@ -500,8 +550,17 @@ async function verifyPhone(page: Page, phone: string) {
   await page.getByLabel("Iraqi phone number").fill(phone);
   await page.getByRole("button", { name: "Send verification code" }).click();
   await expect(page.getByLabel("Verification code")).toBeVisible();
+  await page.screencast.hideActions();
   await page.getByLabel("Verification code").fill(verificationCode);
   await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await page.screencast.showActions({ duration: 900, fontSize: 28 });
+}
+
+function detailValue(surface: Locator, label: string) {
+  return surface
+    .locator("dt")
+    .filter({ hasText: new RegExp(`^${label}$`) })
+    .locator("xpath=following-sibling::dd");
 }
 
 test("records the continuous local RentCottage MVP story", async ({ page }) => {
@@ -514,7 +573,8 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
   await assertApplicationHealth(page);
   const demo = await prepareDemoState();
   console.log(`Recorded walkthrough Service Day: ${demo.recordedDay}`);
-  console.log(`Reserved live-demo Service Day: ${demo.liveDemoDay}`);
+  console.log(`Reserved rehearsal Service Day: ${demo.rehearsalDay}`);
+  console.log(`Reserved meeting Service Day: ${demo.meetingDay}`);
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/en");
   let journeyError: unknown;
@@ -758,22 +818,131 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await ownerNotice
       .getByRole("button", { name: "Accept complete request" })
       .click();
-    await expectScene(ownerNotice.getByText("Accepted", { exact: true }));
+    await expectScene(
+      ownerNotice.getByRole("status").filter({
+        hasText: "Payment confirmation pending",
+      }),
+    );
+    const ownerCookies = await page.context().cookies();
 
     await page.context().clearCookies();
     await page.context().addCookies(customerCookies);
-    await page.screencast.showChapter("Customer status", {
-      description: "The accepted request appears in the Customer account",
+    await page.screencast.showChapter("Simulated payment capture", {
+      description:
+        "Acceptance starts payment processing; private access remains hidden",
       duration: 1_400,
     });
     await page.goto(`/en/booking-requests/${requestReference}`);
     await expectScene(
       page.getByRole("heading", { name: "Booking Request status" }),
     );
-    await expectScene(page.getByText("Accepted", { exact: true }), 2_000);
+    await expectScene(
+      page.getByRole("status").filter({
+        hasText: "Payment confirmation pending",
+      }),
+      2_000,
+    );
+    for (const privateValue of [
+      "Synthetic private fixture address",
+      "Synthetic private directions.",
+      "36.408333, 44.385834",
+      demo.ownerPhone,
+    ]) {
+      await expect(page.getByText(privateValue, { exact: true })).toHaveCount(
+        0,
+      );
+    }
+
+    const scheduled = await page.request.get(
+      "/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A",
+    );
+    expect(scheduled.ok()).toBe(true);
+    await page.screencast.showChapter("Confirmed Booking", {
+      description:
+        "The real local Worker completes simulated capture and unlocks participant details",
+      duration: 1_400,
+    });
+    const customerDetails = page.getByRole("region", {
+      name: "Confirmed booking",
+    });
+    await expectScene(
+      customerDetails.getByRole("heading", { name: "Confirmed booking" }),
+      2_000,
+    );
+    const bookingReference = await customerDetails
+      .locator("header strong")
+      .innerText();
+    expect(bookingReference).toMatch(/^[A-Z0-9][A-Z0-9-]{0,119}$/);
+    const bookingPeriod = await detailValue(
+      customerDetails,
+      "Booking period",
+    ).innerText();
+    expect(bookingPeriod).toBe(expectedMorningPeriod(demo.recordedDay));
+    await expect(detailValue(customerDetails, "Booking price")).toHaveText(
+      "IQD 180,000",
+    );
+    await expect(detailValue(customerDetails, "Service fee")).toHaveText(
+      "IQD 5,000",
+    );
+    await expect(detailValue(customerDetails, "Customer total")).toHaveText(
+      "IQD 185,000",
+    );
+    for (const value of [
+      "Demo Customer",
+      customerPhone,
+      demo.ownerPhone,
+      "Synthetic private fixture address",
+      "Synthetic private directions.",
+      "36.408333, 44.385834",
+    ]) {
+      await expect(customerDetails).toContainText(value);
+    }
+
+    await page.context().clearCookies();
+    await page.context().addCookies(ownerCookies);
+    await page.goto("/en/owner/cottages");
+    const confirmedOwnerNotice = page.getByRole("article", {
+      name: requestReference,
+    });
+    await expectScene(
+      confirmedOwnerNotice.getByRole("status").filter({
+        hasText: "Booking confirmed",
+      }),
+    );
+    await confirmedOwnerNotice
+      .getByRole("link", { name: "Open confirmed booking" })
+      .click();
+    const ownerDetails = page.getByRole("region", {
+      name: "Confirmed booking",
+    });
+    await expectScene(
+      ownerDetails.getByRole("heading", { name: "Confirmed booking" }),
+    );
+    await expect(ownerDetails.locator("header strong")).toHaveText(
+      bookingReference,
+    );
+    await expect(detailValue(ownerDetails, "Booking period")).toHaveText(
+      bookingPeriod,
+    );
+    await expect(detailValue(ownerDetails, "Booking price")).toHaveText(
+      "IQD 180,000",
+    );
     await expect(
-      page.getByText("Synthetic private fixture address"),
-    ).toHaveCount(0);
+      detailValue(ownerDetails, "Marketplace commission"),
+    ).toHaveText("IQD 18,000");
+    await expect(detailValue(ownerDetails, "Cottage Owner net")).toHaveText(
+      "IQD 162,000",
+    );
+    for (const value of [
+      "Demo Customer",
+      customerPhone,
+      demo.ownerPhone,
+      "Synthetic private fixture address",
+      "Synthetic private directions.",
+      "36.408333, 44.385834",
+    ]) {
+      await expect(ownerDetails).toContainText(value);
+    }
   } catch (error) {
     journeyError = error;
   } finally {
