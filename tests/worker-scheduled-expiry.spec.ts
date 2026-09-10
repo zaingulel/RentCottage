@@ -1,3 +1,5 @@
+import { triggerScheduled } from "./fixtures/trigger-scheduled";
+
 // SQL arrangement mirrors admission, isolated effect, and explicit recording.
 const paymentEvidenceSql =
   "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
@@ -6,13 +8,14 @@ const paymentEvidenceSql =
 import { expect, test } from "@playwright/test";
 
 test("the test Worker expires due booking requests exactly once", async ({
-  request,
+  baseURL,
 }) => {
   for (let invocation = 0; invocation < 2; invocation += 1) {
-    const response = await request.get(
+    const response = await triggerScheduled(
+      baseURL,
       "/__scheduled?format=json&cron=%2A%20%2A%20%2A%20%2A%20%2A",
     );
-    expect(response.ok()).toBe(true);
+    expect(response.ok).toBe(true);
   }
 });
 
@@ -46,7 +49,7 @@ for (const { outcome, movement } of (
     })),
 )) {
   test(`the actual Worker preserves safe expiry through ${outcome} ${movement}, interruption and unrelated drain failure`, async ({
-    request,
+    baseURL,
   }) => {
     const harness = createLocalSupabaseConcurrencyHarness();
     harness.guardDisposableLocalDatabase();
@@ -274,7 +277,7 @@ for (const { outcome, movement } of (
         paymentEvidenceSql +
           "create or replace function public.claim_due_booking_request_releases(target_limit integer) returns jsonb language plpgsql security definer set search_path='' as $$begin raise exception 'Injected unrelated ordinary expiry failure';end;$$;",
       );
-      expect((await request.get("/__scheduled")).ok()).toBe(false);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(false);
       const held = observe();
       expect(held.capture).toEqual(before.capture);
       expect(held.request.status).toBe("accepted");
@@ -301,7 +304,7 @@ for (const { outcome, movement } of (
       if (outcome !== "succeeded")
         expect(held.expiry.state).toBe("quarantined");
       harness.runSql(paymentEvidenceSql + ordinary);
-      expect((await request.get("/__scheduled")).ok()).toBe(
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(
         outcome !== "succeeded",
       );
       expect(observe().ledger).toEqual(held.ledger);
@@ -322,7 +325,7 @@ for (const { outcome, movement } of (
             )
           ],
       );
-      expect((await request.get("/__scheduled")).ok()).toBe(true);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       const settled = observe();
       expect(settled.capture).toEqual(before.capture);
       expect(settled.confirmed).toBe(0);
@@ -337,7 +340,7 @@ for (const { outcome, movement } of (
       );
       expect(settled.active).toBe(outcome !== "succeeded" ? 5 : 0);
       expect(settled.notices).toHaveLength(outcome !== "succeeded" ? 0 : 2);
-      expect((await request.get("/__scheduled")).ok()).toBe(true);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       const replay = observe();
       expect(replay.ledger).toEqual(settled.ledger);
       expect(replay.notices).toEqual(settled.notices);

@@ -1,3 +1,5 @@
+import { triggerScheduled } from "./fixtures/trigger-scheduled";
+
 // SQL arrangement mirrors admission, isolated effect, and explicit recording.
 const paymentEvidenceSql =
   "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
@@ -54,6 +56,7 @@ function serviceDay(offset: number) {
 test("a verified Customer double-submit creates one Pending request and one minimal owner notice", async ({
   page,
   browser,
+  baseURL,
 }, testInfo) => {
   test.setTimeout(testInfo.project.name === "worker" ? 480_000 : 120_000);
   const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
@@ -652,10 +655,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
     try {
       harness.runSql(`create or replace function public.list_due_booking_confirmation_notifications(target_limit integer default 50)
         returns setof jsonb language sql security definer set search_path='' as $$select null::jsonb where false$$;`);
-      const scheduled = await page.request.get(
+      const scheduled = await triggerScheduled(
+        baseURL,
         "/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A",
       );
-      expect(scheduled.ok()).toBe(true);
+      expect(scheduled.ok).toBe(true);
     } finally {
       harness.runSql(notificationSelector);
     }
@@ -744,7 +748,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
     ).toHaveCount(0);
     expect(paidIdentity()).toEqual(identityBeforeRetry);
-    expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     await page.goto(`/en/booking-requests/${requestReference}`);
     await expect(
       page.getByRole("heading", { name: "Confirmed booking" }),
@@ -830,7 +834,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       reset role;
       update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${failureId}';`,
     );
-    expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     // Both existing pages must refresh from real Worker-persisted failure evidence.
     await expect(page.getByRole("status")).toContainText("Payment Required", {
       timeout: 15000,
@@ -863,7 +867,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     // access details are fetched on explicit navigation, not by list prefetch.
     expect(ownerPaidDetailPrefetches).toEqual([]);
     await captureViews("payment-required-open", failureReference);
-    expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     expect(observeFailure()).toEqual(terminal);
 
     const windowDefinition = harness.runSql(
@@ -1043,7 +1047,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       expect(expiryResult.status).toBe("processing");
       expect(recoveryGraph()).toEqual(beforeExpiryRefusal);
       expect(observeFailure()).toEqual(heldBeforeExpiryRefusal);
-      expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await expect(
         page.getByRole("heading", { name: "Confirmed booking" }),
       ).toBeVisible({ timeout: 15000 });
@@ -1144,7 +1148,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       select pg_temp.capture_execute(result->'permit','failed') from leased;
       reset role;update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${expiryId}';`,
     );
-    expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     await expect(page.getByRole("status")).toContainText("Payment Required", {
       timeout: 15000,
     });
@@ -1238,7 +1242,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       );
       expect(unresolvedQuery).not.toBe(clocked[4]);
       harness.runSql(paymentEvidenceSql + unresolvedQuery);
-      expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await expect(page.getByRole("status")).toContainText(
         "Support needs to review this payment",
         { timeout: 15000 },
@@ -1269,7 +1273,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await captureViews("payment-expiry-quarantined", expiryReference);
       // The actual scheduled handler cannot restart an uncertain release after quarantine.
       harness.runSql(paymentEvidenceSql + clocked[4]);
-      expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await expect(page.getByRole("status")).toContainText(
         "Payment needs review",
       );

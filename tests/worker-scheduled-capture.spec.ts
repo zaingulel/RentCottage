@@ -1,9 +1,11 @@
+import { triggerScheduled } from "./fixtures/trigger-scheduled";
+
 // SQL arrangement mirrors admission, isolated effect, and explicit recording.
 const paymentEvidenceSql =
   "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
   "\n-- END PAYMENT EVIDENCE FIXTURE\n";
-import { expect, test, type APIResponse } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
@@ -30,7 +32,7 @@ const { withPaymentRecoveryCleanup } = createRequire(import.meta.url)(
 };
 
 test("the actual Worker settles overlapping capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
-  request,
+  baseURL,
 }) => {
   const harness = createLocalSupabaseConcurrencyHarness();
   harness.guardDisposableLocalDatabase();
@@ -72,7 +74,7 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
     );
   let seeded = false;
   let holder: SqlSession | undefined;
-  const scheduled: Promise<PromiseSettledResult<APIResponse>>[] = [];
+  const scheduled: Promise<PromiseSettledResult<Response>>[] = [];
   try {
     harness.runSql(
       paymentEvidenceSql +
@@ -114,7 +116,7 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
     // Observe both complete handlers at the same row lock before either can capture.
     for (let invocation = 1; invocation <= 2; invocation++) {
       scheduled.push(
-        request.get("/__scheduled").then(
+        triggerScheduled(baseURL, "/__scheduled").then(
           (value) => ({ status: "fulfilled" as const, value }),
           (reason: unknown) => ({ status: "rejected" as const, reason }),
         ),
@@ -125,7 +127,7 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
     holder = undefined;
     for (const response of await Promise.all(scheduled)) {
       if (response.status === "rejected") throw response.reason;
-      expect(response.value.ok()).toBe(false);
+      expect(response.value.ok).toBe(false);
     }
     const confirmed = observe();
     expect(confirmed.work.state).toBe("complete");
@@ -138,7 +140,7 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
     expect(confirmed.commitment.status).toBe("confirmed_booking");
     harness.runSql(paymentEvidenceSql + expiryDefinition);
     for (let replay = 0; replay < 2; replay++)
-      expect((await request.get("/__scheduled")).ok()).toBe(true);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     expect(observe()).toEqual(confirmed);
   } finally {
     if (holder) await harness.finishSession(holder, { action: "rollback" });
@@ -152,7 +154,7 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
 });
 
 test("the actual Worker recovers a persisted definitive failure into one fixed Payment Required window", async ({
-  request,
+  baseURL,
 }) => {
   const harness = createLocalSupabaseConcurrencyHarness();
   harness.guardDisposableLocalDatabase();
@@ -214,7 +216,7 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
     expect(before.execution.original_outcome).toBe("failed");
     expect(before.execution.movement_reference).toBeNull();
     expect(before.work.state).toBe("processing");
-    expect((await request.get("/__scheduled")).ok()).toBe(true);
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     const paymentRequired = observe();
     expect(paymentRequired.work.state).toBe("payment_required");
     expect(
@@ -227,7 +229,7 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
     expect(paymentRequired.occupancies).toEqual(before.occupancies);
     expect(paymentRequired.occupancies).toHaveLength(5);
     expect(paymentRequired.intentActive).toBe(true);
-    expect((await request.get("/__scheduled")).ok()).toBe(true);
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     expect(observe()).toEqual(paymentRequired);
     const admitted = JSON.parse(
       harness
@@ -253,7 +255,7 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
       physical_execution_count: 1,
     });
     expect(originalReleased.confirmation).toBeNull();
-    expect((await request.get("/__scheduled")).ok()).toBe(true);
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     const recovered = observe();
     expect(recovered.work).toEqual(paymentRequired.work);
     expect(recovered.execution).toEqual(paymentRequired.execution);
@@ -285,7 +287,7 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
         { operationKind: "capture", outcome: "succeeded", physicalEffects: 1 },
       ]),
     );
-    expect((await request.get("/__scheduled")).ok()).toBe(true);
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     expect(observe()).toEqual(recovered);
   } finally {
     if (seeded)
