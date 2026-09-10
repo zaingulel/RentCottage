@@ -717,6 +717,10 @@ REVOKE ALL ON FUNCTION "public"."get_booking_request_payment_recovery_confirmati
 
 GRANT ALL ON FUNCTION "public"."get_booking_request_payment_recovery_confirmation_evidence"("target_attempt_id" "uuid") TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."get_confirmed_booking_access"("target_reference" "text") FROM PUBLIC;
+
+GRANT ALL ON FUNCTION "public"."get_confirmed_booking_access"("target_reference" "text") TO "authenticated";
+
 REVOKE ALL ON FUNCTION "public"."get_cottage_translation_administration"() FROM PUBLIC;
 
 GRANT ALL ON FUNCTION "public"."get_cottage_translation_administration"() TO "authenticated";
@@ -1318,3 +1322,29 @@ REVOKE ALL ON FUNCTION public.record_booking_request_payment_observation(uuid,js
 GRANT EXECUTE ON FUNCTION public.record_booking_request_payment_observation(uuid,jsonb,jsonb) TO service_role;
 
 REVOKE ALL ON FUNCTION public.booking_request_payment_expiry_is_safe(jsonb) FROM PUBLIC;
+
+REVOKE ALL ON TABLE public.booking_confirmation_notification_work FROM anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.booking_confirmation_notification_attempts FROM anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.fictional_booking_confirmation_notification_effects FROM anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.booking_confirmation_notification_binding(public.booking_confirmation_notification_work) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_due_booking_confirmation_notifications(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.ensure_booking_confirmation_notification_work(uuid,text,text,jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.lease_booking_confirmation_notification_work(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.query_fictional_booking_confirmation_notification_effect(uuid,bigint,uuid,jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.execute_fictional_booking_confirmation_notification_effect(uuid,bigint,uuid,jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.complete_booking_confirmation_notification_delivery(uuid,bigint,uuid,jsonb,uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.record_booking_confirmation_notification_failure(uuid,bigint,uuid,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_booking_confirmation_notification_status(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_confirmed_booking_history() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.retry_booking_confirmation_notification(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.guard_booking_confirmation_notification_work() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.list_due_booking_confirmation_notifications(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.ensure_booking_confirmation_notification_work(uuid,text,text,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lease_booking_confirmation_notification_work(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.query_fictional_booking_confirmation_notification_effect(uuid,bigint,uuid,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.execute_fictional_booking_confirmation_notification_effect(uuid,bigint,uuid,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.complete_booking_confirmation_notification_delivery(uuid,bigint,uuid,jsonb,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_booking_confirmation_notification_failure(uuid,bigint,uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_booking_confirmation_notification_status(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_confirmed_booking_history() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.retry_booking_confirmation_notification(uuid) TO authenticated;

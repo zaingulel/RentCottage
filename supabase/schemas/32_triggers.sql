@@ -125,6 +125,12 @@ CREATE OR REPLACE TRIGGER "reject_booking_period_overlap_with_authorization_clai
 
 CREATE OR REPLACE TRIGGER "reject_booking_receipt_change" BEFORE DELETE OR UPDATE ON "public"."booking_receipts" FOR EACH ROW EXECUTE FUNCTION "public"."reject_booking_confirmation_change"();
 
+CREATE OR REPLACE TRIGGER "guard_booking_confirmation_notification_work" BEFORE DELETE OR UPDATE ON "public"."booking_confirmation_notification_work" FOR EACH ROW EXECUTE FUNCTION "public"."guard_booking_confirmation_notification_work"();
+
+CREATE OR REPLACE TRIGGER "reject_booking_confirmation_notification_attempt_change" BEFORE DELETE OR UPDATE ON "public"."booking_confirmation_notification_attempts" FOR EACH ROW EXECUTE FUNCTION "public"."reject_booking_confirmation_change"();
+
+CREATE OR REPLACE TRIGGER "reject_fictional_booking_confirmation_notification_effect_change" BEFORE DELETE OR UPDATE ON "public"."fictional_booking_confirmation_notification_effects" FOR EACH ROW EXECUTE FUNCTION "public"."reject_booking_confirmation_change"();
+
 CREATE OR REPLACE TRIGGER "reject_booking_request_payment_history_change" BEFORE DELETE OR UPDATE ON "public"."booking_request_payment_history" FOR EACH ROW EXECUTE FUNCTION "public"."reject_booking_request_payment_history_change"();
 
 CREATE OR REPLACE TRIGGER "reject_booking_snapshot_update" BEFORE DELETE OR UPDATE ON "public"."booking_snapshots" FOR EACH ROW EXECUTE FUNCTION "public"."reject_booking_snapshot_change"();

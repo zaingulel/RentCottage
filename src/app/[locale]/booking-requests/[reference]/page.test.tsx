@@ -1,8 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadRequest, notFound, router } = vi.hoisted(() => ({
+const { loadRequest, loadConfirmed, notFound, router } = vi.hoisted(() => ({
   loadRequest: vi.fn(),
+  loadConfirmed: vi.fn(),
   notFound: vi.fn(),
   router: { refresh: vi.fn() },
 }));
@@ -15,6 +16,9 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/booking-request/request-customer-booking-request", () => ({
   loadCustomerBookingRequest: loadRequest,
+}));
+vi.mock("@/booking-request/request-confirmed-booking-access", () => ({
+  loadConfirmedBookingAccess: loadConfirmed,
 }));
 vi.mock("@/booking-request/lifecycle-actions", () => ({
   actOnBookingRequest: vi.fn(),
@@ -50,7 +54,10 @@ const request = {
 };
 
 describe("authenticated Customer Booking Request page", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    loadConfirmed.mockResolvedValue(null);
+  });
 
   it("renders a single contact-safe request and withdrawal control in right-to-left Arabic", async () => {
     loadRequest.mockResolvedValue(request);
@@ -84,6 +91,30 @@ describe("authenticated Customer Booking Request page", () => {
     });
     expect(notFound).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    ["en", "Booking Request status is unavailable"],
+    ["ar", "حالة طلب الحجز غير متاحة"],
+    ["ckb", "دۆخی داواکاری حجز بەردەست نییە"],
+  ] as const)(
+    "renders the localized unavailable recovery when confirmed access cannot be checked in %s",
+    async (locale, unavailable) => {
+      loadConfirmed.mockRejectedValueOnce(new Error("database unavailable"));
+
+      render(
+        await CustomerBookingRequestPage({
+          params: Promise.resolve({
+            locale,
+            reference: request.bookingRequestReference,
+          }),
+        }),
+      );
+
+      expect(screen.getByRole("alert")).toHaveTextContent(unavailable);
+      expect(loadRequest).not.toHaveBeenCalled();
+      expect(screen.queryByText("Confirmed booking")).not.toBeInTheDocument();
+    },
+  );
 
   it("renders Sorani status copy without exposing the pending machine key", async () => {
     loadRequest.mockResolvedValue(request);

@@ -6,6 +6,8 @@ const paymentEvidenceSql =
 import { readFileSync } from "node:fs";
 import { selectPaymentRequiredExpiry } from "../src/booking-request/booking-request-payment-required-expiry";
 import { bookingRequestPaymentFactsFrom } from "../src/booking-request/supabase-booking-request-payment-observation";
+import { bookingTermsFixture } from "../src/booking-request/booking-terms-fixture";
+import { paidConfirmationNotice } from "../src/notification/paid-confirmation-notice";
 import { expect, test } from "@playwright/test";
 import { createRequire } from "node:module";
 import { createClient } from "@supabase/supabase-js";
@@ -13,6 +15,7 @@ import { createClient } from "@supabase/supabase-js";
 type AccessBrowserFixture = {
   bookingCottageName: string;
   bookingOwnerPhone: string;
+  exactAddress: string;
 };
 
 const { accessBrowserFixture } = createRequire(import.meta.url)(
@@ -64,6 +67,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   const bookingFixture = accessBrowserFixture(testInfo.project.name);
   const ownerPhone = bookingFixture.bookingOwnerPhone;
   const cottageName = bookingFixture.bookingCottageName;
+  const exactAddress = bookingFixture.exactAddress;
   const customerPhone = customerPhones[testInfo.project.name];
   const offset = { mobile: 4, desktop: 5, worker: 6 }[testInfo.project.name];
   if (!customerPhone || !offset) {
@@ -201,10 +205,19 @@ test("a verified Customer double-submit creates one Pending request and one mini
   ).toBeVisible();
   await expect(page.getByText(/does not reserve/)).toHaveCount(0);
   await expect(page.getByText("Owner response deadline")).toBeVisible();
+  expect(await page.locator("body").innerText()).not.toContain(exactAddress);
+  expect(await page.content()).not.toContain(ownerPhone);
   const requestReference = await page
     .getByText(/^RC-REQ-[A-F0-9]{16}$/)
     .innerText();
   expect(requestReference).toMatch(/^RC-REQ-[A-F0-9]{16}$/);
+  const unpaidResponse = await page.goto(
+    `/en/booking-requests/${requestReference}`,
+  );
+  expect(unpaidResponse?.ok()).toBe(true);
+  const unpaidResponseBody = await unpaidResponse!.text();
+  expect(unpaidResponseBody).not.toContain(exactAddress);
+  expect(unpaidResponseBody).not.toContain(ownerPhone);
   await page.screenshot({
     path: testInfo.outputPath("en-booking-request-pending.png"),
     fullPage: true,
@@ -213,6 +226,20 @@ test("a verified Customer double-submit creates one Pending request and one mini
     baseURL: new URL(page.url()).origin,
   });
   const ownerPage = await ownerContext.newPage();
+  const ownerPaidDetailPrefetches: string[] = [];
+  ownerPage.on("request", (request) => {
+    const headers = request.headers();
+    if (
+      new URL(ownerPage.url()).pathname === "/en/owner/cottages" &&
+      new URL(request.url()).pathname.startsWith(
+        "/en/owner/booking-requests/",
+      ) &&
+      (headers["next-router-prefetch"] ||
+        headers["next-router-segment-prefetch"])
+    ) {
+      ownerPaidDetailPrefetches.push(new URL(request.url()).pathname);
+    }
+  });
   await ownerPage.goto("/en/owner/access");
   await ownerPage.getByLabel("Iraqi phone number").fill(ownerPhone);
   await ownerPage
@@ -230,7 +257,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(ownerNotice).toContainText("Marketplace commission");
   await expect(ownerNotice).toContainText("Expected net amount");
   await expect(ownerNotice).toContainText("House Rules");
-  await expect(ownerNotice).toContainText("Marketplace terms version");
+  await expect(ownerNotice).not.toContainText(/terms version|policy version/i);
   await expect(ownerNotice).toContainText("(Cottage Shift)");
   await ownerPage.screenshot({
     path: testInfo.outputPath("en-owner-booking-request-notice.png"),
@@ -380,11 +407,20 @@ test("a verified Customer double-submit creates one Pending request and one mini
       page.getByRole("button", { name: "Withdraw pending request" }),
     ).toHaveCount(0);
     await expect(ownerNotice.getByRole("button")).toHaveCount(0);
+    const ownerBookingLink = {
+      en: "Open confirmed booking",
+      ar: "فتح الحجز المؤكد",
+      ckb: "کردنەوەی حجزی پشتڕاستکراو",
+    } as const;
     const locales = [
       {
         locale: "en",
         pending: "Payment confirmation pending",
         confirmed: "Booking confirmed",
+        paidHeading: "Confirmed booking",
+        incomplete: "Some practical access or contact details are unavailable.",
+        noticePending: "Pending",
+        noticeDelivered: "Delivered",
         required: "Payment Required",
         elapsed: "deadline has passed",
         quarantined: "Payment needs review",
@@ -396,6 +432,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
         locale: "ar",
         pending: "بانتظار تأكيد الدفع",
         confirmed: "تم تأكيد الحجز",
+        paidHeading: "حجز مؤكد",
+        incomplete: "بعض تفاصيل الوصول أو الاتصال غير متاحة.",
+        noticePending: "قيد الانتظار",
+        noticeDelivered: "تم التسليم",
         required: "الدفع مطلوب",
         elapsed: "انتهى موعد",
         quarantined: "الدفع يحتاج إلى مراجعة",
@@ -407,6 +447,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
         locale: "ckb",
         pending: "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
         confirmed: "حجز پشتڕاست کراوەتەوە",
+        paidHeading: "حجزی پشتڕاستکراو",
+        incomplete: "هەندێک وردەکاری گەیشتن یان پەیوەندی بەردەست نییە.",
+        noticePending: "چاوەڕێ",
+        noticeDelivered: "گەیەنرا",
         required: "پارەدان پێویستە",
         elapsed: "تێپەڕی",
         quarantined: "پارەدان پێویستی بە پێداچوونەوە هەیە",
@@ -419,6 +463,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       state:
         | "capture-processing"
         | "paid-confirmed"
+        | "paid-confirmed-incomplete"
         | "payment-required-open"
         | "payment-required-elapsed"
         | "payment-expiry-quarantined",
@@ -447,15 +492,90 @@ test("a verified Customer double-submit creates one Pending request and one mini
             ? copy.pending
             : state === "payment-expiry-quarantined"
               ? copy.quarantined
-              : state === "paid-confirmed"
+              : state === "paid-confirmed" ||
+                  state === "paid-confirmed-incomplete"
                 ? copy.confirmed
                 : copy.required;
-        await expect(customerView.getByRole("status")).toContainText(
-          expectedStatus,
-        );
+        if (
+          state === "paid-confirmed" ||
+          state === "paid-confirmed-incomplete"
+        ) {
+          await expect(
+            customerView.getByRole("heading", { name: copy.paidHeading }),
+          ).toBeVisible();
+          await expect(
+            customerView.getByRole("status").filter({
+              hasText: new RegExp(
+                `${copy.noticePending}|${copy.noticeDelivered}`,
+              ),
+            }),
+          ).toBeVisible();
+          await expect(customerView.getByText(exactAddress)).toBeVisible();
+          await expect(customerView.getByText(customerPhone)).toBeVisible();
+          await expect(customerView.getByText(ownerPhone)).toBeVisible();
+          await expect(
+            customerView.getByText(
+              "Synthetic fixture only. Respect neighbours.",
+            ),
+          ).toBeVisible();
+          await expect(
+            customerView.getByText(bookingTermsFixture("en").body),
+          ).toBeVisible();
+          await expect(
+            customerView.getByText("36.408333, 44.385834"),
+          ).toBeVisible();
+        } else {
+          await expect(customerView.getByRole("status")).toContainText(
+            expectedStatus,
+          );
+        }
         await expect(currentOwnerNotice.getByRole("status")).toContainText(
           expectedStatus,
         );
+        if (
+          state === "paid-confirmed" ||
+          state === "paid-confirmed-incomplete"
+        ) {
+          await currentOwnerNotice
+            .getByRole("link", { name: ownerBookingLink[copy.locale] })
+            .click();
+          await expect(
+            ownerView.getByRole("heading", { name: copy.paidHeading }),
+          ).toBeVisible();
+          await expect(
+            ownerView.getByRole("status").filter({
+              hasText: new RegExp(
+                `${copy.noticePending}|${copy.noticeDelivered}`,
+              ),
+            }),
+          ).toBeVisible();
+          await expect(ownerView.getByText(exactAddress)).toBeVisible();
+          await expect(ownerView.getByText(customerPhone)).toBeVisible();
+          await expect(ownerView.getByText(ownerPhone)).toBeVisible();
+          await expect(
+            ownerView.getByText(bookingTermsFixture("en").body),
+          ).toBeVisible();
+          for (const surface of [customerView, ownerView]) {
+            if (state === "paid-confirmed-incomplete") {
+              await expect(
+                surface.getByRole("status", { name: copy.incomplete }),
+              ).toBeVisible();
+            }
+            for (const value of [
+              customerPhone,
+              ownerPhone,
+              "36.408333, 44.385834",
+            ]) {
+              await expect(surface.getByText(value, { exact: true })).toHaveCSS(
+                "direction",
+                "ltr",
+              );
+            }
+            await expect(
+              surface.getByText(bookingTermsFixture("en").body),
+            ).toHaveCSS("direction", "ltr");
+          }
+        }
         if (state === "payment-required-elapsed") {
           await expect(customerView.getByRole("status")).toContainText(
             copy.elapsed,
@@ -482,7 +602,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
             /providerReference|diagnostic_reason|idempotency/i,
           );
         }
-        await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
+        if (state !== "paid-confirmed" && state !== "paid-confirmed-incomplete")
+          await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
         for (const viewport of [
           { name: "mobile", width: 390, height: 844 },
           { name: "desktop", width: 1440, height: 1000 },
@@ -521,19 +642,143 @@ test("a verified Customer double-submit creates one Pending request and one mini
       }
     }
     await captureViews("capture-processing");
-    const scheduled = await page.request.get(
-      "/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A",
+    const harness = createLocalSupabaseConcurrencyHarness();
+    harness.guardDisposableLocalDatabase();
+    const notificationSelector = harness.runSql(
+      "select pg_get_functiondef('public.list_due_booking_confirmation_notifications(integer)'::regprocedure);",
     );
-    expect(scheduled.ok()).toBe(true);
-    // Both original pages remain mounted while the real Worker confirms payment.
-    await expect(page.getByRole("status")).toContainText("Booking confirmed", {
-      timeout: 15000,
-    });
+    // Hold notice discovery for this tick to prove paid access before a drain.
+    // Capture and expiry still run through the real Worker; restore in all cases.
+    try {
+      harness.runSql(`create or replace function public.list_due_booking_confirmation_notifications(target_limit integer default 50)
+        returns setof jsonb language sql security definer set search_path='' as $$select null::jsonb where false$$;`);
+      const scheduled = await page.request.get(
+        "/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A",
+      );
+      expect(scheduled.ok()).toBe(true);
+    } finally {
+      harness.runSql(notificationSelector);
+    }
     await expect(ownerNotice.getByRole("status")).toContainText(
       "Booking confirmed",
+      { timeout: 15000 },
     );
+    // The mounted pending page must refresh into the paid details automatically.
+    await expect(
+      page.getByRole("heading", { name: "Confirmed booking" }),
+    ).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("status")).toContainText("Pending");
     await captureViews("paid-confirmed");
+    const originalPrivateDirections = JSON.parse(
+      harness.runSql(
+        `select to_jsonb(private_directions) from public.owner_application_cottage_profiles where id='${profile.id}';`,
+      ),
+    ) as string | null;
+    try {
+      harness.runSql(
+        `update public.owner_application_cottage_profiles set private_directions=null where id='${profile.id}';`,
+      );
+      await captureViews("paid-confirmed-incomplete");
+    } finally {
+      const restoredPrivateDirections =
+        originalPrivateDirections === null
+          ? "null"
+          : `'${originalPrivateDirections.replaceAll("'", "''")}'`;
+      harness.runSql(
+        `update public.owner_application_cottage_profiles set private_directions=${restoredPrivateDirections} where id='${profile.id}';`,
+      );
+    }
+    const paidIdentity = () =>
+      JSON.parse(
+        harness.runSql(
+          `select jsonb_build_object(
+            'bookingRequestId',requests.id,
+            'bookingReference',commitments.commitment_reference,
+            'receiptId',receipts.id
+          )
+          from public.booking_requests requests
+          join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+          join public.booking_receipts receipts on receipts.booking_confirmation_id=confirmations.id and receipts.recipient_role='customer'
+          join public.cottage_booking_period_commitments commitments on commitments.id=confirmations.booking_period_commitment_id
+          where requests.booking_request_reference='${requestReference}';`,
+        ),
+      );
+    const identityBeforeRetry = paidIdentity();
+    const noticeCandidate = JSON.parse(
+      harness.runSql(`set role service_role;
+        select candidate from public.list_due_booking_confirmation_notifications(10) candidate
+        where candidate->>'receiptId'='${identityBeforeRetry.receiptId}';`),
+    );
+    const noticePayload = JSON.stringify(
+      paidConfirmationNotice(noticeCandidate),
+    ).replaceAll("'", "''");
+    const failedNotice = JSON.parse(
+      harness.runSql(`set role service_role;
+        select public.ensure_booking_confirmation_notification_work(
+          '${identityBeforeRetry.receiptId}','${noticeCandidate.locale}',
+          'paid-confirmation-v1','${noticePayload}'::jsonb
+        );
+        with leased as (
+          select public.lease_booking_confirmation_notification_work('${identityBeforeRetry.receiptId}') result
+        )
+        select public.record_booking_confirmation_notification_failure(
+          '${identityBeforeRetry.receiptId}',
+          (result->>'leaseGeneration')::bigint,
+          (result->>'leaseToken')::uuid,
+          'failed'
+        ) from leased;`),
+    );
+    expect(failedNotice.status).toBe("retryable");
+    await page.reload();
+    const paidDetails = page.getByRole("region", {
+      name: "Confirmed booking",
+    });
+    await expect(paidDetails.getByRole("status")).toContainText(
+      "Delivery failed",
+    );
+    await paidDetails
+      .getByRole("button", { name: "Retry confirmation notice" })
+      .click();
+    await expect(paidDetails.getByRole("status")).toHaveText("Pending");
+    await expect(
+      paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
+    ).toHaveCount(0);
+    expect(paidIdentity()).toEqual(identityBeforeRetry);
     expect((await page.request.get("/__scheduled")).ok()).toBe(true);
+    await page.goto(`/en/booking-requests/${requestReference}`);
+    await expect(
+      page.getByRole("heading", { name: "Confirmed booking" }),
+    ).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("Delivered");
+    await page.getByRole("link", { name: "Booking History" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Booking History" }),
+    ).toBeVisible();
+    const customerHistoryLink = page.locator(
+      `a[href="/en/booking-requests/${requestReference}"]`,
+    );
+    await expect(customerHistoryLink).toContainText(
+      identityBeforeRetry.bookingReference,
+    );
+    await customerHistoryLink.click();
+    await expect(
+      page.getByRole("region", { name: "Confirmed booking" }),
+    ).toContainText(identityBeforeRetry.bookingReference);
+    await expect(page.getByText(exactAddress)).toBeVisible();
+    await ownerPage.goto(`/en/owner/booking-requests/${requestReference}`);
+    await expect(
+      ownerPage.getByRole("heading", { name: "Confirmed booking" }),
+    ).toBeVisible();
+    await expect(ownerPage.getByRole("status")).toContainText("Delivered");
+    await ownerPage.getByRole("link", { name: "Booking History" }).click();
+    const ownerHistoryLink = ownerPage.locator(
+      `a[href="/en/owner/booking-requests/${requestReference}"]`,
+    );
+    await expect(ownerHistoryLink).toContainText(
+      identityBeforeRetry.bookingReference,
+    );
+    await ownerHistoryLink.click();
+    await expect(ownerPage.getByText(exactAddress)).toBeVisible();
 
     // A second, distinct Shift preserves the successful journey above.
     query.set("selection", `${requestedDay}:shift:${shifts[1].position}`);
@@ -555,8 +800,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
       "Payment confirmation pending",
     );
 
-    const harness = createLocalSupabaseConcurrencyHarness();
-    harness.guardDisposableLocalDatabase();
     const failureId = harness.runSql(
       paymentEvidenceSql +
         `select id from public.booking_requests where booking_request_reference='${failureReference}';`,
@@ -616,6 +859,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     expect(terminal.hold).toEqual(held.hold);
     expect(terminal.occupancies).toEqual(held.occupancies);
     expect(terminal.intentActive).toBe(true);
+    // The live owner list has refreshed through both capture outcomes. Paid
+    // access details are fetched on explicit navigation, not by list prefetch.
+    expect(ownerPaidDetailPrefetches).toEqual([]);
     await captureViews("payment-required-open", failureReference);
     expect((await page.request.get("/__scheduled")).ok()).toBe(true);
     expect(observeFailure()).toEqual(terminal);
@@ -667,6 +913,14 @@ test("a verified Customer double-submit creates one Pending request and one mini
       requested_role: "customer",
     });
     if (role.error) throw role.error;
+    const deniedPaidAccess = await otherCustomer.rpc(
+      "get_confirmed_booking_access",
+      { target_reference: requestReference },
+    );
+    expect(deniedPaidAccess.error).toBeNull();
+    expect(deniedPaidAccess.data).toBeNull();
+    expect(JSON.stringify(deniedPaidAccess.data)).not.toContain(exactAddress);
+    expect(JSON.stringify(deniedPaidAccess.data)).not.toContain(ownerPhone);
     const recoveryGraph = () =>
       harness.runSql(
         paymentEvidenceSql +
@@ -790,10 +1044,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
       expect(recoveryGraph()).toEqual(beforeExpiryRefusal);
       expect(observeFailure()).toEqual(heldBeforeExpiryRefusal);
       expect((await page.request.get("/__scheduled")).ok()).toBe(true);
-      await expect(page.getByRole("status")).toContainText(
-        "Booking confirmed",
-        { timeout: 15000 },
-      );
+      await expect(
+        page.getByRole("heading", { name: "Confirmed booking" }),
+      ).toBeVisible({ timeout: 15000 });
       await expect(failureNotice.getByRole("status")).toContainText(
         "Booking confirmed",
         { timeout: 15000 },

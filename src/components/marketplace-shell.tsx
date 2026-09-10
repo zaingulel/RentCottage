@@ -44,6 +44,19 @@ export function MarketplaceShell({
             <ActionLink
               kind="secondary"
               width="content"
+              href={`/${locale}/bookings`}
+            >
+              {
+                {
+                  en: "Booking History",
+                  ar: "سجل الحجوزات",
+                  ckb: "مێژووی حجزەکان",
+                }[locale]
+              }
+            </ActionLink>
+            <ActionLink
+              kind="secondary"
+              width="content"
               href={`/${locale}/owner/access`}
             >
               {copy.ownerSignIn}

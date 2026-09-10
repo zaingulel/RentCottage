@@ -1152,6 +1152,13 @@ try {
     "4:3:1:2",
     "Admission migration must not infer capture, execution, confirmation, or receipts.",
   );
+  assertEqual(
+    harness.runSql(
+      "set role service_role; select count(*) from public.list_due_booking_confirmation_notifications(10);",
+    ),
+    "2",
+    "Both byte-preserved receipt intents must become due notification candidates.",
+  );
   console.log(
     "Payment Required upgrade preserved pending, release-processing, historical accepted, queued, processing, completed and confirmed graphs byte-for-byte; both new terminal timestamps are null on every predecessor row and no provider or booking effect was inferred.",
   );

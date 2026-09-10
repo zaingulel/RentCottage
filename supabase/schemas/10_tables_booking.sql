@@ -315,6 +315,76 @@ CREATE TABLE IF NOT EXISTS "public"."booking_receipts" (
 
 ALTER TABLE "public"."booking_receipts" OWNER TO "postgres";
 
+CREATE TABLE IF NOT EXISTS "public"."booking_confirmation_notification_work" (
+    "receipt_id" "uuid" NOT NULL,
+    "booking_request_id" "uuid" NOT NULL,
+    "booking_request_reference" "text" NOT NULL,
+    "booking_reference" "text" NOT NULL,
+    "recipient_user_id" "uuid" NOT NULL,
+    "recipient_role" "text" NOT NULL,
+    "logical_id" "text" NOT NULL,
+    "notice_locale" "public"."cottage_profile_source_language" NOT NULL,
+    "template_version" "text" NOT NULL,
+    "payload" "jsonb" NOT NULL,
+    "payload_sha256" "text" NOT NULL,
+    "state" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "lease_generation" bigint DEFAULT 0 NOT NULL,
+    "lease_token" "uuid",
+    "lease_expires_at" timestamp with time zone,
+    "last_outcome" "text",
+    "supplier_delivery_reference" "text",
+    "delivered_at" timestamp with time zone,
+    "suppressed_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
+    CONSTRAINT "booking_confirmation_notification_work_binding" CHECK ((("recipient_role" = ANY (ARRAY['customer'::"text", 'cottage_owner'::"text"])) AND ("logical_id" = ('paid-confirmation:'::"text" || ("receipt_id")::"text")) AND ("template_version" = 'paid-confirmation-v1'::"text") AND ("payload_sha256" ~ '^[0-9a-f]{64}$'::"text"))),
+    CONSTRAINT "booking_confirmation_notification_work_state" CHECK (("state" = ANY (ARRAY['pending'::"text", 'processing'::"text", 'retryable'::"text", 'uncertain'::"text", 'delivered'::"text", 'suppressed'::"text"]))),
+    CONSTRAINT "booking_confirmation_notification_work_state_shape" CHECK (((("state" = 'pending'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" IS NULL) AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'processing'::"text") AND ("lease_generation" > 0) AND ("lease_token" IS NOT NULL) AND ("lease_expires_at" IS NOT NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'retryable'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'failed'::"text") AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'uncertain'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'unknown'::"text") AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'delivered'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'delivered'::"text") AND ("supplier_delivery_reference" IS NOT NULL) AND ("delivered_at" IS NOT NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'suppressed'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'suppressed'::"text") AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NOT NULL)))),
+    CONSTRAINT "booking_confirmation_notification_work_payload" CHECK ((("jsonb_typeof"("payload") = 'object'::"text") AND ("payload" ?& ARRAY['kind'::"text", 'title'::"text", 'body'::"text", 'bookingReference'::"text", 'detailsPath'::"text", 'linkLabel'::"text", 'fictional'::"text"]) AND (("payload" - ARRAY['kind'::"text", 'title'::"text", 'body'::"text", 'bookingReference'::"text", 'detailsPath'::"text", 'linkLabel'::"text", 'fictional'::"text"]) = '{}'::"jsonb") AND (("payload" ->> 'kind'::"text") = 'paid-confirmation'::"text") AND (("payload" -> 'fictional'::"text") = 'true'::"jsonb")))
+);
+
+ALTER TABLE "public"."booking_confirmation_notification_work" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."booking_confirmation_notification_attempts" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "receipt_id" "uuid" NOT NULL,
+    "lease_generation" bigint,
+    "lease_token" "uuid",
+    "action" "text" NOT NULL,
+    "outcome" "text" NOT NULL,
+    "effect_id" "uuid",
+    "recorded_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
+    CONSTRAINT "booking_confirmation_notification_attempt_action" CHECK (("action" = ANY (ARRAY['query'::"text", 'execute'::"text", 'complete'::"text", 'failure'::"text", 'user-retry'::"text"]))),
+    CONSTRAINT "booking_confirmation_notification_attempt_outcome" CHECK (("outcome" = ANY (ARRAY['not-found'::"text", 'delivered'::"text", 'failed'::"text", 'unknown'::"text", 'suppressed'::"text", 'queued'::"text"]))),
+    CONSTRAINT "booking_confirmation_notification_attempt_lease" CHECK ((("lease_generation" IS NULL) = ("lease_token" IS NULL)))
+);
+
+ALTER TABLE "public"."booking_confirmation_notification_attempts" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."fictional_booking_confirmation_notification_effects" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "supplier" "text" NOT NULL,
+    "environment" "text" NOT NULL,
+    "logical_id" "text" NOT NULL,
+    "receipt_id" "uuid" NOT NULL,
+    "booking_request_id" "uuid" NOT NULL,
+    "booking_request_reference" "text" NOT NULL,
+    "booking_reference" "text" NOT NULL,
+    "recipient_user_id" "uuid" NOT NULL,
+    "recipient_role" "text" NOT NULL,
+    "notice_locale" "public"."cottage_profile_source_language" NOT NULL,
+    "template_version" "text" NOT NULL,
+    "payload" "jsonb" NOT NULL,
+    "payload_sha256" "text" NOT NULL,
+    "execution_lease_generation" bigint NOT NULL,
+    "execution_lease_token" "uuid" NOT NULL,
+    "supplier_delivery_reference" "text" NOT NULL,
+    "executed_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
+    CONSTRAINT "fictional_booking_confirmation_notification_effect_identity" CHECK ((("supplier" = 'fictional-notifications'::"text") AND ("environment" = 'local-test'::"text") AND ("logical_id" = ('paid-confirmation:'::"text" || ("receipt_id")::"text")) AND ("recipient_role" = ANY (ARRAY['customer'::"text", 'cottage_owner'::"text"])) AND ("template_version" = 'paid-confirmation-v1'::"text") AND ("payload_sha256" ~ '^[0-9a-f]{64}$'::"text") AND ("execution_lease_generation" > 0)))
+);
+
+ALTER TABLE "public"."fictional_booking_confirmation_notification_effects" OWNER TO "postgres";
+
 CREATE TABLE IF NOT EXISTS "public"."booking_request_authorization_claim_items" (
     "claim_id" "uuid" NOT NULL,
     "unit_kind" "public"."cottage_inventory_unit_kind" NOT NULL,

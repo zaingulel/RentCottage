@@ -3,18 +3,21 @@ import { expect, test } from "@playwright/test";
 const ownerSignIn = {
   en: {
     label: "Owner sign-in",
+    history: "Booking History",
     href: "/en/owner/access",
     heading: "Cottage Owner access",
     dir: "ltr",
   },
   ar: {
     label: "دخول مالك البيت",
+    history: "سجل الحجوزات",
     href: "/ar/owner/access",
     heading: "دخول مالك البيت",
     dir: "rtl",
   },
   ckb: {
     label: "چوونەژوورەوەی خاوەنی ماڵ",
+    history: "مێژووی حجزەکان",
     href: "/ckb/owner/access",
     heading: "چوونەژوورەوەی خاوەنی ماڵ",
     dir: "rtl",
@@ -54,7 +57,7 @@ test("keeps the Retreat shell within the Arabic viewport", async ({ page }) => {
   await expect(page.getByRole("navigation", { name: "اللغة" })).toBeVisible();
 });
 
-test("Owner sign-in stays visible, localized, and keyboard-operable", async ({
+test("Booking History and Owner sign-in stay localized and keyboard-operable", async ({
   page,
 }, testInfo) => {
   for (const [locale, copy] of Object.entries(ownerSignIn)) {
@@ -77,6 +80,14 @@ test("Owner sign-in stays visible, localized, and keyboard-operable", async ({
     await expect(
       page.getByRole("link", { name: /RentCottage|ڕێنت کۆتاج|ريف كوتج/ }),
     ).toBeFocused();
+    await page.keyboard.press("Tab");
+    const historyLink = page.getByRole("link", {
+      name: copy.history,
+      exact: true,
+    });
+    await expect(historyLink).toBeFocused();
+    await expect(historyLink).toHaveAttribute("href", `/${locale}/bookings`);
+    await expect(historyLink).toHaveCSS("outline-style", "solid");
     await page.keyboard.press("Tab");
     await expect(ownerLink).toBeFocused();
     await expect(ownerLink).toHaveCSS("outline-style", "solid");

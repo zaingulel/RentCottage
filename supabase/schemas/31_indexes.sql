@@ -94,3 +94,6 @@ CREATE INDEX "privileged_sign_in_attempts_actor_user_id_idx" ON "public"."privil
 CREATE INDEX "privileged_sign_in_attempts_attempted_at_idx" ON "public"."privileged_sign_in_attempts" USING "btree" ("attempted_at");
 
 CREATE INDEX payment_provider_observations_operation_idx ON public.payment_provider_observations USING btree (operation_id,received_at,id);
+CREATE INDEX "booking_confirmation_notification_work_due_idx" ON "public"."booking_confirmation_notification_work" USING "btree" ("updated_at", "receipt_id") WHERE ("state" = ANY (ARRAY['pending'::"text", 'processing'::"text", 'uncertain'::"text"]));
+
+CREATE INDEX "booking_confirmation_notification_attempts_receipt_idx" ON "public"."booking_confirmation_notification_attempts" USING "btree" ("receipt_id", "recorded_at", "id");
