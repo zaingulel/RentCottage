@@ -3,9 +3,11 @@ const paymentEvidenceSql =
   "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
   "\n-- END PAYMENT EVIDENCE FIXTURE\n";
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIResponse } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+
+type SqlSession = { stdout: string };
 
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
@@ -13,6 +15,12 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
   createLocalSupabaseConcurrencyHarness(): {
     guardDisposableLocalDatabase(): void;
     runSql(sql: string): string;
+    startSession(sql: string): SqlSession;
+    waitForMarker(session: SqlSession, marker: string): Promise<void>;
+    finishSession(
+      session: SqlSession,
+      options: { action: string },
+    ): Promise<void>;
   };
 };
 const { withPaymentRecoveryCleanup } = createRequire(import.meta.url)(
@@ -21,7 +29,7 @@ const { withPaymentRecoveryCleanup } = createRequire(import.meta.url)(
   withPaymentRecoveryCleanup(cleanup: string, requestId: string): string;
 };
 
-test("the actual Worker settles capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
+test("the actual Worker settles overlapping capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
   request,
 }) => {
   const harness = createLocalSupabaseConcurrencyHarness();
@@ -63,6 +71,8 @@ test("the actual Worker settles capture despite expiry failure and repeated sche
       ),
     );
   let seeded = false;
+  let holder: SqlSession | undefined;
+  const scheduled: Promise<PromiseSettledResult<APIResponse>>[] = [];
   try {
     harness.runSql(
       paymentEvidenceSql +
@@ -81,7 +91,42 @@ test("the actual Worker settles capture despite expiry failure and repeated sche
         `create or replace function public.claim_due_booking_request_releases(target_limit integer)
       returns jsonb language plpgsql security definer set search_path = '' as $$ begin raise exception 'Injected local expiry failure'; end; $$;`,
     );
-    expect((await request.get("/__scheduled")).ok()).toBe(false);
+    holder = harness.startSession(`begin;
+      set application_name = 'worker_scheduled_capture_holder';
+      select pg_backend_pid();
+      select id from public.booking_requests where id = '${id}' for update;
+      select 'CAPTURE_HELD';`);
+    await harness.waitForMarker(holder, "CAPTURE_HELD");
+    expect(holder.stdout).toContain(id);
+    const holderPid = Number(holder.stdout.split("\n")[0]);
+    const blockedCaptures = () =>
+      Number(
+        harness.runSql(`with recursive blocked(pid) as (
+          select ${holderPid}::integer
+          union
+          select waiting.pid from pg_stat_activity waiting join blocked
+            on blocked.pid = any(pg_blocking_pids(waiting.pid))
+        )
+        select count(*) from pg_stat_activity
+        where pid in (select pid from blocked) and wait_event_type = 'Lock'
+          and query like '%lease_booking_request_capture_work%';`),
+      );
+    // Observe both complete handlers at the same row lock before either can capture.
+    for (let invocation = 1; invocation <= 2; invocation++) {
+      scheduled.push(
+        request.get("/__scheduled").then(
+          (value) => ({ status: "fulfilled" as const, value }),
+          (reason: unknown) => ({ status: "rejected" as const, reason }),
+        ),
+      );
+      await expect.poll(blockedCaptures).toBe(invocation);
+    }
+    await harness.finishSession(holder, { action: "rollback" });
+    holder = undefined;
+    for (const response of await Promise.all(scheduled)) {
+      if (response.status === "rejected") throw response.reason;
+      expect(response.value.ok()).toBe(false);
+    }
     const confirmed = observe();
     expect(confirmed.work.state).toBe("complete");
     expect(confirmed.execution.physical_execution_count).toBe(1);
@@ -96,6 +141,8 @@ test("the actual Worker settles capture despite expiry failure and repeated sche
       expect((await request.get("/__scheduled")).ok()).toBe(true);
     expect(observe()).toEqual(confirmed);
   } finally {
+    if (holder) await harness.finishSession(holder, { action: "rollback" });
+    await Promise.allSettled(scheduled);
     harness.runSql(paymentEvidenceSql + expiryDefinition);
     if (seeded)
       harness.runSql(
