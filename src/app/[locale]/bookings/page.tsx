@@ -6,16 +6,19 @@ import { isLocale } from "@/i18n/routing";
 const copy = {
   en: {
     title: "Booking History",
+    unavailable: "Booking History is unavailable. Please try again.",
     empty: "No confirmed bookings yet.",
     home: "RentCottage home",
   },
   ar: {
     title: "سجل الحجوزات",
+    unavailable: "سجل الحجوزات غير متاح. يرجى المحاولة مرة أخرى.",
     empty: "لا توجد حجوزات مؤكدة بعد.",
     home: "العودة إلى RentCottage",
   },
   ckb: {
     title: "مێژووی حجزەکان",
+    unavailable: "مێژووی حجزەکان بەردەست نییە. تکایە دووبارە هەوڵ بدەوە.",
     empty: "هێشتا هیچ حجزێکی پشتڕاستکراو نییە.",
     home: "گەڕانەوە بۆ RentCottage",
   },
@@ -41,6 +44,7 @@ export default async function BookingHistoryPage({
       <main className="results-page">
         <section role="alert">
           <h1>{copy[locale].title}</h1>
+          <p>{copy[locale].unavailable}</p>
           <Link href={`/${locale}`}>{copy[locale].home}</Link>
         </section>
       </main>
