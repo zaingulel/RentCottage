@@ -2,6 +2,10 @@ import {
   recordedPaymentResult,
   type PaymentOperationExecution,
 } from "./payment-operation-execution";
+import {
+  exactMarketplaceCommission,
+  validateRefundAllocation,
+} from "./payment-refund-allocation";
 import type {
   Fils,
   MoneyMovement,
@@ -354,7 +358,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
     restoredSnapshot?: PaymentLifecycleSnapshot,
   ) {
     this.#assertNonNegativeMoney(input.bookingPriceFils, "Booking Price");
-    this.#exactCommission(input.bookingPriceFils);
+    exactMarketplaceCommission(input.bookingPriceFils);
     this.#assertNonNegativeMoney(
       input.bookingServiceFeeFils,
       "Booking Service Fee",
@@ -1117,7 +1121,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       this.#input.bookingPriceFils - this.#refundedBookingPriceFils;
     const remainingBookingServiceFeeFils =
       this.#input.bookingServiceFeeFils - this.#refundedBookingServiceFeeFils;
-    const marketplaceCommissionFils = this.#exactCommission(
+    const marketplaceCommissionFils = exactMarketplaceCommission(
       remainingBookingPriceFils,
     );
     return {
@@ -1131,37 +1135,12 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
     };
   }
 
-  #exactCommission(remainingBookingPriceFils: Fils): Fils {
-    if (remainingBookingPriceFils % 10 !== 0) {
-      throw new Error("10% Marketplace Commission must be exact in fils.");
-    }
-    return remainingBookingPriceFils / 10;
-  }
-
-  #assertRefundAmount(amountFils: Fils, name: string): void {
-    if (!Number.isSafeInteger(amountFils) || amountFils < 0) {
-      throw new Error(
-        `${name} refund allocation must be non-negative safe integer fils.`,
-      );
-    }
-  }
-
   #validateRefundIntent(allocation: RefundAllocation): Fils {
     if (this.#operations.get("capture")?.status !== "succeeded") {
       throw new Error("Successful Payment Capture is required before refund.");
     }
     if (this.#operations.get("settlement")?.status === "pending") {
       throw new Error("Pending Owner Payout must be reconciled before refund.");
-    }
-    this.#assertRefundAmount(allocation.bookingPriceFils, "Booking Price");
-    this.#assertRefundAmount(
-      allocation.bookingServiceFeeFils,
-      "Booking Service Fee",
-    );
-    const amountFils =
-      allocation.bookingPriceFils + allocation.bookingServiceFeeFils;
-    if (amountFils === 0) {
-      throw new Error("Refund must return a positive amount.");
     }
     const reservedRefunds = this.#refunds.reduce(
       (reserved, refund) => {
@@ -1179,22 +1158,13 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       },
       { bookingPriceFils: 0, bookingServiceFeeFils: 0 },
     );
-    const remainingBookingPriceFils =
-      this.#input.bookingPriceFils - reservedRefunds.bookingPriceFils;
-    const remainingBookingServiceFeeFils =
-      this.#input.bookingServiceFeeFils - reservedRefunds.bookingServiceFeeFils;
-    if (allocation.bookingPriceFils > remainingBookingPriceFils) {
-      throw new Error("Refund allocation exceeds the remaining Booking Price.");
-    }
-    if (allocation.bookingServiceFeeFils > remainingBookingServiceFeeFils) {
-      throw new Error(
-        "Refund allocation exceeds the remaining Booking Service Fee.",
-      );
-    }
-    this.#exactCommission(
-      remainingBookingPriceFils - allocation.bookingPriceFils,
-    );
-    return amountFils;
+    return validateRefundAllocation(allocation, {
+      bookingPriceFils:
+        this.#input.bookingPriceFils - reservedRefunds.bookingPriceFils,
+      bookingServiceFeeFils:
+        this.#input.bookingServiceFeeFils -
+        reservedRefunds.bookingServiceFeeFils,
+    });
   }
 
   #validateRetryIntent(operation: PaymentOperationSnapshot): void {
