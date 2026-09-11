@@ -1,12 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadRequest, loadConfirmed, notFound, router } = vi.hoisted(() => ({
-  loadRequest: vi.fn(),
-  loadConfirmed: vi.fn(),
-  notFound: vi.fn(),
-  router: { refresh: vi.fn() },
-}));
+const { loadRequest, loadConfirmed, loadFinancial, notFound, router } =
+  vi.hoisted(() => ({
+    loadRequest: vi.fn(),
+    loadConfirmed: vi.fn(),
+    loadFinancial: vi.fn(),
+    notFound: vi.fn(),
+    router: { refresh: vi.fn() },
+  }));
 
 vi.mock("@/access/request-account-context", () => ({
   requireRequestAccount: vi.fn().mockResolvedValue({
@@ -31,10 +33,16 @@ vi.mock("@/booking-request/request-customer-booking-request", () => ({
 vi.mock("@/booking-request/request-confirmed-booking-access", () => ({
   loadConfirmedBookingAccess: loadConfirmed,
 }));
+vi.mock("@/booking-request/request-booking-financial-view", () => ({
+  loadBookingFinancialView: loadFinancial,
+}));
 vi.mock("@/booking-request/lifecycle-actions", () => ({
   actOnBookingRequest: vi.fn(),
 }));
 
+vi.mock("@/components/booking-financial-details", () => ({
+  BookingFinancialDetails: () => <div>Retained cancellation</div>,
+}));
 import CustomerBookingRequestPage from "./page";
 
 const request = {
@@ -68,6 +76,7 @@ describe("authenticated Customer Booking Request page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     loadConfirmed.mockResolvedValue(null);
+    loadFinancial.mockResolvedValue(null);
   });
 
   it("renders a single contact-safe request and withdrawal control in right-to-left Arabic", async () => {
@@ -179,4 +188,28 @@ describe("authenticated Customer Booking Request page", () => {
       screen.queryByText("cannot_accommodate_request", { exact: true }),
     ).not.toBeInTheDocument();
   });
+});
+
+it("routes retained cancellation to safe history without reopening private access or pending status", async () => {
+  loadConfirmed.mockResolvedValue(null);
+  loadFinancial.mockResolvedValue({
+    cancellation: { occurredAt: "2101-01-01T05:00:00Z" },
+    actorRole: "customer",
+  });
+  loadRequest.mockClear();
+  render(
+    await CustomerBookingRequestPage({
+      params: Promise.resolve({
+        locale: "en",
+        reference: request.bookingRequestReference,
+      }),
+    }),
+  );
+  expect(screen.getByText("Retained cancellation")).toBeVisible();
+  expect(loadRequest).not.toHaveBeenCalled();
+  expect(screen.queryByText("Confirmed booking")).not.toBeInTheDocument();
+  expect(loadFinancial).toHaveBeenCalledWith(
+    request.bookingRequestReference,
+    "customer",
+  );
 });

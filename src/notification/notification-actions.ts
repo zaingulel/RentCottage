@@ -17,10 +17,16 @@ export async function retryPaidConfirmationNotification(
   const locale = formData.get("locale");
   const reference = formData.get("reference");
   const receiptId = formData.get("receiptId");
+  const eventId = formData.get("eventId");
   if (
     typeof locale !== "string" ||
     typeof reference !== "string" ||
     typeof receiptId !== "string" ||
+    (eventId !== null &&
+      (typeof eventId !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          eventId,
+        ))) ||
     !isLocale(locale) ||
     !/^RC-REQ-[A-F0-9]{16}$/.test(reference) ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -29,12 +35,14 @@ export async function retryPaidConfirmationNotification(
   )
     return { status: "invalid" };
   try {
-    await new SupabaseBookingNotificationStatusRepository(
+    const repository = new SupabaseBookingNotificationStatusRepository(
       await createRequestSupabaseClient(),
-    ).retry(receiptId);
+    );
+    if (eventId === null) await repository.retry(receiptId);
+    else await repository.retry(receiptId, eventId as string);
   } catch {
-    console.error("Confirmation notice retry failed", {
-      code: "confirmation_notice_retry_failed",
+    console.error("Booking notice retry failed", {
+      code: "booking_notice_retry_failed",
     });
     return { status: "failed" };
   }

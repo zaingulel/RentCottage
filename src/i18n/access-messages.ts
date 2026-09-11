@@ -68,7 +68,7 @@ export const accessMessages: Record<
     resend: "أرسل رمزًا آخر",
     editNumber: "تغيير رقم الهاتف",
     confirmedOnly:
-      "تظهر الحجوزات المؤكدة هنا. حالات الطلبات الأخرى متاحة عبر روابطها.",
+      "تظهر الحجوزات المؤكدة والملغاة هنا. حالات الطلبات الأخرى متاحة عبر روابطها.",
     denied: "هذا الحجز غير متاح لهذا الحساب. سجّل الخروج لاستخدام حساب آخر.",
     sessionUnavailable: "الوصول إلى الحساب غير متاح. يرجى المحاولة مجددًا.",
     retry: "حاول مجددًا",
@@ -116,7 +116,7 @@ export const accessMessages: Record<
     resend: "کۆدێکی تر بنێرە",
     editNumber: "گۆڕینی ژمارەی تەلەفۆن",
     confirmedOnly:
-      "حجزە پشتڕاستکراوەکان لێرە دەردەکەون. دۆخی داواکارییەکانی تر لە بەستەرەکانیان بەردەستە.",
+      "حجزە پشتڕاستکراوەکان و هەڵوەشاوەکان لێرە دەردەکەون. دۆخی داواکارییەکانی تر لە بەستەرەکانیان بەردەستە.",
     denied:
       "ئەم حجزە بۆ ئەم هەژمارە بەردەست نییە. بچۆ دەرەوە بۆ بەکارهێنانی هەژمارێکی تر.",
     sessionUnavailable:
@@ -167,7 +167,7 @@ export const accessMessages: Record<
     resend: "Send another code",
     editNumber: "Change phone number",
     confirmedOnly:
-      "Confirmed bookings are shown here. Other request statuses are available from their booking links.",
+      "Confirmed and cancelled bookings are shown here. Other request statuses are available from their booking links.",
     denied:
       "This booking is not available to this account. Sign out to use another account.",
     sessionUnavailable: "Account access is unavailable. Please try again.",

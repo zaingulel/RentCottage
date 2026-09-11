@@ -7,6 +7,7 @@ const item = {
   cottageName: "Preserved Cottage",
   confirmedAt: "2100-12-31T13:00:00Z",
   actorRole: "customer",
+  cancelled: false,
 };
 describe("confirmed Booking History parser", () => {
   it("accepts the minimal paid return-navigation row", async () => {
@@ -15,6 +16,15 @@ describe("confirmed Booking History parser", () => {
       listConfirmedBookingHistory({ rpc } as never),
     ).resolves.toEqual([item]);
     expect(rpc).toHaveBeenCalledWith("list_confirmed_booking_history");
+  });
+  it("requires an explicit retained cancellation status", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ ...item, cancelled: undefined }],
+      error: null,
+    });
+    await expect(listConfirmedBookingHistory({ rpc } as never)).rejects.toThrow(
+      "data is invalid",
+    );
   });
   it("fails closed on an unbound route", async () => {
     const rpc = vi.fn().mockResolvedValue({

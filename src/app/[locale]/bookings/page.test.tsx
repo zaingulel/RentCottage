@@ -40,3 +40,27 @@ describe("Booking History failure", () => {
     }
   });
 });
+
+it("labels retained cancelled bookings and links to their safe detail", async () => {
+  loadHistory.mockResolvedValue([
+    {
+      receiptId: "82000000-0000-4000-8000-000000003502",
+      bookingRequestReference: "RC-REQ-0000000000003501",
+      bookingReference: "CONFIRMED-BOOKING-35",
+      cottageName: "Preserved Cottage",
+      confirmedAt: "2100-12-31T13:00:00Z",
+      actorRole: "customer",
+      cancelled: true,
+    },
+  ]);
+  render(
+    await BookingHistoryPage({
+      params: Promise.resolve({ locale: "en" }),
+      searchParams: Promise.resolve({}),
+    }),
+  );
+  expect(screen.getByText("Cancelled booking")).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: /Preserved Cottage/ }),
+  ).toHaveAttribute("href", "/en/booking-requests/RC-REQ-0000000000003501");
+});

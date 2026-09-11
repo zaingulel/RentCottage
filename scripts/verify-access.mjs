@@ -960,6 +960,7 @@ export async function main(
           "tests/access.spec.ts",
           "tests/booking-request-access.spec.ts",
           "tests/administrator-payment-history.spec.ts",
+          "tests/booking-cancellation-refund.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",

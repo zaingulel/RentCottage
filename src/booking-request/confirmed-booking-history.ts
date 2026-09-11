@@ -5,6 +5,7 @@ export type ConfirmedBookingHistoryItem = {
   readonly bookingReference: string;
   readonly cottageName: string;
   readonly confirmedAt: string;
+  readonly cancelled: boolean;
   readonly actorRole: "customer" | "cottage_owner";
 };
 const uuid =
@@ -25,6 +26,7 @@ export async function listConfirmedBookingHistory(
       !/^RC-REQ-[A-F0-9]{16}$/.test(v.bookingRequestReference) ||
       typeof v.bookingReference !== "string" ||
       typeof v.cottageName !== "string" ||
+      typeof v.cancelled !== "boolean" ||
       typeof v.confirmedAt !== "string" ||
       Number.isNaN(Date.parse(v.confirmedAt)) ||
       (v.actorRole !== "customer" && v.actorRole !== "cottage_owner")

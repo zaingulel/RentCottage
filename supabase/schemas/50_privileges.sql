@@ -1368,3 +1368,6 @@ GRANT EXECUTE ON FUNCTION public.request_automatic_booking_refund(uuid,text,json
 
 REVOKE ALL ON FUNCTION public.booking_notification_event_binding(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.booking_notification_is_deliverable(public.booking_confirmation_notification_work) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.get_booking_financial_view(text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_booking_financial_view(text,text) TO authenticated;

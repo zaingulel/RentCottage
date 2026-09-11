@@ -1,3 +1,5 @@
+import { loadBookingFinancialView } from "@/booking-request/request-booking-financial-view";
+import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import Link from "next/link";
@@ -39,8 +41,10 @@ export default async function CustomerBookingRequestPage({
       />
     );
   let confirmed;
+  let financial;
   try {
     confirmed = await loadConfirmedBookingAccess(reference);
+    financial = await loadBookingFinancialView(reference, "customer");
   } catch (error) {
     unstable_rethrow(error);
     console.error("Customer confirmed Booking load failed", {
@@ -66,10 +70,19 @@ export default async function CustomerBookingRequestPage({
         returnTo={returnTo}
       />
     );
+  if (financial?.cancellation)
+    return (
+      <main className="results-page">
+        <BookingFinancialDetails locale={locale} view={financial} />
+      </main>
+    );
   if (confirmed)
     return (
       <main className="results-page">
         <ConfirmedBookingDetails locale={locale} {...confirmed} />
+        {financial ? (
+          <BookingFinancialDetails locale={locale} view={financial} />
+        ) : null}
       </main>
     );
   let request;

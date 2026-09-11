@@ -2,7 +2,10 @@ import { render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 
 import { parseAdministratorPaymentHistory } from "@/booking-request/administrator-payment-history";
-import { administratorPaymentHistoryCodeMessages } from "@/i18n/administrator-payment-history-messages";
+import {
+  administratorPaymentHistoryCodeMessages,
+  administratorPaymentHistoryMessages,
+} from "@/i18n/administrator-payment-history-messages";
 
 import { AdministratorPaymentHistoryView } from "./administrator-payment-history";
 
@@ -228,5 +231,53 @@ it.each(["en", "ar", "ckb"] as const)(
         administratorPaymentHistoryCodeMessages[locale].succeeded,
       ),
     ).toHaveLength(2);
+  },
+);
+
+it.each([
+  ["en", "Cancelled booking", "Cancelled by an administrator"],
+  ["ar", "حجز ملغى", "ألغاه مسؤول المنصة"],
+  ["ckb", "حجزی هەڵوەشاوە", "بەڕێوەبەر هەڵیوەشاندووەتەوە"],
+] as const)(
+  "renders cancelled current state and the attributed event in %s",
+  (locale, cancelled, reason) => {
+    render(
+      <AdministratorPaymentHistoryView
+        locale={locale}
+        history={{
+          ...history,
+          current: { ...history.current, paymentStatus: "cancelled" },
+          events: [
+            ...history.events,
+            {
+              id: "30000000-0000-4000-8000-000000000137",
+              kind: "state-transition",
+              source: "booking-request",
+              provenance: "observed",
+              fromState: "paid-confirmed",
+              toState: "cancelled",
+              reasonCode: "platform_administrator-cancellation",
+              recordedAt: "2026-09-11T22:45:43.554068+00:00",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      within(
+        screen.getByRole("region", {
+          name: administratorPaymentHistoryMessages[locale].current,
+        }),
+      ).getByText(cancelled),
+    ).toBeVisible();
+    expect(screen.getByText(reason).closest("li")).toHaveTextContent(cancelled);
+    expect(
+      screen.getByText(
+        administratorPaymentHistoryCodeMessages[locale].succeeded,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("platform_administrator-cancellation"),
+    ).not.toBeInTheDocument();
   },
 );

@@ -1,3 +1,6 @@
+import { loadBookingFinancialView } from "@/booking-request/request-booking-financial-view";
+import { BookingFinancialDetails } from "@/components/booking-financial-details";
+import { bookingManagementMessages } from "@/i18n/booking-management-messages";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
@@ -45,12 +48,28 @@ export default async function AdministratorPaymentHistoryPage({
       </main>
     );
   }
+  let financial;
+  let financialUnavailable = false;
+  try {
+    financial = await loadBookingFinancialView(
+      reference,
+      "platform_administrator",
+    );
+  } catch (error) {
+    unstable_rethrow(error);
+    financialUnavailable = true;
+  }
   return (
     <main className="owner-application-page payment-history-page">
       <header className="owner-application-header">
         <Link href={`/${locale}/administrator/payments`}>{copy.back}</Link>
         <span>{copy.eyebrow}</span>
       </header>
+      {financial ? (
+        <BookingFinancialDetails locale={locale} view={financial} />
+      ) : financialUnavailable ? (
+        <p role="alert">{bookingManagementMessages[locale].unavailableView}</p>
+      ) : null}
       <AdministratorPaymentHistoryView
         locale={locale}
         history={result.history}
