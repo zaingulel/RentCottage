@@ -80,9 +80,10 @@ describe("confirmed booking details", () => {
     expect(
       screen.getByRole("button", { name: "دووبارە هەوڵدانەوەی ئاگادارکردن" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "مێژووی حجزەکان" }),
-    ).toHaveAttribute("href", "/ckb/bookings");
+    expect(screen.getByRole("link", { name: "حجزەکانم" })).toHaveAttribute(
+      "href",
+      "/ckb/bookings",
+    );
   });
   it("does not offer retry for uncertain delivery", () => {
     render(

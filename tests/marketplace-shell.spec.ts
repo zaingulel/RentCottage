@@ -2,24 +2,24 @@ import { expect, test } from "@playwright/test";
 
 const ownerSignIn = {
   en: {
-    label: "Owner sign-in",
-    history: "Booking History",
-    href: "/en/owner/access",
-    heading: "Cottage Owner access",
+    label: "List your cottage",
+    history: "Sign in",
+    href: "/en/access?returnTo=%2Fen%2Fowner%2Fapplication",
+    heading: "Sign in or create an account",
     dir: "ltr",
   },
   ar: {
-    label: "دخول مالك البيت",
-    history: "سجل الحجوزات",
-    href: "/ar/owner/access",
-    heading: "دخول مالك البيت",
+    label: "أدرج كوخك",
+    history: "تسجيل الدخول",
+    href: "/ar/access?returnTo=%2Far%2Fowner%2Fapplication",
+    heading: "سجّل الدخول أو أنشئ حسابًا",
     dir: "rtl",
   },
   ckb: {
-    label: "چوونەژوورەوەی خاوەنی ماڵ",
-    history: "مێژووی حجزەکان",
-    href: "/ckb/owner/access",
-    heading: "چوونەژوورەوەی خاوەنی ماڵ",
+    label: "کۆتێجەکەت تۆمار بکە",
+    history: "چوونەژوورەوە",
+    href: "/ckb/access?returnTo=%2Fckb%2Fowner%2Fapplication",
+    heading: "بچۆ ژوورەوە یان هەژمارێک دروست بکە",
     dir: "rtl",
   },
 } as const;
@@ -57,7 +57,7 @@ test("keeps the Retreat shell within the Arabic viewport", async ({ page }) => {
   await expect(page.getByRole("navigation", { name: "اللغة" })).toBeVisible();
 });
 
-test("Booking History and Owner sign-in stay localized and keyboard-operable", async ({
+test("shared sign-in and owner enrollment stay localized and keyboard-operable", async ({
   page,
 }, testInfo) => {
   for (const [locale, copy] of Object.entries(ownerSignIn)) {
@@ -78,7 +78,12 @@ test("Booking History and Owner sign-in stay localized and keyboard-operable", a
     });
     await page.keyboard.press("Tab");
     await expect(
-      page.getByRole("link", { name: /RentCottage|ڕێنت کۆتاج|ريف كوتج/ }),
+      page
+        .getByRole("navigation", {
+          name:
+            locale === "en" ? "Account" : locale === "ar" ? "الحساب" : "هەژمار",
+        })
+        .getByRole("link", { name: "RentCottage", exact: true }),
     ).toBeFocused();
     await page.keyboard.press("Tab");
     const historyLink = page.getByRole("link", {
@@ -86,7 +91,10 @@ test("Booking History and Owner sign-in stay localized and keyboard-operable", a
       exact: true,
     });
     await expect(historyLink).toBeFocused();
-    await expect(historyLink).toHaveAttribute("href", `/${locale}/bookings`);
+    await expect(historyLink).toHaveAttribute(
+      "href",
+      `/${locale}/access?returnTo=%2F${locale}%2Fbookings`,
+    );
     await expect(historyLink).toHaveCSS("outline-style", "solid");
     await page.keyboard.press("Tab");
     await expect(ownerLink).toBeFocused();
@@ -96,10 +104,14 @@ test("Booking History and Owner sign-in stay localized and keyboard-operable", a
       fullPage: true,
     });
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(new RegExp(`${copy.href}$`));
+    await expect(page).toHaveURL(copy.href);
     await expect(
       page.getByRole("heading", { name: copy.heading }),
     ).toBeVisible();
+    await page.screenshot({
+      path: `test-results/shared-access-${testInfo.project.name}-${locale}.png`,
+      fullPage: true,
+    });
   }
 
   if (testInfo.project.name === "mobile") {

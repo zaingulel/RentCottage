@@ -940,3 +940,6 @@ ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "paymen
 ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_event_key" UNIQUE (provider,environment,merchant_id,terminal_id,event_id);
 ALTER TABLE ONLY "public"."simulated_payment_effects" ADD CONSTRAINT "simulated_payment_effects_pkey" PRIMARY KEY (operation_id);
 ALTER TABLE ONLY "public"."simulated_payment_effects" ADD CONSTRAINT "simulated_payment_effects_idempotency_key" UNIQUE (provider,environment,merchant_id,terminal_id,idempotency_key);
+
+ALTER TABLE ONLY "public"."booking_requests"
+    ADD CONSTRAINT "booking_requests_distinct_participants" CHECK ((customer_user_id <> owner_user_id));

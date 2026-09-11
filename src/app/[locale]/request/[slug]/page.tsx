@@ -1,3 +1,4 @@
+import { hasCustomerCapability } from "@/access/account-access";
 import { notFound } from "next/navigation";
 
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
@@ -82,7 +83,7 @@ export default async function RequestPage({
       const context = await new SupabaseAccountContextStore(
         await createRequestSupabaseClient(),
       ).resolve();
-      customerReady = context?.role === "customer";
+      customerReady = hasCustomerCapability(context);
     } catch {
       customerAccessUnavailable = true;
       console.error("Booking Request Customer access check failed", {

@@ -35,10 +35,17 @@ function accountContexts(
   return {
     current: initial,
     async claimMarketplaceRole(role) {
-      if (this.current && this.current.role !== role) {
+      if (this.current?.role === "platform_administrator") {
         return { status: "role_conflict" };
       }
 
+      if (this.current?.role === "customer" && role === "cottage_owner") {
+        this.current = {
+          userId: this.current.userId,
+          role,
+          approvalState: "prospective",
+        };
+      }
       this.current ??=
         role === "customer"
           ? { userId: "customer-user", role }
@@ -80,7 +87,6 @@ describe("account access", () => {
       access.verifyPhoneAccess({
         phone: "+9647500000000",
         code: "123456",
-        role: "customer",
       }),
     ).resolves.toEqual({
       status: "authenticated",
@@ -88,51 +94,58 @@ describe("account access", () => {
     });
   });
 
-  it("gives a verified Cottage Owner only prospective owner access", async () => {
-    const contexts = accountContexts();
+  it.each(["prospective", "approved", "expired", "suspended"] as const)(
+    "signs in an existing %s owner with customer capability without changing approval",
+    async (approvalState) => {
+      const contexts = accountContexts({
+        userId: "owner-user",
+        role: "cottage_owner",
+        approvalState,
+      });
+      const access = createAccountAccess({
+        identityProvider: identityProvider("owner-user"),
+        accountContexts: contexts,
+      });
+      await expect(
+        access.verifyPhoneAccess({ phone: "+9647500000001", code: "123456" }),
+      ).resolves.toEqual({
+        status: "authenticated",
+        context: { userId: "owner-user", role: "cottage_owner", approvalState },
+      });
+    },
+  );
+
+  it("enrolls an authenticated customer explicitly without changing identity", async () => {
+    const contexts = accountContexts({
+      userId: "customer-user",
+      role: "customer",
+    });
     const access = createAccountAccess({
-      identityProvider: identityProvider("owner-user"),
+      identityProvider: identityProvider(),
       accountContexts: contexts,
     });
-
-    await expect(
-      access.verifyPhoneAccess({
-        phone: "+9647500000001",
-        code: "123456",
-        role: "cottage_owner",
-      }),
-    ).resolves.toEqual({
-      status: "authenticated",
+    await expect(access.enrollOwner()).resolves.toEqual({
+      status: "enrolled",
       context: {
-        userId: "owner-user",
+        userId: "customer-user",
         role: "cottage_owner",
         approvalState: "prospective",
       },
     });
   });
 
-  it("signs out when a verified identity tries to claim a second role", async () => {
-    let signedOut = false;
-    const provider = identityProvider();
-    provider.signOut = async () => {
-      signedOut = true;
-    };
-    const access = createAccountAccess({
-      identityProvider: provider,
-      accountContexts: accountContexts({
-        userId: "customer-user",
-        role: "customer",
-      }),
+  it("refuses public administrator enrollment", async () => {
+    const contexts = accountContexts({
+      userId: "admin-user",
+      role: "platform_administrator",
     });
-
-    await expect(
-      access.verifyPhoneAccess({
-        phone: "+9647500000",
-        code: "123456",
-        role: "cottage_owner",
-      }),
-    ).resolves.toEqual({ status: "role_conflict" });
-    expect(signedOut).toBe(true);
+    const access = createAccountAccess({
+      identityProvider: identityProvider("admin-user"),
+      accountContexts: contexts,
+    });
+    await expect(access.enrollOwner()).resolves.toEqual({
+      status: "not_authorized",
+    });
   });
 
   it("signs out when phone verification returns another identity's context", async () => {
@@ -150,7 +163,6 @@ describe("account access", () => {
       access.verifyPhoneAccess({
         phone: "+9647500000000",
         code: "123456",
-        role: "customer",
       }),
     ).resolves.toEqual({ status: "not_authorized" });
     expect(signedOut).toBe(true);
@@ -176,7 +188,6 @@ describe("account access", () => {
       access.verifyPhoneAccess({
         phone: "+9647500000000",
         code: "123456",
-        role: "customer",
       }),
     ).rejects.toThrow("role store unavailable");
     expect(signedOut).toBe(true);

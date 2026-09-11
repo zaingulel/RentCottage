@@ -6,7 +6,6 @@ import { messages } from "@/i18n/messages";
 import type { Locale } from "@/i18n/routing";
 import { useRoutedLocale } from "@/i18n/use-routed-locale";
 
-import { ActionLink } from "./interaction-controls";
 import { LocaleButtons } from "./locale-buttons";
 import { CottageDiscoveryForm } from "./cottage-discovery-form";
 
@@ -41,26 +40,6 @@ export function MarketplaceShell({
             <span>{copy.tagline}</span>
           </a>
           <div className="retreat-access">
-            <ActionLink
-              kind="secondary"
-              width="content"
-              href={`/${locale}/bookings`}
-            >
-              {
-                {
-                  en: "Booking History",
-                  ar: "سجل الحجوزات",
-                  ckb: "مێژووی حجزەکان",
-                }[locale]
-              }
-            </ActionLink>
-            <ActionLink
-              kind="secondary"
-              width="content"
-              href={`/${locale}/owner/access`}
-            >
-              {copy.ownerSignIn}
-            </ActionLink>
             <LocaleButtons
               className="language-switcher"
               locale={locale}

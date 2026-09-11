@@ -59,9 +59,7 @@ const browserFixtures: Record<
       sendCode: string;
       code: string;
       verify: string;
-      verifiedOwner: string;
-      ownerApplicationCta: string;
-      cottageProfilesCta: string;
+      enroll: string;
     };
     application: BrowserApplicationFixture;
     review: {
@@ -77,10 +75,7 @@ const browserFixtures: Record<
       sendCode: "Send verification code",
       code: "Verification code",
       verify: "Verify",
-      verifiedOwner:
-        "Verified. Your Cottage Owner access is awaiting approval.",
-      ownerApplicationCta: "Continue to Owner Application",
-      cottageProfilesCta: "Open Cottage Profiles",
+      enroll: "Start owner application",
     },
     application: {
       privacyNote:
@@ -129,9 +124,7 @@ const browserFixtures: Record<
       sendCode: "أرسل رمز التحقق",
       code: "رمز التحقق",
       verify: "تحقق",
-      verifiedOwner: "تم التحقق. حساب المالك ما زال بانتظار الموافقة.",
-      ownerApplicationCta: "تابع إلى طلب المالك",
-      cottageProfilesCta: "افتح ملفات الأكواخ",
+      enroll: "ابدأ طلب المالك",
     },
     application: {
       privacyNote:
@@ -180,9 +173,7 @@ const browserFixtures: Record<
       sendCode: "کۆدی پشتڕاستکردنەوە بنێرە",
       code: "کۆدی پشتڕاستکردنەوە",
       verify: "پشتڕاست بکەرەوە",
-      verifiedOwner: "پشتڕاست کرایەوە. هەژماری خاوەن چاوەڕێی پەسەندە.",
-      ownerApplicationCta: "بەردەوام بە بۆ داواکاری خاوەن",
-      cottageProfilesCta: "پرۆفایلەکانی کۆتێج بکەرەوە",
+      enroll: "داواکاری خاوەن دەست پێ بکە",
     },
     application: {
       privacyNote:
@@ -387,11 +378,9 @@ async function openOwnerApplication(
   await page.getByRole("button", { name: copy.sendCode }).click();
   await page.getByLabel(copy.code).fill("123456");
   await page.getByRole("button", { name: copy.verify }).click();
-  await expect(page.getByText(copy.verifiedOwner)).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: copy.cottageProfilesCta }),
-  ).toHaveCount(0);
-  await page.getByRole("link", { name: copy.ownerApplicationCta }).click();
+  await expect(page.getByRole("button", { name: copy.enroll })).toBeVisible();
+  await page.getByRole("button", { name: copy.enroll }).click();
+  await expect(page).toHaveURL(new RegExp(`/${locale}/owner/application$`));
 }
 
 async function saveOwnerApplicationDraft(
@@ -581,20 +570,26 @@ test("the fictional booking-request back door is unavailable", async ({
   expect(response?.status()).toBe(404);
 });
 
-test("Owner sign-in from the homepage gives a prospective Cottage Owner no approved-owner claim", async ({
+test("shared sign-in from the homepage returns a prospective owner to their private application", async ({
   page,
 }) => {
   await page.goto("/ckb");
   await page
-    .getByRole("link", { name: "چوونەژوورەوەی خاوەنی ماڵ", exact: true })
+    .getByRole("link", { name: "کۆتێجەکەت تۆمار بکە", exact: true })
     .click();
-  await expect(page).toHaveURL(/\/ckb\/owner\/access$/);
-  await page.getByLabel("ژمارە تەلەفۆنی عێراقی").fill("+9647500000001");
+  await expect(page).toHaveURL(/\/ckb\/access\?returnTo=/);
+  await page.getByLabel("ژمارە تەلەفۆنی عێراقی").fill("+9647500000002");
   await page.getByRole("button", { name: "کۆدی پشتڕاستکردنەوە بنێرە" }).click();
   await page.getByLabel("کۆدی پشتڕاستکردنەوە").fill("123456");
   await page.getByRole("button", { name: "پشتڕاست بکەرەوە" }).click();
 
-  await expect(page.getByText(/چاوەڕێی پەسەندە/)).toBeVisible();
+  await expect(page).toHaveURL(/\/ckb\/owner\/application$/);
+  await expect(
+    page.getByLabel(browserFixtures.ckb.application.legalName),
+  ).toHaveValue("Concurrent Upload Test");
+  await expect(
+    page.getByRole("button", { name: "Create another cottage draft" }),
+  ).toHaveCount(0);
 });
 
 test("Arabic access renders right to left", async ({ page }) => {
@@ -891,12 +886,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page.getByRole("button", { name: "Send verification code" }).click();
   await page.getByLabel("Verification code").fill("123456");
   await page.getByRole("button", { name: "Verify" }).click();
-  await expect(page.getByText(/Verified/)).toBeVisible();
-  await page
-    .getByRole("link", {
-      name: browserFixtures.en.access.cottageProfilesCta,
-    })
-    .click();
+  await expect(page).toHaveURL(/\/en\/owner\/cottages$/);
 
   await expect(
     page.getByRole("heading", { name: "Your cottages" }),
@@ -1591,7 +1581,25 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     fullPage: true,
   });
 
-  await openOwnerApplication(page, "en", reviewFixture.reviewOwnerPhone);
+  await page.goto("/en/owner/access");
+  await expect(
+    page.getByRole("heading", {
+      name: "This booking is not available to this account. Sign out to use another account.",
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Sign out" })
+    .click();
+  await expect(page).toHaveURL(/\/en$/);
+  await page.goto("/en/owner/access");
+  await page
+    .getByLabel("Iraqi phone number")
+    .fill(reviewFixture.reviewOwnerPhone);
+  await page.getByRole("button", { name: "Send verification code" }).click();
+  await page.getByLabel("Verification code").fill("123456");
+  await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(page).toHaveURL(/\/en\/owner\/application$/);
   await expect(
     page
       .locator(".owner-review-status")
@@ -2206,4 +2214,196 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     path: testInfo.outputPath("public-cottage-profile-unavailable.png"),
     fullPage: true,
   });
+});
+
+test("one account returns to customer bookings, enrolls explicitly and signs out only this device", async ({
+  page,
+  browser,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  const suffix = { mobile: "0", desktop: "1", worker: "2" }[
+    testInfo.project.name
+  ];
+  if (!suffix) throw new Error("Shared account fixture project is unmapped");
+  const phone = `+964755000000${suffix}`;
+  assertIsolatedLocalAccessDatabase();
+  const before = await auditClient.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (before.error) throw before.error;
+  expect(
+    before.data.users.some(
+      (user) => user.phone?.replace(/^\+/, "") === phone.slice(1),
+    ),
+  ).toBe(false);
+  async function verify(target: Page) {
+    await target.getByLabel("Iraqi phone number").fill(phone);
+    await target
+      .getByRole("button", { name: "Send verification code" })
+      .click();
+    await expect(target.getByLabel("Verification code")).toBeVisible();
+    await target.getByLabel("Verification code").fill("123456");
+    await target.getByRole("button", { name: "Verify", exact: true }).click();
+  }
+  await page.goto("/en/bookings");
+  await expect(page).toHaveURL(/\/en\/access\?returnTo=%2Fen%2Fbookings/);
+  await verify(page);
+  await expect(
+    page.getByRole("heading", { name: "My bookings", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("No confirmed bookings yet.")).toBeVisible();
+  const users = await auditClient.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (users.error) throw users.error;
+  const identity = users.data.users.filter(
+    (user) => user.phone?.replace(/^\+/, "") === phone.slice(1),
+  );
+  expect(identity).toHaveLength(1);
+  const userId = identity[0].id;
+  const { createLocalSupabaseConcurrencyHarness } = createRequire(
+    import.meta.url,
+  )("../scripts/local-supabase-concurrency-harness.mjs") as {
+    createLocalSupabaseConcurrencyHarness(): {
+      guardDisposableLocalDatabase(): void;
+      runSql(sql: string): string;
+    };
+  };
+  const database = createLocalSupabaseConcurrencyHarness();
+  database.guardDisposableLocalDatabase();
+  expect(userId).toMatch(/^[0-9a-f-]{36}$/);
+  function accountContext() {
+    return JSON.parse(
+      database.runSql(`
+      select json_build_object('user_id', user_id, 'role', role,
+        'owner_approval_state', owner_approval_state)
+      from public.account_contexts where user_id = '${userId}'::uuid;
+    `),
+    ) as { user_id: string; role: string; owner_approval_state: string | null };
+  }
+  expect(accountContext()).toEqual({
+    user_id: userId,
+    role: "customer",
+    owner_approval_state: null,
+  });
+  await page.getByText("Account", { exact: true }).click();
+  await page.screenshot({
+    path: `test-results/account-menu-${testInfo.project.name}.png`,
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "List your cottage" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Become a Cottage Owner" }),
+  ).toBeVisible();
+  expect(accountContext().role).toBe("customer");
+  await page.screenshot({
+    path: `test-results/account-enrollment-${testInfo.project.name}.png`,
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Start owner application" }).click();
+  await expect(page).toHaveURL(/\/en\/owner\/application$/);
+  expect(accountContext()).toEqual({
+    user_id: userId,
+    role: "cottage_owner",
+    owner_approval_state: "prospective",
+  });
+  function prepareLaterSignIn() {
+    // Model a later visit without waiting for or weakening the provider's OTP rate limit.
+    expect(
+      database.runSql(`
+      update auth.users set confirmation_sent_at = now() - interval '1 hour'
+      where id = '${userId}'::uuid and phone = '${phone.slice(1)}' returning id;
+    `),
+    ).toBe(userId);
+  }
+  prepareLaterSignIn();
+  const second = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+  });
+  const secondPage = await second.newPage();
+  try {
+    await secondPage.goto("/en/bookings");
+    await verify(secondPage);
+    await expect(
+      secondPage.getByRole("heading", { name: "My bookings", exact: true }),
+    ).toBeVisible();
+    await page.getByText("Account", { exact: true }).click();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page).toHaveURL(/\/en$/);
+    await expect(
+      page.getByRole("link", { name: "Sign in", exact: true }),
+    ).toBeVisible();
+    await page.goto("/en/bookings");
+    await expect(page.getByLabel("Iraqi phone number")).toBeVisible();
+    await secondPage.reload();
+    await expect(
+      secondPage.getByRole("heading", { name: "My bookings", exact: true }),
+    ).toBeVisible();
+    prepareLaterSignIn();
+    await verify(page);
+    await expect(
+      page.getByRole("heading", { name: "My bookings", exact: true }),
+    ).toBeVisible();
+    const returning = await auditClient.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    if (returning.error) throw returning.error;
+    expect(
+      returning.data.users
+        .filter((user) => user.phone?.replace(/^\+/, "") === phone.slice(1))
+        .map((user) => user.id),
+    ).toEqual([userId]);
+    await page.goto("/en/booking-requests/RC-REQ-2142142142142142");
+    await expect(page.getByRole("main").getByRole("alert")).toContainText(
+      "This booking is not available to this account.",
+    );
+    await expect(
+      page
+        .getByRole("button", { name: "Sign out", exact: true })
+        .filter({ visible: true }),
+    ).toBeVisible();
+    for (const control of [
+      page
+        .getByRole("main")
+        .getByRole("button", { name: "Sign out", exact: true }),
+      page
+        .getByRole("main")
+        .getByRole("link", { name: "Try again", exact: true }),
+    ]) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+    await page.screenshot({
+      path: `test-results/account-denied-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+    await page.context().clearCookies();
+    await page.reload();
+    await expect(page).toHaveURL(
+      /\/en\/access\?returnTo=%2Fen%2Fbooking-requests%2FRC-REQ-2142142142142142/,
+    );
+    await page.screenshot({
+      path: `test-results/account-return-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  } catch (error) {
+    try {
+      await secondPage.screenshot({
+        path: `test-results/account-second-device-failure-${testInfo.project.name}.png`,
+        fullPage: true,
+      });
+      await second.close();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "Account journey failed; second-context cleanup also failed",
+      );
+    }
+    throw error;
+  }
+  await second.close();
 });

@@ -250,7 +250,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     .click();
   await ownerPage.getByLabel("Verification code").fill("123456");
   await ownerPage.getByRole("button", { name: "Verify", exact: true }).click();
-  await ownerPage.getByRole("link", { name: "Open Cottage Profiles" }).click();
+  await expect(ownerPage).toHaveURL(/\/en\/owner\/cottages$/);
   const ownerNotice = ownerPage.getByRole("article", {
     name: requestReference,
   });
@@ -754,9 +754,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
       page.getByRole("heading", { name: "Confirmed booking" }),
     ).toBeVisible();
     await expect(page.getByRole("status")).toContainText("Delivered");
-    await page.getByRole("link", { name: "Booking History" }).click();
+    await page.getByRole("link", { name: "My bookings" }).click();
     await expect(
-      page.getByRole("heading", { name: "Booking History" }),
+      page.getByRole("heading", { name: "My bookings" }),
     ).toBeVisible();
     const customerHistoryLink = page.locator(
       `a[href="/en/booking-requests/${requestReference}"]`,
@@ -774,7 +774,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
       ownerPage.getByRole("heading", { name: "Confirmed booking" }),
     ).toBeVisible();
     await expect(ownerPage.getByRole("status")).toContainText("Delivered");
-    await ownerPage.getByRole("link", { name: "Booking History" }).click();
+    await ownerPage
+      .getByRole("link", { name: "Bookings for my cottages" })
+      .click();
     const ownerHistoryLink = ownerPage.locator(
       `a[href="/en/owner/booking-requests/${requestReference}"]`,
     );

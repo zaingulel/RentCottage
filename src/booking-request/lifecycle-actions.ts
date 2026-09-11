@@ -1,5 +1,6 @@
 "use server";
 
+import { hasCustomerCapability } from "@/access/account-access";
 import { revalidatePath } from "next/cache";
 
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
@@ -40,7 +41,7 @@ export async function actOnBookingRequest(
     if (!context) return { status: "access-required" };
     let result: BookingRequestLifecycleResult;
     if (input.action === "withdraw") {
-      if (context.role !== "customer") return { status: "access-required" };
+      if (!hasCustomerCapability(context)) return { status: "access-required" };
       result = await lifecycle.act({
         actor: "customer",
         actorUserId: context.userId,

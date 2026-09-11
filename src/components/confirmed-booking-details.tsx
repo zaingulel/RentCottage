@@ -1,3 +1,4 @@
+import { accessMessages } from "@/i18n/access-messages";
 import Link from "next/link";
 import type { ConfirmedBookingAccess } from "@/booking-request/confirmed-booking-access";
 import type { PaidConfirmationNotificationPresentationStatus } from "@/booking-request/request-confirmed-booking-access";
@@ -31,7 +32,6 @@ const messages = {
     retryFailed:
       "The notice could not be retried. Your booking details are still available.",
     retryQueued: "Confirmation notice queued for retry.",
-    history: "Booking History",
     delivered: "Delivered",
     historical: "Delivered before access was withdrawn",
     pending: "Pending",
@@ -65,7 +65,6 @@ const messages = {
     retry: "إعادة محاولة إشعار التأكيد",
     retryFailed: "تعذرت إعادة محاولة الإشعار. لا تزال تفاصيل حجزك متاحة.",
     retryQueued: "تم وضع إشعار التأكيد في قائمة إعادة المحاولة.",
-    history: "سجل الحجوزات",
     delivered: "تم التسليم",
     historical: "تم التسليم قبل سحب الوصول",
     pending: "قيد الانتظار",
@@ -101,7 +100,6 @@ const messages = {
     retryFailed:
       "دووبارە هەوڵدانەوەی ئاگادارکردنەوەکە سەرکەوتوو نەبوو. وردەکارییەکانی حجزەکەت هەر بەردەستن.",
     retryQueued: "ئاگادارکردنەوەی پشتڕاستکردن بۆ دووبارە هەوڵدانەوە ڕیزکرا.",
-    history: "مێژووی حجزەکان",
     delivered: "گەیەنرا",
     historical: "پێش لابردنی دەستگەیشتن گەیەنرا",
     pending: "چاوەڕێ",
@@ -141,7 +139,13 @@ export function ConfirmedBookingDetails({
           <p>{access.cottageName}</p>
           <strong>{access.bookingReference}</strong>
         </div>
-        <Link href={`/${locale}/bookings`}>{c.history}</Link>
+        <Link
+          href={`/${locale}/bookings${access.actorRole === "cottage_owner" ? "?workspace=owner" : ""}`}
+        >
+          {access.actorRole === "customer"
+            ? accessMessages[locale].myBookings
+            : accessMessages[locale].ownerBookings}
+        </Link>
       </header>
       {practicalDetailsIncomplete ? (
         <p role="status" aria-label={c.incomplete}>

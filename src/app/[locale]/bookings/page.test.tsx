@@ -8,17 +8,29 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
   unstable_rethrow: vi.fn(),
 }));
+vi.mock("@/access/request-account-context", () => ({
+  requireRequestAccount: vi.fn().mockResolvedValue({
+    status: "authenticated",
+    context: { role: "customer", userId: "fixture" },
+  }),
+}));
+vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
 import BookingHistoryPage from "./page";
 describe("Booking History failure", () => {
   it.each([
-    ["en", "Booking History is unavailable. Please try again."],
-    ["ar", "سجل الحجوزات غير متاح. يرجى المحاولة مرة أخرى."],
-    ["ckb", "مێژووی حجزەکان بەردەست نییە. تکایە دووبارە هەوڵ بدەوە."],
+    ["en", "Account access is unavailable. Please try again."],
+    ["ar", "الوصول إلى الحساب غير متاح. يرجى المحاولة مجددًا."],
+    ["ckb", "دەستگەیشتن بە هەژمار بەردەست نییە. تکایە دووبارە هەوڵ بدەوە."],
   ])("explains an unavailable history in %s", async (locale, message) => {
     loadHistory.mockRejectedValue(new Error("private database diagnostic"));
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      render(await BookingHistoryPage({ params: Promise.resolve({ locale }) }));
+      render(
+        await BookingHistoryPage({
+          params: Promise.resolve({ locale }),
+          searchParams: Promise.resolve({}),
+        }),
+      );
       expect(screen.getByRole("alert")).toHaveTextContent(message);
       expect(
         screen.queryByText("private database diagnostic"),

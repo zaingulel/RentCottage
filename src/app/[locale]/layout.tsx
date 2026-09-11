@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { AccountNavigation } from "@/components/account-navigation";
+import { resolveRequestAccount } from "@/access/request-account-context";
 import type { ReactNode } from "react";
 
 import { directionFor, isLocale, locales } from "@/i18n/routing";
@@ -25,9 +27,27 @@ export default async function LocaleLayout({
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
 
+  const account = await resolveRequestAccount();
+  const navigationAccount =
+    account.status === "authenticated"
+      ? {
+          status: account.status,
+          context: account.context
+            ? {
+                role: account.context.role,
+                ...(account.context.role === "cottage_owner"
+                  ? { approvalState: account.context.approvalState }
+                  : {}),
+              }
+            : undefined,
+        }
+      : account;
   return (
     <html lang={locale} dir={directionFor(locale)}>
-      <body>{children}</body>
+      <body>
+        <AccountNavigation locale={locale} account={navigationAccount} />
+        {children}
+      </body>
     </html>
   );
 }

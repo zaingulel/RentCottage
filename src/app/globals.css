@@ -2791,3 +2791,59 @@ a:focus-visible {
     flex-direction: column;
   }
 }
+
+.account-navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem max(1rem, calc((100vw - 1200px) / 2));
+  background: #fffdf7;
+  color: #263d35;
+  border-bottom: 1px solid #d7dfd5;
+}
+.account-navigation a,
+.account-navigation button,
+.account-navigation summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+}
+.account-navigation > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+}
+.account-navigation details {
+  position: relative;
+}
+.account-navigation summary {
+  cursor: pointer;
+  list-style: revert;
+}
+.account-navigation details > div {
+  position: absolute;
+  z-index: 50;
+  inset-inline-end: 0;
+  min-width: 230px;
+  padding: 0.5rem;
+  background: #fffdf7;
+  border: 1px solid #d7dfd5;
+  box-shadow: 0 8px 24px #0002;
+  border-radius: 0.75rem;
+}
+.account-navigation details a {
+  display: flex;
+}
+.account-navigation button {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.account-navigation :focus-visible {
+  outline: 3px solid #a16b21;
+  outline-offset: 2px;
+}

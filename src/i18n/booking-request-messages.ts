@@ -71,6 +71,8 @@ export const bookingRequestMessages: Record<
     viewStatus: "View and manage this request",
     errors: {
       invalid: "Check every field and required acceptance, then try again.",
+      "self-booking-not-allowed":
+        "You cannot book your own cottage. Use your owner availability and private-block tools instead.",
       "access-required": "Verify your Customer phone number before continuing.",
       "quote-stale":
         "The price, rules, or availability changed. Refresh this quote before trying again.",
@@ -119,6 +121,8 @@ export const bookingRequestMessages: Record<
     viewStatus: "عرض هذا الطلب وإدارته",
     errors: {
       invalid: "راجع الحقول والموافقات المطلوبة ثم حاول مرة أخرى.",
+      "self-booking-not-allowed":
+        "لا يمكنك حجز كوخك. استخدم أدوات توافر المالك والحظر الخاص.",
       "access-required": "تحقق من رقم هاتف العميل قبل المتابعة.",
       "quote-stale": "تغير السعر أو القواعد أو التوفر. حدّث عرض السعر.",
       "too-late": "انتهى حد إرسال الطلب قبل ست ساعات.",
@@ -167,6 +171,8 @@ export const bookingRequestMessages: Record<
     viewStatus: "بینین و بەڕێوەبردنی ئەم داواکارییە",
     errors: {
       invalid: "خانەکان و قبوڵکردنە پێویستەکان بپشکنە و دووبارە هەوڵ بدە.",
+      "self-booking-not-allowed":
+        "ناتوانیت کۆتێجەکەی خۆت حجز بکەیت. ئامرازەکانی بەردەستبوون و داخستنی تایبەتی خاوەن بەکاربهێنە.",
       "access-required":
         "پێش بەردەوامبوون ژمارەی تەلەفۆنی کڕیار پشتڕاست بکەرەوە.",
       "quote-stale":

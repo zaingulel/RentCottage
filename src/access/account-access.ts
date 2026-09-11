@@ -10,12 +10,15 @@ export type AccountContext =
   | { userId: string; role: "platform_administrator" };
 
 export interface IdentityProvider {
-  requestPhoneCode(phone: string): Promise<{ status: "code_sent" }>;
+  requestPhoneCode(
+    phone: string,
+  ): Promise<{ status: "code_sent" } | { status: "rate_limited" }>;
   verifyPhoneCode(
     phone: string,
     code: string,
   ): Promise<
-    { status: "verified"; userId: string } | { status: "invalid_code" }
+    | { status: "verified"; userId: string }
+    | { status: "invalid_code" | "expired_code" | "rate_limited" }
   >;
   signInPlatformAdministrator(
     email: string,
@@ -73,20 +76,12 @@ export function createAccountAccess({
     requestPhoneAccess({ phone }: { phone: string }) {
       return identityProvider.requestPhoneCode(phone);
     },
-    async verifyPhoneAccess({
-      phone,
-      code,
-      role,
-    }: {
-      phone: string;
-      code: string;
-      role: MarketplaceRole;
-    }) {
+    async verifyPhoneAccess({ phone, code }: { phone: string; code: string }) {
       const identity = await identityProvider.verifyPhoneCode(phone, code);
-      if (identity.status === "invalid_code") return identity;
+      if (identity.status !== "verified") return identity;
       let result;
       try {
-        result = await accountContexts.claimMarketplaceRole(role);
+        result = await accountContexts.claimMarketplaceRole("customer");
       } catch (error) {
         await identityProvider.signOut();
         throw error;
@@ -95,12 +90,30 @@ export function createAccountAccess({
         await identityProvider.signOut();
         return result;
       }
-      if (result.context.userId !== identity.userId) {
+      if (
+        result.context.userId !== identity.userId ||
+        !hasCustomerCapability(result.context)
+      ) {
         await identityProvider.signOut();
         return { status: "not_authorized" as const };
       }
 
       return { status: "authenticated" as const, context: result.context };
+    },
+    async enrollOwner() {
+      const current = await accountContexts.resolve();
+      if (!hasCustomerCapability(current))
+        return { status: "not_authorized" as const };
+      const result =
+        await accountContexts.claimMarketplaceRole("cottage_owner");
+      if (
+        result.status !== "claimed" ||
+        result.context.userId !== current.userId ||
+        result.context.role !== "cottage_owner"
+      ) {
+        return { status: "not_authorized" as const };
+      }
+      return { status: "enrolled" as const, context: result.context };
     },
     async signInPlatformAdministrator({
       email,
@@ -181,4 +194,10 @@ export function createAccountAccess({
       return { status: "authenticated" as const, context };
     },
   };
+}
+
+export function hasCustomerCapability(
+  context: AccountContext | undefined,
+): context is Exclude<AccountContext, { role: "platform_administrator" }> {
+  return context?.role === "customer" || context?.role === "cottage_owner";
 }

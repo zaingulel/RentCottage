@@ -33,7 +33,7 @@ A person who discovers cottages and, after phone verification, submits and manag
 _Avoid_: Guest, buyer, client
 
 **Customer Account**:
-The customer identity created from a verified phone number when that customer first sends an In-Platform Message or submits a Booking Request. Browsing cottages does not require a customer account.
+The identity created from a verified phone number at sign-in, before an In-Platform Message or Booking Request. The same account may also enroll as a Cottage Owner and retain access to its own customer bookings. Browsing cottages does not require an account.
 _Avoid_: Anonymous booking, email account
 
 **Cottage**:
@@ -69,7 +69,7 @@ The mobile-friendly web experience through which cottage owners manage cottages,
 _Avoid_: Owner app, provider portal
 
 **Owner Account**:
-The phone-verified identity through which a prospective or approved cottage owner submits an application and accesses the owner backoffice. Application access does not grant publication or booking privileges.
+The same phone-verified marketplace identity after explicit owner enrollment, through which a prospective or approved cottage owner submits an application and accesses the owner backoffice. Owner enrollment requires separate approval before offering cottages. Owner approval changes do not remove access to the account's own customer bookings; an owner cannot book their own cottage.
 _Avoid_: Automatically approved owner, password-only owner account
 
 **Owner Terms Acceptance**:

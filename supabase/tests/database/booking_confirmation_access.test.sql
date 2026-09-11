@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(40);
 
 select has_function(
   'public',
@@ -145,8 +145,20 @@ reset role;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003502', true);
 set local role authenticated;
+select is((public.claim_marketplace_role('cottage_owner')).user_id::text, '10000000-0000-4000-8000-000000003502', 'customer enrolls as owner without changing identity');
 create temp table customer_access as
   select public.get_confirmed_booking_access('RC-REQ-0000000000003501') result;
+select is((select count(*)::text from public.list_confirmed_booking_history()), '1', 'prospective owner retains their customer receipt');
+reset role;
+update public.account_contexts set owner_approval_state='suspended' where user_id='10000000-0000-4000-8000-000000003502';
+set local role authenticated;
+select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')->>'actorRole', 'customer', 'suspended owner keeps their customer participation');
+select is((select count(*)::text from public.list_confirmed_booking_history()), '1', 'suspended owner keeps customer history');
+select is(public.get_booking_confirmation_notification_status('82000000-0000-4000-8000-000000003502')->>'state', 'pending', 'suspended owner keeps customer notification status');
+reset role;
+update public.account_contexts set owner_approval_state='expired' where user_id='10000000-0000-4000-8000-000000003502';
+set local role authenticated;
+select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')->>'actorRole', 'customer', 'expired owner keeps their customer participation');
 select is((select result->>'actorRole' from customer_access), 'customer', 'the actual Customer receives Customer access');
 select is((select result->>'receiptId' from customer_access), '82000000-0000-4000-8000-000000003502', 'the Customer receives only their receipt identity');
 select is((select result->>'bookingReference' from customer_access), 'CONFIRMED-BOOKING-35', 'the stable commitment reference is retained');

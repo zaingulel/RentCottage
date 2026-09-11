@@ -1,3 +1,5 @@
+import { requireRequestAccount } from "@/access/request-account-context";
+import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
@@ -26,6 +28,16 @@ export default async function CustomerBookingRequestPage({
 }) {
   const { locale, reference } = await params;
   if (!isLocale(locale) || !/^RC-REQ-[A-F0-9]{16}$/.test(reference)) notFound();
+  const returnTo = `/${locale}/booking-requests/${reference}`;
+  const account = await requireRequestAccount(locale, returnTo);
+  if (account.status === "unavailable")
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="unavailable"
+        returnTo={returnTo}
+      />
+    );
   let confirmed;
   try {
     confirmed = await loadConfirmedBookingAccess(reference);
@@ -47,7 +59,13 @@ export default async function CustomerBookingRequestPage({
     confirmed?.access.actorRole !== undefined &&
     confirmed.access.actorRole !== "customer"
   )
-    notFound();
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="denied"
+        returnTo={returnTo}
+      />
+    );
   if (confirmed)
     return (
       <main className="results-page">
@@ -63,7 +81,14 @@ export default async function CustomerBookingRequestPage({
       code: "customer_booking_request_status_failed",
     });
   }
-  if (request === null) notFound();
+  if (request === null)
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="denied"
+        returnTo={returnTo}
+      />
+    );
   if (!request)
     return (
       <main className="results-page">

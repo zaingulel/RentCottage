@@ -32,23 +32,51 @@ const startCommand = [
     "start",
     "-x",
     "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
+    "--workdir",
+    expect.any(String),
   ],
 ];
 const ownershipCommand = [
   "docker",
   [
     "inspect",
-    "supabase_db_rentcottage",
+    "supabase_db_rentcottage-verification",
     "--format",
     '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
   ],
 ];
-const resetCommand = ["npx", ["supabase", "db", "reset", "--local"]];
-const statusCommand = ["npx", ["supabase", "status", "-o", "json"]];
-const stopCommand = ["npx", ["supabase", "stop", "--no-backup"]];
+const resetCommand = [
+  "npx",
+  ["supabase", "db", "reset", "--local", "--workdir", expect.any(String)],
+];
+const statusCommand = [
+  "npx",
+  ["supabase", "status", "-o", "json", "--workdir", expect.any(String)],
+];
+const stopCommand = [
+  "npx",
+  [
+    "supabase",
+    "stop",
+    "--no-backup",
+    "--project-id",
+    "rentcottage-verification",
+    "--workdir",
+    expect.any(String),
+  ],
+];
 const declaredSchemaDiffCommand = [
   "npx",
-  ["supabase", "db", "diff", "--local", "--output-format", "json"],
+  [
+    "supabase",
+    "db",
+    "diff",
+    "--local",
+    "--output-format",
+    "json",
+    "--workdir",
+    expect.any(String),
+  ],
 ];
 const emptyDeclaredSchemaDiff = JSON.stringify({
   diff: "",
@@ -61,7 +89,7 @@ const emptyDeclaredSchemaDiff = JSON.stringify({
 });
 const databasePreflightCommands = [
   declaredSchemaDiffCommand,
-  ["npx", ["supabase", "test", "db"]],
+  ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
   [
     "node",
     [
@@ -90,9 +118,11 @@ const databasePreflightCommands = [
     ["scripts/verify-booking-request-payment-required-expiry-upgrade.mjs"],
   ],
   ["node", ["scripts/verify-booking-request-payment-history-upgrade.mjs"]],
+  ["node", ["scripts/verify-account-access-upgrade.mjs"]],
 ];
 const databaseCheckCommands = [
   ["node", ["scripts/verify-access-fixture-contract.mjs"]],
+  ["node", ["scripts/verify-account-access-concurrency.mjs"]],
   ["node", ["scripts/prepare-access-test.mjs", "create", "mobile"]],
   ["node", ["scripts/verify-cottage-profile-draft-concurrency.mjs"]],
   ["node", ["scripts/verify-cottage-shift-schedule-concurrency.mjs"]],
@@ -244,11 +274,14 @@ esac
 
 function ownedRun(
   implementation,
-  { project = "rentcottage", workdir = process.cwd() } = {},
+  { project = "rentcottage-verification", workdir } = {},
 ) {
   return vi.fn((command, args, options) => {
     if (command === "docker" && args[0] === "inspect") {
-      const ownedWorkdir = typeof workdir === "function" ? workdir() : workdir;
+      const ownedWorkdir =
+        typeof workdir === "function"
+          ? workdir()
+          : (workdir ?? options.env.SUPABASE_LOCAL_WORKDIR);
       return { status: 0, stdout: `${project}|${ownedWorkdir}\n`, stderr: "" };
     }
     if (
@@ -265,20 +298,25 @@ function ownedRun(
   });
 }
 
-function successfulRun({
-  project = "rentcottage",
-  workdir = process.cwd(),
-} = {}) {
+function successfulRun({ project = "rentcottage-verification", workdir } = {}) {
   return ownedRun(
     (command, args) => ({
       status: 0,
       stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
           ? localCredentials
           : "",
     }),
     { project, workdir },
   );
+}
+
+function mainWithPreparedProject(args, options = {}) {
+  return main(args, {
+    prepareProject: ({ stateRoot }) => join(stateRoot, "project"),
+    ...options,
+  });
 }
 
 function commands(run) {
@@ -399,6 +437,10 @@ async function observeInterruptedAccessVerification(
   const fixtureProcess = join(stateRoot, "fixture-process.mjs");
   const commandBoundary = join(stateRoot, `command-boundary-${token}.mjs`);
   const inspectionBoundary = join(stateRoot, "inspection-boundary.mjs");
+  const readinessPublisher = `const publishReady = (path, contents) => {
+  writeFileSync(path + ".pending", contents);
+  renameSync(path + ".pending", path);
+};`;
   writeFileSync(
     inspectionBoundary,
     `
@@ -468,9 +510,10 @@ syncBuiltinESMExports();
   );
   writeFileSync(
     fixtureProcess,
-    `import { writeFileSync } from "node:fs";
+    `import { renameSync, writeFileSync } from "node:fs";
+${readinessPublisher}
 const [readyFile, token, behavior = "graceful"] = process.argv.slice(2);
-writeFileSync(readyFile, JSON.stringify({ pid: process.pid, ppid: process.ppid, token }));
+publishReady(readyFile, JSON.stringify({ pid: process.pid, ppid: process.ppid, token }));
 const finish = () => process.exit(0);
 const ignore = () => { process.title = "retitled-" + token; };
 process.on("SIGTERM", behavior === "ignore" ? ignore : finish);
@@ -482,8 +525,9 @@ setInterval(() => {}, 1000);
     commandBoundary,
     `#!${process.execPath}
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
+${readinessPublisher}
 
 const command = basename(process.argv[1]);
 const args = process.argv.slice(2);
@@ -512,11 +556,11 @@ const waitFor = async (predicate) => {
 
 if (command === "docker" && args[0] === "inspect") {
   if (cleanupStage === "inspection" && existsSync(root + "/inspected")) {
-    writeFileSync(root + "/cleanup.ready", JSON.stringify({ pid: process.pid, token: "cleanup-stop-" + token }));
+    publishReady(root + "/cleanup.ready", JSON.stringify({ pid: process.pid, token: "cleanup-stop-" + token }));
     await waitFor(() => existsSync(root + "/cleanup.release"));
   }
   writeFileSync(root + "/inspected", "inspected");
-  process.stdout.write("rentcottage|" + process.cwd() + "\\n");
+  process.stdout.write(process.env.SUPABASE_LOCAL_PROJECT + "|" + process.env.SUPABASE_LOCAL_WORKDIR + "\\n");
   process.exit(0);
 }
 if (args[0] !== "supabase") process.exit(0);
@@ -533,11 +577,11 @@ if (args[1] === "start") {
 if (args[1] === "stop") {
   appendFileSync(root + "/stop.log", "stop invoked\\n");
   if (cleanupStage === "stop") {
-    writeFileSync(root + "/cleanup.ready", JSON.stringify({ pid: process.pid, token: "cleanup-stop-" + token }));
+    publishReady(root + "/cleanup.ready", JSON.stringify({ pid: process.pid, token: "cleanup-stop-" + token }));
     await waitFor(() => existsSync(root + "/cleanup.release"));
   }
   if (hangCleanup) {
-    writeFileSync(root + "/cleanup.ready", JSON.stringify({
+    publishReady(root + "/cleanup.ready", JSON.stringify({
       pid: process.pid,
       ppid: process.ppid,
       token: "cleanup-stop-" + token,
@@ -560,7 +604,7 @@ if ((args[1] === "db" && args[2] === "reset") || (args[1] === "start" && (interr
     stdio: "ignore",
   });
   await waitFor(() => existsSync(root + "/descendant.ready"));
-  writeFileSync(root + "/command.ready", JSON.stringify({
+  publishReady(root + "/command.ready", JSON.stringify({
     pid: process.pid,
     ppid: process.ppid,
     token,
@@ -642,7 +686,7 @@ if (args[1] === "status") {
               : String(completedCommandStatus),
           ACCESS_EXITED_GROUP_STATE: exitedGroupState ?? "",
           PATH: `${fakeBin}:${process.env.PATH}`,
-          SUPABASE_LOCAL_PROJECT: "rentcottage",
+          SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
           TMPDIR: stateRoot,
         },
         stdio: ["ignore", "pipe", "pipe"],
@@ -807,7 +851,7 @@ if (args[1] === "status") {
       expect(existsSync(join(stateRoot, "termination-attempt"))).toBe(false);
       const invoked = readFileSync(join(stateRoot, "commands.log"), "utf8");
       expect(invoked.trimEnd().split("\n").at(-1)).toBe(
-        "npx supabase db reset --local",
+        `npx supabase db reset --local --workdir ${realpathSync(join(retainedState, "project"))}`,
       );
       expect(invoked.match(/docker inspect/g)).toHaveLength(1);
       return;
@@ -929,8 +973,8 @@ describe("local Supabase concurrency harness", () => {
     );
     const harness = createLocalSupabaseConcurrencyHarness({
       environment: {
-        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-        SUPABASE_LOCAL_PROJECT: "rentcottage",
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+        SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
       },
       workingDirectory: "/tmp/rentcottage-worktree",
     });
@@ -949,7 +993,7 @@ describe("local Supabase concurrency harness", () => {
     });
     resolveInspection({
       status: 0,
-      stdout: "rentcottage|/tmp/rentcottage-worktree\n",
+      stdout: "rentcottage-verification|/tmp/rentcottage-worktree\n",
       stderr: "",
     });
     await guarded;
@@ -1291,6 +1335,108 @@ describe("access verification command", () => {
     );
   });
 
+  it("uses real isolated preparation by default without changing the source config", async () => {
+    const stateRoot = mkdtempSync(
+      join(tmpdir(), "rentcottage-default-verifier-"),
+    );
+    const sourcePath = join(process.cwd(), "supabase/config.toml");
+    const sourceConfig = readFileSync(sourcePath, "utf8");
+    const workdir = realpathSync(stateRoot) + "/project";
+    const run = vi.fn((command, args) => {
+      if (command === "docker")
+        return {
+          status: 0,
+          stdout: `rentcottage-verification|${workdir}\n`,
+          stderr: "",
+        };
+      if (command === "npx" && args[1] === "start") {
+        expect(existsSync(join(workdir, "supabase/config.toml"))).toBe(true);
+        expect(
+          readFileSync(join(workdir, "supabase/config.toml"), "utf8"),
+        ).toContain('project_id = "rentcottage-verification"');
+      }
+      return {
+        status: 0,
+        stdout:
+          command === "npx" && args[1] === "status"
+            ? localCredentials
+            : command === "npx" && args[2] === "diff"
+              ? emptyDeclaredSchemaDiff
+              : "",
+      };
+    });
+    try {
+      expect(
+        await main([], {
+          environment: {},
+          makeTemp: () => stateRoot,
+          run,
+        }),
+      ).toBe(0);
+      for (const [command, args] of run.mock.calls) {
+        if (command === "npx" && args[0] === "supabase")
+          expect(args.slice(-2)).toEqual(["--workdir", workdir]);
+      }
+      for (const script of [
+        "scripts/verify-account-access-upgrade.mjs",
+        "scripts/verify-account-access-concurrency.mjs",
+      ]) {
+        const invocation = run.mock.calls.find(
+          ([command, args]) => command === "node" && args[0] === script,
+        );
+        expect(invocation).toBeDefined();
+        expect(invocation[2].env).toMatchObject({
+          SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+          SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+          SUPABASE_LOCAL_WORKDIR: workdir,
+        });
+      }
+      const browser = run.mock.calls.find(
+        ([command, args]) => command === "npx" && args[0] === "playwright",
+      );
+      expect(browser).toBeDefined();
+      expect(browser[2].env).toMatchObject({
+        SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+        SUPABASE_LOCAL_WORKDIR: workdir,
+      });
+      expect(run.mock.calls.at(-1)[1]).toEqual([
+        "supabase",
+        "stop",
+        "--no-backup",
+        "--project-id",
+        "rentcottage-verification",
+        "--workdir",
+        workdir,
+      ]);
+      expect(existsSync(stateRoot)).toBe(false);
+      expect(readFileSync(sourcePath, "utf8")).toBe(sourceConfig);
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects the root project before any preparation or subprocess", async () => {
+    const makeTemp = vi.fn(() => "/tmp/forbidden-root-state");
+    const prepareProject = vi.fn(() => "/tmp/forbidden-root-state/project");
+    const removeTemp = vi.fn();
+    const run = vi.fn(() => ({ status: 1 }));
+    expect(
+      await main([], {
+        environment: { SUPABASE_LOCAL_PROJECT: "rentcottage" },
+        makeTemp,
+        prepareProject,
+        removeTemp,
+        run,
+        stderr: vi.fn(),
+      }),
+    ).toBe(2);
+    expect(makeTemp).not.toHaveBeenCalled();
+    expect(prepareProject).not.toHaveBeenCalled();
+    expect(removeTemp).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("cleans the real isolated Supabase workdir on success and retains it after uncertain startup failure", async () => {
     const workingDirectory = process.cwd();
     const sourceConfigPath = join(workingDirectory, "supabase", "config.toml");
@@ -1358,7 +1504,7 @@ describe("access verification command", () => {
 
       try {
         expect(
-          await main([], {
+          await mainWithPreparedProject([], {
             environment: {
               SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-constructor",
             },
@@ -1488,11 +1634,23 @@ describe("access verification command", () => {
     const run = vi.fn();
     const stderr = vi.fn();
 
-    expect(await main(["unexpected"], { run, stderr })).toBe(2);
+    expect(await mainWithPreparedProject(["unexpected"], { run, stderr })).toBe(
+      2,
+    );
     expect(run).not.toHaveBeenCalled();
 
-    expect(await main(["--database", "--browser"], { run, stderr })).toBe(2);
-    expect(await main(["--database", "--database"], { run, stderr })).toBe(2);
+    expect(
+      await mainWithPreparedProject(["--database", "--browser"], {
+        run,
+        stderr,
+      }),
+    ).toBe(2);
+    expect(
+      await mainWithPreparedProject(["--database", "--database"], {
+        run,
+        stderr,
+      }),
+    ).toBe(2);
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -1508,7 +1666,7 @@ describe("access verification command", () => {
           env: {
             ...process.env,
             PATH: emptyPath,
-            SUPABASE_LOCAL_PROJECT: "rentcottage",
+            SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
             TMPDIR: emptyPath,
           },
           stdio: ["ignore", "ignore", "pipe"],
@@ -1552,7 +1710,7 @@ setTimeout(() => {
           env: {
             ...process.env,
             PATH: stateRoot,
-            SUPABASE_LOCAL_PROJECT: "rentcottage",
+            SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
             TMPDIR: stateRoot,
           },
           stdio: ["ignore", "ignore", "pipe"],
@@ -1601,7 +1759,7 @@ setInterval(() => {}, 1000);
             OUTPUT_READY: ready,
             OUTPUT_TOKEN: token,
             PATH: stateRoot,
-            SUPABASE_LOCAL_PROJECT: "rentcottage",
+            SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
             TMPDIR: stateRoot,
           },
           stdio: ["ignore", "ignore", "pipe"],
@@ -1631,7 +1789,9 @@ setInterval(() => {}, 1000);
   it("runs complete database evidence without browser work", async () => {
     const run = successfulRun();
 
-    expect(await main(["--database"], { environment: {}, run })).toBe(0);
+    expect(
+      await mainWithPreparedProject(["--database"], { environment: {}, run }),
+    ).toBe(0);
 
     expect(commands(run)).toEqual([
       startCommand,
@@ -1670,13 +1830,18 @@ setInterval(() => {}, 1000);
           args.slice(0, 6).join(" ") ===
             "supabase db diff --local --output-format json"
             ? stdout
-            : command === "npx" && args.join(" ") === "supabase status -o json"
+            : command === "npx" &&
+                args.slice(0, 4).join(" ") === "supabase status -o json"
               ? localCredentials
               : "",
       }));
 
       expect(
-        await main(["--database"], { environment: {}, run, stderr: errors }),
+        await mainWithPreparedProject(["--database"], {
+          environment: {},
+          run,
+          stderr: errors,
+        }),
       ).toBe(1);
 
       expect(commands(run)).toEqual([
@@ -1701,13 +1866,18 @@ setInterval(() => {}, 1000);
             ? 7
             : 0,
         stdout:
-          command === "npx" && args.join(" ") === "supabase status -o json"
+          command === "npx" &&
+          args.slice(0, 4).join(" ") === "supabase status -o json"
             ? localCredentials
             : "",
       }));
-      expect(await main(mode, { environment: {}, run, stderr: vi.fn() })).toBe(
-        7,
-      );
+      expect(
+        await mainWithPreparedProject(mode, {
+          environment: {},
+          run,
+          stderr: vi.fn(),
+        }),
+      ).toBe(7);
       expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
       expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
         false,
@@ -1718,7 +1888,9 @@ setInterval(() => {}, 1000);
   it("runs complete browser evidence from fresh fixtures without database checks", async () => {
     const run = successfulRun();
 
-    expect(await main(["--browser"], { environment: {}, run })).toBe(0);
+    expect(
+      await mainWithPreparedProject(["--browser"], { environment: {}, run }),
+    ).toBe(0);
 
     expect(commands(run)).toEqual([
       startCommand,
@@ -1736,14 +1908,14 @@ setInterval(() => {}, 1000);
       status: 0,
       stdout:
         command === "docker" && args[0] === "inspect"
-          ? "rentcottage|/tmp/another-checkout\n"
+          ? "rentcottage-verification|/tmp/another-checkout\n"
           : "",
     }));
     const removeTemp = vi.fn();
     const stderr = vi.fn();
 
     expect(
-      await main(["--browser"], {
+      await mainWithPreparedProject(["--browser"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -1760,13 +1932,15 @@ setInterval(() => {}, 1000);
           "start",
           "-x",
           "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
+          "--workdir",
+          "/tmp/access-docker/project",
         ],
       ],
       [
         "docker",
         [
           "inspect",
-          "supabase_db_rentcottage",
+          "supabase_db_rentcottage-verification",
           "--format",
           '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
         ],
@@ -1784,14 +1958,15 @@ setInterval(() => {}, 1000);
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
           ? localCredentials
           : "",
     }));
     const removeTemp = vi.fn();
 
     expect(
-      await main(["--fixture-contract"], {
+      await mainWithPreparedProject(["--fixture-contract"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -1811,8 +1986,8 @@ setInterval(() => {}, 1000);
     expect(run.mock.calls[4][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
@@ -1824,7 +1999,7 @@ setInterval(() => {}, 1000);
     const stderr = vi.fn();
 
     expect(
-      await main([], {
+      await mainWithPreparedProject([], {
         environment: {
           SUPABASE_LOCAL_PROJECT: "rentcottage;docker-rm",
         },
@@ -1846,14 +2021,15 @@ setInterval(() => {}, 1000);
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
           ? localCredentials
           : "",
     }));
     const removeTemp = vi.fn();
 
     expect(
-      await main([], {
+      await mainWithPreparedProject([], {
         environment: {
           EXISTING: "kept",
           SUPABASE_URL: "http://127.0.0.1:59999",
@@ -1889,8 +2065,8 @@ setInterval(() => {}, 1000);
         DOCKER_CONFIG: "/tmp/access-docker",
         DO_NOT_TRACK: "1",
         EXISTING: "kept",
-        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-        SUPABASE_LOCAL_PROJECT: "rentcottage",
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+        SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
         SUPABASE_TELEMETRY_DISABLED: "1",
       },
       maxBuffer: 1024 * 1024,
@@ -1904,7 +2080,7 @@ setInterval(() => {}, 1000);
       "SUPABASE_PUBLISHABLE_KEY",
     );
     expect(run.mock.calls[1][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[12][2].env).toMatchObject({
+    expect(run.mock.calls[13][2].env).toMatchObject({
       EXISTING: "kept",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
@@ -1912,74 +2088,65 @@ setInterval(() => {}, 1000);
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
       SUPABASE_TELEMETRY_DISABLED: "1",
       DO_NOT_TRACK: "1",
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
-    expect(run.mock.calls[13][2].env).toMatchObject({
+    expect(run.mock.calls[15][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[14][2].env).toMatchObject({
+    expect(run.mock.calls[16][2].env).toMatchObject({
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
-    expect(run.mock.calls[14][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[16][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[5][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
     expect(run.mock.calls[5][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[6][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
     expect(run.mock.calls[6][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[16][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
-    });
-    expect(run.mock.calls[16][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[17][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
-    });
-    expect(run.mock.calls[17][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[18][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
     expect(run.mock.calls[18][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[19][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+    });
+    expect(run.mock.calls[19][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[20][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+    });
+    expect(run.mock.calls[20][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[21][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[20][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    expect(run.mock.calls[22][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
-    expect(run.mock.calls[20][2].env.SUPABASE_SECRET_KEY).toBe("local-secret");
-    expect(run.mock.calls[23][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
-    });
-    expect(run.mock.calls[23][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[22][2].env.SUPABASE_SECRET_KEY).toBe("local-secret");
     expect(run.mock.calls[25][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
-    expect(run.mock.calls[26][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
-    });
+    expect(run.mock.calls[25][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[27][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
-      NEXTJS_ENV: "test",
-      SUPABASE_PROJECT_REF: "local-test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[28][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
@@ -1987,29 +2154,38 @@ setInterval(() => {}, 1000);
     });
     expect(run.mock.calls[29][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
+      NEXTJS_ENV: "test",
+      SUPABASE_PROJECT_REF: "local-test",
+    });
+    expect(run.mock.calls[30][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[31][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+    });
+    expect(run.mock.calls[33][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
-    expect(run.mock.calls[32][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    expect(run.mock.calls[34][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
-    expect(run.mock.calls[32][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[33][2].env).toMatchObject({
+    expect(run.mock.calls[34][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[35][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[34][2].env).toMatchObject({
-      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage",
-      SUPABASE_LOCAL_PROJECT: "rentcottage",
+    expect(run.mock.calls[36][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
-    expect(run.mock.calls[34][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[36][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
@@ -2027,13 +2203,13 @@ setInterval(() => {}, 1000);
         return {
           status: 0,
           stdout:
-            args.join(" ") === "supabase status -o json"
+            args.slice(0, 4).join(" ") === "supabase status -o json"
               ? localCredentials
               : "",
         };
       });
       expect(
-        await main(["--browser"], {
+        await mainWithPreparedProject(["--browser"], {
           environment: {},
           makeTemp: () => "/tmp/access-docker",
           removeTemp,
@@ -2053,7 +2229,9 @@ setInterval(() => {}, 1000);
 
   it("builds Worker access and scheduled expiry once with the same real local bindings", async () => {
     const run = successfulRun();
-    expect(await main(["--browser"], { environment: {}, run })).toBe(0);
+    expect(
+      await mainWithPreparedProject(["--browser"], { environment: {}, run }),
+    ).toBe(0);
     const builds = run.mock.calls.filter(([command]) => command === "npm");
     const workers = run.mock.calls.filter(([, args]) =>
       args.includes("--project=worker"),
@@ -2091,12 +2269,13 @@ setInterval(() => {}, 1000);
           !mobileIdentityCreated
             ? 9
             : 0,
-        stdout:
-          invocation === "npx supabase status -o json" ? localCredentials : "",
+        stdout: invocation.startsWith("npx supabase status -o json ")
+          ? localCredentials
+          : "",
       };
     });
 
-    expect(await main([], { environment: {}, run })).toBe(0);
+    expect(await mainWithPreparedProject([], { environment: {}, run })).toBe(0);
     expect(mobileIdentityCreated).toBe(true);
   });
 
@@ -2109,13 +2288,14 @@ setInterval(() => {}, 1000);
           ? 7
           : 0,
       stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
           ? localCredentials
           : "",
     }));
 
     expect(
-      await main(["--browser"], {
+      await mainWithPreparedProject(["--browser"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -2130,10 +2310,7 @@ setInterval(() => {}, 1000);
           args.includes("--project=worker"),
       ),
     ).toBe(false);
-    expect(run.mock.calls.at(-1).slice(0, 2)).toEqual([
-      "npx",
-      ["supabase", "stop", "--no-backup"],
-    ]);
+    expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
@@ -2156,7 +2333,7 @@ setInterval(() => {}, 1000);
     );
 
     expect(
-      await main([], {
+      await mainWithPreparedProject([], {
         environment: {
           SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
         },
@@ -2212,31 +2389,30 @@ setInterval(() => {}, 1000);
         status:
           invocation === "node scripts/verify-booking-request-concurrency.mjs"
             ? 9
-            : invocation === "npx supabase stop --no-backup"
+            : invocation.startsWith("npx supabase stop --no-backup ")
               ? 6
               : 0,
-        stdout:
-          invocation === "npx supabase status -o json" ? localCredentials : "",
+        stdout: invocation.startsWith("npx supabase status -o json ")
+          ? localCredentials
+          : "",
       };
     });
     const removeTemp = vi.fn();
 
     expect(
-      await main(["--database"], {
+      await mainWithPreparedProject(["--database"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
         run,
       }),
     ).toBe(9);
-    expect(run.mock.calls.at(-1).slice(0, 2)).toEqual([
-      "npx",
-      ["supabase", "stop", "--no-backup"],
-    ]);
+    expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
     expect(
       run.mock.calls.filter(
         ([command, args]) =>
-          command === "npx" && args.join(" ") === "supabase stop --no-backup",
+          command === "npx" &&
+          args.slice(0, 3).join(" ") === "supabase stop --no-backup",
       ),
     ).toHaveLength(1);
     expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
@@ -2247,14 +2423,14 @@ setInterval(() => {}, 1000);
 
   it("fails and retains the project when ownership changes before cleanup", async () => {
     let inspections = 0;
-    const run = vi.fn((command, args) => {
+    const run = vi.fn((command, args, options) => {
       if (command === "docker" && args[0] === "inspect") {
         inspections += 1;
         return {
           status: 0,
           stdout:
             inspections === 1
-              ? `rentcottage|${process.cwd()}\n`
+              ? `rentcottage-verification|${options.env.SUPABASE_LOCAL_WORKDIR}\n`
               : `foreign-project|${process.cwd()}\n`,
           stderr: "",
         };
@@ -2262,7 +2438,8 @@ setInterval(() => {}, 1000);
       return {
         status: 0,
         stdout:
-          command === "npx" && args.join(" ") === "supabase status -o json"
+          command === "npx" &&
+          args.slice(0, 4).join(" ") === "supabase status -o json"
             ? localCredentials
             : "",
       };
@@ -2271,7 +2448,7 @@ setInterval(() => {}, 1000);
     const stderr = vi.fn();
 
     expect(
-      await main(["--fixture-contract"], {
+      await mainWithPreparedProject(["--fixture-contract"], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,
@@ -2283,7 +2460,8 @@ setInterval(() => {}, 1000);
     expect(
       run.mock.calls.some(
         ([command, args]) =>
-          command === "npx" && args.join(" ") === "supabase stop --no-backup",
+          command === "npx" &&
+          args.slice(0, 3).join(" ") === "supabase stop --no-backup",
       ),
     ).toBe(false);
     expect(removeTemp).not.toHaveBeenCalled();
@@ -2305,7 +2483,7 @@ setInterval(() => {}, 1000);
     async ({ signal, stage, status }) => {
       let inspections = 0;
       let stops = 0;
-      const run = vi.fn((command, args) => {
+      const run = vi.fn((command, args, options) => {
         if (command === "docker" && args[0] === "inspect") {
           inspections += 1;
           if (stage === "cleanup inspection" && inspections === 2) {
@@ -2313,13 +2491,13 @@ setInterval(() => {}, 1000);
           }
           return {
             status: 0,
-            stdout: `rentcottage|${process.cwd()}\n`,
+            stdout: `rentcottage-verification|${options.env.SUPABASE_LOCAL_WORKDIR}\n`,
             stderr: "",
           };
         }
         if (
           command === "npx" &&
-          args.join(" ") === "supabase stop --no-backup"
+          args.slice(0, 3).join(" ") === "supabase stop --no-backup"
         ) {
           stops += 1;
           if (stage === "cleanup stop") process.emit(signal);
@@ -2327,7 +2505,8 @@ setInterval(() => {}, 1000);
         return {
           status: 0,
           stdout:
-            command === "npx" && args.join(" ") === "supabase status -o json"
+            command === "npx" &&
+            args.slice(0, 4).join(" ") === "supabase status -o json"
               ? localCredentials
               : "",
         };
@@ -2335,7 +2514,7 @@ setInterval(() => {}, 1000);
       const removeTemp = vi.fn();
 
       expect(
-        await main(["--fixture-contract"], {
+        await mainWithPreparedProject(["--fixture-contract"], {
           environment: {},
           makeTemp: () => "/tmp/access-docker",
           removeTemp,
@@ -2358,7 +2537,7 @@ setInterval(() => {}, 1000);
     const stderr = vi.fn();
 
     expect(
-      await main([], {
+      await mainWithPreparedProject([], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp: vi.fn(),
@@ -2374,7 +2553,8 @@ setInterval(() => {}, 1000);
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
           ? JSON.stringify({
               API_URL: {},
               PUBLISHABLE_KEY: [],
@@ -2384,7 +2564,9 @@ setInterval(() => {}, 1000);
     }));
     const stderr = vi.fn();
 
-    expect(await main([], { environment: {}, run, stderr })).toBe(1);
+    expect(
+      await mainWithPreparedProject([], { environment: {}, run, stderr }),
+    ).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase did not return valid local test credentials.",
     );
@@ -2403,13 +2585,16 @@ setInterval(() => {}, 1000);
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
           ? "not-json"
           : "",
     }));
     const stderr = vi.fn();
 
-    expect(await main([], { environment: {}, run, stderr })).toBe(1);
+    expect(
+      await mainWithPreparedProject([], { environment: {}, run, stderr }),
+    ).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase returned unreadable local test credentials.",
     );
@@ -2422,7 +2607,8 @@ setInterval(() => {}, 1000);
     const run = ownedRun((command, args) => ({
       status: 0,
       stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
           ? JSON.stringify({
               API_URL: "https://supabase.example.com",
               PUBLISHABLE_KEY: "local-publishable",
@@ -2432,7 +2618,9 @@ setInterval(() => {}, 1000);
     }));
     const stderr = vi.fn();
 
-    expect(await main([], { environment: {}, run, stderr })).toBe(1);
+    expect(
+      await mainWithPreparedProject([], { environment: {}, run, stderr }),
+    ).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       "Supabase did not return valid local test credentials.",
     );
@@ -2450,11 +2638,13 @@ setInterval(() => {}, 1000);
   it("fails when the local services cannot be stopped cleanly", async () => {
     const run = ownedRun((command, args) => ({
       status:
-        command === "npx" && args.join(" ") === "supabase stop --no-backup"
+        command === "npx" &&
+        args.slice(0, 3).join(" ") === "supabase stop --no-backup"
           ? 6
           : 0,
       stdout:
-        command === "npx" && args.join(" ") === "supabase status -o json"
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
           ? localCredentials
           : "",
     }));
@@ -2462,7 +2652,7 @@ setInterval(() => {}, 1000);
     const removeTemp = vi.fn();
 
     expect(
-      await main([], {
+      await mainWithPreparedProject([], {
         environment: {},
         makeTemp: () => "/tmp/access-docker",
         removeTemp,

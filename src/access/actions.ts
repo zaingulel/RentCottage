@@ -1,5 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { isLocale } from "@/i18n/routing";
+import { accountAccessHref, safeReturnDestination } from "./return-destination";
+
 import { recordPrivilegedSignInAttempt } from "./privileged-sign-in-audit";
 import { createSupabaseAccountAccess } from "./supabase-account-access";
 import {
@@ -62,7 +67,7 @@ export async function verifyPhoneAccess(value: unknown) {
     !input ||
     typeof input.phone !== "string" ||
     typeof input.code !== "string" ||
-    (input.role !== "customer" && input.role !== "cottage_owner") ||
+    "role" in input ||
     !iraqiPhone.test(input.phone) ||
     !otp.test(input.code)
   ) {
@@ -75,7 +80,6 @@ export async function verifyPhoneAccess(value: unknown) {
     return await access.verifyPhoneAccess({
       phone: input.phone,
       code: input.code,
-      role: input.role,
     });
   } catch {
     await discardRequestSession(client);
@@ -203,4 +207,52 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
     return { status: "unavailable" as const };
   }
   return result;
+}
+
+export async function enrollOwner(value: unknown) {
+  const input = recordInput(value);
+  if (!input || typeof input.locale !== "string" || !isLocale(input.locale))
+    return { status: "not_authorized" as const };
+  let result;
+  try {
+    result = await createSupabaseAccountAccess(
+      await createRequestSupabaseClient(),
+    ).enrollOwner();
+  } catch {
+    return { status: "unavailable" as const };
+  }
+  if (result.status !== "enrolled") return result;
+  revalidatePath("/", "layout");
+  return {
+    status: "enrolled" as const,
+    destination: safeReturnDestination(input.locale, input.returnTo),
+  };
+}
+
+export async function completePhoneAccess(locale: unknown, returnTo: unknown) {
+  if (typeof locale !== "string" || !isLocale(locale))
+    return { status: "unavailable" as const };
+  const { resolveRequestAccount } = await import("./request-account-context");
+  const account = await resolveRequestAccount();
+  if (
+    account.status !== "authenticated" ||
+    !account.context ||
+    account.context.role === "platform_administrator"
+  )
+    return { status: "unavailable" as const };
+  revalidatePath("/", "layout");
+  redirect(accountAccessHref(locale, returnTo));
+}
+
+export async function signOutAccount(locale: unknown) {
+  if (typeof locale !== "string" || !isLocale(locale)) return;
+  try {
+    const client = await createRequestSupabaseClient();
+    await client.auth.signOut({ scope: "local" });
+  } catch {
+    // Local cookie removal still signs this browser out when the provider is unavailable.
+  }
+  await clearRequestSupabaseSession();
+  revalidatePath("/", "layout");
+  redirect(`/${locale}`);
 }

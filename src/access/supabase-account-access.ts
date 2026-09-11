@@ -48,6 +48,11 @@ export class SupabaseIdentityProvider implements IdentityProvider {
 
   async requestPhoneCode(phone: string) {
     const { error } = await this.client.auth.signInWithOtp({ phone });
+    if (
+      error?.code === "over_request_rate_limit" ||
+      error?.code === "over_sms_send_rate_limit"
+    )
+      return { status: "rate_limited" as const };
     if (error) throw error;
     return { status: "code_sent" as const };
   }
@@ -58,9 +63,12 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       token: code,
       type: "sms",
     });
-    if (error?.code === "otp_expired") {
+    if (error?.code === "otp_expired")
+      return { status: "expired_code" as const };
+    if (error?.code === "validation_failed")
       return { status: "invalid_code" as const };
-    }
+    if (error?.code === "over_request_rate_limit")
+      return { status: "rate_limited" as const };
     if (error) throw error;
     if (!data.user) throw new Error("Phone verification returned no identity");
     return { status: "verified" as const, userId: data.user.id };
@@ -167,7 +175,7 @@ export class SupabaseIdentityProvider implements IdentityProvider {
   }
 
   async signOut() {
-    const { error } = await this.client.auth.signOut();
+    const { error } = await this.client.auth.signOut({ scope: "local" });
     if (error) throw error;
   }
 }
@@ -190,10 +198,18 @@ export class SupabaseAccountContextStore implements AccountContextStore {
   }
 
   async resolve() {
-    const { data: claims, error: claimsError } =
-      await this.client.auth.getClaims();
-    if (claimsError) throw claimsError;
-    const userId = claims?.claims.sub;
+    const { data: identity, error: identityError } =
+      await this.client.auth.getUser();
+    if (
+      identityError?.name === "AuthSessionMissingError" ||
+      identityError?.code === "session_not_found" ||
+      identityError?.code === "refresh_token_not_found" ||
+      identityError?.code === "refresh_token_already_used" ||
+      identityError?.code === "user_not_found"
+    )
+      return undefined;
+    if (identityError) throw identityError;
+    const userId = identity.user?.id;
     if (!userId) return undefined;
     const { data, error } = await this.client
       .from("account_contexts")

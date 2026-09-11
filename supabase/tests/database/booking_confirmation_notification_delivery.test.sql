@@ -1,5 +1,5 @@
 begin;
-select plan(32);
+select plan(36);
 select ok(
   has_function_privilege('authenticated', 'public.get_confirmed_booking_access(text)', 'execute')
     and not has_function_privilege('anon', 'public.get_confirmed_booking_access(text)', 'execute')
@@ -16,7 +16,7 @@ insert into auth.users (id, aud, role, phone, phone_confirmed_at) values
   ('10000000-0000-4000-8000-000000003503', 'authenticated', 'authenticated', '+9647500003503', now());
 insert into public.account_contexts (user_id, role, owner_approval_state) values
   ('10000000-0000-4000-8000-000000003501', 'cottage_owner', 'approved'),
-  ('10000000-0000-4000-8000-000000003502', 'customer', null),
+  ('10000000-0000-4000-8000-000000003502', 'cottage_owner', 'suspended'),
   ('10000000-0000-4000-8000-000000003503', 'customer', null);
 insert into public.owner_application_cottage_profiles (
   id, owner_user_id, name, governorate, approximate_location, exact_address,
@@ -143,6 +143,14 @@ create temp table leased as select public.lease_booking_confirmation_notificatio
 select is((select result->>'locale' from leased),'en','lease returns frozen locale');
 select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003502',null,null,(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from leased))->>'status','stale','null lease identity fails closed');
 select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003502',(select (result->>'leaseGeneration')::bigint from leased),(select (result->>'leaseToken')::uuid from leased),(select jsonb_set(result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt','{templateVersion}','"changed"') from leased))->>'status','stale','changed frozen binding is stale');
+select public.record_booking_confirmation_notification_failure('82000000-0000-4000-8000-000000003502',(select (result->>'leaseGeneration')::bigint from leased),(select (result->>'leaseToken')::uuid from leased),'failed');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003502',true);
+select is(public.retry_booking_confirmation_notification('82000000-0000-4000-8000-000000003502')->>'status','queued','suspended owner retains retry of their customer receipt');
+reset role;
+set local role service_role;
+update leased set result=public.lease_booking_confirmation_notification_work('82000000-0000-4000-8000-000000003502');
 create temp table expired_lease as select result from leased;
 reset role;
 update public.booking_confirmation_notification_work set lease_expires_at=clock_timestamp()-interval '1 second' where receipt_id='82000000-0000-4000-8000-000000003502';
@@ -171,6 +179,16 @@ reset role;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003501',true);
 set local role authenticated;
 select is(public.retry_booking_confirmation_notification('82000000-0000-4000-8000-000000003501')->>'status','queued','the verified paid participant queues the retry');
+reset role;
+update public.account_contexts set owner_approval_state='suspended' where user_id='10000000-0000-4000-8000-000000003501';
+set local role authenticated;
+select throws_ok($$select public.retry_booking_confirmation_notification('82000000-0000-4000-8000-000000003501')$$,'42501',null,'suspended owner cannot retry their owner receipt');
+select throws_ok($$select public.get_booking_confirmation_notification_status('82000000-0000-4000-8000-000000003501')$$,'42501',null,'suspended owner cannot read their owner notification status');
+select is((select count(*)::integer from public.list_confirmed_booking_history()),0,'suspended owner sees no owner receipts in history');
+reset role;
+update public.account_contexts set owner_approval_state='approved' where user_id='10000000-0000-4000-8000-000000003501';
+set local role authenticated;
+
 reset role;
 set local role service_role;
 drop table owner_lease;

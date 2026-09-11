@@ -1,5 +1,8 @@
+import { requireRequestAccount } from "@/access/request-account-context";
+import { accountAccessHref } from "@/access/return-destination";
+import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import Link from "next/link";
-import { notFound, unstable_rethrow } from "next/navigation";
+import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
 import { loadOwnerCottageEditor } from "@/cottage-profile/owner-cottage-editor";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
@@ -18,6 +21,22 @@ export default async function OwnerCottageProfilePage({
 }) {
   const { locale, profileId } = await params;
   if (!isLocale(locale)) notFound();
+  const account = await requireRequestAccount(
+    locale,
+    `/${locale}/owner/cottages/${profileId}`,
+  );
+  if (account.status === "unavailable")
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="unavailable"
+        returnTo={`/${locale}/owner/cottages/${profileId}`}
+      />
+    );
+  if (account.context?.role === "customer")
+    redirect(
+      accountAccessHref(locale, `/${locale}/owner/cottages/${profileId}`),
+    );
   const copy = cottageProfileMessages[locale];
   const page = await loadOwnerCottageEditor(profileId);
   if (page.status === "unavailable") {

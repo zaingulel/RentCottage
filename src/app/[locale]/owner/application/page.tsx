@@ -1,5 +1,8 @@
+import { requireRequestAccount } from "@/access/request-account-context";
+import { accountAccessHref } from "@/access/return-destination";
+import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import Link from "next/link";
-import { notFound, unstable_rethrow } from "next/navigation";
+import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
@@ -34,6 +37,20 @@ export default async function OwnerApplicationPage({
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
+  const account = await requireRequestAccount(
+    locale,
+    `/${locale}/owner/application`,
+  );
+  if (account.status === "unavailable")
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="unavailable"
+        returnTo={`/${locale}/owner/application`}
+      />
+    );
+  if (account.context?.role === "customer")
+    redirect(accountAccessHref(locale, `/${locale}/owner/application`));
   const copy = ownerApplicationMessages[locale];
   let page: Awaited<ReturnType<typeof loadOwnerApplicationPage>> | undefined;
   try {

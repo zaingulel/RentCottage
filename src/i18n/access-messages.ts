@@ -3,22 +3,36 @@ import type { Locale } from "./routing";
 export const accessMessages: Record<
   Locale,
   {
+    account: string;
+    signInAccount: string;
+    accessTitle: string;
+    accessIntro: string;
+    myBookings: string;
+    ownerBookings: string;
+    listCottage: string;
+    manageCottages: string;
+    signOut: string;
+    enrollTitle: string;
+    enrollIntro: string;
+    enroll: string;
+    expiredCode: string;
+    rateLimited: string;
+    resend: string;
+    editNumber: string;
+    confirmedOnly: string;
+    denied: string;
+    sessionUnavailable: string;
+    retry: string;
+    verified: string;
     phone: string;
     phoneHint: string;
     sendCode: string;
     code: string;
     verify: string;
-    verifiedCustomer: string;
-    verifiedOwner: string;
-    verifiedApprovedOwner: string;
     invalidPhone: string;
     invalidCode: string;
     unavailable: string;
-    roleConflict: string;
-    ownerTitle: string;
-    ownerIntro: string;
     ownerApplicationCta: string;
-    cottageProfilesCta: string;
     administratorTitle: string;
     email: string;
     password: string;
@@ -34,22 +48,40 @@ export const accessMessages: Record<
   }
 > = {
   ar: {
+    account: "الحساب",
+    signInAccount: "تسجيل الدخول",
+    accessTitle: "سجّل الدخول أو أنشئ حسابًا",
+    accessIntro:
+      "تحقق من هاتفك للعودة إلى حجوزاتك. يُنشأ حساب للأرقام الجديدة.",
+    myBookings: "حجوزاتي",
+    ownerBookings: "حجوزات أكواخي",
+    listCottage: "أدرج كوخك",
+    manageCottages: "إدارة أكواخي",
+    signOut: "تسجيل الخروج",
+    enrollTitle: "انضم كمالك كوخ",
+    enrollIntro:
+      "استخدم الحساب نفسه للحجز وإدارة الأكواخ. ابدأ طلب مالك خاصًا؛ يلزم الحصول على الموافقة قبل نشر كوخك.",
+    enroll: "ابدأ طلب المالك",
+    expiredCode:
+      "انتهت صلاحية الرمز أو أنه غير صحيح. اطلب رمزًا آخر أو تحقق من الرقم.",
+    rateLimited: "محاولات كثيرة. انتظر قليلًا قبل المحاولة مجددًا.",
+    resend: "أرسل رمزًا آخر",
+    editNumber: "تغيير رقم الهاتف",
+    confirmedOnly:
+      "تظهر الحجوزات المؤكدة هنا. حالات الطلبات الأخرى متاحة عبر روابطها.",
+    denied: "هذا الحجز غير متاح لهذا الحساب. سجّل الخروج لاستخدام حساب آخر.",
+    sessionUnavailable: "الوصول إلى الحساب غير متاح. يرجى المحاولة مجددًا.",
+    retry: "حاول مجددًا",
+    verified: "تم التحقق من الهاتف. تم تسجيل دخولك.",
     phone: "رقم الهاتف العراقي",
-    phoneHint: "اكتب الرقم بصيغة +9647501234567",
+    phoneHint: "اكتب الرقم بصيغة",
     sendCode: "أرسل رمز التحقق",
     code: "رمز التحقق",
     verify: "تحقق",
-    verifiedCustomer: "تم التحقق. لديك صلاحيات العميل فقط.",
-    verifiedOwner: "تم التحقق. حساب المالك ما زال بانتظار الموافقة.",
-    verifiedApprovedOwner: "تم التحقق. ملفات الأكواخ الخاصة بك جاهزة.",
     invalidPhone: "أدخل رقمًا عراقيًا صحيحًا يبدأ بـ +964.",
     invalidCode: "تعذر التحقق من الرمز.",
     unavailable: "التحقق غير متاح الآن. حاول مرة أخرى.",
-    roleConflict: "هذا الرقم مرتبط بدور مختلف. استخدم هوية منفصلة.",
-    ownerTitle: "دخول مالك البيت",
-    ownerIntro: "تحقق من رقمك لبدء طلب المالك الخاص بك.",
     ownerApplicationCta: "تابع إلى طلب المالك",
-    cottageProfilesCta: "افتح ملفات الأكواخ",
     administratorTitle: "دخول مسؤول المنصة",
     email: "البريد الإلكتروني",
     password: "كلمة المرور",
@@ -64,22 +96,42 @@ export const accessMessages: Record<
     invalidSignIn: "بيانات الدخول غير صحيحة أو الحساب ليس لمسؤول.",
   },
   ckb: {
+    account: "هەژمار",
+    signInAccount: "چوونەژوورەوە",
+    accessTitle: "بچۆ ژوورەوە یان هەژمارێک دروست بکە",
+    accessIntro:
+      "ژمارەکەت پشتڕاست بکەرەوە بۆ گەڕانەوە بۆ حجزەکانت. بۆ ژمارەی نوێ هەژمار دروست دەکرێت.",
+    myBookings: "حجزەکانم",
+    ownerBookings: "حجزەکانی کۆتێجەکانم",
+    listCottage: "کۆتێجەکەت تۆمار بکە",
+    manageCottages: "بەڕێوەبردنی کۆتێجەکانم",
+    signOut: "چوونەدەرەوە",
+    enrollTitle: "ببە خاوەنی کۆتێج",
+    enrollIntro:
+      "هەمان هەژمار بۆ حجزکردن و بەڕێوەبردنی کۆتێج بەکاربهێنە. داواکارییەکی تایبەتی خاوەن دەست پێ بکە؛ پەسەندکردن پێویستە پێش بڵاوکردنەوەی کۆتێجەکەت.",
+    enroll: "داواکاری خاوەن دەست پێ بکە",
+    expiredCode:
+      "کۆدەکە بەسەرچووە یان نادروستە. کۆدێکی تر داوا بکە یان ژمارەکە بپشکنە.",
+    rateLimited: "هەوڵدان زۆرە. کەمێک چاوەڕێ بکە پێش هەوڵدانەوە.",
+    resend: "کۆدێکی تر بنێرە",
+    editNumber: "گۆڕینی ژمارەی تەلەفۆن",
+    confirmedOnly:
+      "حجزە پشتڕاستکراوەکان لێرە دەردەکەون. دۆخی داواکارییەکانی تر لە بەستەرەکانیان بەردەستە.",
+    denied:
+      "ئەم حجزە بۆ ئەم هەژمارە بەردەست نییە. بچۆ دەرەوە بۆ بەکارهێنانی هەژمارێکی تر.",
+    sessionUnavailable:
+      "دەستگەیشتن بە هەژمار بەردەست نییە. تکایە دووبارە هەوڵ بدەوە.",
+    retry: "دووبارە هەوڵ بدەوە",
+    verified: "تەلەفۆن پشتڕاست کرایەوە. چوویتە ژوورەوە.",
     phone: "ژمارە تەلەفۆنی عێراقی",
-    phoneHint: "ژمارەکە بە شێوەی +9647501234567 بنووسە",
+    phoneHint: "ژمارەکە بەم شێوەیە بنووسە:",
     sendCode: "کۆدی پشتڕاستکردنەوە بنێرە",
     code: "کۆدی پشتڕاستکردنەوە",
     verify: "پشتڕاست بکەرەوە",
-    verifiedCustomer: "پشتڕاست کرایەوە. تەنها دەسەڵاتی کڕیار هەیە.",
-    verifiedOwner: "پشتڕاست کرایەوە. هەژماری خاوەن چاوەڕێی پەسەندە.",
-    verifiedApprovedOwner: "پشتڕاست کرایەوە. پرۆفایلەکانی کۆتێج ئامادەن.",
     invalidPhone: "ژمارەیەکی دروستی عێراقی بە +964 بنووسە.",
     invalidCode: "کۆدەکە پشتڕاست نەکرایەوە.",
     unavailable: "پشتڕاستکردنەوە ئێستا بەردەست نییە.",
-    roleConflict: "ئەم ژمارەیە بە ڕۆڵێکی ترەوە بەستراوە.",
-    ownerTitle: "چوونەژوورەوەی خاوەنی ماڵ",
-    ownerIntro: "ژمارەکەت پشتڕاست بکەرەوە بۆ دەستپێکردنی داواکاری.",
     ownerApplicationCta: "بەردەوام بە بۆ داواکاری خاوەن",
-    cottageProfilesCta: "پرۆفایلەکانی کۆتێج بکەرەوە",
     administratorTitle: "چوونەژوورەوەی بەڕێوەبەری پلاتفۆرم",
     email: "ئیمەیڵ",
     password: "وشەی نهێنی",
@@ -95,23 +147,41 @@ export const accessMessages: Record<
       "زانیاری چوونەژوورەوە نادروستە یان هەژمارەکە بەڕێوەبەر نییە.",
   },
   en: {
+    account: "Account",
+    signInAccount: "Sign in",
+    accessTitle: "Sign in or create an account",
+    accessIntro:
+      "Verify your phone to return to your bookings. New numbers create an account.",
+    myBookings: "My bookings",
+    ownerBookings: "Bookings for my cottages",
+    listCottage: "List your cottage",
+    manageCottages: "Manage my cottages",
+    signOut: "Sign out",
+    enrollTitle: "Become a Cottage Owner",
+    enrollIntro:
+      "Use this same account to book and manage cottages. Start a private owner application; approval is required before your cottage can be published.",
+    enroll: "Start owner application",
+    expiredCode:
+      "The code has expired or is invalid. Request another code or check the number.",
+    rateLimited: "Too many attempts. Wait a little before trying again.",
+    resend: "Send another code",
+    editNumber: "Change phone number",
+    confirmedOnly:
+      "Confirmed bookings are shown here. Other request statuses are available from their booking links.",
+    denied:
+      "This booking is not available to this account. Sign out to use another account.",
+    sessionUnavailable: "Account access is unavailable. Please try again.",
+    retry: "Try again",
+    verified: "Phone verified. You are signed in.",
     phone: "Iraqi phone number",
-    phoneHint: "Use the format +9647501234567",
+    phoneHint: "Use the format",
     sendCode: "Send verification code",
     code: "Verification code",
     verify: "Verify",
-    verifiedCustomer: "Verified. You have Customer access only.",
-    verifiedOwner: "Verified. Your Cottage Owner access is awaiting approval.",
-    verifiedApprovedOwner: "Verified. Your private Cottage Profiles are ready.",
     invalidPhone: "Enter a valid Iraqi number beginning +964.",
     invalidCode: "The verification code could not be confirmed.",
     unavailable: "Verification is unavailable. Try again.",
-    roleConflict:
-      "This number belongs to another role. Use a separate identity.",
-    ownerTitle: "Cottage Owner access",
-    ownerIntro: "Verify your phone to begin your private owner application.",
     ownerApplicationCta: "Continue to Owner Application",
-    cottageProfilesCta: "Open Cottage Profiles",
     administratorTitle: "Platform Administrator access",
     email: "Email",
     password: "Password",

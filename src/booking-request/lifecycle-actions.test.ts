@@ -75,6 +75,30 @@ describe("Booking Request lifecycle action boundary", () => {
     );
   });
 
+  it.each(["prospective", "approved", "expired", "suspended"])(
+    "allows %s owners to withdraw their own customer request",
+    async (approvalState) => {
+      resolveContext.mockResolvedValue({
+        role: "cottage_owner",
+        approvalState,
+        userId: "00000000-0000-4000-8000-000000000034",
+      });
+      await expect(
+        actOnBookingRequest({
+          locale: "en",
+          bookingRequestId,
+          action: "withdraw",
+        }),
+      ).resolves.toMatchObject({ status: "withdrawn" });
+      expect(act).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: "customer",
+          actorUserId: "00000000-0000-4000-8000-000000000034",
+        }),
+      );
+    },
+  );
+
   it("rejects cross-role actions before privileged lifecycle work", async () => {
     resolveContext.mockResolvedValue({
       role: "customer",

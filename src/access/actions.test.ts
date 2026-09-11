@@ -1,14 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { recordAudit, createClient, clearSession, createAccess } = vi.hoisted(
-  () => ({
-    recordAudit: vi.fn(),
-    createClient: vi.fn(),
-    clearSession: vi.fn(),
-    createAccess: vi.fn(),
-  }),
-);
+const {
+  recordAudit,
+  createClient,
+  clearSession,
+  createAccess,
+  redirect,
+  revalidatePath,
+} = vi.hoisted(() => ({
+  recordAudit: vi.fn(),
+  redirect: vi.fn(),
+  revalidatePath: vi.fn(),
+  createClient: vi.fn(),
+  clearSession: vi.fn(),
+  createAccess: vi.fn(),
+}));
 
+vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("./privileged-sign-in-audit", () => ({
   recordPrivilegedSignInAttempt: recordAudit,
 }));
@@ -21,6 +30,7 @@ vi.mock("./supabase-account-access", () => ({
 }));
 
 import {
+  signOutAccount,
   requestPhoneAccess,
   signInPlatformAdministrator,
   verifyPhoneAccess,
@@ -63,7 +73,6 @@ describe("account action HTTP boundary", () => {
       verifyPhoneAccess({
         phone: "+9647500000000",
         code: "123456",
-        role: "customer",
       }),
     ).resolves.toEqual({ status: "unavailable" });
     expect(clearSession).toHaveBeenCalledOnce();
@@ -250,4 +259,22 @@ describe("account action HTTP boundary", () => {
     ).resolves.toEqual({ status: "unavailable" });
     expect(signOut).toHaveBeenCalledOnce();
   });
+});
+
+describe("current-device sign out", () => {
+  it.each([false, true])(
+    "clears local session and private rendering when provider error is %s",
+    async (providerError) => {
+      vi.clearAllMocks();
+      const signOut = vi.fn().mockResolvedValue({
+        error: providerError ? new Error("offline") : null,
+      });
+      createClient.mockResolvedValue({ auth: { signOut } });
+      await signOutAccount("ckb");
+      expect(signOut).toHaveBeenCalledWith({ scope: "local" });
+      expect(clearSession).toHaveBeenCalledOnce();
+      expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+      expect(redirect).toHaveBeenCalledWith("/ckb");
+    },
+  );
 });
