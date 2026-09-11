@@ -1,3 +1,8 @@
+import { refundAllocationTotal } from "@/payment/payment-refund-allocation";
+import {
+  bookingEventNotice,
+  type BookingNoticeEvent,
+} from "./booking-event-notice";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FictionalNotificationEffectRepository } from "./fictional-notification-adapter";
 import type {
@@ -39,6 +44,22 @@ function validPayload(
       ? "booking-requests"
       : "owner/booking-requests"
   }/${base.bookingRequestReference}`;
+  if (base.event) {
+    const expected = bookingEventNotice({ ...base, event: base.event });
+    return (
+      payload !== null &&
+      Object.keys(payload).length === Object.keys(expected).length &&
+      Object.entries(expected).every(([key, value]) =>
+        key === "allocation"
+          ? row(payload[key])?.bookingPriceFils ===
+              base.event?.allocation.bookingPriceFils &&
+            row(payload[key])?.bookingServiceFeeFils ===
+              base.event?.allocation.bookingServiceFeeFils &&
+            Object.keys(row(payload[key]) ?? {}).length === 2
+          : payload[key] === value,
+      )
+    );
+  }
   return (
     payload !== null &&
     Object.keys(payload).length === payloadKeys.size &&
@@ -65,7 +86,36 @@ function parseCandidate(value: unknown): NotificationCandidate {
     !["ar", "ckb", "en"].includes(String(v.locale))
   )
     throw new Error("Database returned an invalid notification candidate");
+  let event: BookingNoticeEvent | undefined;
+  if (v.event !== undefined) {
+    const source = row(v.event);
+    const allocation = row(source?.allocation);
+    if (
+      !source ||
+      !uuid(source.id) ||
+      ![
+        "cancelled",
+        "refund_requested",
+        "refund_returned",
+        "refund_attention",
+      ].includes(String(source.kind)) ||
+      !allocation ||
+      typeof allocation.bookingPriceFils !== "number" ||
+      typeof allocation.bookingServiceFeeFils !== "number"
+    )
+      throw new Error("Database returned an invalid notification event");
+    event = {
+      id: source.id,
+      kind: source.kind as BookingNoticeEvent["kind"],
+      allocation: {
+        bookingPriceFils: allocation.bookingPriceFils,
+        bookingServiceFeeFils: allocation.bookingServiceFeeFils,
+      },
+    };
+    refundAllocationTotal(event.allocation);
+  }
   return {
+    ...(event ? { event } : {}),
     receiptId: v.receiptId,
     recipientUserId: v.recipientUserId,
     recipientRole: v.recipientRole as NotificationCandidate["recipientRole"],
@@ -78,10 +128,16 @@ function parseLease(value: unknown): NotificationLease {
   const v = row(value),
     base = parseCandidate(value),
     payload = row(v?.payload);
+  const templateVersion = base.event
+    ? "booking-event-v1"
+    : "paid-confirmation-v1";
   if (
     !v ||
-    v.logicalId !== `paid-confirmation:${base.receiptId}` ||
-    v.templateVersion !== "paid-confirmation-v1" ||
+    v.logicalId !==
+      (base.event
+        ? `booking-event:${base.event.id}`
+        : `paid-confirmation:${base.receiptId}`) ||
+    v.templateVersion !== templateVersion ||
     !validPayload(payload, base) ||
     typeof v.payloadSha256 !== "string" ||
     !/^[0-9a-f]{64}$/.test(v.payloadSha256) ||
@@ -95,7 +151,7 @@ function parseLease(value: unknown): NotificationLease {
   return {
     ...base,
     logicalId: v.logicalId,
-    templateVersion: v.templateVersion,
+    templateVersion,
     payload,
     payloadSha256: v.payloadSha256,
     leaseGeneration: v.leaseGeneration as number,
@@ -104,6 +160,7 @@ function parseLease(value: unknown): NotificationLease {
   };
 }
 const binding = (v: NotificationLease) => ({
+  ...(v.event ? { event: v.event } : {}),
   receiptId: v.receiptId,
   recipientUserId: v.recipientUserId,
   recipientRole: v.recipientRole,
@@ -182,6 +239,7 @@ export class SupabaseNotificationDeliveryRepository
       "ensure_booking_confirmation_notification_work",
       {
         target_receipt_id: v.receiptId,
+        ...(v.event ? { target_event_id: v.event.id } : {}),
         target_locale: v.locale,
         target_template: v.templateVersion,
         target_payload: v.payload,
@@ -190,19 +248,29 @@ export class SupabaseNotificationDeliveryRepository
     if (error)
       throw new Error("Notification binding preparation is unavailable");
   }
-  async lease(receiptId: string) {
+  async lease(receiptId: string, eventId?: string) {
     const { data, error } = await this.client.rpc(
       "lease_booking_confirmation_notification_work",
-      { target_receipt_id: receiptId },
+      {
+        target_receipt_id: receiptId,
+        ...(eventId ? { target_event_id: eventId } : {}),
+      },
     );
     if (error) throw new Error("Notification lease is unavailable");
-    return data === null ? null : parseLease(data);
+    if (data === null) return null;
+    const lease = parseLease(data);
+    if (lease.receiptId !== receiptId || lease.event?.id !== eventId)
+      throw new Error(
+        "Database returned an invalid notification lease binding",
+      );
+    return lease;
   }
   async queryEffect(v: NotificationLease): Promise<NotificationQueryResult> {
     const { data, error } = await this.client.rpc(
       "query_fictional_booking_confirmation_notification_effect",
       {
         target_receipt_id: v.receiptId,
+        ...(v.event ? { target_event_id: v.event.id } : {}),
         target_generation: v.leaseGeneration,
         target_token: v.leaseToken,
         target_binding: binding(v),
@@ -222,6 +290,7 @@ export class SupabaseNotificationDeliveryRepository
       "execute_fictional_booking_confirmation_notification_effect",
       {
         target_receipt_id: v.receiptId,
+        ...(v.event ? { target_event_id: v.event.id } : {}),
         target_generation: v.leaseGeneration,
         target_token: v.leaseToken,
         target_binding: binding(v),
@@ -247,6 +316,7 @@ export class SupabaseNotificationDeliveryRepository
       "complete_booking_confirmation_notification_delivery",
       {
         target_receipt_id: v.receiptId,
+        ...(v.event ? { target_event_id: v.event.id } : {}),
         target_generation: v.leaseGeneration,
         target_token: v.leaseToken,
         target_binding: binding(v),
@@ -267,6 +337,7 @@ export class SupabaseNotificationDeliveryRepository
       "record_booking_confirmation_notification_failure",
       {
         target_receipt_id: v.receiptId,
+        ...(v.event ? { target_event_id: v.event.id } : {}),
         target_generation: v.leaseGeneration,
         target_token: v.leaseToken,
         target_outcome: outcome,

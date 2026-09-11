@@ -13,7 +13,7 @@ vi.mock("@/access/supabase-server", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: revalidate }));
 vi.mock("./notification-status-repository", () => ({
-  SupabasePaidConfirmationNotificationStatusRepository: class {
+  SupabaseBookingNotificationStatusRepository: class {
     retry = retry;
   },
 }));

@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { isLocale } from "@/i18n/routing";
-import { SupabasePaidConfirmationNotificationStatusRepository } from "./notification-status-repository";
+import { SupabaseBookingNotificationStatusRepository } from "./notification-status-repository";
 import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
 
 export type RetryPaidConfirmationNotificationState = {
@@ -29,7 +29,7 @@ export async function retryPaidConfirmationNotification(
   )
     return { status: "invalid" };
   try {
-    await new SupabasePaidConfirmationNotificationStatusRepository(
+    await new SupabaseBookingNotificationStatusRepository(
       await createRequestSupabaseClient(),
     ).retry(receiptId);
   } catch {

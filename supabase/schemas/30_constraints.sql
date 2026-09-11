@@ -42,7 +42,7 @@ ALTER TABLE ONLY "public"."booking_receipts"
     ADD CONSTRAINT "booking_receipts_pkey" PRIMARY KEY ("id");
 
 ALTER TABLE ONLY "public"."booking_confirmation_notification_work"
-    ADD CONSTRAINT "booking_confirmation_notification_work_pkey" PRIMARY KEY ("receipt_id");
+    ADD CONSTRAINT "booking_confirmation_notification_work_pkey" PRIMARY KEY (notification_id);
 
 ALTER TABLE ONLY "public"."booking_confirmation_notification_work"
     ADD CONSTRAINT "booking_confirmation_notification_work_logical_id_key" UNIQUE ("logical_id");
@@ -525,10 +525,10 @@ ALTER TABLE ONLY "public"."booking_confirmation_notification_work"
     ADD CONSTRAINT "booking_confirmation_notification_work_recipient_user_id_fkey" FOREIGN KEY ("recipient_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."booking_confirmation_notification_attempts"
-    ADD CONSTRAINT "booking_confirmation_notification_attempts_receipt_id_fkey" FOREIGN KEY ("receipt_id") REFERENCES "public"."booking_confirmation_notification_work"("receipt_id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "booking_confirmation_notification_attempts_receipt_id_fkey" FOREIGN KEY (notification_id) REFERENCES "public"."booking_confirmation_notification_work"(notification_id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."fictional_booking_confirmation_notification_effects"
-    ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_receipt_id_fkey" FOREIGN KEY ("receipt_id") REFERENCES "public"."booking_confirmation_notification_work"("receipt_id") ON DELETE RESTRICT;
+    ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_receipt_id_fkey" FOREIGN KEY (notification_id) REFERENCES "public"."booking_confirmation_notification_work"(notification_id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."fictional_booking_confirmation_notification_effects"
     ADD CONSTRAINT "fictional_booking_confirmation_notification_effects_booking_request_id_fkey" FOREIGN KEY ("booking_request_id") REFERENCES "public"."booking_requests"("id") ON DELETE RESTRICT;
@@ -962,3 +962,9 @@ ALTER TABLE public.booking_refund_intents ADD CONSTRAINT booking_refund_intents_
 ALTER TABLE public.booking_refund_intents ADD CONSTRAINT booking_refund_intents_actor_fkey FOREIGN KEY (actor_user_id) REFERENCES auth.users(id);
 ALTER TABLE public.booking_refund_attempts ADD CONSTRAINT booking_refund_attempts_intent_fkey FOREIGN KEY (refund_intent_id) REFERENCES public.booking_refund_intents(id);
 ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_refund_fkey FOREIGN KEY (refund_intent_id) REFERENCES public.booking_refund_intents(id);
+
+ALTER TABLE ONLY public.booking_confirmation_notification_work ADD CONSTRAINT booking_confirmation_notification_work_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.booking_notification_events(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.booking_confirmation_notification_attempts ADD CONSTRAINT booking_confirmation_notification_attempts_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.booking_notification_events(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.fictional_booking_confirmation_notification_effects ADD CONSTRAINT fictional_booking_confirmation_notification_effects_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.booking_notification_events(id) ON DELETE RESTRICT;

@@ -119,6 +119,7 @@ const databasePreflightCommands = [
   ],
   ["node", ["scripts/verify-booking-request-payment-history-upgrade.mjs"]],
   ["node", ["scripts/verify-account-access-upgrade.mjs"]],
+  ["node", ["scripts/verify-booking-notification-upgrade.mjs"]],
 ];
 const databaseCheckCommands = [
   ["node", ["scripts/verify-access-fixture-contract.mjs"]],
@@ -137,6 +138,7 @@ const databaseCheckCommands = [
     "node",
     ["scripts/verify-booking-confirmation-notification-concurrency.mjs"],
   ],
+  ["node", ["scripts/verify-booking-event-notification-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-cancellation-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-refund-concurrency.mjs"]],
   [

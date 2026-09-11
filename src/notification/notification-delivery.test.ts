@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createPaidConfirmationNotificationDelivery } from "./notification-delivery";
+import { createBookingNotificationDelivery } from "./notification-delivery";
 import type {
   NotificationCandidate,
   NotificationDeliveryAdapter,
@@ -81,9 +81,73 @@ function setup(candidates = [candidate]) {
 }
 
 describe("paid confirmation notification delivery", () => {
+  it("delivers requested and returned refund events separately to the same receipt", async () => {
+    const candidates = [
+      {
+        ...candidate,
+        event: {
+          id: "00000000-0000-4000-8000-000000000081",
+          kind: "refund_requested" as const,
+          allocation: {
+            bookingPriceFils: 30000000,
+            bookingServiceFeeFils: 1000000,
+          },
+        },
+      },
+      {
+        ...candidate,
+        event: {
+          id: "00000000-0000-4000-8000-000000000082",
+          kind: "refund_returned" as const,
+          allocation: {
+            bookingPriceFils: 30000000,
+            bookingServiceFeeFils: 1000000,
+          },
+        },
+      },
+    ];
+    const { repository, adapter } = setup(candidates);
+    await createBookingNotificationDelivery({ repository, adapter }).processDue(
+      10,
+    );
+    expect(repository.prepare).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        logicalId: "booking-event:00000000-0000-4000-8000-000000000081",
+        templateVersion: "booking-event-v1",
+        payload: expect.objectContaining({
+          kind: "refund_requested",
+          title: "Refund requested",
+          body: expect.stringContaining("IQD 31,000"),
+        }),
+      }),
+    );
+    expect(repository.prepare).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        logicalId: "booking-event:00000000-0000-4000-8000-000000000082",
+        payload: expect.objectContaining({
+          kind: "refund_returned",
+          title: "Refund returned",
+          body: expect.stringContaining("IQD 31,000"),
+        }),
+      }),
+    );
+    expect(repository.lease).toHaveBeenNthCalledWith(
+      1,
+      candidate.receiptId,
+      candidates[0].event.id,
+    );
+    expect(repository.lease).toHaveBeenNthCalledWith(
+      2,
+      candidate.receiptId,
+      candidates[1].event.id,
+    );
+  });
+
   it("queries before first execution and completes from one effect", async () => {
     const { repository, adapter } = setup();
-    const delivery = createPaidConfirmationNotificationDelivery({
+    const delivery = createBookingNotificationDelivery({
       repository,
       adapter,
     });
@@ -108,7 +172,7 @@ describe("paid confirmation notification delivery", () => {
       executedAt: "2099-08-21T10:00:00.000Z",
     });
 
-    await createPaidConfirmationNotificationDelivery({
+    await createBookingNotificationDelivery({
       repository,
       adapter,
     }).processDue(10);
@@ -130,7 +194,7 @@ describe("paid confirmation notification delivery", () => {
       vi.mocked(adapter.execute).mockResolvedValue({ status });
 
       await expect(
-        createPaidConfirmationNotificationDelivery({
+        createBookingNotificationDelivery({
           repository,
           adapter,
         }).processDue(10),
@@ -144,7 +208,7 @@ describe("paid confirmation notification delivery", () => {
     const { repository, adapter } = setup();
     vi.mocked(adapter.query).mockResolvedValue({ status: "stale" });
     await expect(
-      createPaidConfirmationNotificationDelivery({
+      createBookingNotificationDelivery({
         repository,
         adapter,
       }).processDue(10),
@@ -157,7 +221,7 @@ describe("paid confirmation notification delivery", () => {
     const { repository, adapter } = setup();
     vi.mocked(adapter.execute).mockResolvedValue({ status: "suppressed" });
     await expect(
-      createPaidConfirmationNotificationDelivery({
+      createBookingNotificationDelivery({
         repository,
         adapter,
       }).processDue(10),
@@ -178,14 +242,14 @@ describe("paid confirmation notification delivery", () => {
         vi.mocked(repository.completeDelivered).mockRejectedValue(interruption);
 
       await expect(
-        createPaidConfirmationNotificationDelivery({
+        createBookingNotificationDelivery({
           repository,
           adapter,
         }).processDue(10),
       ).rejects.toEqual(
         expect.objectContaining({
           name: "AggregateError",
-          message: "Paid-confirmation notification batch failed",
+          message: "Booking notification batch failed",
           errors: [interruption],
         }),
       );
@@ -205,7 +269,7 @@ describe("paid confirmation notification delivery", () => {
           interruption,
         );
 
-      const processing = createPaidConfirmationNotificationDelivery({
+      const processing = createBookingNotificationDelivery({
         repository,
         adapter,
       }).processDue(10);
@@ -241,7 +305,7 @@ describe("paid confirmation notification delivery", () => {
         vi.mocked(repository.recordUnknown).mockRejectedValueOnce(failure);
       }
 
-      const processing = createPaidConfirmationNotificationDelivery({
+      const processing = createBookingNotificationDelivery({
         repository,
         adapter,
       }).processDue(10);
@@ -272,7 +336,7 @@ describe("paid confirmation notification delivery", () => {
       .mockResolvedValueOnce({ status: "not-found" });
 
     await expect(
-      createPaidConfirmationNotificationDelivery({
+      createBookingNotificationDelivery({
         repository,
         adapter,
       }).processDue(10),
@@ -290,7 +354,7 @@ describe("paid confirmation notification delivery", () => {
 
   it("preserves an empty batch and a candidate-listing failure", async () => {
     const { repository, adapter } = setup([]);
-    const delivery = createPaidConfirmationNotificationDelivery({
+    const delivery = createBookingNotificationDelivery({
       repository,
       adapter,
     });

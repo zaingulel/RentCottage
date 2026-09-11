@@ -6,7 +6,7 @@ import { runScheduledBookingRequestExpiry } from "./src/booking-request/booking-
 
 import { runScheduledBookingRefunds } from "./src/booking-request/booking-refund-schedule";
 import { runScheduledBookingRequestCapture } from "./src/booking-request/booking-request-capture-schedule";
-import { runScheduledPaidConfirmationNotifications } from "./src/notification/notification-schedule";
+import { runScheduledBookingNotifications } from "./src/notification/notification-schedule";
 import { bookingRequestTestRuntimeIsEnabled } from "./src/booking-request/booking-request-test-runtime-core";
 
 interface Environment {
@@ -26,7 +26,7 @@ export default {
     ];
     if (bookingRequestTestRuntimeIsEnabled(environment))
       scheduledTasks.push(
-        runScheduledPaidConfirmationNotifications(environment),
+        runScheduledBookingNotifications(environment),
         runScheduledBookingRefunds(environment),
       );
     const results = await Promise.allSettled(scheduledTasks);

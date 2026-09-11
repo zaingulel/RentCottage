@@ -10,7 +10,7 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
-test("scheduled refunds complete a cancellation once and retain the original capture", async ({
+test("scheduled cancellation refunds and notices settle once through the shared workers", async ({
   baseURL,
 }) => {
   const harness = createLocalSupabaseConcurrencyHarness();
@@ -42,7 +42,7 @@ test("scheduled refunds complete a cancellation once and retain the original cap
   const observe = () =>
     JSON.parse(
       harness.runSql(
-        `select jsonb_build_object('capture',(select to_jsonb(capture) from public.payment_provider_operations capture join public.booking_confirmations confirmation on confirmation.capture_operation_id=capture.id where confirmation.booking_request_id='${request}'),'refunds',(select jsonb_agg(to_jsonb(operation) order by operation.id) from public.payment_provider_operations operation where operation.claim_id='72000000-0000-4000-8000-000000001001' and operation.operation_kind='refund'),'effects',(select sum(effect.physical_execution_count) from public.simulated_payment_effects effect join public.payment_provider_operations operation on operation.id=effect.operation_id where operation.claim_id='72000000-0000-4000-8000-000000001001' and operation.operation_kind='refund'),'returnedEvents',(select count(*) from public.booking_notification_events where booking_request_id='${request}' and event_kind='refund_returned'));`,
+        `select jsonb_build_object('capture',(select to_jsonb(capture) from public.payment_provider_operations capture join public.booking_confirmations confirmation on confirmation.capture_operation_id=capture.id where confirmation.booking_request_id='${request}'),'refunds',(select jsonb_agg(to_jsonb(operation) order by operation.id) from public.payment_provider_operations operation where operation.claim_id='72000000-0000-4000-8000-000000001001' and operation.operation_kind='refund'),'effects',(select sum(effect.physical_execution_count) from public.simulated_payment_effects effect join public.payment_provider_operations operation on operation.id=effect.operation_id where operation.claim_id='72000000-0000-4000-8000-000000001001' and operation.operation_kind='refund'),'returnedEvents',(select count(*) from public.booking_notification_events where booking_request_id='${request}' and event_kind='refund_returned'),'notices',(select jsonb_agg(jsonb_build_object('logicalId',w.logical_id,'receiptId',w.receipt_id,'eventId',w.event_id,'kind',e.event_kind,'recipientRole',w.recipient_role,'state',w.state,'payload',w.payload,'supplierDeliveryReference',w.supplier_delivery_reference) order by w.logical_id) from public.booking_confirmation_notification_work w join public.booking_notification_events e on e.id=w.event_id where w.booking_request_id='${request}'),'notificationEffects',(select count(*) from public.fictional_booking_confirmation_notification_effects where booking_request_id='${request}'));`,
       ),
     );
   try {
@@ -63,7 +63,52 @@ test("scheduled refunds complete a cancellation once and retain the original cap
     expect(after.effects).toBe(1);
     expect(after.returnedEvents).toBe(2);
     expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
-    expect(observe()).toEqual(after);
+    const settled = observe();
+    expect(settled.capture).toEqual(before.capture);
+    expect(settled.refunds).toEqual(after.refunds);
+    expect(settled.effects).toBe(1);
+    expect(settled.notices).toHaveLength(6);
+    expect(settled.notificationEffects).toBe(6);
+    const identities = new Set<string>();
+    for (const notice of settled.notices) {
+      identities.add(notice.logicalId);
+      expect(notice.state).toBe("delivered");
+      expect(notice.logicalId).toBe(`booking-event:${notice.eventId}`);
+      expect(notice.supplierDeliveryReference).toBe(
+        `fictional-booking-event-${notice.eventId}`,
+      );
+      expect(notice.payload.allocation).toEqual({
+        bookingPriceFils: 110000000,
+        bookingServiceFeeFils: 5000000,
+      });
+      expect(notice.payload.detailsPath).toBe(
+        `/en/${notice.recipientRole === "customer" ? "booking-requests" : "owner/booking-requests"}/RC-REQ-0000000000001001`,
+      );
+      expect(JSON.stringify(notice.payload)).not.toContain(
+        "Unavailable property",
+      );
+      if (notice.kind === "refund_requested")
+        expect(notice.payload.body).toContain(
+          "was requested. View your booking for its current status.",
+        );
+      if (notice.kind === "refund_returned")
+        expect(notice.payload.body).toContain("has been verified as returned");
+    }
+    expect(identities.size).toBe(6);
+    expect(
+      settled.notices.map((notice: { kind: string }) => notice.kind).sort(),
+    ).toEqual([
+      "cancelled",
+      "cancelled",
+      "refund_requested",
+      "refund_requested",
+      "refund_returned",
+      "refund_returned",
+    ]);
+    // Refund and notification drains intentionally run concurrently. This next
+    // explicit tick must be an idempotent repeat after both have settled.
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+    expect(observe()).toEqual(settled);
   } finally {
     harness.runSql(cleanup);
   }

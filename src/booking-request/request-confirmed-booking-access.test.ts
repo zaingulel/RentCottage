@@ -14,7 +14,7 @@ vi.mock("./confirmed-booking-access", () => ({
   getConfirmedBookingAccess: getAccess,
 }));
 vi.mock("@/notification/notification-status-repository", () => ({
-  SupabasePaidConfirmationNotificationStatusRepository: class {
+  SupabaseBookingNotificationStatusRepository: class {
     get = getStatus;
   },
 }));

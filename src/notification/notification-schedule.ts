@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime-core";
 import { FictionalNotificationAdapter } from "./fictional-notification-adapter";
-import { createPaidConfirmationNotificationDelivery } from "./notification-delivery";
+import { createBookingNotificationDelivery } from "./notification-delivery";
 import { SupabaseNotificationDeliveryRepository } from "./supabase-notification-delivery";
 
 interface NotificationScheduleEnvironment {
@@ -14,10 +14,10 @@ interface NotificationScheduleEnvironment {
 }
 
 type ProcessDue = ReturnType<
-  typeof createPaidConfirmationNotificationDelivery
+  typeof createBookingNotificationDelivery
 >["processDue"];
 
-export async function runScheduledPaidConfirmationNotifications(
+export async function runScheduledBookingNotifications(
   environment: NotificationScheduleEnvironment,
   injectedProcessDue?: ProcessDue,
 ) {
@@ -27,7 +27,7 @@ export async function runScheduledPaidConfirmationNotifications(
     !environment.SUPABASE_SECRET_KEY
   ) {
     throw new Error(
-      "Paid-confirmation notifications require the exact local test runtime and credentials",
+      "Booking notifications require the exact local test runtime and credentials",
     );
   }
 
@@ -39,7 +39,7 @@ export async function runScheduledPaidConfirmationNotifications(
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
     const repository = new SupabaseNotificationDeliveryRepository(client);
-    processDue = createPaidConfirmationNotificationDelivery({
+    processDue = createBookingNotificationDelivery({
       repository,
       adapter: new FictionalNotificationAdapter(repository, environment),
     }).processDue;

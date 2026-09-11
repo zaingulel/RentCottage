@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SupabasePaidConfirmationNotificationStatusRepository } from "./notification-status-repository";
+import { SupabaseBookingNotificationStatusRepository } from "./notification-status-repository";
 const receipt = "00000000-0000-4000-8000-000000000035";
 describe("paid confirmation notification status repository", () => {
   it("parses truthful historical delivery status", async () => {
@@ -16,7 +16,7 @@ describe("paid confirmation notification status repository", () => {
       error: null,
     });
     await expect(
-      new SupabasePaidConfirmationNotificationStatusRepository({
+      new SupabaseBookingNotificationStatusRepository({
         rpc,
       } as never).get(receipt),
     ).resolves.toMatchObject({ state: "delivered", historical: true });
@@ -68,7 +68,7 @@ describe("paid confirmation notification status repository", () => {
       error: null,
     });
     await expect(
-      new SupabasePaidConfirmationNotificationStatusRepository({
+      new SupabaseBookingNotificationStatusRepository({
         rpc,
       } as never).get(receipt),
     ).resolves.toMatchObject(status);
@@ -79,7 +79,7 @@ describe("paid confirmation notification status repository", () => {
       error: null,
     });
     await expect(
-      new SupabasePaidConfirmationNotificationStatusRepository({
+      new SupabaseBookingNotificationStatusRepository({
         rpc,
       } as never).get(receipt),
     ).rejects.toThrow("invalid notification status");
@@ -115,7 +115,7 @@ describe("paid confirmation notification status repository", () => {
       error: null,
     });
     await expect(
-      new SupabasePaidConfirmationNotificationStatusRepository({
+      new SupabaseBookingNotificationStatusRepository({
         rpc,
       } as never).get(receipt),
     ).rejects.toThrow("invalid notification status");
@@ -134,7 +134,7 @@ describe("paid confirmation notification status repository", () => {
       error: null,
     });
     await expect(
-      new SupabasePaidConfirmationNotificationStatusRepository({
+      new SupabaseBookingNotificationStatusRepository({
         rpc,
       } as never).get(receipt),
     ).rejects.toThrow("invalid notification status");
@@ -144,13 +144,67 @@ describe("paid confirmation notification status repository", () => {
       .fn()
       .mockResolvedValue({ data: { status: "queued" }, error: null });
     await expect(
-      new SupabasePaidConfirmationNotificationStatusRepository({
+      new SupabaseBookingNotificationStatusRepository({
         rpc,
       } as never).retry(receipt),
     ).resolves.toEqual({ status: "queued" });
     expect(rpc).toHaveBeenCalledWith(
       "retry_booking_confirmation_notification",
       { target_receipt_id: receipt },
+    );
+  });
+});
+
+describe("event notification status and retry", () => {
+  const eventId = "00000000-0000-4000-8000-000000000081";
+  const status = {
+    receiptId: receipt,
+    eventId,
+    state: "pending",
+    lastOutcome: null,
+    supplierDeliveryReference: null,
+    deliveredAt: null,
+    suppressedAt: null,
+    historical: false,
+  };
+  it("reads the chosen event instead of the original confirmation notice", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: status, error: null });
+    await expect(
+      new SupabaseBookingNotificationStatusRepository({ rpc } as never).get(
+        receipt,
+        eventId,
+      ),
+    ).resolves.toEqual(status);
+    expect(rpc).toHaveBeenCalledWith(
+      "get_booking_confirmation_notification_status",
+      { target_receipt_id: receipt, target_event_id: eventId },
+    );
+  });
+  it("rejects status for another event on the same receipt", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { ...status, eventId: "00000000-0000-4000-8000-000000000082" },
+      error: null,
+    });
+    await expect(
+      new SupabaseBookingNotificationStatusRepository({ rpc } as never).get(
+        receipt,
+        eventId,
+      ),
+    ).rejects.toThrow("invalid notification status");
+  });
+  it("retries only the selected failed event", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValue({ data: { status: "queued" }, error: null });
+    await expect(
+      new SupabaseBookingNotificationStatusRepository({ rpc } as never).retry(
+        receipt,
+        eventId,
+      ),
+    ).resolves.toEqual({ status: "queued" });
+    expect(rpc).toHaveBeenCalledWith(
+      "retry_booking_confirmation_notification",
+      { target_receipt_id: receipt, target_event_id: eventId },
     );
   });
 });

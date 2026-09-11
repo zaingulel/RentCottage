@@ -676,6 +676,12 @@ export async function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = await execute(
+        "node",
+        ["scripts/verify-booking-notification-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {
@@ -837,6 +843,13 @@ export async function main(
       );
       if (notificationConcurrency.status !== 0)
         return notificationConcurrency.status;
+      const eventNotificationConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-event-notification-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (eventNotificationConcurrency.status !== 0)
+        return eventNotificationConcurrency.status;
       const cancellationConcurrency = await execute(
         "node",
         ["scripts/verify-booking-cancellation-concurrency.mjs"],

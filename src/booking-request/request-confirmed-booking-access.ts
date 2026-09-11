@@ -2,11 +2,11 @@ import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
 import { getConfirmedBookingAccess } from "./confirmed-booking-access";
-import { SupabasePaidConfirmationNotificationStatusRepository } from "@/notification/notification-status-repository";
-import type { PaidConfirmationNotificationStatus } from "@/notification/notification-status-repository";
+import { SupabaseBookingNotificationStatusRepository } from "@/notification/notification-status-repository";
+import type { BookingNotificationStatus } from "@/notification/notification-status-repository";
 
 export type PaidConfirmationNotificationPresentationStatus =
-  | PaidConfirmationNotificationStatus
+  | BookingNotificationStatus
   | {
       readonly receiptId: string;
       readonly state: "unavailable";
@@ -24,10 +24,9 @@ export async function loadConfirmedBookingAccess(reference: string) {
   if (!access) return null;
   let notification: PaidConfirmationNotificationPresentationStatus;
   try {
-    notification =
-      await new SupabasePaidConfirmationNotificationStatusRepository(
-        client,
-      ).get(access.receiptId);
+    notification = await new SupabaseBookingNotificationStatusRepository(
+      client,
+    ).get(access.receiptId);
   } catch {
     notification = {
       receiptId: access.receiptId,

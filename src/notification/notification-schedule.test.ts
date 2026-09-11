@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 
-import { runScheduledPaidConfirmationNotifications } from "./notification-schedule";
+import { runScheduledBookingNotifications } from "./notification-schedule";
 
 const environment = {
   APP_ENVIRONMENT: "test",
@@ -23,10 +23,7 @@ it.each([
   async (override) => {
     const drain = vi.fn();
     await expect(
-      runScheduledPaidConfirmationNotifications(
-        { ...environment, ...override },
-        drain,
-      ),
+      runScheduledBookingNotifications({ ...environment, ...override }, drain),
     ).rejects.toThrow("exact local test runtime");
     expect(drain).not.toHaveBeenCalled();
   },
@@ -35,7 +32,7 @@ it.each([
 it("awaits one bounded notification drain", async () => {
   const drain = vi.fn().mockResolvedValue([{ status: "delivered" }]);
   await expect(
-    runScheduledPaidConfirmationNotifications(environment, drain),
+    runScheduledBookingNotifications(environment, drain),
   ).resolves.toEqual([{ status: "delivered" }]);
   expect(drain).toHaveBeenCalledExactlyOnceWith(50);
 });
