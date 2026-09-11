@@ -241,3 +241,6 @@ ALTER TABLE public.booking_cancellations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_cancellation_incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_cancellation_administrator_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_notification_events ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.booking_refund_intents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_refund_attempts ENABLE ROW LEVEL SECURITY;

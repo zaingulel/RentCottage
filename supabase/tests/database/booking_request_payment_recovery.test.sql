@@ -176,7 +176,7 @@ select public.record_booking_request_capture_failure(
 ) result;
 reset role;
 
-select plan(86);
+select plan(92);
 select has_table('public','booking_request_payment_recovery_attempts','recovery attempts are durable');
 select has_table('public','booking_request_payment_recovery_operations','recovery operations are durable');
 select function_privs_are('public','claim_customer_booking_request_payment_recovery',
@@ -724,6 +724,28 @@ select is(
   (select graph from recovery_before_denial)-array['booking_request_payment_recovery_attempts','booking_request_payment_recovery_operations',
     'payment_provider_operations','booking_confirmations','booking_receipts','cottage_booking_period_commitments'],
   'recovery preserves original submission, snapshots, claims, capture history, notifications, selected units and occupancies');
+
+-- Cancellation refunds bind to the actual replacement capture confirmed above.
+create temp table recovered_capture_before as select to_jsonb(ledger) original from public.payment_provider_operations ledger join public.booking_confirmations confirmed on confirmed.capture_operation_id=ledger.id;
+grant select on recovered_capture_before to service_role;
+insert into auth.users (id,aud,role,email,email_confirmed_at) values ('10000000-0000-4000-8000-000000003801','authenticated','authenticated','recovered-refund-admin@example.test',now());
+insert into public.account_contexts(user_id,role) values ('10000000-0000-4000-8000-000000003801','platform_administrator');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);
+set local role authenticated;
+create temp table recovered_refund_intent as select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003830','Recovered capture compensation','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}') result;
+grant select on recovered_refund_intent to service_role;
+set local role service_role;
+create temp table recovered_refund_claim as select public.claim_booking_refund((select (result->>'intentId')::uuid from recovered_refund_intent)) result;
+select is((select result#>>'{request,amountFils}' from recovered_refund_claim),'31000000','recovered booking supports an explicit partial refund');
+select is((select result#>>'{request,executionPermit,binding,paymentLifecycleId}' from recovered_refund_claim),(select original->>'payment_lifecycle_id' from recovered_capture_before),'refund uses the replacement payment lifecycle');
+create temp table recovered_refund_admission as select public.admit_booking_refund((select result#>'{request,executionPermit}' from recovered_refund_claim)) result;
+create temp table recovered_refund_effect as select public.persist_simulated_payment_effect(result-array['purpose','binding','mode'],jsonb_build_object('outcome','succeeded','providerRequestId','recovered-refund-request','providerReference','recovered-refund-reference','movementReference','recovered-refund-movement','evidence',jsonb_build_object('operationId',result->>'operationId','eventId','recovered-refund-event','provenance','fictional-provider','originalOutcome','succeeded','executedAt',clock_timestamp(),'occurredAt',clock_timestamp(),'closedAt',null))) result from recovered_refund_admission;
+select lives_ok($$select public.record_booking_request_payment_observation((select (result->>'operationId')::uuid from recovered_refund_admission),(select result from recovered_refund_effect),jsonb_build_object('revision',public.get_booking_request_payment_observation_facts((select (result->>'operationId')::uuid from recovered_refund_admission))->>'revision','recoveryState',null,'quarantineReason',null,'correctiveCaptureId',null))$$,'shared observation accepts a refund of the successful recovered capture');
+select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'refunded','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}'::jsonb,'recovered capture projects verified returned components');
+reset role;
+select is((select capture_operation_id from public.booking_refund_intents),(select capture_operation_id from public.booking_confirmations),'intent binds to the confirmation capture, not the failed initial capture');
+select is((select to_jsonb(ledger) from public.payment_provider_operations ledger join public.booking_confirmations confirmed on confirmed.capture_operation_id=ledger.id),(select original from recovered_capture_before),'refund preserves the original recovered capture record');
 
 select * from finish();
 rollback;

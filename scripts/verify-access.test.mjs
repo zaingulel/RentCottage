@@ -138,6 +138,7 @@ const databaseCheckCommands = [
     ["scripts/verify-booking-confirmation-notification-concurrency.mjs"],
   ],
   ["node", ["scripts/verify-booking-cancellation-concurrency.mjs"]],
+  ["node", ["scripts/verify-booking-refund-concurrency.mjs"]],
   [
     "node",
     ["scripts/verify-booking-request-payment-required-expiry-concurrency.mjs"],
@@ -188,6 +189,7 @@ const browserCommands = [
       "test",
       "tests/worker-scheduled-expiry.spec.ts",
       "tests/worker-scheduled-capture.spec.ts",
+      "tests/worker-scheduled-refund.spec.ts",
       "--project=worker",
       "--config=playwright.worker-prebuilt.config.ts",
       "--workers=1",
@@ -2150,48 +2152,53 @@ setInterval(() => {}, 1000);
       SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
     expect(run.mock.calls[26][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[28][2].env).toMatchObject({
-      APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+    expect(run.mock.calls[27][2].env).toMatchObject({
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
+    expect(run.mock.calls[27][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(run.mock.calls[29][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[30][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
-      NEXTJS_ENV: "test",
-      SUPABASE_PROJECT_REF: "local-test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
     });
     expect(run.mock.calls[31][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
-      SUPABASE_URL: "http://127.0.0.1:54331",
+      NEXTJS_ENV: "test",
+      SUPABASE_PROJECT_REF: "local-test",
     });
     expect(run.mock.calls[32][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
     });
-    expect(run.mock.calls[34][2].env).toMatchObject({
+    expect(run.mock.calls[33][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+    });
+    expect(run.mock.calls[35][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_PUBLISHABLE_KEY: "local-publishable",
       SUPABASE_SECRET_KEY: "local-secret",
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     });
-    expect(run.mock.calls[35][2].env).toMatchObject({
+    expect(run.mock.calls[36][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
       SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
-    expect(run.mock.calls[35][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
-    expect(run.mock.calls[36][2].env).toMatchObject({
+    expect(run.mock.calls[36][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[37][2].env).toMatchObject({
       PLAYWRIGHT_SERVER: "worker",
       SUPABASE_SECRET_KEY: "local-secret",
     });
-    expect(run.mock.calls[37][2].env).toMatchObject({
+    expect(run.mock.calls[38][2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
       SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
     });
-    expect(run.mock.calls[37][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    expect(run.mock.calls[38][2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
     expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 

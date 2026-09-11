@@ -717,12 +717,45 @@ CREATE TABLE public.booking_cancellation_administrator_audit (
 CREATE TABLE public.booking_notification_events (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   booking_request_id uuid NOT NULL ,
-  cancellation_id uuid NOT NULL ,
+  cancellation_id uuid,
+  refund_intent_id uuid,
   receipt_id uuid NOT NULL ,
-  event_kind text NOT NULL CHECK (event_kind='cancelled'),
+  event_kind text NOT NULL CHECK (event_kind IN ('cancelled','refund_requested','refund_returned','refund_attention')),
   recipient_user_id uuid NOT NULL ,
   recipient_role text NOT NULL CHECK (recipient_role IN ('customer','cottage_owner')),
   notice_locale public.cottage_profile_source_language NOT NULL,
   created_at timestamptz NOT NULL,
-  UNIQUE(cancellation_id,recipient_role)
+  UNIQUE(cancellation_id,recipient_role),
+  UNIQUE(refund_intent_id,event_kind,recipient_role),
+  CHECK ((event_kind='cancelled' AND cancellation_id IS NOT NULL AND refund_intent_id IS NULL) OR
+    (event_kind<>'cancelled' AND cancellation_id IS NULL AND refund_intent_id IS NOT NULL))
+);
+
+CREATE TABLE public.booking_refund_intents (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  booking_request_id uuid NOT NULL,
+  capture_operation_id uuid NOT NULL,
+  cancellation_id uuid,
+  command_id uuid NOT NULL UNIQUE,
+  command_fingerprint text NOT NULL CHECK (length(command_fingerprint)=64),
+  source text NOT NULL CHECK (source IN ('cancellation','administrator')),
+  actor_user_id uuid,
+  reason text,
+  booking_price_fils bigint NOT NULL CHECK (booking_price_fils>=0 AND booking_price_fils%10=0),
+  booking_service_fee_fils bigint NOT NULL CHECK (booking_service_fee_fils>=0),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK (booking_price_fils+booking_service_fee_fils>0),
+  CHECK ((source='cancellation' AND cancellation_id IS NOT NULL AND actor_user_id IS NULL AND reason IS NULL) OR
+    (source='administrator' AND actor_user_id IS NOT NULL AND reason IS NOT NULL AND length(btrim(reason))>=1 AND length(btrim(reason))<=2000))
+);
+
+CREATE TABLE public.booking_refund_attempts (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  refund_intent_id uuid NOT NULL,
+  generation integer NOT NULL CHECK (generation>0),
+  lease_token uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  not_after timestamptz NOT NULL,
+  UNIQUE(refund_intent_id,generation),
+  CHECK (not_after>created_at)
 );

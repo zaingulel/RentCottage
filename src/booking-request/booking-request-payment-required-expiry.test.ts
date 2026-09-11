@@ -14,8 +14,10 @@ import type {
   PaymentExpiryOperationFact,
 } from "./booking-request-payment-observation";
 import type { PaymentProviderAdapter } from "@/payment/payment-contract";
-const base = () =>
-  paymentFactsFixture({ observedAt: "2026-09-06T12:20:00Z", attempts: [] });
+const base = () => ({
+  ...paymentFactsFixture({ observedAt: "2026-09-06T12:20:00Z", attempts: [] }),
+  deadline: "2026-09-06T12:20:00.000Z",
+});
 function owned(
   overrides: Partial<PaymentExpiryOperationFact> = {},
 ): PaymentExpiryOperationFact {

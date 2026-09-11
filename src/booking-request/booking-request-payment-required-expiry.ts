@@ -121,8 +121,11 @@ export function selectPaymentRequiredExpiry(
   });
   if (facts.quarantined) return { status: "quarantined" };
   if (facts.expired) return { status: "expired" };
+  const deadline = facts.deadline;
+  if (deadline === null)
+    return { status: facts.confirmationValid ? "confirmed" : "unavailable" };
   if (!facts.sourceValid)
-    return paymentInstant(facts.observedAt) < paymentInstant(facts.deadline)
+    return paymentInstant(facts.observedAt) < paymentInstant(deadline)
       ? { status: "not-due" }
       : quarantine("source-evidence-invalid");
   const unresolved = facts.operations.find(
@@ -161,12 +164,11 @@ export function selectPaymentRequiredExpiry(
   if (
     facts.confirmationValid &&
     !captures.some(
-      (entry) =>
-        paymentInstant(entry.occurredAt!) >= paymentInstant(facts.deadline),
+      (entry) => paymentInstant(entry.occurredAt!) >= paymentInstant(deadline),
     )
   )
     return { status: "confirmed" };
-  if (paymentInstant(facts.observedAt) < paymentInstant(facts.deadline))
+  if (paymentInstant(facts.observedAt) < paymentInstant(deadline))
     return { status: "not-due" };
   const original = facts.operations.find(
     (entry) => entry.id === facts.originalCaptureId,
@@ -175,7 +177,7 @@ export function selectPaymentRequiredExpiry(
     entry.outcome === "succeeded" &&
     entry.originalOutcome !== "failed" &&
     entry.occurredAt !== null &&
-    paymentInstant(entry.occurredAt) >= paymentInstant(facts.deadline);
+    paymentInstant(entry.occurredAt) >= paymentInstant(deadline);
   if (
     !original ||
     (!(
@@ -209,7 +211,7 @@ export function selectPaymentRequiredExpiry(
   )
     return quarantine("recovery-operation-indeterminate");
   for (const capture of captures) {
-    if (paymentInstant(capture.occurredAt!) < paymentInstant(facts.deadline)) {
+    if (paymentInstant(capture.occurredAt!) < paymentInstant(deadline)) {
       const attempt = facts.attempts.find(
         (entry) => entry.id === capture.recoveryAttemptId,
       );
@@ -232,6 +234,7 @@ export function selectPaymentRequiredExpiry(
         entry.id !== facts.originalAuthorizationId &&
         entry.id !== facts.originalCaptureId &&
         !entry.recoveryOperationId &&
+        !entry.bookingRefund &&
         entry.outcome !== "not-executed" &&
         !facts.expiryOperations.some(
           (owned) => owned.providerOperationId === entry.id,

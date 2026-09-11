@@ -283,6 +283,22 @@ select is((select result#>>'{permit,binding,amountFils}' from correction_prepare
 reset role;
 select is((select count(*) from public.booking_confirmations),0::bigint,'a late capture cannot confirm');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'every selected Cottage Shift remains held before corrective refund proof');
+-- The shared capacity reader includes existing corrective ownership. Authoritative
+-- absence closes its fixed provider identity; later callers cannot reopen it.
+savepoint closed_corrective_identity;
+select is(public.booking_capture_refund_totals((select (result->>'providerOperationId')::uuid from correction_capture_result),'{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}')->'reserved','{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb,'unadmitted corrective intent reserves the complete capture');
+set local role service_role;
+create temp table closed_corrective_admission as select public.admit_booking_request_payment_required_expiry((select result->'permit' from correction_prepared)) result;
+create temp table closed_corrective_result as select public.seal_simulated_payment_absence(result-array['purpose','binding','mode']) result from closed_corrective_admission;
+select is((select result->>'outcome' from closed_corrective_result),'not-executed','supplier inquiry verifies closed absence for the admitted corrective identity');
+select public.record_booking_request_payment_observation((select (result->>'operationId')::uuid from closed_corrective_admission),(select result from closed_corrective_result),jsonb_build_object('revision',public.get_booking_request_payment_observation_facts((select (result->>'operationId')::uuid from closed_corrective_admission))->>'revision','recoveryState',null,'quarantineReason','expiry-refund-not-executed','correctiveCaptureId',null));
+select throws_ok($$select public.admit_booking_request_payment_required_expiry((select result->'permit' from correction_prepared))$$,'RC409',null,'verified unexecuted corrective refund cannot be readmitted');
+select is(public.persist_simulated_payment_effect((select result-array['purpose','binding','mode'] from closed_corrective_admission),jsonb_build_object('outcome','succeeded','providerRequestId','late-execute-request','providerReference','late-execute-reference','movementReference','late-execute-movement','evidence',jsonb_build_object('operationId',(select result->>'operationId' from closed_corrective_admission),'eventId','late-execute-event','provenance','fictional-provider','originalOutcome','succeeded','executedAt',clock_timestamp(),'occurredAt',clock_timestamp(),'closedAt',null)))->>'outcome','not-executed','stale corrective execute cannot reopen verified closed absence');
+select throws_ok($$select public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')$$,'RC409',null,'a late capture without a valid confirmation cannot admit a cancellation partial');
+reset role;
+select is(public.booking_capture_refund_totals((select (result->>'providerOperationId')::uuid from correction_capture_result),'{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}')->'reserved','{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb,'only verified closed corrective absence releases its shared reservation');
+select is((select physical_execution_count::integer from public.simulated_payment_effects where operation_id=(select (result->>'operationId')::uuid from closed_corrective_admission)),0,'closed corrective retry creates no money movement');
+rollback to closed_corrective_identity;
 savepoint late_capture;
 set local role service_role;
 select pg_temp.expiry_execute((select result->'permit' from correction_prepared),'succeeded');

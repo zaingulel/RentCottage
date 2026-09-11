@@ -100,6 +100,26 @@ describe("explicit durable payment operation execution", () => {
       );
     },
   );
+  it("records booking refunds through the shared observation application", async () => {
+    const test = fixture();
+    vi.mocked(test.repository.admit).mockResolvedValue({
+      ...admission,
+      purpose: "booking-refund",
+    });
+    const observation = {
+      record: vi.fn(
+        async (_admission, result: ProviderOperationResult) => result,
+      ),
+    };
+    const execution = createPaymentOperationExecution({
+      repository: test.repository,
+      provider: test.provider,
+      observation,
+    });
+    expect((await execution.execute(request)).status).toBe("recorded");
+    expect(observation.record).toHaveBeenCalledOnce();
+    expect(test.repository.record).not.toHaveBeenCalled();
+  });
   it("reconciles a lost response using the original admission and null references without executing again", async () => {
     const test = fixture();
     vi.mocked(test.repository.admit).mockResolvedValue({

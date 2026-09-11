@@ -20,10 +20,6 @@ const request = "60000000-0000-4000-8000-000000001001";
 const customer = "10000000-0000-4000-8000-000000001002";
 const owner = "10000000-0000-4000-8000-000000001001";
 const claim = "72000000-0000-4000-8000-000000001001";
-const actor = (id) =>
-  `set local role authenticated; select set_config('request.jwt.claim.sub','${id}',true);`;
-const cancel = (role, key) =>
-  `select public.commit_booking_cancellation('${request}','${key}','${role}',${role === "customer" ? "null" : "'Unavailable property'"},null,jsonb_build_object('revision',public.get_booking_cancellation_facts('${request}','${role}')->>'revision','refundObligation','{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb));`;
 const resetCancellation = `set session_replication_role=replica;
 delete from public.booking_notification_events where booking_request_id='${request}';
 delete from public.booking_cancellation_administrator_audit where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${request}');
@@ -60,68 +56,98 @@ delete from public.owner_application_cottage_profiles where id='20000000-0000-40
 delete from public.account_contexts where user_id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003','10000000-0000-4000-8000-000000003801');
 delete from auth.users where id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003','10000000-0000-4000-8000-000000003801');
 set session_replication_role=origin;`;
+const resetRefunds = `set session_replication_role=replica;
+delete from public.booking_notification_events where refund_intent_id in (select id from public.booking_refund_intents where booking_request_id='${request}');
+delete from public.payment_provider_observations where operation_id in (select id from public.payment_provider_operations where claim_id='${claim}' and operation_kind='refund');
+delete from public.simulated_payment_effects where operation_id in (select id from public.payment_provider_operations where claim_id='${claim}' and operation_kind='refund');
+delete from public.payment_provider_operations where claim_id='${claim}' and operation_kind='refund';
+delete from public.booking_refund_attempts where refund_intent_id in (select id from public.booking_refund_intents where booking_request_id='${request}');
+delete from public.booking_refund_intents where booking_request_id='${request}';
+set session_replication_role=origin;`;
+const administrator = `set local role authenticated; select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true); select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);`;
+const exception = (key, price) =>
+  `select public.request_booking_refund_exception('${request}','${key}','Concurrent compensation','{"bookingPriceFils":${price},"bookingServiceFeeFils":1000000}');`;
+const firstKey = "90000000-0000-4000-8000-000000003820";
+const secondKey = "90000000-0000-4000-8000-000000003821";
 const sessions = [];
 harness.guardDisposableLocalDatabase();
 try {
-  harness.runSql(cleanup);
+  harness.runSql(resetRefunds + cleanup);
   harness.runSql(
     `${fixture("PAYMENT EVIDENCE FIXTURE")} ${fixture("CANCELLATION FIXTURE")} select pg_temp.seed_cancellation_booking('2101-01-01');`,
   );
-  for (const scenario of ["duplicate", "competing-actors", "rollback"]) {
-    const ownerFirst = scenario !== "duplicate";
+  for (const scenario of ["capacity", "duplicate", "rollback"]) {
     const holder = harness.startSession(
-      `begin; set application_name='cancellation_holder'; ${actor(ownerFirst ? owner : customer)} ${cancel(ownerFirst ? "cottage_owner" : "customer", "90000000-0000-4000-8000-000000003801")} select 'CANCELLATION_LOCKED';`,
+      `begin; set application_name='refund_holder'; ${administrator} ${exception(firstKey, 80000000)} select 'REFUND_RESERVED';`,
     );
     sessions.push(holder);
-    await harness.waitForMarker(holder, "CANCELLATION_LOCKED");
+    await harness.waitForMarker(holder, "REFUND_RESERVED");
     const contender = harness.startSession(
-      `begin; set application_name='cancellation_contender'; ${actor(customer)} ${cancel("customer", ownerFirst ? "90000000-0000-4000-8000-000000003802" : "90000000-0000-4000-8000-000000003801")} commit;`,
+      `begin; set application_name='refund_contender'; ${administrator} ${exception(scenario === "duplicate" ? firstKey : secondKey, scenario === "duplicate" ? 80000000 : 40000000)} commit;`,
       true,
     );
     sessions.push(contender);
-    await harness.waitForLock("cancellation_contender", contender);
+    await harness.waitForLock("refund_contender", contender);
     await harness.finishSession(holder, {
       action: scenario === "rollback" ? "rollback" : "commit",
     });
     await harness.finishSession(
       contender,
-      scenario === "competing-actors" ? { expectedState: "RC409" } : undefined,
+      scenario === "capacity" ? { expectedState: "RC409" } : undefined,
     );
     assert.equal(
-      harness.runSql(
-        `select count(*) from public.booking_cancellations where booking_request_id='${request}'`,
-      ),
+      harness
+        .runSql(
+          `select count(*) from public.booking_refund_intents where booking_request_id='${request}';`,
+        )
+        .trim(),
       "1",
-      `${scenario}: one cancellation fact`,
     );
     assert.equal(
-      harness.runSql(
-        `select actor_role from public.booking_cancellations where booking_request_id='${request}'`,
-      ),
-      scenario === "competing-actors" ? "cottage_owner" : "customer",
-      `${scenario}: first committed actor wins`,
+      harness
+        .runSql(
+          `select booking_price_fils from public.booking_refund_intents where booking_request_id='${request}';`,
+        )
+        .trim(),
+      scenario === "rollback" ? "40000000" : "80000000",
     );
-    assert.equal(
-      harness.runSql(
-        `select count(*) from public.booking_notification_events where booking_request_id='${request}'`,
-      ),
-      "2",
-      `${scenario}: two recipient events`,
-    );
-    assert.equal(
-      harness.runSql(
-        `select count(*) from public.booking_request_payment_history where booking_request_id='${request}' and to_state='cancelled'`,
-      ),
-      "1",
-      `${scenario}: one history transition`,
-    );
-    harness.runSql(resetCancellation);
+    harness.runSql(resetRefunds);
   }
+  harness.runSql(
+    `begin; ${administrator} ${exception(firstKey, 30000000)} commit;`,
+  );
+  const intent = harness
+    .runSql(
+      `select id from public.booking_refund_intents where command_id='${firstKey}';`,
+    )
+    .trim();
+  const holder = harness.startSession(
+    `begin; set application_name='refund_worker_holder'; set local role service_role; select public.claim_booking_refund('${intent}'); select 'REFUND_LEASED';`,
+  );
+  sessions.push(holder);
+  await harness.waitForMarker(holder, "REFUND_LEASED");
+  const contender = harness.startSession(
+    `begin; set application_name='refund_worker_contender'; set local role service_role; select public.claim_booking_refund('${intent}'); commit;`,
+    true,
+  );
+  sessions.push(contender);
+  await harness.waitForLock("refund_worker_contender", contender);
+  await harness.finishSession(holder, { action: "commit" });
+  await harness.finishSession(contender);
+  assert.equal(
+    harness
+      .runSql(
+        `select count(*) from public.booking_refund_attempts where refund_intent_id='${intent}';`,
+      )
+      .trim(),
+    "1",
+  );
+  assert.match(contender.stdout, /processing/);
   console.log(
-    "Cancellation concurrency passed duplicate-command replay, competing actors, and transaction rollback in separate PostgreSQL sessions.",
+    "Refund capacity, command replay, rollback and competing worker lease interleavings passed.",
   );
 } finally {
   for (const session of sessions)
     if (!session.exit) session.child.kill("SIGTERM");
-  harness.runSql(cleanup);
+  harness.runSql(resetRefunds + cleanup);
 }

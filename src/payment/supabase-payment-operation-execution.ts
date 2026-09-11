@@ -1,3 +1,4 @@
+import { bookingRefundRequestMatches } from "./booking-refund-contract";
 import { recoveryRequestMatches } from "./booking-request-payment-recovery-contract";
 import { paymentRequiredExpiryRequestMatches } from "./booking-request-payment-required-expiry-contract";
 import { createHash } from "node:crypto";
@@ -67,6 +68,7 @@ type ActiveExecutionPermit = Exclude<
   | { readonly purpose: "booking-request-payment-recovery" }
   | { readonly purpose: "booking-request-payment-required-expiry" }
   | { readonly purpose: "booking-request-payment-required-corrective-refund" }
+  | { readonly purpose: "booking-refund" }
 >;
 
 function permitPayload(permit: ActiveExecutionPermit) {
@@ -151,6 +153,7 @@ function admissionFrom(
       "booking-request-payment-recovery",
       "booking-request-payment-required-expiry",
       "booking-request-payment-required-corrective-refund",
+      "booking-refund",
     ].includes(admission.purpose)
   )
     throw new Error("Invalid payment admission binding");
@@ -159,6 +162,8 @@ function admissionFrom(
 
 function purposeRoutine(purpose: PaymentOperationAdmission["purpose"]): string {
   switch (purpose) {
+    case "booking-refund":
+      return "booking_refund";
     case "booking-request-capture":
       return "booking_request_capture";
     case "booking-request-payment-recovery":
@@ -212,6 +217,8 @@ export class SupabasePaymentOperationExecutionRepository implements PaymentOpera
     if (!permit)
       throw new Error("Payment admission needs a booking execution permit");
     if (
+      (permit.purpose === "booking-refund" &&
+        !bookingRefundRequestMatches(request, permit, identity)) ||
       (permit.purpose === "booking-request-payment-recovery" &&
         !recoveryRequestMatches(request, permit, identity)) ||
       ((permit.purpose === "booking-request-payment-required-expiry" ||
@@ -245,6 +252,8 @@ export class SupabasePaymentOperationExecutionRepository implements PaymentOpera
     identity: PaymentProviderIdentity,
   ): Promise<PaymentOperationAdmissionResult> {
     if (
+      (query.refundPermit &&
+        !bookingRefundRequestMatches(query, query.refundPermit, identity)) ||
       (query.recoveryPermit &&
         !recoveryRequestMatches(query, query.recoveryPermit, identity)) ||
       (query.expiryPermit &&
@@ -255,16 +264,18 @@ export class SupabasePaymentOperationExecutionRepository implements PaymentOpera
         ))
     )
       throw new Error("Payment inquiry permit is invalid");
-    const fingerprint = query.recoveryPermit
-      ? query.recoveryPermit.binding.requestFingerprint
-      : query.expiryPermit
-        ? query.expiryPermit.purpose ===
-          "booking-request-payment-required-expiry"
-          ? query.expiryPermit.binding.requestFingerprint
-          : null
-        : query.kind === "release"
-          ? null
-          : operationFingerprint(query, identity);
+    const fingerprint = query.refundPermit
+      ? query.refundPermit.binding.requestFingerprint
+      : query.recoveryPermit
+        ? query.recoveryPermit.binding.requestFingerprint
+        : query.expiryPermit
+          ? query.expiryPermit.purpose ===
+            "booking-request-payment-required-expiry"
+            ? query.expiryPermit.binding.requestFingerprint
+            : null
+          : query.kind === "release"
+            ? null
+            : operationFingerprint(query, identity);
     const { data, error } = await this.client.rpc(
       "reload_booking_request_payment_operation",
       {
@@ -290,6 +301,7 @@ export class SupabasePaymentOperationExecutionRepository implements PaymentOpera
         "booking-request-payment-recovery",
         "booking-request-payment-required-expiry",
         "booking-request-payment-required-corrective-refund",
+        "booking-refund",
       ].includes(admission.purpose)
     )
       throw new Error("Payment observation requires application consequences");

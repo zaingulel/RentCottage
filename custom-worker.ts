@@ -4,6 +4,7 @@ import handler from "./.open-next/worker.js";
 
 import { runScheduledBookingRequestExpiry } from "./src/booking-request/booking-request-expiry-schedule";
 
+import { runScheduledBookingRefunds } from "./src/booking-request/booking-refund-schedule";
 import { runScheduledBookingRequestCapture } from "./src/booking-request/booking-request-capture-schedule";
 import { runScheduledPaidConfirmationNotifications } from "./src/notification/notification-schedule";
 import { bookingRequestTestRuntimeIsEnabled } from "./src/booking-request/booking-request-test-runtime-core";
@@ -26,6 +27,7 @@ export default {
     if (bookingRequestTestRuntimeIsEnabled(environment))
       scheduledTasks.push(
         runScheduledPaidConfirmationNotifications(environment),
+        runScheduledBookingRefunds(environment),
       );
     const results = await Promise.allSettled(scheduledTasks);
     if (results.some((result) => result.status === "rejected"))

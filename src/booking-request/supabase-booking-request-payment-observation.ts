@@ -61,7 +61,8 @@ export function bookingRequestPaymentFactsFrom(
       typeof facts.revision === "string" &&
       /^[a-f0-9]{32}$/.test(facts.revision) &&
       time(facts.observedAt) &&
-      time(facts.deadline) &&
+      (time(facts.deadline) ||
+        (facts.deadline === null && facts.confirmationValid === true)) &&
       [
         facts.sourceValid,
         facts.quarantined,
@@ -134,6 +135,17 @@ export function bookingRequestPaymentFactsFrom(
             operation.recoveryStep as (typeof paymentRecoverySteps)[number],
           )),
     );
+    if (operation.bookingRefund != null) {
+      const refund = object(operation.bookingRefund);
+      requireValid(
+        operation.kind === "refund" &&
+          id(refund.intentId) &&
+          id(refund.captureOperationId) &&
+          Number.isSafeInteger(refund.amountFils) &&
+          (refund.amountFils as number) > 0 &&
+          (refund.amountFils as number) <= (facts.amountFils as number),
+      );
+    }
     const permit =
       operation.permit === null
         ? null

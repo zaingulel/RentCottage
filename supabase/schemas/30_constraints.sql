@@ -955,3 +955,10 @@ ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notificati
 ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_cancellation_id_fkey FOREIGN KEY (cancellation_id) REFERENCES public.booking_cancellations(id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_receipt_id_fkey FOREIGN KEY (receipt_id) REFERENCES public.booking_receipts(id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_recipient_user_id_fkey FOREIGN KEY (recipient_user_id) REFERENCES public.account_contexts(user_id) ON DELETE RESTRICT;
+
+ALTER TABLE public.booking_refund_intents ADD CONSTRAINT booking_refund_intents_request_fkey FOREIGN KEY (booking_request_id) REFERENCES public.booking_requests(id);
+ALTER TABLE public.booking_refund_intents ADD CONSTRAINT booking_refund_intents_capture_fkey FOREIGN KEY (capture_operation_id) REFERENCES public.payment_provider_operations(id);
+ALTER TABLE public.booking_refund_intents ADD CONSTRAINT booking_refund_intents_cancellation_fkey FOREIGN KEY (cancellation_id) REFERENCES public.booking_cancellations(id);
+ALTER TABLE public.booking_refund_intents ADD CONSTRAINT booking_refund_intents_actor_fkey FOREIGN KEY (actor_user_id) REFERENCES auth.users(id);
+ALTER TABLE public.booking_refund_attempts ADD CONSTRAINT booking_refund_attempts_intent_fkey FOREIGN KEY (refund_intent_id) REFERENCES public.booking_refund_intents(id);
+ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_refund_fkey FOREIGN KEY (refund_intent_id) REFERENCES public.booking_refund_intents(id);

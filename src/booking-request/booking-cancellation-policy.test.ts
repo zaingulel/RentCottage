@@ -41,6 +41,24 @@ describe("confirmed booking cancellation refund policy", () => {
     },
   );
 
+  it.each([
+    ["2099-08-20T05:00:00.000001Z", 128_450_000],
+    ["2099-08-20T05:00:00.000002Z", 0],
+    ["2099-08-20T05:00:00.000000Z", 128_450_000],
+  ] as const)(
+    "preserves PostgreSQL microseconds at %s",
+    (evaluatedAt, amountFils) => {
+      expect(
+        bookingCancellationRefundObligation({
+          outcome: "customer_cancellation",
+          firstStartsAt: "2099-08-22T05:00:00.000001Z",
+          evaluatedAt,
+          captured,
+        }).amountFils,
+      ).toBe(amountFils);
+    },
+  );
+
   it.each(["owner_cancellation", "administrator_cancellation"] as const)(
     "owes the full captured price and fee for %s after the first shift starts",
     (outcome) => {
