@@ -1,14 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { recordAudit, createClient, clearSession, createAccess } = vi.hoisted(
-  () => ({
-    recordAudit: vi.fn(),
-    createClient: vi.fn(),
-    clearSession: vi.fn(),
-    createAccess: vi.fn(),
-  }),
-);
+const {
+  recordAudit,
+  createClient,
+  clearSession,
+  createAccess,
+  redirect,
+  revalidatePath,
+} = vi.hoisted(() => ({
+  recordAudit: vi.fn(),
+  redirect: vi.fn(),
+  revalidatePath: vi.fn(),
+  createClient: vi.fn(),
+  clearSession: vi.fn(),
+  createAccess: vi.fn(),
+}));
 
+vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("./privileged-sign-in-audit", () => ({
   recordPrivilegedSignInAttempt: recordAudit,
 }));
@@ -21,6 +30,8 @@ vi.mock("./supabase-account-access", () => ({
 }));
 
 import {
+  enrollOwner,
+  signOutAccount,
   requestPhoneAccess,
   signInPlatformAdministrator,
   verifyPhoneAccess,
@@ -48,6 +59,36 @@ describe("account action HTTP boundary", () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "/en/owner/booking-requests/RC-REQ-0123456789ABCDEF",
+    "/en/owner/cottages/10000000-0000-4000-8000-000000000001",
+  ])(
+    "refuses enrollment from the participant-only destination %s before contacting Supabase",
+    async (returnTo) => {
+      await expect(enrollOwner({ locale: "en", returnTo })).resolves.toEqual({
+        status: "not_authorized",
+      });
+      expect(createClient).not.toHaveBeenCalled();
+      expect(createAccess).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["/ar/owner/application", "/ar/owner/cottages"])(
+    "enrolls from the supported owner-onboarding destination %s",
+    async (returnTo) => {
+      const enrollment = vi.fn().mockResolvedValue({ status: "enrolled" });
+      createClient.mockResolvedValue({});
+      createAccess.mockReturnValue({ enrollOwner: enrollment });
+
+      await expect(enrollOwner({ locale: "ar", returnTo })).resolves.toEqual({
+        status: "enrolled",
+        destination: returnTo,
+      });
+      expect(enrollment).toHaveBeenCalledOnce();
+      expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+    },
+  );
+
   it("reports role assignment infrastructure failure as unavailable", async () => {
     const signOut = vi.fn().mockResolvedValue({
       error: new Error("provider unavailable"),
@@ -63,7 +104,6 @@ describe("account action HTTP boundary", () => {
       verifyPhoneAccess({
         phone: "+9647500000000",
         code: "123456",
-        role: "customer",
       }),
     ).resolves.toEqual({ status: "unavailable" });
     expect(clearSession).toHaveBeenCalledOnce();
@@ -250,4 +290,22 @@ describe("account action HTTP boundary", () => {
     ).resolves.toEqual({ status: "unavailable" });
     expect(signOut).toHaveBeenCalledOnce();
   });
+});
+
+describe("current-device sign out", () => {
+  it.each([false, true])(
+    "clears local session and private rendering when provider error is %s",
+    async (providerError) => {
+      vi.clearAllMocks();
+      const signOut = vi.fn().mockResolvedValue({
+        error: providerError ? new Error("offline") : null,
+      });
+      createClient.mockResolvedValue({ auth: { signOut } });
+      await signOutAccount("ckb");
+      expect(signOut).toHaveBeenCalledWith({ scope: "local" });
+      expect(clearSession).toHaveBeenCalledOnce();
+      expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+      expect(redirect).toHaveBeenCalledWith("/ckb");
+    },
+  );
 });

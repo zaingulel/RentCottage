@@ -88,7 +88,7 @@ function verifyProviderResolution() {
       ) +
       `
     reset role;
-    update public.account_contexts set role='platform_administrator' where user_id=(select customer_user_id from public.booking_requests);
+    update public.account_contexts set role='platform_administrator', owner_approval_state=null where user_id=(select customer_user_id from public.booking_requests);
     select set_config('request.jwt.claims',jsonb_build_object('sub',(select customer_user_id from public.booking_requests),'role','authenticated','aal','aal2')::text,true);
     create temp table history_reference as select booking_request_reference reference from public.booking_requests;
     grant select on history_reference to authenticated;

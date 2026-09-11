@@ -1,5 +1,6 @@
 "use server";
 
+import { hasCustomerCapability } from "@/access/account-access";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import {
@@ -188,7 +189,7 @@ export async function submitBookingRequest(
   try {
     const client = await createRequestSupabaseClient();
     const context = await new SupabaseAccountContextStore(client).resolve();
-    if (context?.role !== "customer") return { status: "access-required" };
+    if (!hasCustomerCapability(context)) return { status: "access-required" };
     const submission = await createRequestBookingRequestSubmission();
     if (!submission) return { status: "payment-unavailable" };
     return await submission.submit({

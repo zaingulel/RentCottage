@@ -57,6 +57,7 @@ export interface SubmissionAttempt {
 
 export type SubmissionFailureStatus =
   | "invalid"
+  | "self-booking-not-allowed"
   | "access-required"
   | "quote-stale"
   | "too-late"

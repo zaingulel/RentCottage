@@ -164,7 +164,7 @@ describe("Booking Request action boundary", () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it("rejects malformed input and non-Customer access before provider work", async () => {
+  it("rejects malformed input and administrator access before provider work", async () => {
     await expect(
       submitBookingRequest({ ...request, partySize: 0 }),
     ).resolves.toEqual({ status: "invalid" });
@@ -172,14 +172,30 @@ describe("Booking Request action boundary", () => {
 
     resolveContext.mockResolvedValue({
       userId: "00000000-0000-4000-8000-000000000033",
-      role: "cottage_owner",
-      approvalState: "approved",
+      role: "platform_administrator",
     });
     await expect(submitBookingRequest(request)).resolves.toEqual({
       status: "access-required",
     });
     expect(createSubmission).not.toHaveBeenCalled();
   });
+
+  it.each(["prospective", "approved", "expired", "suspended"])(
+    "allows an %s owner to submit as the same customer identity",
+    async (approvalState) => {
+      resolveContext.mockResolvedValue({
+        userId: "00000000-0000-4000-8000-000000000032",
+        role: "cottage_owner",
+        approvalState,
+      });
+      await submitBookingRequest(request);
+      expect(submit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerUserId: "00000000-0000-4000-8000-000000000032",
+        }),
+      );
+    },
+  );
 
   it("fails closed when no approved payment provider is configured", async () => {
     createSubmission.mockResolvedValue(undefined);

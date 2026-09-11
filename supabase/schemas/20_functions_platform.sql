@@ -18,7 +18,7 @@ CREATE OR REPLACE FUNCTION "public"."claim_marketplace_role"("requested_role" "p
 declare
   context public.account_contexts;
 begin
-  if requested_role not in ('customer', 'cottage_owner') then
+  if requested_role is null or requested_role not in ('customer', 'cottage_owner') then
     raise exception 'Only Customer or Cottage Owner access can be claimed publicly'
       using errcode = '42501';
   end if;
@@ -33,6 +33,9 @@ begin
       using errcode = '42501';
   end if;
 
+  -- The auth identity exists before either first-time claim, so it serializes enrollment even with no context row yet.
+  perform 1 from auth.users where id = (select auth.uid()) for update;
+
   insert into public.account_contexts (user_id, role, owner_approval_state)
   values (
     (select auth.uid()),
@@ -46,11 +49,19 @@ begin
 
   select * into context
   from public.account_contexts
-  where user_id = (select auth.uid());
+  where user_id = (select auth.uid())
+  for update;
 
-  if context.role <> requested_role then
+  if context.role = 'platform_administrator' then
     raise exception 'This identity already has a different marketplace role'
       using errcode = 'RC001';
+  end if;
+
+  if requested_role = 'cottage_owner' and context.role = 'customer' then
+    update public.account_contexts
+    set role = 'cottage_owner', owner_approval_state = 'prospective'
+    where user_id = context.user_id
+    returning * into context;
   end if;
 
   return context;

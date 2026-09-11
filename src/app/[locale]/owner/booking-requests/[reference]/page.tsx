@@ -1,3 +1,5 @@
+import { requireRequestAccount } from "@/access/request-account-context";
+import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-booking-access";
@@ -17,6 +19,16 @@ export default async function OwnerConfirmedBookingPage({
 }) {
   const { locale, reference } = await params;
   if (!isLocale(locale) || !/^RC-REQ-[A-F0-9]{16}$/.test(reference)) notFound();
+  const returnTo = `/${locale}/owner/booking-requests/${reference}`;
+  const account = await requireRequestAccount(locale, returnTo);
+  if (account.status === "unavailable")
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="unavailable"
+        returnTo={returnTo}
+      />
+    );
   let confirmed;
   try {
     confirmed = await loadConfirmedBookingAccess(reference);
@@ -26,7 +38,14 @@ export default async function OwnerConfirmedBookingPage({
       code: "owner_confirmed_booking_failed",
     });
   }
-  if (confirmed === null) notFound();
+  if (confirmed === null)
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="denied"
+        returnTo={returnTo}
+      />
+    );
   if (!confirmed)
     return (
       <main className="results-page">
@@ -36,7 +55,14 @@ export default async function OwnerConfirmedBookingPage({
         </section>
       </main>
     );
-  if (confirmed.access.actorRole !== "cottage_owner") notFound();
+  if (confirmed.access.actorRole !== "cottage_owner")
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="denied"
+        returnTo={returnTo}
+      />
+    );
   return (
     <main className="results-page">
       <ConfirmedBookingDetails locale={locale} {...confirmed} />

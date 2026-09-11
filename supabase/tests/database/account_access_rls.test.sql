@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(14);
+select plan(17);
 
 select has_table(
   'public',
@@ -70,12 +70,17 @@ select throws_ok(
   'an authenticated user cannot promote their existing account context'
 );
 
-select throws_ok(
-  $$select public.claim_marketplace_role('cottage_owner')$$,
-  'RC001',
-  null,
-  'a conflicting marketplace role has a stable domain error code'
+select results_eq(
+  $$select user_id, role::text, owner_approval_state::text from public.claim_marketplace_role('cottage_owner')$$,
+  $$values ('00000000-0000-0000-0000-000000000001'::uuid, 'cottage_owner', 'prospective')$$,
+  'explicit owner enrollment preserves customer identity and requires approval'
 );
+select results_eq(
+  $$select user_id, role::text, owner_approval_state::text from public.claim_marketplace_role('customer')$$,
+  $$values ('00000000-0000-0000-0000-000000000001'::uuid, 'cottage_owner', 'prospective')$$,
+  'shared sign in retains owner enrollment and customer capability'
+);
+select throws_ok($$select public.claim_marketplace_role('platform_administrator')$$, '42501', null, 'public claims cannot grant administration');
 
 select set_config(
   'request.jwt.claims',
@@ -83,6 +88,11 @@ select set_config(
   true
 );
 
+select results_eq(
+  $$select user_id, role::text, owner_approval_state::text from public.claim_marketplace_role('customer')$$,
+  $$values ('00000000-0000-0000-0000-000000000002'::uuid, 'cottage_owner', 'approved')$$,
+  'shared sign in preserves existing owner approval'
+);
 select results_eq(
   $$select cottage_id from public.cottage_ownership order by cottage_id$$,
   array['10000000-0000-0000-0000-000000000001'::uuid],

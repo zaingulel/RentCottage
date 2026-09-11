@@ -644,11 +644,11 @@ select throws_ok(
   $$select public.create_pending_booking_period_hold(
     '00000000-0000-0000-0000-000000003101',
     '30000000-0000-4000-8000-000000003102',
-    'RC-NOT-CUSTOMER-3101',
+    'RC-SELF-BOOKING-3101',
     '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":1}]}'::jsonb
   )$$,
-  '42501', null,
-  'the service rejects an identity that is not a verified Customer'
+  'RC422', null,
+  'the service rejects an owner booking their own cottage'
 );
 reset role;
 

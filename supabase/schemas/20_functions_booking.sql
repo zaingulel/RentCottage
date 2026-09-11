@@ -1012,7 +1012,7 @@ begin
   select * into r from public.booking_receipts where id=target_receipt_id;
   select requests.* into q from public.booking_requests requests join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id where confirmations.id=r.booking_confirmation_id;
   select * into role from public.account_contexts where user_id=actor;
-  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or r.id is null or r.recipient_user_id is distinct from actor or role.role::text is distinct from r.recipient_role or (r.recipient_role='cottage_owner' and role.owner_approval_state::text is distinct from 'approved') or (w.receipt_id is null and public.booking_request_payment_status(q) is distinct from 'paid-confirmed') then raise exception 'Notification status unavailable' using errcode='42501'; end if;
+  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or r.id is null or r.recipient_user_id is distinct from actor or not ((r.recipient_role='customer' and role.role in ('customer','cottage_owner') and q.customer_user_id=actor) or (r.recipient_role='cottage_owner' and role.role='cottage_owner' and role.owner_approval_state='approved' and q.owner_user_id=actor)) or (w.receipt_id is null and public.booking_request_payment_status(q) is distinct from 'paid-confirmed') then raise exception 'Notification status unavailable' using errcode='42501'; end if;
   if w.receipt_id is null then return jsonb_build_object('receiptId',r.id,'state','pending','lastOutcome',null,'supplierDeliveryReference',null,'deliveredAt',null,'suppressedAt',null,'historical',false); end if;
   return jsonb_build_object('receiptId',w.receipt_id,'state',w.state,'lastOutcome',w.last_outcome,'supplierDeliveryReference',w.supplier_delivery_reference,'deliveredAt',w.delivered_at,'suppressedAt',w.suppressed_at,'historical',w.state='delivered' and public.booking_request_payment_status(q)<>'paid-confirmed');
 end $$;
@@ -1022,10 +1022,10 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare actor uuid:=(select auth.uid()); declare context public.account_contexts;
 begin
   select * into context from public.account_contexts where user_id=actor;
-  if actor is null or context.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or (context.role='cottage_owner' and context.owner_approval_state::text is distinct from 'approved') then raise exception 'Booking History unavailable' using errcode='42501'; end if;
+  if actor is null or context.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or context.role not in ('customer','cottage_owner') then raise exception 'Booking History unavailable' using errcode='42501'; end if;
   return query select jsonb_build_object('receiptId',receipts.id,'bookingRequestReference',requests.booking_request_reference,'bookingReference',commitments.commitment_reference,'cottageName',snapshots.quote_payload->>'cottageName','confirmedAt',confirmations.confirmed_at,'actorRole',receipts.recipient_role)
   from public.booking_receipts receipts join public.booking_confirmations confirmations on confirmations.id=receipts.booking_confirmation_id join public.booking_requests requests on requests.id=confirmations.booking_request_id join public.booking_snapshots snapshots on snapshots.id=receipts.booking_snapshot_id join public.cottage_booking_period_commitments commitments on commitments.id=confirmations.booking_period_commitment_id
-  where receipts.recipient_user_id=actor and receipts.recipient_role=context.role::text and public.booking_request_payment_status(requests)='paid-confirmed' order by confirmations.confirmed_at desc,receipts.id;
+  where receipts.recipient_user_id=actor and ((receipts.recipient_role='customer' and requests.customer_user_id=actor and context.role in ('customer','cottage_owner')) or (receipts.recipient_role='cottage_owner' and requests.owner_user_id=actor and context.role='cottage_owner' and context.owner_approval_state='approved')) and public.booking_request_payment_status(requests)='paid-confirmed' order by confirmations.confirmed_at desc,receipts.id;
 end $$;
 
 CREATE OR REPLACE FUNCTION public.retry_booking_confirmation_notification(target_receipt_id uuid) RETURNS jsonb
@@ -1035,7 +1035,7 @@ begin
   select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.receipt_id=target_receipt_id for update of requests;
   select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id for update;
   select * into role from public.account_contexts where user_id=actor;
-  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or w.receipt_id is null or w.recipient_user_id is distinct from actor or role.role::text is distinct from w.recipient_role or (w.recipient_role='cottage_owner' and role.owner_approval_state::text is distinct from 'approved') or w.state is distinct from 'retryable' or public.booking_request_payment_status(q) is distinct from 'paid-confirmed' then raise exception 'Notification retry unavailable' using errcode='42501'; end if;
+  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or w.receipt_id is null or w.recipient_user_id is distinct from actor or not ((w.recipient_role='customer' and role.role in ('customer','cottage_owner') and q.customer_user_id=actor) or (w.recipient_role='cottage_owner' and role.role='cottage_owner' and role.owner_approval_state='approved' and q.owner_user_id=actor)) or w.state is distinct from 'retryable' or public.booking_request_payment_status(q) is distinct from 'paid-confirmed' then raise exception 'Notification retry unavailable' using errcode='42501'; end if;
   update public.booking_confirmation_notification_work set state='pending',last_outcome=null,updated_at=clock_timestamp() where receipt_id=w.receipt_id;
   insert into public.booking_confirmation_notification_attempts(receipt_id,action,outcome) values(w.receipt_id,'user-retry','queued');
   return jsonb_build_object('status','queued');
@@ -1392,7 +1392,7 @@ begin
   if actor is null or target_booking_request_id is null or target_command_key is null
     or target_replacement_method <> 'simulated-replacement'
     or not exists (select 1 from public.account_contexts contexts
-      where contexts.user_id = actor and contexts.role = 'customer') then
+      where contexts.user_id = actor and contexts.role in ('customer', 'cottage_owner')) then
     raise exception 'Booking Request payment recovery is unavailable' using errcode = 'RC404';
   end if;
 
@@ -1927,7 +1927,7 @@ begin
     from public.account_contexts contexts
     join auth.users users on users.id = contexts.user_id
     where contexts.user_id = target_customer_user_id
-      and contexts.role = 'customer'::public.account_role
+      and contexts.role in ('customer'::public.account_role, 'cottage_owner'::public.account_role)
       and users.phone_confirmed_at is not null
   ) then
     raise exception 'A verified Customer is required' using errcode = '42501';
@@ -1939,6 +1939,9 @@ begin
   for update;
   if not found then
     raise exception 'Published Cottage was not found' using errcode = 'RC404';
+  end if;
+  if target_profile.owner_user_id = target_customer_user_id then
+    raise exception 'Self booking is not allowed; use owner availability controls' using errcode = 'RC422';
   end if;
   target_schedule_revision_id := target_profile.current_shift_schedule_id;
   if target_schedule_revision_id is null
@@ -3617,14 +3620,14 @@ CREATE OR REPLACE FUNCTION "public"."get_confirmed_booking_access"("target_refer
     SET "search_path" TO ''
     AS $$
   with actor as (
-    select contexts.role
+    select case when actor_request.customer_user_id = contexts.user_id then 'customer'::public.account_role else 'cottage_owner'::public.account_role end as role
     from public.booking_requests actor_request
     join public.account_contexts contexts on contexts.user_id = (select auth.uid())
     join auth.users actor_user on actor_user.id = contexts.user_id
     where actor_request.booking_request_reference = target_reference
       and actor_user.phone_confirmed_at is not null
       and (
-        (contexts.role = 'customer'::public.account_role
+        (contexts.role in ('customer'::public.account_role, 'cottage_owner'::public.account_role)
           and actor_request.customer_user_id = contexts.user_id)
         or
         (contexts.role = 'cottage_owner'::public.account_role
@@ -3734,7 +3737,7 @@ CREATE OR REPLACE FUNCTION "public"."get_customer_booking_request"("target_refer
         and receipts.recipient_user_id=(select auth.uid())),'[]'::jsonb))
   from public.booking_requests requests join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id
   where requests.booking_request_reference=target_reference and requests.customer_user_id=(select auth.uid())
-    and exists(select 1 from public.account_contexts contexts where contexts.user_id=(select auth.uid()) and contexts.role='customer');
+    and exists(select 1 from public.account_contexts contexts where contexts.user_id=(select auth.uid()) and contexts.role in ('customer','cottage_owner'));
 $$;
 
 ALTER FUNCTION "public"."get_customer_booking_request"("target_reference" "text") OWNER TO "postgres";
@@ -4868,7 +4871,7 @@ begin
     from public.account_contexts contexts
     join auth.users users on users.id = contexts.user_id
     where contexts.user_id = target_customer_user_id
-      and contexts.role = 'customer'::public.account_role
+      and contexts.role in ('customer'::public.account_role, 'cottage_owner'::public.account_role)
       and users.phone_confirmed_at is not null
   ) then
     return jsonb_build_object('status', 'access-required');
@@ -4906,6 +4909,14 @@ begin
   exception when others then
     return jsonb_build_object('status', 'invalid');
   end;
+
+  if exists (
+    select 1 from public.cottage_marketplace_listings listings
+    join public.owner_application_cottage_profiles profiles on profiles.id = listings.profile_id
+    where listings.public_slug = target_slug and profiles.owner_user_id = target_customer_user_id
+  ) then
+    return jsonb_build_object('status', 'self-booking-not-allowed');
+  end if;
 
   intent := intent || jsonb_build_object(
     'customerUserId', target_customer_user_id,

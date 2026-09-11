@@ -338,8 +338,6 @@ export function prepareIsolatedSupabaseWorkdir({
   stateRoot,
   workingDirectory,
 }) {
-  if (localProject === "rentcottage") return workingDirectory;
-
   const workdir = join(stateRoot, "project");
   const source = join(workingDirectory, "supabase");
   const target = join(workdir, "supabase");
@@ -424,8 +422,12 @@ export async function main(
   const databaseMode = mode === undefined || mode === DATABASE_MODE;
   const browserMode = mode === undefined || mode === BROWSER_MODE;
 
-  const localProject = environment.SUPABASE_LOCAL_PROJECT ?? "rentcottage";
-  if (!LOCAL_PROJECT_PATTERN.test(localProject)) {
+  const localProject =
+    environment.SUPABASE_LOCAL_PROJECT ?? "rentcottage-verification";
+  if (
+    localProject === "rentcottage" ||
+    !LOCAL_PROJECT_PATTERN.test(localProject)
+  ) {
     stderr(
       "SUPABASE_LOCAL_PROJECT must name a disposable RentCottage local project.",
     );
@@ -447,9 +449,11 @@ export async function main(
     );
     return 1;
   }
-  const isolatedProject = localProject !== "rentcottage";
-  const supabaseArguments = (commandArgs) =>
-    isolatedProject ? [...commandArgs, "--workdir", localWorkdir] : commandArgs;
+  const supabaseArguments = (commandArgs) => [
+    ...commandArgs,
+    "--workdir",
+    localWorkdir,
+  ];
   const supabaseEnvironment = {
     ...environment,
     DOCKER_CONFIG: dockerConfig,
@@ -540,10 +544,8 @@ export async function main(
     ...supabaseEnvironment,
     SUPABASE_DB_CONTAINER: `supabase_db_${localProject}`,
     SUPABASE_LOCAL_PROJECT: localProject,
+    SUPABASE_LOCAL_WORKDIR: localWorkdir,
   };
-  if (isolatedProject) {
-    databaseConcurrencyEnvironment.SUPABASE_LOCAL_WORKDIR = localWorkdir;
-  }
   delete databaseConcurrencyEnvironment.SUPABASE_URL;
   delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
   delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
@@ -668,6 +670,12 @@ export async function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = await execute(
+        "node",
+        ["scripts/verify-account-access-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {
@@ -724,6 +732,12 @@ export async function main(
     const verifyDatabaseChecks = async () => {
       const fixtureContractStatus = await verifyFixtureContract();
       if (fixtureContractStatus !== 0) return fixtureContractStatus;
+      const accountConcurrency = await execute(
+        "node",
+        ["scripts/verify-account-access-concurrency.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (accountConcurrency.status !== 0) return accountConcurrency.status;
       const createDraftConcurrencyFixture = await execute(
         "node",
         ["scripts/prepare-access-test.mjs", "create", "mobile"],
@@ -1004,7 +1018,8 @@ export async function main(
             "supabase",
             "stop",
             "--no-backup",
-            ...(isolatedProject ? ["--project-id", localProject] : []),
+            "--project-id",
+            localProject,
           ]),
           {
             cleanup: true,

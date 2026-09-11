@@ -9,6 +9,17 @@ const { loadOwnerCottageEditor, notFound, unstableRethrow } = vi.hoisted(
   }),
 );
 
+vi.mock("@/access/request-account-context", () => ({
+  requireRequestAccount: vi.fn().mockResolvedValue({
+    status: "authenticated",
+    context: {
+      userId: "fixture",
+      role: "cottage_owner",
+      approvalState: "approved",
+    },
+  }),
+}));
+vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/cottage-profile/owner-cottage-editor", () => ({
   loadOwnerCottageEditor,

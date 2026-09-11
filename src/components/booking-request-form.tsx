@@ -112,11 +112,7 @@ export function BookingRequestForm({
         <h2>{copy.verifyTitle}</h2>
         <p>{copy.verifyIntro}</p>
         <p className="quote-notice">{quoteNotice}</p>
-        <PhoneAccessForm
-          locale={locale}
-          role="customer"
-          onVerified={() => setVerified(true)}
-        />
+        <PhoneAccessForm locale={locale} onVerified={() => setVerified(true)} />
       </section>
     );
   }

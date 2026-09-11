@@ -20,17 +20,23 @@ export async function middleware(request: NextRequest) {
     cookieOptions: { name: supabaseAuthCookieName },
     cookies: {
       getAll: () => request.cookies.getAll(),
-      setAll: (values) => {
+      setAll: (values, headers) => {
         for (const { name, value } of values) request.cookies.set(name, value);
         response = NextResponse.next({ request });
         for (const { name, value, options } of values) {
           response.cookies.set(name, value, options);
         }
+        for (const [name, value] of Object.entries(headers))
+          response.headers.set(name, value);
       },
     },
   });
 
   await client.auth.getClaims();
+  response.headers.set(
+    "Cache-Control",
+    "private, no-cache, no-store, must-revalidate, max-age=0",
+  );
   return response;
 }
 

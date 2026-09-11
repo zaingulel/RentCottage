@@ -1,5 +1,9 @@
+import { requireRequestAccount } from "@/access/request-account-context";
+import { accountAccessHref } from "@/access/return-destination";
+import { AccountAccessRecovery } from "@/components/account-access-recovery";
+import { accessMessages } from "@/i18n/access-messages";
 import Link from "next/link";
-import { notFound, unstable_rethrow } from "next/navigation";
+import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
 import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
 import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
@@ -28,6 +32,20 @@ export default async function OwnerCottagesPage({
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
+  const account = await requireRequestAccount(
+    locale,
+    `/${locale}/owner/cottages`,
+  );
+  if (account.status === "unavailable")
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="unavailable"
+        returnTo={`/${locale}/owner/cottages`}
+      />
+    );
+  if (account.context?.role === "customer")
+    redirect(accountAccessHref(locale, `/${locale}/owner/cottages`));
   const copy = cottageProfileMessages[locale];
   let page: Awaited<ReturnType<typeof loadOwnerCottages>> | undefined;
   try {
@@ -73,6 +91,9 @@ export default async function OwnerCottagesPage({
         <Link href={`/${locale}`}>RentCottage</Link>
         <span>{copy.eyebrow}</span>
       </header>
+      <Link href={`/${locale}/bookings?workspace=owner`}>
+        {accessMessages[locale].ownerBookings}
+      </Link>
       <CottageProfileOverview
         locale={locale}
         actor="owner"

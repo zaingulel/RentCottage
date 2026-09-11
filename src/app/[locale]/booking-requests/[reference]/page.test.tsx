@@ -8,6 +8,17 @@ const { loadRequest, loadConfirmed, notFound, router } = vi.hoisted(() => ({
   router: { refresh: vi.fn() },
 }));
 
+vi.mock("@/access/request-account-context", () => ({
+  requireRequestAccount: vi.fn().mockResolvedValue({
+    status: "authenticated",
+    context: {
+      userId: "fixture",
+      role: "cottage_owner",
+      approvalState: "approved",
+    },
+  }),
+}));
+vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/navigation", () => ({
   notFound,
@@ -83,13 +94,17 @@ describe("authenticated Customer Booking Request page", () => {
 
   it("does not disclose another Customer's missing request", async () => {
     loadRequest.mockResolvedValue(null);
-    await CustomerBookingRequestPage({
-      params: Promise.resolve({
-        locale: "en",
-        reference: request.bookingRequestReference,
+    render(
+      await CustomerBookingRequestPage({
+        params: Promise.resolve({
+          locale: "en",
+          reference: request.bookingRequestReference,
+        }),
       }),
-    });
-    expect(notFound).toHaveBeenCalledOnce();
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This booking is not available to this account.",
+    );
   });
 
   it.each([

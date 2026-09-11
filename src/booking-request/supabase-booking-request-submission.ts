@@ -27,6 +27,7 @@ const uuid =
 const bookingRequestReference = /^RC-REQ-[A-F0-9]{16}$/;
 const stateStatuses = new Set<SubmissionFailureStatus>([
   "invalid",
+  "self-booking-not-allowed",
   "access-required",
   "quote-stale",
   "too-late",

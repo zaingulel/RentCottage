@@ -10,6 +10,7 @@ import {
 const failureStatuses = [
   "invalid",
   "access-required",
+  "self-booking-not-allowed",
   "quote-stale",
   "too-late",
   "authorization-failed",

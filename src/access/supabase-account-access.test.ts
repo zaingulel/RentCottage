@@ -244,7 +244,7 @@ describe("Supabase administrator primary adapter", () => {
 });
 
 describe("Supabase phone verification adapter", () => {
-  it("maps an expired one-time code to the public invalid-code result", async () => {
+  it("maps an expired one-time code to an actionable expiry result", async () => {
     const client = {
       auth: {
         verifyOtp: vi.fn().mockResolvedValue({
@@ -259,7 +259,7 @@ describe("Supabase phone verification adapter", () => {
         "+9647500000000",
         "123456",
       ),
-    ).resolves.toEqual({ status: "invalid_code" });
+    ).resolves.toEqual({ status: "expired_code" });
   });
 });
 

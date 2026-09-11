@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(277);
+select plan(281);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -345,7 +345,7 @@ values
 insert into public.account_contexts (user_id, role, owner_approval_state)
 values
   ('00000000-0000-0000-0000-000000003201', 'cottage_owner', 'approved'),
-  ('00000000-0000-0000-0000-000000003202', 'customer', null),
+  ('00000000-0000-0000-0000-000000003202', 'cottage_owner', 'suspended'),
   ('00000000-0000-0000-0000-000000003203', 'customer', null),
   ('00000000-0000-0000-0000-000000003204', 'cottage_owner', 'approved'),
   ('00000000-0000-0000-0000-000000003205', 'customer', null);
@@ -578,6 +578,27 @@ select is(
   ) ->> 'requiresInside48HourNoRefundAcceptance',
   'true', 'just inside 48 hours requires the no-refund acceptance'
 );
+
+create temp table self_booking_before as select
+  (select count(*) from public.booking_request_submission_attempts) attempts,
+  (select count(*) from public.cottage_booking_period_commitments) holds,
+  (select count(*) from public.cottage_booking_period_occupancies) occupancies;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003201',
+  '12141214-1214-4214-8214-121412141214',
+  (select submission from valid_submission)
+)->>'status', 'self-booking-not-allowed', 'owners cannot start payment work for their own cottage');
+reset role;
+select throws_ok($$select public.create_pending_booking_period_hold_without_authorization_claim(
+  '00000000-0000-0000-0000-000000003201',
+  '30000000-0000-4000-8000-000000003201',
+  'SELF-BOOKING-214',
+  (select submission->'discoveryQuery' from valid_submission)
+)$$, 'RC422', null, 'self-booking is denied at the hold boundary');
+reset role;
+select ok((select count(*) from public.booking_request_submission_attempts)=(select attempts from self_booking_before), 'self-booking creates no attempt or payment work');
+select ok((select count(*) from public.cottage_booking_period_commitments)=(select holds from self_booking_before) and (select count(*) from public.cottage_booking_period_occupancies)=(select occupancies from self_booking_before), 'self-booking creates no hold or occupancy');
 
 set local role service_role;
 select is(
