@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import type { Locale } from "@/i18n/routing";
 import type { AccountContext } from "./account-access";
 import { accountAccessHref } from "./return-destination";
@@ -31,7 +31,8 @@ export const resolveRequestAccount = cache(
       if (context && context.userId !== data.user.id)
         return { status: "unavailable" };
       return { status: "authenticated", context };
-    } catch {
+    } catch (error) {
+      unstable_rethrow(error);
       return { status: "unavailable" };
     }
   },

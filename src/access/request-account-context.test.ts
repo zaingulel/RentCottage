@@ -19,6 +19,19 @@ describe("current request account", () => {
     vi.clearAllMocks();
     createClient.mockResolvedValue({ auth: { getUser } });
   });
+  it("preserves the framework request-rendering signal", async () => {
+    const signal = Object.assign(new Error("Request-time cookies"), {
+      digest: "DYNAMIC_SERVER_USAGE",
+    });
+    createClient.mockRejectedValueOnce(signal);
+    await expect(resolveRequestAccount()).rejects.toBe(signal);
+  });
+  it("reports an ordinary client exception as unavailable", async () => {
+    createClient.mockRejectedValueOnce(new Error("Network unavailable"));
+    await expect(resolveRequestAccount()).resolves.toEqual({
+      status: "unavailable",
+    });
+  });
   it("checks current user before reading a private account context", async () => {
     getUser.mockResolvedValue({
       data: { user: null },

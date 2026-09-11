@@ -4,7 +4,7 @@ import { safeReturnDestination } from "./return-destination";
 describe("account return destinations", () => {
   it.each([
     "/en",
-    "/en/search?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1",
+    "/en/results?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1",
     "/en/cottages/river-house",
     "/en/request/river-house",
     "/en/bookings?workspace=owner",
@@ -29,10 +29,11 @@ describe("account return destinations", () => {
     "/en/administrator/access",
     "/api/anything",
     "/en/access",
+    "/en/search",
     "/ar/bookings",
     "/en/owner/cottages/invalid",
     "/en/bookings#secret",
-    "/en/search?note=private",
+    "/en/results?note=private",
     "/en/\\evil.test",
     "/en/bookings\n",
   ])("rejects untrusted destination %s", (destination) => {
@@ -44,7 +45,7 @@ describe("account return destinations", () => {
     "rejects extra fields on an otherwise valid search: %s",
     (extra) => {
       const search =
-        "/en/search?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1";
+        "/en/results?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1";
       expect(safeReturnDestination("en", `${search}&${extra}`)).toBe(
         "/en/bookings",
       );

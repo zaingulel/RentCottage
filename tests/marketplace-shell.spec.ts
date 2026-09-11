@@ -138,3 +138,24 @@ test("disconnects the fictional booking-request route", async ({ page }) => {
   const response = await page.goto("/en/request/garden-house");
   expect(response?.status()).toBe(404);
 });
+
+test("sign-in preserves the permitted search selection in every language", async ({
+  page,
+}) => {
+  const query =
+    "from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01%3Ashift%3A1";
+  for (const [locale, name] of Object.entries({
+    en: "Sign in",
+    ar: "تسجيل الدخول",
+    ckb: "چوونەژوورەوە",
+  })) {
+    const destination = `/${locale}/results?${query}`;
+    await page.goto(destination);
+    const signIn = page.getByRole("link", { name, exact: true });
+    const href = `/${locale}/access?returnTo=${encodeURIComponent(destination)}`;
+    await expect(signIn).toHaveAttribute("href", href);
+    await signIn.click();
+    await expect(page).toHaveURL(new URL(href, page.url()).href);
+    await expect(page.locator('input[autocomplete="tel"]')).toBeVisible();
+  }
+});

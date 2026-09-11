@@ -4,7 +4,7 @@ import { parseCottageDiscoveryQuery } from "@/cottage-discovery/discovery-query"
 const uuid =
   "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 const publicRoute =
-  /^(?:|\/search|\/(?:cottages|quote|request)\/[a-z0-9]+(?:-[a-z0-9]+)*)$/;
+  /^(?:|\/results|\/(?:cottages|quote|request)\/[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const privateRoute = new RegExp(
   `^(?:/bookings|/(?:owner/)?booking-requests/RC-REQ-[A-F0-9]{16}|/owner/application|/owner/cottages(?:/${uuid})?)$`,
 );

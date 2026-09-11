@@ -1,5 +1,5 @@
 "use client";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signOutAccount } from "@/access/actions";
 import type { AccountContext } from "@/access/account-access";
@@ -30,9 +30,15 @@ export function AccountNavigation({
   locale: Locale;
   account: NavigationAccount;
 }) {
-  const pathLocale = usePathname().split("/")[1];
+  const pathname = usePathname();
+  const query = useSearchParams().toString();
+  const pathLocale = pathname.split("/")[1];
   const locale = isLocale(pathLocale) ? pathLocale : initialLocale;
   const copy = accessMessages[locale];
+  const returnTo =
+    pathname === `/${locale}` && !query
+      ? `/${locale}/bookings`
+      : `${pathname}${query ? `?${query}` : ""}`;
   const enrollHref = accountAccessHref(locale, `/${locale}/owner/application`);
   return (
     <nav aria-label={copy.account} className="account-navigation">
@@ -41,7 +47,7 @@ export function AccountNavigation({
         <span role="status">{copy.sessionUnavailable}</span>
       ) : account.status === "signed_out" ? (
         <div>
-          <Link href={accountAccessHref(locale, `/${locale}/bookings`)}>
+          <Link href={accountAccessHref(locale, returnTo)}>
             {copy.signInAccount}
           </Link>
           <Link href={enrollHref}>{copy.listCottage}</Link>
