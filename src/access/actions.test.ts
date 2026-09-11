@@ -30,6 +30,7 @@ vi.mock("./supabase-account-access", () => ({
 }));
 
 import {
+  enrollOwner,
   signOutAccount,
   requestPhoneAccess,
   signInPlatformAdministrator,
@@ -57,6 +58,36 @@ describe("account action HTTP boundary", () => {
     ).resolves.toEqual({ status: "invalid_code" });
     expect(createClient).not.toHaveBeenCalled();
   });
+
+  it.each([
+    "/en/owner/booking-requests/RC-REQ-0123456789ABCDEF",
+    "/en/owner/cottages/10000000-0000-4000-8000-000000000001",
+  ])(
+    "refuses enrollment from the participant-only destination %s before contacting Supabase",
+    async (returnTo) => {
+      await expect(enrollOwner({ locale: "en", returnTo })).resolves.toEqual({
+        status: "not_authorized",
+      });
+      expect(createClient).not.toHaveBeenCalled();
+      expect(createAccess).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["/ar/owner/application", "/ar/owner/cottages"])(
+    "enrolls from the supported owner-onboarding destination %s",
+    async (returnTo) => {
+      const enrollment = vi.fn().mockResolvedValue({ status: "enrolled" });
+      createClient.mockResolvedValue({});
+      createAccess.mockReturnValue({ enrollOwner: enrollment });
+
+      await expect(enrollOwner({ locale: "ar", returnTo })).resolves.toEqual({
+        status: "enrolled",
+        destination: returnTo,
+      });
+      expect(enrollment).toHaveBeenCalledOnce();
+      expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+    },
+  );
 
   it("reports role assignment infrastructure failure as unavailable", async () => {
     const signOut = vi.fn().mockResolvedValue({

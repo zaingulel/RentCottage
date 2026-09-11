@@ -1,6 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import { resolveRequestAccount } from "@/access/request-account-context";
-import { safeReturnDestination } from "@/access/return-destination";
+import {
+  isOwnerEnrollmentDestination,
+  safeReturnDestination,
+} from "@/access/return-destination";
 import { PhoneAccessForm } from "@/components/phone-access-form";
 import { OwnerEnrollmentForm } from "@/components/owner-enrollment-form";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
@@ -36,13 +39,24 @@ export default async function AccountAccessPage({
         />
       );
     if (
-      returnTo.startsWith(`/${locale}/owner/`) &&
-      account.context.role === "customer"
+      account.context.role === "customer" &&
+      isOwnerEnrollmentDestination(locale, returnTo)
     )
       return (
         <main className="standalone-access">
           <OwnerEnrollmentForm locale={locale} returnTo={returnTo} />
         </main>
+      );
+    if (
+      account.context.role === "customer" &&
+      returnTo.startsWith(`/${locale}/owner/`)
+    )
+      return (
+        <AccountAccessRecovery
+          locale={locale}
+          status="denied"
+          returnTo={returnTo}
+        />
       );
     if (
       returnTo === `/${locale}/owner/application` &&

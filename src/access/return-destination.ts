@@ -9,6 +9,13 @@ const privateRoute = new RegExp(
   `^(?:/bookings|/(?:owner/)?booking-requests/RC-REQ-[A-F0-9]{16}|/owner/application|/owner/cottages(?:/${uuid})?)$`,
 );
 
+export function isOwnerEnrollmentDestination(locale: Locale, value: unknown) {
+  return (
+    value === `/${locale}/owner/application` ||
+    value === `/${locale}/owner/cottages`
+  );
+}
+
 export function safeReturnDestination(locale: Locale, value: unknown): string {
   const fallback = `/${locale}/bookings`;
   if (

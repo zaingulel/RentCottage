@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isLocale } from "@/i18n/routing";
-import { accountAccessHref, safeReturnDestination } from "./return-destination";
+import {
+  accountAccessHref,
+  isOwnerEnrollmentDestination,
+  safeReturnDestination,
+} from "./return-destination";
 
 import { recordPrivilegedSignInAttempt } from "./privileged-sign-in-audit";
 import { createSupabaseAccountAccess } from "./supabase-account-access";
@@ -211,7 +215,12 @@ export async function verifyPlatformAdministratorMfa(value: unknown) {
 
 export async function enrollOwner(value: unknown) {
   const input = recordInput(value);
-  if (!input || typeof input.locale !== "string" || !isLocale(input.locale))
+  if (
+    !input ||
+    typeof input.locale !== "string" ||
+    !isLocale(input.locale) ||
+    !isOwnerEnrollmentDestination(input.locale, input.returnTo)
+  )
     return { status: "not_authorized" as const };
   let result;
   try {
