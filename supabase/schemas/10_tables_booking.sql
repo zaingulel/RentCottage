@@ -679,3 +679,50 @@ CREATE TABLE IF NOT EXISTS "public"."simulated_payment_effects" (
     CONSTRAINT "simulated_payment_effect_state" CHECK ((((state='reserved' AND result IS NULL AND physical_execution_count=0) OR (state='closed-not-executed' AND result->>'outcome'='not-executed' AND physical_execution_count=0) OR (state='executed' AND result->>'outcome' IN ('succeeded','failed','indeterminate') AND physical_execution_count=1))) IS TRUE)
 );
 ALTER TABLE "public"."simulated_payment_effects" OWNER TO "postgres";
+
+CREATE TABLE public.booking_cancellations (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  booking_request_id uuid NOT NULL UNIQUE ,
+  booking_confirmation_id uuid NOT NULL UNIQUE ,
+  capture_operation_id uuid NOT NULL ,
+  command_id uuid NOT NULL UNIQUE,
+  command_fingerprint text NOT NULL CHECK (command_fingerprint ~ '^[0-9a-f]{64}$'),
+  actor_user_id uuid NOT NULL ,
+  actor_role text NOT NULL CHECK (actor_role IN ('customer','cottage_owner','platform_administrator')),
+  reason text,
+  category text,
+  first_starts_at timestamptz NOT NULL,
+  occurred_at timestamptz NOT NULL,
+  refund_booking_price_fils bigint NOT NULL CHECK (refund_booking_price_fils >= 0 AND refund_booking_price_fils % 10 = 0),
+  refund_booking_service_fee_fils bigint NOT NULL CHECK (refund_booking_service_fee_fils >= 0),
+  CONSTRAINT booking_cancellation_reason CHECK (
+    (actor_role='customer' AND reason IS NULL AND category IS NULL) OR
+    (actor_role='cottage_owner' AND reason IS NOT NULL AND length(btrim(reason)) >= 1 AND length(btrim(reason)) <= 2000 AND category IS NULL) OR
+    (actor_role='platform_administrator' AND reason IS NOT NULL AND length(btrim(reason)) >= 1 AND length(btrim(reason)) <= 2000 AND category IS NOT NULL AND category IN ('safety','fraud','legal','serious_operational'))
+  )
+);
+
+CREATE TABLE public.booking_cancellation_incidents (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  cancellation_id uuid NOT NULL UNIQUE ,
+  recorded_at timestamptz NOT NULL
+);
+
+CREATE TABLE public.booking_cancellation_administrator_audit (
+  cancellation_id uuid PRIMARY KEY ,
+  administrator_user_id uuid NOT NULL ,
+  recorded_at timestamptz NOT NULL
+);
+
+CREATE TABLE public.booking_notification_events (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  booking_request_id uuid NOT NULL ,
+  cancellation_id uuid NOT NULL ,
+  receipt_id uuid NOT NULL ,
+  event_kind text NOT NULL CHECK (event_kind='cancelled'),
+  recipient_user_id uuid NOT NULL ,
+  recipient_role text NOT NULL CHECK (recipient_role IN ('customer','cottage_owner')),
+  notice_locale public.cottage_profile_source_language NOT NULL,
+  created_at timestamptz NOT NULL,
+  UNIQUE(cancellation_id,recipient_role)
+);

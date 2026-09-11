@@ -236,3 +236,8 @@ ALTER TABLE "public"."payment_provider_operations" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."payment_provider_observations" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."simulated_payment_effects" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.booking_cancellations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_cancellation_incidents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_cancellation_administrator_audit ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_notification_events ENABLE ROW LEVEL SECURITY;

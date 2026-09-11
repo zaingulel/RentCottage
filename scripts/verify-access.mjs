@@ -837,6 +837,13 @@ export async function main(
       );
       if (notificationConcurrency.status !== 0)
         return notificationConcurrency.status;
+      const cancellationConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-cancellation-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (cancellationConcurrency.status !== 0)
+        return cancellationConcurrency.status;
       return (
         await execute(
           "node",

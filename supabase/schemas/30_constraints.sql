@@ -943,3 +943,15 @@ ALTER TABLE ONLY "public"."simulated_payment_effects" ADD CONSTRAINT "simulated_
 
 ALTER TABLE ONLY "public"."booking_requests"
     ADD CONSTRAINT "booking_requests_distinct_participants" CHECK ((customer_user_id <> owner_user_id));
+
+ALTER TABLE public.booking_cancellations ADD CONSTRAINT booking_cancellations_booking_request_id_fkey FOREIGN KEY (booking_request_id) REFERENCES public.booking_requests(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_cancellations ADD CONSTRAINT booking_cancellations_booking_confirmation_id_fkey FOREIGN KEY (booking_confirmation_id) REFERENCES public.booking_confirmations(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_cancellations ADD CONSTRAINT booking_cancellations_capture_operation_id_fkey FOREIGN KEY (capture_operation_id) REFERENCES public.payment_provider_operations(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_cancellations ADD CONSTRAINT booking_cancellations_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.account_contexts(user_id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_cancellation_incidents ADD CONSTRAINT booking_cancellation_incidents_cancellation_id_fkey FOREIGN KEY (cancellation_id) REFERENCES public.booking_cancellations(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_cancellation_administrator_audit ADD CONSTRAINT booking_cancellation_administrator_audit_cancellation_id_fkey FOREIGN KEY (cancellation_id) REFERENCES public.booking_cancellations(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_cancellation_administrator_audit ADD CONSTRAINT booking_cancellation_administrator_audit_administrator_user_id_fkey FOREIGN KEY (administrator_user_id) REFERENCES public.account_contexts(user_id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_booking_request_id_fkey FOREIGN KEY (booking_request_id) REFERENCES public.booking_requests(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_cancellation_id_fkey FOREIGN KEY (cancellation_id) REFERENCES public.booking_cancellations(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_receipt_id_fkey FOREIGN KEY (receipt_id) REFERENCES public.booking_receipts(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_recipient_user_id_fkey FOREIGN KEY (recipient_user_id) REFERENCES public.account_contexts(user_id) ON DELETE RESTRICT;

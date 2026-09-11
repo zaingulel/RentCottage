@@ -1348,3 +1348,14 @@ GRANT EXECUTE ON FUNCTION public.record_booking_confirmation_notification_failur
 GRANT EXECUTE ON FUNCTION public.get_booking_confirmation_notification_status(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_confirmed_booking_history() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.retry_booking_confirmation_notification(uuid) TO authenticated;
+
+REVOKE ALL ON TABLE public.booking_cancellations FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.booking_cancellation_incidents FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.booking_cancellation_administrator_audit FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.booking_notification_events FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_booking_cancellation_facts(uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.commit_booking_cancellation(uuid,uuid,text,text,text,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_cancellation_result(public.booking_cancellations) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.reject_booking_cancellation_fact_change() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_booking_cancellation_facts(uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.commit_booking_cancellation(uuid,uuid,text,text,text,jsonb) TO authenticated;
