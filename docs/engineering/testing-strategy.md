@@ -34,6 +34,7 @@ the deliberate mutation proof and convergence route, so a builder does not repea
 - Use supplier contract tests for payment signatures, retries, duplicate and out-of-order events, authorization release, capture, refunds, settlement, and translation failures.
 - Use the Cloudflare Workers runtime for server code, bindings, and the production Worker build. A Node.js test does not prove Workers compatibility.
 - Use isolated Playwright journeys for critical visible flows. Locate controls by accessible, user-facing names.
+- For changed user-facing date or money displays, use the existing locale formatters and add focused regression coverage for English, Arabic, and Kurdish.
 - Directly inspect changed mobile, desktop, right-to-left, and accessibility states. Automated functional checks do not prove visual quality.
 - Smoke the exact hosted preview before release. A local Worker preview does not prove Cloudflare deployment or Supabase reachability.
 
@@ -60,6 +61,12 @@ Keep expensive fixtures alive across related assertions only when isolation is p
 the broken claim. Prove a process or provider boundary with the smallest representative journey; test ordinary
 logic below it without repeatedly starting that boundary. When an interface changes, run its focused observer and
 the adjacent tests for affected callers.
+
+When verification commands change, update their contract tests in the same change and run those focused tests
+before broad verification.
+
+Before executing a temporary test configuration, inspect the runner's selected test list and confirm it matches
+the intended files and cases. Correct unexpected additions or missing targets before running the tests.
 
 ## Construction and convergence
 
