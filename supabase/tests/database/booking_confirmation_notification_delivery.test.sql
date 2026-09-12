@@ -184,7 +184,7 @@ update public.account_contexts set owner_approval_state='suspended' where user_i
 set local role authenticated;
 select throws_ok($$select public.retry_booking_confirmation_notification('82000000-0000-4000-8000-000000003501')$$,'42501',null,'suspended owner cannot retry their owner receipt');
 select throws_ok($$select public.get_booking_confirmation_notification_status('82000000-0000-4000-8000-000000003501')$$,'42501',null,'suspended owner cannot read their owner notification status');
-select is((select count(*)::integer from public.list_confirmed_booking_history()),0,'suspended owner sees no owner receipts in history');
+select throws_ok($$select public.list_booking_history('cottage_owner')$$,'42501',null,'suspended owner cannot forge the owner workspace');
 reset role;
 update public.account_contexts set owner_approval_state='approved' where user_id='10000000-0000-4000-8000-000000003501';
 set local role authenticated;

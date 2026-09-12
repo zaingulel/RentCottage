@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 const { loadHistory } = vi.hoisted(() => ({ loadHistory: vi.fn() }));
-vi.mock("@/booking-request/request-confirmed-booking-history", () => ({
-  loadConfirmedBookingHistory: loadHistory,
+vi.mock("@/booking-request/request-booking-history", () => ({
+  loadBookingHistory: loadHistory,
 }));
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
@@ -44,14 +44,17 @@ describe("Booking History failure", () => {
 it("labels retained cancelled bookings and links to their safe detail", async () => {
   loadHistory.mockResolvedValue([
     {
+      bookingRequestId: "60000000-0000-4000-8000-000000003501",
       receiptId: "82000000-0000-4000-8000-000000003502",
       bookingRequestReference: "RC-REQ-0000000000003501",
       bookingReference: "CONFIRMED-BOOKING-35",
       cottageName: "Preserved Cottage",
+      createdAt: "2100-12-30T13:00:00Z",
       confirmedAt: "2100-12-31T13:00:00Z",
+      firstStartsAt: "2101-01-01T05:00:00Z",
+      lastEndsAt: "2101-01-01T09:00:00Z",
       actorRole: "customer",
-      cancelled: true,
-      lifecycleStatus: "cancelled",
+      status: "cancelled",
     },
   ]);
   render(
@@ -64,6 +67,7 @@ it("labels retained cancelled bookings and links to their safe detail", async ()
   expect(
     screen.getByRole("link", { name: /Preserved Cottage/ }),
   ).toHaveAttribute("href", "/en/booking-requests/RC-REQ-0000000000003501");
+  expect(loadHistory).toHaveBeenCalledWith("customer");
 });
 
 it.each(["completed", "no_show", "incident_pending"])(
@@ -71,14 +75,17 @@ it.each(["completed", "no_show", "incident_pending"])(
   async (status) => {
     loadHistory.mockResolvedValue([
       {
-        receiptId: "receipt",
+        bookingRequestId: "60000000-0000-4000-8000-000000003501",
+        receiptId: "82000000-0000-4000-8000-000000003502",
         bookingRequestReference: "RC-REQ-0000000000003501",
         bookingReference: "BOOKING",
         cottageName: "Preserved Cottage",
+        createdAt: "2100-12-30T13:00:00Z",
         confirmedAt: "2100-12-31T13:00:00Z",
+        firstStartsAt: "2101-01-01T05:00:00Z",
+        lastEndsAt: "2101-01-01T09:00:00Z",
         actorRole: "customer",
-        cancelled: false,
-        lifecycleStatus: status,
+        status,
       },
     ]);
     render(

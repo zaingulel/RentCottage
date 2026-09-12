@@ -1,46 +1,69 @@
 import { describe, expect, it, vi } from "vitest";
-import { listConfirmedBookingHistory } from "./confirmed-booking-history";
+import { listBookingHistory } from "./booking-history";
 const item = {
-  receiptId: "82000000-0000-4000-8000-000000003502",
+  bookingRequestId: "60000000-0000-4000-8000-000000003501",
   bookingRequestReference: "RC-REQ-0000000000003501",
-  bookingReference: "CONFIRMED-BOOKING-35",
+  bookingReference: null,
   cottageName: "Preserved Cottage",
-  confirmedAt: "2100-12-31T13:00:00Z",
+  createdAt: "2100-12-30T13:00:00Z",
+  firstStartsAt: "2101-01-02T00:30:00+03:00",
+  lastEndsAt: "2101-01-02T04:30:00+03:00",
   actorRole: "customer",
-  cancelled: false,
-  lifecycleStatus: "completed",
+  status: "pending",
 };
-describe("confirmed Booking History parser", () => {
-  it("accepts the minimal paid return-navigation row", async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: [item], error: null });
+describe("Booking History parser", () => {
+  it("accepts the database-shaped unconfirmed request without manufacturing a receipt", async () => {
+    const databaseItem = Object.fromEntries(
+      Object.entries(item).filter(([key]) => key !== "bookingReference"),
+    );
+    const rpc = vi
+      .fn()
+      .mockResolvedValue({ data: [databaseItem], error: null });
     await expect(
-      listConfirmedBookingHistory({ rpc } as never),
+      listBookingHistory({ rpc } as never, "customer"),
     ).resolves.toEqual([item]);
-    expect(rpc).toHaveBeenCalledWith("list_confirmed_booking_history");
+    expect(rpc).toHaveBeenCalledWith("list_booking_history", {
+      target_actor_role: "customer",
+    });
   });
-  it("requires an explicit retained cancellation status", async () => {
+  it("accepts a genuine confirmed receipt and durable lifecycle outcome", async () => {
     const rpc = vi.fn().mockResolvedValue({
-      data: [{ ...item, cancelled: undefined }],
+      data: [
+        {
+          ...item,
+          receiptId: "82000000-0000-4000-8000-000000003502",
+          bookingReference: "CONFIRMED-BOOKING-35",
+          confirmedAt: "2100-12-31T13:00:00Z",
+          status: "completed",
+        },
+      ],
       error: null,
     });
-    await expect(listConfirmedBookingHistory({ rpc } as never)).rejects.toThrow(
-      "data is invalid",
-    );
+    await expect(
+      listBookingHistory({ rpc } as never, "customer"),
+    ).resolves.toMatchObject([
+      {
+        status: "completed",
+        receiptId: "82000000-0000-4000-8000-000000003502",
+      },
+    ]);
   });
-  it("strips unexpected private data and requires a valid lifecycle outcome", async () => {
+  it("strips unexpected private data and requires a truthful outcome", async () => {
     const rpc = vi
       .fn()
       .mockResolvedValueOnce({
-        data: [{ ...item, incidents: [{ narrative: "PRIVATE" }] }],
+        data: [{ ...item, address: "PRIVATE", phone: "PRIVATE" }],
         error: null,
       })
       .mockResolvedValueOnce({
-        data: [{ ...item, lifecycleStatus: "unknown" }],
+        data: [{ ...item, status: "unknown" }],
         error: null,
       });
-    expect(await listConfirmedBookingHistory({ rpc } as never)).toEqual([item]);
+    expect(await listBookingHistory({ rpc } as never, "customer")).toEqual([
+      item,
+    ]);
     await expect(
-      listConfirmedBookingHistory({ rpc } as never),
+      listBookingHistory({ rpc } as never, "customer"),
     ).rejects.toThrow();
   });
   it("fails closed on an unbound route", async () => {
@@ -48,8 +71,8 @@ describe("confirmed Booking History parser", () => {
       data: [{ ...item, bookingRequestReference: "wrong" }],
       error: null,
     });
-    await expect(listConfirmedBookingHistory({ rpc } as never)).rejects.toThrow(
-      "data is invalid",
-    );
+    await expect(
+      listBookingHistory({ rpc } as never, "customer"),
+    ).rejects.toThrow("data is invalid");
   });
 });

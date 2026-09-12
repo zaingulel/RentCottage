@@ -197,10 +197,10 @@ select is((select result->>'status' from cancelled_result),'cancelled','customer
 select is((select result->'refundObligation' from cancelled_result),'{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb,'entire captured price and service fee are owed');
 select is(public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003801','customer',null,null,'{}'),(select result from cancelled_result),'same command replays the original outcome regardless of derived decision');
 select throws_ok($$select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003802','customer',null,null,'{}')$$,'RC409',null,'a second cancellation cannot replace the first fact');
-select is((select count(*) from public.list_confirmed_booking_history()),1::bigint,'customer history retains the cancelled booking');
+select is(jsonb_array_length(public.list_booking_history('customer')),1,'customer history retains the cancelled booking');
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000001001'),null::jsonb,'retained history does not grant active private access');
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
-select is((select count(*) from public.list_confirmed_booking_history()),1::bigint,'owner history retains the cancelled booking');
+select is(jsonb_array_length(public.list_booking_history('cottage_owner')),1,'owner history retains the cancelled booking');
 reset role;
 select is((select status::text from public.cottage_booking_period_commitments),'cancelled_booking','cancellation ends the active customer conflict');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),0::bigint,'all unstarted component shifts including bundle components become available');

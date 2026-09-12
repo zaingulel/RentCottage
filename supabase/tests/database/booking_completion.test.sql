@@ -202,7 +202,7 @@ select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','c
 select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'payoutPrerequisiteAvailable','true','completed booking exposes matured lifecycle payout prerequisite');
 select lives_ok($$select public.get_booking_financial_view('RC-REQ-0000000000001001','customer')$$,'completed booking retains financial reader and manual-refund source access');
 select is(public.get_booking_financial_view('RC-REQ-0000000000001001','customer')#>>'{lifecycle,status}','completed','financial detail publishes explicit completed lifecycle');
-select is((select value->>'lifecycleStatus' from public.list_confirmed_booking_history() value),'completed','history navigation carries durable lifecycle status');
+select is((select value->>'status' from jsonb_array_elements(public.list_booking_history('customer')) value),'completed','history navigation carries durable lifecycle status');
 select is(public.get_booking_financial_view('RC-REQ-0000000000001001','customer')#>>'{eligibility,reviewAvailable}','true','detail carries downstream review prerequisite');
 select throws_ok($$select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003901','customer',null,null,pg_temp.cancellation_decision('customer',false))$$,'RC409',null,'completion conflicts with subsequent cancellation');
 select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
