@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import {
   parseBookingPayoutFacts,
+  parseBookingSettlementFacts,
+  SupabaseBookingSettlementRepository,
   SupabaseBookingPayoutRepository,
 } from "./supabase-booking-payout";
 const bookingRequestId = "60000000-0000-4000-8000-000000001001";
@@ -35,16 +37,14 @@ const facts = {
 };
 describe("payout evidence adapter", () => {
   it("fresh adapters reproduce independent attributed holds without raw provider payloads", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValue({
-        data: {
-          ...facts,
-          providerReference: "private-correlation",
-          rawObservation: { secret: true },
-        },
-        error: null,
-      });
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        ...facts,
+        providerReference: "private-correlation",
+        rawObservation: { secret: true },
+      },
+      error: null,
+    });
     const client = { rpc } as unknown as SupabaseClient;
     const first = await new SupabaseBookingPayoutRepository(client).facts(
       bookingRequestId,
@@ -76,17 +76,15 @@ describe("payout evidence adapter", () => {
   );
   it("rejects a replay receipt that belongs to another command", async () => {
     const client = {
-      rpc: vi
-        .fn()
-        .mockResolvedValue({
-          data: {
-            status: "recorded",
-            bookingRequestId,
-            commandId: dispute,
-            occurredAt: command.occurredAt,
-          },
-          error: null,
-        }),
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          status: "recorded",
+          bookingRequestId,
+          commandId: dispute,
+          occurredAt: command.occurredAt,
+        },
+        error: null,
+      }),
     } as unknown as SupabaseClient;
     await expect(
       new SupabaseBookingPayoutRepository(client).record({
@@ -109,5 +107,108 @@ describe("payout evidence adapter", () => {
         reason: "Review",
       }),
     ).rejects.toThrow("Refresh");
+  });
+});
+
+const settlementFacts = {
+  ...facts,
+  revision: "a".repeat(32),
+  maturity: {
+    status: "unavailable",
+    reviewAvailable: false,
+    payoutPrerequisiteAvailable: false,
+  },
+  intents: [],
+  settlement: null,
+};
+describe("settlement fact boundaries", () => {
+  it("preserves the original administrative command identity for replay validation", () => {
+    const value = {
+      ...settlementFacts,
+      settlement: {
+        id: dispute,
+        commandId: hold,
+        amountFils: 90000000,
+        state: "succeeded",
+        retrySafe: false,
+      },
+    };
+    expect(parseBookingSettlementFacts(value, bookingRequestId)).toEqual(value);
+  });
+  it("does not expose raw provider correlation in the application DTO", () => {
+    expect(
+      parseBookingSettlementFacts(
+        {
+          ...settlementFacts,
+          providerReference: "private",
+          rawObservation: { private: true },
+        },
+        bookingRequestId,
+      ),
+    ).toEqual(settlementFacts);
+  });
+  it.each([
+    { maturity: undefined },
+    { intents: undefined },
+    { settlement: undefined },
+    { revision: "unknown" },
+    {
+      settlement: {
+        id: hold,
+        commandId: hold,
+        amountFils: 100000001,
+        state: "succeeded",
+        retrySafe: false,
+      },
+    },
+    {
+      settlement: {
+        id: hold,
+        commandId: hold,
+        amountFils: 90000000,
+        state: "indeterminate",
+        retrySafe: undefined,
+      },
+    },
+  ])("rejects unavailable or malformed settlement facts %j", (change) => {
+    expect(() =>
+      parseBookingSettlementFacts(
+        { ...settlementFacts, ...change },
+        bookingRequestId,
+      ),
+    ).toThrow();
+  });
+  it("keeps attributed commands on the authenticated client and admission claims on the service client", async () => {
+    const rpc = vi
+        .fn()
+        .mockResolvedValue({
+          data: { status: "requested", intentId: hold },
+          error: null,
+        }),
+      serviceRpc = vi
+        .fn()
+        .mockResolvedValue({ data: { status: "processing" }, error: null });
+    const repository = new SupabaseBookingSettlementRepository(
+      { rpc } as unknown as SupabaseClient,
+      { rpc: serviceRpc } as unknown as SupabaseClient,
+    );
+    await repository.request(
+      { bookingRequestId, commandId: hold, reason: "Review" },
+      settlementFacts.revision,
+      90000000,
+    );
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("request_booking_settlement", {
+      target_booking_request_id: bookingRequestId,
+      target_command_id: hold,
+      target_reason: "Review",
+      target_revision: settlementFacts.revision,
+      target_amount_fils: 90000000,
+    });
+    expect(serviceRpc).not.toHaveBeenCalled();
+    expect(await repository.claim(hold)).toEqual({ status: "processing" });
+    expect(serviceRpc).toHaveBeenCalledExactlyOnceWith(
+      "claim_booking_settlement",
+      { target_intent_id: hold },
+    );
   });
 });

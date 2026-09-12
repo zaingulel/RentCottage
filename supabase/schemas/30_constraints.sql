@@ -994,3 +994,8 @@ ALTER TABLE public.booking_payout_commands ADD CONSTRAINT booking_payout_command
 ALTER TABLE public.booking_payout_commands ADD CONSTRAINT booking_payout_commands_subject_fkey FOREIGN KEY (subject_id) REFERENCES public.booking_payout_commands(id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_payout_commands ADD CONSTRAINT booking_payout_commands_actor_fkey FOREIGN KEY (actor_user_id) REFERENCES public.account_contexts(user_id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_refund_intents ADD CONSTRAINT booking_refund_intents_dispute_fkey FOREIGN KEY (dispute_resolution_id) REFERENCES public.booking_payout_commands(id) ON DELETE RESTRICT;
+
+ALTER TABLE public.booking_settlement_intents ADD CONSTRAINT booking_settlement_intents_request_fkey FOREIGN KEY (booking_request_id) REFERENCES public.booking_requests(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_settlement_intents ADD CONSTRAINT booking_settlement_intents_capture_fkey FOREIGN KEY (capture_operation_id) REFERENCES public.payment_provider_operations(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_settlement_intents ADD CONSTRAINT booking_settlement_intents_actor_fkey FOREIGN KEY (actor_user_id) REFERENCES public.account_contexts(user_id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_settlement_attempts ADD CONSTRAINT booking_settlement_attempts_intent_fkey FOREIGN KEY (settlement_intent_id) REFERENCES public.booking_settlement_intents(id) ON DELETE RESTRICT;

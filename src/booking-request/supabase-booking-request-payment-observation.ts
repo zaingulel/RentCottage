@@ -135,6 +135,17 @@ export function bookingRequestPaymentFactsFrom(
             operation.recoveryStep as (typeof paymentRecoverySteps)[number],
           )),
     );
+    if (operation.bookingSettlement != null) {
+      const settlement = object(operation.bookingSettlement);
+      requireValid(
+        operation.kind === "settlement" &&
+          id(settlement.intentId) &&
+          id(settlement.captureOperationId) &&
+          Number.isSafeInteger(settlement.amountFils) &&
+          (settlement.amountFils as number) > 0 &&
+          (settlement.amountFils as number) <= (facts.amountFils as number),
+      );
+    }
     if (operation.bookingRefund != null) {
       const refund = object(operation.bookingRefund);
       requireValid(

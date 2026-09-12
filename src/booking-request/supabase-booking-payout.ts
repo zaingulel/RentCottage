@@ -1,3 +1,20 @@
+import {
+  bookingSettlementPermitFrom,
+  bookingSettlementRequestMatches,
+} from "@/payment/booking-settlement-contract";
+import { paymentQueryReferencesAreValid } from "@/payment/payment-operation-execution";
+import type {
+  ProviderOperationBinding,
+  ProviderOperationRequest,
+  ProviderReconciliationQuery,
+} from "@/payment/payment-contract";
+import { parseBookingCompletionEligibility } from "./booking-lifecycle";
+import type {
+  BookingSettlementFacts,
+  BookingSettlementRepository,
+  BookingSettlementCommand,
+  BookingSettlementClaim,
+} from "./booking-payout";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   exactMarketplaceCommission,
@@ -229,5 +246,148 @@ export class SupabaseBookingPayoutRepository implements BookingPayoutRepository 
       commandId: uuid(v.commandId),
       occurredAt: timestamp(v.occurredAt),
     };
+  }
+}
+
+export function parseBookingSettlementFacts(
+  value: unknown,
+  bookingRequestId: string,
+): BookingSettlementFacts {
+  const v = object(value),
+    payout = parseBookingPayoutFacts(v, bookingRequestId);
+  if (typeof v.revision !== "string" || !/^[a-f0-9]{32}$/.test(v.revision))
+    throw new Error("Invalid settlement revision");
+  const intent = v.settlement === null ? null : object(v.settlement);
+  if (
+    intent &&
+    (typeof intent.amountFils !== "number" ||
+      !Number.isSafeInteger(intent.amountFils) ||
+      intent.amountFils <= 0 ||
+      intent.amountFils > payout.captured.bookingPriceFils ||
+      typeof intent.retrySafe !== "boolean")
+  )
+    throw new Error("Invalid settlement evidence");
+  return {
+    ...payout,
+    revision: v.revision,
+    maturity: parseBookingCompletionEligibility(v.maturity),
+    intents: list(v.intents).map((value) => {
+      const intent = object(value);
+      if (typeof intent.automatic !== "boolean")
+        throw new Error("Invalid settlement refund evidence");
+      return {
+        id: uuid(intent.id),
+        automatic: intent.automatic,
+        state: choice(intent.state, [
+          "requested",
+          "processing",
+          "unknown",
+          "succeeded",
+          "failed",
+        ] as const),
+      };
+    }),
+    settlement: intent
+      ? {
+          id: uuid(intent.id),
+          commandId: uuid(intent.commandId),
+          amountFils: intent.amountFils as number,
+          state: choice(intent.state, [
+            "requested",
+            "processing",
+            "indeterminate",
+            "succeeded",
+            "failed",
+            "not-executed",
+          ] as const),
+          retrySafe: intent.retrySafe as boolean,
+        }
+      : null,
+  };
+}
+export class SupabaseBookingSettlementRepository implements BookingSettlementRepository {
+  constructor(
+    private readonly client: SupabaseClient,
+    private readonly serviceClient: SupabaseClient,
+  ) {}
+  async facts(bookingRequestId: string): Promise<BookingSettlementFacts> {
+    const { data, error } = await this.client.rpc(
+      "get_booking_settlement_facts",
+      { target_booking_request_id: bookingRequestId },
+    );
+    checkError(error);
+    return parseBookingSettlementFacts(data, bookingRequestId);
+  }
+  async request(
+    command: BookingSettlementCommand,
+    revision: string,
+    amountFils: number,
+  ) {
+    const { data, error } = await this.client.rpc(
+      "request_booking_settlement",
+      {
+        target_booking_request_id: command.bookingRequestId,
+        target_command_id: command.commandId,
+        target_reason: command.reason,
+        target_revision: revision,
+        target_amount_fils: amountFils,
+      },
+    );
+    checkError(error);
+    const v = object(data);
+    if (v.status === "stale") return { status: "stale" as const };
+    if (v.status !== "requested")
+      throw new Error("Invalid settlement request receipt");
+    return { status: "requested" as const, intentId: uuid(v.intentId) };
+  }
+  async claim(intentId: string): Promise<BookingSettlementClaim> {
+    const { data, error } = await this.serviceClient.rpc(
+      "claim_booking_settlement",
+      { target_intent_id: intentId },
+    );
+    checkError(error);
+    const v = object(data);
+    if (
+      v.status === "processing" ||
+      v.status === "settled" ||
+      v.status === "blocked" ||
+      v.status === "attention-required"
+    )
+      return { status: v.status };
+    const request = object(
+      v.status === "execute"
+        ? v.request
+        : v.status === "query"
+          ? v.query
+          : null,
+    );
+    const permit = bookingSettlementPermitFrom(
+      v.status === "execute"
+        ? request.executionPermit
+        : request.settlementPermit,
+    );
+    if (
+      permit.binding.settlementIntentId !== intentId ||
+      !bookingSettlementRequestMatches(
+        request as unknown as ProviderOperationBinding,
+        permit,
+        permit.binding.providerIdentity,
+      ) ||
+      (v.status === "query" &&
+        !paymentQueryReferencesAreValid(
+          request.providerRequestId,
+          request.providerReference,
+        ))
+    )
+      throw new Error("Invalid settlement work binding");
+    return v.status === "execute"
+      ? {
+          status: "execute",
+          request: request as unknown as ProviderOperationRequest,
+        }
+      : {
+          status: "query",
+          query: request as unknown as ProviderReconciliationQuery,
+        };
   }
 }

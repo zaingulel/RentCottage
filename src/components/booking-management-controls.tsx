@@ -32,7 +32,13 @@ export function BookingManagementControl({
   reference: string;
   actorRole: BookingParticipantRole;
   commandId: string;
-  action: "cancel" | "refund" | "no_show" | "incident" | BookingPayoutAction;
+  action:
+    | "cancel"
+    | "refund"
+    | "no_show"
+    | "incident"
+    | BookingPayoutAction
+    | "settle";
   subjectId?: string;
 }) {
   const c = bookingManagementMessages[locale],
@@ -42,7 +48,8 @@ export function BookingManagementControl({
     action === "place_hold" ||
     action === "release_hold" ||
     action === "open_dispute" ||
-    action === "resolve_dispute";
+    action === "resolve_dispute" ||
+    action === "settle";
   const [outcome, setOutcome] = useState("");
   const allocationRequired =
     action === "refund" ||
@@ -92,19 +99,21 @@ export function BookingManagementControl({
       ) : null}
       <h3>{label}</h3>
       <p>
-        {payoutAction
-          ? p.help
-          : action === "no_show"
-            ? l.noShowHelp
-            : action === "incident"
-              ? l.privateHelp
-              : action === "refund"
-                ? c.exceptionHelp
-                : actorRole === "customer"
-                  ? c.policy
-                  : actorRole === "cottage_owner"
-                    ? c.ownerPolicy
-                    : c.adminPolicy}
+        {action === "settle"
+          ? p.settlementHelp
+          : payoutAction
+            ? p.help
+            : action === "no_show"
+              ? l.noShowHelp
+              : action === "incident"
+                ? l.privateHelp
+                : action === "refund"
+                  ? c.exceptionHelp
+                  : actorRole === "customer"
+                    ? c.policy
+                    : actorRole === "cottage_owner"
+                      ? c.ownerPolicy
+                      : c.adminPolicy}
       </p>
       {action === "cancel" && actorRole === "platform_administrator" ? (
         <label>
@@ -234,6 +243,14 @@ export function BookingManagementControl({
       >
         {action === "refund" ? c.approve : label}
       </ActionButton>
+      {state.status === "settled" ||
+      state.status === "blocked" ||
+      state.status === "attention-required" ||
+      state.status === "processing" ? (
+        <ActionFeedback kind={state.status === "settled" ? "success" : "error"}>
+          {p[state.status]}
+        </ActionFeedback>
+      ) : null}
       {state.status === "conflict" ||
       state.status === "invalid" ||
       state.status === "unavailable" ||

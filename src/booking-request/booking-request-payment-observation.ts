@@ -52,6 +52,11 @@ export interface PaymentOperationFact {
   readonly recoveryOperationId: string | null;
   readonly recoveryStep: PaymentRecoveryStep | null;
   readonly valid: boolean;
+  readonly bookingSettlement?: {
+    readonly intentId: string;
+    readonly captureOperationId: string;
+    readonly amountFils: number;
+  } | null;
   readonly bookingRefund?: {
     readonly intentId: string;
     readonly captureOperationId: string;
@@ -337,7 +342,9 @@ export function createBookingRequestPaymentObservation({
                 physicalAttemptId: operation.physicalAttemptId,
                 kind: operation.kind,
                 amountFils:
-                  operation.bookingRefund?.amountFils ?? facts.amountFils,
+                  operation.bookingRefund?.amountFils ??
+                  operation.bookingSettlement?.amountFils ??
+                  facts.amountFils,
                 currency: "IQD",
                 providerRequestId:
                   operation.providerRequestId ?? value.providerRequestId,
@@ -405,7 +412,8 @@ export function createBookingRequestPaymentObservation({
               command = selectPaymentObservation(facts, operationId, result);
               if (
                 result.outcome === "indeterminate" &&
-                !operation.bookingRefund
+                !operation.bookingRefund &&
+                !operation.bookingSettlement
               )
                 command = {
                   ...command,
@@ -414,7 +422,8 @@ export function createBookingRequestPaymentObservation({
               if (
                 (operation.kind === "release" || operation.kind === "refund") &&
                 result.outcome === "failed" &&
-                !operation.bookingRefund
+                !operation.bookingRefund &&
+                !operation.bookingSettlement
               )
                 command = {
                   ...command,

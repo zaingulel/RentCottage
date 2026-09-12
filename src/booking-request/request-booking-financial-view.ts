@@ -1,5 +1,5 @@
 import "server-only";
-import { SupabaseBookingPayoutRepository } from "./supabase-booking-payout";
+import { SupabaseBookingSettlementRepository } from "./supabase-booking-payout";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
 import {
@@ -16,7 +16,7 @@ export async function loadBookingFinancialView(
   if (!view || actorRole !== "platform_administrator") return view;
   return {
     ...view,
-    payout: await new SupabaseBookingPayoutRepository(client).facts(
+    payout: await new SupabaseBookingSettlementRepository(client, client).facts(
       view.bookingRequestId,
     ),
   };

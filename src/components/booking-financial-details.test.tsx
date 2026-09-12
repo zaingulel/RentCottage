@@ -243,6 +243,10 @@ describe("administrator payout investigation", () => {
   const hold = "90000000-0000-4000-8000-000000002270",
     dispute = "90000000-0000-4000-8000-000000002271";
   const payout = {
+    revision: "a".repeat(32),
+    maturity: financial.eligibility,
+    intents: [],
+    settlement: null,
     bookingRequestId: financial.bookingRequestId,
     captured: financial.captured,
     refunded: zero,

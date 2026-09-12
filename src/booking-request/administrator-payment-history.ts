@@ -78,6 +78,7 @@ const operations = [
   "capture",
   "release",
   "refund",
+  "settlement",
   "original-release",
   "replacement-authorization",
   "replacement-capture",

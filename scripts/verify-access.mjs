@@ -883,6 +883,12 @@ export async function main(
         { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
       );
       if (refundConcurrency.status !== 0) return refundConcurrency.status;
+      const payoutConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-payout-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (payoutConcurrency.status !== 0) return payoutConcurrency.status;
       return (
         await execute(
           "node",

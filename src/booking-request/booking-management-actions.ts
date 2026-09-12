@@ -1,4 +1,5 @@
 "use server";
+import { createRequestBookingSettlement } from "./request-booking-settlement";
 import { refresh } from "next/cache";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
@@ -35,6 +36,10 @@ export type BookingManagementActionState = {
     | "requested"
     | "no_show"
     | "recorded"
+    | "settled"
+    | "blocked"
+    | "attention-required"
+    | "processing"
     | "conflict"
     | "invalid"
     | "access-required"
@@ -73,6 +78,7 @@ export async function manageConfirmedBooking(
       "release_hold",
       "open_dispute",
       "resolve_dispute",
+      "settle",
     ].includes(String(action))
   )
     return { status: "invalid" };
@@ -107,7 +113,10 @@ export async function manageConfirmedBooking(
     return { status: "invalid" };
   if (
     (action === "incident" && actorRole === "customer") ||
-    ((action === "refund" || action === "no_show" || payoutAction) &&
+    ((action === "refund" ||
+      action === "no_show" ||
+      action === "settle" ||
+      payoutAction) &&
       actorRole !== "platform_administrator")
   )
     return { status: "access-required" };
@@ -135,6 +144,15 @@ export async function manageConfirmedBooking(
     }
     const view = await getBookingFinancialView(client, reference, actorRole);
     if (!view) return { status: "access-required" };
+    if (action === "settle") {
+      const result = await createRequestBookingSettlement(client).settle({
+        bookingRequestId: view.bookingRequestId,
+        commandId,
+        reason: (reason as string).trim(),
+      });
+      refresh();
+      return result;
+    }
     if (payoutAction) {
       const subjectId = form.get("subjectId"),
         outcome = form.get("outcome");

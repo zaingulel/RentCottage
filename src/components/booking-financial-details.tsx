@@ -1,3 +1,4 @@
+import { selectBookingSettlement } from "@/booking-request/booking-payout";
 import Link from "next/link";
 import type { BookingFinancialView } from "@/booking-request/booking-financial-view";
 import { bookingFinancialPresentation } from "@/booking-request/booking-financial-presentation";
@@ -252,6 +253,28 @@ export function BookingFinancialDetails({
       {view.actorRole === "platform_administrator" && view.payout ? (
         <section aria-label={p.title}>
           <h2>{p.title}</h2>
+          {view.payout.settlement ? (
+            <div>
+              <p>{p[view.payout.settlement.state]}</p>
+              <p>
+                {p.settlementAmount}:{" "}
+                {amount(view.payout.settlement.amountFils)}
+              </p>
+            </div>
+          ) : null}
+          {selectBookingSettlement(view.payout).action === "blocked" ? (
+            <p>{p.blocked}</p>
+          ) : null}
+          {view.payout.settlement?.state !== "succeeded" ? (
+            <BookingManagementControl
+              locale={locale}
+              reference={view.bookingRequestReference}
+              actorRole="platform_administrator"
+              action="settle"
+              commandId={crypto.randomUUID()}
+            />
+          ) : null}
+
           <p>{view.payout.activeHoldIds.length ? p.held : p.clear}</p>
           {view.payout.activeHoldIds.length ? (
             view.payout.activeHoldIds.map((id) => (

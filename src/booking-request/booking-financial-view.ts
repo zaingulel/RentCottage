@@ -1,4 +1,4 @@
-import type { BookingPayoutFacts } from "./booking-payout";
+import type { BookingSettlementFacts } from "./booking-payout";
 import {
   parseBookingLifecycle,
   parseBookingCompletionEligibility,
@@ -15,7 +15,7 @@ import {
 import type { BookingCancellationCommand } from "./booking-cancellation";
 export type BookingParticipantRole = BookingCancellationCommand["actorRole"];
 export interface BookingFinancialView {
-  readonly payout?: BookingPayoutFacts;
+  readonly payout?: BookingSettlementFacts;
   readonly bookingRequestId: string;
   readonly bookingRequestReference: string;
   readonly bookingReference: string;
