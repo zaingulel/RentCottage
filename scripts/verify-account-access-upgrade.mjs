@@ -139,6 +139,11 @@ export function verifyAccountAccessUpgrade({
       ],
     );
     run(["migration", "up", "--local"]);
+    // Historical bookings gain only a null scheduling field. Keep it in the
+    // expected graph so the later enrollment comparison also preserves it.
+    before["public.booking_requests"] = before["public.booking_requests"].map(
+      (row) => ({ ...row, refund_last_scheduled_at: null }),
+    );
     assert.deepEqual(
       snapshot(),
       before,
