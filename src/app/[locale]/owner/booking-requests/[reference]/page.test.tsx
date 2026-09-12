@@ -1,8 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
-const { confirmed, financial } = vi.hoisted(() => ({
+const { confirmed, financial, request } = vi.hoisted(() => ({
   confirmed: vi.fn(),
   financial: vi.fn(),
+  request: vi.fn(),
 }));
 vi.mock("@/access/request-account-context", () => ({
   requireRequestAccount: vi.fn().mockResolvedValue({ status: "authenticated" }),
@@ -16,6 +17,15 @@ vi.mock("@/booking-request/request-confirmed-booking-access", () => ({
 }));
 vi.mock("@/booking-request/request-booking-financial-view", () => ({
   loadBookingFinancialView: financial,
+}));
+vi.mock(
+  "@/booking-request/request-owner-booking-request-notifications",
+  () => ({
+    loadOwnerBookingRequest: request,
+  }),
+);
+vi.mock("@/components/owner-booking-request-notifications", () => ({
+  OwnerBookingRequestCard: () => <h1>Preserved owner request</h1>,
 }));
 vi.mock("@/components/confirmed-booking-details", () => ({
   ConfirmedBookingDetails: () => <h1>Confirmed booking</h1>,
@@ -36,6 +46,7 @@ beforeEach(() => {
     cancellation: null,
     lifecycle: { status: "confirmed" },
   });
+  request.mockResolvedValue(null);
 });
 it.each([
   ["en", "Confirmed booking is unavailable"],
@@ -76,6 +87,20 @@ it("retains cancellation history without reopening private access", async () => 
   expect(
     screen.getByRole("heading", { name: "Cancellation and refunds" }),
   ).toBeVisible();
+  expect(
+    screen.queryByRole("heading", { name: "Confirmed booking" }),
+  ).not.toBeInTheDocument();
+});
+it("opens an authorised unpaid owner request from complete history", async () => {
+  confirmed.mockResolvedValue(null);
+  request.mockResolvedValue({
+    bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
+  });
+  render(await Page({ params: params("en") }));
+  expect(
+    screen.getByRole("heading", { name: "Preserved owner request" }),
+  ).toBeVisible();
+  expect(request).toHaveBeenCalledWith("RC-REQ-AAAAAAAAAAAAAAAA");
   expect(
     screen.queryByRole("heading", { name: "Confirmed booking" }),
   ).not.toBeInTheDocument();

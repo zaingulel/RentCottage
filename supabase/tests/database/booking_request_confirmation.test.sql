@@ -48,7 +48,7 @@ create or replace function pg_temp.capture_execute(permit jsonb,outcome text def
   select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
-select plan(40);
+select plan(42);
 
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
@@ -212,7 +212,7 @@ create trigger fail_owner_receipt before insert on public.booking_receipts for e
 set local role service_role;
 select throws_ok($$select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',(select result->'snapshot' from confirmation_capture))$$,'P0001','injected second receipt failure','second receipt failure rolls back the complete outcome');
 reset role;
-select ok((select status from public.cottage_booking_period_commitments)='pending_hold' and not exists(select 1 from public.booking_confirmations) and not exists(select 1 from public.booking_receipts),'receipt failure leaves no partial outcome');
+select ok((select status from public.cottage_booking_period_commitments)='pending_hold' and not exists(select 1 from public.booking_confirmations) and not exists(select 1 from public.booking_receipts) and not exists(select 1 from public.booking_notification_events),'receipt failure leaves no partial confirmation, receipt or reminder outcome');
 drop trigger fail_owner_receipt on public.booking_receipts;
 
 set local role service_role;
@@ -222,6 +222,8 @@ select is((select status::text from public.cottage_booking_period_commitments),'
 select is((select count(*) from public.cottage_booking_period_commitments),1::bigint,'confirmation creates no second commitment');
 select is((select count(*) from public.booking_confirmations),1::bigint,'one confirmation is persisted');
 select is((select count(*) from public.booking_receipts),2::bigint,'exactly two receipts are persisted');
+select is((select count(*) from public.booking_notification_events where event_kind='preparation_reminder'),2::bigint,'confirmation atomically records both preparation reminder intents');
+select results_eq($$select due_at,first_starts_at from public.booking_notification_events where event_kind='preparation_reminder' order by recipient_role$$,$$values ('2100-12-31 05:00+00'::timestamptz,'2101-01-01 05:00+00'::timestamptz),('2100-12-31 05:00+00'::timestamptz,'2101-01-01 05:00+00'::timestamptz)$$,'Iraq first-shift deadline is exactly twenty-four hours before the immutable earliest access range');
 select results_eq($$select recipient_role,recipient_user_id from public.booking_receipts order by recipient_role$$,$$values ('cottage_owner'::text,'10000000-0000-4000-8000-000000001001'::uuid),('customer'::text,'10000000-0000-4000-8000-000000001002'::uuid)$$,'receipts bind Customer and Cottage Owner');
 select results_eq($$select shift_id,service_day from public.cottage_booking_period_occupancies where active order by service_day,shift_id$$,$$values ('32000000-0000-4000-8000-000000001001'::uuid,'2101-01-01'::date),('32000000-0000-4000-8000-000000001003'::uuid,'2101-01-01'::date),('32000000-0000-4000-8000-000000001001'::uuid,'2101-01-02'::date),('32000000-0000-4000-8000-000000001002'::uuid,'2101-01-02'::date),('32000000-0000-4000-8000-000000001003'::uuid,'2101-01-02'::date)$$,'all individual, bundle, and cross-midnight occupancies remain active');
 select throws_ok($$insert into public.cottage_booking_period_commitments (customer_user_id,profile_id,schedule_revision_id,commitment_reference,status,access_ranges) values ('10000000-0000-4000-8000-000000001002','20000000-0000-4000-8000-000000001001','30000000-0000-4000-8000-000000001001','OVERLAPPING-CUSTOMER','pending_hold','{["2101-01-02 06:00+00","2101-01-02 07:00+00")}'::tstzmultirange)$$,'23P01',null,'confirmed Customer access continues to reject overlap');
@@ -233,7 +235,7 @@ select is((select result->>'captureMovementReference' from confirmation_outcome)
 set local role service_role;
 select is(public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',(select result->'snapshot' from confirmation_capture)),(select result from confirmation_outcome),'replay returns exact stored outcome');
 reset role;
-select ok((select count(*) from public.booking_confirmations)=1 and (select count(*) from public.booking_receipts)=2 and not exists(select 1 from public.booking_request_release_work),'replay creates no duplicates or release work');
+select ok((select count(*) from public.booking_confirmations)=1 and (select count(*) from public.booking_receipts)=2 and (select count(*) from public.booking_notification_events where event_kind='preparation_reminder')=2 and not exists(select 1 from public.booking_request_release_work),'replay creates no duplicate confirmation, receipt, reminder or release work');
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000001002', true);
 set local role authenticated;

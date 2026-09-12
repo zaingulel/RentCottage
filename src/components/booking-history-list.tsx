@@ -1,0 +1,45 @@
+import type { BookingHistoryItem } from "@/booking-request/booking-history";
+import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
+import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
+import { formatIraqDateTime } from "@/i18n/format";
+import type { Locale } from "@/i18n/routing";
+import Link from "next/link";
+
+export function BookingHistoryList({
+  items,
+  locale,
+}: {
+  readonly items: readonly BookingHistoryItem[];
+  readonly locale: Locale;
+}) {
+  return (
+    <ul>
+      {items.map((item) => (
+        <li key={`${item.actorRole}:${item.bookingRequestId}`}>
+          <Link
+            href={
+              item.actorRole === "customer"
+                ? `/${locale}/booking-requests/${item.bookingRequestReference}`
+                : `/${locale}/owner/booking-requests/${item.bookingRequestReference}`
+            }
+          >
+            <strong>{item.cottageName}</strong>
+            <span>{item.bookingReference ?? item.bookingRequestReference}</span>
+            <span>
+              {item.status in bookingLifecycleMessages[locale]
+                ? bookingLifecycleMessages[locale][
+                    item.status as keyof (typeof bookingLifecycleMessages)[typeof locale]
+                  ]
+                : bookingRequestDisplayStatusMessages[locale][
+                    item.status as keyof (typeof bookingRequestDisplayStatusMessages)[typeof locale]
+                  ]}
+            </span>
+            <time dateTime={item.firstStartsAt}>
+              {formatIraqDateTime(item.firstStartsAt, locale)}
+            </time>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}

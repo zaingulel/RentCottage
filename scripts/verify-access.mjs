@@ -682,6 +682,12 @@ export async function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = await execute(
+        "node",
+        ["scripts/verify-booking-preparation-reminder-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {
@@ -850,6 +856,13 @@ export async function main(
       );
       if (eventNotificationConcurrency.status !== 0)
         return eventNotificationConcurrency.status;
+      const preparationReminderConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-preparation-reminder-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (preparationReminderConcurrency.status !== 0)
+        return preparationReminderConcurrency.status;
       const cancellationConcurrency = await execute(
         "node",
         ["scripts/verify-booking-cancellation-concurrency.mjs"],
@@ -922,6 +935,7 @@ export async function main(
           "tests/access.spec.ts",
           "tests/booking-request-access.spec.ts",
           "tests/administrator-payment-history.spec.ts",
+          "tests/booking-history.spec.ts",
           "--project=mobile",
           "--project=desktop",
           "--workers=1",
@@ -994,6 +1008,7 @@ export async function main(
           "tests/worker-scheduled-capture.spec.ts",
           "tests/worker-scheduled-refund.spec.ts",
           "tests/worker-scheduled-completion.spec.ts",
+          "tests/worker-scheduled-reminder.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",

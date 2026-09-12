@@ -45,16 +45,17 @@ function validPayload(
       : "owner/booking-requests"
   }/${base.bookingRequestReference}`;
   if (base.event) {
-    const expected = bookingEventNotice({ ...base, event: base.event });
+    const event = base.event;
+    const expected = bookingEventNotice({ ...base, event });
     return (
       payload !== null &&
       Object.keys(payload).length === Object.keys(expected).length &&
       Object.entries(expected).every(([key, value]) =>
-        key === "allocation"
+        key === "allocation" && event.kind !== "preparation_reminder"
           ? row(payload[key])?.bookingPriceFils ===
-              base.event?.allocation.bookingPriceFils &&
+              event.allocation.bookingPriceFils &&
             row(payload[key])?.bookingServiceFeeFils ===
-              base.event?.allocation.bookingServiceFeeFils &&
+              event.allocation.bookingServiceFeeFils &&
             Object.keys(row(payload[key]) ?? {}).length === 2
           : payload[key] === value,
       )
@@ -90,29 +91,50 @@ function parseCandidate(value: unknown): NotificationCandidate {
   if (v.event !== undefined) {
     const source = row(v.event);
     const allocation = row(source?.allocation);
-    if (
-      !source ||
-      !uuid(source.id) ||
-      ![
-        "cancelled",
-        "refund_requested",
-        "refund_returned",
-        "refund_attention",
-      ].includes(String(source.kind)) ||
-      !allocation ||
-      typeof allocation.bookingPriceFils !== "number" ||
-      typeof allocation.bookingServiceFeeFils !== "number"
-    )
+    if (!source || !uuid(source.id))
       throw new Error("Database returned an invalid notification event");
-    event = {
-      id: source.id,
-      kind: source.kind as BookingNoticeEvent["kind"],
-      allocation: {
-        bookingPriceFils: allocation.bookingPriceFils,
-        bookingServiceFeeFils: allocation.bookingServiceFeeFils,
-      },
-    };
-    refundAllocationTotal(event.allocation);
+    if (source.kind === "preparation_reminder") {
+      if (
+        !text(source.dueAt) ||
+        !text(source.firstStartsAt) ||
+        Number.isNaN(Date.parse(source.dueAt)) ||
+        Number.isNaN(Date.parse(source.firstStartsAt)) ||
+        Date.parse(source.firstStartsAt) - Date.parse(source.dueAt) !==
+          86_400_000
+      )
+        throw new Error("Database returned an invalid notification event");
+      event = {
+        id: source.id,
+        kind: "preparation_reminder",
+        dueAt: source.dueAt,
+        firstStartsAt: source.firstStartsAt,
+      };
+    } else {
+      if (
+        ![
+          "cancelled",
+          "refund_requested",
+          "refund_returned",
+          "refund_attention",
+        ].includes(String(source.kind)) ||
+        !allocation ||
+        typeof allocation.bookingPriceFils !== "number" ||
+        typeof allocation.bookingServiceFeeFils !== "number"
+      )
+        throw new Error("Database returned an invalid notification event");
+      event = {
+        id: source.id,
+        kind: source.kind as Exclude<
+          BookingNoticeEvent["kind"],
+          "preparation_reminder"
+        >,
+        allocation: {
+          bookingPriceFils: allocation.bookingPriceFils,
+          bookingServiceFeeFils: allocation.bookingServiceFeeFils,
+        },
+      };
+      refundAllocationTotal(event.allocation);
+    }
   }
   return {
     ...(event ? { event } : {}),

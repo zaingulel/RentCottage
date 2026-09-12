@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bookingEventNotice,
-  type BookingNoticeEventKind,
+  type RefundBookingNoticeEvent,
 } from "./booking-event-notice";
 const candidate = {
   locale: "en" as const,
@@ -10,11 +10,38 @@ const candidate = {
   bookingReference: "BOOKING-38",
   event: {
     id: "00000000-0000-4000-8000-000000000081",
-    kind: "refund_requested" as BookingNoticeEventKind,
+    kind: "refund_requested" as const,
     allocation: { bookingPriceFils: 30000000, bookingServiceFeeFils: 1000000 },
   },
 };
 describe("booking event notices", () => {
+  it.each([
+    ["en", "Prepare for your stay", "View booking"],
+    ["ar", "استعد لإقامتك", "عرض الحجز"],
+    ["ckb", "بۆ مانەوەکەت ئامادە بە", "بینینی حجز"],
+  ] as const)(
+    "uses private-detail links instead of embedding preparation details in %s",
+    (locale, title, linkLabel) => {
+      const notice = bookingEventNotice({
+        ...candidate,
+        locale,
+        event: {
+          id: "00000000-0000-4000-8000-000000000082",
+          kind: "preparation_reminder",
+          dueAt: "2100-12-31T21:30:00Z",
+          firstStartsAt: "2101-01-01T21:30:00Z",
+        },
+      });
+      expect(notice).toMatchObject({
+        kind: "preparation_reminder",
+        title,
+        linkLabel,
+        detailsPath: `/${locale}/booking-requests/RC-REQ-AAAAAAAAAAAAAAAA`,
+      });
+      expect(JSON.stringify(notice)).not.toMatch(/address|phone|location/i);
+      expect(notice).not.toHaveProperty("allocation");
+    },
+  );
   it.each([
     ["en", "Refund requested", "View booking"],
     ["ar", "تم طلب الاسترداد", "عرض الحجز"],
@@ -87,7 +114,10 @@ describe("booking event notices", () => {
         bookingEventNotice({
           ...candidate,
           locale,
-          event: { ...candidate.event, kind: kind as BookingNoticeEventKind },
+          event: {
+            ...candidate.event,
+            kind: kind as RefundBookingNoticeEvent["kind"],
+          },
         }),
       );
       expect(returned.kind).toBe("refund_returned");

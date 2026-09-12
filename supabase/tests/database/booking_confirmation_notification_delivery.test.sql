@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(57);
 select ok(
   has_function_privilege('authenticated', 'public.get_confirmed_booking_access(text)', 'execute')
     and not has_function_privilege('anon', 'public.get_confirmed_booking_access(text)', 'execute')
@@ -222,6 +222,93 @@ reset role;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003501',true);
 set local role authenticated;
 select is(public.get_booking_confirmation_notification_status('82000000-0000-4000-8000-000000003501')->>'historical','true','the paid participant sees truthful historic delivery');
+reset role;
+
+-- Preparation reminder intents exist before work and become candidates only at
+-- their immutable database deadline. Shift this isolated fixture around the
+-- real database clock without weakening the production deadline calculation.
+set session_replication_role=replica;
+delete from public.booking_request_confirmation_invalidations where booking_request_id='60000000-0000-4000-8000-000000003501';
+delete from public.booking_request_payment_required_expiry_work where booking_request_id='60000000-0000-4000-8000-000000003501';
+insert into public.booking_notification_events(id,booking_request_id,receipt_id,event_kind,recipient_user_id,recipient_role,notice_locale,due_at,first_starts_at,created_at) values
+  ('90000000-0000-4000-8000-000000003571','60000000-0000-4000-8000-000000003501','82000000-0000-4000-8000-000000003502','preparation_reminder','10000000-0000-4000-8000-000000003502','customer','en','2100-12-31 05:00+00','2101-01-01 05:00+00',clock_timestamp()),
+  ('90000000-0000-4000-8000-000000003572','60000000-0000-4000-8000-000000003501','82000000-0000-4000-8000-000000003501','preparation_reminder','10000000-0000-4000-8000-000000003501','cottage_owner','en','2100-12-31 05:00+00','2101-01-01 05:00+00',clock_timestamp());
+set session_replication_role=origin;
+set local role service_role;
+select is((select count(*) from public.list_due_booking_confirmation_notifications(50) candidate where candidate#>>'{event,kind}'='preparation_reminder'),0::bigint,'future reminder intents create no work or early candidates');
+reset role;
+select is((select count(*) from public.booking_confirmation_notification_work where event_id in ('90000000-0000-4000-8000-000000003571','90000000-0000-4000-8000-000000003572')),0::bigint,'future reminder tick creates no work');
+set session_replication_role=replica;
+update public.cottage_booking_period_commitments set access_ranges=tstzmultirange(tstzrange(now()+interval '23 hours',now()+interval '27 hours','[)')) where id='50000000-0000-4000-8000-000000003501';
+update public.booking_notification_events set due_at=now()-interval '1 hour',first_starts_at=now()+interval '23 hours' where id in ('90000000-0000-4000-8000-000000003571','90000000-0000-4000-8000-000000003572');
+set session_replication_role=origin;
+set local role service_role;
+select is((select count(*) from public.list_due_booking_confirmation_notifications(50) candidate where candidate#>>'{event,kind}'='preparation_reminder'),2::bigint,'due workless reminders are selected for bounded reconciliation');
+create temp table reminder_candidate as select candidate from public.list_due_booking_confirmation_notifications(50) candidate where candidate#>>'{event,id}'='90000000-0000-4000-8000-000000003571';
+select lives_ok($$select public.ensure_booking_confirmation_notification_work((candidate->>'receiptId')::uuid,candidate->>'locale','booking-event-v1',jsonb_build_object('kind','preparation_reminder','title','Prepare','body','Open authenticated details','bookingReference',candidate->>'bookingReference','detailsPath','/en/booking-requests/'||(candidate->>'bookingRequestReference'),'linkLabel','View booking','fictional',true,'dueAt',candidate#>>'{event,dueAt}','firstStartsAt',candidate#>>'{event,firstStartsAt}'),(candidate#>>'{event,id}')::uuid) from reminder_candidate$$,'due customer reminder freezes one immutable binding');
+create temp table reminder_lease as select public.lease_booking_confirmation_notification_work((candidate->>'receiptId')::uuid,(candidate#>>'{event,id}')::uuid) result from reminder_candidate;
+create temp table reminder_execution as select public.execute_fictional_booking_confirmation_notification_effect((candidate->>'receiptId')::uuid,(result->>'leaseGeneration')::bigint,(result->>'leaseToken')::uuid,result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt',(candidate#>>'{event,id}')::uuid) result from reminder_candidate,reminder_lease;
+select is((select result->>'status' from reminder_execution),'delivered','eligible due reminder records one fictional effect');
+reset role;
+select is((select count(*) from public.fictional_booking_confirmation_notification_effects where event_id='90000000-0000-4000-8000-000000003571'),1::bigint,'repeated processing cannot duplicate the reminder effect');
+set local role service_role;
+create temp table owner_reminder_candidate as select candidate from public.list_due_booking_confirmation_notifications(50) candidate where candidate#>>'{event,id}'='90000000-0000-4000-8000-000000003572';
+select lives_ok($$select public.ensure_booking_confirmation_notification_work((candidate->>'receiptId')::uuid,candidate->>'locale','booking-event-v1',jsonb_build_object('kind','preparation_reminder','title','Prepare','body','Open authenticated details','bookingReference',candidate->>'bookingReference','detailsPath','/en/owner/booking-requests/'||(candidate->>'bookingRequestReference'),'linkLabel','View booking','fictional',true,'dueAt',candidate#>>'{event,dueAt}','firstStartsAt',candidate#>>'{event,firstStartsAt}'),(candidate#>>'{event,id}')::uuid) from owner_reminder_candidate$$,'due owner reminder freezes one immutable binding');
+create temp table owner_reminder_lease as select public.lease_booking_confirmation_notification_work((candidate->>'receiptId')::uuid,(candidate#>>'{event,id}')::uuid) result from owner_reminder_candidate;
+reset role;
+update public.account_contexts set owner_approval_state='suspended' where user_id='10000000-0000-4000-8000-000000003501';
+set local role service_role;
+create temp table owner_reminder_execution as select public.execute_fictional_booking_confirmation_notification_effect((candidate->>'receiptId')::uuid,(result->>'leaseGeneration')::bigint,(result->>'leaseToken')::uuid,result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt',(candidate#>>'{event,id}')::uuid) result from owner_reminder_candidate,owner_reminder_lease;
+select is((select result->>'status' from owner_reminder_execution),'suppressed','revoked owner capability suppresses due work after leasing');
+reset role;
+select is((select state from public.booking_confirmation_notification_work where event_id='90000000-0000-4000-8000-000000003572'),'suppressed','revoked due reminder reaches a durable terminal state');
+select is((select count(*) from public.fictional_booking_confirmation_notification_effects where event_id='90000000-0000-4000-8000-000000003572'),0::bigint,'revoked reminder creates no supplier effect');
+
+-- Revocation before work exists still receives a durable outcome at due.
+set session_replication_role=replica;
+delete from public.booking_confirmation_notification_attempts where event_id='90000000-0000-4000-8000-000000003572';
+delete from public.booking_confirmation_notification_work where event_id='90000000-0000-4000-8000-000000003572';
+set session_replication_role=origin;
+set local role service_role;
+select is((select count(*) from public.list_due_booking_confirmation_notifications(50) candidate where candidate#>>'{event,id}'='90000000-0000-4000-8000-000000003572'),1::bigint,'revoked due intent without work is selected rather than silently skipped');
+select lives_ok($$select public.ensure_booking_confirmation_notification_work((candidate->>'receiptId')::uuid,candidate->>'locale','booking-event-v1',jsonb_build_object('kind','preparation_reminder','title','Prepare','body','Open authenticated details','bookingReference',candidate->>'bookingReference','detailsPath','/en/owner/booking-requests/'||(candidate->>'bookingRequestReference'),'linkLabel','View booking','fictional',true,'dueAt',candidate#>>'{event,dueAt}','firstStartsAt',candidate#>>'{event,firstStartsAt}'),(candidate#>>'{event,id}')::uuid) from owner_reminder_candidate$$,'revoked due intent can prepare its immutable work');
+create temp table workless_revoked_lease as select public.lease_booking_confirmation_notification_work('82000000-0000-4000-8000-000000003501','90000000-0000-4000-8000-000000003572') result;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from workless_revoked_lease),(select (result->>'leaseToken')::uuid from workless_revoked_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from workless_revoked_lease),'90000000-0000-4000-8000-000000003572')->>'status','suppressed','revoked workless intent reaches durable suppression');
+reset role;
+select is((select count(*) from public.fictional_booking_confirmation_notification_effects where event_id='90000000-0000-4000-8000-000000003572'),0::bigint,'revoked workless reconciliation creates no effect');
+
+-- A manually prepared future reminder still cannot lease early. Once due, an
+-- eligible retryable reminder waits for participant action, while revocation
+-- makes that same retryable row selectable and leaseable for suppression.
+set session_replication_role=replica;
+delete from public.booking_confirmation_notification_attempts where event_id='90000000-0000-4000-8000-000000003572';
+delete from public.fictional_booking_confirmation_notification_effects where event_id='90000000-0000-4000-8000-000000003572';
+delete from public.booking_confirmation_notification_work where event_id='90000000-0000-4000-8000-000000003572';
+update public.account_contexts set owner_approval_state='approved' where user_id='10000000-0000-4000-8000-000000003501';
+update public.cottage_booking_period_commitments set access_ranges='{["2101-01-02 05:00+00","2101-01-02 09:00+00")}'::tstzmultirange where id='50000000-0000-4000-8000-000000003501';
+update public.booking_notification_events set due_at='2101-01-01 05:00+00',first_starts_at='2101-01-02 05:00+00' where id='90000000-0000-4000-8000-000000003572';
+set session_replication_role=origin;
+set local role service_role;
+select lives_ok($$select public.ensure_booking_confirmation_notification_work('82000000-0000-4000-8000-000000003501','en','booking-event-v1','{"kind":"preparation_reminder","title":"Prepare","body":"Open authenticated details","bookingReference":"CONFIRMED-BOOKING-35","detailsPath":"/en/owner/booking-requests/RC-REQ-0000000000003501","linkLabel":"View booking","fictional":true,"dueAt":"2101-01-01T05:00:00+00:00","firstStartsAt":"2101-01-02T05:00:00+00:00"}'::jsonb,'90000000-0000-4000-8000-000000003572')$$,'a manually prepared future reminder retains immutable work');
+select is(public.lease_booking_confirmation_notification_work('82000000-0000-4000-8000-000000003501','90000000-0000-4000-8000-000000003572'),null::jsonb,'a future reminder cannot lease before its due boundary');
+reset role;
+create temp table due_reminder_anchor as select clock_timestamp()+interval '23 hours' first_starts_at;
+set session_replication_role=replica;
+update public.booking_confirmation_notification_work set state='pending',lease_token=null,lease_expires_at=null where event_id='90000000-0000-4000-8000-000000003572';
+update public.cottage_booking_period_commitments set access_ranges=tstzmultirange(tstzrange(anchor.first_starts_at,anchor.first_starts_at+interval '4 hours','[)')) from due_reminder_anchor anchor where id='50000000-0000-4000-8000-000000003501';
+update public.booking_notification_events set due_at=anchor.first_starts_at-interval '24 hours',first_starts_at=anchor.first_starts_at from due_reminder_anchor anchor where id='90000000-0000-4000-8000-000000003572';
+set session_replication_role=origin;
+set local role service_role;
+create temp table due_retry_lease as select public.lease_booking_confirmation_notification_work('82000000-0000-4000-8000-000000003501','90000000-0000-4000-8000-000000003572') result;
+select is(public.record_booking_confirmation_notification_failure('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from due_retry_lease),(select (result->>'leaseToken')::uuid from due_retry_lease),'failed','90000000-0000-4000-8000-000000003572')->>'status','retryable','a due preparation reminder records a known retryable failure');
+select is((select count(*) from public.list_due_booking_confirmation_notifications(50) candidate where candidate#>>'{event,id}'='90000000-0000-4000-8000-000000003572'),0::bigint,'an eligible retryable reminder waits for participant action');
+reset role;
+update public.account_contexts set owner_approval_state='suspended' where user_id='10000000-0000-4000-8000-000000003501';
+set local role service_role;
+select is((select count(*) from public.list_due_booking_confirmation_notifications(50) candidate where candidate#>>'{event,id}'='90000000-0000-4000-8000-000000003572'),1::bigint,'an ineligible retryable reminder remains selected for durable suppression');
+create temp table revoked_retry_lease as select public.lease_booking_confirmation_notification_work('82000000-0000-4000-8000-000000003501','90000000-0000-4000-8000-000000003572') result;
+select isnt((select result from revoked_retry_lease),null::jsonb,'an ineligible retryable reminder leases for suppression');
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from revoked_retry_lease),(select (result->>'leaseToken')::uuid from revoked_retry_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from revoked_retry_lease),'90000000-0000-4000-8000-000000003572')->>'status','suppressed','the ineligible retryable reminder reaches durable suppression without an effect');
 reset role;
 select * from finish();
 rollback;

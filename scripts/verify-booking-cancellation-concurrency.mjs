@@ -103,10 +103,10 @@ try {
     );
     assert.equal(
       harness.runSql(
-        `select count(*) from public.booking_notification_events where booking_request_id='${request}'`,
+        `select count(*) from public.booking_notification_events where booking_request_id='${request}' and event_kind='cancelled'`,
       ),
       "2",
-      `${scenario}: two recipient events`,
+      `${scenario}: two cancellation recipient events`,
     );
     assert.equal(
       harness.runSql(

@@ -7,6 +7,8 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-booking-access";
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { isLocale } from "@/i18n/routing";
+import { loadOwnerBookingRequest } from "@/booking-request/request-owner-booking-request-notifications";
+import { OwnerBookingRequestCard } from "@/components/owner-booking-request-notifications";
 
 const unavailableCopy = {
   en: "Confirmed booking is unavailable",
@@ -33,9 +35,11 @@ export default async function OwnerConfirmedBookingPage({
     );
   let confirmed;
   let financial;
+  let request;
   try {
     confirmed = await loadConfirmedBookingAccess(reference);
     financial = await loadBookingFinancialView(reference, "cottage_owner");
+    if (confirmed === null) request = await loadOwnerBookingRequest(reference);
   } catch (error) {
     unstable_rethrow(error);
     confirmed = undefined;
@@ -47,6 +51,14 @@ export default async function OwnerConfirmedBookingPage({
     return (
       <main className="results-page">
         <BookingFinancialDetails locale={locale} view={financial} />
+      </main>
+    );
+  if (confirmed === null && request)
+    return (
+      <main className="results-page">
+        <section className="owner-booking-requests">
+          <OwnerBookingRequestCard locale={locale} notification={request} />
+        </section>
       </main>
     );
   if (confirmed === null)

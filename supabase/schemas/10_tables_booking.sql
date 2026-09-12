@@ -343,7 +343,7 @@ CREATE TABLE IF NOT EXISTS "public"."booking_confirmation_notification_work" (
     CONSTRAINT "booking_confirmation_notification_work_binding" CHECK (recipient_role IN ('customer','cottage_owner') AND payload_sha256 ~ '^[0-9a-f]{64}$' AND ((event_id IS NULL AND logical_id='paid-confirmation:'||receipt_id AND template_version='paid-confirmation-v1') OR (event_id IS NOT NULL AND logical_id='booking-event:'||event_id AND template_version='booking-event-v1'))),
     CONSTRAINT "booking_confirmation_notification_work_state" CHECK (("state" = ANY (ARRAY['pending'::"text", 'processing'::"text", 'retryable'::"text", 'uncertain'::"text", 'delivered'::"text", 'suppressed'::"text"]))),
     CONSTRAINT "booking_confirmation_notification_work_state_shape" CHECK (((("state" = 'pending'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" IS NULL) AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'processing'::"text") AND ("lease_generation" > 0) AND ("lease_token" IS NOT NULL) AND ("lease_expires_at" IS NOT NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'retryable'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'failed'::"text") AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'uncertain'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'unknown'::"text") AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'delivered'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'delivered'::"text") AND ("supplier_delivery_reference" IS NOT NULL) AND ("delivered_at" IS NOT NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'suppressed'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'suppressed'::"text") AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NOT NULL)))),
-    CONSTRAINT "booking_confirmation_notification_work_payload" CHECK (jsonb_typeof(payload)='object' AND payload ?& array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional'] AND payload->'fictional'='true'::jsonb AND ((event_id IS NULL AND payload->>'kind'='paid-confirmation' AND payload-array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional']='{}'::jsonb) OR (event_id IS NOT NULL AND payload->>'kind' IN ('cancelled','refund_requested','refund_returned','refund_attention') AND payload ? 'allocation' AND payload-array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional','allocation']='{}'::jsonb)))
+    CONSTRAINT "booking_confirmation_notification_work_payload" CHECK (jsonb_typeof(payload)='object' AND payload ?& array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional'] AND payload->'fictional'='true'::jsonb AND ((event_id IS NULL AND payload->>'kind'='paid-confirmation' AND payload-array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional']='{}'::jsonb) OR (event_id IS NOT NULL AND payload->>'kind' IN ('cancelled','refund_requested','refund_returned','refund_attention') AND payload ? 'allocation' AND payload-array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional','allocation']='{}'::jsonb) OR (event_id IS NOT NULL AND payload->>'kind'='preparation_reminder' AND payload ?& array['dueAt','firstStartsAt'] AND payload-array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional','dueAt','firstStartsAt']='{}'::jsonb)))
 );
 
 ALTER TABLE "public"."booking_confirmation_notification_work" OWNER TO "postgres";
@@ -780,15 +780,18 @@ CREATE TABLE public.booking_notification_events (
   cancellation_id uuid,
   refund_intent_id uuid,
   receipt_id uuid NOT NULL ,
-  event_kind text NOT NULL CHECK (event_kind IN ('cancelled','refund_requested','refund_returned','refund_attention')),
+  event_kind text NOT NULL CHECK (event_kind IN ('cancelled','refund_requested','refund_returned','refund_attention','preparation_reminder')),
   recipient_user_id uuid NOT NULL ,
   recipient_role text NOT NULL CHECK (recipient_role IN ('customer','cottage_owner')),
   notice_locale public.cottage_profile_source_language NOT NULL,
+  due_at timestamptz,
+  first_starts_at timestamptz,
   created_at timestamptz NOT NULL,
   UNIQUE(cancellation_id,recipient_role),
   UNIQUE(refund_intent_id,event_kind,recipient_role),
-  CHECK ((event_kind='cancelled' AND cancellation_id IS NOT NULL AND refund_intent_id IS NULL) OR
-    (event_kind<>'cancelled' AND cancellation_id IS NULL AND refund_intent_id IS NOT NULL))
+  CHECK ((event_kind='cancelled' AND cancellation_id IS NOT NULL AND refund_intent_id IS NULL AND due_at IS NULL AND first_starts_at IS NULL) OR
+    (event_kind IN ('refund_requested','refund_returned','refund_attention') AND cancellation_id IS NULL AND refund_intent_id IS NOT NULL AND due_at IS NULL AND first_starts_at IS NULL) OR
+    (event_kind='preparation_reminder' AND cancellation_id IS NULL AND refund_intent_id IS NULL AND first_starts_at IS NOT NULL AND due_at=first_starts_at-interval '24 hours'))
 );
 
 CREATE TABLE public.booking_refund_intents (

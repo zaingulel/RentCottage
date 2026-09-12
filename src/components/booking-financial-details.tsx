@@ -55,6 +55,7 @@ export function BookingFinancialDetails({
     refund_requested: c.noticeRequested,
     refund_returned: c.noticeReturned,
     refund_attention: c.noticeAttention,
+    preparation_reminder: c.noticePreparation,
   };
   const noticeStates = {
     pending: c.noticePending,
@@ -187,7 +188,18 @@ export function BookingFinancialDetails({
                   <span>{noticeNames[notice.kind]}</span>
                   <span>{noticeStates[notice.state]}</span>
                 </div>
-                {notice.state === "retryable" ? (
+                {notice.dueAt ? (
+                  <p>
+                    {c.noticeDue}: {formatIraqDateTime(notice.dueAt, locale)}
+                  </p>
+                ) : null}
+                {notice.deliveredAt ? (
+                  <p>
+                    {c.noticeDeliveredAt}:{" "}
+                    {formatIraqDateTime(notice.deliveredAt, locale)}
+                  </p>
+                ) : null}
+                {notice.retryAllowed ? (
                   <NotificationRetryControl
                     locale={locale}
                     reference={view.bookingRequestReference}

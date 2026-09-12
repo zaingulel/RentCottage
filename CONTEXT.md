@@ -193,15 +193,19 @@ The immediate alert sent to a customer when their booking request is accepted, d
 _Avoid_: Manual status checking, silent expiry
 
 **Customer Booking Reminder**:
-The customer notification sent 24 hours before the first selected cottage shift begins, containing the booking reference, access details and cottage owner contact information.
+The customer Preparation Reminder sent 24 hours before the first selected cottage shift begins. It links to authenticated booking details and does not embed private access or contact information.
 _Avoid_: Post-booking notification, informal reminder
 
 **Owner Booking Reminder**:
-The cottage owner notification sent 24 hours before the first selected cottage shift begins for a confirmed booking, prompting preparation and review of the booking details.
+The cottage owner's Preparation Reminder sent 24 hours before the first selected cottage shift begins for an active confirmed booking. It links to the owner's authenticated booking details and does not embed private customer or location information.
 _Avoid_: Customer reminder, post-booking notification
 
+**Preparation Reminder**:
+The durable, role-specific reminder intent recorded for both participants when a paid booking is confirmed, due 24 hours before its first purchased shift. Delivery occurs only while the booking and recipient remain eligible; the intent, attempts and final delivery or suppression state remain visible for operational follow-up.
+_Avoid_: Embedded private details, proof of delivery, new notification framework
+
 **Booking History**:
-The customer-visible record of a customer's current and past booking requests, and the owner-visible record of upcoming, current and past bookings for each cottage.
+The role-specific record of every authorised booking request and outcome, using the preserved cottage and purchased period from its original snapshot. Each row opens only the details allowed for that state; an owner-capable account's customer and cottage-owner histories remain separate.
 _Avoid_: Hidden transaction log, analytics report
 
 **Decline Reason**:

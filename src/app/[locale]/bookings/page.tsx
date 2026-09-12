@@ -1,13 +1,11 @@
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
-import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
-import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
 import { accessMessages } from "@/i18n/access-messages";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 import { loadBookingHistory } from "@/booking-request/request-booking-history";
-import { formatIraqDateTime } from "@/i18n/format";
 import { isLocale } from "@/i18n/routing";
+import { BookingHistoryList } from "@/components/booking-history-list";
 const copy = {
   en: {
     empty: "No booking requests yet.",
@@ -91,36 +89,7 @@ export default async function BookingHistoryPage({
         {items.length === 0 ? (
           <p>{copy[locale].empty}</p>
         ) : (
-          <ul>
-            {items.map((item) => (
-              <li key={`${item.actorRole}:${item.bookingRequestId}`}>
-                <Link
-                  href={
-                    item.actorRole === "customer"
-                      ? `/${locale}/booking-requests/${item.bookingRequestReference}`
-                      : `/${locale}/owner/booking-requests/${item.bookingRequestReference}`
-                  }
-                >
-                  <strong>{item.cottageName}</strong>
-                  <span>
-                    {item.bookingReference ?? item.bookingRequestReference}
-                  </span>
-                  <span>
-                    {item.status in bookingLifecycleMessages[locale]
-                      ? bookingLifecycleMessages[locale][
-                          item.status as keyof (typeof bookingLifecycleMessages)[typeof locale]
-                        ]
-                      : bookingRequestDisplayStatusMessages[locale][
-                          item.status as keyof (typeof bookingRequestDisplayStatusMessages)[typeof locale]
-                        ]}
-                  </span>
-                  <time dateTime={item.firstStartsAt}>
-                    {formatIraqDateTime(item.firstStartsAt, locale)}
-                  </time>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <BookingHistoryList items={items} locale={locale} />
         )}
       </section>
     </main>

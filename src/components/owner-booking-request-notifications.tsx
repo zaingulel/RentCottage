@@ -25,14 +25,14 @@ const paymentDeadlineMessages: Record<Locale, string> = {
   ckb: "کاتی کۆتایی پارەدان",
 };
 
-function OwnerBookingRequestCard({
+export function OwnerBookingRequestCard({
   locale,
   notification,
   refresh,
 }: {
   locale: Locale;
   notification: OwnerBookingRequestNotificationDisplay;
-  refresh: () => void;
+  refresh?: () => void;
 }) {
   const copy = ownerBookingRequestMessages[locale];
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
@@ -164,7 +164,7 @@ function OwnerBookingRequestCard({
           bookingRequestId={notification.id}
           onStatusChange={(next) => {
             setStatus(next);
-            if (next !== "pending" && next !== "processing") refresh();
+            if (next !== "pending" && next !== "processing") refresh?.();
           }}
         />
       ) : notification.status === "paid-confirmed" ? (

@@ -2252,7 +2252,7 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
   await expect(
     page.getByRole("heading", { name: "My bookings", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("No confirmed bookings yet.")).toBeVisible();
+  await expect(page.getByText("No booking requests yet.")).toBeVisible();
   const users = await auditClient.auth.admin.listUsers({
     page: 1,
     perPage: 1000,
