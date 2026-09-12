@@ -46,7 +46,9 @@ before editing. Plans name affected areas, expected behaviour, verification, mig
    ride with the job when their risk is bounded and verifiable; disclose them in the pull request. A material
    change to product meaning, outcome, scope, or risk requires owner approval.
 2. **Delivery approval:** the owner reviews one filled pull-request body containing the finished bundle and local
-   evidence. The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
+   evidence. Name any proposed external review explicitly, including Greptile access to the private pull-request
+   diff when selected, and each proposed delivery action through ready, merge and exact cleanup.
+   The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
    hosted settings, and tracker mutation require that authority.
    A current approval carries its named actions through merge and exact cleanup; confirmed reviewer-credit
    exhaustion under `docs/agents/delivery.md` does not require approval of those actions again.
