@@ -1,3 +1,5 @@
+import type { BookingLifecycleStatus } from "@/booking-request/booking-lifecycle";
+import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { accessMessages } from "@/i18n/access-messages";
 import Link from "next/link";
 import type { ConfirmedBookingAccess } from "@/booking-request/confirmed-booking-access";
@@ -8,7 +10,6 @@ import { NotificationRetryControl } from "./notification-retry-control";
 
 const messages = {
   en: {
-    title: "Confirmed booking",
     reference: "Booking reference",
     customer: "Customer",
     period: "Booking period",
@@ -43,7 +44,6 @@ const messages = {
     incomplete: "Some practical access or contact details are unavailable.",
   },
   ar: {
-    title: "حجز مؤكد",
     reference: "مرجع الحجز",
     customer: "العميل",
     period: "فترة الحجز",
@@ -76,7 +76,6 @@ const messages = {
     incomplete: "بعض تفاصيل الوصول أو الاتصال غير متاحة.",
   },
   ckb: {
-    title: "حجزی پشتڕاستکراو",
     reference: "ژمارەی حجز",
     customer: "کڕیار",
     period: "ماوەی حجز",
@@ -116,8 +115,10 @@ export function ConfirmedBookingDetails({
   locale,
   access,
   notification,
+  lifecycleStatus = "confirmed",
 }: {
   locale: Locale;
+  lifecycleStatus?: BookingLifecycleStatus;
   access: ConfirmedBookingAccess;
   notification: PaidConfirmationNotificationPresentationStatus;
 }) {
@@ -135,7 +136,9 @@ export function ConfirmedBookingDetails({
     >
       <header>
         <div>
-          <h1 id="confirmed-booking-heading">{c.title}</h1>
+          <h1 id="confirmed-booking-heading">
+            {bookingLifecycleMessages[locale][lifecycleStatus]}
+          </h1>
           <p>{access.cottageName}</p>
           <strong>{access.bookingReference}</strong>
         </div>

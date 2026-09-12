@@ -67,3 +67,37 @@ describe("booking command controls", () => {
     await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
   });
 });
+
+it("clears a successful incident submission while retaining visible confirmation and a fresh command", async () => {
+  action.mockResolvedValue({ status: "recorded" });
+  const user = userEvent.setup();
+  const view = render(
+    <BookingManagementControl
+      {...props}
+      actorRole="cottage_owner"
+      action="incident"
+    />,
+  );
+  await user.selectOptions(
+    screen.getByLabelText("Incident category"),
+    "safety",
+  );
+  await user.type(
+    screen.getByLabelText("Reason or incident details"),
+    "Private concern",
+  );
+  await user.click(screen.getByRole("button", { name: "Record incident" }));
+  expect(await screen.findByText("Incident recorded.")).toBeVisible();
+  expect(screen.getByLabelText("Reason or incident details")).toHaveValue("");
+  const next = "90000000-0000-4000-8000-000000003857";
+  view.rerender(
+    <BookingManagementControl
+      {...props}
+      actorRole="cottage_owner"
+      action="incident"
+      commandId={next}
+    />,
+  );
+  expect(screen.getByText("Incident recorded.")).toBeVisible();
+  expect(document.querySelector('input[name="commandId"]')).toHaveValue(next);
+});

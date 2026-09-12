@@ -32,7 +32,10 @@ const params = (locale: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   confirmed.mockResolvedValue({ access: { actorRole: "cottage_owner" } });
-  financial.mockResolvedValue({ cancellation: null });
+  financial.mockResolvedValue({
+    cancellation: null,
+    lifecycle: { status: "confirmed" },
+  });
 });
 it.each([
   ["en", "Confirmed booking is unavailable"],

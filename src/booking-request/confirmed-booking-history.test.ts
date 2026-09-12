@@ -8,6 +8,7 @@ const item = {
   confirmedAt: "2100-12-31T13:00:00Z",
   actorRole: "customer",
   cancelled: false,
+  lifecycleStatus: "completed",
 };
 describe("confirmed Booking History parser", () => {
   it("accepts the minimal paid return-navigation row", async () => {
@@ -25,6 +26,22 @@ describe("confirmed Booking History parser", () => {
     await expect(listConfirmedBookingHistory({ rpc } as never)).rejects.toThrow(
       "data is invalid",
     );
+  });
+  it("strips unexpected private data and requires a valid lifecycle outcome", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: [{ ...item, incidents: [{ narrative: "PRIVATE" }] }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{ ...item, lifecycleStatus: "unknown" }],
+        error: null,
+      });
+    expect(await listConfirmedBookingHistory({ rpc } as never)).toEqual([item]);
+    await expect(
+      listConfirmedBookingHistory({ rpc } as never),
+    ).rejects.toThrow();
   });
   it("fails closed on an unbound route", async () => {
     const rpc = vi.fn().mockResolvedValue({

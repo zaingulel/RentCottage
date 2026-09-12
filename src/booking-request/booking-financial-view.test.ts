@@ -16,6 +16,15 @@ const view = {
   captured: { bookingPriceFils: 110000000, bookingServiceFeeFils: 5000000 },
   refunded: zero,
   reserved: zero,
+  lifecycle: {
+    bookingRequestId: "60000000-0000-4000-8000-000000001001",
+    status: "confirmed",
+  },
+  eligibility: {
+    status: "unavailable",
+    reviewAvailable: false,
+    payoutPrerequisiteAvailable: false,
+  },
   cancellation: null,
   refunds: [],
   notifications: [],
@@ -38,6 +47,9 @@ describe("safe financial projection binding", () => {
     { actorRole: "cottage_owner" },
     { bookingRequestReference: "RC-REQ-0000000000009999" },
     { audit: { reason: "PRIVATE" } },
+    { lifecycle: { ...view.lifecycle, incidents: [{ narrative: "PRIVATE" }] } },
+    { lifecycle: undefined },
+    { eligibility: undefined },
   ])(
     "rejects a changed participant binding or privileged audit %j",
     (change) => {
@@ -99,6 +111,7 @@ describe("safe financial projection binding", () => {
       {
         ...view,
         actorRole: "platform_administrator",
+        lifecycle: { ...view.lifecycle, incidents: [], noShow: null },
         audit,
         exactAddress: "PRIVATE",
       },

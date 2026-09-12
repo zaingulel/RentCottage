@@ -20,6 +20,15 @@ const financial: BookingFinancialView = {
   captured: { bookingPriceFils: 100000000, bookingServiceFeeFils: 5000000 },
   refunded: zero,
   reserved: { bookingPriceFils: 20000000, bookingServiceFeeFils: 0 },
+  lifecycle: {
+    bookingRequestId: "60000000-0000-4000-8000-000000001001",
+    status: "confirmed",
+  },
+  eligibility: {
+    status: "unavailable",
+    reviewAvailable: false,
+    payoutPrerequisiteAvailable: false,
+  },
   cancellation: null,
   refunds: [
     {
@@ -147,5 +156,23 @@ describe("retained cancellation and refund details", () => {
     expect(
       screen.getByText("No owner payout for this cancelled booking"),
     ).toBeInTheDocument();
+  });
+  it("replaces cancellation controls with the completed lifecycle while preserving financial history", () => {
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{
+          ...financial,
+          lifecycle: { ...financial.lifecycle, status: "completed" },
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Completed booking" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("form", { name: "Cancel booking" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("verified-refund")).toBeInTheDocument();
   });
 });

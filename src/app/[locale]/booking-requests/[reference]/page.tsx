@@ -79,7 +79,11 @@ export default async function CustomerBookingRequestPage({
   if (confirmed)
     return (
       <main className="results-page">
-        <ConfirmedBookingDetails locale={locale} {...confirmed} />
+        <ConfirmedBookingDetails
+          locale={locale}
+          {...confirmed}
+          lifecycleStatus={financial?.lifecycle.status}
+        />
         {financial ? (
           <BookingFinancialDetails locale={locale} view={financial} />
         ) : null}

@@ -201,6 +201,9 @@ set local role authenticated;
 select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'reviewAvailable','true','delayed completion opens review only within original fourteen-day window');
 select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'payoutPrerequisiteAvailable','true','completed booking exposes matured lifecycle payout prerequisite');
 select lives_ok($$select public.get_booking_financial_view('RC-REQ-0000000000001001','customer')$$,'completed booking retains financial reader and manual-refund source access');
+select is(public.get_booking_financial_view('RC-REQ-0000000000001001','customer')#>>'{lifecycle,status}','completed','financial detail publishes explicit completed lifecycle');
+select is((select value->>'lifecycleStatus' from public.list_confirmed_booking_history() value),'completed','history navigation carries durable lifecycle status');
+select is(public.get_booking_financial_view('RC-REQ-0000000000001001','customer')#>>'{eligibility,reviewAvailable}','true','detail carries downstream review prerequisite');
 select throws_ok($$select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003901','customer',null,null,pg_temp.cancellation_decision('customer',false))$$,'RC409',null,'completion conflicts with subsequent cancellation');
 select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
 select throws_ok($$select public.get_booking_no_show_facts('60000000-0000-4000-8000-000000001001')$$,'RC409',null,'completion conflicts with later no-show');
@@ -242,6 +245,7 @@ select throws_ok($$select public.commit_booking_no_show('60000000-0000-4000-8000
 select is(public.commit_booking_no_show('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003904','Did not arrive','{}')->>'status','stale','forged no-show decision cannot commit');
 create temp table no_show_receipt as select public.commit_booking_no_show('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003904','Did not arrive',pg_temp.no_show_decision()) value;
 select is((select value->'refundObligation' from no_show_receipt),'{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb,'no-show preserves the literal zero standard refund');
+select is(public.get_booking_lifecycle('RC-REQ-0000000000001001','platform_administrator')#>>'{noShow,reason}','Did not arrive','administrator sees no-show attribution in restricted lifecycle section');
 select lives_ok($$select public.record_booking_incident('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003905','platform_administrator','conduct','Private late incident')$$,'no-show-first accepts later incident');
 select is(public.commit_booking_no_show('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003904','Did not arrive','{}'),(select value from no_show_receipt),'same no-show command replays even after a later incident');
 select throws_ok($$select public.commit_booking_no_show('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003904','Different reason','{}')$$,'RC409',null,'no-show conflicting command reuse fails');

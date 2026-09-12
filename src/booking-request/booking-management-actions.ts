@@ -12,12 +12,24 @@ import {
 import { SupabaseBookingRefundRepository } from "./supabase-booking-refund";
 import { SupabaseBookingCancellationRepository } from "./supabase-booking-cancellation";
 import { getBookingFinancialView } from "./booking-financial-view";
+import {
+  createBookingNoShow,
+  type BookingIncidentCommand,
+} from "./booking-completion-commands";
+import {
+  SupabaseBookingNoShowRepository,
+  recordBookingIncident,
+  BookingLifecycleConflict,
+} from "./supabase-booking-lifecycle";
 import { refundInputAllocation } from "./booking-financial-presentation";
 export type BookingManagementActionState = {
   readonly status:
     | "idle"
     | "cancelled"
     | "requested"
+    | "no_show"
+    | "recorded"
+    | "conflict"
     | "invalid"
     | "access-required"
     | "unavailable";
@@ -46,7 +58,7 @@ export async function manageConfirmedBooking(
     !["customer", "cottage_owner", "platform_administrator"].includes(
       String(role),
     ) ||
-    !["cancel", "refund"].includes(String(action))
+    !["cancel", "refund", "no_show", "incident"].includes(String(action))
   )
     return { status: "invalid" };
   const actorRole = role as BookingCancellationCommand["actorRole"];
@@ -65,7 +77,18 @@ export async function manageConfirmedBooking(
     )
   )
     return { status: "invalid" };
-  if (action === "refund" && actorRole !== "platform_administrator")
+  if (
+    action === "incident" &&
+    !["safety", "property_damage", "conduct", "other"].includes(
+      String(category),
+    )
+  )
+    return { status: "invalid" };
+  if (
+    (action === "incident" && actorRole === "customer") ||
+    ((action === "refund" || action === "no_show") &&
+      actorRole !== "platform_administrator")
+  )
     return { status: "access-required" };
   try {
     const client = await createRequestSupabaseClient();
@@ -104,6 +127,22 @@ export async function manageConfirmedBooking(
             ? (category as BookingCancellationCommand["category"])
             : null,
       });
+    else if (action === "no_show")
+      await createBookingNoShow(
+        new SupabaseBookingNoShowRepository(client),
+      ).record({
+        bookingRequestId: view.bookingRequestId,
+        commandId,
+        reason: (reason as string).trim(),
+      });
+    else if (action === "incident")
+      await recordBookingIncident(client, {
+        bookingRequestId: view.bookingRequestId,
+        commandId,
+        actorRole: actorRole as BookingIncidentCommand["actorRole"],
+        category: category as BookingIncidentCommand["category"],
+        narrative: (reason as string).trim(),
+      });
     else {
       const price = form.get("price"),
         fee = form.get("fee");
@@ -123,8 +162,19 @@ export async function manageConfirmedBooking(
       });
     }
     refresh();
-    return { status: action === "cancel" ? "cancelled" : "requested" };
-  } catch {
+    return {
+      status:
+        action === "cancel"
+          ? "cancelled"
+          : action === "refund"
+            ? "requested"
+            : action === "incident"
+              ? "recorded"
+              : "no_show",
+    };
+  } catch (error) {
+    if (error instanceof BookingLifecycleConflict)
+      return { status: "conflict" };
     console.error("Booking management command failed", {
       code: "booking_management_unavailable",
     });

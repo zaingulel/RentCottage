@@ -1,3 +1,7 @@
+import {
+  bookingLifecycleStatuses,
+  type BookingLifecycleStatus,
+} from "./booking-lifecycle";
 import type { SupabaseClient } from "@supabase/supabase-js";
 export type ConfirmedBookingHistoryItem = {
   readonly receiptId: string;
@@ -6,6 +10,7 @@ export type ConfirmedBookingHistoryItem = {
   readonly cottageName: string;
   readonly confirmedAt: string;
   readonly cancelled: boolean;
+  readonly lifecycleStatus: BookingLifecycleStatus;
   readonly actorRole: "customer" | "cottage_owner";
 };
 const uuid =
@@ -27,11 +32,23 @@ export async function listConfirmedBookingHistory(
       typeof v.bookingReference !== "string" ||
       typeof v.cottageName !== "string" ||
       typeof v.cancelled !== "boolean" ||
+      !bookingLifecycleStatuses.includes(
+        v.lifecycleStatus as BookingLifecycleStatus,
+      ) ||
       typeof v.confirmedAt !== "string" ||
       Number.isNaN(Date.parse(v.confirmedAt)) ||
       (v.actorRole !== "customer" && v.actorRole !== "cottage_owner")
     )
       throw new Error("Booking History data is invalid");
-    return v as ConfirmedBookingHistoryItem;
+    return {
+      receiptId: v.receiptId,
+      bookingRequestReference: v.bookingRequestReference,
+      bookingReference: v.bookingReference,
+      cottageName: v.cottageName,
+      confirmedAt: v.confirmedAt,
+      cancelled: v.cancelled,
+      lifecycleStatus: v.lifecycleStatus as BookingLifecycleStatus,
+      actorRole: v.actorRole,
+    };
   });
 }

@@ -51,6 +51,7 @@ it("labels retained cancelled bookings and links to their safe detail", async ()
       confirmedAt: "2100-12-31T13:00:00Z",
       actorRole: "customer",
       cancelled: true,
+      lifecycleStatus: "cancelled",
     },
   ]);
   render(
@@ -64,3 +65,36 @@ it("labels retained cancelled bookings and links to their safe detail", async ()
     screen.getByRole("link", { name: /Preserved Cottage/ }),
   ).toHaveAttribute("href", "/en/booking-requests/RC-REQ-0000000000003501");
 });
+
+it.each(["completed", "no_show", "incident_pending"])(
+  "shows %s from the persisted lifecycle in booking history",
+  async (status) => {
+    loadHistory.mockResolvedValue([
+      {
+        receiptId: "receipt",
+        bookingRequestReference: "RC-REQ-0000000000003501",
+        bookingReference: "BOOKING",
+        cottageName: "Preserved Cottage",
+        confirmedAt: "2100-12-31T13:00:00Z",
+        actorRole: "customer",
+        cancelled: false,
+        lifecycleStatus: status,
+      },
+    ]);
+    render(
+      await BookingHistoryPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+    expect(
+      screen.getByText(
+        status === "completed"
+          ? "Completed booking"
+          : status === "no_show"
+            ? "No-show"
+            : "Incident pending",
+      ),
+    ).toBeVisible();
+  },
+);
