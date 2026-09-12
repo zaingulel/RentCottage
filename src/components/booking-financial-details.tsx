@@ -259,7 +259,7 @@ export function BookingFinancialDetails({
               <p>{view.payout.settlement.reason}</p>
               <p>
                 {view.payout.settlement.actorUserId} ·{" "}
-                {view.payout.settlement.requestedAt}
+                {formatIraqDateTime(view.payout.settlement.requestedAt, locale)}
               </p>
               <p>
                 {p.settlementAmount}:{" "}

@@ -275,6 +275,42 @@ describe("administrator payout investigation", () => {
       },
     ],
   };
+  it.each([
+    ["en", "Sep 12, 2026, 3:00 PM"],
+    ["ar", "12\u200f/09\u200f/2026، 3:00 م"],
+    ["ckb", "٢٠٢٦ ئەیلوول ١٢ ٣:٠٠ د.ن"],
+  ] as const)(
+    "shows the settlement request at localized Iraq time in %s",
+    (locale, requestedTime) => {
+      const actorUserId = "10000000-0000-4000-8000-000000002279";
+      render(
+        <BookingFinancialDetails
+          locale={locale}
+          view={{
+            ...financial,
+            actorRole: "platform_administrator",
+            payout: {
+              ...payout,
+              settlement: {
+                id: financial.bookingRequestId,
+                commandId: financial.bookingRequestId,
+                amountFils: 90000000,
+                state: "processing",
+                retrySafe: false,
+                actorUserId,
+                reason: "Approved settlement",
+                requestedAt: "2026-09-12T12:00:00+00:00",
+                receipt: null,
+              },
+            },
+          }}
+        />,
+      );
+      expect(
+        screen.getByText(`${actorUserId} · ${requestedTime}`),
+      ).toBeInTheDocument();
+    },
+  );
   it("shows verified recovery amounts and the explicit absence of an owner debit to administrators", () => {
     render(
       <BookingFinancialDetails
