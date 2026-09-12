@@ -1,5 +1,5 @@
 begin;
-select plan(12);
+select plan(14);
 
 select has_function('public','list_booking_history',array['text'],'history requires an explicit workspace');
 select ok((select prosecdef and proconfig=array['search_path=""'] from pg_proc where oid='public.list_booking_history(text)'::regprocedure),'history owns its authenticated database boundary');
@@ -22,6 +22,8 @@ insert into public.cottage_booking_period_commitments(id,customer_user_id,profil
 insert into public.booking_requests(id,booking_request_reference,customer_user_id,owner_user_id,profile_id,booking_snapshot_id,booking_period_commitment_id,payment_lifecycle_id,customer_name,party_size,status,response_deadline,created_at,settled_at) values
   ('60000000-0000-4000-8000-000000003701','RC-REQ-0000000000003701','10000000-0000-4000-8000-000000003701','10000000-0000-4000-8000-000000003702','20000000-0000-4000-8000-000000003702','40000000-0000-4000-8000-000000003701','50000000-0000-4000-8000-000000003701','73000000-0000-4000-8000-000000003701','Fictional dual user',2,'pending','2100-12-20 14:00+00','2100-12-20 10:00+00',null),
   ('60000000-0000-4000-8000-000000003702','RC-REQ-0000000000003702','10000000-0000-4000-8000-000000003703','10000000-0000-4000-8000-000000003701','20000000-0000-4000-8000-000000003701','40000000-0000-4000-8000-000000003702','50000000-0000-4000-8000-000000003702','73000000-0000-4000-8000-000000003702','Fictional other customer',2,'declined','2100-12-21 14:00+00','2100-12-21 10:00+00','2100-12-21 11:00+00');
+insert into public.owner_request_notifications(id,booking_request_id,owner_user_id,created_at) values
+  ('90000000-0000-4000-8000-000000003702','60000000-0000-4000-8000-000000003702','10000000-0000-4000-8000-000000003701','2100-12-21 10:00+00');
 set session_replication_role=origin;
 
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003701',true);
@@ -38,6 +40,13 @@ select is((select value#>>'{0,lastEndsAt}' from customer_history),'2101-01-04T02
 select ok(not ((select value->0 from customer_history) ?| array['receiptId','bookingReference','confirmedAt']),'unconfirmed history manufactures no paid receipt or confirmation');
 select is((select value#>>'{0,actorRole}' from customer_history),'customer','customer workspace binds the returned role');
 select is((select value#>>'{0,actorRole}' from owner_history),'cottage_owner','owner workspace binds the returned role');
+select is(public.list_owner_booking_request_notifications()#>>'{0,customerName}','Fictional other customer','verified approved owner retains unpaid request details');
+reset role;
+set session_replication_role=replica;
+update auth.users set phone_confirmed_at=null where id='10000000-0000-4000-8000-000000003701';
+set session_replication_role=origin;
+set local role authenticated;
+select is(public.list_owner_booking_request_notifications(),'[]'::jsonb,'revoked phone verification denies unpaid request details');
 
 select * from finish();
 rollback;

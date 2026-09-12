@@ -8,7 +8,7 @@ import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { isLocale } from "@/i18n/routing";
 import { loadOwnerBookingRequest } from "@/booking-request/request-owner-booking-request-notifications";
-import { OwnerBookingRequestCard } from "@/components/owner-booking-request-notifications";
+import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
 
 const unavailableCopy = {
   en: "Confirmed booking is unavailable",
@@ -56,9 +56,10 @@ export default async function OwnerConfirmedBookingPage({
   if (confirmed === null && request)
     return (
       <main className="results-page">
-        <section className="owner-booking-requests">
-          <OwnerBookingRequestCard locale={locale} notification={request} />
-        </section>
+        <OwnerBookingRequestNotifications
+          locale={locale}
+          notifications={[request]}
+        />
       </main>
     );
   if (confirmed === null)

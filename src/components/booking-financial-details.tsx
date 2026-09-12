@@ -188,6 +188,12 @@ export function BookingFinancialDetails({
                   <span>{noticeNames[notice.kind]}</span>
                   <span>{noticeStates[notice.state]}</span>
                 </div>
+                <p>
+                  {c.noticeRecipient}:{" "}
+                  {notice.recipientRole === "customer"
+                    ? c.noticeRecipientCustomer
+                    : c.noticeRecipientOwner}
+                </p>
                 {notice.dueAt ? (
                   <p>
                     {c.noticeDue}: {formatIraqDateTime(notice.dueAt, locale)}

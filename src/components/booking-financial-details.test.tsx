@@ -175,4 +175,66 @@ describe("retained cancellation and refund details", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("verified-refund")).toBeInTheDocument();
   });
+  it.each([
+    [
+      "en",
+      "Recipient: Customer",
+      "Delivery failed",
+      "Recipient: Cottage Owner",
+      "Delivered",
+    ],
+    [
+      "ar",
+      "المستلم: العميل",
+      "فشل التسليم",
+      "المستلم: مالك الكوخ",
+      "تم التسليم",
+    ],
+    [
+      "ckb",
+      "وەرگر: کڕیار",
+      "گەیاندن سەرکەوتوو نەبوو",
+      "وەرگر: خاوەنی کۆخ",
+      "گەیەنرا",
+    ],
+  ] as const)(
+    "identifies each reminder recipient and actual state in %s",
+    (locale, customerLabel, customerState, ownerLabel, ownerState) => {
+      render(
+        <BookingFinancialDetails
+          locale={locale}
+          view={{
+            ...financial,
+            actorRole: "platform_administrator",
+            notifications: [
+              {
+                eventId: "90000000-0000-4000-8000-000000001001",
+                receiptId: "82000000-0000-4000-8000-000000001001",
+                kind: "preparation_reminder",
+                dueAt: "2100-12-31T05:00:00Z",
+                recipientRole: "customer",
+                state: "retryable",
+                outcome: "failed",
+                retryAllowed: false,
+              },
+              {
+                eventId: "90000000-0000-4000-8000-000000001002",
+                receiptId: "82000000-0000-4000-8000-000000001002",
+                kind: "preparation_reminder",
+                dueAt: "2100-12-31T05:00:00Z",
+                recipientRole: "cottage_owner",
+                state: "delivered",
+                outcome: "delivered",
+                retryAllowed: false,
+              },
+            ],
+          }}
+        />,
+      );
+      const customerNotice = screen.getByText(customerLabel).closest("li");
+      const ownerNotice = screen.getByText(ownerLabel).closest("li");
+      expect(customerNotice).toHaveTextContent(customerState);
+      expect(ownerNotice).toHaveTextContent(ownerState);
+    },
+  );
 });

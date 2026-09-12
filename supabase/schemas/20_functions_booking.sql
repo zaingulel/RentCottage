@@ -4205,7 +4205,9 @@ CREATE OR REPLACE FUNCTION "public"."list_owner_booking_request_notifications"()
   from public.owner_request_notifications notifications
   join public.booking_requests requests on requests.id=notifications.booking_request_id
   join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id
-  where notifications.owner_user_id=(select auth.uid()) and exists(select 1 from public.account_contexts contexts
+  where notifications.owner_user_id=(select auth.uid())
+    and exists(select 1 from auth.users users where users.id=(select auth.uid()) and users.phone_confirmed_at is not null)
+    and exists(select 1 from public.account_contexts contexts
     where contexts.user_id=(select auth.uid()) and contexts.role='cottage_owner' and contexts.owner_approval_state='approved');
 $$;
 
