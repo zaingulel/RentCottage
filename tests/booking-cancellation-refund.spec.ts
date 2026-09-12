@@ -308,10 +308,19 @@ test.describe("retained cancellation and refund controls", () => {
       0,
     );
     await page.getByRole("link", { name: messages.en.history }).click();
+    await expect(page).toHaveURL("/en/bookings");
     await expect(
-      page.getByText("Cancelled booking", { exact: true }),
+      page.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
-    await page.getByRole("link", { name: /Preserved Cottage/ }).click();
+    const retainedBooking = page.getByRole("link", {
+      name: /Preserved Cottage/,
+    });
+    await expect(retainedBooking).toContainText("Cancelled booking");
+    await expect(retainedBooking).toHaveAttribute(
+      "href",
+      `/en/booking-requests/${reference}`,
+    );
+    await retainedBooking.click();
     await expect(
       page.getByRole("heading", { name: "Cancelled booking", exact: true }),
     ).toBeVisible();

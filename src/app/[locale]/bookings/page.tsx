@@ -1,5 +1,6 @@
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
+import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { accessMessages } from "@/i18n/access-messages";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
@@ -9,17 +10,14 @@ import { isLocale } from "@/i18n/routing";
 const copy = {
   en: {
     empty: "No confirmed bookings yet.",
-    cancelled: "Cancelled booking",
     home: "RentCottage home",
   },
   ar: {
     empty: "لا توجد حجوزات مؤكدة بعد.",
-    cancelled: "حجز ملغى",
     home: "العودة إلى RentCottage",
   },
   ckb: {
     empty: "هێشتا هیچ حجزێکی پشتڕاستکراو نییە.",
-    cancelled: "حجزی هەڵوەشاوە",
     home: "گەڕانەوە بۆ RentCottage",
   },
 } as const;
@@ -106,7 +104,9 @@ export default async function BookingHistoryPage({
                 >
                   <strong>{item.cottageName}</strong>
                   <span>{item.bookingReference}</span>
-                  {item.cancelled && <span>{copy[locale].cancelled}</span>}
+                  <span>
+                    {bookingLifecycleMessages[locale][item.lifecycleStatus]}
+                  </span>
                   <time dateTime={item.confirmedAt}>
                     {formatIraqDateTime(item.confirmedAt, locale)}
                   </time>

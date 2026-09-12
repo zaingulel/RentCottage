@@ -260,4 +260,152 @@ describe("confirmed booking command authority", () => {
     });
     expect(resolve).not.toHaveBeenCalled();
   });
+  it("records approved owner incident with booking identity derived from authorized view", async () => {
+    resolve.mockResolvedValue({
+      userId: "actor",
+      role: "cottage_owner",
+      approvalState: "approved",
+    });
+    client.rpc.mockResolvedValue({
+      data: {
+        status: "recorded",
+        bookingRequestId: request,
+        incidentId: commandId,
+        recordedAt: "2026-09-12T01:00:00Z",
+      },
+      error: null,
+    });
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          action: "incident",
+          actorRole: "cottage_owner",
+          reason: "PRIVATE narrative",
+          category: "safety",
+          bookingRequestId: "forged",
+          customerUserId: "forged",
+        }),
+      ),
+    ).toEqual({ status: "recorded" });
+    expect(client.rpc).toHaveBeenCalledWith("record_booking_incident", {
+      target_booking_request_id: request,
+      target_command_id: commandId,
+      target_actor_role: "cottage_owner",
+      target_category: "safety",
+      target_narrative: "PRIVATE narrative",
+    });
+  });
+  it("records administrator no-show with the standard zero-refund decision", async () => {
+    resolve.mockResolvedValue({
+      userId: "actor",
+      role: "platform_administrator",
+    });
+    client.rpc
+      .mockResolvedValueOnce({
+        data: {
+          bookingRequestId: request,
+          revision: "a".repeat(32),
+          firstStartsAt: "2026-09-11T05:00:00Z",
+          observedAt: "2026-09-12T01:00:00Z",
+          captured: {
+            bookingPriceFils: 110000000,
+            bookingServiceFeeFils: 5000000,
+          },
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          status: "no_show",
+          bookingRequestId: request,
+          noShowId: commandId,
+          occurredAt: "2026-09-12T01:00:00Z",
+          refundObligation: { bookingPriceFils: 0, bookingServiceFeeFils: 0 },
+        },
+        error: null,
+      });
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          action: "no_show",
+          actorRole: "platform_administrator",
+          reason: "Did not arrive",
+        }),
+      ),
+    ).toEqual({ status: "no_show" });
+    expect(client.rpc).toHaveBeenLastCalledWith(
+      "commit_booking_no_show",
+      expect.objectContaining({
+        target_decision: {
+          revision: "a".repeat(32),
+          refundObligation: { bookingPriceFils: 0, bookingServiceFeeFils: 0 },
+        },
+      }),
+    );
+  });
+  it.each(["incident", "no_show"])(
+    "requires administrator second factor for %s",
+    async (action) => {
+      resolve.mockResolvedValue({
+        userId: "actor",
+        role: "platform_administrator",
+      });
+      client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
+        data: { currentLevel: "aal1" },
+        error: null,
+      });
+      expect(
+        await manageConfirmedBooking(
+          { status: "idle" },
+          form({
+            action,
+            actorRole: "platform_administrator",
+            reason: "Private",
+            category: "safety",
+          }),
+        ),
+      ).toEqual({ status: "access-required" });
+      expect(client.rpc).not.toHaveBeenCalled();
+    },
+  );
+  it("reports a concurrent finalization conflict without leaking private details", async () => {
+    resolve.mockResolvedValue({
+      userId: "actor",
+      role: "platform_administrator",
+    });
+    client.rpc.mockResolvedValue({
+      data: null,
+      error: { code: "RC409", message: "PRIVATE incident" },
+    });
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          action: "no_show",
+          actorRole: "platform_administrator",
+          reason: "Did not arrive",
+        }),
+      ),
+    ).toEqual({ status: "conflict" });
+  });
+  it("does not allow the reporting owner to mark no-show", async () => {
+    resolve.mockResolvedValue({
+      userId: "actor",
+      role: "cottage_owner",
+      approvalState: "approved",
+    });
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          action: "no_show",
+          actorRole: "cottage_owner",
+          reason: "Private",
+        }),
+      ),
+    ).toEqual({ status: "access-required" });
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
 });

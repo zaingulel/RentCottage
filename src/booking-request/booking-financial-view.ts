@@ -1,3 +1,9 @@
+import {
+  parseBookingLifecycle,
+  parseBookingCompletionEligibility,
+  type BookingLifecycle,
+  type BookingCompletionEligibility,
+} from "./booking-lifecycle";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RefundAllocation } from "@/payment/payment-contract";
 import {
@@ -18,6 +24,8 @@ export interface BookingFinancialView {
   readonly captured: RefundAllocation;
   readonly refunded: RefundAllocation;
   readonly reserved: RefundAllocation;
+  readonly lifecycle: BookingLifecycle;
+  readonly eligibility: BookingCompletionEligibility;
   readonly cancellation: null | {
     readonly occurredAt: string;
     readonly obligation: RefundAllocation;
@@ -141,6 +149,12 @@ export function parseBookingFinancialView(
     captured,
     refunded,
     reserved,
+    lifecycle: parseBookingLifecycle(
+      v.lifecycle,
+      uuid(v.bookingRequestId),
+      actorRole,
+    ),
+    eligibility: parseBookingCompletionEligibility(v.eligibility),
     cancellation: cancellation
       ? {
           occurredAt: timestamp(cancellation.occurredAt),

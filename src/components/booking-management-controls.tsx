@@ -9,6 +9,7 @@ import { refundInputAllocation } from "@/booking-request/booking-financial-prese
 import { refundAllocationTotal } from "@/payment/payment-refund-allocation";
 import { formatFilsAsIqd } from "@/i18n/format";
 import { bookingManagementMessages } from "@/i18n/booking-management-messages";
+import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
@@ -28,14 +29,34 @@ export function BookingManagementControl({
   reference: string;
   actorRole: BookingParticipantRole;
   commandId: string;
-  action: "cancel" | "refund";
+  action: "cancel" | "refund" | "no_show" | "incident";
 }) {
-  const c = bookingManagementMessages[locale];
-  const [state, submit, pending] = useActionState(manageConfirmedBooking, idle);
+  const c = bookingManagementMessages[locale],
+    l = bookingLifecycleMessages[locale];
+  const lifecycleAction = action === "no_show" || action === "incident";
+  const label =
+    action === "cancel"
+      ? c.cancel
+      : action === "refund"
+        ? c.exception
+        : action === "no_show"
+          ? l.markNoShow
+          : l.report;
   const [reason, setReason] = useState(""),
     [category, setCategory] = useState(""),
     [price, setPrice] = useState("0"),
     [fee, setFee] = useState("0");
+  const [state, submit, pending] = useActionState(
+    async (previous: BookingManagementActionState, form: FormData) => {
+      const result = await manageConfirmedBooking(previous, form);
+      if (result.status === "recorded") {
+        setReason("");
+        setCategory("");
+      }
+      return result;
+    },
+    idle,
+  );
   let total: number | null = null;
   if (action === "refund") {
     try {
@@ -45,25 +66,25 @@ export function BookingManagementControl({
     }
   }
   return (
-    <form
-      action={submit}
-      className={styles.form}
-      aria-label={action === "cancel" ? c.cancel : c.exception}
-    >
+    <form action={submit} className={styles.form} aria-label={label}>
       <input type="hidden" name="locale" value={locale} />
       <input type="hidden" name="reference" value={reference} />
       <input type="hidden" name="actorRole" value={actorRole} />
       <input type="hidden" name="commandId" value={commandId} />
       <input type="hidden" name="action" value={action} />
-      <h3>{action === "cancel" ? c.cancel : c.exception}</h3>
+      <h3>{label}</h3>
       <p>
-        {action === "refund"
-          ? c.exceptionHelp
-          : actorRole === "customer"
-            ? c.policy
-            : actorRole === "cottage_owner"
-              ? c.ownerPolicy
-              : c.adminPolicy}
+        {action === "no_show"
+          ? l.noShowHelp
+          : action === "incident"
+            ? l.privateHelp
+            : action === "refund"
+              ? c.exceptionHelp
+              : actorRole === "customer"
+                ? c.policy
+                : actorRole === "cottage_owner"
+                  ? c.ownerPolicy
+                  : c.adminPolicy}
       </p>
       {action === "cancel" && actorRole === "platform_administrator" ? (
         <label>
@@ -86,9 +107,30 @@ export function BookingManagementControl({
           </FormControl>
         </label>
       ) : null}
+      {action === "incident" ? (
+        <label>
+          {l.category}
+          <FormControl
+            kind="select"
+            name="category"
+            required
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            <option value="">{l.chooseCategory}</option>
+            {(["safety", "property_damage", "conduct", "other"] as const).map(
+              (value) => (
+                <option key={value} value={value}>
+                  {l[value]}
+                </option>
+              ),
+            )}
+          </FormControl>
+        </label>
+      ) : null}
       {actorRole !== "customer" ? (
         <label>
-          {c.reason}
+          {lifecycleAction ? l.reason : c.reason}
           <FormControl
             kind="textarea"
             name="reason"
@@ -137,33 +179,45 @@ export function BookingManagementControl({
             </p>
           ) : null}
         </>
-      ) : (
+      ) : action === "cancel" ? (
         <label className={styles.acknowledge}>
           <input type="checkbox" name="acknowledge" required />
           {c.acknowledge}
         </label>
-      )}
+      ) : null}
       <ActionButton
         type="submit"
         kind="primary"
         width="content"
         pending={pending}
       >
-        {action === "cancel" ? c.cancel : c.approve}
+        {action === "refund" ? c.approve : label}
       </ActionButton>
-      {state.status === "invalid" ||
+      {state.status === "conflict" ||
+      state.status === "invalid" ||
       state.status === "unavailable" ||
       state.status === "access-required" ? (
         <ActionFeedback kind="error">
-          {state.status === "invalid"
-            ? c.invalid
-            : state.status === "access-required"
-              ? c.accessRequired
-              : c.unavailable}
+          {state.status === "conflict"
+            ? l.conflict
+            : state.status === "invalid"
+              ? c.invalid
+              : state.status === "access-required"
+                ? c.accessRequired
+                : c.unavailable}
         </ActionFeedback>
-      ) : state.status === "cancelled" || state.status === "requested" ? (
+      ) : state.status === "cancelled" ||
+        state.status === "requested" ||
+        state.status === "recorded" ||
+        state.status === "no_show" ? (
         <ActionFeedback kind="success">
-          {state.status === "cancelled" ? c.cancelSuccess : c.refundSuccess}
+          {state.status === "cancelled"
+            ? c.cancelSuccess
+            : state.status === "requested"
+              ? c.refundSuccess
+              : state.status === "recorded"
+                ? l.recorded
+                : l.noShowRecorded}
         </ActionFeedback>
       ) : null}
     </form>

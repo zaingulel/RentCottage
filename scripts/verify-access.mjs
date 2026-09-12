@@ -857,6 +857,13 @@ export async function main(
       );
       if (cancellationConcurrency.status !== 0)
         return cancellationConcurrency.status;
+      const completionConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-completion-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (completionConcurrency.status !== 0)
+        return completionConcurrency.status;
       const refundConcurrency = await execute(
         "node",
         ["scripts/verify-booking-refund-concurrency.mjs"],
@@ -986,6 +993,7 @@ export async function main(
           "tests/worker-scheduled-expiry.spec.ts",
           "tests/worker-scheduled-capture.spec.ts",
           "tests/worker-scheduled-refund.spec.ts",
+          "tests/worker-scheduled-completion.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",

@@ -240,6 +240,9 @@ ALTER TABLE "public"."simulated_payment_effects" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_cancellations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_cancellation_incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_cancellation_administrator_audit ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_lifecycle_outcomes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_incidents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_completion_maturity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_notification_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.booking_refund_intents ENABLE ROW LEVEL SECURITY;

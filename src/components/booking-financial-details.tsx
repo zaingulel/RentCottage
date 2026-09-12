@@ -6,6 +6,7 @@ import type { RefundAllocation } from "@/payment/payment-contract";
 import { formatFilsAsIqd, formatIraqDateTime } from "@/i18n/format";
 import { bookingManagementMessages } from "@/i18n/booking-management-messages";
 import type { Locale } from "@/i18n/routing";
+import { BookingLifecycleDetails } from "./booking-lifecycle-details";
 import { BookingManagementControl } from "./booking-management-controls";
 import { NotificationRetryControl } from "./notification-retry-control";
 import styles from "./booking-financial-details.module.css";
@@ -65,6 +66,14 @@ export function BookingFinancialDetails({
   };
   return (
     <section className={styles.panel} aria-label={c.title}>
+      <BookingLifecycleDetails
+        locale={locale}
+        reference={view.bookingRequestReference}
+        bookingReference={view.bookingReference}
+        actorRole={view.actorRole}
+        lifecycle={view.lifecycle}
+        eligibility={view.eligibility}
+      />
       {view.cancellation ? (
         <header>
           <h1>{c.cancelled}</h1>
@@ -194,7 +203,9 @@ export function BookingFinancialDetails({
           </ul>
         </section>
       ) : null}
-      {!view.cancellation ? (
+      {!view.cancellation &&
+      view.lifecycle.status !== "completed" &&
+      view.lifecycle.status !== "no_show" ? (
         <BookingManagementControl
           key={cancelCommandId}
           locale={locale}

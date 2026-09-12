@@ -169,3 +169,18 @@ describe("confirmed booking details", () => {
     expect(screen.getByText("Current private address")).toBeInTheDocument();
   });
 });
+
+it("shows the persisted lifecycle beside the retained booking reference", () => {
+  render(
+    <ConfirmedBookingDetails
+      locale="en"
+      access={base}
+      notification={pending}
+      lifecycleStatus="completed"
+    />,
+  );
+  expect(
+    screen.getByRole("heading", { level: 1, name: "Completed booking" }),
+  ).toBeVisible();
+  expect(screen.getByText("Preserved House Rules")).toBeInTheDocument();
+});

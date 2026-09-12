@@ -75,6 +75,8 @@ begin
   end if;
   select * into cancellation from public.booking_cancellations where booking_request_id=target_booking_request_id;
   if found then raise exception 'Booking has already been cancelled' using errcode='RC409'; end if;
+  if exists(select 1 from public.booking_lifecycle_outcomes where booking_request_id=target_booking_request_id) then
+    raise exception 'Booking already has a final lifecycle outcome' using errcode='RC409'; end if;
   first_start:=(facts->>'firstStartsAt')::timestamptz;
   occurred_at:=(facts->>'observedAt')::timestamptz;
   obligation:=CASE WHEN target_actor_role IN ('cottage_owner','platform_administrator') OR
@@ -148,6 +150,7 @@ begin
     result:=result||jsonb_build_object('audit',jsonb_build_object('cancellation',case when cancellation.id is not null then jsonb_build_object('reason',cancellation.reason,'category',cancellation.category,'actorUserId',cancellation.actor_user_id,'actorRole',cancellation.actor_role) end,
       'refunds',(select coalesce(jsonb_agg(jsonb_build_object('id',id,'reason',reason,'actorUserId',actor_user_id) order by created_at,id),'[]') from public.booking_refund_intents where booking_request_id=request.id and source='administrator')));
   end if;
+  result:=result||jsonb_build_object('lifecycle',public.get_booking_lifecycle(target_reference,target_actor_role),'eligibility',public.get_booking_completion_eligibility(target_reference,target_actor_role));
   return result;
 end;
 $$;
