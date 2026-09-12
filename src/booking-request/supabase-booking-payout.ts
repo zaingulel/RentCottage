@@ -10,6 +10,7 @@ import type {
 } from "@/payment/payment-contract";
 import { parseBookingCompletionEligibility } from "./booking-lifecycle";
 import type {
+  BookingPayoutRecovery,
   BookingSettlementFacts,
   BookingSettlementRepository,
   BookingSettlementCommand,
@@ -249,6 +250,43 @@ export class SupabaseBookingPayoutRepository implements BookingPayoutRepository 
   }
 }
 
+export function parseBookingPayoutRecovery(
+  value: unknown,
+): BookingPayoutRecovery {
+  const v = object(value);
+  if (v.status === "unsettled" || v.status === "unavailable")
+    return { status: v.status };
+  if (
+    v.status !== "paid" ||
+    typeof v.paidWhileBlocked !== "boolean" ||
+    v.automaticOwnerDebitFils !== 0
+  )
+    throw new Error("Invalid owner recovery evidence");
+  const money = (part: unknown) => {
+    if (typeof part !== "number" || !Number.isSafeInteger(part) || part < 0)
+      throw new Error("Invalid owner recovery amount");
+    return part;
+  };
+  const paidFils = money(v.paidFils),
+    recoveryExposureFils = money(v.recoveryExposureFils),
+    recoveryBalanceFils = money(v.recoveryBalanceFils),
+    ownerEntitlementFils = money(v.ownerEntitlementFils);
+  if (
+    paidFils === 0 ||
+    recoveryBalanceFils > recoveryExposureFils ||
+    recoveryExposureFils > paidFils
+  )
+    throw new Error("Conflicting owner recovery evidence");
+  return {
+    status: "paid",
+    paidFils,
+    ownerEntitlementFils,
+    paidWhileBlocked: v.paidWhileBlocked,
+    recoveryExposureFils,
+    recoveryBalanceFils,
+    automaticOwnerDebitFils: 0,
+  };
+}
 export function parseBookingSettlementFacts(
   value: unknown,
   bookingRequestId: string,
@@ -270,6 +308,7 @@ export function parseBookingSettlementFacts(
   return {
     ...payout,
     revision: v.revision,
+    recovery: parseBookingPayoutRecovery(v.recovery),
     maturity: parseBookingCompletionEligibility(v.maturity),
     intents: list(v.intents).map((value) => {
       const intent = object(value);
@@ -301,6 +340,33 @@ export function parseBookingSettlementFacts(
             "not-executed",
           ] as const),
           retrySafe: intent.retrySafe as boolean,
+          actorUserId: uuid(intent.actorUserId),
+          reason:
+            typeof intent.reason === "string" && intent.reason.trim()
+              ? intent.reason
+              : (() => {
+                  throw new Error("Invalid settlement attribution");
+                })(),
+          requestedAt: timestamp(intent.requestedAt),
+          receipt:
+            intent.receipt === null
+              ? null
+              : (() => {
+                  const r = object(intent.receipt);
+                  if (
+                    typeof r.historySequence !== "number" ||
+                    !Number.isSafeInteger(r.historySequence) ||
+                    r.historySequence < 1
+                  )
+                    throw new Error("Invalid settlement receipt sequence");
+                  return {
+                    observationId: uuid(r.observationId),
+                    historySequence: r.historySequence,
+                    recordedAt: timestamp(r.recordedAt),
+                    activeHoldIds: list(r.activeHoldIds).map(uuid),
+                    activeDisputeIds: list(r.activeDisputeIds).map(uuid),
+                  };
+                })(),
         }
       : null,
   };

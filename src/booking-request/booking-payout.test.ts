@@ -59,6 +59,7 @@ describe("persisted booking payout commands", () => {
 const settlementFacts: BookingSettlementFacts = {
   bookingRequestId,
   revision: "a".repeat(32),
+  recovery: { status: "unsettled" },
   captured: { bookingPriceFils: 100000000, bookingServiceFeeFils: 5000000 },
   refunded: { bookingPriceFils: 0, bookingServiceFeeFils: 0 },
   reserved: { bookingPriceFils: 0, bookingServiceFeeFils: 0 },
@@ -81,16 +82,14 @@ const settlementFacts: BookingSettlementFacts = {
 describe("settlement selection", () => {
   it("requires authoritative maturity before requesting settlement", async () => {
     const repository = {
-      facts: vi
-        .fn()
-        .mockResolvedValue({
-          ...settlementFacts,
-          maturity: {
-            status: "unavailable",
-            reviewAvailable: false,
-            payoutPrerequisiteAvailable: false,
-          },
-        }),
+      facts: vi.fn().mockResolvedValue({
+        ...settlementFacts,
+        maturity: {
+          status: "unavailable",
+          reviewAvailable: false,
+          payoutPrerequisiteAvailable: false,
+        },
+      }),
       request: vi.fn(),
       claim: vi.fn(),
     };
@@ -149,6 +148,10 @@ describe("settlement selection", () => {
           id: command.commandId,
           commandId: "90000000-0000-4000-8000-000000002280",
           amountFils: 99000000,
+          actorUserId: command.commandId,
+          reason: "Review",
+          requestedAt: "2026-09-12T12:00:00Z",
+          receipt: null,
           state: "not-executed",
           retrySafe: false,
         },
@@ -157,18 +160,16 @@ describe("settlement selection", () => {
   });
   it("validates original command content again when a settled command is replayed", async () => {
     const repository = {
-      facts: vi
-        .fn()
-        .mockResolvedValue({
-          ...settlementFacts,
-          settlement: {
-            id: command.commandId,
-            commandId: command.commandId,
-            amountFils: 90000000,
-            state: "succeeded",
-            retrySafe: false,
-          },
-        }),
+      facts: vi.fn().mockResolvedValue({
+        ...settlementFacts,
+        settlement: {
+          id: command.commandId,
+          commandId: command.commandId,
+          amountFils: 90000000,
+          state: "succeeded",
+          retrySafe: false,
+        },
+      }),
       request: vi
         .fn()
         .mockRejectedValue(new Error("Settlement command identity was reused")),
@@ -198,19 +199,17 @@ describe("settlement selection", () => {
       providerReference: null,
     };
     const repository = {
-      facts: vi
-        .fn()
-        .mockResolvedValue({
-          ...settlementFacts,
-          activeHoldIds: [command.commandId],
-          settlement: {
-            id: command.commandId,
-            commandId: "90000000-0000-4000-8000-000000002280",
-            amountFils: 90000000,
-            state: "indeterminate",
-            retrySafe: false,
-          },
-        }),
+      facts: vi.fn().mockResolvedValue({
+        ...settlementFacts,
+        activeHoldIds: [command.commandId],
+        settlement: {
+          id: command.commandId,
+          commandId: "90000000-0000-4000-8000-000000002280",
+          amountFils: 90000000,
+          state: "indeterminate",
+          retrySafe: false,
+        },
+      }),
       request: vi.fn(),
       claim: vi.fn().mockResolvedValue({ status: "query", query }),
     };

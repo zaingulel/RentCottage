@@ -688,6 +688,12 @@ export async function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = await execute(
+        "node",
+        ["scripts/verify-booking-payout-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {

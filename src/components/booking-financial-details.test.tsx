@@ -244,6 +244,7 @@ describe("administrator payout investigation", () => {
     dispute = "90000000-0000-4000-8000-000000002271";
   const payout = {
     revision: "a".repeat(32),
+    recovery: { status: "unsettled" as const },
     maturity: financial.eligibility,
     intents: [],
     settlement: null,
@@ -274,6 +275,56 @@ describe("administrator payout investigation", () => {
       },
     ],
   };
+  it("shows verified recovery amounts and the explicit absence of an owner debit to administrators", () => {
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{
+          ...financial,
+          actorRole: "platform_administrator",
+          payout: {
+            ...payout,
+            recovery: {
+              status: "paid",
+              ownerEntitlementFils: 81000000,
+              paidFils: 90000000,
+              paidWhileBlocked: true,
+              recoveryExposureFils: 90000000,
+              recoveryBalanceFils: 9000000,
+              automaticOwnerDebitFils: 0,
+            },
+          },
+        }}
+      />,
+    );
+    const recovery = screen.getByTestId("settlement-recovery");
+    expect(recovery).toHaveTextContent("Current recovery balance: IQD 9,000");
+    expect(recovery).toHaveTextContent(
+      "Recorded recovery exposure: IQD 90,000",
+    );
+    expect(recovery).toHaveTextContent(
+      "No automatic owner debit has been made.",
+    );
+    expect(recovery).toHaveTextContent(
+      "Settlement was verified while a payout hold or dispute was active.",
+    );
+  });
+  it("shows missing recovery context as unavailable without a zero amount", () => {
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{
+          ...financial,
+          actorRole: "platform_administrator",
+          payout: { ...payout, recovery: { status: "unavailable" } },
+        }}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Settlement recovery evidence is incomplete",
+    );
+    expect(screen.queryByTestId("settlement-recovery")).not.toBeInTheDocument();
+  });
   it("exposes independent hold release and dispute resolution on the existing administrator detail", () => {
     render(
       <BookingFinancialDetails

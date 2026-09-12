@@ -2,6 +2,8 @@
 // with the disposable PostgreSQL transport in place of HTTP authentication.
 import { execFileSync } from "node:child_process";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createBookingRefund } from "../src/booking-request/booking-refund";
+import { SupabaseBookingRefundRepository } from "../src/booking-request/supabase-booking-refund";
 import { createBookingSettlement } from "../src/booking-request/booking-payout";
 import { SupabaseBookingSettlementRepository } from "../src/booking-request/supabase-booking-payout";
 import { createPaymentOperationExecution } from "../src/payment/payment-operation-execution";
@@ -85,11 +87,17 @@ const repository = new SupabaseBookingSettlementRepository(
   client("authenticated"),
   service,
 );
-const result = await createBookingSettlement({ repository, operations }).settle(
-  {
-    bookingRequestId: "60000000-0000-4000-8000-000000001001",
-    commandId: "90000000-0000-4000-8000-000000002280",
-    reason: "Settlement review",
-  },
-);
+const result =
+  process.argv[2] === "refund"
+    ? await createBookingRefund({
+        repository: new SupabaseBookingRefundRepository(service),
+        operations,
+      }).resume("60000000-0000-4000-8000-000000001001")
+    : process.argv[2] === "facts"
+      ? await repository.facts("60000000-0000-4000-8000-000000001001")
+      : await createBookingSettlement({ repository, operations }).settle({
+          bookingRequestId: "60000000-0000-4000-8000-000000001001",
+          commandId: "90000000-0000-4000-8000-000000002280",
+          reason: "Settlement review",
+        });
 process.stdout.write(JSON.stringify(result) + "\n");

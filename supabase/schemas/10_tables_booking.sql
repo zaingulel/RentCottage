@@ -866,3 +866,14 @@ CREATE TABLE public.booking_settlement_attempts (
   UNIQUE(settlement_intent_id,generation),
   CHECK (not_after>created_at)
 );
+
+-- Context at the first verified settlement success. Amount remains owned by the
+-- provider operation; sequence remains owned by shared payment history.
+CREATE TABLE public.booking_settlement_receipts (
+  settlement_intent_id uuid PRIMARY KEY,
+  operation_id uuid NOT NULL UNIQUE,
+  observation_id uuid NOT NULL UNIQUE,
+  history_sequence bigint NOT NULL UNIQUE,
+  active_hold_ids uuid[] NOT NULL,
+  active_dispute_ids uuid[] NOT NULL
+);

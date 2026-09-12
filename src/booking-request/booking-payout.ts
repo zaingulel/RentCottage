@@ -76,8 +76,20 @@ export function createBookingPayout(repository: BookingPayoutRepository) {
   };
 }
 
+export type BookingPayoutRecovery =
+  | { readonly status: "unsettled" | "unavailable" }
+  | {
+      readonly status: "paid";
+      readonly ownerEntitlementFils: number;
+      readonly paidFils: number;
+      readonly paidWhileBlocked: boolean;
+      readonly recoveryExposureFils: number;
+      readonly recoveryBalanceFils: number;
+      readonly automaticOwnerDebitFils: 0;
+    };
 export interface BookingSettlementFacts extends BookingPayoutFacts {
   readonly revision: string;
+  readonly recovery: BookingPayoutRecovery;
   readonly maturity: import("./booking-lifecycle").BookingCompletionEligibility;
   readonly intents: import("./booking-refund").BookingRefundFacts["intents"];
   readonly settlement: null | {
@@ -92,6 +104,16 @@ export interface BookingSettlementFacts extends BookingPayoutFacts {
       | "failed"
       | "not-executed";
     readonly retrySafe: boolean;
+    readonly actorUserId: string;
+    readonly reason: string;
+    readonly requestedAt: string;
+    readonly receipt: null | {
+      readonly observationId: string;
+      readonly historySequence: number;
+      readonly recordedAt: string;
+      readonly activeHoldIds: readonly string[];
+      readonly activeDisputeIds: readonly string[];
+    };
   };
 }
 export interface BookingSettlementCommand {

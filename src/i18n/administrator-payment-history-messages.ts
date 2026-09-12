@@ -553,6 +553,14 @@ export const bookingPayoutMessages = {
     failed: "Settlement failed",
     "not-executed": "Settlement was not executed",
     settlementAmount: "Recorded settlement amount",
+    paidAmount: "Verified owner payment",
+    recoveryExposure: "Recorded recovery exposure",
+    recoveryBalance: "Current recovery balance",
+    lateSettlement:
+      "Settlement was verified while a payout hold or dispute was active.",
+    noDebit: "No automatic owner debit has been made.",
+    recoveryUnavailable:
+      "Settlement recovery evidence is incomplete. Investigation is required.",
   },
   ar: {
     title: "تعليق مستحقات المالك ونزاعات الدفع",
@@ -588,6 +596,12 @@ export const bookingPayoutMessages = {
     failed: "فشلت التسوية",
     "not-executed": "لم يتم تنفيذ التسوية",
     settlementAmount: "مبلغ التسوية المسجل",
+    paidAmount: "الدفعة المؤكدة للمالك",
+    recoveryExposure: "التعرض المسجل للاسترداد",
+    recoveryBalance: "رصيد الاسترداد الحالي",
+    lateSettlement: "تم تأكيد التسوية أثناء تعليق المستحقات أو وجود نزاع.",
+    noDebit: "لم يتم إجراء أي خصم تلقائي من المالك.",
+    recoveryUnavailable: "أدلة استرداد التسوية غير مكتملة. يلزم التحقيق.",
   },
   ckb: {
     title: "ڕاگرتنی پارەی خاوەن و ناکۆکیی پارەدان",
@@ -624,5 +638,12 @@ export const bookingPayoutMessages = {
     failed: "تسویە شکستی هێنا",
     "not-executed": "تسویە جێبەجێ نەکرا",
     settlementAmount: "بڕی تۆمارکراوی تسویە",
+    paidAmount: "پارەدانی پشتڕاستکراو بۆ خاوەن",
+    recoveryExposure: "بڕی تۆمارکراوی مەترسیی گەڕاندنەوە",
+    recoveryBalance: "باڵانسی ئێستای گەڕاندنەوە",
+    lateSettlement: "تسویە پشتڕاست کرایەوە لە کاتی ڕاگرتن یان ناکۆکیی پارەدان.",
+    noDebit: "هیچ پارەیەک بە شێوەی خۆکار لە خاوەن کەم نەکراوەتەوە.",
+    recoveryUnavailable:
+      "بەڵگەکانی گەڕاندنەوەی تسویە تەواو نین. پێویستی بە لێکۆڵینەوە هەیە.",
   },
 } as const;

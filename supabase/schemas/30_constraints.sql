@@ -999,3 +999,7 @@ ALTER TABLE public.booking_settlement_intents ADD CONSTRAINT booking_settlement_
 ALTER TABLE public.booking_settlement_intents ADD CONSTRAINT booking_settlement_intents_capture_fkey FOREIGN KEY (capture_operation_id) REFERENCES public.payment_provider_operations(id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_settlement_intents ADD CONSTRAINT booking_settlement_intents_actor_fkey FOREIGN KEY (actor_user_id) REFERENCES public.account_contexts(user_id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_settlement_attempts ADD CONSTRAINT booking_settlement_attempts_intent_fkey FOREIGN KEY (settlement_intent_id) REFERENCES public.booking_settlement_intents(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement_receipts_intent_fkey FOREIGN KEY (settlement_intent_id) REFERENCES public.booking_settlement_intents(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement_receipts_operation_fkey FOREIGN KEY (operation_id) REFERENCES public.payment_provider_operations(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement_receipts_observation_fkey FOREIGN KEY (observation_id) REFERENCES public.payment_provider_observations(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement_receipts_history_fkey FOREIGN KEY (history_sequence) REFERENCES public.booking_request_payment_history(sequence) ON DELETE RESTRICT;

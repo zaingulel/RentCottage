@@ -113,8 +113,9 @@ begin
   select * into intent from public.booking_settlement_intents where booking_request_id=target_booking_request_id;
   select * into attempt from public.booking_settlement_attempts where settlement_intent_id=intent.id order by generation desc limit 1;
   select * into ledger from public.payment_provider_operations where admission->>'purpose'='booking-settlement' and admission#>>'{permit,attemptId}'=attempt.id::text;
-  projected:=source||jsonb_build_object('maturity',public.booking_completion_eligibility(target_booking_request_id),
-    'settlement',case when intent.id is not null then jsonb_build_object('id',intent.id,'commandId',intent.command_id,'amountFils',intent.amount_fils,
+  projected:=source||jsonb_build_object('recovery',public.booking_settlement_recovery(target_booking_request_id,source->'captured',source->'refunded'),'maturity',public.booking_completion_eligibility(target_booking_request_id),
+    'settlement',case when intent.id is not null then jsonb_build_object('id',intent.id,'commandId',intent.command_id,'amountFils',intent.amount_fils,'actorUserId',intent.actor_user_id,'reason',intent.reason,'requestedAt',intent.created_at,
+      'receipt',(select jsonb_build_object('observationId',r.observation_id,'historySequence',r.history_sequence,'recordedAt',o.received_at,'activeHoldIds',to_jsonb(r.active_hold_ids),'activeDisputeIds',to_jsonb(r.active_dispute_ids)) from public.booking_settlement_receipts r join public.payment_provider_observations o on o.id=r.observation_id where r.settlement_intent_id=intent.id),
       'state',case when ledger.id is null then 'requested' else coalesce(ledger.current_outcome,'processing') end,
       'retrySafe',coalesce((public.payment_provider_recorded_result(ledger)->>'retrySafe')::boolean,false)) end);
   return projected||jsonb_build_object('revision',md5(projected::text));
@@ -238,7 +239,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.record_booking_settlement_observation(target_operation_id uuid,target_result jsonb) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-declare ledger public.payment_provider_operations; declare attempt public.booking_settlement_attempts; declare intent public.booking_settlement_intents;
+declare ledger public.payment_provider_operations; declare attempt public.booking_settlement_attempts; declare intent public.booking_settlement_intents; declare facts jsonb; declare was_succeeded boolean;
 begin
   ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-settlement']);
   select * into attempt from public.booking_settlement_attempts where id=(ledger.admission#>>'{permit,attemptId}')::uuid;
@@ -246,7 +247,51 @@ begin
   perform public.lock_booking_refund_source(intent.booking_request_id);
   if intent.id is null or ledger.admission->'permit' is distinct from public.booking_settlement_execution_permit(attempt)
     or ledger.amount_fils is distinct from intent.amount_fils then raise exception 'Settlement observation binding is invalid' using errcode='RC409'; end if;
+  facts:=public.get_booking_payout_facts(intent.booking_request_id);
+  was_succeeded:=ledger.current_outcome is not distinct from 'succeeded';
   ledger:=public.accept_payment_provider_observation(ledger.id,target_result);
+  if ledger.current_outcome='succeeded' and not was_succeeded then
+    insert into public.booking_settlement_receipts(settlement_intent_id,operation_id,observation_id,history_sequence,active_hold_ids,active_dispute_ids)
+    select intent.id,ledger.id,observation.id,history.sequence,
+      array(select value::uuid from jsonb_array_elements_text(facts->'activeHoldIds')),
+      array(select value::uuid from jsonb_array_elements_text(facts->'activeDisputeIds'))
+    from public.payment_provider_observations observation
+      join public.booking_request_payment_history history on history.provider_operation_id=ledger.id and history.source='provider-operation' and history.outcome='succeeded'
+    where observation.operation_id=ledger.id and observation.event_id=target_result#>>'{evidence,eventId}'
+    order by history.sequence limit 1;
+    if not found then raise exception 'Settlement success context is unavailable' using errcode='RC409'; end if;
+  end if;
   return public.payment_provider_recorded_result(ledger);
+end;
+$$;
+
+-- Caller has authorized the participant and locked the booking/capture source.
+CREATE OR REPLACE FUNCTION public.booking_settlement_recovery(target_booking_request_id uuid,captured jsonb,refunded jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare intent public.booking_settlement_intents; declare ledger public.payment_provider_operations; declare receipt public.booking_settlement_receipts;
+declare entitlement bigint; declare balance bigint; declare blocked boolean; declare later_refund boolean;
+begin
+  select * into intent from public.booking_settlement_intents where booking_request_id=target_booking_request_id;
+  select operation.* into ledger from public.payment_provider_operations operation join public.booking_settlement_attempts attempt on attempt.id::text=operation.admission#>>'{permit,attemptId}'
+    where attempt.settlement_intent_id=intent.id and operation.admission->>'purpose'='booking-settlement' and operation.current_outcome='succeeded';
+  if ledger.id is null then return '{"status":"unsettled"}'::jsonb; end if;
+  select r.* into receipt from public.booking_settlement_receipts r
+    join public.payment_provider_observations observation on observation.id=r.observation_id and observation.operation_id=ledger.id and observation.result->>'outcome'='succeeded'
+    join public.booking_request_payment_history history on history.sequence=r.history_sequence and history.provider_operation_id=ledger.id and history.outcome='succeeded'
+    where r.settlement_intent_id=intent.id and r.operation_id=ledger.id;
+  if receipt.settlement_intent_id is null or ledger.amount_fils is distinct from intent.amount_fils then return '{"status":"unavailable"}'::jsonb; end if;
+  entitlement:=((captured->>'bookingPriceFils')::bigint-(refunded->>'bookingPriceFils')::bigint)*9/10;
+  blocked:=cardinality(receipt.active_hold_ids)>0 or cardinality(receipt.active_dispute_ids)>0;
+  -- A completed refund refreshes recovery under #30. Use serialized history order,
+  -- never provider occurrence time or potentially equal received timestamps.
+  select exists(select 1 from public.booking_request_payment_history history join public.payment_provider_operations operation on operation.id=history.provider_operation_id
+    where history.sequence>receipt.history_sequence and history.source='provider-operation' and history.outcome='succeeded' and operation.current_outcome='succeeded' and operation.operation_kind='refund'
+    and ((operation.admission->>'purpose'='booking-refund' and operation.admission#>>'{permit,binding,captureOperationId}'=intent.capture_operation_id::text)
+      or exists(select 1 from public.booking_request_payment_required_expiry_operations corrective where corrective.capture_provider_operation_id=intent.capture_operation_id
+        and (corrective.provider_operation_id=operation.id or (corrective.provider,corrective.environment,corrective.merchant_id,corrective.terminal_id,corrective.provider_idempotency_key)
+          =(operation.provider,operation.environment,operation.merchant_id,operation.terminal_id,operation.provider_idempotency_key))))) into later_refund;
+  balance:=case when blocked and not later_refund then ledger.amount_fils else greatest(ledger.amount_fils-entitlement,0) end;
+  return jsonb_build_object('status','paid','ownerEntitlementFils',entitlement,'paidFils',ledger.amount_fils,'paidWhileBlocked',blocked,
+    'recoveryExposureFils',greatest(case when blocked then ledger.amount_fils else 0 end,balance),'recoveryBalanceFils',balance,'automaticOwnerDebitFils',0);
 end;
 $$;

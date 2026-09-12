@@ -1,4 +1,11 @@
-import type { BookingSettlementFacts } from "./booking-payout";
+import {
+  parseBookingPayoutRecovery,
+  parseBookingSettlementFacts,
+} from "./supabase-booking-payout";
+import type {
+  BookingPayoutRecovery,
+  BookingSettlementFacts,
+} from "./booking-payout";
 import {
   parseBookingLifecycle,
   parseBookingCompletionEligibility,
@@ -16,6 +23,7 @@ import type { BookingCancellationCommand } from "./booking-cancellation";
 export type BookingParticipantRole = BookingCancellationCommand["actorRole"];
 export interface BookingFinancialView {
   readonly payout?: BookingSettlementFacts;
+  readonly ownerPayout?: BookingPayoutRecovery;
   readonly bookingRequestId: string;
   readonly bookingRequestReference: string;
   readonly bookingReference: string;
@@ -143,7 +151,9 @@ export function parseBookingFinancialView(
   if (
     v.bookingRequestReference !== reference ||
     v.actorRole !== actorRole ||
-    (actorRole !== "platform_administrator" && v.audit !== undefined)
+    (actorRole !== "platform_administrator" &&
+      (v.audit !== undefined || v.payout !== undefined)) ||
+    (actorRole === "customer" && v.ownerPayout !== undefined)
   )
     throw new Error("Invalid financial view binding");
   const captured = allocation(v.captured),
@@ -152,6 +162,13 @@ export function parseBookingFinancialView(
   refundCapacity({ captured, refunded, reserved });
   const cancellation = v.cancellation === null ? null : object(v.cancellation);
   const result: BookingFinancialView = {
+    ...(actorRole === "customer"
+      ? {}
+      : {
+          ownerPayout: parseBookingPayoutRecovery(
+            v.ownerPayout ?? { status: "unavailable" },
+          ),
+        }),
     bookingRequestId: uuid(v.bookingRequestId),
     bookingRequestReference: reference,
     bookingReference: text(v.bookingReference),
@@ -234,6 +251,14 @@ export function parseBookingFinancialView(
     c = a.cancellation === null ? null : object(a.cancellation);
   return {
     ...result,
+    ...(v.payout === undefined
+      ? {}
+      : {
+          payout: parseBookingSettlementFacts(
+            v.payout,
+            result.bookingRequestId,
+          ),
+        }),
     audit: {
       cancellation: c
         ? {

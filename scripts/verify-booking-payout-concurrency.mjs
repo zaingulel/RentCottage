@@ -22,7 +22,7 @@ const harness = createLocalSupabaseConcurrencyHarness({
 });
 const source = readFileSync(
   new URL(
-    "../supabase/tests/database/booking_completion.test.sql",
+    "../supabase/tests/database/booking_settlement.test.sql",
     import.meta.url,
   ),
   "utf8",
@@ -51,6 +51,7 @@ update public.cottage_booking_period_commitments set status='confirmed_booking' 
 update public.cottage_booking_period_occupancies set active=true where booking_period_commitment_id='50000000-0000-4000-8000-000000001001';
 set session_replication_role=origin;`;
 const cleanup = `${resetCancellation} set session_replication_role=replica;
+delete from public.booking_settlement_receipts where settlement_intent_id in (select id from public.booking_settlement_intents where booking_request_id='${request}');
 delete from public.booking_settlement_attempts where settlement_intent_id in (select id from public.booking_settlement_intents where booking_request_id='${request}');
 delete from public.booking_settlement_intents where booking_request_id='${request}';
 delete from public.booking_refund_attempts where refund_intent_id in (select id from public.booking_refund_intents where booking_request_id='${request}');
@@ -120,10 +121,62 @@ try {
     format: "esm",
     logLevel: "silent",
   });
-  harness.runSql(cleanup);
-  harness.runSql(
-    `${fixture("PAYMENT EVIDENCE FIXTURE")} ${fixture("COMPLETION FIXTURE")} select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3); begin;set local role service_role;select public.commit_booking_completion('${request}',(select value->>'revision' from public.list_due_booking_completions(50) value));commit;`,
-  );
+  const seed = () => {
+    harness.runSql(cleanup);
+    harness.runSql(
+      `${fixture("PAYMENT EVIDENCE FIXTURE")} ${fixture("COMPLETION FIXTURE")} select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3); begin;set local role service_role;select public.commit_booking_completion('${request}',(select value->>'revision' from public.list_due_booking_completions(50) value));commit;`,
+    );
+  };
+  const literal = (value) =>
+    `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
+  for (const scenario of [
+    "hold-first",
+    "refund-first",
+    "settlement-first",
+    "hold-rollback",
+    "duplicate-admission",
+  ]) {
+    seed();
+    harness.runSql(
+      `begin;${administrator}select public.request_booking_settlement('${request}','90000000-0000-4000-8000-000000002280','Settlement review',public.get_booking_settlement_facts('${request}')->>'revision',90000000);commit;`,
+    );
+    const intent = harness.runSql(
+      `select id from public.booking_settlement_intents where booking_request_id='${request}'`,
+    );
+    const claim = JSON.parse(
+      harness.runSql(
+        `set role service_role;select public.claim_booking_settlement('${intent}')`,
+      ),
+    );
+    const admission = `set local role service_role;select public.admit_booking_settlement(${literal(claim.request.executionPermit)});`;
+    const refund = `${administrator}select public.request_booking_refund_exception('${request}','90000000-0000-4000-8000-000000002287','Concurrent refund','{"bookingPriceFils":10000000,"bookingServiceFeeFils":0}');`;
+    const hold = `${administrator}select public.record_booking_payout_command('${request}','90000000-0000-4000-8000-000000002288','place_hold','Concurrent hold',null,null,null);`;
+    const holder = harness.startSession(
+      `begin;set application_name='payout_race_holder';${scenario.startsWith("hold") ? hold : scenario === "refund-first" ? refund : admission}select 'PAYOUT_SOURCE_LOCKED';`,
+    );
+    sessions.push(holder);
+    await harness.waitForMarker(holder, "PAYOUT_SOURCE_LOCKED");
+    const contender = harness.startSession(
+      `begin;set application_name='payout_race_contender';${scenario === "settlement-first" ? refund : admission}commit;`,
+      true,
+    );
+    sessions.push(contender);
+    await harness.waitForLock("payout_race_contender", contender);
+    await harness.finishSession(holder, {
+      action: scenario === "hold-rollback" ? "rollback" : "commit",
+    });
+    await harness.finishSession(
+      contender,
+      scenario === "settlement-first" ? { expectedState: "RC409" } : undefined,
+    );
+    if (scenario === "hold-first" || scenario === "refund-first")
+      assert.match(contender.stdout, /not-admitted/);
+    if (scenario === "hold-rollback")
+      assert.match(contender.stdout, /"mode": "execute"/);
+    if (scenario === "duplicate-admission")
+      assert.match(contender.stdout, /"mode": "reconcile"/);
+  }
+  seed();
   assert.equal(
     harness.runSql(
       `select public.booking_request_payment_status(r) from public.booking_requests r where id='${request}'`,
@@ -188,7 +241,7 @@ try {
     harness.runSql(
       `select count(*)||':'||sum(e.physical_execution_count)||':'||sum(o.amount_fils) from public.payment_provider_operations o join public.simulated_payment_effects e on e.operation_id=o.id where o.operation_kind='settlement' and o.claim_id='${claim}'`,
     ),
-    "1:1:99000000",
+    "1:1:90000000",
   );
   assert.equal(
     harness.runSql(
@@ -207,6 +260,44 @@ try {
       `select jsonb_build_object('snapshot',to_jsonb(s),'receipt',(select jsonb_agg(to_jsonb(r) order by r.id) from public.booking_receipts r where r.booking_confirmation_id=c.id)) from public.booking_confirmations c join public.booking_requests b on b.id=c.booking_request_id join public.booking_snapshots s on s.id=b.booking_snapshot_id where b.id='${request}'`,
     ),
     original,
+  );
+  const late = JSON.parse(await child("facts"));
+  assert.deepEqual(late.recovery, {
+    status: "paid",
+    ownerEntitlementFils: 90000000,
+    paidFils: 90000000,
+    paidWhileBlocked: true,
+    recoveryExposureFils: 90000000,
+    recoveryBalanceFils: 90000000,
+    automaticOwnerDebitFils: 0,
+  });
+  const receipt = late.settlement.receipt;
+  assert.equal(receipt.activeHoldIds.length, 1);
+  harness.runSql(
+    `begin;${administrator}select public.request_booking_refund_exception('${request}','90000000-0000-4000-8000-000000002290','Later compensation','{"bookingPriceFils":10000000,"bookingServiceFeeFils":0}');commit;`,
+  );
+  assert.deepEqual(JSON.parse(await child("refund")), { status: "settled" });
+  const recovered = JSON.parse(await child("facts"));
+  assert.deepEqual(recovered.recovery, {
+    ...late.recovery,
+    ownerEntitlementFils: 81000000,
+    recoveryBalanceFils: 9000000,
+  });
+  assert.deepEqual(
+    recovered.settlement.receipt,
+    receipt,
+    "later refunds and replay preserve first-success audit context",
+  );
+  assert.deepEqual(recovered.captured, {
+    bookingPriceFils: 100000000,
+    bookingServiceFeeFils: 5000000,
+  });
+  assert.equal(
+    harness.runSql(`select count(*) from public.booking_settlement_receipts`),
+    "1",
+  );
+  console.log(
+    "Hold/refund/admission/rollback races passed; fresh process recovery preserved 90m paid/exposure, then verified 10m price refund yielded 9m balance and zero owner debit.",
   );
   console.log(
     "Fresh processes recovered effect-before-recording through the real settlement application, simulator and shared observation recorder; duplicate replay preserved one effect, operation, observation and history entry.",

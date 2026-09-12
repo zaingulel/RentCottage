@@ -1409,3 +1409,5 @@ REVOKE ALL ON FUNCTION public.booking_completion_eligibility(uuid),public.get_bo
 GRANT EXECUTE ON FUNCTION public.get_booking_settlement_facts(uuid) TO authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.request_booking_settlement(uuid,uuid,text,text,bigint) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_booking_settlement(uuid),public.admit_booking_settlement(jsonb),public.record_booking_settlement_observation(uuid,jsonb) TO service_role;
+REVOKE ALL ON TABLE public.booking_settlement_receipts FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.booking_settlement_recovery(uuid,jsonb,jsonb) FROM PUBLIC,anon,authenticated,service_role;

@@ -256,11 +256,37 @@ export function BookingFinancialDetails({
           {view.payout.settlement ? (
             <div>
               <p>{p[view.payout.settlement.state]}</p>
+              <p>{view.payout.settlement.reason}</p>
+              <p>
+                {view.payout.settlement.actorUserId} ·{" "}
+                {view.payout.settlement.requestedAt}
+              </p>
               <p>
                 {p.settlementAmount}:{" "}
                 {amount(view.payout.settlement.amountFils)}
               </p>
             </div>
+          ) : null}
+          {view.payout.recovery.status === "paid" ? (
+            <div data-testid="settlement-recovery">
+              <p>
+                {p.paidAmount}: {amount(view.payout.recovery.paidFils)}
+              </p>
+              <p>
+                {p.recoveryExposure}:{" "}
+                {amount(view.payout.recovery.recoveryExposureFils)}
+              </p>
+              <p>
+                {p.recoveryBalance}:{" "}
+                {amount(view.payout.recovery.recoveryBalanceFils)}
+              </p>
+              {view.payout.recovery.paidWhileBlocked ? (
+                <p>{p.lateSettlement}</p>
+              ) : null}
+              <p>{p.noDebit}</p>
+            </div>
+          ) : view.payout.recovery.status === "unavailable" ? (
+            <p role="status">{p.recoveryUnavailable}</p>
           ) : null}
           {selectBookingSettlement(view.payout).action === "blocked" ? (
             <p>{p.blocked}</p>

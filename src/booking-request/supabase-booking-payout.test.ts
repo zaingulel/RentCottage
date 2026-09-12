@@ -113,6 +113,7 @@ describe("payout evidence adapter", () => {
 const settlementFacts = {
   ...facts,
   revision: "a".repeat(32),
+  recovery: { status: "unsettled" },
   maturity: {
     status: "unavailable",
     reviewAvailable: false,
@@ -128,6 +129,10 @@ describe("settlement fact boundaries", () => {
       settlement: {
         id: dispute,
         commandId: hold,
+        actorUserId: hold,
+        reason: "Review",
+        requestedAt: command.occurredAt,
+        receipt: null,
         amountFils: 90000000,
         state: "succeeded",
         retrySafe: false,
@@ -165,6 +170,10 @@ describe("settlement fact boundaries", () => {
       settlement: {
         id: hold,
         commandId: hold,
+        actorUserId: hold,
+        reason: "Review",
+        requestedAt: command.occurredAt,
+        receipt: null,
         amountFils: 90000000,
         state: "indeterminate",
         retrySafe: undefined,
@@ -179,12 +188,10 @@ describe("settlement fact boundaries", () => {
     ).toThrow();
   });
   it("keeps attributed commands on the authenticated client and admission claims on the service client", async () => {
-    const rpc = vi
-        .fn()
-        .mockResolvedValue({
-          data: { status: "requested", intentId: hold },
-          error: null,
-        }),
+    const rpc = vi.fn().mockResolvedValue({
+        data: { status: "requested", intentId: hold },
+        error: null,
+      }),
       serviceRpc = vi
         .fn()
         .mockResolvedValue({ data: { status: "processing" }, error: null });

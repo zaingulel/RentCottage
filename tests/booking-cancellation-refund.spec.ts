@@ -8,6 +8,7 @@ import * as OTPAuth from "otpauth";
 import { getConfirmedBookingAccess } from "../src/booking-request/confirmed-booking-access";
 import { getBookingFinancialView } from "../src/booking-request/booking-financial-view";
 import { triggerScheduled } from "./fixtures/trigger-scheduled";
+import { bookingPayoutMessages as payoutMessages } from "../src/i18n/administrator-payment-history-messages";
 import { bookingManagementMessages as messages } from "../src/i18n/booking-management-messages";
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
@@ -76,13 +77,12 @@ const fixture = source
   );
 let activeAdministratorId: string | null = null;
 const observer = readFileSync(
-  "scripts/verify-booking-refund-concurrency.mjs",
+  "scripts/verify-booking-payout-concurrency.mjs",
   "utf8",
 );
 const template = (name: string) =>
   observer.split(`const ${name} = \``)[1].split("`;")[0];
 let cleanup =
-  template("resetRefunds") +
   template("resetCancellation") +
   template("cleanup").replace("${resetCancellation}", "");
 for (const [key, value] of Object.entries({
@@ -265,9 +265,18 @@ test.describe("retained cancellation and refund controls", () => {
           cause: result.error,
         });
     }
-    harness.runSql(
-      `${fixture}select pg_temp.seed_cancellation_booking('2101-01-01');commit;`,
+    const payoutJourney = test.info().title.includes("payout holds");
+    const datedFixture = fixture.replace(
+      "fixture:=replace(fixture,'2101-01-02'",
+      "fixture:=replace(fixture,'2101-01-03',(start_day+2)::text); fixture:=replace(fixture,'2101-01-02'",
     );
+    harness.runSql(
+      `${datedFixture}select pg_temp.seed_cancellation_booking(${payoutJourney ? "(clock_timestamp() at time zone 'Asia/Baghdad')::date-3" : "'2101-01-01'"});commit;`,
+    );
+    if (payoutJourney)
+      harness.runSql(
+        `set role service_role;select public.commit_booking_completion('${request}',(select value->>'revision' from public.list_due_booking_completions(50) value));`,
+      );
   });
   test.afterEach(async () => {
     clear();
@@ -277,6 +286,86 @@ test.describe("retained cancellation and refund controls", () => {
       );
       if (error) throw error;
       activeAdministratorId = null;
+    }
+  });
+  test("administrator manages independent payout holds and settlement on the existing detail", async ({
+    page,
+    browser,
+    baseURL,
+  }, info) => {
+    await administrator(page);
+    await page.goto(`/en/administrator/payments/${reference}`);
+    const p = payoutMessages.en;
+    const command = async (
+      action: "place_hold" | "release_hold" | "open_dispute" | "settle",
+      reason: string,
+    ) => {
+      const form = page.getByRole("form", { name: p[action] });
+      await form.getByLabel(p.reason, { exact: true }).fill(reason);
+      await form.getByRole("button", { name: p[action], exact: true }).click();
+    };
+    await command("place_hold", "PRIVATE payout review");
+    await expect(page.getByText(p.held, { exact: true })).toBeVisible();
+    await command("open_dispute", "PRIVATE dispute review");
+    await expect(page.getByText(p.open, { exact: true })).toBeVisible();
+    const resolution = page.getByRole("form", { name: p.resolve_dispute });
+    await resolution.getByLabel(p.outcome).selectOption("owner_won");
+    await resolution
+      .getByLabel(p.reason, { exact: true })
+      .fill("PRIVATE decision");
+    await resolution
+      .getByRole("button", { name: p.resolve_dispute, exact: true })
+      .click();
+    await expect(page.getByText(p.resolved, { exact: true })).toBeVisible();
+    await expect(page.getByText(p.held, { exact: true })).toBeVisible();
+    await command("settle", "Held settlement check");
+    await expect(
+      page.getByRole("form", { name: p.settle }).getByRole("alert"),
+    ).toContainText(p.blocked);
+    expect(
+      harness.runSql(
+        `select count(*) from public.payment_provider_operations where operation_kind='settlement'`,
+      ),
+    ).toBe("0");
+    await snapshots(
+      page,
+      "platform_administrator",
+      info.project.name,
+      "payout-held",
+    );
+    await page.goto(`/en/administrator/payments/${reference}`);
+    await command("release_hold", "PRIVATE review complete");
+    await expect(page.getByText(p.clear, { exact: true })).toBeVisible();
+    await command("settle", "PRIVATE settlement approval");
+    await expect(page.getByTestId("settlement-recovery")).toContainText(
+      "IQD 99,000",
+    );
+    await expect(page.getByTestId("settlement-recovery")).toContainText(
+      p.noDebit,
+    );
+    await snapshots(
+      page,
+      "platform_administrator",
+      info.project.name,
+      "payout-settled",
+    );
+    const ownerContext = await browser.newContext({
+      baseURL,
+      viewport: page.viewportSize() ?? undefined,
+    });
+    try {
+      await participant(ownerContext, owner, baseURL);
+      const ownerPage = await ownerContext.newPage();
+      await ownerPage.goto(`/en/owner/booking-requests/${reference}`);
+      await expect(
+        ownerPage.getByText("PRIVATE payout review", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        ownerPage.getByRole("region", { name: p.title }),
+      ).toHaveCount(0);
+      await expect(ownerPage.getByTestId("settlement-recovery")).toHaveCount(0);
+    } finally {
+      await ownerContext.close();
     }
   });
   test("customer cancels with the disclosed rule and returns through retained history", async ({
