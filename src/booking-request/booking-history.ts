@@ -8,6 +8,10 @@ import {
   type BookingRequestPaymentStatus,
   type BookingRequestStatus,
 } from "./booking-request-status";
+import {
+  parseOwnerBookingEarningsAvailability,
+  type OwnerBookingEarningsFacts,
+} from "./owner-booking-earnings";
 
 export type BookingHistoryStatus =
   | BookingRequestStatus
@@ -26,6 +30,7 @@ export interface BookingHistoryItem {
   readonly lastEndsAt: string;
   readonly status: BookingHistoryStatus;
   readonly actorRole: "customer" | "cottage_owner";
+  readonly ownerEarnings?: OwnerBookingEarningsFacts;
 }
 
 const uuid =
@@ -73,6 +78,8 @@ export async function listBookingHistory(
       Date.parse(v.lastEndsAt) <= Date.parse(v.firstStartsAt) ||
       !statuses.includes(v.status as BookingHistoryStatus) ||
       (v.actorRole !== "customer" && v.actorRole !== "cottage_owner") ||
+      v.actorRole !== actorRole ||
+      (v.actorRole === "cottage_owner") !== (v.ownerEarnings !== undefined) ||
       (v.receiptId === undefined) !== (v.confirmedAt === undefined) ||
       (v.receiptId === undefined) !==
         (v.bookingReference === null || v.bookingReference === undefined)
@@ -90,6 +97,13 @@ export async function listBookingHistory(
       lastEndsAt: v.lastEndsAt,
       status: v.status as BookingHistoryStatus,
       actorRole: v.actorRole,
+      ...(v.actorRole === "cottage_owner"
+        ? {
+            ownerEarnings: parseOwnerBookingEarningsAvailability(
+              v.ownerEarnings,
+            ),
+          }
+        : {}),
     };
   });
 }

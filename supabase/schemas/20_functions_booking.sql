@@ -1094,6 +1094,7 @@ end $$;
 CREATE OR REPLACE FUNCTION public.list_booking_history(target_actor_role text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare actor uuid:=(select auth.uid()); declare context public.account_contexts;
+declare booking record; declare financial jsonb; declare earnings_by_request jsonb:='{}'::jsonb;
 begin
   select * into context from public.account_contexts where user_id=actor;
   if actor is null or context.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null)
@@ -1101,6 +1102,25 @@ begin
     or (target_actor_role='customer' and context.role not in ('customer','cottage_owner'))
     or (target_actor_role='cottage_owner' and (context.role<>'cottage_owner' or context.owner_approval_state<>'approved'))
   then raise exception 'Booking History unavailable' using errcode='42501'; end if;
+  if target_actor_role='cottage_owner' then
+    -- Establish one deterministic lock order before the per-booking financial
+    -- readers lock their capture/refund sources.
+    perform requests.id from public.booking_requests requests
+      where requests.owner_user_id=actor order by requests.id for update;
+    for booking in
+      select requests.id,requests.booking_request_reference
+      from public.booking_requests requests
+      join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+      where requests.owner_user_id=actor
+        and not exists(select 1 from public.booking_request_confirmation_invalidations invalidation where invalidation.booking_request_id=requests.id)
+        and not exists(select 1 from public.booking_request_payment_required_expiry_work expiry where expiry.booking_request_id=requests.id and expiry.state='quarantined')
+        and (public.booking_request_payment_status(requests)='paid-confirmed' or exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=requests.id))
+      order by requests.id
+    loop
+      financial:=public.get_booking_financial_view(booking.booking_request_reference,'cottage_owner');
+      earnings_by_request:=earnings_by_request||jsonb_build_object(booking.id::text,coalesce(financial->'ownerEarnings','{"status":"unavailable"}'::jsonb));
+    end loop;
+  end if;
   return (select coalesce(jsonb_agg(source.item order by source.created_at desc,source.booking_request_id,source.actor_role),'[]'::jsonb) from (
     select requests.created_at,requests.id booking_request_id,target_actor_role actor_role,
       jsonb_strip_nulls(jsonb_build_object(
@@ -1111,7 +1131,11 @@ begin
         'lastEndsAt',(select max(upper(period)) from unnest(commitments.access_ranges) period),'actorRole',target_actor_role,
         'status',case when access.paid_access
           then public.get_booking_lifecycle(requests.booking_request_reference,target_actor_role)->>'status'
-          else coalesce(public.booking_request_payment_status(requests),requests.status) end)) item
+          else coalesce(public.booking_request_payment_status(requests),requests.status) end))
+        ||case when target_actor_role='cottage_owner' then jsonb_build_object('ownerEarnings',case when access.paid_access
+          then coalesce(earnings_by_request->requests.id::text,'{"status":"unavailable"}'::jsonb)
+          when confirmations.id is not null or public.booking_request_payment_status(requests) in ('capture-processing','payment-required','paid-confirmed')
+          then '{"status":"unavailable"}'::jsonb else '{"status":"not-captured"}'::jsonb end) else '{}'::jsonb end item
     from public.booking_requests requests
     join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id
     join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id

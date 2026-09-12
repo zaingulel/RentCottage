@@ -1400,12 +1400,12 @@ REVOKE ALL ON FUNCTION public.get_booking_financial_view(text,text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_booking_financial_view(text,text) TO authenticated;
 
 REVOKE ALL ON TABLE public.booking_payout_commands FROM PUBLIC,anon,authenticated,service_role;
-REVOKE ALL ON FUNCTION public.booking_payout_command_receipt(public.booking_payout_commands),public.get_booking_payout_facts(uuid),public.record_booking_payout_command(uuid,uuid,text,text,uuid,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.booking_payout_command_receipt(public.booking_payout_commands),public.booking_payout_command_facts(uuid,jsonb),public.get_booking_payout_facts(uuid),public.record_booking_payout_command(uuid,uuid,text,text,uuid,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.get_booking_payout_facts(uuid) TO authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.record_booking_payout_command(uuid,uuid,text,text,uuid,text,jsonb) TO authenticated;
 
 REVOKE ALL ON TABLE public.booking_settlement_intents,public.booking_settlement_attempts FROM PUBLIC,anon,authenticated,service_role;
-REVOKE ALL ON FUNCTION public.booking_completion_eligibility(uuid),public.get_booking_settlement_facts(uuid),public.booking_settlement_admission_is_eligible(jsonb),public.request_booking_settlement(uuid,uuid,text,text,bigint),public.booking_settlement_execution_permit(public.booking_settlement_attempts),public.claim_booking_settlement(uuid),public.admit_booking_settlement(jsonb),public.booking_settlement_has_unresolved_execution(uuid),public.record_booking_settlement_observation(uuid,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.booking_completion_eligibility(uuid),public.booking_settlement_projection_facts(uuid,jsonb),public.get_booking_settlement_facts(uuid),public.booking_settlement_admission_is_eligible(jsonb),public.request_booking_settlement(uuid,uuid,text,text,bigint),public.booking_settlement_execution_permit(public.booking_settlement_attempts),public.claim_booking_settlement(uuid),public.admit_booking_settlement(jsonb),public.booking_settlement_has_unresolved_execution(uuid),public.record_booking_settlement_observation(uuid,jsonb) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.get_booking_settlement_facts(uuid) TO authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.request_booking_settlement(uuid,uuid,text,text,bigint) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_booking_settlement(uuid),public.admit_booking_settlement(jsonb),public.record_booking_settlement_observation(uuid,jsonb) TO service_role;

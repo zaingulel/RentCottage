@@ -5,13 +5,13 @@ LANGUAGE sql STABLE SET search_path='' AS $$
   select jsonb_build_object('status','recorded','bookingRequestId',target.booking_request_id,'commandId',target.id,'occurredAt',target.occurred_at);
 $$;
 
-CREATE OR REPLACE FUNCTION public.get_booking_payout_facts(target_booking_request_id uuid) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-declare source jsonb; declare commands jsonb; declare disputes jsonb; declare holds jsonb;
+-- Private factual extraction shared by administrator operations and the
+-- already-authorized participant financial reader. As a security-invoker
+-- helper it can read these tables only through its SECURITY DEFINER callers.
+CREATE OR REPLACE FUNCTION public.booking_payout_command_facts(target_booking_request_id uuid,source jsonb) RETURNS jsonb
+LANGUAGE plpgsql SET search_path='' AS $$
+declare commands jsonb; declare disputes jsonb; declare holds jsonb;
 begin
-  if current_setting('role',true)<>'service_role' and not public.is_platform_administrator('aal2') then
-    raise exception 'Payout facts unavailable' using errcode='42501'; end if;
-  source:=public.get_booking_refund_facts(target_booking_request_id);
   select coalesce(jsonb_agg(jsonb_build_object('commandId',id,'action',action,'subjectId',subject_id,'outcome',outcome,
     'allocation',case when booking_price_fils is not null then jsonb_build_object('bookingPriceFils',booking_price_fils,'bookingServiceFeeFils',booking_service_fee_fils) end,
     'actorUserId',actor_user_id,'reason',reason,'occurredAt',occurred_at) order by occurred_at,id),'[]') into commands
@@ -27,6 +27,15 @@ begin
     where opening.booking_request_id=target_booking_request_id and opening.action='open_dispute';
   return source||jsonb_build_object('commands',commands,'activeHoldIds',holds,'disputes',disputes,
     'activeDisputeIds',(select coalesce(jsonb_agg(dispute->'id'),'[]') from jsonb_array_elements(disputes) dispute where dispute->>'state'<>'resolved'));
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_booking_payout_facts(target_booking_request_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  if current_setting('role',true)<>'service_role' and not public.is_platform_administrator('aal2') then
+    raise exception 'Payout facts unavailable' using errcode='42501'; end if;
+  return public.booking_payout_command_facts(target_booking_request_id,public.get_booking_refund_facts(target_booking_request_id));
 end;
 $$;
 
@@ -99,12 +108,11 @@ exception when unique_violation then
 end;
 $$;
 
-CREATE OR REPLACE FUNCTION public.get_booking_settlement_facts(target_booking_request_id uuid) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-declare source jsonb; declare projected jsonb; declare snapshot public.booking_snapshots;
+CREATE OR REPLACE FUNCTION public.booking_settlement_projection_facts(target_booking_request_id uuid,source jsonb) RETURNS jsonb
+LANGUAGE plpgsql SET search_path='' AS $$
+declare projected jsonb; declare snapshot public.booking_snapshots;
 declare intent public.booking_settlement_intents; declare attempt public.booking_settlement_attempts; declare ledger public.payment_provider_operations;
 begin
-  source:=public.get_booking_payout_facts(target_booking_request_id);
   select snapshots.* into snapshot from public.booking_snapshots snapshots join public.booking_requests request on request.booking_snapshot_id=snapshots.id where request.id=target_booking_request_id;
   if snapshot.marketplace_commission_rate_basis_points is distinct from 1000
     or snapshot.marketplace_commission_amount_fils is distinct from (source#>>'{captured,bookingPriceFils}')::bigint/10
@@ -119,6 +127,13 @@ begin
       'state',case when ledger.id is null then 'requested' else coalesce(ledger.current_outcome,'processing') end,
       'retrySafe',coalesce((public.payment_provider_recorded_result(ledger)->>'retrySafe')::boolean,false)) end);
   return projected||jsonb_build_object('revision',md5(projected::text));
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_booking_settlement_facts(target_booking_request_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  return public.booking_settlement_projection_facts(target_booking_request_id,public.get_booking_payout_facts(target_booking_request_id));
 end;
 $$;
 

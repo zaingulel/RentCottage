@@ -5,6 +5,7 @@ import {
 } from "./booking-financial-view";
 const reference = "RC-REQ-0000000000001001";
 const zero = { bookingPriceFils: 0, bookingServiceFeeFils: 0 };
+const ownerEarnings = { status: "unavailable" as const };
 const view = {
   bookingRequestId: "60000000-0000-4000-8000-000000001001",
   bookingRequestReference: reference,
@@ -44,6 +45,7 @@ describe("safe financial projection binding", () => {
       {
         ...view,
         actorRole: "cottage_owner",
+        ownerEarnings,
         ownerPayout: {
           ...ownerPayout,
           actorUserId: "PRIVATE",
@@ -68,6 +70,7 @@ describe("safe financial projection binding", () => {
         {
           ...view,
           actorRole: "cottage_owner",
+          ownerEarnings,
           ownerPayout: {
             status: "paid",
             ownerEntitlementFils: 81000000,

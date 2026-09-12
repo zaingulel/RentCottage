@@ -129,6 +129,7 @@ CREATE OR REPLACE FUNCTION public.get_booking_financial_view(target_reference te
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare request public.booking_requests; declare snapshot public.booking_snapshots; declare commitment public.cottage_booking_period_commitments;
 declare cancellation public.booking_cancellations; declare facts jsonb; declare totals jsonb; declare result jsonb;
+declare owner_projection jsonb; declare owner_earnings jsonb;
 begin
   select * into request from public.booking_requests where booking_request_reference=target_reference;
   if request.id is null or not exists(select 1 from public.booking_confirmations where booking_request_id=request.id)
@@ -149,6 +150,38 @@ begin
   if target_actor_role='platform_administrator' then
     result:=result||jsonb_build_object('payout',public.get_booking_settlement_facts(request.id),'audit',jsonb_build_object('cancellation',case when cancellation.id is not null then jsonb_build_object('reason',cancellation.reason,'category',cancellation.category,'actorUserId',cancellation.actor_user_id,'actorRole',cancellation.actor_role) end,
       'refunds',(select coalesce(jsonb_agg(jsonb_build_object('id',id,'reason',reason,'actorUserId',actor_user_id) order by created_at,id),'[]') from public.booking_refund_intents where booking_request_id=request.id and source='administrator')));
+  end if;
+  if target_actor_role='cottage_owner' then
+    begin
+      owner_projection:=public.booking_payout_command_facts(request.id,
+        facts||totals||jsonb_build_object(
+          'obligation',jsonb_build_object('bookingPriceFils',coalesce(cancellation.refund_booking_price_fils,0),'bookingServiceFeeFils',coalesce(cancellation.refund_booking_service_fee_fils,0)),
+          'intents',(select coalesce(jsonb_agg(jsonb_build_object('id',id,'state',public.booking_refund_intent_state(id),'automatic',source='cancellation') order by created_at,id),'[]') from public.booking_refund_intents where booking_request_id=request.id)));
+      owner_projection:=public.booking_settlement_projection_facts(request.id,owner_projection);
+      if owner_projection->'captured' is null or owner_projection->'refunded' is null or owner_projection->'reserved' is null
+        or owner_projection->'obligation' is null or owner_projection->'maturity' is null or owner_projection->'recovery' is null
+        or owner_projection#>>'{recovery,status}'='unavailable'
+        or ((owner_projection#>>'{settlement,state}' is not distinct from 'succeeded') is distinct from
+          (owner_projection#>>'{recovery,status}'='paid' and owner_projection#>'{settlement,receipt}' is not null and owner_projection#>'{settlement,receipt}'<>'null'::jsonb))
+        or (owner_projection#>'{settlement,receipt}' is not null and owner_projection#>'{settlement,receipt}'<>'null'::jsonb and owner_projection#>>'{settlement,state}'<>'succeeded')
+      then
+        owner_earnings:='{"status":"unavailable"}'::jsonb;
+      else
+        owner_earnings:=jsonb_build_object(
+          'status','captured','captured',owner_projection->'captured','refunded',owner_projection->'refunded','reserved',owner_projection->'reserved','obligation',owner_projection->'obligation',
+          'marketplaceCommissionRateBasisPoints',snapshot.marketplace_commission_rate_basis_points,'marketplaceCommissionAmountFils',snapshot.marketplace_commission_amount_fils,
+          'refunds',(select coalesce(jsonb_agg(jsonb_build_object('state',public.booking_refund_intent_state(id),'allocation',jsonb_build_object('bookingPriceFils',booking_price_fils,'bookingServiceFeeFils',booking_service_fee_fils)) order by created_at,id),'[]') from public.booking_refund_intents where booking_request_id=request.id),
+          'maturity',owner_projection->'maturity','administratorHoldActive',jsonb_array_length(owner_projection->'activeHoldIds')>0,
+          'disputes',(select coalesce(jsonb_agg(jsonb_build_object('state',dispute->>'state','outcome',(select command->'outcome' from jsonb_array_elements(owner_projection->'commands') command where command->>'commandId'=dispute->>'resolutionId'))),'[]') from jsonb_array_elements(owner_projection->'disputes') dispute),
+          'settlement',case when owner_projection->'settlement' is not null and owner_projection->'settlement'<>'null'::jsonb then jsonb_build_object(
+            'amountFils',owner_projection#>'{settlement,amountFils}','state',owner_projection#>'{settlement,state}','retrySafe',owner_projection#>'{settlement,retrySafe}',
+            'receipt',case when owner_projection#>'{settlement,receipt}' is not null and owner_projection#>'{settlement,receipt}'<>'null'::jsonb then jsonb_build_object('paidFils',owner_projection#>'{settlement,amountFils}','recordedAt',owner_projection#>'{settlement,receipt,recordedAt}') end) end,
+          'recovery',owner_projection->'recovery');
+      end if;
+    exception when sqlstate 'RC409' or data_exception or integrity_constraint_violation then
+      owner_earnings:='{"status":"unavailable"}'::jsonb;
+    end;
+    result:=result||jsonb_build_object('ownerEarnings',owner_earnings);
   end if;
   if target_actor_role in ('cottage_owner','platform_administrator') then result:=result||jsonb_build_object('ownerPayout',public.booking_settlement_recovery(request.id,facts->'captured',totals->'refunded')); end if;
   result:=result||jsonb_build_object('lifecycle',public.get_booking_lifecycle(target_reference,target_actor_role),'eligibility',public.get_booking_completion_eligibility(target_reference,target_actor_role));
