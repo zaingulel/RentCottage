@@ -238,3 +238,102 @@ describe("retained cancellation and refund details", () => {
     },
   );
 });
+
+describe("administrator payout investigation", () => {
+  const hold = "90000000-0000-4000-8000-000000002270",
+    dispute = "90000000-0000-4000-8000-000000002271";
+  const payout = {
+    bookingRequestId: financial.bookingRequestId,
+    captured: financial.captured,
+    refunded: zero,
+    reserved: zero,
+    commands: [
+      {
+        commandId: hold,
+        action: "place_hold" as const,
+        subjectId: null,
+        outcome: null,
+        allocation: null,
+        actorUserId: "10000000-0000-4000-8000-000000003801",
+        reason: "Independent risk review",
+        occurredAt: "2026-09-12T12:00:00Z",
+      },
+    ],
+    activeHoldIds: [hold],
+    activeDisputeIds: [dispute],
+    disputes: [
+      {
+        id: dispute,
+        resolutionId: null,
+        refundIntentId: null,
+        state: "open" as const,
+      },
+    ],
+  };
+  it("exposes independent hold release and dispute resolution on the existing administrator detail", () => {
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{ ...financial, actorRole: "platform_administrator", payout }}
+      />,
+    );
+    const section = within(
+      screen.getByRole("region", { name: "Payout holds and disputes" }),
+    );
+    expect(section.getByText("Administrator hold active")).toBeInTheDocument();
+    expect(
+      section.getByRole("button", { name: "Release administrator hold" }),
+    ).toBeInTheDocument();
+    expect(
+      section.getByRole("button", { name: "Resolve payment dispute" }),
+    ).toBeInTheDocument();
+    expect(
+      section.queryByRole("button", { name: "Place administrator hold" }),
+    ).not.toBeInTheDocument();
+    expect(
+      section.queryByRole("button", { name: "Open payment dispute" }),
+    ).not.toBeInTheDocument();
+    expect(section.getByText("Independent risk review")).toBeInTheDocument();
+  });
+  it.each(["customer", "cottage_owner"] as const)(
+    "never renders private payout reasons or commands for %s",
+    (actorRole) => {
+      render(
+        <BookingFinancialDetails
+          locale="en"
+          view={{ ...financial, actorRole, payout }}
+        />,
+      );
+      expect(
+        screen.queryByText("Independent risk review"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: "Payout holds and disputes" }),
+      ).not.toBeInTheDocument();
+    },
+  );
+  it.each([
+    ["ar", "تعليق مستحقات المالك ونزاعات الدفع", "رفع التعليق الإداري"],
+    [
+      "ckb",
+      "ڕاگرتنی پارەی خاوەن و ناکۆکیی پارەدان",
+      "لابردنی ڕاگرتنی بەڕێوەبەر",
+    ],
+  ] as const)(
+    "localizes administrator controls in %s",
+    (locale, title, release) => {
+      render(
+        <BookingFinancialDetails
+          locale={locale}
+          view={{ ...financial, actorRole: "platform_administrator", payout }}
+        />,
+      );
+      expect(
+        within(screen.getByRole("region", { name: title })).getByRole(
+          "button",
+          { name: release },
+        ),
+      ).toBeInTheDocument();
+    },
+  );
+});

@@ -228,3 +228,5 @@ CREATE TRIGGER reject_booking_notification_events_change BEFORE UPDATE OR DELETE
 
 CREATE TRIGGER booking_refund_intents_immutable BEFORE UPDATE OR DELETE ON public.booking_refund_intents FOR EACH ROW EXECUTE FUNCTION public.reject_booking_cancellation_fact_change();
 CREATE TRIGGER booking_refund_attempts_immutable BEFORE UPDATE OR DELETE ON public.booking_refund_attempts FOR EACH ROW EXECUTE FUNCTION public.reject_booking_cancellation_fact_change();
+
+CREATE TRIGGER booking_payout_commands_immutable BEFORE UPDATE OR DELETE ON public.booking_payout_commands FOR EACH ROW EXECUTE FUNCTION public.reject_booking_cancellation_fact_change();

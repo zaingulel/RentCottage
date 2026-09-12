@@ -1,4 +1,5 @@
 import "server-only";
+import { SupabaseBookingPayoutRepository } from "./supabase-booking-payout";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
 import {
@@ -10,9 +11,13 @@ export async function loadBookingFinancialView(
   actorRole: BookingParticipantRole,
 ) {
   if (!bookingRequestTestRuntimeIsEnabled()) return null;
-  return getBookingFinancialView(
-    await createRequestSupabaseClient(),
-    reference,
-    actorRole,
-  );
+  const client = await createRequestSupabaseClient();
+  const view = await getBookingFinancialView(client, reference, actorRole);
+  if (!view || actorRole !== "platform_administrator") return view;
+  return {
+    ...view,
+    payout: await new SupabaseBookingPayoutRepository(client).facts(
+      view.bookingRequestId,
+    ),
+  };
 }

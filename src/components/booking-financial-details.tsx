@@ -4,6 +4,7 @@ import { bookingFinancialPresentation } from "@/booking-request/booking-financia
 import { refundAllocationTotal } from "@/payment/payment-refund-allocation";
 import type { RefundAllocation } from "@/payment/payment-contract";
 import { formatFilsAsIqd, formatIraqDateTime } from "@/i18n/format";
+import { bookingPayoutMessages } from "@/i18n/administrator-payment-history-messages";
 import { bookingManagementMessages } from "@/i18n/booking-management-messages";
 import type { Locale } from "@/i18n/routing";
 import { BookingLifecycleDetails } from "./booking-lifecycle-details";
@@ -17,6 +18,7 @@ export function BookingFinancialDetails({
   locale: Locale;
   view: BookingFinancialView;
 }) {
+  const p = bookingPayoutMessages[locale];
   const c = bookingManagementMessages[locale],
     isOwner = view.actorRole !== "customer";
   const pending = view.refunds.some((r) =>
@@ -167,7 +169,11 @@ export function BookingFinancialDetails({
           {view.refunds.map((refund) => (
             <li key={refund.id}>
               <h3>
-                {refund.source === "administrator" ? c.approved : c.automatic}
+                {refund.source === "dispute"
+                  ? p.disputeRefund
+                  : refund.source === "administrator"
+                    ? c.approved
+                    : c.automatic}
               </h3>
               <p>
                 {formatIraqDateTime(refund.occurredAt, locale)} ·{" "}
@@ -242,6 +248,74 @@ export function BookingFinancialDetails({
           action="refund"
           commandId={refundCommandId}
         />
+      ) : null}
+      {view.actorRole === "platform_administrator" && view.payout ? (
+        <section aria-label={p.title}>
+          <h2>{p.title}</h2>
+          <p>{view.payout.activeHoldIds.length ? p.held : p.clear}</p>
+          {view.payout.activeHoldIds.length ? (
+            view.payout.activeHoldIds.map((id) => (
+              <BookingManagementControl
+                key={id}
+                locale={locale}
+                reference={view.bookingRequestReference}
+                actorRole="platform_administrator"
+                action="release_hold"
+                subjectId={id}
+                commandId={crypto.randomUUID()}
+              />
+            ))
+          ) : (
+            <BookingManagementControl
+              locale={locale}
+              reference={view.bookingRequestReference}
+              actorRole="platform_administrator"
+              action="place_hold"
+              commandId={crypto.randomUUID()}
+            />
+          )}
+          {view.payout.disputes.map((dispute) => (
+            <div key={dispute.id}>
+              <h3>{p[dispute.state]}</h3>
+              {dispute.state === "open" ? (
+                <BookingManagementControl
+                  locale={locale}
+                  reference={view.bookingRequestReference}
+                  actorRole="platform_administrator"
+                  action="resolve_dispute"
+                  subjectId={dispute.id}
+                  commandId={crypto.randomUUID()}
+                />
+              ) : null}
+            </div>
+          ))}
+          {view.payout.activeDisputeIds.length === 0 ? (
+            <BookingManagementControl
+              locale={locale}
+              reference={view.bookingRequestReference}
+              actorRole="platform_administrator"
+              action="open_dispute"
+              commandId={crypto.randomUUID()}
+            />
+          ) : null}
+          <details>
+            <summary>{p.history}</summary>
+            <ol className={styles.history}>
+              {view.payout.commands.map((command) => (
+                <li key={command.commandId}>
+                  <strong>{p[command.action]}</strong> ·{" "}
+                  {formatIraqDateTime(command.occurredAt, locale)}
+                  <p dir="auto">{command.reason}</p>
+                  <p>
+                    {c.actor}: <bdi>{command.actorUserId}</bdi>
+                  </p>
+                  {command.outcome ? <p>{p[command.outcome]}</p> : null}
+                  {command.allocation ? components(command.allocation) : null}
+                </li>
+              ))}
+            </ol>
+          </details>
+        </section>
       ) : null}
       {view.actorRole === "platform_administrator" && view.audit ? (
         <details>

@@ -801,15 +801,17 @@ CREATE TABLE public.booking_refund_intents (
   cancellation_id uuid,
   command_id uuid NOT NULL UNIQUE,
   command_fingerprint text NOT NULL CHECK (length(command_fingerprint)=64),
-  source text NOT NULL CHECK (source IN ('cancellation','administrator')),
+  source text NOT NULL CHECK (source IN ('cancellation','administrator','dispute')),
+  dispute_resolution_id uuid UNIQUE,
   actor_user_id uuid,
   reason text,
   booking_price_fils bigint NOT NULL CHECK (booking_price_fils>=0 AND booking_price_fils%10=0),
   booking_service_fee_fils bigint NOT NULL CHECK (booking_service_fee_fils>=0),
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   CHECK (booking_price_fils+booking_service_fee_fils>0),
+  CHECK ((source='dispute') = (dispute_resolution_id IS NOT NULL)),
   CHECK ((source='cancellation' AND cancellation_id IS NOT NULL AND actor_user_id IS NULL AND reason IS NULL) OR
-    (source='administrator' AND actor_user_id IS NOT NULL AND reason IS NOT NULL AND length(btrim(reason))>=1 AND length(btrim(reason))<=2000))
+    (source IN ('administrator','dispute') AND actor_user_id IS NOT NULL AND reason IS NOT NULL AND length(btrim(reason))>=1 AND length(btrim(reason))<=2000))
 );
 
 CREATE TABLE public.booking_refund_attempts (
@@ -821,4 +823,24 @@ CREATE TABLE public.booking_refund_attempts (
   not_after timestamptz NOT NULL,
   UNIQUE(refund_intent_id,generation),
   CHECK (not_after>created_at)
+);
+
+CREATE TABLE public.booking_payout_commands (
+  id uuid NOT NULL,
+  booking_request_id uuid NOT NULL,
+  capture_operation_id uuid NOT NULL,
+  action text NOT NULL CHECK (action IN ('place_hold','release_hold','open_dispute','resolve_dispute')),
+  subject_id uuid,
+  outcome text CHECK (outcome IN ('owner_won','customer_won','partial_customer_award')),
+  booking_price_fils bigint CHECK (booking_price_fils>=0 AND booking_price_fils%10=0),
+  booking_service_fee_fils bigint CHECK (booking_service_fee_fils>=0),
+  actor_user_id uuid NOT NULL,
+  reason text NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000),
+  command_fingerprint text NOT NULL CHECK (length(command_fingerprint)=64),
+  occurred_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK ((action IN ('release_hold','resolve_dispute')) = (subject_id IS NOT NULL)),
+  CHECK ((action='resolve_dispute') = (outcome IS NOT NULL)),
+  CHECK (((outcome IN ('customer_won','partial_customer_award')) IS TRUE) = (booking_price_fils IS NOT NULL)),
+  CHECK ((booking_price_fils IS NULL) = (booking_service_fee_fils IS NULL)),
+  CHECK (booking_price_fils+booking_service_fee_fils>0)
 );

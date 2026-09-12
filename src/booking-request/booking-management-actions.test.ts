@@ -409,3 +409,98 @@ describe("confirmed booking command authority", () => {
     expect(client.rpc).not.toHaveBeenCalled();
   });
 });
+
+describe("payout command authority", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    runtime.mockReturnValue(true);
+    client.auth.getUser.mockResolvedValue({
+      data: { user: { id: "actor" } },
+      error: null,
+    });
+    resolve.mockResolvedValue({
+      userId: "actor",
+      role: "platform_administrator",
+    });
+    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
+      data: { currentLevel: "aal2" },
+      error: null,
+    });
+    view.mockResolvedValue({ bookingRequestId: request });
+    client.rpc.mockResolvedValue({
+      data: {
+        status: "recorded",
+        bookingRequestId: request,
+        commandId,
+        occurredAt: "2026-09-12T12:00:00Z",
+      },
+      error: null,
+    });
+  });
+  it("records an administrator hold without accepting supplied actor identity", async () => {
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          actorRole: "platform_administrator",
+          action: "place_hold",
+          reason: "Review",
+          actorUserId: "forged",
+        }),
+      ),
+    ).toEqual({ status: "recorded" });
+    expect(client.rpc).toHaveBeenCalledWith("record_booking_payout_command", {
+      target_booking_request_id: request,
+      target_command_id: commandId,
+      target_action: "place_hold",
+      target_reason: "Review",
+      target_subject_id: null,
+      target_outcome: null,
+      target_allocation: null,
+    });
+  });
+  it("requires current administrator assurance before a payout command", async () => {
+    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
+      data: { currentLevel: "aal1" },
+      error: null,
+    });
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          actorRole: "platform_administrator",
+          action: "open_dispute",
+          reason: "Disputed",
+        }),
+      ),
+    ).toEqual({ status: "access-required" });
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+  it("binds a customer award to its dispute and exact allocation", async () => {
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          actorRole: "platform_administrator",
+          action: "resolve_dispute",
+          reason: "Provider award",
+          subjectId: "90000000-0000-4000-8000-000000002271",
+          outcome: "partial_customer_award",
+          price: "10000",
+          fee: "0",
+        }),
+      ),
+    ).toEqual({ status: "recorded" });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "record_booking_payout_command",
+      expect.objectContaining({
+        target_subject_id: "90000000-0000-4000-8000-000000002271",
+        target_outcome: "partial_customer_award",
+        target_allocation: {
+          bookingPriceFils: 10000000,
+          bookingServiceFeeFils: 0,
+        },
+      }),
+    );
+  });
+});

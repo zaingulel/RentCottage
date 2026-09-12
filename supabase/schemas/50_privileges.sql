@@ -1398,3 +1398,8 @@ REVOKE ALL ON FUNCTION public.ensure_booking_preparation_reminder_events(uuid) F
 
 REVOKE ALL ON FUNCTION public.get_booking_financial_view(text,text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_booking_financial_view(text,text) TO authenticated;
+
+REVOKE ALL ON TABLE public.booking_payout_commands FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.booking_payout_command_receipt(public.booking_payout_commands),public.get_booking_payout_facts(uuid),public.record_booking_payout_command(uuid,uuid,text,text,uuid,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.get_booking_payout_facts(uuid) TO authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.record_booking_payout_command(uuid,uuid,text,text,uuid,text,jsonb) TO authenticated;

@@ -102,3 +102,6 @@ CREATE UNIQUE INDEX booking_notification_events_preparation_receipt_idx ON publi
 
 CREATE INDEX booking_incidents_booking_request_recorded_idx ON public.booking_incidents (booking_request_id,recorded_at,id);
 CREATE INDEX booking_lifecycle_outcomes_period_end_idx ON public.booking_lifecycle_outcomes (effective_period_end,booking_request_id);
+
+CREATE UNIQUE INDEX booking_payout_commands_subject_unique ON public.booking_payout_commands(subject_id) WHERE subject_id IS NOT NULL;
+CREATE INDEX booking_payout_commands_request_history ON public.booking_payout_commands(booking_request_id,occurred_at,id);

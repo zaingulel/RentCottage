@@ -1,3 +1,4 @@
+import type { BookingPayoutFacts } from "./booking-payout";
 import {
   parseBookingLifecycle,
   parseBookingCompletionEligibility,
@@ -14,6 +15,7 @@ import {
 import type { BookingCancellationCommand } from "./booking-cancellation";
 export type BookingParticipantRole = BookingCancellationCommand["actorRole"];
 export interface BookingFinancialView {
+  readonly payout?: BookingPayoutFacts;
   readonly bookingRequestId: string;
   readonly bookingRequestReference: string;
   readonly bookingReference: string;
@@ -33,7 +35,7 @@ export interface BookingFinancialView {
   readonly refunds: readonly {
     readonly id: string;
     readonly occurredAt: string;
-    readonly source: "administrator" | "cancellation";
+    readonly source: "administrator" | "cancellation" | "dispute";
     readonly state:
       | "requested"
       | "processing"
@@ -177,7 +179,7 @@ export function parseBookingFinancialView(
       return {
         id: uuid(r.id),
         occurredAt: timestamp(r.occurredAt),
-        source: choice(r.source, ["administrator", "cancellation"]),
+        source: choice(r.source, ["administrator", "cancellation", "dispute"]),
         state: choice(r.state, [
           "requested",
           "processing",
