@@ -83,14 +83,14 @@ const sourceTables = [
   "cottage_booking_period_commitments",
   "cottage_booking_period_occupancies",
 ];
-function sourceHashes() {
+function sourceHashes(beforeRefundScheduling = false) {
   return Object.fromEntries(
     sourceTables.map((table) => [
       table,
       createHash("sha256")
         .update(
           harness.runSql(
-            `select coalesce(jsonb_agg(to_jsonb(source) order by to_jsonb(source)::text),'[]') from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} source;`,
+            `select coalesce(jsonb_agg(${beforeRefundScheduling && table === "booking_requests" ? `to_jsonb(source)||'{"refund_last_scheduled_at":null}'::jsonb` : "to_jsonb(source)"} order by to_jsonb(source)::text),'[]') from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} source;`,
           ),
         )
         .digest("hex"),
@@ -187,7 +187,8 @@ function verifyProviderEvidenceCutover() {
   );
   harness.runSql(`select public.append_booking_request_payment_history('73000000-0000-4000-8000-000000001001','60000000-0000-4000-8000-000000001001',
     'state-transition','provider-operation','imported',target_provider_operation_id=>'${receipt.providerOperationId}',target_outcome=>'failed',target_source_recorded_at=>'2026-01-01T00:00:00Z');`);
-  const graph = sourceHashes();
+  // Only historical expected rows gain the newly added null column.
+  const graph = sourceHashes(true);
   const retainedHistory = harness.runSql(
     "select jsonb_agg(to_jsonb(history) order by sequence) from public.booking_request_payment_history history;",
   );
@@ -522,7 +523,7 @@ try {
     expiry.requestCreatedAt,
     "The fixture must distinguish the expiry operation clock from the request clock",
   );
-  const before = sourceHashes();
+  const before = sourceHashes(true);
   const provider = JSON.parse(
     harness.runSql(
       "select jsonb_build_object('id',id,'originalOutcome',original_outcome,'outcome',current_outcome,'amount',amount_fils::text,'createdAt',created_at,'occurredAt',authoritative_outcome_at,'updatedAt',updated_at) from public.simulated_payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001';",

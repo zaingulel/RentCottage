@@ -1,4 +1,5 @@
 import { historicalProviderOperationSource } from "../tests/fixtures/payment-provider-history.mjs";
+import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -61,6 +62,19 @@ function assertEqual(actual, expected, message) {
   if (actual !== expected) {
     throw new Error(`${message}\nExpected: ${expected}\nReceived: ${actual}`);
   }
+}
+
+function assertRefundSchedulingUpgrade(actual, expected, message) {
+  // Historical request rows gain only a null scheduling field on upgrade.
+  // Current snapshots stay whole-row, so later scheduling changes remain visible.
+  assert.deepEqual(
+    JSON.parse(actual),
+    JSON.parse(expected).map((row) => ({
+      ...row,
+      refund_last_scheduled_at: null,
+    })),
+    message,
+  );
 }
 
 function assertPaymentRequiredUpgrade(actual, expected, message) {
@@ -615,7 +629,9 @@ try {
 
   const after = snapshotPredecessorGraph();
   for (const key of Object.keys(before)) {
-    assertEqual(
+    const compare =
+      key === "requests" ? assertRefundSchedulingUpgrade : assertEqual;
+    compare(
       after[key],
       before[key],
       `Capture-work migration changed predecessor ${key}.`,
@@ -832,6 +848,12 @@ try {
         beforeExecution[key],
         message,
       );
+    else if (key === "requests")
+      assertRefundSchedulingUpgrade(
+        afterExecution[key],
+        beforeExecution[key],
+        message,
+      );
     else assertEqual(afterExecution[key], beforeExecution[key], message);
   }
   assertEqual(
@@ -915,6 +937,12 @@ try {
     const message = `Confirmation migration changed completed-Capture predecessor ${key}.`;
     if (key === "captureWork")
       assertPaymentRequiredUpgrade(
+        afterConfirmation[key],
+        beforeConfirmation[key],
+        message,
+      );
+    else if (key === "requests")
+      assertRefundSchedulingUpgrade(
         afterConfirmation[key],
         beforeConfirmation[key],
         message,
@@ -1015,6 +1043,12 @@ try {
     const message = `Recovery migration changed predecessor ${key}.`;
     if (key === "captureWork")
       assertPaymentRequiredUpgrade(
+        afterRecovery[key],
+        beforeRecovery[key],
+        message,
+      );
+    else if (key === "requests")
+      assertRefundSchedulingUpgrade(
         afterRecovery[key],
         beforeRecovery[key],
         message,
@@ -1143,6 +1177,12 @@ try {
         beforeAdmission[key],
         message,
       );
+    else if (key === "requests")
+      assertRefundSchedulingUpgrade(
+        afterAdmission[key],
+        beforeAdmission[key],
+        message,
+      );
     else assertEqual(afterAdmission[key], beforeAdmission[key], message);
   }
   assertEqual(
@@ -1192,12 +1232,15 @@ try {
   const upgrade138 = runSupabase(upgradeArgs);
   if (upgrade138.status !== 0) throw commandFailure(upgradeArgs, upgrade138);
   const after138 = recovery138Graph();
-  for (const field of Object.keys(before138))
-    assertEqual(
+  for (const field of Object.keys(before138)) {
+    const compare =
+      field === "requests" ? assertRefundSchedulingUpgrade : assertEqual;
+    compare(
       after138[field],
       before138[field],
       `Customer recovery migration changed original ${field}.`,
     );
+  }
   assertEqual(
     harness.runSql(
       `select (select count(*) from public.booking_request_payment_recovery_attempts)||':'||(select count(*) from public.booking_request_payment_recovery_operations)||':'||(select count(*) from ${historicalProviderOperationSource(paymentEvidenceInstalled)} where recovery_attempt_id is not null or authoritative_outcome_at is not null);`,
