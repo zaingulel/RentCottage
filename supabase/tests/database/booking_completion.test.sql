@@ -286,6 +286,120 @@ select is(public.get_booking_lifecycle('RC-REQ-0000000000001001','customer')->>'
 reset role;
 rollback to confirmed;
 
+-- Earlier incident exclusions survive an otherwise valid late customer cancellation.
+select pg_temp.actor('10000000-0000-4000-8000-000000001001');
+set local role authenticated;
+select is(public.record_booking_incident('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003920','cottage_owner','safety','Earlier unresolved incident')->>'status','recorded','owner incident is recorded before cancellation');
+select pg_temp.actor('10000000-0000-4000-8000-000000001002');
+select is(public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003921','customer',null,null,pg_temp.cancellation_decision('customer',false))->'refundObligation','{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb,'prior incident preserves authorized customer cancellation and literal zero refund');
+reset role;
+select ok((select incidents.recorded_at<cancellations.occurred_at from public.booking_incidents incidents join public.booking_cancellations cancellations using(booking_request_id)),'real shared-lock commands preserve incident-before-cancellation recorded order');
+create temp table blocked_cancellation_revision as
+select md5(jsonb_build_object('bookingRequestId',requests.id,'confirmationId',confirmations.id,
+  'bookingPeriodCommitmentId',commitments.id,'effectivePeriodEnd',upper(range_merge(commitments.access_ranges)),
+  'action','assess_maturity','lifecycleOutcomeId',null,'cancellationId',cancellations.id)::text) value
+from public.booking_requests requests join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id
+join public.booking_cancellations cancellations on cancellations.booking_request_id=requests.id;
+grant select on blocked_cancellation_revision to service_role;
+create temp table blocked_cancellation_source as select pg_temp.source_history() value;
+savepoint before_blocked_maturity;
+set local role service_role;
+select is((select count(*) from public.list_due_booking_completions(50)),0::bigint,'incident-first cancellation cannot enter the maturity candidate list');
+select is(public.commit_booking_completion_maturity('60000000-0000-4000-8000-000000001001',(select value from blocked_cancellation_revision))->>'status','ineligible','otherwise-valid incident-first cancellation revision cannot commit maturity');
+reset role;
+select is((select count(*) from public.booking_completion_maturity),0::bigint,'incident-first cancellation creates no maturity row');
+rollback to before_blocked_maturity;
+-- A constraint-valid retained row models the reviewed implementation's already-recorded mistake.
+-- Do not disable triggers, overwrite immutable facts or replace a production function.
+insert into public.booking_completion_maturity(booking_request_id,cancellation_id,outcome,effective_period_end,assessed_at,review_expires_at,payout_prerequisite_at)
+select cancellations.booking_request_id,cancellations.id,'late_customer_cancellation',upper(range_merge(commitments.access_ranges)),clock_timestamp(),null,upper(range_merge(commitments.access_ranges))
+from public.booking_cancellations cancellations join public.booking_requests requests on requests.id=cancellations.booking_request_id
+join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id;
+select is((select count(*) from public.booking_completion_maturity),1::bigint,'retained incorrect maturity fixture actually exists');
+select pg_temp.actor('10000000-0000-4000-8000-000000001002');
+set local role authenticated;
+select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'status','unavailable','earlier incident denies current eligibility despite retained incorrect maturity');
+select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'payoutPrerequisiteAvailable','false','retained incorrect maturity cannot expose the payout lifecycle prerequisite');
+select is(public.get_booking_lifecycle('RC-REQ-0000000000001001','customer')->>'status','cancelled','earlier incident does not undo the cancellation outcome');
+reset role;
+set local role service_role;
+select is(public.commit_booking_completion_maturity('60000000-0000-4000-8000-000000001001',(select value from blocked_cancellation_revision))->>'status','ineligible','replay does not endorse an incorrect prior maturity after incident-first cancellation');
+reset role;
+select is((select count(*) from public.booking_completion_maturity),1::bigint,'denied eligibility preserves the immutable prior maturity record');
+select is(pg_temp.source_history(),(select value from blocked_cancellation_source),'incident eligibility denial leaves original cancellation and financial evidence unchanged');
+rollback to confirmed;
+
+-- A genuine later incident must not revoke cancellation-first eligibility.
+select pg_temp.actor('10000000-0000-4000-8000-000000001002');
+set local role authenticated;
+select is(public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003922','customer',null,null,pg_temp.cancellation_decision('customer',false))->>'status','cancelled','customer can cancel before a later owner incident');
+select pg_temp.actor('10000000-0000-4000-8000-000000001001');
+select is(public.record_booking_incident('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003923','cottage_owner','conduct','Later incident after cancellation')->>'status','recorded','later owner incident remains recordable before maturity');
+reset role;
+select ok((select incidents.recorded_at>cancellations.occurred_at from public.booking_incidents incidents join public.booking_cancellations cancellations using(booking_request_id)),'real shared-lock commands preserve cancellation-before-incident recorded order');
+set local role service_role;
+create temp table cancellation_first_candidate as select value from public.list_due_booking_completions(50) value;
+select is((select count(*) from cancellation_first_candidate),1::bigint,'strictly later incident preserves cancellation-first maturity admission');
+select is(public.commit_booking_completion_maturity('60000000-0000-4000-8000-000000001001',(select value->>'revision' from cancellation_first_candidate))->>'status','matured','cancellation-first maturity remains available after a later incident');
+reset role;
+create temp table cancellation_first_maturity as select to_jsonb(maturity) value from public.booking_completion_maturity maturity;
+select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
+set local role authenticated;
+select is(public.record_booking_incident('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003924','platform_administrator','safety','Another later incident after maturity')->>'status','recorded','administrator can record a later incident after cancellation maturity');
+select pg_temp.actor('10000000-0000-4000-8000-000000001002');
+select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'payoutPrerequisiteAvailable','true','strictly later incidents preserve cancellation-first current eligibility');
+select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'reviewAvailable','false','cancellation-first with later incidents never opens reviews');
+reset role;
+set local role service_role;
+select is(public.commit_booking_completion_maturity('60000000-0000-4000-8000-000000001001',(select value->>'revision' from cancellation_first_candidate))->>'status','matured','later incidents preserve valid maturity replay');
+reset role;
+select is((select to_jsonb(maturity) from public.booking_completion_maturity maturity),(select value from cancellation_first_maturity),'later incidents never rewrite recorded cancellation maturity');
+rollback to confirmed;
+
+-- Exact equality is ambiguous in existing timestamp evidence and fails closed.
+-- Preserve genuine cancellation and incident commands, then add one valid historical
+-- incident fixture at exactly the cancellation time without altering either original.
+select pg_temp.actor('10000000-0000-4000-8000-000000001002');
+set local role authenticated;
+select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003925','customer',null,null,pg_temp.cancellation_decision('customer',false));
+select pg_temp.actor('10000000-0000-4000-8000-000000001001');
+select public.record_booking_incident('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003926','cottage_owner','safety','Recorded-time boundary incident');
+reset role;
+insert into public.booking_incidents(booking_request_id,booking_confirmation_id,customer_user_id,owner_user_id,profile_id,command_id,command_fingerprint,actor_user_id,actor_role,category,narrative,recorded_at)
+select incidents.booking_request_id,incidents.booking_confirmation_id,incidents.customer_user_id,incidents.owner_user_id,incidents.profile_id,'90000000-0000-4000-8000-000000003927',incidents.command_fingerprint,incidents.actor_user_id,incidents.actor_role,incidents.category,incidents.narrative,cancellations.occurred_at
+from public.booking_incidents incidents join public.booking_cancellations cancellations using(booking_request_id);
+select is((select count(*) from public.booking_incidents incidents join public.booking_cancellations cancellations using(booking_request_id) where incidents.recorded_at=cancellations.occurred_at),1::bigint,'equal-time incident fixture actually exercises the exact timestamp boundary');
+create temp table equal_cancellation_revision as
+select md5(jsonb_build_object('bookingRequestId',requests.id,'confirmationId',confirmations.id,
+  'bookingPeriodCommitmentId',commitments.id,'effectivePeriodEnd',upper(range_merge(commitments.access_ranges)),
+  'action','assess_maturity','lifecycleOutcomeId',null,'cancellationId',cancellations.id)::text) value
+from public.booking_requests requests join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id
+join public.booking_cancellations cancellations on cancellations.booking_request_id=requests.id;
+grant select on equal_cancellation_revision to service_role;
+savepoint before_equal_maturity;
+set local role service_role;
+select is((select count(*) from public.list_due_booking_completions(50)),0::bigint,'equal-time incident cannot enter cancellation maturity admission');
+select is(public.commit_booking_completion_maturity('60000000-0000-4000-8000-000000001001',(select value from equal_cancellation_revision))->>'status','ineligible','equal-time incident blocks direct commit with an otherwise-valid revision');
+reset role;
+select is((select count(*) from public.booking_completion_maturity),0::bigint,'equal-time incident creates no maturity row');
+rollback to before_equal_maturity;
+insert into public.booking_completion_maturity(booking_request_id,cancellation_id,outcome,effective_period_end,assessed_at,review_expires_at,payout_prerequisite_at)
+select cancellations.booking_request_id,cancellations.id,'late_customer_cancellation',upper(range_merge(commitments.access_ranges)),clock_timestamp(),null,upper(range_merge(commitments.access_ranges))
+from public.booking_cancellations cancellations join public.booking_requests requests on requests.id=cancellations.booking_request_id
+join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id;
+select is((select count(*) from public.booking_completion_maturity),1::bigint,'equal-time boundary fixture contains retained incorrect maturity');
+select pg_temp.actor('10000000-0000-4000-8000-000000001002');
+set local role authenticated;
+select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'status','unavailable','equal-time incident denies retained maturity in current eligibility');
+select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'payoutPrerequisiteAvailable','false','equal-time incident denies the payout prerequisite despite retained maturity');
+reset role;
+set local role service_role;
+select is(public.commit_booking_completion_maturity('60000000-0000-4000-8000-000000001001',(select value from equal_cancellation_revision))->>'status','ineligible','equal-time incident blocks incorrect maturity replay');
+reset role;
+rollback to confirmed;
+
 select pg_temp.actor('10000000-0000-4000-8000-000000001001');
 set local role authenticated;
 select lives_ok($$select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003908','cottage_owner','Unsafe property',null,pg_temp.cancellation_decision('cottage_owner',true))$$,'owner cancellation creates original restricted incident');

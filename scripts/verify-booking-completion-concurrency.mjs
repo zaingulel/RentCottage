@@ -165,6 +165,31 @@ try {
       incidents: "0",
       rollback: true,
     },
+    {
+      name: "incident-before-cancellation-maturity",
+      first: "incident",
+      second: "cancel",
+      outcome: "cancelled",
+      incidents: "1",
+      maturityAllowed: false,
+    },
+    {
+      name: "cancellation-before-incident-maturity",
+      first: "cancel",
+      second: "incident",
+      outcome: "cancelled",
+      incidents: "1",
+      maturityAllowed: true,
+    },
+    {
+      name: "incident-rollback-before-cancellation-maturity",
+      first: "incident",
+      second: "cancel",
+      outcome: "cancelled",
+      incidents: "0",
+      rollback: true,
+      maturityAllowed: true,
+    },
   ];
   for (const scenario of scenarios) {
     const revision = harness.runSql(
@@ -244,6 +269,48 @@ begin; select id from public.booking_requests where id='${request}' for update n
       "2",
       `${scenario.name}: both original receipts survive`,
     );
+
+    if (scenario.maturityAllowed !== undefined) {
+      const expectedRevision = harness.runSql(`select md5(jsonb_build_object(
+        'bookingRequestId',requests.id,'confirmationId',confirmations.id,
+        'bookingPeriodCommitmentId',commitments.id,'effectivePeriodEnd',upper(range_merge(commitments.access_ranges)),
+        'action','assess_maturity','lifecycleOutcomeId',null,'cancellationId',cancellations.id)::text)
+        from public.booking_requests requests join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+        join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id
+        join public.booking_cancellations cancellations on cancellations.booking_request_id=requests.id where requests.id='${request}';`);
+      assert.match(expectedRevision, /^[a-f0-9]{32}$/);
+      assert.equal(
+        harness.runSql(
+          `begin; set local role service_role; select count(*) from public.list_due_booking_completions(50) candidate where candidate->>'bookingRequestId'='${request}'; commit;`,
+        ),
+        scenario.maturityAllowed ? "1" : "0",
+        `${scenario.name}: incident order controls cancellation maturity admission`,
+      );
+      assert.equal(
+        harness.runSql(
+          `begin; set local role service_role; select public.commit_booking_completion_maturity('${request}','${expectedRevision}')->>'status'; commit;`,
+        ),
+        scenario.maturityAllowed ? "matured" : "ineligible",
+        `${scenario.name}: exact revision cannot bypass incident-order revalidation`,
+      );
+      assert.equal(
+        harness.runSql(
+          `select count(*) from public.booking_completion_maturity where booking_request_id='${request}'`,
+        ),
+        scenario.maturityAllowed ? "1" : "0",
+        `${scenario.name}: only the permitted cancellation maturity is persisted`,
+      );
+      assert.equal(
+        harness
+          .runSql(
+            `begin; ${actor(customer)} select public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'payoutPrerequisiteAvailable'; commit;`,
+          )
+          .split("\n")
+          .at(-1),
+        String(scenario.maturityAllowed),
+        `${scenario.name}: current eligibility preserves committed incident order`,
+      );
+    }
     harness.runSql(resetCancellation);
   }
   console.log(

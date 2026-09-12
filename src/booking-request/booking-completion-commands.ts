@@ -75,7 +75,3 @@ export interface BookingIncidentResult {
   readonly incidentId: string;
   readonly recordedAt: string;
 }
-
-export interface BookingIncidentRepository {
-  record(command: BookingIncidentCommand): Promise<BookingIncidentResult>;
-}

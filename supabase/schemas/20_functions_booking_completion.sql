@@ -71,7 +71,9 @@ begin
       and (
         (outcomes.id is null and cancellations.id is null and not exists(select 1 from public.booking_incidents incidents where incidents.booking_request_id=requests.id)) or
         outcomes.outcome='no_show' or
-        (cancellations.actor_role='customer' and cancellations.refund_booking_price_fils=0 and cancellations.refund_booking_service_fee_fils=0)
+        (cancellations.actor_role='customer' and cancellations.refund_booking_price_fils=0 and cancellations.refund_booking_service_fee_fils=0
+          and not exists(select 1 from public.booking_incidents incidents where incidents.booking_request_id=requests.id
+            and incidents.recorded_at<=cancellations.occurred_at))
       )
     order by effective_end,requests.id limit target_limit
   ), projected as (
@@ -120,11 +122,16 @@ declare existing record; declare action_outcome text; declare source_id uuid; de
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Booking maturity processing is unavailable' using errcode='42501'; end if;
   source:=public.booking_completion_source(target_booking_request_id);
+  select * into cancellation from public.booking_cancellations where booking_request_id=target_booking_request_id;
+  -- Both event times are recorded under the shared request lock; equal-time evidence fails closed.
+  -- Revalidate before replay so a previously incorrect maturity is not endorsed again.
+  if cancellation.id is not null and exists(select 1 from public.booking_incidents incidents
+    where incidents.booking_request_id=target_booking_request_id and incidents.recorded_at<=cancellation.occurred_at)
+  then return jsonb_build_object('status','ineligible','bookingRequestId',target_booking_request_id); end if;
   select * into existing from public.booking_completion_maturity where booking_request_id=target_booking_request_id;
   if existing.booking_request_id is not null then return jsonb_build_object('status','matured','bookingRequestId',existing.booking_request_id,
     'effectivePeriodEnd',existing.effective_period_end,'assessedAt',existing.assessed_at); end if;
   select * into lifecycle from public.booking_lifecycle_outcomes where booking_request_id=target_booking_request_id;
-  select * into cancellation from public.booking_cancellations where booking_request_id=target_booking_request_id;
   if lifecycle.outcome='no_show' then action_outcome:='no_show'; source_id:=lifecycle.id;
   elsif cancellation.actor_role='customer' and cancellation.refund_booking_price_fils=0 and cancellation.refund_booking_service_fee_fils=0 then action_outcome:='late_customer_cancellation'; source_id:=cancellation.id;
   else return jsonb_build_object('status','ineligible','bookingRequestId',target_booking_request_id); end if;
@@ -250,7 +257,14 @@ declare lifecycle jsonb; declare request_id uuid; declare maturity record; decla
 begin
   lifecycle:=public.get_booking_lifecycle(target_reference,target_actor_role); request_id:=(lifecycle->>'bookingRequestId')::uuid;
   select * into maturity from public.booking_completion_maturity where booking_request_id=request_id;
-  if maturity.booking_request_id is null or exists(select 1 from public.booking_request_confirmation_invalidations where booking_request_id=request_id) or exists(select 1 from public.booking_request_payment_required_expiry_work where booking_request_id=request_id and state='quarantined') then return jsonb_build_object('status','unavailable','reviewAvailable',false,'payoutPrerequisiteAvailable',false); end if;
+  if maturity.booking_request_id is null
+    or exists(select 1 from public.booking_request_confirmation_invalidations where booking_request_id=request_id)
+    or exists(select 1 from public.booking_request_payment_required_expiry_work where booking_request_id=request_id and state='quarantined')
+    or (maturity.outcome='late_customer_cancellation' and exists(
+      select 1 from public.booking_cancellations cancellations join public.booking_incidents incidents using(booking_request_id)
+      where cancellations.id=maturity.cancellation_id and cancellations.booking_request_id=request_id
+        and incidents.recorded_at<=cancellations.occurred_at))
+  then return jsonb_build_object('status','unavailable','reviewAvailable',false,'payoutPrerequisiteAvailable',false); end if;
   return jsonb_build_object('status',maturity.outcome,'effectivePeriodEnd',maturity.effective_period_end,'assessedAt',maturity.assessed_at,
     'reviewExpiresAt',maturity.review_expires_at,'reviewAvailable',public.booking_review_is_available(maturity.effective_period_end,maturity.review_expires_at,observed),
     'payoutPrerequisiteAt',maturity.payout_prerequisite_at,'payoutPrerequisiteAvailable',observed>=maturity.payout_prerequisite_at);
