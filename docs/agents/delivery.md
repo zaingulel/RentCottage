@@ -89,16 +89,19 @@ documents [manual-only configuration](https://www.greptile.com/docs/code-review/
 
 When Greptile is needed, read current usage from an authoritative provider surface, such as
 [Greptile's usage and billing dashboard](https://www.greptile.com/docs/code-review-bot/billing-seats).
-Record the source, observation time, and available or exhausted allowance for the intended review in the existing
-delivery packet. Use included or already purchased credits; this instruction does not authorize additional spend.
+Record the source, observation time, exact head and available or exhausted allowance in existing local
+delivery evidence. Publish only the availability conclusion and review status; keep account identifiers,
+billing details, usage counts and dashboard captures out of pull-request bodies and comments.
+Use included or already purchased credits; this instruction does not authorize additional spend.
 Historical exhaustion or a reported top-up only guides the lookup. Check again for each later selected delivery or
 changed-head request: replenishment or a billing-period reset restores normal review use when current credits are confirmed.
 
 If usage cannot be read, make one read-only retry, then retain the draft and ask only for the missing current-usage
-fact, explaining the failed lookup. A queued, running, silent, or partial review likewise remains unresolved: record
-the observed state and time, make one follow-up observation, then report the gap and ask only for a necessary missing
-fact or new decision. Neither case proves exhaustion or a clean review, and neither reopens approval of the named
-delivery actions. Keep the original approval and its covered packet available when resuming; verify current ownership,
+fact, explaining the failed lookup. A queued, running, silent, or partial review remains unresolved: record
+the observed state and time and continue bounded observations during the approved delivery. Ask only for a
+necessary missing fact or new decision; elapsed waiting alone does not require permission to continue.
+Neither case proves exhaustion or a clean review, and neither reopens approval of the named delivery actions.
+Keep the original approval and its covered packet available when resuming; verify current ownership,
 head, required evidence, and exact cleanup targets before continuing its remaining actions.
 
 ### Greptile attempt states

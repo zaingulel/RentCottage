@@ -51,6 +51,10 @@ Every distinct material behaviour change needs one regression proof that fails w
 
 ## Focused preparation
 
+For database integrity evidence, reuse an existing valid domain fixture or create one through the real
+production transition. During fixture setup, keep the payment, authorization and lifecycle guards intact. Validate
+the fixture through the production reader before launching its browser or Worker journey.
+
 Before an expensive journey, validate each new database observer query and fixture at its relevant disposable
 database seam: qualify ambiguous columns, assert the expected row cardinality, and preserve the public outcome.
 Validate each browser selector against its intended rendered state using an accessible name or meaningful scope;
@@ -104,6 +108,11 @@ definitions carry the whole body because PostgreSQL replaces functions whole; th
 edit. Row Level Security policies, triggers, grants and data changes are hand-written migrations, because the diff
 engine does not track every privilege and policy change; mirror each such migration into the matching schema file so
 the declaration stays complete.
+
+When regenerating an unshipped migration, compare it with the previous version and preserve required
+hand-written data, policy, trigger and grant changes. Before broad convergence, rerun the affected upgrade
+observer from the shipped baseline against the final migration, including existing eligible and ineligible
+records; an empty schema diff does not prove a data backfill.
 
 An orchestration migration follows the same declared-schema rule. Change only the affected flow, preserve its
 Integrity Core in the schema declaration and generated migration, and prove that no required atomic transaction was
