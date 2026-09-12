@@ -721,6 +721,59 @@ CREATE TABLE public.booking_cancellation_administrator_audit (
   recorded_at timestamptz NOT NULL
 );
 
+CREATE TABLE public.booking_lifecycle_outcomes (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  booking_request_id uuid NOT NULL,
+  booking_confirmation_id uuid NOT NULL,
+  booking_period_commitment_id uuid NOT NULL,
+  outcome text NOT NULL CHECK (outcome IN ('completed','no_show')),
+  command_id uuid,
+  command_fingerprint text,
+  actor_user_id uuid,
+  reason text,
+  effective_period_end timestamptz NOT NULL,
+  recorded_at timestamptz NOT NULL,
+  CONSTRAINT booking_lifecycle_outcome_attribution CHECK
+    (outcome = 'completed'::text AND command_id IS NULL AND command_fingerprint IS NULL AND actor_user_id IS NULL AND reason IS NULL OR outcome = 'no_show'::text AND command_id IS
+    NOT NULL AND command_fingerprint ~ '^[0-9a-f]{64}$'::text AND actor_user_id IS NOT NULL AND reason IS NOT NULL AND length(btrim(reason)) >= 1 AND length(btrim(reason)) <= 2000)
+);
+
+CREATE TABLE public.booking_incidents (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  booking_request_id uuid NOT NULL,
+  booking_confirmation_id uuid NOT NULL,
+  customer_user_id uuid NOT NULL,
+  owner_user_id uuid NOT NULL,
+  profile_id uuid NOT NULL,
+  command_id uuid NOT NULL,
+  command_fingerprint text NOT NULL CHECK (command_fingerprint ~ '^[0-9a-f]{64}$'),
+  actor_user_id uuid NOT NULL,
+  actor_role text NOT NULL CHECK (actor_role IN ('cottage_owner','platform_administrator')),
+  category text NOT NULL CHECK (category IN ('safety','property_damage','conduct','other')),
+  narrative text NOT NULL CHECK (length(btrim(narrative)) BETWEEN 1 AND 2000),
+  recorded_at timestamptz NOT NULL
+);
+
+CREATE TABLE public.booking_completion_maturity (
+  booking_request_id uuid NOT NULL,
+  lifecycle_outcome_id uuid,
+  cancellation_id uuid,
+  outcome text NOT NULL CHECK (outcome IN ('completed','no_show','late_customer_cancellation')),
+  effective_period_end timestamptz NOT NULL,
+  assessed_at timestamptz NOT NULL,
+  review_expires_at timestamptz,
+  payout_prerequisite_at timestamptz NOT NULL,
+  CONSTRAINT booking_completion_maturity_source CHECK (
+    (outcome IN ('completed','no_show') AND lifecycle_outcome_id IS NOT NULL AND cancellation_id IS NULL) OR
+    (outcome='late_customer_cancellation' AND lifecycle_outcome_id IS NULL AND cancellation_id IS NOT NULL)
+  ),
+  CONSTRAINT booking_completion_maturity_review CHECK (
+    (outcome='completed' AND review_expires_at=effective_period_end+interval '14 days') OR
+    (outcome<>'completed' AND review_expires_at IS NULL)
+  ),
+  CONSTRAINT booking_completion_maturity_payout CHECK (payout_prerequisite_at=effective_period_end AND assessed_at>=effective_period_end)
+);
+
 CREATE TABLE public.booking_notification_events (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   booking_request_id uuid NOT NULL ,

@@ -140,6 +140,7 @@ const databaseCheckCommands = [
   ],
   ["node", ["scripts/verify-booking-event-notification-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-cancellation-concurrency.mjs"]],
+  ["node", ["scripts/verify-booking-completion-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-refund-concurrency.mjs"]],
   [
     "node",
@@ -2143,6 +2144,7 @@ setInterval(() => {}, 1000);
       "verify-booking-confirmation-notification-concurrency",
       "verify-booking-event-notification-concurrency",
       "verify-booking-cancellation-concurrency",
+      "verify-booking-completion-concurrency",
       "verify-booking-refund-concurrency",
       "verify-booking-request-payment-required-expiry-concurrency",
     ]) {

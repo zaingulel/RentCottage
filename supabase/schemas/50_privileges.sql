@@ -1360,6 +1360,32 @@ REVOKE ALL ON FUNCTION public.reject_booking_cancellation_fact_change() FROM PUB
 GRANT EXECUTE ON FUNCTION public.get_booking_cancellation_facts(uuid,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.commit_booking_cancellation(uuid,uuid,text,text,text,jsonb) TO authenticated;
 
+REVOKE ALL ON TABLE public.booking_lifecycle_outcomes FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.booking_incidents FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.booking_completion_maturity FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.reject_booking_completion_fact_change() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_completion_is_due(timestamptz,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_review_is_available(timestamptz,timestamptz,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.booking_completion_is_due(timestamptz,timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.booking_review_is_available(timestamptz,timestamptz,timestamptz) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_completion_source(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.list_due_booking_completions(integer) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.commit_booking_completion(uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.commit_booking_completion_maturity(uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_booking_no_show_facts(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.commit_booking_no_show(uuid,uuid,text,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.record_booking_incident(uuid,uuid,text,text,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_booking_lifecycle(text,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_booking_completion_eligibility(text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_due_booking_completions(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.commit_booking_completion(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.commit_booking_completion_maturity(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_booking_no_show_facts(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.commit_booking_no_show(uuid,uuid,text,jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.record_booking_incident(uuid,uuid,text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_booking_lifecycle(text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_booking_completion_eligibility(text,text) TO authenticated;
+
 REVOKE ALL ON TABLE public.booking_refund_intents,public.booking_refund_attempts FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.lock_booking_refund_source(uuid),public.booking_refund_intent_state(uuid),public.booking_capture_refund_totals(uuid,jsonb),public.get_booking_refund_facts(uuid),public.record_booking_refund_notification(uuid,text),public.request_booking_refund_exception(uuid,uuid,text,jsonb),public.request_automatic_booking_refund(uuid,text,jsonb),public.booking_refund_execution_permit(public.booking_refund_attempts),public.claim_booking_refund(uuid),public.admit_booking_refund(jsonb),public.record_booking_refund_observation(uuid,jsonb),public.claim_due_booking_refunds(integer) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.get_booking_refund_facts(uuid) TO authenticated,service_role;
