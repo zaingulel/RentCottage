@@ -81,6 +81,37 @@ function setup(candidates = [candidate]) {
 }
 
 describe("paid confirmation notification delivery", () => {
+  it("prepares and leases a preparation reminder by immutable event identity", async () => {
+    const reminder = {
+      ...candidate,
+      event: {
+        id: "00000000-0000-4000-8000-000000000083",
+        kind: "preparation_reminder" as const,
+        dueAt: "2100-12-31T21:30:00Z",
+        firstStartsAt: "2101-01-01T21:30:00Z",
+      },
+    };
+    const { repository, adapter } = setup([reminder]);
+    vi.mocked(repository.lease).mockResolvedValue(null);
+    await expect(
+      createBookingNotificationDelivery({ repository, adapter }).processDue(1),
+    ).resolves.toEqual([{ status: "unavailable" }]);
+    expect(repository.prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        logicalId: `booking-event:${reminder.event.id}`,
+        templateVersion: "booking-event-v1",
+        payload: expect.objectContaining({
+          kind: "preparation_reminder",
+          dueAt: reminder.event.dueAt,
+          firstStartsAt: reminder.event.firstStartsAt,
+        }),
+      }),
+    );
+    expect(repository.lease).toHaveBeenCalledWith(
+      candidate.receiptId,
+      reminder.event.id,
+    );
+  });
   it("delivers requested and returned refund events separately to the same receipt", async () => {
     const candidates = [
       {

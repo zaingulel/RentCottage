@@ -13,3 +13,13 @@ export async function loadOwnerBookingRequestNotifications() {
   );
   return notifications.map(ownerBookingRequestNotificationDisplay);
 }
+
+export async function loadOwnerBookingRequest(reference: string) {
+  const notifications = await loadOwnerBookingRequestNotifications();
+  if (!notifications) return undefined;
+  return (
+    notifications.find(
+      (notification) => notification.bookingRequestReference === reference,
+    ) ?? null
+  );
+}

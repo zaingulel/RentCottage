@@ -1,4 +1,4 @@
-import { formatFilsAsIqd } from "@/i18n/format";
+import { formatFilsAsIqd, formatIraqDateTime } from "@/i18n/format";
 import type { RefundAllocation } from "@/payment/payment-contract";
 import { refundAllocationTotal } from "@/payment/payment-refund-allocation";
 import {
@@ -12,25 +12,44 @@ export type BookingNoticeEventKind =
   | "cancelled"
   | "refund_requested"
   | "refund_returned"
-  | "refund_attention";
-export interface BookingNoticeEvent {
+  | "refund_attention"
+  | "preparation_reminder";
+export type BookingNoticeEvent =
+  | {
+      readonly id: string;
+      readonly kind: Exclude<BookingNoticeEventKind, "preparation_reminder">;
+      readonly allocation: RefundAllocation;
+    }
+  | {
+      readonly id: string;
+      readonly kind: "preparation_reminder";
+      readonly dueAt: string;
+      readonly firstStartsAt: string;
+    };
+export interface RefundBookingNoticeEvent {
   readonly id: string;
-  readonly kind: BookingNoticeEventKind;
+  readonly kind: Exclude<BookingNoticeEventKind, "preparation_reminder">;
   readonly allocation: RefundAllocation;
 }
-export interface BookingEventNotice extends Omit<
-  PaidConfirmationNotice,
-  "kind"
-> {
-  readonly kind: BookingNoticeEventKind;
-  readonly allocation: RefundAllocation;
-}
+export type BookingEventNotice = Omit<PaidConfirmationNotice, "kind"> &
+  (
+    | {
+        readonly kind: Exclude<BookingNoticeEventKind, "preparation_reminder">;
+        readonly allocation: RefundAllocation;
+      }
+    | {
+        readonly kind: "preparation_reminder";
+        readonly dueAt: string;
+        readonly firstStartsAt: string;
+      }
+  );
 const messages = {
   en: {
     cancelled: "Booking cancelled",
     refund_requested: "Refund requested",
     refund_returned: "Refund returned",
     refund_attention: "Refund attention recorded",
+    preparation_reminder: "Prepare for your stay",
     cancellation:
       "This booking is cancelled. View your booking for refund progress.",
     requested: (amount: string) =>
@@ -42,12 +61,15 @@ const messages = {
     price: "Booking price",
     fee: "Service fee",
     link: "View booking",
+    preparation: (startsAt: string) =>
+      `Your first Cottage Shift starts ${startsAt}. Open your authenticated booking details to prepare.`,
   },
   ar: {
     cancelled: "تم إلغاء الحجز",
     refund_requested: "تم طلب الاسترداد",
     refund_returned: "تم رد المبلغ",
     refund_attention: "تم تسجيل حاجة الاسترداد إلى متابعة",
+    preparation_reminder: "استعد لإقامتك",
     cancellation: "تم إلغاء هذا الحجز. افتح الحجز لمتابعة الاسترداد.",
     requested: (amount: string) =>
       `تم طلب استرداد ${amount}. افتح الحجز للاطلاع على حالته الحالية.`,
@@ -57,12 +79,15 @@ const messages = {
     price: "سعر الحجز",
     fee: "رسوم الخدمة",
     link: "عرض الحجز",
+    preparation: (startsAt: string) =>
+      `تبدأ أول فترة للبيت في ${startsAt}. افتح تفاصيل حجزك الموثقة للاستعداد.`,
   },
   ckb: {
     cancelled: "حجزەکە هەڵوەشایەوە",
     refund_requested: "داوای گەڕاندنەوەی پارە کرا",
     refund_returned: "پارەکە گەڕێندرایەوە",
     refund_attention: "پێویستی گەڕاندنەوەی پارە بە بەدواداچوون تۆمار کرا",
+    preparation_reminder: "بۆ مانەوەکەت ئامادە بە",
     cancellation:
       "ئەم حجزە هەڵوەشاوەتەوە. بۆ زانینی دۆخی گەڕاندنەوەی پارە حجزەکەت بکەرەوە.",
     requested: (amount: string) =>
@@ -73,6 +98,8 @@ const messages = {
     price: "نرخی حجز",
     fee: "کرێی خزمەتگوزاری",
     link: "بینینی حجز",
+    preparation: (startsAt: string) =>
+      `یەکەم شەفتی کۆتێج لە ${startsAt} دەست پێ دەکات. بۆ ئامادەبوون وردەکارییە پشتڕاستکراوەکانی حجزەکەت بکەرەوە.`,
   },
 };
 export function bookingEventNotice(candidate: {
@@ -84,6 +111,16 @@ export function bookingEventNotice(candidate: {
 }): BookingEventNotice {
   const { event, locale } = candidate;
   const copy = messages[locale];
+  if (event.kind === "preparation_reminder")
+    return {
+      ...paidConfirmationNotice(candidate),
+      kind: event.kind,
+      title: copy.preparation_reminder,
+      body: copy.preparation(formatIraqDateTime(event.firstStartsAt, locale)),
+      linkLabel: copy.link,
+      dueAt: event.dueAt,
+      firstStartsAt: event.firstStartsAt,
+    };
   const total = formatFilsAsIqd(
     refundAllocationTotal(event.allocation),
     locale,

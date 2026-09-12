@@ -181,7 +181,7 @@ select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001'
 reset role;
 -- Arrange a worker restart after the old paid notice's effect, before its recording.
 update public.booking_confirmation_notification_work set lease_expires_at=clock_timestamp()-interval '1 second' where receipt_id=(pg_temp.notice_value('paid-cottage_owner')->>'receiptId')::uuid;
-create temp table event_cases as select id event_id,receipt_id,recipient_role,event_kind,pg_temp.notification_payload(id) payload from public.booking_notification_events where booking_request_id='60000000-0000-4000-8000-000000001001';
+create temp table event_cases as select id event_id,receipt_id,recipient_role,event_kind,pg_temp.notification_payload(id) payload from public.booking_notification_events where booking_request_id='60000000-0000-4000-8000-000000001001' and event_kind='cancelled';
 grant all on event_cases to authenticated,service_role;
 set local role service_role;
 update notice_values set value=public.lease_booking_confirmation_notification_work((value->>'receiptId')::uuid) where key='paid-cottage_owner';
@@ -248,7 +248,7 @@ select pg_temp.refund_record(pg_temp.notice_value('refund-admission'),pg_temp.no
 insert into notice_values values('refund-resolved',public.resolve_simulated_payment_effect(pg_temp.notice_value('refund-admission')-array['purpose','binding','mode'],pg_temp.notice_value('refund-unknown')#>>'{evidence,eventId}',jsonb_set(jsonb_set(pg_temp.refund_proposal(pg_temp.notice_value('refund-admission'),'succeeded'),'{evidence,originalOutcome}','"indeterminate"'),'{evidence,executedAt}',pg_temp.notice_value('refund-unknown')#>'{evidence,executedAt}')));
 select pg_temp.refund_record(pg_temp.notice_value('refund-admission'),pg_temp.notice_value('refund-resolved'));
 reset role;
-insert into event_cases select id,receipt_id,recipient_role,event_kind,pg_temp.notification_payload(id) from public.booking_notification_events where booking_request_id='60000000-0000-4000-8000-000000001001' and event_kind<>'cancelled';
+insert into event_cases select id,receipt_id,recipient_role,event_kind,pg_temp.notification_payload(id) from public.booking_notification_events where booking_request_id='60000000-0000-4000-8000-000000001001' and event_kind in ('refund_requested','refund_returned','refund_attention');
 select is((select count(*)::integer from event_cases),8,'cancellation, requested, attention and returned events retain both original recipients');
 set local role service_role;
 select lives_ok(format('select public.ensure_booking_confirmation_notification_work(%L,''en'',''booking-event-v1'',%L,%L)',receipt_id,payload,event_id),'shared preparation supports '||event_kind||' for '||recipient_role) from event_cases where event_kind<>'cancelled' order by event_kind,recipient_role;

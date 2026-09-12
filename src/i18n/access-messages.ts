@@ -19,7 +19,7 @@ export const accessMessages: Record<
     rateLimited: string;
     resend: string;
     editNumber: string;
-    confirmedOnly: string;
+    bookingHistoryIntro: string;
     denied: string;
     sessionUnavailable: string;
     retry: string;
@@ -67,8 +67,8 @@ export const accessMessages: Record<
     rateLimited: "محاولات كثيرة. انتظر قليلًا قبل المحاولة مجددًا.",
     resend: "أرسل رمزًا آخر",
     editNumber: "تغيير رقم الهاتف",
-    confirmedOnly:
-      "تظهر الحجوزات المؤكدة والملغاة هنا. حالات الطلبات الأخرى متاحة عبر روابطها.",
+    bookingHistoryIntro:
+      "تظهر هنا جميع طلبات الحجز ونتائج الحجوزات، وتفتح كل خانة التفاصيل المحفوظة المسموح بها.",
     denied: "هذا الحجز غير متاح لهذا الحساب. سجّل الخروج لاستخدام حساب آخر.",
     sessionUnavailable: "الوصول إلى الحساب غير متاح. يرجى المحاولة مجددًا.",
     retry: "حاول مجددًا",
@@ -115,8 +115,8 @@ export const accessMessages: Record<
     rateLimited: "هەوڵدان زۆرە. کەمێک چاوەڕێ بکە پێش هەوڵدانەوە.",
     resend: "کۆدێکی تر بنێرە",
     editNumber: "گۆڕینی ژمارەی تەلەفۆن",
-    confirmedOnly:
-      "حجزە پشتڕاستکراوەکان و هەڵوەشاوەکان لێرە دەردەکەون. دۆخی داواکارییەکانی تر لە بەستەرەکانیان بەردەستە.",
+    bookingHistoryIntro:
+      "هەموو داواکارییەکانی حجز و ئەنجامەکانیان لێرە دەردەکەون؛ هەر دانەیەک وردەکارییە پارێزراوە ڕێپێدراوەکان دەکاتەوە.",
     denied:
       "ئەم حجزە بۆ ئەم هەژمارە بەردەست نییە. بچۆ دەرەوە بۆ بەکارهێنانی هەژمارێکی تر.",
     sessionUnavailable:
@@ -166,8 +166,8 @@ export const accessMessages: Record<
     rateLimited: "Too many attempts. Wait a little before trying again.",
     resend: "Send another code",
     editNumber: "Change phone number",
-    confirmedOnly:
-      "Confirmed and cancelled bookings are shown here. Other request statuses are available from their booking links.",
+    bookingHistoryIntro:
+      "Every booking request and booking outcome appears here. Each entry opens its authorised preserved details.",
     denied:
       "This booking is not available to this account. Sign out to use another account.",
     sessionUnavailable: "Account access is unavailable. Please try again.",

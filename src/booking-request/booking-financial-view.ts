@@ -49,7 +49,13 @@ export interface BookingFinancialView {
       | "cancelled"
       | "refund_requested"
       | "refund_returned"
-      | "refund_attention";
+      | "refund_attention"
+      | "preparation_reminder";
+    readonly dueAt?: string;
+    readonly recipientRole: "customer" | "cottage_owner";
+    readonly deliveredAt?: string;
+    readonly outcome?: "failed" | "unknown" | "delivered" | "suppressed";
+    readonly retryAllowed: boolean;
     readonly state:
       | "pending"
       | "processing"
@@ -101,6 +107,11 @@ const timestamp = (v: unknown): string => {
 const choice = <T extends string>(v: unknown, choices: readonly T[]): T => {
   if (!choices.includes(v as T)) throw new Error("Invalid booking state");
   return v as T;
+};
+const boolean = (value: unknown): boolean => {
+  if (typeof value !== "boolean")
+    throw new Error("Invalid booking notification retry status");
+  return value;
 };
 const allocation = (v: unknown): RefundAllocation => {
   const o = object(v);
@@ -187,7 +198,24 @@ export function parseBookingFinancialView(
           "refund_requested",
           "refund_returned",
           "refund_attention",
+          "preparation_reminder",
         ]),
+        ...(n.dueAt === undefined ? {} : { dueAt: timestamp(n.dueAt) }),
+        recipientRole: choice(n.recipientRole, ["customer", "cottage_owner"]),
+        ...(n.deliveredAt === undefined
+          ? {}
+          : { deliveredAt: timestamp(n.deliveredAt) }),
+        ...(n.outcome === undefined
+          ? {}
+          : {
+              outcome: choice(n.outcome, [
+                "failed",
+                "unknown",
+                "delivered",
+                "suppressed",
+              ] as const),
+            }),
+        retryAllowed: boolean(n.retryAllowed),
         state: choice(n.state, [
           "pending",
           "processing",

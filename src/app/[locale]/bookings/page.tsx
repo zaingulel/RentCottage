@@ -1,23 +1,22 @@
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
-import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { accessMessages } from "@/i18n/access-messages";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
-import { loadConfirmedBookingHistory } from "@/booking-request/request-confirmed-booking-history";
-import { formatIraqDateTime } from "@/i18n/format";
+import { loadBookingHistory } from "@/booking-request/request-booking-history";
 import { isLocale } from "@/i18n/routing";
+import { BookingHistoryList } from "@/components/booking-history-list";
 const copy = {
   en: {
-    empty: "No confirmed bookings yet.",
+    empty: "No booking requests yet.",
     home: "RentCottage home",
   },
   ar: {
-    empty: "لا توجد حجوزات مؤكدة بعد.",
+    empty: "لا توجد طلبات حجز بعد.",
     home: "العودة إلى RentCottage",
   },
   ckb: {
-    empty: "هێشتا هیچ حجزێکی پشتڕاستکراو نییە.",
+    empty: "هێشتا هیچ داواکارییەکی حجز نییە.",
     home: "گەڕانەوە بۆ RentCottage",
   },
 } as const;
@@ -62,10 +61,8 @@ export default async function BookingHistoryPage({
       : accessMessages[locale].myBookings;
   let items;
   try {
-    items = (await loadConfirmedBookingHistory())?.filter(
-      (item) =>
-        item.actorRole ===
-        (workspace === "owner" ? "cottage_owner" : "customer"),
+    items = await loadBookingHistory(
+      workspace === "owner" ? "cottage_owner" : "customer",
     );
   } catch (error) {
     unstable_rethrow(error);
@@ -88,32 +85,11 @@ export default async function BookingHistoryPage({
           <Link href={`/${locale}`}>{copy[locale].home}</Link>
           <h1>{title}</h1>
         </header>
-        <p>{accessMessages[locale].confirmedOnly}</p>
+        <p>{accessMessages[locale].bookingHistoryIntro}</p>
         {items.length === 0 ? (
           <p>{copy[locale].empty}</p>
         ) : (
-          <ul>
-            {items.map((item) => (
-              <li key={item.receiptId}>
-                <Link
-                  href={
-                    item.actorRole === "customer"
-                      ? `/${locale}/booking-requests/${item.bookingRequestReference}`
-                      : `/${locale}/owner/booking-requests/${item.bookingRequestReference}`
-                  }
-                >
-                  <strong>{item.cottageName}</strong>
-                  <span>{item.bookingReference}</span>
-                  <span>
-                    {bookingLifecycleMessages[locale][item.lifecycleStatus]}
-                  </span>
-                  <time dateTime={item.confirmedAt}>
-                    {formatIraqDateTime(item.confirmedAt, locale)}
-                  </time>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <BookingHistoryList items={items} locale={locale} />
         )}
       </section>
     </main>

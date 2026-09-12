@@ -89,6 +89,41 @@ describe("event notification binding", () => {
   it("accepts the separately bound event for an existing receipt", async () => {
     await expect(read(eventLease)).resolves.toEqual(eventLease);
   });
+  it("accepts an exact preparation reminder without a refund allocation", async () => {
+    const reminder = {
+      id: "00000000-0000-4000-8000-000000000083",
+      kind: "preparation_reminder" as const,
+      dueAt: "2100-12-31T21:30:00Z",
+      firstStartsAt: "2101-01-01T21:30:00Z",
+    };
+    const reminderLease = {
+      ...validLease,
+      event: reminder,
+      logicalId: `booking-event:${reminder.id}`,
+      templateVersion: "booking-event-v1",
+      payload: bookingEventNotice({
+        ...validLease,
+        locale: "en" as const,
+        recipientRole: "customer" as const,
+        event: reminder,
+      }),
+    };
+    await expect(read(reminderLease, reminder.id)).resolves.toEqual(
+      reminderLease,
+    );
+    await expect(
+      read(
+        {
+          ...reminderLease,
+          event: {
+            ...reminder,
+            dueAt: "2100-12-31T22:30:00Z",
+          },
+        },
+        reminder.id,
+      ),
+    ).rejects.toThrow("invalid notification event");
+  });
   it.each([
     { event: { ...event, id: "00000000-0000-4000-8000-000000000082" } },
     { locale: "ar" },

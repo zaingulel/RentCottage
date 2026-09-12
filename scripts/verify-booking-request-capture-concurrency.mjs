@@ -1692,6 +1692,9 @@ const cleanup = `begin;
     select payment_lifecycle_id from public.booking_requests where id = '${requestId}'
   );
   alter table public.booking_request_payment_history enable trigger reject_booking_request_payment_history_change;
+  alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
+  delete from public.booking_notification_events where booking_request_id = '${requestId}';
+  alter table public.booking_notification_events enable trigger reject_booking_notification_events_change;
   alter table public.booking_receipts disable trigger reject_booking_receipt_change;
   delete from public.booking_receipts where booking_confirmation_id in (
     select id from public.booking_confirmations where booking_request_id = '${requestId}'

@@ -1335,7 +1335,7 @@ REVOKE ALL ON FUNCTION public.execute_fictional_booking_confirmation_notificatio
 REVOKE ALL ON FUNCTION public.complete_booking_confirmation_notification_delivery(uuid,bigint,uuid,jsonb,uuid,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.record_booking_confirmation_notification_failure(uuid,bigint,uuid,text,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_booking_confirmation_notification_status(uuid,uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.list_confirmed_booking_history() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_booking_history(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.retry_booking_confirmation_notification(uuid,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.guard_booking_confirmation_notification_work() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.list_due_booking_confirmation_notifications(integer) TO service_role;
@@ -1346,7 +1346,7 @@ GRANT EXECUTE ON FUNCTION public.execute_fictional_booking_confirmation_notifica
 GRANT EXECUTE ON FUNCTION public.complete_booking_confirmation_notification_delivery(uuid,bigint,uuid,jsonb,uuid,uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.record_booking_confirmation_notification_failure(uuid,bigint,uuid,text,uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.get_booking_confirmation_notification_status(uuid,uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.list_confirmed_booking_history() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_booking_history(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.retry_booking_confirmation_notification(uuid,uuid) TO authenticated;
 
 REVOKE ALL ON TABLE public.booking_cancellations FROM PUBLIC, anon, authenticated, service_role;
@@ -1394,6 +1394,7 @@ GRANT EXECUTE ON FUNCTION public.request_automatic_booking_refund(uuid,text,json
 
 REVOKE ALL ON FUNCTION public.booking_notification_event_binding(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.booking_notification_is_deliverable(public.booking_confirmation_notification_work) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.ensure_booking_preparation_reminder_events(uuid) FROM PUBLIC,anon,authenticated,service_role;
 
 REVOKE ALL ON FUNCTION public.get_booking_financial_view(text,text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_booking_financial_view(text,text) TO authenticated;

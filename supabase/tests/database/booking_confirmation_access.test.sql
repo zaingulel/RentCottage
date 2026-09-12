@@ -1,5 +1,5 @@
 begin;
-select plan(40);
+select plan(43);
 
 select has_function(
   'public',
@@ -16,8 +16,8 @@ select ok(
   'paid access projection is security-definer with an empty search path'
 );
 select ok(
-  has_function_privilege('authenticated', 'public.list_confirmed_booking_history()', 'execute')
-    and not has_function_privilege('anon', 'public.list_confirmed_booking_history()', 'execute'),
+  has_function_privilege('authenticated', 'public.list_booking_history(text)', 'execute')
+    and not has_function_privilege('anon', 'public.list_booking_history(text)', 'execute'),
   'only authenticated actors can list their minimal paid Booking History'
 );
 select ok(
@@ -148,12 +148,13 @@ set local role authenticated;
 select is((public.claim_marketplace_role('cottage_owner')).user_id::text, '10000000-0000-4000-8000-000000003502', 'customer enrolls as owner without changing identity');
 create temp table customer_access as
   select public.get_confirmed_booking_access('RC-REQ-0000000000003501') result;
-select is((select count(*)::text from public.list_confirmed_booking_history()), '1', 'prospective owner retains their customer receipt');
+select is(jsonb_array_length(public.list_booking_history('customer'))::text, '1', 'prospective owner retains their customer request');
 reset role;
 update public.account_contexts set owner_approval_state='suspended' where user_id='10000000-0000-4000-8000-000000003502';
 set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')->>'actorRole', 'customer', 'suspended owner keeps their customer participation');
-select is((select count(*)::text from public.list_confirmed_booking_history()), '1', 'suspended owner keeps customer history');
+select is(jsonb_array_length(public.list_booking_history('customer'))::text, '1', 'suspended owner keeps customer history');
+select throws_ok($$select public.list_booking_history('cottage_owner')$$,'42501',null,'suspended owner cannot select the owner workspace');
 select is(public.get_booking_confirmation_notification_status('82000000-0000-4000-8000-000000003502')->>'state', 'pending', 'suspended owner keeps customer notification status');
 reset role;
 update public.account_contexts set owner_approval_state='expired' where user_id='10000000-0000-4000-8000-000000003502';
@@ -173,7 +174,7 @@ select is((select result->>'customerPhone' from customer_access), '+964750000350
 select is((select result->>'ownerPhone' from customer_access), '+9647500003501', 'the verified Cottage Owner phone is released');
 select is(public.get_confirmed_booking_access('82000000-0000-4000-8000-000000003502'), null, 'receipt possession does not authorize access');
 select is(public.get_booking_confirmation_notification_status('82000000-0000-4000-8000-000000003502')->>'state', 'pending', 'paid details remain available with truthful pending notice status before first drain');
-select is((select count(*)::text from public.list_confirmed_booking_history()), '1', 'the Customer history contains only their paid receipt');
+select is(jsonb_array_length(public.list_booking_history('customer'))::text, '1', 'the Customer history contains only their request');
 reset role;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003501', true);
@@ -181,13 +182,13 @@ set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')->>'actorRole', 'cottage_owner', 'the approved actual Cottage Owner receives Owner access');
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')#>>'{pricing,ownerNetFils}', '99000000', 'the Cottage Owner receives preserved Owner pricing');
 select ok(not (public.get_confirmed_booking_access('RC-REQ-0000000000003501')->'pricing' ? 'customerTotalIqd'), 'the Cottage Owner does not receive Customer fee data');
-select is((select value->>'actorRole' from public.list_confirmed_booking_history() value), 'cottage_owner', 'the Cottage Owner history links through the Owner role');
+select is((select value->>'actorRole' from jsonb_array_elements(public.list_booking_history('cottage_owner')) value), 'cottage_owner', 'the Cottage Owner history links through the Owner role');
 reset role;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003503', true);
 set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'an authenticated non-participant receives no private facts');
-select is((select count(*)::text from public.list_confirmed_booking_history()), '0', 'an authenticated non-participant has no paid history rows');
+select is(jsonb_array_length(public.list_booking_history('customer'))::text, '0', 'an authenticated non-participant has no history rows');
 reset role;
 
 set session_replication_role = replica;
@@ -236,7 +237,8 @@ set session_replication_role = origin;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003502', true);
 set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'an invalidated confirmation releases nothing');
-select is((select count(*)::text from public.list_confirmed_booking_history()), '0', 'an invalidated confirmation leaves paid Booking History');
+select is(jsonb_array_length(public.list_booking_history('customer'))::text, '1', 'an invalidated confirmation retains its truthful request history');
+select ok(not ((public.list_booking_history('customer')->0) ?| array['receiptId','bookingReference','confirmedAt']),'invalidated confirmation does not present paid booking identity');
 reset role;
 set session_replication_role = replica;
 delete from public.booking_request_confirmation_invalidations
@@ -258,7 +260,8 @@ set session_replication_role = origin;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003502', true);
 set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'a quarantined payment releases nothing');
-select is((select count(*)::text from public.list_confirmed_booking_history()), '0', 'a quarantined payment leaves paid Booking History');
+select is(jsonb_array_length(public.list_booking_history('customer'))::text, '1', 'a quarantined payment retains its truthful request history');
+select ok(not ((public.list_booking_history('customer')->0) ?| array['receiptId','bookingReference','confirmedAt']),'quarantined confirmation does not present paid booking identity');
 reset role;
 set session_replication_role = replica;
 delete from public.booking_request_payment_required_expiry_work

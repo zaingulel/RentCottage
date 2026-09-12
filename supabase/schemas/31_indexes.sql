@@ -98,5 +98,7 @@ CREATE INDEX "booking_confirmation_notification_work_due_idx" ON "public"."booki
 
 CREATE INDEX "booking_confirmation_notification_attempts_receipt_idx" ON "public"."booking_confirmation_notification_attempts" USING "btree" ("receipt_id", "recorded_at", "id");
 
+CREATE UNIQUE INDEX booking_notification_events_preparation_receipt_idx ON public.booking_notification_events(receipt_id) WHERE event_kind='preparation_reminder';
+
 CREATE INDEX booking_incidents_booking_request_recorded_idx ON public.booking_incidents (booking_request_id,recorded_at,id);
 CREATE INDEX booking_lifecycle_outcomes_period_end_idx ON public.booking_lifecycle_outcomes (effective_period_end,booking_request_id);
