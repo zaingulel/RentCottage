@@ -235,6 +235,7 @@ export function selectPaymentRequiredExpiry(
         entry.id !== facts.originalCaptureId &&
         !entry.recoveryOperationId &&
         !entry.bookingRefund &&
+        !entry.bookingSettlement &&
         entry.outcome !== "not-executed" &&
         !facts.expiryOperations.some(
           (owned) => owned.providerOperationId === entry.id,

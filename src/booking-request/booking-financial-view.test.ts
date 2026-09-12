@@ -30,6 +30,60 @@ const view = {
   notifications: [],
 };
 describe("safe financial projection binding", () => {
+  it("retains owner monetary recovery facts without private command or provider details", () => {
+    const ownerPayout = {
+      status: "paid",
+      ownerEntitlementFils: 81000000,
+      paidFils: 90000000,
+      paidWhileBlocked: true,
+      recoveryExposureFils: 90000000,
+      recoveryBalanceFils: 9000000,
+      automaticOwnerDebitFils: 0,
+    };
+    const result = parseBookingFinancialView(
+      {
+        ...view,
+        actorRole: "cottage_owner",
+        ownerPayout: {
+          ...ownerPayout,
+          actorUserId: "PRIVATE",
+          providerReference: "PRIVATE",
+          activeHoldIds: ["PRIVATE"],
+        },
+      },
+      reference,
+      "cottage_owner",
+    );
+    expect(result).toHaveProperty("ownerPayout", ownerPayout);
+  });
+  it.each([
+    { paidFils: null },
+    { recoveryBalanceFils: 90000001 },
+    { recoveryExposureFils: 1 },
+    { automaticOwnerDebitFils: 9000000 },
+    { status: "pending" },
+  ])("rejects malformed owner recovery evidence %j", (change) => {
+    expect(() =>
+      parseBookingFinancialView(
+        {
+          ...view,
+          actorRole: "cottage_owner",
+          ownerPayout: {
+            status: "paid",
+            ownerEntitlementFils: 81000000,
+            paidFils: 90000000,
+            paidWhileBlocked: true,
+            recoveryExposureFils: 90000000,
+            recoveryBalanceFils: 9000000,
+            automaticOwnerDebitFils: 0,
+            ...change,
+          },
+        },
+        reference,
+        "cottage_owner",
+      ),
+    ).toThrow();
+  });
   it("returns an explicit whitelist without private access fields", () => {
     expect(
       parseBookingFinancialView(
@@ -50,6 +104,8 @@ describe("safe financial projection binding", () => {
     { lifecycle: { ...view.lifecycle, incidents: [{ narrative: "PRIVATE" }] } },
     { lifecycle: undefined },
     { eligibility: undefined },
+    { ownerPayout: { status: "unsettled" } },
+    { payout: { commands: [{ reason: "PRIVATE" }] } },
   ])(
     "rejects a changed participant binding or privileged audit %j",
     (change) => {

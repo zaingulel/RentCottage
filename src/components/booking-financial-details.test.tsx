@@ -238,3 +238,193 @@ describe("retained cancellation and refund details", () => {
     },
   );
 });
+
+describe("administrator payout investigation", () => {
+  const hold = "90000000-0000-4000-8000-000000002270",
+    dispute = "90000000-0000-4000-8000-000000002271";
+  const payout = {
+    revision: "a".repeat(32),
+    recovery: { status: "unsettled" as const },
+    maturity: financial.eligibility,
+    intents: [],
+    settlement: null,
+    bookingRequestId: financial.bookingRequestId,
+    captured: financial.captured,
+    refunded: zero,
+    reserved: zero,
+    commands: [
+      {
+        commandId: hold,
+        action: "place_hold" as const,
+        subjectId: null,
+        outcome: null,
+        allocation: null,
+        actorUserId: "10000000-0000-4000-8000-000000003801",
+        reason: "Independent risk review",
+        occurredAt: "2026-09-12T12:00:00Z",
+      },
+    ],
+    activeHoldIds: [hold],
+    activeDisputeIds: [dispute],
+    disputes: [
+      {
+        id: dispute,
+        resolutionId: null,
+        refundIntentId: null,
+        state: "open" as const,
+      },
+    ],
+  };
+  it.each([
+    ["en", "Sep 12, 2026, 3:00 PM"],
+    ["ar", "12\u200f/09\u200f/2026، 3:00 م"],
+    ["ckb", "٢٠٢٦ ئەیلوول ١٢ ٣:٠٠ د.ن"],
+  ] as const)(
+    "shows the settlement request at localized Iraq time in %s",
+    (locale, requestedTime) => {
+      const actorUserId = "10000000-0000-4000-8000-000000002279";
+      render(
+        <BookingFinancialDetails
+          locale={locale}
+          view={{
+            ...financial,
+            actorRole: "platform_administrator",
+            payout: {
+              ...payout,
+              settlement: {
+                id: financial.bookingRequestId,
+                commandId: financial.bookingRequestId,
+                amountFils: 90000000,
+                state: "processing",
+                retrySafe: false,
+                actorUserId,
+                reason: "Approved settlement",
+                requestedAt: "2026-09-12T12:00:00+00:00",
+                receipt: null,
+              },
+            },
+          }}
+        />,
+      );
+      expect(
+        screen.getByText(`${actorUserId} · ${requestedTime}`),
+      ).toBeInTheDocument();
+    },
+  );
+  it("shows verified recovery amounts and the explicit absence of an owner debit to administrators", () => {
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{
+          ...financial,
+          actorRole: "platform_administrator",
+          payout: {
+            ...payout,
+            recovery: {
+              status: "paid",
+              ownerEntitlementFils: 81000000,
+              paidFils: 90000000,
+              paidWhileBlocked: true,
+              recoveryExposureFils: 90000000,
+              recoveryBalanceFils: 9000000,
+              automaticOwnerDebitFils: 0,
+            },
+          },
+        }}
+      />,
+    );
+    const recovery = screen.getByTestId("settlement-recovery");
+    expect(recovery).toHaveTextContent("Current recovery balance: IQD 9,000");
+    expect(recovery).toHaveTextContent(
+      "Recorded recovery exposure: IQD 90,000",
+    );
+    expect(recovery).toHaveTextContent(
+      "No automatic owner debit has been made.",
+    );
+    expect(recovery).toHaveTextContent(
+      "Settlement was verified while a payout hold or dispute was active.",
+    );
+  });
+  it("shows missing recovery context as unavailable without a zero amount", () => {
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{
+          ...financial,
+          actorRole: "platform_administrator",
+          payout: { ...payout, recovery: { status: "unavailable" } },
+        }}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Settlement recovery evidence is incomplete",
+    );
+    expect(screen.queryByTestId("settlement-recovery")).not.toBeInTheDocument();
+  });
+  it("exposes independent hold release and dispute resolution on the existing administrator detail", () => {
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{ ...financial, actorRole: "platform_administrator", payout }}
+      />,
+    );
+    const section = within(
+      screen.getByRole("region", { name: "Payout holds and disputes" }),
+    );
+    expect(section.getByText("Administrator hold active")).toBeInTheDocument();
+    expect(
+      section.getByRole("button", { name: "Release administrator hold" }),
+    ).toBeInTheDocument();
+    expect(
+      section.getByRole("button", { name: "Resolve payment dispute" }),
+    ).toBeInTheDocument();
+    expect(
+      section.queryByRole("button", { name: "Place administrator hold" }),
+    ).not.toBeInTheDocument();
+    expect(
+      section.queryByRole("button", { name: "Open payment dispute" }),
+    ).not.toBeInTheDocument();
+    expect(section.getByText("Independent risk review")).toBeInTheDocument();
+  });
+  it.each(["customer", "cottage_owner"] as const)(
+    "never renders private payout reasons or commands for %s",
+    (actorRole) => {
+      render(
+        <BookingFinancialDetails
+          locale="en"
+          view={{ ...financial, actorRole, payout }}
+        />,
+      );
+      expect(
+        screen.queryByText("Independent risk review"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: "Payout holds and disputes" }),
+      ).not.toBeInTheDocument();
+    },
+  );
+  it.each([
+    ["ar", "تعليق مستحقات المالك ونزاعات الدفع", "رفع التعليق الإداري"],
+    [
+      "ckb",
+      "ڕاگرتنی پارەی خاوەن و ناکۆکیی پارەدان",
+      "لابردنی ڕاگرتنی بەڕێوەبەر",
+    ],
+  ] as const)(
+    "localizes administrator controls in %s",
+    (locale, title, release) => {
+      render(
+        <BookingFinancialDetails
+          locale={locale}
+          view={{ ...financial, actorRole: "platform_administrator", payout }}
+        />,
+      );
+      expect(
+        within(screen.getByRole("region", { name: title })).getByRole(
+          "button",
+          { name: release },
+        ),
+      ).toBeInTheDocument();
+    },
+  );
+});

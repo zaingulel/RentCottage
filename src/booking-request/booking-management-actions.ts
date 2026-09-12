@@ -1,4 +1,5 @@
 "use server";
+import { createRequestBookingSettlement } from "./request-booking-settlement";
 import { refresh } from "next/cache";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
@@ -21,6 +22,12 @@ import {
   recordBookingIncident,
   BookingLifecycleConflict,
 } from "./supabase-booking-lifecycle";
+import {
+  createBookingPayout,
+  type BookingPayoutAction,
+  type BookingDisputeOutcome,
+} from "./booking-payout";
+import { SupabaseBookingPayoutRepository } from "./supabase-booking-payout";
 import { refundInputAllocation } from "./booking-financial-presentation";
 export type BookingManagementActionState = {
   readonly status:
@@ -29,6 +36,10 @@ export type BookingManagementActionState = {
     | "requested"
     | "no_show"
     | "recorded"
+    | "settled"
+    | "blocked"
+    | "attention-required"
+    | "processing"
     | "conflict"
     | "invalid"
     | "access-required"
@@ -58,10 +69,26 @@ export async function manageConfirmedBooking(
     !["customer", "cottage_owner", "platform_administrator"].includes(
       String(role),
     ) ||
-    !["cancel", "refund", "no_show", "incident"].includes(String(action))
+    ![
+      "cancel",
+      "refund",
+      "no_show",
+      "incident",
+      "place_hold",
+      "release_hold",
+      "open_dispute",
+      "resolve_dispute",
+      "settle",
+    ].includes(String(action))
   )
     return { status: "invalid" };
   const actorRole = role as BookingCancellationCommand["actorRole"];
+  const payoutAction = [
+    "place_hold",
+    "release_hold",
+    "open_dispute",
+    "resolve_dispute",
+  ].includes(String(action));
   if (
     (actorRole !== "customer" || action === "refund") &&
     (typeof reason !== "string" ||
@@ -86,7 +113,10 @@ export async function manageConfirmedBooking(
     return { status: "invalid" };
   if (
     (action === "incident" && actorRole === "customer") ||
-    ((action === "refund" || action === "no_show") &&
+    ((action === "refund" ||
+      action === "no_show" ||
+      action === "settle" ||
+      payoutAction) &&
       actorRole !== "platform_administrator")
   )
     return { status: "access-required" };
@@ -114,6 +144,66 @@ export async function manageConfirmedBooking(
     }
     const view = await getBookingFinancialView(client, reference, actorRole);
     if (!view) return { status: "access-required" };
+    if (action === "settle") {
+      const result = await createRequestBookingSettlement(client).settle({
+        bookingRequestId: view.bookingRequestId,
+        commandId,
+        reason: (reason as string).trim(),
+      });
+      refresh();
+      return result;
+    }
+    if (payoutAction) {
+      const subjectId = form.get("subjectId"),
+        outcome = form.get("outcome");
+      const hasSubject =
+        action === "release_hold" || action === "resolve_dispute";
+      if (
+        hasSubject &&
+        (typeof subjectId !== "string" ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            subjectId,
+          ))
+      )
+        return { status: "invalid" };
+      if (
+        action === "resolve_dispute" &&
+        !["owner_won", "customer_won", "partial_customer_award"].includes(
+          String(outcome),
+        )
+      )
+        return { status: "invalid" };
+      let allocation;
+      if (
+        action === "resolve_dispute" &&
+        outcome === "partial_customer_award"
+      ) {
+        const price = form.get("price"),
+          fee = form.get("fee");
+        if (typeof price !== "string" || typeof fee !== "string")
+          return { status: "invalid" };
+        try {
+          allocation = refundInputAllocation(price, fee);
+        } catch {
+          return { status: "invalid" };
+        }
+      }
+      await createBookingPayout(
+        new SupabaseBookingPayoutRepository(client),
+      ).record({
+        bookingRequestId: view.bookingRequestId,
+        commandId,
+        action: action as BookingPayoutAction,
+        reason: (reason as string).trim(),
+        ...(hasSubject ? { subjectId: subjectId as string } : {}),
+        ...(action === "resolve_dispute"
+          ? { outcome: outcome as BookingDisputeOutcome }
+          : {}),
+        ...(allocation ? { allocation } : {}),
+      });
+      refresh();
+      return { status: "recorded" };
+    }
     if (action === "cancel")
       await createBookingCancellation(
         new SupabaseBookingCancellationRepository(client),

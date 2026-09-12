@@ -122,6 +122,7 @@ begin
     if intent.command_fingerprint is distinct from fingerprint then raise exception 'Refund command identity was reused' using errcode='RC409'; end if;
     return jsonb_build_object('status','requested','intentId',intent.id);
   end if;
+  if public.booking_settlement_has_unresolved_execution(target_booking_request_id) then raise exception 'Settlement must be reconciled before refund' using errcode='RC409'; end if;
   if price>(facts#>>'{captured,bookingPriceFils}')::bigint-(facts#>>'{refunded,bookingPriceFils}')::bigint-(facts#>>'{reserved,bookingPriceFils}')::bigint
     or fee>(facts#>>'{captured,bookingServiceFeeFils}')::bigint-(facts#>>'{refunded,bookingServiceFeeFils}')::bigint-(facts#>>'{reserved,bookingServiceFeeFils}')::bigint then
     raise exception 'Refund allocation exceeds available capacity' using errcode='RC409'; end if;
@@ -139,6 +140,7 @@ begin
   if current_setting('role',true)<>'service_role' then raise exception 'Automatic refund unavailable' using errcode='42501'; end if;
   facts:=public.get_booking_refund_facts(target_booking_request_id);
   if facts->>'revision' is distinct from target_revision then return jsonb_build_object('status','stale'); end if;
+  if public.booking_settlement_has_unresolved_execution(target_booking_request_id) then raise exception 'Settlement must be reconciled before refund' using errcode='RC409'; end if;
   expected:=jsonb_build_object('bookingPriceFils',greatest(0,(facts#>>'{obligation,bookingPriceFils}')::bigint-(facts#>>'{refunded,bookingPriceFils}')::bigint),
     'bookingServiceFeeFils',greatest(0,(facts#>>'{obligation,bookingServiceFeeFils}')::bigint-(facts#>>'{refunded,bookingServiceFeeFils}')::bigint));
   if target_allocation is distinct from expected or (expected->>'bookingPriceFils')::bigint+(expected->>'bookingServiceFeeFils')::bigint=0
@@ -183,6 +185,7 @@ begin
       jsonb_build_object('refundPermit',permit,'providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference));
   end if;
   if ledger.id is null and attempt.not_after>clock_timestamp() then return jsonb_build_object('status','processing'); end if;
+  if public.booking_settlement_has_unresolved_execution(intent.booking_request_id) then return jsonb_build_object('status','processing'); end if;
   next_generation:=coalesce(attempt.generation,0)+1;
   insert into public.booking_refund_attempts(refund_intent_id,generation,not_after) values(intent.id,next_generation,clock_timestamp()+interval '30 seconds') returning * into attempt;
   permit:=public.booking_refund_execution_permit(attempt);
@@ -207,6 +210,7 @@ begin
     raise exception 'Refund admission binding is invalid' using errcode='RC409'; end if;
   select * into ledger from public.payment_provider_operations where admission->>'purpose'='booking-refund' and admission#>>'{permit,attemptId}'=attempt.id::text;
   if found then return public.payment_operation_admission(ledger); end if;
+  if public.booking_settlement_has_unresolved_execution(intent.booking_request_id) then return jsonb_build_object('status','not-admitted'); end if;
   if attempt.not_after<=clock_timestamp() or exists(select 1 from public.booking_refund_attempts newer where newer.refund_intent_id=intent.id and newer.generation>attempt.generation) then
     return jsonb_build_object('status','not-admitted'); end if;
   perform public.booking_capture_refund_totals(capture.id,source->'captured');

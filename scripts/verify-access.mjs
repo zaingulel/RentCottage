@@ -688,6 +688,12 @@ export async function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = await execute(
+        "node",
+        ["scripts/verify-booking-payout-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {
@@ -883,6 +889,12 @@ export async function main(
         { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
       );
       if (refundConcurrency.status !== 0) return refundConcurrency.status;
+      const payoutConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-payout-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (payoutConcurrency.status !== 0) return payoutConcurrency.status;
       return (
         await execute(
           "node",

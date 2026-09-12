@@ -4568,11 +4568,11 @@ begin
   select * into ledger from public.payment_provider_operations operations where operations.id=target_provider_operation_id;
   if ledger.claim_id is distinct from work.authorization_claim_id then raise exception 'Payment observation source is invalid' using errcode='RC409'; end if;
   ledger:=public.lock_payment_observation_source(target_provider_operation_id,
-    array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund']);
+    array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund','booking-settlement']);
   select * into work from public.booking_request_capture_work capture where capture.booking_request_id=target_booking_request_id for update of capture;
   facts:=public.get_booking_request_payment_observation_facts(ledger.id);
   if facts->>'revision' is distinct from target_command->>'revision' then return jsonb_build_object('status','stale'); end if;
-  if (work.payment_required_deadline is null and ledger.admission->>'purpose'<>'booking-refund') or ledger.id is null or ledger.operation_kind not in ('capture','release','refund')
+  if (work.payment_required_deadline is null and ledger.admission->>'purpose' not in ('booking-refund','booking-settlement')) or ledger.id is null or ledger.operation_kind not in ('capture','release','refund','settlement')
     or ledger.claim_id is distinct from work.authorization_claim_id then raise exception 'Payment observation source is invalid' using errcode='RC409'; end if;
   if target_receipt is null or jsonb_typeof(target_receipt)<>'object'
     or target_receipt ?& array['receiptId','bookingRequestId','providerOperationId','providerIdentity','paymentLifecycleId','logicalOperationId','physicalAttemptId','kind','amountFils','currency','providerRequestId','providerReference','movementReference','outcome','occurredAt'] is not true
@@ -4617,7 +4617,7 @@ begin
     'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
     'kind',ledger.operation_kind,'amountFils',ledger.amount_fils,'currency',ledger.currency,'providerRequestId',coalesce(ledger.provider_request_id,target_receipt->>'providerRequestId'),'providerReference',coalesce(ledger.provider_reference,target_receipt->>'providerReference'));
   conflicting := (ledger.claim_generation,ledger.amount_fils,ledger.currency,ledger.provider,ledger.environment,ledger.merchant_id,ledger.terminal_id)
-      is distinct from (work.authorization_claim_generation,case when ledger.admission->>'purpose'='booking-refund' then ledger.amount_fils else work.amount_fils end,work.currency,work.provider,work.environment,work.merchant_id,work.terminal_id)
+      is distinct from (work.authorization_claim_generation,case when ledger.admission->>'purpose' in ('booking-refund','booking-settlement') then ledger.amount_fils else work.amount_fils end,work.currency,work.provider,work.environment,work.merchant_id,work.terminal_id)
     or target_receipt-array['receiptId','movementReference','outcome','occurredAt','evidence'] is distinct from expected
     or target_receipt->>'outcome' not in ('succeeded','failed','indeterminate')
     or (ledger.current_outcome is null and not (target_receipt ? 'evidence'))
@@ -4840,6 +4840,7 @@ begin
   end if;
   if exists(select 1 from public.booking_refund_intents intents where intents.capture_operation_id=capture.id and public.booking_refund_intent_state(intents.id)<>'failed') then
     raise exception 'Capture refund capacity is already reserved' using errcode='RC409'; end if;
+  if public.booking_settlement_has_unresolved_execution(target_booking_request_id) then raise exception 'Settlement must be reconciled before refund' using errcode='RC409'; end if;
   logical_id:=expiry.id::text||':corrective-refund:'||capture.id::text;
   insert into public.booking_request_payment_required_expiry_operations(
     expiry_work_id,booking_request_id,owner,authorization_claim_id,authorization_claim_generation,authorization_payment_lifecycle_id,
@@ -7438,7 +7439,7 @@ begin
   select attempts.* into submission from public.booking_request_submission_attempts attempts
     join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id where claims.id=ledger.claim_id;
   request_id:=submission.booking_request_id;
-  if ledger.admission->>'purpose' in ('booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund') then
+  if ledger.admission->>'purpose' in ('booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund','booking-settlement') then
     perform 1 from public.booking_requests requests where requests.id=request_id for update of requests;
     perform 1 from public.booking_request_capture_work work where work.booking_request_id=request_id for update of work;
   elsif ledger.admission->>'purpose'='booking-request-release' then
@@ -7632,6 +7633,13 @@ begin
     end if;
     operations_json:=operations_json||jsonb_build_object('id',operation.id,'kind',operation.operation_kind,'lifecycleId',operation.payment_lifecycle_id,
       'logicalOperationId',operation.logical_operation_id,'physicalAttemptId',operation.physical_attempt_id,
+      'bookingSettlement',case when operation.admission->>'purpose'='booking-settlement' then (select jsonb_build_object('intentId',intent.id,'captureOperationId',intent.capture_operation_id,'amountFils',intent.amount_fils)
+        from public.booking_settlement_attempts settlement_attempt join public.booking_settlement_intents intent on intent.id=settlement_attempt.settlement_intent_id
+        where settlement_attempt.id=(operation.admission#>>'{permit,attemptId}')::uuid and intent.booking_request_id=request.id
+          and operation.admission->'permit'=public.booking_settlement_execution_permit(settlement_attempt)
+          and operation.operation_kind='settlement' and operation.amount_fils=intent.amount_fils
+          and operation.logical_operation_id=intent.id::text||':settlement'
+          and operation.physical_attempt_id=intent.id::text||':settlement:'||settlement_attempt.generation::text) end,
       'bookingRefund',case when operation.admission->>'purpose'='booking-refund' then (select jsonb_build_object('intentId',intent.id,'captureOperationId',intent.capture_operation_id,'amountFils',intent.booking_price_fils+intent.booking_service_fee_fils)
         from public.booking_refund_attempts refund_attempt join public.booking_refund_intents intent on intent.id=refund_attempt.refund_intent_id where refund_attempt.id=(operation.admission#>>'{permit,attemptId}')::uuid
         and operation.admission->'permit'=public.booking_refund_execution_permit(refund_attempt)) end,
@@ -7729,7 +7737,7 @@ declare quarantine_required boolean;
 declare late_capture boolean;
 declare result jsonb;
 begin
-  ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund']);
+  ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund','booking-settlement']);
   facts:=public.get_booking_request_payment_observation_facts(ledger.id);
   if facts->>'revision' is distinct from target_command->>'revision' then return jsonb_build_object('status','stale'); end if;
   select * into work from public.booking_request_capture_work capture where capture.booking_request_id=(facts->>'bookingRequestId')::uuid;
@@ -7740,6 +7748,10 @@ begin
     if target.id is null or target.owner<>'expiry' or target.booking_request_id<>work.booking_request_id or (target.provider_operation_id is not null and target.provider_operation_id<>ledger.id)
       or ledger.admission->'permit' is distinct from public.booking_request_payment_required_expiry_permit(target,work.payment_required_deadline) then
       raise exception 'Expiry observation targets another operation' using errcode='RC409'; end if;
+  end if;
+  if ledger.admission->>'purpose'='booking-settlement' then
+    if target_command-array['revision'] is distinct from '{"recoveryState":null,"quarantineReason":null,"correctiveCaptureId":null}'::jsonb then raise exception 'Settlement observation consequence is invalid' using errcode='RC409'; end if;
+    return public.record_booking_settlement_observation(ledger.id,target_result);
   end if;
   if ledger.admission->>'purpose'='booking-refund' then
     if target_command-array['revision'] is distinct from '{"recoveryState":null,"quarantineReason":null,"correctiveCaptureId":null}'::jsonb then raise exception 'Refund observation consequence is invalid' using errcode='RC409'; end if;

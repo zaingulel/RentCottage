@@ -1,4 +1,12 @@
 import {
+  parseBookingPayoutRecovery,
+  parseBookingSettlementFacts,
+} from "./supabase-booking-payout";
+import type {
+  BookingPayoutRecovery,
+  BookingSettlementFacts,
+} from "./booking-payout";
+import {
   parseBookingLifecycle,
   parseBookingCompletionEligibility,
   type BookingLifecycle,
@@ -14,6 +22,8 @@ import {
 import type { BookingCancellationCommand } from "./booking-cancellation";
 export type BookingParticipantRole = BookingCancellationCommand["actorRole"];
 export interface BookingFinancialView {
+  readonly payout?: BookingSettlementFacts;
+  readonly ownerPayout?: BookingPayoutRecovery;
   readonly bookingRequestId: string;
   readonly bookingRequestReference: string;
   readonly bookingReference: string;
@@ -33,7 +43,7 @@ export interface BookingFinancialView {
   readonly refunds: readonly {
     readonly id: string;
     readonly occurredAt: string;
-    readonly source: "administrator" | "cancellation";
+    readonly source: "administrator" | "cancellation" | "dispute";
     readonly state:
       | "requested"
       | "processing"
@@ -141,7 +151,9 @@ export function parseBookingFinancialView(
   if (
     v.bookingRequestReference !== reference ||
     v.actorRole !== actorRole ||
-    (actorRole !== "platform_administrator" && v.audit !== undefined)
+    (actorRole !== "platform_administrator" &&
+      (v.audit !== undefined || v.payout !== undefined)) ||
+    (actorRole === "customer" && v.ownerPayout !== undefined)
   )
     throw new Error("Invalid financial view binding");
   const captured = allocation(v.captured),
@@ -150,6 +162,13 @@ export function parseBookingFinancialView(
   refundCapacity({ captured, refunded, reserved });
   const cancellation = v.cancellation === null ? null : object(v.cancellation);
   const result: BookingFinancialView = {
+    ...(actorRole === "customer"
+      ? {}
+      : {
+          ownerPayout: parseBookingPayoutRecovery(
+            v.ownerPayout ?? { status: "unavailable" },
+          ),
+        }),
     bookingRequestId: uuid(v.bookingRequestId),
     bookingRequestReference: reference,
     bookingReference: text(v.bookingReference),
@@ -177,7 +196,7 @@ export function parseBookingFinancialView(
       return {
         id: uuid(r.id),
         occurredAt: timestamp(r.occurredAt),
-        source: choice(r.source, ["administrator", "cancellation"]),
+        source: choice(r.source, ["administrator", "cancellation", "dispute"]),
         state: choice(r.state, [
           "requested",
           "processing",
@@ -232,6 +251,14 @@ export function parseBookingFinancialView(
     c = a.cancellation === null ? null : object(a.cancellation);
   return {
     ...result,
+    ...(v.payout === undefined
+      ? {}
+      : {
+          payout: parseBookingSettlementFacts(
+            v.payout,
+            result.bookingRequestId,
+          ),
+        }),
     audit: {
       cancellation: c
         ? {

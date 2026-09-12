@@ -1,3 +1,4 @@
+import type { BookingSettlementExecutionPermit } from "./booking-settlement-contract";
 import type { BookingRefundExecutionPermit } from "./booking-refund-contract";
 import type { PaymentOperationAdmission } from "./payment-operation-execution";
 import type { BookingRequestPaymentRecoveryPermit } from "./booking-request-payment-recovery-contract";
@@ -54,7 +55,8 @@ export type ProviderExecutionPermit =
   | BookingRequestCaptureExecutionPermit
   | BookingRequestPaymentRecoveryPermit
   | BookingRequestPaymentRequiredExpiryPermit
-  | BookingRefundExecutionPermit;
+  | BookingRefundExecutionPermit
+  | BookingSettlementExecutionPermit;
 
 export interface ProviderOperationBinding {
   readonly kind: PaymentOperationKind;
@@ -149,6 +151,7 @@ export interface ProviderReconciliationQuery extends ProviderOperationBinding {
   readonly recoveryPermit?: BookingRequestPaymentRecoveryPermit;
   readonly expiryPermit?: BookingRequestPaymentRequiredExpiryPermit;
   readonly refundPermit?: BookingRefundExecutionPermit;
+  readonly settlementPermit?: BookingSettlementExecutionPermit;
   readonly providerRequestId: string | null;
   readonly providerReference: string | null;
 }

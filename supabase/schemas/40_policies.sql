@@ -247,3 +247,9 @@ ALTER TABLE public.booking_notification_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.booking_refund_intents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_refund_attempts ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.booking_payout_commands ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.booking_settlement_intents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_settlement_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.booking_settlement_receipts ENABLE ROW LEVEL SECURITY;

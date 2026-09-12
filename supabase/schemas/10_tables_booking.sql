@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS "public"."payment_provider_operations" (
     CONSTRAINT "simulated_payment_provider_operations_currency_check" CHECK (("currency" = 'IQD'::"text")),
     CONSTRAINT "simulated_payment_provider_operations_current_outcome_check" CHECK (("current_outcome" = ANY (ARRAY['succeeded'::"text", 'failed'::"text", 'indeterminate'::"text", 'not-executed'::"text"]))),
     CONSTRAINT "simulated_payment_provider_operations_environment_check" CHECK ((length(btrim("environment")) > 0)),
-    CONSTRAINT "simulated_payment_provider_operations_operation_kind_check" CHECK (("operation_kind" = ANY (ARRAY['authorization'::"text", 'capture'::"text", 'release'::"text", 'refund'::"text"]))),
+    CONSTRAINT "simulated_payment_provider_operations_operation_kind_check" CHECK (("operation_kind" = ANY (ARRAY['authorization'::"text", 'capture'::"text", 'release'::"text", 'refund'::"text", 'settlement'::"text"]))),
     CONSTRAINT "simulated_payment_provider_operations_original_outcome_check" CHECK (("original_outcome" = ANY (ARRAY['succeeded'::"text", 'failed'::"text", 'indeterminate'::"text", 'not-executed'::"text"]))),
     CONSTRAINT "simulated_payment_provider_operations_request_fingerprint_check" CHECK (("request_fingerprint" ~ '^[0-9a-f]{64}$'::"text"))
 );
@@ -520,7 +520,7 @@ CREATE TABLE IF NOT EXISTS "public"."booking_request_payment_history" (
     "recorded_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
     CONSTRAINT "booking_request_payment_history_amount_fils_check" CHECK ((("amount_fils" IS NULL) OR ("amount_fils" > 0))),
     CONSTRAINT "booking_request_payment_history_kind_check" CHECK (("kind" = ANY (ARRAY['logical-operation'::"text", 'physical-attempt'::"text", 'retry'::"text", 'receipt-observation'::"text", 'state-transition'::"text", 'terminal-outcome'::"text", 'quarantine'::"text"]))),
-    CONSTRAINT "booking_request_payment_history_operation_kind_check" CHECK (("operation_kind" = ANY (ARRAY['authorization'::"text", 'capture'::"text", 'release'::"text", 'refund'::"text", 'original-release'::"text", 'replacement-authorization'::"text", 'replacement-capture'::"text", 'replacement-release'::"text", 'expiry'::"text", 'confirmation'::"text", 'invalidation'::"text"]))),
+    CONSTRAINT "booking_request_payment_history_operation_kind_check" CHECK (("operation_kind" = ANY (ARRAY['authorization'::"text", 'capture'::"text", 'release'::"text", 'refund'::"text", 'settlement'::"text", 'original-release'::"text", 'replacement-authorization'::"text", 'replacement-capture'::"text", 'replacement-release'::"text", 'expiry'::"text", 'confirmation'::"text", 'invalidation'::"text"]))),
     CONSTRAINT "booking_request_payment_history_provenance_check" CHECK (("provenance" = ANY (ARRAY['observed'::"text", 'imported'::"text"]))),
     CONSTRAINT "booking_request_payment_history_source_check" CHECK (("source" = ANY (ARRAY['history-boundary'::"text", 'authorization-claim'::"text", 'provider-operation'::"text", 'release-work'::"text", 'release-operation'::"text", 'capture-work'::"text", 'recovery-attempt'::"text", 'recovery-operation'::"text", 'expiry-work'::"text", 'expiry-operation'::"text", 'booking-request'::"text", 'confirmation'::"text", 'confirmation-invalidation'::"text", 'provider-receipt'::"text"])))
 );
@@ -801,15 +801,17 @@ CREATE TABLE public.booking_refund_intents (
   cancellation_id uuid,
   command_id uuid NOT NULL UNIQUE,
   command_fingerprint text NOT NULL CHECK (length(command_fingerprint)=64),
-  source text NOT NULL CHECK (source IN ('cancellation','administrator')),
+  source text NOT NULL CHECK (source IN ('cancellation','administrator','dispute')),
+  dispute_resolution_id uuid UNIQUE,
   actor_user_id uuid,
   reason text,
   booking_price_fils bigint NOT NULL CHECK (booking_price_fils>=0 AND booking_price_fils%10=0),
   booking_service_fee_fils bigint NOT NULL CHECK (booking_service_fee_fils>=0),
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   CHECK (booking_price_fils+booking_service_fee_fils>0),
+  CHECK ((source='dispute') = (dispute_resolution_id IS NOT NULL)),
   CHECK ((source='cancellation' AND cancellation_id IS NOT NULL AND actor_user_id IS NULL AND reason IS NULL) OR
-    (source='administrator' AND actor_user_id IS NOT NULL AND reason IS NOT NULL AND length(btrim(reason))>=1 AND length(btrim(reason))<=2000))
+    (source IN ('administrator','dispute') AND actor_user_id IS NOT NULL AND reason IS NOT NULL AND length(btrim(reason))>=1 AND length(btrim(reason))<=2000))
 );
 
 CREATE TABLE public.booking_refund_attempts (
@@ -821,4 +823,57 @@ CREATE TABLE public.booking_refund_attempts (
   not_after timestamptz NOT NULL,
   UNIQUE(refund_intent_id,generation),
   CHECK (not_after>created_at)
+);
+
+CREATE TABLE public.booking_payout_commands (
+  id uuid NOT NULL,
+  booking_request_id uuid NOT NULL,
+  capture_operation_id uuid NOT NULL,
+  action text NOT NULL CHECK (action IN ('place_hold','release_hold','open_dispute','resolve_dispute')),
+  subject_id uuid,
+  outcome text CHECK (outcome IN ('owner_won','customer_won','partial_customer_award')),
+  booking_price_fils bigint CHECK (booking_price_fils>=0 AND booking_price_fils%10=0),
+  booking_service_fee_fils bigint CHECK (booking_service_fee_fils>=0),
+  actor_user_id uuid NOT NULL,
+  reason text NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000),
+  command_fingerprint text NOT NULL CHECK (length(command_fingerprint)=64),
+  occurred_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK ((action IN ('release_hold','resolve_dispute')) = (subject_id IS NOT NULL)),
+  CHECK ((action='resolve_dispute') = (outcome IS NOT NULL)),
+  CHECK (((outcome IN ('customer_won','partial_customer_award')) IS TRUE) = (booking_price_fils IS NOT NULL)),
+  CHECK ((booking_price_fils IS NULL) = (booking_service_fee_fils IS NULL)),
+  CHECK (booking_price_fils+booking_service_fee_fils>0)
+);
+
+CREATE TABLE public.booking_settlement_intents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_request_id uuid NOT NULL UNIQUE,
+  capture_operation_id uuid NOT NULL,
+  command_id uuid NOT NULL UNIQUE,
+  command_fingerprint text NOT NULL CHECK (length(command_fingerprint)=64),
+  amount_fils bigint NOT NULL CHECK (amount_fils>0),
+  actor_user_id uuid NOT NULL,
+  reason text NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE TABLE public.booking_settlement_attempts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  settlement_intent_id uuid NOT NULL,
+  generation integer NOT NULL CHECK (generation>0),
+  lease_token uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  not_after timestamptz NOT NULL,
+  UNIQUE(settlement_intent_id,generation),
+  CHECK (not_after>created_at)
+);
+
+-- Context at the first verified settlement success. Amount remains owned by the
+-- provider operation; sequence remains owned by shared payment history.
+CREATE TABLE public.booking_settlement_receipts (
+  settlement_intent_id uuid PRIMARY KEY,
+  operation_id uuid NOT NULL UNIQUE,
+  observation_id uuid NOT NULL UNIQUE,
+  history_sequence bigint NOT NULL UNIQUE,
+  active_hold_ids uuid[] NOT NULL,
+  active_dispute_ids uuid[] NOT NULL
 );

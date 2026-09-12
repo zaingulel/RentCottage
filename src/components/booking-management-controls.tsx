@@ -10,6 +10,8 @@ import { refundAllocationTotal } from "@/payment/payment-refund-allocation";
 import { formatFilsAsIqd } from "@/i18n/format";
 import { bookingManagementMessages } from "@/i18n/booking-management-messages";
 import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
+import type { BookingPayoutAction } from "@/booking-request/booking-payout";
+import { bookingPayoutMessages } from "@/i18n/administrator-payment-history-messages";
 import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
@@ -24,18 +26,38 @@ export function BookingManagementControl({
   actorRole,
   commandId,
   action,
+  subjectId,
 }: {
   locale: Locale;
   reference: string;
   actorRole: BookingParticipantRole;
   commandId: string;
-  action: "cancel" | "refund" | "no_show" | "incident";
+  action:
+    | "cancel"
+    | "refund"
+    | "no_show"
+    | "incident"
+    | BookingPayoutAction
+    | "settle";
+  subjectId?: string;
 }) {
   const c = bookingManagementMessages[locale],
-    l = bookingLifecycleMessages[locale];
+    l = bookingLifecycleMessages[locale],
+    p = bookingPayoutMessages[locale];
+  const payoutAction =
+    action === "place_hold" ||
+    action === "release_hold" ||
+    action === "open_dispute" ||
+    action === "resolve_dispute" ||
+    action === "settle";
+  const [outcome, setOutcome] = useState("");
+  const allocationRequired =
+    action === "refund" ||
+    (action === "resolve_dispute" && outcome === "partial_customer_award");
   const lifecycleAction = action === "no_show" || action === "incident";
-  const label =
-    action === "cancel"
+  const label = payoutAction
+    ? p[action]
+    : action === "cancel"
       ? c.cancel
       : action === "refund"
         ? c.exception
@@ -58,7 +80,7 @@ export function BookingManagementControl({
     idle,
   );
   let total: number | null = null;
-  if (action === "refund") {
+  if (allocationRequired) {
     try {
       total = refundAllocationTotal(refundInputAllocation(price, fee));
     } catch {
@@ -72,19 +94,26 @@ export function BookingManagementControl({
       <input type="hidden" name="actorRole" value={actorRole} />
       <input type="hidden" name="commandId" value={commandId} />
       <input type="hidden" name="action" value={action} />
+      {subjectId ? (
+        <input type="hidden" name="subjectId" value={subjectId} />
+      ) : null}
       <h3>{label}</h3>
       <p>
-        {action === "no_show"
-          ? l.noShowHelp
-          : action === "incident"
-            ? l.privateHelp
-            : action === "refund"
-              ? c.exceptionHelp
-              : actorRole === "customer"
-                ? c.policy
-                : actorRole === "cottage_owner"
-                  ? c.ownerPolicy
-                  : c.adminPolicy}
+        {action === "settle"
+          ? p.settlementHelp
+          : payoutAction
+            ? p.help
+            : action === "no_show"
+              ? l.noShowHelp
+              : action === "incident"
+                ? l.privateHelp
+                : action === "refund"
+                  ? c.exceptionHelp
+                  : actorRole === "customer"
+                    ? c.policy
+                    : actorRole === "cottage_owner"
+                      ? c.ownerPolicy
+                      : c.adminPolicy}
       </p>
       {action === "cancel" && actorRole === "platform_administrator" ? (
         <label>
@@ -104,6 +133,27 @@ export function BookingManagementControl({
                 </option>
               ),
             )}
+          </FormControl>
+        </label>
+      ) : null}
+      {action === "resolve_dispute" ? (
+        <label>
+          {p.outcome}
+          <FormControl
+            kind="select"
+            name="outcome"
+            required
+            value={outcome}
+            onChange={(e) => setOutcome(e.target.value)}
+          >
+            <option value="">{p.chooseOutcome}</option>
+            {(
+              ["owner_won", "customer_won", "partial_customer_award"] as const
+            ).map((value) => (
+              <option key={value} value={value}>
+                {p[value]}
+              </option>
+            ))}
           </FormControl>
         </label>
       ) : null}
@@ -130,7 +180,7 @@ export function BookingManagementControl({
       ) : null}
       {actorRole !== "customer" ? (
         <label>
-          {lifecycleAction ? l.reason : c.reason}
+          {payoutAction ? p.reason : lifecycleAction ? l.reason : c.reason}
           <FormControl
             kind="textarea"
             name="reason"
@@ -142,7 +192,7 @@ export function BookingManagementControl({
           />
         </label>
       ) : null}
-      {action === "refund" ? (
+      {allocationRequired ? (
         <>
           <p id={`precision-${commandId}`}>{c.precision}</p>
           <div className={styles.amounts}>
@@ -193,6 +243,14 @@ export function BookingManagementControl({
       >
         {action === "refund" ? c.approve : label}
       </ActionButton>
+      {state.status === "settled" ||
+      state.status === "blocked" ||
+      state.status === "attention-required" ||
+      state.status === "processing" ? (
+        <ActionFeedback kind={state.status === "settled" ? "success" : "error"}>
+          {p[state.status]}
+        </ActionFeedback>
+      ) : null}
       {state.status === "conflict" ||
       state.status === "invalid" ||
       state.status === "unavailable" ||
@@ -216,7 +274,9 @@ export function BookingManagementControl({
             : state.status === "requested"
               ? c.refundSuccess
               : state.status === "recorded"
-                ? l.recorded
+                ? payoutAction
+                  ? p.recorded
+                  : l.recorded
                 : l.noShowRecorded}
         </ActionFeedback>
       ) : null}

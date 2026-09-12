@@ -10,9 +10,6 @@ export async function loadBookingFinancialView(
   actorRole: BookingParticipantRole,
 ) {
   if (!bookingRequestTestRuntimeIsEnabled()) return null;
-  return getBookingFinancialView(
-    await createRequestSupabaseClient(),
-    reference,
-    actorRole,
-  );
+  const client = await createRequestSupabaseClient();
+  return getBookingFinancialView(client, reference, actorRole);
 }
