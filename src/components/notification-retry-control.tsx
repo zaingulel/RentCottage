@@ -14,6 +14,7 @@ export function NotificationRetryControl({
   locale,
   reference,
   receiptId,
+  eventId,
   label,
   failed,
   queued,
@@ -21,6 +22,7 @@ export function NotificationRetryControl({
   locale: string;
   reference: string;
   receiptId: string;
+  eventId?: string;
   label: string;
   failed: string;
   queued: string;
@@ -34,6 +36,7 @@ export function NotificationRetryControl({
       <input type="hidden" name="locale" value={locale} />
       <input type="hidden" name="reference" value={reference} />
       <input type="hidden" name="receiptId" value={receiptId} />
+      {eventId ? <input type="hidden" name="eventId" value={eventId} /> : null}
       <ActionButton
         type="submit"
         kind="primary"

@@ -6,6 +6,9 @@ const { load, notFound, unstableRethrow } = vi.hoisted(() => ({
   notFound: vi.fn(),
   unstableRethrow: vi.fn(),
 }));
+vi.mock("@/booking-request/request-booking-financial-view", () => ({
+  loadBookingFinancialView: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("server-only", () => ({}));
 vi.mock("@/booking-request/request-administrator-payment-history", () => ({
   loadAdministratorPaymentHistory: load,

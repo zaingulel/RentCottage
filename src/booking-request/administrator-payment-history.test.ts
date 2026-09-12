@@ -165,3 +165,61 @@ it.each([
     }
   },
 );
+
+const cancelledEvent = {
+  id: "b4cc103f-6470-4305-842f-6cbca2c52ca1",
+  kind: "state-transition",
+  source: "booking-request",
+  provenance: "observed",
+  fromState: "paid-confirmed",
+  toState: "cancelled",
+  amountFils: "115000000",
+  currency: "IQD",
+  reasonCode: "unclassified-evidence",
+  recordedAt: "2026-09-11T22:45:43.554068+00:00",
+  sourceRecordedAt: "2026-09-11T22:45:43.551873+00:00",
+  providerOperationId: "3f4e958c-5bbf-4f02-90a5-035f0dbf686d",
+};
+it("accepts the exact safe cancellation event returned by the existing history RPC", () => {
+  const value = {
+    ...history,
+    current: {
+      ...history.current,
+      paymentStatus: "capture-processing",
+      paymentRequiredDeadline: null,
+    },
+    events: [cancelledEvent],
+  };
+  expect(parseAdministratorPaymentHistory(value)).toEqual(value);
+});
+it.each([
+  "customer-cancellation",
+  "cottage_owner-cancellation",
+  "platform_administrator-cancellation",
+] as const)(
+  "labels the finite cancellation state and %s without admitting arbitrary reasons",
+  (reasonCode) => {
+    const value = {
+      ...history,
+      current: {
+        ...history.current,
+        paymentStatus: "cancelled",
+        paymentRequiredDeadline: null,
+      },
+      events: [{ ...cancelledEvent, reasonCode }],
+    };
+    expect(parseAdministratorPaymentHistory(value)).toEqual(value);
+    for (const messages of Object.values(
+      administratorPaymentHistoryCodeMessages,
+    )) {
+      expect(messages[reasonCode as keyof typeof messages]).toBeTruthy();
+      expect(messages["cancelled" as keyof typeof messages]).toBeTruthy();
+    }
+    expect(() =>
+      parseAdministratorPaymentHistory({
+        ...value,
+        events: [{ ...cancelledEvent, reasonCode: "PRIVATE reason" }],
+      }),
+    ).toThrow("invalid");
+  },
+);

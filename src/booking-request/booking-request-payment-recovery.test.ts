@@ -23,8 +23,10 @@ function fixture(
   ],
 ) {
   let stage = 0;
+  const deadline = "2026-09-06T12:20:00.000Z";
   const facts = () =>
     paymentFactsFixture({
+      deadline,
       attempts: [
         { id: recoveryAttemptId, generation: 1, state: states[stage] },
       ],
@@ -40,7 +42,7 @@ function fixture(
     admit: vi.fn(async () => ({
       status: "processing" as const,
       attemptId: recoveryAttemptId,
-      deadline: facts().deadline,
+      deadline,
     })),
     facts: vi.fn(async () => facts()),
     lease: vi.fn(async (_id: string, step: PaymentRecoveryStep) => {

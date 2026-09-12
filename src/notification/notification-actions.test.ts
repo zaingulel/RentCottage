@@ -13,7 +13,7 @@ vi.mock("@/access/supabase-server", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: revalidate }));
 vi.mock("./notification-status-repository", () => ({
-  SupabasePaidConfirmationNotificationStatusRepository: class {
+  SupabaseBookingNotificationStatusRepository: class {
     retry = retry;
   },
 }));
@@ -59,8 +59,32 @@ it("returns a safe failure state without revalidating when retry is denied", asy
     retryPaidConfirmationNotification({ status: "idle" }, form()),
   ).resolves.toEqual({ status: "failed" });
   expect(revalidate).not.toHaveBeenCalled();
-  expect(log).toHaveBeenCalledWith("Confirmation notice retry failed", {
-    code: "confirmation_notice_retry_failed",
+  expect(log).toHaveBeenCalledWith("Booking notice retry failed", {
+    code: "booking_notice_retry_failed",
   });
   log.mockRestore();
+});
+
+it("binds an event retry separately from the original receipt", async () => {
+  enabled.mockReturnValue(true);
+  createClient.mockResolvedValue({});
+  retry.mockResolvedValue({ status: "queued" });
+  const data = form();
+  data.set("eventId", "82000000-0000-4000-8000-000000003888");
+  await expect(
+    retryPaidConfirmationNotification({ status: "idle" }, data),
+  ).resolves.toEqual({ status: "queued" });
+  expect(retry).toHaveBeenCalledWith(
+    "82000000-0000-4000-8000-000000003502",
+    "82000000-0000-4000-8000-000000003888",
+  );
+});
+it("rejects a malformed event retry before constructing a client", async () => {
+  enabled.mockReturnValue(true);
+  const data = form();
+  data.set("eventId", "wrong");
+  await expect(
+    retryPaidConfirmationNotification({ status: "idle" }, data),
+  ).resolves.toEqual({ status: "invalid" });
+  expect(createClient).not.toHaveBeenCalled();
 });

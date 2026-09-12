@@ -44,6 +44,7 @@ ALTER TYPE "public"."cottage_inventory_availability_state" OWNER TO "postgres";
 CREATE TYPE "public"."cottage_inventory_commitment_status" AS ENUM (
     'pending_hold',
     'confirmed_booking',
+    'cancelled_booking',
     'released_hold'
 );
 

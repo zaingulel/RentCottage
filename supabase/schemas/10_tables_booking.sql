@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS "public"."booking_requests" (
     "customer_name" "text" NOT NULL,
     "party_size" smallint NOT NULL,
     "booking_note" "text",
+    "refund_last_scheduled_at" timestamp with time zone,
     "status" "text" NOT NULL,
     "response_deadline" timestamp with time zone NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -317,6 +318,8 @@ ALTER TABLE "public"."booking_receipts" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."booking_confirmation_notification_work" (
     "receipt_id" "uuid" NOT NULL,
+    event_id uuid,
+    notification_id uuid GENERATED ALWAYS AS (coalesce(event_id, receipt_id)) STORED NOT NULL,
     "booking_request_id" "uuid" NOT NULL,
     "booking_request_reference" "text" NOT NULL,
     "booking_reference" "text" NOT NULL,
@@ -337,10 +340,10 @@ CREATE TABLE IF NOT EXISTS "public"."booking_confirmation_notification_work" (
     "suppressed_at" timestamp with time zone,
     "created_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
-    CONSTRAINT "booking_confirmation_notification_work_binding" CHECK ((("recipient_role" = ANY (ARRAY['customer'::"text", 'cottage_owner'::"text"])) AND ("logical_id" = ('paid-confirmation:'::"text" || ("receipt_id")::"text")) AND ("template_version" = 'paid-confirmation-v1'::"text") AND ("payload_sha256" ~ '^[0-9a-f]{64}$'::"text"))),
+    CONSTRAINT "booking_confirmation_notification_work_binding" CHECK (recipient_role IN ('customer','cottage_owner') AND payload_sha256 ~ '^[0-9a-f]{64}$' AND ((event_id IS NULL AND logical_id='paid-confirmation:'||receipt_id AND template_version='paid-confirmation-v1') OR (event_id IS NOT NULL AND logical_id='booking-event:'||event_id AND template_version='booking-event-v1'))),
     CONSTRAINT "booking_confirmation_notification_work_state" CHECK (("state" = ANY (ARRAY['pending'::"text", 'processing'::"text", 'retryable'::"text", 'uncertain'::"text", 'delivered'::"text", 'suppressed'::"text"]))),
     CONSTRAINT "booking_confirmation_notification_work_state_shape" CHECK (((("state" = 'pending'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" IS NULL) AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'processing'::"text") AND ("lease_generation" > 0) AND ("lease_token" IS NOT NULL) AND ("lease_expires_at" IS NOT NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'retryable'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'failed'::"text") AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'uncertain'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'unknown'::"text") AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'delivered'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'delivered'::"text") AND ("supplier_delivery_reference" IS NOT NULL) AND ("delivered_at" IS NOT NULL) AND ("suppressed_at" IS NULL)) OR (("state" = 'suppressed'::"text") AND ("lease_token" IS NULL) AND ("lease_expires_at" IS NULL) AND ("last_outcome" = 'suppressed'::"text") AND ("supplier_delivery_reference" IS NULL) AND ("delivered_at" IS NULL) AND ("suppressed_at" IS NOT NULL)))),
-    CONSTRAINT "booking_confirmation_notification_work_payload" CHECK ((("jsonb_typeof"("payload") = 'object'::"text") AND ("payload" ?& ARRAY['kind'::"text", 'title'::"text", 'body'::"text", 'bookingReference'::"text", 'detailsPath'::"text", 'linkLabel'::"text", 'fictional'::"text"]) AND (("payload" - ARRAY['kind'::"text", 'title'::"text", 'body'::"text", 'bookingReference'::"text", 'detailsPath'::"text", 'linkLabel'::"text", 'fictional'::"text"]) = '{}'::"jsonb") AND (("payload" ->> 'kind'::"text") = 'paid-confirmation'::"text") AND (("payload" -> 'fictional'::"text") = 'true'::"jsonb")))
+    CONSTRAINT "booking_confirmation_notification_work_payload" CHECK (jsonb_typeof(payload)='object' AND payload ?& array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional'] AND payload->'fictional'='true'::jsonb AND ((event_id IS NULL AND payload->>'kind'='paid-confirmation' AND payload-array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional']='{}'::jsonb) OR (event_id IS NOT NULL AND payload->>'kind' IN ('cancelled','refund_requested','refund_returned','refund_attention') AND payload ? 'allocation' AND payload-array['kind','title','body','bookingReference','detailsPath','linkLabel','fictional','allocation']='{}'::jsonb)))
 );
 
 ALTER TABLE "public"."booking_confirmation_notification_work" OWNER TO "postgres";
@@ -348,6 +351,8 @@ ALTER TABLE "public"."booking_confirmation_notification_work" OWNER TO "postgres
 CREATE TABLE IF NOT EXISTS "public"."booking_confirmation_notification_attempts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "receipt_id" "uuid" NOT NULL,
+    event_id uuid,
+    notification_id uuid GENERATED ALWAYS AS (coalesce(event_id, receipt_id)) STORED NOT NULL,
     "lease_generation" bigint,
     "lease_token" "uuid",
     "action" "text" NOT NULL,
@@ -367,6 +372,8 @@ CREATE TABLE IF NOT EXISTS "public"."fictional_booking_confirmation_notification
     "environment" "text" NOT NULL,
     "logical_id" "text" NOT NULL,
     "receipt_id" "uuid" NOT NULL,
+    event_id uuid,
+    notification_id uuid GENERATED ALWAYS AS (coalesce(event_id, receipt_id)) STORED NOT NULL,
     "booking_request_id" "uuid" NOT NULL,
     "booking_request_reference" "text" NOT NULL,
     "booking_reference" "text" NOT NULL,
@@ -380,7 +387,7 @@ CREATE TABLE IF NOT EXISTS "public"."fictional_booking_confirmation_notification
     "execution_lease_token" "uuid" NOT NULL,
     "supplier_delivery_reference" "text" NOT NULL,
     "executed_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
-    CONSTRAINT "fictional_booking_confirmation_notification_effect_identity" CHECK ((("supplier" = 'fictional-notifications'::"text") AND ("environment" = 'local-test'::"text") AND ("logical_id" = ('paid-confirmation:'::"text" || ("receipt_id")::"text")) AND ("recipient_role" = ANY (ARRAY['customer'::"text", 'cottage_owner'::"text"])) AND ("template_version" = 'paid-confirmation-v1'::"text") AND ("payload_sha256" ~ '^[0-9a-f]{64}$'::"text") AND ("execution_lease_generation" > 0)))
+    CONSTRAINT "fictional_booking_confirmation_notification_effect_identity" CHECK (supplier='fictional-notifications' AND environment='local-test' AND recipient_role IN ('customer','cottage_owner') AND payload_sha256 ~ '^[0-9a-f]{64}$' AND execution_lease_generation>0 AND ((event_id IS NULL AND logical_id='paid-confirmation:'||receipt_id AND template_version='paid-confirmation-v1') OR (event_id IS NOT NULL AND logical_id='booking-event:'||event_id AND template_version='booking-event-v1')))
 );
 
 ALTER TABLE "public"."fictional_booking_confirmation_notification_effects" OWNER TO "postgres";
@@ -679,3 +686,83 @@ CREATE TABLE IF NOT EXISTS "public"."simulated_payment_effects" (
     CONSTRAINT "simulated_payment_effect_state" CHECK ((((state='reserved' AND result IS NULL AND physical_execution_count=0) OR (state='closed-not-executed' AND result->>'outcome'='not-executed' AND physical_execution_count=0) OR (state='executed' AND result->>'outcome' IN ('succeeded','failed','indeterminate') AND physical_execution_count=1))) IS TRUE)
 );
 ALTER TABLE "public"."simulated_payment_effects" OWNER TO "postgres";
+
+CREATE TABLE public.booking_cancellations (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  booking_request_id uuid NOT NULL UNIQUE ,
+  booking_confirmation_id uuid NOT NULL UNIQUE ,
+  capture_operation_id uuid NOT NULL ,
+  command_id uuid NOT NULL UNIQUE,
+  command_fingerprint text NOT NULL CHECK (command_fingerprint ~ '^[0-9a-f]{64}$'),
+  actor_user_id uuid NOT NULL ,
+  actor_role text NOT NULL CHECK (actor_role IN ('customer','cottage_owner','platform_administrator')),
+  reason text,
+  category text,
+  first_starts_at timestamptz NOT NULL,
+  occurred_at timestamptz NOT NULL,
+  refund_booking_price_fils bigint NOT NULL CHECK (refund_booking_price_fils >= 0 AND refund_booking_price_fils % 10 = 0),
+  refund_booking_service_fee_fils bigint NOT NULL CHECK (refund_booking_service_fee_fils >= 0),
+  CONSTRAINT booking_cancellation_reason CHECK (
+    (actor_role='customer' AND reason IS NULL AND category IS NULL) OR
+    (actor_role='cottage_owner' AND reason IS NOT NULL AND length(btrim(reason)) >= 1 AND length(btrim(reason)) <= 2000 AND category IS NULL) OR
+    (actor_role='platform_administrator' AND reason IS NOT NULL AND length(btrim(reason)) >= 1 AND length(btrim(reason)) <= 2000 AND category IS NOT NULL AND category IN ('safety','fraud','legal','serious_operational'))
+  )
+);
+
+CREATE TABLE public.booking_cancellation_incidents (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  cancellation_id uuid NOT NULL UNIQUE ,
+  recorded_at timestamptz NOT NULL
+);
+
+CREATE TABLE public.booking_cancellation_administrator_audit (
+  cancellation_id uuid PRIMARY KEY ,
+  administrator_user_id uuid NOT NULL ,
+  recorded_at timestamptz NOT NULL
+);
+
+CREATE TABLE public.booking_notification_events (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  booking_request_id uuid NOT NULL ,
+  cancellation_id uuid,
+  refund_intent_id uuid,
+  receipt_id uuid NOT NULL ,
+  event_kind text NOT NULL CHECK (event_kind IN ('cancelled','refund_requested','refund_returned','refund_attention')),
+  recipient_user_id uuid NOT NULL ,
+  recipient_role text NOT NULL CHECK (recipient_role IN ('customer','cottage_owner')),
+  notice_locale public.cottage_profile_source_language NOT NULL,
+  created_at timestamptz NOT NULL,
+  UNIQUE(cancellation_id,recipient_role),
+  UNIQUE(refund_intent_id,event_kind,recipient_role),
+  CHECK ((event_kind='cancelled' AND cancellation_id IS NOT NULL AND refund_intent_id IS NULL) OR
+    (event_kind<>'cancelled' AND cancellation_id IS NULL AND refund_intent_id IS NOT NULL))
+);
+
+CREATE TABLE public.booking_refund_intents (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  booking_request_id uuid NOT NULL,
+  capture_operation_id uuid NOT NULL,
+  cancellation_id uuid,
+  command_id uuid NOT NULL UNIQUE,
+  command_fingerprint text NOT NULL CHECK (length(command_fingerprint)=64),
+  source text NOT NULL CHECK (source IN ('cancellation','administrator')),
+  actor_user_id uuid,
+  reason text,
+  booking_price_fils bigint NOT NULL CHECK (booking_price_fils>=0 AND booking_price_fils%10=0),
+  booking_service_fee_fils bigint NOT NULL CHECK (booking_service_fee_fils>=0),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK (booking_price_fils+booking_service_fee_fils>0),
+  CHECK ((source='cancellation' AND cancellation_id IS NOT NULL AND actor_user_id IS NULL AND reason IS NULL) OR
+    (source='administrator' AND actor_user_id IS NOT NULL AND reason IS NOT NULL AND length(btrim(reason))>=1 AND length(btrim(reason))<=2000))
+);
+
+CREATE TABLE public.booking_refund_attempts (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  refund_intent_id uuid NOT NULL,
+  generation integer NOT NULL CHECK (generation>0),
+  lease_token uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  not_after timestamptz NOT NULL,
+  UNIQUE(refund_intent_id,generation),
+  CHECK (not_after>created_at)
+);

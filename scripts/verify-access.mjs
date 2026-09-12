@@ -676,6 +676,12 @@ export async function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = await execute(
+        "node",
+        ["scripts/verify-booking-notification-upgrade.mjs"],
+        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {
@@ -837,6 +843,26 @@ export async function main(
       );
       if (notificationConcurrency.status !== 0)
         return notificationConcurrency.status;
+      const eventNotificationConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-event-notification-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (eventNotificationConcurrency.status !== 0)
+        return eventNotificationConcurrency.status;
+      const cancellationConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-cancellation-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (cancellationConcurrency.status !== 0)
+        return cancellationConcurrency.status;
+      const refundConcurrency = await execute(
+        "node",
+        ["scripts/verify-booking-refund-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (refundConcurrency.status !== 0) return refundConcurrency.status;
       return (
         await execute(
           "node",
@@ -934,6 +960,7 @@ export async function main(
           "tests/access.spec.ts",
           "tests/booking-request-access.spec.ts",
           "tests/administrator-payment-history.spec.ts",
+          "tests/booking-cancellation-refund.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",
@@ -958,6 +985,7 @@ export async function main(
           "test",
           "tests/worker-scheduled-expiry.spec.ts",
           "tests/worker-scheduled-capture.spec.ts",
+          "tests/worker-scheduled-refund.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",

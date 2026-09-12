@@ -161,7 +161,8 @@ export function selectPaymentRecovery(
   if (facts.quarantined) return { status: "quarantined" };
   if (facts.expired) return { status: "deadline-elapsed" };
   const attempt = facts.attempts.find((entry) => entry.id === attemptId);
-  if (!attempt || !facts.sourceValid) return { status: "unavailable" };
+  if (!attempt || !facts.sourceValid || facts.deadline === null)
+    return { status: "unavailable" };
   const pending =
     facts.operations.find(
       (operation) =>

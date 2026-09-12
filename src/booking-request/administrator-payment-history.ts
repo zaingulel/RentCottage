@@ -87,6 +87,8 @@ const operations = [
   "invalidation",
 ];
 const states = [
+  "paid-confirmed",
+  "cancelled",
   "indeterminate",
   "pending",
   "processing",
@@ -137,6 +139,9 @@ const outcomes = [
   "malformed",
 ];
 const reasons = [
+  "customer-cancellation",
+  "cottage_owner-cancellation",
+  "platform_administrator-cancellation",
   "replacement-capture-succeeded",
   "source-evidence-invalid",
   "capture-occurrence-unknown",
@@ -386,6 +391,7 @@ export function parseAdministratorPaymentHistory(
               "capture-processing",
               "payment-required",
               "paid-confirmed",
+              "cancelled",
             ]),
       expiryStatus:
         current.expiryStatus === null

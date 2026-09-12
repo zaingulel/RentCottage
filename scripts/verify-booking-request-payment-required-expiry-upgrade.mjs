@@ -302,6 +302,11 @@ try {
   const before = snapshot();
   runSupabase(["migration", "up", "--local"]);
   paymentEvidenceInstalled = true;
+  // The new scheduling column must start null; all original row fields survive.
+  before.booking_requests = before.booking_requests.map((row) => ({
+    ...row,
+    refund_last_scheduled_at: null,
+  }));
   assert.deepEqual(
     snapshot(),
     before,

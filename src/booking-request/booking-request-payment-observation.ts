@@ -52,6 +52,11 @@ export interface PaymentOperationFact {
   readonly recoveryOperationId: string | null;
   readonly recoveryStep: PaymentRecoveryStep | null;
   readonly valid: boolean;
+  readonly bookingRefund?: {
+    readonly intentId: string;
+    readonly captureOperationId: string;
+    readonly amountFils: number;
+  } | null;
   readonly permit:
     | BookingRequestPaymentRecoveryPermit
     | BookingRequestPaymentRequiredExpiryPermit
@@ -71,7 +76,7 @@ export interface BookingRequestPaymentFacts {
   readonly bookingRequestId: string;
   readonly revision: string;
   readonly observedAt: string;
-  readonly deadline: string;
+  readonly deadline: string | null;
   readonly providerIdentity: PaymentProviderIdentity;
   readonly amountFils: number;
   readonly sourceValid: boolean;
@@ -145,6 +150,8 @@ export function selectPaymentObservation(
   result: ProviderOperationResult,
 ): PaymentObservationCommand {
   const operation = facts.operations.find((entry) => entry.id === operationId);
+  if (operation?.recoveryStep && facts.deadline === null)
+    throw new Error("Recovery deadline is missing");
   if (!operation) throw new Error("Payment observation operation is missing");
   const outcome =
     result.outcome === "indeterminate" &&
@@ -188,7 +195,7 @@ export function selectPaymentObservation(
             outcome === "failed"
               ? "capture_failed"
               : occurredAt &&
-                  paymentInstant(occurredAt) < paymentInstant(facts.deadline)
+                  paymentInstant(occurredAt) < paymentInstant(facts.deadline!)
                 ? "succeeded"
                 : "late_succeeded";
           break;
@@ -213,7 +220,10 @@ export function selectPaymentObservation(
     quarantineReason = `expiry-${operation.kind}-${outcome}`;
   if (operation.kind === "capture" && outcome === "succeeded") {
     if (!occurredAt) quarantineReason = "capture-occurrence-unknown";
-    else if (paymentInstant(occurredAt) >= paymentInstant(facts.deadline)) {
+    else if (
+      facts.deadline !== null &&
+      paymentInstant(occurredAt) >= paymentInstant(facts.deadline)
+    ) {
       if (
         operation.originalOutcome === "failed" ||
         result.evidence?.originalOutcome === "failed"
@@ -326,7 +336,8 @@ export function createBookingRequestPaymentObservation({
                 logicalOperationId: operation.logicalOperationId,
                 physicalAttemptId: operation.physicalAttemptId,
                 kind: operation.kind,
-                amountFils: facts.amountFils,
+                amountFils:
+                  operation.bookingRefund?.amountFils ?? facts.amountFils,
                 currency: "IQD",
                 providerRequestId:
                   operation.providerRequestId ?? value.providerRequestId,
@@ -392,14 +403,18 @@ export function createBookingRequestPaymentObservation({
               )
                 throw new Error("Conflicting occurrence");
               command = selectPaymentObservation(facts, operationId, result);
-              if (result.outcome === "indeterminate")
+              if (
+                result.outcome === "indeterminate" &&
+                !operation.bookingRefund
+              )
                 command = {
                   ...command,
                   quarantineReason: "unresolved-provider-observation",
                 };
               if (
                 (operation.kind === "release" || operation.kind === "refund") &&
-                result.outcome === "failed"
+                result.outcome === "failed" &&
+                !operation.bookingRefund
               )
                 command = {
                   ...command,

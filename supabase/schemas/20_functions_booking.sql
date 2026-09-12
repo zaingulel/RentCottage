@@ -875,13 +875,35 @@ $$;
 
 ALTER FUNCTION "public"."booking_request_payment_status"("target_request" "public"."booking_requests") OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION public.booking_notification_event_binding(target_event_id uuid) RETURNS jsonb
+LANGUAGE sql STABLE SET search_path='' AS $$
+  select jsonb_build_object('id',event.id,'kind',event.event_kind,'allocation',jsonb_build_object(
+    'bookingPriceFils',coalesce(cancelled.refund_booking_price_fils,intent.booking_price_fils),
+    'bookingServiceFeeFils',coalesce(cancelled.refund_booking_service_fee_fils,intent.booking_service_fee_fils)))
+  from public.booking_notification_events event left join public.booking_cancellations cancelled on cancelled.id=event.cancellation_id
+    left join public.booking_refund_intents intent on intent.id=event.refund_intent_id where event.id=target_event_id;
+$$;
+
+CREATE OR REPLACE FUNCTION public.booking_notification_is_deliverable(target public.booking_confirmation_notification_work) RETURNS boolean
+LANGUAGE sql STABLE SET search_path='' AS $$
+  select case when target.event_id is null then public.booking_request_payment_status(request)='paid-confirmed'
+    else exists(select 1 from public.booking_notification_events event join public.booking_receipts receipt on receipt.id=event.receipt_id
+      join public.account_contexts context on context.user_id=event.recipient_user_id join auth.users actor on actor.id=context.user_id
+      where event.id=target.event_id and event.booking_request_id=request.id and event.receipt_id=target.receipt_id
+        and event.recipient_user_id=target.recipient_user_id and event.recipient_role=target.recipient_role and event.notice_locale=target.notice_locale
+        and receipt.recipient_user_id=target.recipient_user_id and receipt.recipient_role=target.recipient_role and actor.phone_confirmed_at is not null
+        and ((event.recipient_role='customer' and request.customer_user_id=actor.id and context.role in ('customer','cottage_owner'))
+          or (event.recipient_role='cottage_owner' and request.owner_user_id=actor.id and context.role='cottage_owner' and context.owner_approval_state='approved')))
+    end from public.booking_requests request where request.id=target.booking_request_id;
+$$;
+
 CREATE OR REPLACE FUNCTION public.booking_confirmation_notification_binding(target public.booking_confirmation_notification_work) RETURNS jsonb
 LANGUAGE sql STABLE SET search_path='' AS $$
   select jsonb_build_object(
     'receiptId',target.receipt_id,'recipientUserId',target.recipient_user_id,'recipientRole',target.recipient_role,
     'bookingRequestReference',target.booking_request_reference,'bookingReference',target.booking_reference,
     'locale',target.notice_locale,'logicalId',target.logical_id,'templateVersion',target.template_version,
-    'payload',target.payload,'payloadSha256',target.payload_sha256)
+    'payload',target.payload,'payloadSha256',target.payload_sha256)||case when target.event_id is null then '{}'::jsonb else jsonb_build_object('event',public.booking_notification_event_binding(target.event_id)) end
 $$;
 
 CREATE OR REPLACE FUNCTION public.list_due_booking_confirmation_notifications(target_limit integer DEFAULT 50) RETURNS SETOF jsonb
@@ -889,24 +911,22 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Notification service role required' using errcode='42501'; end if;
   if target_limit is null or target_limit not between 1 and 100 then raise exception 'Invalid notification limit' using errcode='22023'; end if;
-  return query select jsonb_build_object(
-    'receiptId',r.id,'recipientUserId',r.recipient_user_id,'recipientRole',r.recipient_role,
-    'bookingRequestReference',q.booking_request_reference,'bookingReference',c.commitment_reference,
-    'locale',s.acceptance_locale)
-  from public.booking_receipts r
-  join public.booking_confirmations x on x.id=r.booking_confirmation_id
-  join public.booking_requests q on q.id=x.booking_request_id
-  join public.booking_snapshots s on s.id=r.booking_snapshot_id
-  join public.cottage_booking_period_commitments c on c.id=x.booking_period_commitment_id
-  left join public.booking_confirmation_notification_work w on w.receipt_id=r.id
-  where ((w.receipt_id is null and public.booking_request_payment_status(q)='paid-confirmed')
-    or w.state in ('pending','uncertain') or (w.state='processing' and w.lease_expires_at<=clock_timestamp()))
-  order by coalesce(w.updated_at,r.created_at),r.id limit target_limit;
+  return query select source.candidate from (
+    select r.id notification_id,r.created_at,public.booking_request_payment_status(q)='paid-confirmed' eligible,
+      jsonb_build_object('receiptId',r.id,'recipientUserId',r.recipient_user_id,'recipientRole',r.recipient_role,'bookingRequestReference',q.booking_request_reference,'bookingReference',c.commitment_reference,'locale',s.acceptance_locale) candidate
+    from public.booking_receipts r join public.booking_confirmations x on x.id=r.booking_confirmation_id join public.booking_requests q on q.id=x.booking_request_id
+      join public.booking_snapshots s on s.id=r.booking_snapshot_id join public.cottage_booking_period_commitments c on c.id=x.booking_period_commitment_id
+    union all
+    select event.id,event.created_at,true,jsonb_build_object('receiptId',event.receipt_id,'recipientUserId',event.recipient_user_id,'recipientRole',event.recipient_role,'bookingRequestReference',q.booking_request_reference,'bookingReference',c.commitment_reference,'locale',event.notice_locale,'event',public.booking_notification_event_binding(event.id))
+    from public.booking_notification_events event join public.booking_requests q on q.id=event.booking_request_id join public.cottage_booking_period_commitments c on c.id=q.booking_period_commitment_id
+  ) source left join public.booking_confirmation_notification_work w on w.notification_id=source.notification_id
+  where ((w.notification_id is null and source.eligible) or w.state in ('pending','uncertain') or (w.state='processing' and w.lease_expires_at<=clock_timestamp()))
+  order by coalesce(w.updated_at,source.created_at),source.notification_id limit target_limit;
 end $$;
 
-CREATE OR REPLACE FUNCTION public.ensure_booking_confirmation_notification_work(target_receipt_id uuid,target_locale text,target_template text,target_payload jsonb) RETURNS void
+CREATE OR REPLACE FUNCTION public.ensure_booking_confirmation_notification_work(target_receipt_id uuid,target_locale text,target_template text,target_payload jsonb,target_event_id uuid DEFAULT NULL) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-declare q public.booking_requests; declare r public.booking_receipts; declare s public.booking_snapshots; declare c public.cottage_booking_period_commitments; declare w public.booking_confirmation_notification_work; declare target_hash text;
+declare q public.booking_requests; declare r public.booking_receipts; declare s public.booking_snapshots; declare c public.cottage_booking_period_commitments; declare w public.booking_confirmation_notification_work; declare event public.booking_notification_events; declare target_hash text; declare expected_binding jsonb; declare event_binding jsonb; declare logical_id text;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Notification service role required' using errcode='42501'; end if;
   select * into r from public.booking_receipts where id=target_receipt_id;
@@ -914,107 +934,118 @@ begin
   select * into s from public.booking_snapshots where id=r.booking_snapshot_id;
   select commitments.* into c from public.cottage_booking_period_commitments commitments join public.booking_confirmations confirmations on confirmations.booking_period_commitment_id=commitments.id where confirmations.id=r.booking_confirmation_id;
   select * into q from public.booking_requests where id=(select booking_request_id from public.booking_confirmations where id=r.booking_confirmation_id) for update;
-  select * into w from public.booking_confirmation_notification_work where receipt_id=r.id for update;
-  target_hash:=encode(extensions.digest(convert_to(target_payload::text,'UTF8'),'sha256'),'hex');
-  if w.receipt_id is not null then
-    if public.booking_confirmation_notification_binding(w) is distinct from jsonb_build_object('receiptId',r.id,'recipientUserId',r.recipient_user_id,'recipientRole',r.recipient_role,'bookingRequestReference',q.booking_request_reference,'bookingReference',c.commitment_reference,'locale',target_locale,'logicalId','paid-confirmation:'||r.id,'templateVersion',target_template,'payload',target_payload,'payloadSha256',target_hash)
-      then raise exception 'Notification binding is immutable' using errcode='RC409'; end if; return;
+  if target_event_id is not null then
+    select * into event from public.booking_notification_events where id=target_event_id;
+    if event.id is null or (event.booking_request_id,event.receipt_id,event.recipient_user_id,event.recipient_role,event.notice_locale) is distinct from (q.id,r.id,r.recipient_user_id,r.recipient_role,s.acceptance_locale) then raise exception 'Notification event source is invalid' using errcode='RC409'; end if;
+    event_binding:=public.booking_notification_event_binding(event.id);
   end if;
-  if public.booking_request_payment_status(q) is distinct from 'paid-confirmed' or target_locale is distinct from s.acceptance_locale::text or target_template is distinct from 'paid-confirmation-v1'
-    or target_payload->>'bookingReference' is distinct from c.commitment_reference or target_payload->>'detailsPath' is distinct from ('/'||target_locale||'/'||case when r.recipient_role='customer' then 'booking-requests/' else 'owner/booking-requests/' end||q.booking_request_reference)
-    then raise exception 'Invalid paid confirmation notification binding' using errcode='RC409'; end if;
-  insert into public.booking_confirmation_notification_work(receipt_id,booking_request_id,booking_request_reference,booking_reference,recipient_user_id,recipient_role,logical_id,notice_locale,template_version,payload,payload_sha256)
-    values(r.id,q.id,q.booking_request_reference,c.commitment_reference,r.recipient_user_id,r.recipient_role,'paid-confirmation:'||r.id,target_locale::public.cottage_profile_source_language,target_template,target_payload,target_hash);
+  select * into w from public.booking_confirmation_notification_work where notification_id=coalesce(target_event_id,r.id) for update;
+  target_hash:=encode(extensions.digest(convert_to(target_payload::text,'UTF8'),'sha256'),'hex');
+  logical_id:=case when target_event_id is null then 'paid-confirmation:'||r.id else 'booking-event:'||target_event_id end;
+  expected_binding:=jsonb_build_object('receiptId',r.id,'recipientUserId',r.recipient_user_id,'recipientRole',r.recipient_role,'bookingRequestReference',q.booking_request_reference,'bookingReference',c.commitment_reference,'locale',target_locale,'logicalId',logical_id,'templateVersion',target_template,'payload',target_payload,'payloadSha256',target_hash)||case when target_event_id is null then '{}'::jsonb else jsonb_build_object('event',event_binding) end;
+  if w.receipt_id is not null then
+    if public.booking_confirmation_notification_binding(w) is distinct from expected_binding then raise exception 'Notification binding is immutable' using errcode='RC409'; end if; return;
+  end if;
+  if (target_event_id is null and public.booking_request_payment_status(q) is distinct from 'paid-confirmed')
+    or target_locale is distinct from s.acceptance_locale::text
+    or target_template is distinct from (case when target_event_id is null then 'paid-confirmation-v1' else 'booking-event-v1' end)
+    or target_payload->>'kind' is distinct from (case when target_event_id is null then 'paid-confirmation' else event.event_kind end)
+    or (target_event_id is not null and target_payload->'allocation' is distinct from event_binding->'allocation')
+    or target_payload->>'bookingReference' is distinct from c.commitment_reference
+    or target_payload->>'detailsPath' is distinct from ('/'||target_locale||'/'||case when r.recipient_role='customer' then 'booking-requests/' else 'owner/booking-requests/' end||q.booking_request_reference)
+    then raise exception 'Invalid booking notification binding' using errcode='RC409'; end if;
+  insert into public.booking_confirmation_notification_work(receipt_id,event_id,booking_request_id,booking_request_reference,booking_reference,recipient_user_id,recipient_role,logical_id,notice_locale,template_version,payload,payload_sha256)
+    values(r.id,target_event_id,q.id,q.booking_request_reference,c.commitment_reference,r.recipient_user_id,r.recipient_role,logical_id,target_locale::public.cottage_profile_source_language,target_template,target_payload,target_hash);
 end $$;
 
-CREATE OR REPLACE FUNCTION public.lease_booking_confirmation_notification_work(target_receipt_id uuid) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.lease_booking_confirmation_notification_work(target_receipt_id uuid,target_event_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare q public.booking_requests; declare w public.booking_confirmation_notification_work;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Notification service role required' using errcode='42501'; end if;
-  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.receipt_id=target_receipt_id for update of requests;
-  select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id for update;
-  if w.receipt_id is null or not (w.state in ('pending','uncertain') or (w.state='processing' and w.lease_expires_at<=clock_timestamp())) then return null; end if;
-  update public.booking_confirmation_notification_work set state='processing',lease_generation=lease_generation+1,lease_token=gen_random_uuid(),lease_expires_at=clock_timestamp()+interval '5 minutes',updated_at=clock_timestamp() where receipt_id=w.receipt_id returning * into w;
+  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.notification_id=coalesce(target_event_id,target_receipt_id) for update of requests;
+  select * into w from public.booking_confirmation_notification_work where notification_id=coalesce(target_event_id,target_receipt_id) for update;
+  if w.receipt_id is null or w.receipt_id is distinct from target_receipt_id or w.event_id is distinct from target_event_id or not (w.state in ('pending','uncertain') or (w.state='processing' and w.lease_expires_at<=clock_timestamp())) then return null; end if;
+  update public.booking_confirmation_notification_work set state='processing',lease_generation=lease_generation+1,lease_token=gen_random_uuid(),lease_expires_at=clock_timestamp()+interval '5 minutes',updated_at=clock_timestamp() where notification_id=w.notification_id returning * into w;
   return public.booking_confirmation_notification_binding(w)||jsonb_build_object('leaseGeneration',w.lease_generation,'leaseToken',w.lease_token,'leaseExpiresAt',w.lease_expires_at);
 end $$;
 
-CREATE OR REPLACE FUNCTION public.query_fictional_booking_confirmation_notification_effect(target_receipt_id uuid,target_generation bigint,target_token uuid,target_binding jsonb) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.query_fictional_booking_confirmation_notification_effect(target_receipt_id uuid,target_generation bigint,target_token uuid,target_binding jsonb,target_event_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare q public.booking_requests; declare w public.booking_confirmation_notification_work; declare e public.fictional_booking_confirmation_notification_effects;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Notification service role required' using errcode='42501'; end if;
-  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.receipt_id=target_receipt_id for update of requests;
-  select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id for update;
-  select * into e from public.fictional_booking_confirmation_notification_effects where receipt_id=target_receipt_id for update;
-  if w.receipt_id is null or w.state is distinct from 'processing' or w.lease_generation is distinct from target_generation or w.lease_token is distinct from target_token or w.lease_expires_at is null or w.lease_expires_at<=clock_timestamp() or public.booking_confirmation_notification_binding(w) is distinct from target_binding then return jsonb_build_object('status','stale'); end if;
-  if e.id is null then insert into public.booking_confirmation_notification_attempts(receipt_id,lease_generation,lease_token,action,outcome) values(w.receipt_id,target_generation,target_token,'query','not-found'); return jsonb_build_object('status','not-found'); end if;
+  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.notification_id=coalesce(target_event_id,target_receipt_id) for update of requests;
+  select * into w from public.booking_confirmation_notification_work where notification_id=coalesce(target_event_id,target_receipt_id) for update;
+  select * into e from public.fictional_booking_confirmation_notification_effects where notification_id=coalesce(target_event_id,target_receipt_id) for update;
+  if w.receipt_id is null or w.receipt_id is distinct from target_receipt_id or w.event_id is distinct from target_event_id or w.state is distinct from 'processing' or w.lease_generation is distinct from target_generation or w.lease_token is distinct from target_token or w.lease_expires_at is null or w.lease_expires_at<=clock_timestamp() or public.booking_confirmation_notification_binding(w) is distinct from target_binding then return jsonb_build_object('status','stale'); end if;
+  if e.id is null then insert into public.booking_confirmation_notification_attempts(receipt_id,event_id,lease_generation,lease_token,action,outcome) values(w.receipt_id,w.event_id,target_generation,target_token,'query','not-found'); return jsonb_build_object('status','not-found'); end if;
   if (e.logical_id,e.booking_request_id,e.booking_request_reference,e.booking_reference,e.recipient_user_id,e.recipient_role,e.notice_locale,e.template_version,e.payload,e.payload_sha256) is distinct from (w.logical_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256) then raise exception 'Notification effect binding conflict' using errcode='RC409'; end if;
-  insert into public.booking_confirmation_notification_attempts(receipt_id,lease_generation,lease_token,action,outcome,effect_id) values(w.receipt_id,target_generation,target_token,'query','delivered',e.id);
+  insert into public.booking_confirmation_notification_attempts(receipt_id,event_id,lease_generation,lease_token,action,outcome,effect_id) values(w.receipt_id,w.event_id,target_generation,target_token,'query','delivered',e.id);
   return jsonb_build_object('status','found','effectId',e.id,'supplierDeliveryReference',e.supplier_delivery_reference,'executedAt',e.executed_at);
 end $$;
 
-CREATE OR REPLACE FUNCTION public.execute_fictional_booking_confirmation_notification_effect(target_receipt_id uuid,target_generation bigint,target_token uuid,target_binding jsonb) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.execute_fictional_booking_confirmation_notification_effect(target_receipt_id uuid,target_generation bigint,target_token uuid,target_binding jsonb,target_event_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare q public.booking_requests; declare w public.booking_confirmation_notification_work; declare e public.fictional_booking_confirmation_notification_effects;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Notification service role required' using errcode='42501'; end if;
-  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.receipt_id=target_receipt_id for update of requests;
-  select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id for update;
-  select * into e from public.fictional_booking_confirmation_notification_effects where receipt_id=target_receipt_id for update;
-  if w.receipt_id is null or w.state is distinct from 'processing' or w.lease_generation is distinct from target_generation or w.lease_token is distinct from target_token or w.lease_expires_at is null or w.lease_expires_at<=clock_timestamp() or public.booking_confirmation_notification_binding(w) is distinct from target_binding then return jsonb_build_object('status','stale'); end if;
+  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.notification_id=coalesce(target_event_id,target_receipt_id) for update of requests;
+  select * into w from public.booking_confirmation_notification_work where notification_id=coalesce(target_event_id,target_receipt_id) for update;
+  select * into e from public.fictional_booking_confirmation_notification_effects where notification_id=coalesce(target_event_id,target_receipt_id) for update;
+  if w.receipt_id is null or w.receipt_id is distinct from target_receipt_id or w.event_id is distinct from target_event_id or w.state is distinct from 'processing' or w.lease_generation is distinct from target_generation or w.lease_token is distinct from target_token or w.lease_expires_at is null or w.lease_expires_at<=clock_timestamp() or public.booking_confirmation_notification_binding(w) is distinct from target_binding then return jsonb_build_object('status','stale'); end if;
   if e.id is not null then return jsonb_build_object('status','delivered','effectId',e.id,'supplierDeliveryReference',e.supplier_delivery_reference,'executedAt',e.executed_at); end if;
-  if public.booking_request_payment_status(q)<>'paid-confirmed' then
-    update public.booking_confirmation_notification_work set state='suppressed',lease_token=null,lease_expires_at=null,last_outcome='suppressed',suppressed_at=clock_timestamp(),updated_at=clock_timestamp() where receipt_id=w.receipt_id;
-    insert into public.booking_confirmation_notification_attempts(receipt_id,lease_generation,lease_token,action,outcome) values(w.receipt_id,target_generation,target_token,'execute','suppressed'); return jsonb_build_object('status','suppressed');
+  if not public.booking_notification_is_deliverable(w) then
+    update public.booking_confirmation_notification_work set state='suppressed',lease_token=null,lease_expires_at=null,last_outcome='suppressed',suppressed_at=clock_timestamp(),updated_at=clock_timestamp() where notification_id=w.notification_id;
+    insert into public.booking_confirmation_notification_attempts(receipt_id,event_id,lease_generation,lease_token,action,outcome) values(w.receipt_id,w.event_id,target_generation,target_token,'execute','suppressed'); return jsonb_build_object('status','suppressed');
   end if;
-  insert into public.fictional_booking_confirmation_notification_effects(supplier,environment,logical_id,receipt_id,booking_request_id,booking_request_reference,booking_reference,recipient_user_id,recipient_role,notice_locale,template_version,payload,payload_sha256,execution_lease_generation,execution_lease_token,supplier_delivery_reference)
-    values('fictional-notifications','local-test',w.logical_id,w.receipt_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256,target_generation,target_token,'fictional-confirmation-'||w.receipt_id) returning * into e;
-  insert into public.booking_confirmation_notification_attempts(receipt_id,lease_generation,lease_token,action,outcome,effect_id) values(w.receipt_id,target_generation,target_token,'execute','delivered',e.id);
+  insert into public.fictional_booking_confirmation_notification_effects(supplier,environment,logical_id,receipt_id,event_id,booking_request_id,booking_request_reference,booking_reference,recipient_user_id,recipient_role,notice_locale,template_version,payload,payload_sha256,execution_lease_generation,execution_lease_token,supplier_delivery_reference)
+    values('fictional-notifications','local-test',w.logical_id,w.receipt_id,w.event_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256,target_generation,target_token,case when w.event_id is null then 'fictional-confirmation-'||w.receipt_id else 'fictional-booking-event-'||w.event_id end) returning * into e;
+  insert into public.booking_confirmation_notification_attempts(receipt_id,event_id,lease_generation,lease_token,action,outcome,effect_id) values(w.receipt_id,w.event_id,target_generation,target_token,'execute','delivered',e.id);
   return jsonb_build_object('status','delivered','effectId',e.id,'supplierDeliveryReference',e.supplier_delivery_reference,'executedAt',e.executed_at);
 end $$;
 
-CREATE OR REPLACE FUNCTION public.complete_booking_confirmation_notification_delivery(target_receipt_id uuid,target_generation bigint,target_token uuid,target_binding jsonb,target_effect_id uuid) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.complete_booking_confirmation_notification_delivery(target_receipt_id uuid,target_generation bigint,target_token uuid,target_binding jsonb,target_effect_id uuid,target_event_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare q public.booking_requests; declare w public.booking_confirmation_notification_work; declare e public.fictional_booking_confirmation_notification_effects;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Notification service role required' using errcode='42501'; end if;
-  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.receipt_id=target_receipt_id for update of requests;
-  select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id for update;
-  select * into e from public.fictional_booking_confirmation_notification_effects where id=target_effect_id and receipt_id=target_receipt_id for update;
-  if w.receipt_id is null or e.id is null or w.state is distinct from 'processing' or w.lease_generation is distinct from target_generation or w.lease_token is distinct from target_token or w.lease_expires_at is null or w.lease_expires_at<=clock_timestamp() or public.booking_confirmation_notification_binding(w) is distinct from target_binding
+  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.notification_id=coalesce(target_event_id,target_receipt_id) for update of requests;
+  select * into w from public.booking_confirmation_notification_work where notification_id=coalesce(target_event_id,target_receipt_id) for update;
+  select * into e from public.fictional_booking_confirmation_notification_effects where id=target_effect_id and notification_id=coalesce(target_event_id,target_receipt_id) for update;
+  if w.receipt_id is null or w.receipt_id is distinct from target_receipt_id or w.event_id is distinct from target_event_id or e.id is null or w.state is distinct from 'processing' or w.lease_generation is distinct from target_generation or w.lease_token is distinct from target_token or w.lease_expires_at is null or w.lease_expires_at<=clock_timestamp() or public.booking_confirmation_notification_binding(w) is distinct from target_binding
     or (e.logical_id,e.booking_request_id,e.booking_request_reference,e.booking_reference,e.recipient_user_id,e.recipient_role,e.notice_locale,e.template_version,e.payload,e.payload_sha256) is distinct from (w.logical_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256)
     then return jsonb_build_object('status','stale'); end if;
-  update public.booking_confirmation_notification_work set state='delivered',lease_token=null,lease_expires_at=null,last_outcome='delivered',supplier_delivery_reference=e.supplier_delivery_reference,delivered_at=e.executed_at,updated_at=clock_timestamp() where receipt_id=w.receipt_id;
-  insert into public.booking_confirmation_notification_attempts(receipt_id,lease_generation,lease_token,action,outcome,effect_id) values(w.receipt_id,target_generation,target_token,'complete','delivered',e.id);
-  return jsonb_build_object('status','delivered','historical',public.booking_request_payment_status(q)<>'paid-confirmed');
+  update public.booking_confirmation_notification_work set state='delivered',lease_token=null,lease_expires_at=null,last_outcome='delivered',supplier_delivery_reference=e.supplier_delivery_reference,delivered_at=e.executed_at,updated_at=clock_timestamp() where notification_id=w.notification_id;
+  insert into public.booking_confirmation_notification_attempts(receipt_id,event_id,lease_generation,lease_token,action,outcome,effect_id) values(w.receipt_id,w.event_id,target_generation,target_token,'complete','delivered',e.id);
+  return jsonb_build_object('status','delivered','historical',not public.booking_notification_is_deliverable(w));
 end $$;
 
-CREATE OR REPLACE FUNCTION public.record_booking_confirmation_notification_failure(target_receipt_id uuid,target_generation bigint,target_token uuid,target_outcome text) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.record_booking_confirmation_notification_failure(target_receipt_id uuid,target_generation bigint,target_token uuid,target_outcome text,target_event_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare q public.booking_requests; declare w public.booking_confirmation_notification_work;
 begin
   if current_setting('role',true)<>'service_role' or target_outcome not in ('failed','unknown') then raise exception 'Invalid notification failure' using errcode='42501'; end if;
-  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.receipt_id=target_receipt_id for update of requests;
-  select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id for update;
-  if w.receipt_id is null or w.state is distinct from 'processing' or w.lease_generation is distinct from target_generation or w.lease_token is distinct from target_token or w.lease_expires_at is null or w.lease_expires_at<=clock_timestamp() then return jsonb_build_object('status','stale'); end if;
-  if target_outcome='failed' and exists(select 1 from public.fictional_booking_confirmation_notification_effects where receipt_id=w.receipt_id) then raise exception 'Delivered effect cannot be failed' using errcode='RC409'; end if;
-  update public.booking_confirmation_notification_work set state=case target_outcome when 'failed' then 'retryable' else 'uncertain' end,lease_token=null,lease_expires_at=null,last_outcome=target_outcome,updated_at=clock_timestamp() where receipt_id=w.receipt_id;
-  insert into public.booking_confirmation_notification_attempts(receipt_id,lease_generation,lease_token,action,outcome) values(w.receipt_id,target_generation,target_token,'failure',target_outcome);
+  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.notification_id=coalesce(target_event_id,target_receipt_id) for update of requests;
+  select * into w from public.booking_confirmation_notification_work where notification_id=coalesce(target_event_id,target_receipt_id) for update;
+  if w.receipt_id is null or w.receipt_id is distinct from target_receipt_id or w.event_id is distinct from target_event_id or w.state is distinct from 'processing' or w.lease_generation is distinct from target_generation or w.lease_token is distinct from target_token or w.lease_expires_at is null or w.lease_expires_at<=clock_timestamp() then return jsonb_build_object('status','stale'); end if;
+  if target_outcome='failed' and exists(select 1 from public.fictional_booking_confirmation_notification_effects where notification_id=w.notification_id) then raise exception 'Delivered effect cannot be failed' using errcode='RC409'; end if;
+  update public.booking_confirmation_notification_work set state=case target_outcome when 'failed' then 'retryable' else 'uncertain' end,lease_token=null,lease_expires_at=null,last_outcome=target_outcome,updated_at=clock_timestamp() where notification_id=w.notification_id;
+  insert into public.booking_confirmation_notification_attempts(receipt_id,event_id,lease_generation,lease_token,action,outcome) values(w.receipt_id,w.event_id,target_generation,target_token,'failure',target_outcome);
   return jsonb_build_object('status',case target_outcome when 'failed' then 'retryable' else 'uncertain' end);
 end $$;
 
-CREATE OR REPLACE FUNCTION public.get_booking_confirmation_notification_status(target_receipt_id uuid) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.get_booking_confirmation_notification_status(target_receipt_id uuid,target_event_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare q public.booking_requests; declare w public.booking_confirmation_notification_work; declare r public.booking_receipts; declare role public.account_contexts; declare actor uuid:=(select auth.uid());
 begin
-  select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id;
+  select * into w from public.booking_confirmation_notification_work where notification_id=coalesce(target_event_id,target_receipt_id);
   select * into r from public.booking_receipts where id=target_receipt_id;
   select requests.* into q from public.booking_requests requests join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id where confirmations.id=r.booking_confirmation_id;
   select * into role from public.account_contexts where user_id=actor;
-  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or r.id is null or r.recipient_user_id is distinct from actor or not ((r.recipient_role='customer' and role.role in ('customer','cottage_owner') and q.customer_user_id=actor) or (r.recipient_role='cottage_owner' and role.role='cottage_owner' and role.owner_approval_state='approved' and q.owner_user_id=actor)) or (w.receipt_id is null and public.booking_request_payment_status(q) is distinct from 'paid-confirmed') then raise exception 'Notification status unavailable' using errcode='42501'; end if;
-  if w.receipt_id is null then return jsonb_build_object('receiptId',r.id,'state','pending','lastOutcome',null,'supplierDeliveryReference',null,'deliveredAt',null,'suppressedAt',null,'historical',false); end if;
-  return jsonb_build_object('receiptId',w.receipt_id,'state',w.state,'lastOutcome',w.last_outcome,'supplierDeliveryReference',w.supplier_delivery_reference,'deliveredAt',w.delivered_at,'suppressedAt',w.suppressed_at,'historical',w.state='delivered' and public.booking_request_payment_status(q)<>'paid-confirmed');
+  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or r.id is null or (w.receipt_id is not null and w.receipt_id is distinct from target_receipt_id) or (target_event_id is not null and not exists(select 1 from public.booking_notification_events event where event.id=target_event_id and event.receipt_id=r.id)) or r.recipient_user_id is distinct from actor or not ((r.recipient_role='customer' and role.role in ('customer','cottage_owner') and q.customer_user_id=actor) or (r.recipient_role='cottage_owner' and role.role='cottage_owner' and role.owner_approval_state='approved' and q.owner_user_id=actor)) or (w.receipt_id is null and target_event_id is null and public.booking_request_payment_status(q) is distinct from 'paid-confirmed') then raise exception 'Notification status unavailable' using errcode='42501'; end if;
+  if w.receipt_id is null then return jsonb_build_object('receiptId',r.id,'state','pending','lastOutcome',null,'supplierDeliveryReference',null,'deliveredAt',null,'suppressedAt',null,'historical',false)||case when target_event_id is null then '{}'::jsonb else jsonb_build_object('eventId',target_event_id) end; end if;
+  return jsonb_build_object('receiptId',w.receipt_id,'state',w.state,'lastOutcome',w.last_outcome,'supplierDeliveryReference',w.supplier_delivery_reference,'deliveredAt',w.delivered_at,'suppressedAt',w.suppressed_at,'historical',w.state='delivered' and not public.booking_notification_is_deliverable(w))||case when w.event_id is null then '{}'::jsonb else jsonb_build_object('eventId',w.event_id) end;
 end $$;
 
 CREATE OR REPLACE FUNCTION public.list_confirmed_booking_history() RETURNS SETOF jsonb
@@ -1023,29 +1054,29 @@ declare actor uuid:=(select auth.uid()); declare context public.account_contexts
 begin
   select * into context from public.account_contexts where user_id=actor;
   if actor is null or context.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or context.role not in ('customer','cottage_owner') then raise exception 'Booking History unavailable' using errcode='42501'; end if;
-  return query select jsonb_build_object('receiptId',receipts.id,'bookingRequestReference',requests.booking_request_reference,'bookingReference',commitments.commitment_reference,'cottageName',snapshots.quote_payload->>'cottageName','confirmedAt',confirmations.confirmed_at,'actorRole',receipts.recipient_role)
+  return query select jsonb_build_object('receiptId',receipts.id,'bookingRequestReference',requests.booking_request_reference,'bookingReference',commitments.commitment_reference,'cottageName',snapshots.quote_payload->>'cottageName','confirmedAt',confirmations.confirmed_at,'cancelled',exists(select 1 from public.booking_cancellations cancellations where cancellations.booking_request_id=requests.id),'actorRole',receipts.recipient_role)
   from public.booking_receipts receipts join public.booking_confirmations confirmations on confirmations.id=receipts.booking_confirmation_id join public.booking_requests requests on requests.id=confirmations.booking_request_id join public.booking_snapshots snapshots on snapshots.id=receipts.booking_snapshot_id join public.cottage_booking_period_commitments commitments on commitments.id=confirmations.booking_period_commitment_id
-  where receipts.recipient_user_id=actor and ((receipts.recipient_role='customer' and requests.customer_user_id=actor and context.role in ('customer','cottage_owner')) or (receipts.recipient_role='cottage_owner' and requests.owner_user_id=actor and context.role='cottage_owner' and context.owner_approval_state='approved')) and public.booking_request_payment_status(requests)='paid-confirmed' order by confirmations.confirmed_at desc,receipts.id;
+  where receipts.recipient_user_id=actor and ((receipts.recipient_role='customer' and requests.customer_user_id=actor and context.role in ('customer','cottage_owner')) or (receipts.recipient_role='cottage_owner' and requests.owner_user_id=actor and context.role='cottage_owner' and context.owner_approval_state='approved')) and (public.booking_request_payment_status(requests)='paid-confirmed' or exists(select 1 from public.booking_cancellations cancellations where cancellations.booking_request_id=requests.id)) order by confirmations.confirmed_at desc,receipts.id;
 end $$;
 
-CREATE OR REPLACE FUNCTION public.retry_booking_confirmation_notification(target_receipt_id uuid) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.retry_booking_confirmation_notification(target_receipt_id uuid,target_event_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare q public.booking_requests; declare w public.booking_confirmation_notification_work; declare role public.account_contexts; declare actor uuid:=(select auth.uid());
 begin
-  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.receipt_id=target_receipt_id for update of requests;
-  select * into w from public.booking_confirmation_notification_work where receipt_id=target_receipt_id for update;
+  select requests.* into q from public.booking_requests requests join public.booking_confirmation_notification_work work on work.booking_request_id=requests.id where work.notification_id=coalesce(target_event_id,target_receipt_id) for update of requests;
+  select * into w from public.booking_confirmation_notification_work where notification_id=coalesce(target_event_id,target_receipt_id) for update;
   select * into role from public.account_contexts where user_id=actor;
-  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or w.receipt_id is null or w.recipient_user_id is distinct from actor or not ((w.recipient_role='customer' and role.role in ('customer','cottage_owner') and q.customer_user_id=actor) or (w.recipient_role='cottage_owner' and role.role='cottage_owner' and role.owner_approval_state='approved' and q.owner_user_id=actor)) or w.state is distinct from 'retryable' or public.booking_request_payment_status(q) is distinct from 'paid-confirmed' then raise exception 'Notification retry unavailable' using errcode='42501'; end if;
-  update public.booking_confirmation_notification_work set state='pending',last_outcome=null,updated_at=clock_timestamp() where receipt_id=w.receipt_id;
-  insert into public.booking_confirmation_notification_attempts(receipt_id,action,outcome) values(w.receipt_id,'user-retry','queued');
+  if actor is null or role.user_id is null or not exists(select 1 from auth.users where id=actor and phone_confirmed_at is not null) or w.receipt_id is null or w.receipt_id is distinct from target_receipt_id or w.event_id is distinct from target_event_id or w.recipient_user_id is distinct from actor or not ((w.recipient_role='customer' and role.role in ('customer','cottage_owner') and q.customer_user_id=actor) or (w.recipient_role='cottage_owner' and role.role='cottage_owner' and role.owner_approval_state='approved' and q.owner_user_id=actor)) or w.state is distinct from 'retryable' or not public.booking_notification_is_deliverable(w) then raise exception 'Notification retry unavailable' using errcode='42501'; end if;
+  update public.booking_confirmation_notification_work set state='pending',last_outcome=null,updated_at=clock_timestamp() where notification_id=w.notification_id;
+  insert into public.booking_confirmation_notification_attempts(receipt_id,event_id,action,outcome) values(w.receipt_id,w.event_id,'user-retry','queued');
   return jsonb_build_object('status','queued');
 end $$;
 
 CREATE OR REPLACE FUNCTION public.guard_booking_confirmation_notification_work() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$
 begin
-  if (old.receipt_id,old.booking_request_id,old.booking_request_reference,old.booking_reference,old.recipient_user_id,old.recipient_role,old.logical_id,old.notice_locale,old.template_version,old.payload,old.payload_sha256,old.created_at)
-    is distinct from (new.receipt_id,new.booking_request_id,new.booking_request_reference,new.booking_reference,new.recipient_user_id,new.recipient_role,new.logical_id,new.notice_locale,new.template_version,new.payload,new.payload_sha256,new.created_at)
+  if (old.receipt_id,old.event_id,old.booking_request_id,old.booking_request_reference,old.booking_reference,old.recipient_user_id,old.recipient_role,old.logical_id,old.notice_locale,old.template_version,old.payload,old.payload_sha256,old.created_at)
+    is distinct from (new.receipt_id,new.event_id,new.booking_request_id,new.booking_request_reference,new.booking_reference,new.recipient_user_id,new.recipient_role,new.logical_id,new.notice_locale,new.template_version,new.payload,new.payload_sha256,new.created_at)
     or old.state in ('delivered','suppressed') then raise exception 'Notification work binding or terminal state is immutable' using errcode='RC409'; end if;
   return new;
 end $$;
@@ -2571,6 +2602,10 @@ begin
         join public.booking_requests requests on requests.id=invalidation.booking_request_id
         join public.booking_request_payment_required_expiry_work expiry on expiry.id=invalidation.expiry_work_id
         where requests.booking_period_commitment_id=old.id and expiry.state in ('processing','quarantined')))
+    or (old.status='confirmed_booking' and new.status='cancelled_booking'
+      and exists(select 1 from public.booking_cancellations cancellations
+        join public.booking_requests requests on requests.id=cancellations.booking_request_id
+        where requests.booking_period_commitment_id=old.id))
     or (
     old.status = 'pending_hold'::public.cottage_inventory_commitment_status
     and new.status in (
@@ -3563,7 +3598,7 @@ begin
     'physicalAttemptId',case when history.physical_attempt_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:((authorization|capture|release):attempt-[1-9][0-9]*|(original-release|replacement-authorization|replacement-capture|replacement-release(:[1-9][0-9]*)?|corrective-refund:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):[1-9][0-9]*)$' then history.physical_attempt_id when history.physical_attempt_id is not null then 'reference-unavailable' end,'operationGeneration',history.operation_generation,
     'recoveryGeneration',history.recovery_generation,'fromState',history.from_state,'toState',history.to_state,
     'outcome',history.outcome,
-    'reasonCode',case when history.reason_code in ('replacement-capture-succeeded','source-evidence-invalid','capture-occurrence-unknown','original-capture-unresolved','recovery-evidence-invalid','unexplained-recovery-provider-operation','recovery-operation-indeterminate','corrective-capture-invalid','unexplained-provider-operation','original-release-indeterminate','original-release-failed','replacement-authorization-invalid','replacement-release-indeterminate','replacement-release-failed','expiry-evidence-invalid','expiry-release-failed','expiry-release-indeterminate','expiry-refund-failed','expiry-refund-indeterminate','inventory-evidence-invalid','legacy-unresolved-money','legacy-confirmation-evidence-invalid','unsafe-recovery-original-release-indeterminate','unsafe-recovery-original-release-failed','unsafe-recovery-replacement-authorization-indeterminate','unsafe-recovery-replacement-capture-indeterminate','unsafe-recovery-replacement-release-indeterminate','unsafe-recovery-replacement-release-failed','cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then history.reason_code when history.reason_code is not null then 'unclassified-evidence' end,
+    'reasonCode',case when history.reason_code in ('customer-cancellation','cottage_owner-cancellation','platform_administrator-cancellation','replacement-capture-succeeded','source-evidence-invalid','capture-occurrence-unknown','original-capture-unresolved','recovery-evidence-invalid','unexplained-recovery-provider-operation','recovery-operation-indeterminate','corrective-capture-invalid','unexplained-provider-operation','original-release-indeterminate','original-release-failed','replacement-authorization-invalid','replacement-release-indeterminate','replacement-release-failed','expiry-evidence-invalid','expiry-release-failed','expiry-release-indeterminate','expiry-refund-failed','expiry-refund-indeterminate','inventory-evidence-invalid','legacy-unresolved-money','legacy-confirmation-evidence-invalid','unsafe-recovery-original-release-indeterminate','unsafe-recovery-original-release-failed','unsafe-recovery-replacement-authorization-indeterminate','unsafe-recovery-replacement-capture-indeterminate','unsafe-recovery-replacement-release-indeterminate','unsafe-recovery-replacement-release-failed','cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then history.reason_code when history.reason_code is not null then 'unclassified-evidence' end,
     'providerOperationId',history.provider_operation_id,
     'providerRequestId',case when history.provider_request_id ~ '^sim(-capture|-recovery|-expiry)?-request-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$' then history.provider_request_id when history.provider_request_id is not null and exists(select 1 from public.payment_provider_observations accepted where accepted.operation_id=support_operation.id and accepted.result->>'providerRequestId'=history.provider_request_id) then 'internal-request:'||support_operation.id when history.provider_request_id is not null then 'reference-unavailable' end,
     'providerReference',case when history.provider_reference ~ '^sim(-capture|-recovery|-expiry)?-reference-([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$' then history.provider_reference when history.provider_reference is not null and exists(select 1 from public.payment_provider_observations accepted where accepted.operation_id=support_operation.id and accepted.result->>'providerReference'=history.provider_reference) then 'internal-reference:'||support_operation.id when history.provider_reference is not null then 'reference-unavailable' end,
@@ -3581,7 +3616,7 @@ begin
   where history.payment_lifecycle_id=request.payment_lifecycle_id and history.source<>'history-boundary';
   return jsonb_build_object(
     'bookingRequestReference',request.booking_request_reference,'simulated',true,
-    'current',jsonb_build_object('requestStatus',request.status,'paymentStatus',public.booking_request_payment_status(request),
+    'current',jsonb_build_object('requestStatus',request.status,'paymentStatus',case when exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=request.id) then 'cancelled' else public.booking_request_payment_status(request) end,
       'expiryStatus',expiry.state,'reasonCode',case when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) in ('replacement-capture-succeeded','source-evidence-invalid','capture-occurrence-unknown','original-capture-unresolved','recovery-evidence-invalid','unexplained-recovery-provider-operation','recovery-operation-indeterminate','corrective-capture-invalid','unexplained-provider-operation','original-release-indeterminate','original-release-failed','replacement-authorization-invalid','replacement-release-indeterminate','replacement-release-failed','expiry-evidence-invalid','expiry-release-failed','expiry-release-indeterminate','expiry-refund-failed','expiry-refund-indeterminate','inventory-evidence-invalid','legacy-unresolved-money','legacy-confirmation-evidence-invalid','unsafe-recovery-original-release-indeterminate','unsafe-recovery-original-release-failed','unsafe-recovery-replacement-authorization-indeterminate','unsafe-recovery-replacement-capture-indeterminate','unsafe-recovery-replacement-release-indeterminate','unsafe-recovery-replacement-release-failed','cottage_unavailable','cannot_accommodate_request','other','capture-failed','payment-required-expired','late-capture','conflicting-evidence','unresolved-evidence','conflicting-provider-observation','unresolved-provider-observation','failed-release-observation','failed-refund-observation','malformed-provider-observation') then coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) when coalesce(expiry.quarantine_reason,expiry.diagnostic_reason) is not null then 'unclassified-evidence' end,
       'paymentRequiredDeadline',to_jsonb((select work from public.booking_request_capture_work work where work.booking_request_id=request.id))->>'payment_required_deadline'),
     'historyCoverage',case when exists(select 1 from public.booking_request_payment_history history where history.payment_lifecycle_id=request.payment_lifecycle_id and history.source='history-boundary' and history.provenance='imported') then 'retained-evidence-only' else 'complete' end,
@@ -4462,11 +4497,11 @@ begin
   select * into ledger from public.payment_provider_operations operations where operations.id=target_provider_operation_id;
   if ledger.claim_id is distinct from work.authorization_claim_id then raise exception 'Payment observation source is invalid' using errcode='RC409'; end if;
   ledger:=public.lock_payment_observation_source(target_provider_operation_id,
-    array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund']);
+    array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund']);
   select * into work from public.booking_request_capture_work capture where capture.booking_request_id=target_booking_request_id for update of capture;
   facts:=public.get_booking_request_payment_observation_facts(ledger.id);
   if facts->>'revision' is distinct from target_command->>'revision' then return jsonb_build_object('status','stale'); end if;
-  if work.payment_required_deadline is null or ledger.id is null or ledger.operation_kind not in ('capture','release','refund')
+  if (work.payment_required_deadline is null and ledger.admission->>'purpose'<>'booking-refund') or ledger.id is null or ledger.operation_kind not in ('capture','release','refund')
     or ledger.claim_id is distinct from work.authorization_claim_id then raise exception 'Payment observation source is invalid' using errcode='RC409'; end if;
   if target_receipt is null or jsonb_typeof(target_receipt)<>'object'
     or target_receipt ?& array['receiptId','bookingRequestId','providerOperationId','providerIdentity','paymentLifecycleId','logicalOperationId','physicalAttemptId','kind','amountFils','currency','providerRequestId','providerReference','movementReference','outcome','occurredAt'] is not true
@@ -4511,7 +4546,7 @@ begin
     'paymentLifecycleId',ledger.payment_lifecycle_id,'logicalOperationId',ledger.logical_operation_id,'physicalAttemptId',ledger.physical_attempt_id,
     'kind',ledger.operation_kind,'amountFils',ledger.amount_fils,'currency',ledger.currency,'providerRequestId',coalesce(ledger.provider_request_id,target_receipt->>'providerRequestId'),'providerReference',coalesce(ledger.provider_reference,target_receipt->>'providerReference'));
   conflicting := (ledger.claim_generation,ledger.amount_fils,ledger.currency,ledger.provider,ledger.environment,ledger.merchant_id,ledger.terminal_id)
-      is distinct from (work.authorization_claim_generation,work.amount_fils,work.currency,work.provider,work.environment,work.merchant_id,work.terminal_id)
+      is distinct from (work.authorization_claim_generation,case when ledger.admission->>'purpose'='booking-refund' then ledger.amount_fils else work.amount_fils end,work.currency,work.provider,work.environment,work.merchant_id,work.terminal_id)
     or target_receipt-array['receiptId','movementReference','outcome','occurredAt','evidence'] is distinct from expected
     or target_receipt->>'outcome' not in ('succeeded','failed','indeterminate')
     or (ledger.current_outcome is null and not (target_receipt ? 'evidence'))
@@ -4732,6 +4767,8 @@ begin
     authorization_logical:=authorization_ledger.logical_operation_id; authorization_physical:=authorization_ledger.physical_attempt_id;
     predecessor:=authorization_ledger.movement_reference; predecessor_at:=authorization_ledger.authoritative_outcome_at;
   end if;
+  if exists(select 1 from public.booking_refund_intents intents where intents.capture_operation_id=capture.id and public.booking_refund_intent_state(intents.id)<>'failed') then
+    raise exception 'Capture refund capacity is already reserved' using errcode='RC409'; end if;
   logical_id:=expiry.id::text||':corrective-refund:'||capture.id::text;
   insert into public.booking_request_payment_required_expiry_operations(
     expiry_work_id,booking_request_id,owner,authorization_claim_id,authorization_claim_generation,authorization_payment_lifecycle_id,
@@ -7330,7 +7367,7 @@ begin
   select attempts.* into submission from public.booking_request_submission_attempts attempts
     join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id where claims.id=ledger.claim_id;
   request_id:=submission.booking_request_id;
-  if ledger.admission->>'purpose' in ('booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund') then
+  if ledger.admission->>'purpose' in ('booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund') then
     perform 1 from public.booking_requests requests where requests.id=request_id for update of requests;
     perform 1 from public.booking_request_capture_work work where work.booking_request_id=request_id for update of work;
   elsif ledger.admission->>'purpose'='booking-request-release' then
@@ -7487,7 +7524,7 @@ begin
   if current_setting('role',true)<>'service_role' then raise exception 'Payment facts unavailable' using errcode='42501'; end if;
   select * into request from public.booking_requests requests where requests.id=target_booking_request_id for update of requests;
   select * into work from public.booking_request_capture_work capture where capture.booking_request_id=request.id for update of capture;
-  if request.id is null or work.payment_required_deadline is null then raise exception 'Payment facts source is invalid' using errcode='RC409'; end if;
+  if request.id is null or (work.payment_required_deadline is null and not exists(select 1 from public.booking_confirmations where booking_request_id=request.id)) then raise exception 'Payment facts source is invalid' using errcode='RC409'; end if;
   select * into submission from public.booking_request_submission_attempts attempts where attempts.id=work.attempt_id;
   if not public.booking_request_payment_required_expiry_completed(request.id) then
     begin
@@ -7524,6 +7561,9 @@ begin
     end if;
     operations_json:=operations_json||jsonb_build_object('id',operation.id,'kind',operation.operation_kind,'lifecycleId',operation.payment_lifecycle_id,
       'logicalOperationId',operation.logical_operation_id,'physicalAttemptId',operation.physical_attempt_id,
+      'bookingRefund',case when operation.admission->>'purpose'='booking-refund' then (select jsonb_build_object('intentId',intent.id,'captureOperationId',intent.capture_operation_id,'amountFils',intent.booking_price_fils+intent.booking_service_fee_fils)
+        from public.booking_refund_attempts refund_attempt join public.booking_refund_intents intent on intent.id=refund_attempt.refund_intent_id where refund_attempt.id=(operation.admission#>>'{permit,attemptId}')::uuid
+        and operation.admission->'permit'=public.booking_refund_execution_permit(refund_attempt)) end,
       'outcome',operation.current_outcome,'originalOutcome',operation.original_outcome,'occurredAt',operation.authoritative_outcome_at,
       'executedAt',operation.executed_at,'recordedAt',operation.recorded_at,'provenance',operation.evidence_provenance,'movementReference',operation.movement_reference,
       'providerRequestId',operation.provider_request_id,'providerReference',operation.provider_reference,
@@ -7618,7 +7658,7 @@ declare quarantine_required boolean;
 declare late_capture boolean;
 declare result jsonb;
 begin
-  ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund']);
+  ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-capture','booking-request-payment-recovery','booking-request-payment-required-expiry','booking-request-payment-required-corrective-refund','booking-refund']);
   facts:=public.get_booking_request_payment_observation_facts(ledger.id);
   if facts->>'revision' is distinct from target_command->>'revision' then return jsonb_build_object('status','stale'); end if;
   select * into work from public.booking_request_capture_work capture where capture.booking_request_id=(facts->>'bookingRequestId')::uuid;
@@ -7629,6 +7669,10 @@ begin
     if target.id is null or target.owner<>'expiry' or target.booking_request_id<>work.booking_request_id or (target.provider_operation_id is not null and target.provider_operation_id<>ledger.id)
       or ledger.admission->'permit' is distinct from public.booking_request_payment_required_expiry_permit(target,work.payment_required_deadline) then
       raise exception 'Expiry observation targets another operation' using errcode='RC409'; end if;
+  end if;
+  if ledger.admission->>'purpose'='booking-refund' then
+    if target_command-array['revision'] is distinct from '{"recoveryState":null,"quarantineReason":null,"correctiveCaptureId":null}'::jsonb then raise exception 'Refund observation consequence is invalid' using errcode='RC409'; end if;
+    return public.record_booking_refund_observation(ledger.id,target_result);
   end if;
   ledger:=public.accept_payment_provider_observation(ledger.id,target_result);
   transition_required:=recovery_step is not null and ledger.current_outcome<>'not-executed' and not (facts->>'quarantined')::boolean

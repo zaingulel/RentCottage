@@ -1,4 +1,9 @@
 import {
+  bookingEventNotice,
+  type BookingEventNotice,
+  type BookingNoticeEvent,
+} from "./booking-event-notice";
+import {
   paidConfirmationNotice,
   type PaidConfirmationNotice,
   type PaidConfirmationNoticeLocale,
@@ -7,6 +12,7 @@ import {
 
 export interface NotificationCandidate {
   readonly receiptId: string;
+  readonly event?: BookingNoticeEvent;
   readonly recipientUserId: string;
   readonly recipientRole: PaidConfirmationRecipientRole;
   readonly bookingRequestReference: string;
@@ -16,8 +22,8 @@ export interface NotificationCandidate {
 
 export interface NotificationBinding extends NotificationCandidate {
   readonly logicalId: string;
-  readonly templateVersion: "paid-confirmation-v1";
-  readonly payload: PaidConfirmationNotice;
+  readonly templateVersion: "paid-confirmation-v1" | "booking-event-v1";
+  readonly payload: PaidConfirmationNotice | BookingEventNotice;
 }
 
 export interface NotificationLease extends NotificationBinding {
@@ -60,7 +66,7 @@ export type NotificationDeliveryResult =
 export interface NotificationDeliveryRepository {
   listCandidates(limit: number): Promise<readonly NotificationCandidate[]>;
   prepare(binding: NotificationBinding): Promise<void>;
-  lease(receiptId: string): Promise<NotificationLease | null>;
+  lease(receiptId: string, eventId?: string): Promise<NotificationLease | null>;
   completeDelivered(
     lease: NotificationLease,
     effect: { readonly status: "found" | "delivered" } & NotificationEffect,
@@ -70,6 +76,13 @@ export interface NotificationDeliveryRepository {
 }
 
 function bindingFor(candidate: NotificationCandidate): NotificationBinding {
+  if (candidate.event)
+    return {
+      ...candidate,
+      logicalId: `booking-event:${candidate.event.id}`,
+      templateVersion: "booking-event-v1",
+      payload: bookingEventNotice({ ...candidate, event: candidate.event }),
+    };
   return {
     ...candidate,
     logicalId: `paid-confirmation:${candidate.receiptId}`,
@@ -78,7 +91,7 @@ function bindingFor(candidate: NotificationCandidate): NotificationBinding {
   };
 }
 
-export function createPaidConfirmationNotificationDelivery({
+export function createBookingNotificationDelivery({
   repository,
   adapter,
 }: {
@@ -89,7 +102,9 @@ export function createPaidConfirmationNotificationDelivery({
     candidate: NotificationCandidate,
   ): Promise<NotificationDeliveryResult> {
     await repository.prepare(bindingFor(candidate));
-    const lease = await repository.lease(candidate.receiptId);
+    const lease = candidate.event
+      ? await repository.lease(candidate.receiptId, candidate.event.id)
+      : await repository.lease(candidate.receiptId);
     if (!lease) return { status: "unavailable" };
 
     let queried: NotificationQueryResult;
@@ -146,10 +161,7 @@ export function createPaidConfirmationNotificationDelivery({
         }
       }
       if (failures.length > 0)
-        throw new AggregateError(
-          failures,
-          "Paid-confirmation notification batch failed",
-        );
+        throw new AggregateError(failures, "Booking notification batch failed");
       return results;
     },
   };

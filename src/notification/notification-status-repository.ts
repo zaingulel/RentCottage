@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type PaidConfirmationNotificationStatus = {
+export type BookingNotificationStatus = {
   readonly receiptId: string;
+  readonly eventId?: string;
   readonly state:
     | "pending"
     | "processing"
@@ -76,11 +77,12 @@ function hasValidStateShape(v: Record<string, unknown>) {
       return false;
   }
 }
-function parse(value: unknown): PaidConfirmationNotificationStatus {
+function parse(value: unknown): BookingNotificationStatus {
   const v = value as Record<string, unknown> | null;
   if (
     !v ||
     !uuid(v.receiptId) ||
+    (v.eventId !== undefined && !uuid(v.eventId)) ||
     ![
       "pending",
       "processing",
@@ -102,23 +104,32 @@ function parse(value: unknown): PaidConfirmationNotificationStatus {
     !hasValidStateShape(v)
   )
     throw new Error("Database returned invalid notification status");
-  return v as PaidConfirmationNotificationStatus;
+  return v as BookingNotificationStatus;
 }
 
-export class SupabasePaidConfirmationNotificationStatusRepository {
+export class SupabaseBookingNotificationStatusRepository {
   constructor(private readonly client: SupabaseClient) {}
-  async get(receiptId: string) {
+  async get(receiptId: string, eventId?: string) {
     const { data, error } = await this.client.rpc(
       "get_booking_confirmation_notification_status",
-      { target_receipt_id: receiptId },
+      {
+        target_receipt_id: receiptId,
+        ...(eventId ? { target_event_id: eventId } : {}),
+      },
     );
     if (error) throw new Error("Notification status is unavailable");
-    return parse(data);
+    const status = parse(data);
+    if (status.receiptId !== receiptId || status.eventId !== eventId)
+      throw new Error("Database returned invalid notification status binding");
+    return status;
   }
-  async retry(receiptId: string) {
+  async retry(receiptId: string, eventId?: string) {
     const { data, error } = await this.client.rpc(
       "retry_booking_confirmation_notification",
-      { target_receipt_id: receiptId },
+      {
+        target_receipt_id: receiptId,
+        ...(eventId ? { target_event_id: eventId } : {}),
+      },
     );
     if (error || (data as { status?: unknown } | null)?.status !== "queued")
       throw new Error("Notification retry is unavailable");

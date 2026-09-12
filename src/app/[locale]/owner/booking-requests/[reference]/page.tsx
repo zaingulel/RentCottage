@@ -1,3 +1,5 @@
+import { loadBookingFinancialView } from "@/booking-request/request-booking-financial-view";
+import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import Link from "next/link";
@@ -30,14 +32,23 @@ export default async function OwnerConfirmedBookingPage({
       />
     );
   let confirmed;
+  let financial;
   try {
     confirmed = await loadConfirmedBookingAccess(reference);
+    financial = await loadBookingFinancialView(reference, "cottage_owner");
   } catch (error) {
     unstable_rethrow(error);
+    confirmed = undefined;
     console.error("Owner confirmed Booking load failed", {
       code: "owner_confirmed_booking_failed",
     });
   }
+  if (financial?.cancellation)
+    return (
+      <main className="results-page">
+        <BookingFinancialDetails locale={locale} view={financial} />
+      </main>
+    );
   if (confirmed === null)
     return (
       <AccountAccessRecovery
@@ -66,6 +77,9 @@ export default async function OwnerConfirmedBookingPage({
   return (
     <main className="results-page">
       <ConfirmedBookingDetails locale={locale} {...confirmed} />
+      {financial ? (
+        <BookingFinancialDetails locale={locale} view={financial} />
+      ) : null}
     </main>
   );
 }

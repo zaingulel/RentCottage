@@ -167,6 +167,7 @@ export function createPaymentOperationExecution({
       "booking-request-payment-recovery",
       "booking-request-payment-required-expiry",
       "booking-request-payment-required-corrective-refund",
+      "booking-refund",
     ].includes(purpose);
   function validateAdmission(
     admission: PaymentOperationAdmission,

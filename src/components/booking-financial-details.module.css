@@ -1,0 +1,90 @@
+.panel {
+  display: grid;
+  gap: 1.4rem;
+  margin-block: 1.5rem;
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid #d5ddd7;
+  border-radius: 1rem;
+  background: #fff;
+  color: #18352b;
+  overflow-wrap: anywhere;
+}
+.panel h1,
+.panel h2,
+.panel h3,
+.panel p {
+  margin: 0;
+}
+.panel header {
+  display: grid;
+  gap: 0.6rem;
+}
+.summary,
+.amounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 1rem;
+  margin: 0;
+}
+.summary > div {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem;
+  background: #f4f7f4;
+  border-radius: 0.6rem;
+}
+.summary dt {
+  font-size: 0.9rem;
+}
+.summary dd {
+  margin: 0;
+  font-weight: 650;
+  font-size: 1.05rem;
+}
+.policy {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border-inline-start: 0.25rem solid #386954;
+  background: #eef6ef;
+}
+.form {
+  display: grid;
+  gap: 1rem;
+  padding-block: 1.2rem;
+  border-block-start: 1px solid #d5ddd7;
+}
+.form label {
+  display: grid;
+  gap: 0.4rem;
+}
+.form .acknowledge {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+.acknowledge input {
+  margin-block-start: 0.3rem;
+  min-width: 1.2rem;
+  min-height: 1.2rem;
+}
+.history {
+  list-style: none;
+  display: grid;
+  gap: 1rem;
+  padding: 0;
+  margin: 0;
+}
+.history > li {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid #d5ddd7;
+  border-radius: 0.7rem;
+}
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
