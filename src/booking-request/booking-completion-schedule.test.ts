@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { BookingCompletionResult } from "./booking-completion";
 import { runScheduledBookingCompletion } from "./booking-completion-schedule";
 
 const environment = {
@@ -41,17 +42,38 @@ describe("scheduled booking completion", () => {
     expect(processDue).toHaveBeenCalledExactlyOnceWith(50);
   });
 
-  it.each(["ineligible"] as const)(
-    "propagates a %s completion result as incomplete scheduled work",
-    async (status) => {
-      await expect(
-        runScheduledBookingCompletion(environment, async () => [
-          {
-            status,
-            bookingRequestId: "60000000-0000-4000-8000-000000003901",
-          },
-        ]),
-      ).rejects.toThrow("incomplete");
-    },
-  );
+  it("preserves successful outcomes and candidates made ineligible before commit", async () => {
+    const results: readonly BookingCompletionResult[] = [
+      {
+        status: "completed",
+        bookingRequestId: "60000000-0000-4000-8000-000000003901",
+        effectivePeriodEnd: "2099-08-24T18:00:00.000Z",
+        completedAt: "2099-08-24T18:01:00.000Z",
+      },
+      {
+        status: "ineligible",
+        bookingRequestId: "60000000-0000-4000-8000-000000003902",
+      },
+      {
+        status: "matured",
+        bookingRequestId: "60000000-0000-4000-8000-000000003903",
+        effectivePeriodEnd: "2099-08-24T18:00:00.000Z",
+        assessedAt: "2099-08-24T18:01:00.000Z",
+      },
+    ];
+
+    await expect(
+      runScheduledBookingCompletion(environment, async () => results),
+    ).resolves.toEqual(results);
+  });
+
+  it("propagates a failed drain without converting it into a successful tick", async () => {
+    const error = new Error("Booking completion could not be recorded");
+
+    await expect(
+      runScheduledBookingCompletion(environment, async () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+  });
 });

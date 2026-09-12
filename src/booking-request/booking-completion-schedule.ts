@@ -43,10 +43,5 @@ export async function runScheduledBookingCompletion(
         ),
       ),
     ).processDue;
-  const results = await processDue(50);
-  if (
-    results.some(({ status }) => status !== "completed" && status !== "matured")
-  )
-    throw new Error("Scheduled booking completion is incomplete");
-  return results;
+  return processDue(50);
 }
