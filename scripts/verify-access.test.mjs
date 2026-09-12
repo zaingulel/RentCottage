@@ -194,6 +194,7 @@ const browserCommands = [
       "tests/worker-scheduled-expiry.spec.ts",
       "tests/worker-scheduled-capture.spec.ts",
       "tests/worker-scheduled-refund.spec.ts",
+      "tests/worker-scheduled-completion.spec.ts",
       "--project=worker",
       "--config=playwright.worker-prebuilt.config.ts",
       "--workers=1",

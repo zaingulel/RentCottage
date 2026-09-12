@@ -168,8 +168,8 @@ describe("retained cancellation and refund details", () => {
       />,
     );
     expect(
-      screen.getByRole("heading", { name: "Completed booking" }),
-    ).toBeInTheDocument();
+      screen.getByRole("region", { name: "Booking lifecycle" }),
+    ).toHaveTextContent("Completed booking");
     expect(
       screen.queryByRole("form", { name: "Cancel booking" }),
     ).not.toBeInTheDocument();

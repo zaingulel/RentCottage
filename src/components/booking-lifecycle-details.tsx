@@ -27,7 +27,10 @@ export function BookingLifecycleDetails({
   return (
     <section aria-label={c.title}>
       <header>
-        <h2>{c[lifecycle.status]}</h2>
+        <h2>{c.title}</h2>
+        <p>
+          <strong>{c[lifecycle.status]}</strong>
+        </p>
         <p>
           <bdi>{bookingReference}</bdi>
         </p>

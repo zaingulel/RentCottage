@@ -4,6 +4,7 @@ import handler from "./.open-next/worker.js";
 
 import { runScheduledBookingRequestExpiry } from "./src/booking-request/booking-request-expiry-schedule";
 
+import { runScheduledBookingCompletion } from "./src/booking-request/booking-completion-schedule";
 import { runScheduledBookingRefunds } from "./src/booking-request/booking-refund-schedule";
 import { runScheduledBookingRequestCapture } from "./src/booking-request/booking-request-capture-schedule";
 import { runScheduledBookingNotifications } from "./src/notification/notification-schedule";
@@ -28,6 +29,7 @@ export default {
       scheduledTasks.push(
         runScheduledBookingNotifications(environment),
         runScheduledBookingRefunds(environment),
+        runScheduledBookingCompletion(environment),
       );
     const results = await Promise.allSettled(scheduledTasks);
     if (results.some((result) => result.status === "rejected"))

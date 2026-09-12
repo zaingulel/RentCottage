@@ -28,8 +28,12 @@ describe("lifecycle status and restricted controls", () => {
         />,
       );
       expect(
-        screen.getByRole("heading", { name: messages[locale].completed }),
+        screen.getByRole("heading", { name: messages[locale].title }),
       ).toBeInTheDocument();
+      expect(screen.getByText(messages[locale].completed)).toBeVisible();
+      expect(
+        screen.queryByRole("heading", { name: messages[locale].completed }),
+      ).not.toBeInTheDocument();
       expect(screen.queryByRole("form")).not.toBeInTheDocument();
     },
   );
