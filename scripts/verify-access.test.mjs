@@ -121,6 +121,7 @@ const databasePreflightCommands = [
   ["node", ["scripts/verify-account-access-upgrade.mjs"]],
   ["node", ["scripts/verify-booking-notification-upgrade.mjs"]],
   ["node", ["scripts/verify-booking-preparation-reminder-upgrade.mjs"]],
+  ["node", ["scripts/verify-booking-payout-upgrade.mjs"]],
 ];
 const databaseCheckCommands = [
   ["node", ["scripts/verify-access-fixture-contract.mjs"]],
@@ -144,6 +145,7 @@ const databaseCheckCommands = [
   ["node", ["scripts/verify-booking-cancellation-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-completion-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-refund-concurrency.mjs"]],
+  ["node", ["scripts/verify-booking-payout-concurrency.mjs"]],
   [
     "node",
     ["scripts/verify-booking-request-payment-required-expiry-concurrency.mjs"],
@@ -2152,6 +2154,7 @@ setInterval(() => {}, 1000);
       "verify-booking-cancellation-concurrency",
       "verify-booking-completion-concurrency",
       "verify-booking-refund-concurrency",
+      "verify-booking-payout-concurrency",
       "verify-booking-request-payment-required-expiry-concurrency",
     ]) {
       const { env } = optionsFor("node", [`scripts/${script}.mjs`]);
