@@ -38,6 +38,7 @@ export default async function OwnerConfirmedBookingPage({
     financial = await loadBookingFinancialView(reference, "cottage_owner");
   } catch (error) {
     unstable_rethrow(error);
+    confirmed = undefined;
     console.error("Owner confirmed Booking load failed", {
       code: "owner_confirmed_booking_failed",
     });

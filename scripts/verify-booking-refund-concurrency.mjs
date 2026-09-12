@@ -143,8 +143,51 @@ try {
     "1",
   );
   assert.match(contender.stdout, /processing/);
+  // A scheduling claim holds only the selected booking rows. A different
+  // transaction skips those rows, and rollback leaves the work recoverable.
+  const batchHolder = harness.startSession(
+    `begin; set application_name='refund_batch_holder'; set local role service_role; select public.claim_due_booking_refunds(1); select 'REFUND_BATCH_SELECTED';`,
+  );
+  sessions.push(batchHolder);
+  await harness.waitForMarker(batchHolder, "REFUND_BATCH_SELECTED");
+  assert.match(batchHolder.stdout, new RegExp(request));
+  const batchContender = harness.startSession(
+    `begin; set application_name='refund_batch_contender'; set local statement_timeout='3s'; set local role service_role; select public.claim_due_booking_refunds(50); commit;`,
+    true,
+  );
+  sessions.push(batchContender);
+  await harness.finishSession(batchContender);
+  assert.equal(
+    batchContender.stdout.trim(),
+    "[]",
+    "parallel selector skips the locked request without duplicating it",
+  );
+  await harness.finishSession(batchHolder, { action: "rollback" });
+  assert.equal(
+    harness.runSql(
+      `select refund_last_scheduled_at is null from public.booking_requests where id='${request}';`,
+    ),
+    "t",
+    "rollback does not advance scheduling metadata",
+  );
+  assert.deepEqual(
+    JSON.parse(
+      harness.runSql(
+        `begin; set local role service_role; select public.claim_due_booking_refunds(1); commit;`,
+      ),
+    ),
+    [request],
+    "rolled-back selection is immediately recoverable",
+  );
+  assert.equal(
+    harness.runSql(
+      `select refund_last_scheduled_at is not null from public.booking_requests where id='${request}';`,
+    ),
+    "t",
+    "committed selection durably advances scheduling metadata",
+  );
   console.log(
-    "Refund capacity, command replay, rollback and competing worker lease interleavings passed.",
+    "Refund capacity, command replay, rollback, competing worker lease and skip-locked scheduling interleavings passed.",
   );
 } finally {
   for (const session of sessions)

@@ -237,18 +237,35 @@ begin
 end;
 $$;
 
-CREATE OR REPLACE FUNCTION public.due_booking_refunds(target_limit integer) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.claim_due_booking_refunds(target_limit integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare scheduled_at timestamptz:=clock_timestamp(); declare claimed jsonb;
 begin
   if current_setting('role',true)<>'service_role' then raise exception 'Refund batch unavailable' using errcode='42501'; end if;
-  if target_limit<1 or target_limit>50 then raise exception 'Refund batch size is invalid' using errcode='22023'; end if;
-  return (select coalesce(jsonb_agg(candidate.id),'[]') from (
-    select requests.id from public.booking_requests requests where
-      exists(select 1 from public.booking_refund_intents intent where intent.booking_request_id=requests.id and public.booking_refund_intent_state(intent.id) in ('requested','processing','unknown'))
-      or (exists(select 1 from public.booking_cancellations cancelled where cancelled.booking_request_id=requests.id and cancelled.refund_booking_price_fils+cancelled.refund_booking_service_fee_fils>0)
-        and not exists(select 1 from public.booking_refund_intents intent where intent.booking_request_id=requests.id and intent.source='cancellation' and public.booking_refund_intent_state(intent.id)='failed')
-        and (select coalesce(sum(intent.booking_price_fils+intent.booking_service_fee_fils),0) from public.booking_refund_intents intent where intent.booking_request_id=requests.id and public.booking_refund_intent_state(intent.id)='succeeded')
-          <(select cancelled.refund_booking_price_fils+cancelled.refund_booking_service_fee_fils from public.booking_cancellations cancelled where cancelled.booking_request_id=requests.id))
-    order by requests.created_at,requests.id limit target_limit) candidate);
+  if target_limit is null or target_limit<1 or target_limit>50 then raise exception 'Refund batch size is invalid' using errcode='22023'; end if;
+  with candidates as materialized (
+    select requests.id,greatest(coalesce(requests.refund_last_scheduled_at,due.due_since),due.due_since) as priority
+    from public.booking_requests requests
+    cross join lateral (
+      select min(work.due_since) as due_since from (
+        select intent.created_at as due_since from public.booking_refund_intents intent
+        where intent.booking_request_id=requests.id and public.booking_refund_intent_state(intent.id) in ('requested','processing','unknown')
+        union all
+        select cancelled.occurred_at from public.booking_cancellations cancelled
+        where cancelled.booking_request_id=requests.id and cancelled.refund_booking_price_fils+cancelled.refund_booking_service_fee_fils>0
+          and not exists(select 1 from public.booking_refund_intents intent where intent.booking_request_id=requests.id and intent.source='cancellation' and public.booking_refund_intent_state(intent.id)='failed')
+          and (select coalesce(sum(intent.booking_price_fils+intent.booking_service_fee_fils),0) from public.booking_refund_intents intent where intent.booking_request_id=requests.id and public.booking_refund_intent_state(intent.id)='succeeded')
+            <cancelled.refund_booking_price_fils+cancelled.refund_booking_service_fee_fils
+      ) work
+    ) due
+    where due.due_since is not null
+    order by priority,requests.id limit target_limit for update of requests skip locked
+  ), scheduled as (
+    update public.booking_requests requests set refund_last_scheduled_at=scheduled_at
+    from candidates where requests.id=candidates.id returning requests.id
+  )
+  select coalesce(jsonb_agg(scheduled.id order by candidates.priority,scheduled.id),'[]'::jsonb) into claimed
+    from scheduled join candidates on candidates.id=scheduled.id;
+  return claimed;
 end;
 $$;

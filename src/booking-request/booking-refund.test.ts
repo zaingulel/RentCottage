@@ -141,7 +141,7 @@ describe("booking refund application", () => {
         .mockResolvedValue({ ...facts, refunded: facts.captured }),
       requestAutomatic: vi.fn().mockResolvedValue({ status: "stale" }),
       claim: vi.fn(),
-      due: vi.fn(),
+      claimDue: vi.fn(),
     };
     const operations = { execute: vi.fn(), query: vi.fn() };
     expect(
@@ -173,7 +173,7 @@ describe("booking refund application", () => {
       }),
       requestAutomatic: vi.fn(),
       claim: vi.fn().mockResolvedValue({ status: "query", query }),
-      due: vi.fn(),
+      claimDue: vi.fn(),
     };
     const operations = {
       execute: vi.fn(),
@@ -191,7 +191,7 @@ describe("booking refund application", () => {
       facts: vi.fn().mockResolvedValue({ ...facts, bookingRequestId: "other" }),
       requestAutomatic: vi.fn(),
       claim: vi.fn(),
-      due: vi.fn(),
+      claimDue: vi.fn(),
     };
     await expect(
       createBookingRefund({
@@ -201,4 +201,41 @@ describe("booking refund application", () => {
     ).rejects.toThrow("another booking");
     expect(repository.requestAutomatic).not.toHaveBeenCalled();
   });
+});
+
+it("claims one bounded batch and continues after unavailable and attention outcomes", async () => {
+  const repository = {
+    claimDue: vi.fn().mockResolvedValue(["unavailable", "attention", "later"]),
+    facts: vi
+      .fn()
+      .mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValueOnce({
+        ...facts,
+        bookingRequestId: "attention",
+        intents: [{ id: "failed", state: "failed", automatic: true }],
+      })
+      .mockResolvedValueOnce({
+        ...facts,
+        bookingRequestId: "later",
+        refunded: facts.captured,
+      }),
+    claim: vi.fn(),
+    requestAutomatic: vi.fn(),
+  };
+  expect(
+    await createBookingRefund({
+      repository,
+      operations: { execute: vi.fn(), query: vi.fn() },
+    }).processDue(50),
+  ).toEqual([
+    { status: "unavailable" },
+    { status: "attention-required" },
+    { status: "settled" },
+  ]);
+  expect(repository.claimDue).toHaveBeenCalledExactlyOnceWith(50);
+  expect(repository.facts.mock.calls).toEqual([
+    ["unavailable"],
+    ["attention"],
+    ["later"],
+  ]);
 });

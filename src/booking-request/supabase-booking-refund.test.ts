@@ -80,3 +80,19 @@ describe("durable refund repository", () => {
     ).rejects.toThrow();
   });
 });
+
+it("claims a bounded due batch through the explicit scheduling RPC", async () => {
+  const test = fixture([bookingRequestId]);
+  expect(await test.repository.claimDue(50)).toEqual([bookingRequestId]);
+  expect(test.rpc).toHaveBeenCalledExactlyOnceWith(
+    "claim_due_booking_refunds",
+    { target_limit: 50 },
+  );
+});
+it.each([
+  { data: [bookingRequestId, bookingRequestId] },
+  { data: ["invalid"] },
+  { data: null },
+])("rejects malformed claimed batches %j", async ({ data }) => {
+  await expect(fixture(data).repository.claimDue(1)).rejects.toThrow();
+});

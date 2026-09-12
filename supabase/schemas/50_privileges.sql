@@ -1361,10 +1361,10 @@ GRANT EXECUTE ON FUNCTION public.get_booking_cancellation_facts(uuid,text) TO au
 GRANT EXECUTE ON FUNCTION public.commit_booking_cancellation(uuid,uuid,text,text,text,jsonb) TO authenticated;
 
 REVOKE ALL ON TABLE public.booking_refund_intents,public.booking_refund_attempts FROM PUBLIC,anon,authenticated,service_role;
-REVOKE ALL ON FUNCTION public.lock_booking_refund_source(uuid),public.booking_refund_intent_state(uuid),public.booking_capture_refund_totals(uuid,jsonb),public.get_booking_refund_facts(uuid),public.record_booking_refund_notification(uuid,text),public.request_booking_refund_exception(uuid,uuid,text,jsonb),public.request_automatic_booking_refund(uuid,text,jsonb),public.booking_refund_execution_permit(public.booking_refund_attempts),public.claim_booking_refund(uuid),public.admit_booking_refund(jsonb),public.record_booking_refund_observation(uuid,jsonb),public.due_booking_refunds(integer) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.lock_booking_refund_source(uuid),public.booking_refund_intent_state(uuid),public.booking_capture_refund_totals(uuid,jsonb),public.get_booking_refund_facts(uuid),public.record_booking_refund_notification(uuid,text),public.request_booking_refund_exception(uuid,uuid,text,jsonb),public.request_automatic_booking_refund(uuid,text,jsonb),public.booking_refund_execution_permit(public.booking_refund_attempts),public.claim_booking_refund(uuid),public.admit_booking_refund(jsonb),public.record_booking_refund_observation(uuid,jsonb),public.claim_due_booking_refunds(integer) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.get_booking_refund_facts(uuid) TO authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.request_booking_refund_exception(uuid,uuid,text,jsonb) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.request_automatic_booking_refund(uuid,text,jsonb),public.claim_booking_refund(uuid),public.admit_booking_refund(jsonb),public.record_booking_refund_observation(uuid,jsonb),public.due_booking_refunds(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.request_automatic_booking_refund(uuid,text,jsonb),public.claim_booking_refund(uuid),public.admit_booking_refund(jsonb),public.record_booking_refund_observation(uuid,jsonb),public.claim_due_booking_refunds(integer) TO service_role;
 
 REVOKE ALL ON FUNCTION public.booking_notification_event_binding(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.booking_notification_is_deliverable(public.booking_confirmation_notification_work) FROM PUBLIC;

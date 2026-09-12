@@ -9,6 +9,7 @@ import {
   createBookingCancellation,
   type BookingCancellationCommand,
 } from "./booking-cancellation";
+import { SupabaseBookingRefundRepository } from "./supabase-booking-refund";
 import { SupabaseBookingCancellationRepository } from "./supabase-booking-cancellation";
 import { getBookingFinancialView } from "./booking-financial-view";
 import { refundInputAllocation } from "./booking-financial-presentation";
@@ -66,18 +67,6 @@ export async function manageConfirmedBooking(
     return { status: "invalid" };
   if (action === "refund" && actorRole !== "platform_administrator")
     return { status: "access-required" };
-  let allocation;
-  if (action === "refund") {
-    const price = form.get("price"),
-      fee = form.get("fee");
-    if (typeof price !== "string" || typeof fee !== "string")
-      return { status: "invalid" };
-    try {
-      allocation = refundInputAllocation(price, fee);
-    } catch {
-      return { status: "invalid" };
-    }
-  }
   try {
     const client = await createRequestSupabaseClient();
     const user = await client.auth.getUser();
@@ -116,17 +105,22 @@ export async function manageConfirmedBooking(
             : null,
       });
     else {
-      const { data, error } = await client.rpc(
-        "request_booking_refund_exception",
-        {
-          target_booking_request_id: view.bookingRequestId,
-          target_command_id: commandId,
-          target_reason: (reason as string).trim(),
-          target_allocation: allocation,
-        },
-      );
-      if (error || data?.status !== "requested")
-        throw new Error("Refund exception unavailable");
+      const price = form.get("price"),
+        fee = form.get("fee");
+      if (typeof price !== "string" || typeof fee !== "string")
+        return { status: "invalid" };
+      let allocation;
+      try {
+        allocation = refundInputAllocation(price, fee);
+      } catch {
+        return { status: "invalid" };
+      }
+      await new SupabaseBookingRefundRepository(client).requestException({
+        bookingRequestId: view.bookingRequestId,
+        commandId,
+        reason: (reason as string).trim(),
+        allocation,
+      });
     }
     refresh();
     return { status: action === "cancel" ? "cancelled" : "requested" };

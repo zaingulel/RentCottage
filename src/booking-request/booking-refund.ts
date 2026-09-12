@@ -40,7 +40,7 @@ export interface BookingRefundRepository {
     allocation: RefundAllocation,
   ): Promise<{ readonly status: "requested" | "stale" }>;
   claim(intentId: string): Promise<BookingRefundClaim>;
-  due(limit: number): Promise<readonly string[]>;
+  claimDue(limit: number): Promise<readonly string[]>;
 }
 export type BookingRefundResult = {
   readonly status:
@@ -140,7 +140,7 @@ export function createBookingRefund({
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50)
         throw new Error("Invalid refund batch size.");
       const results: BookingRefundResult[] = [];
-      for (const id of await repository.due(limit)) {
+      for (const id of await repository.claimDue(limit)) {
         try {
           results.push(await resume(id));
         } catch {

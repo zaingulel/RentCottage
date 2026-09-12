@@ -64,7 +64,10 @@ describe("confirmed booking command authority", () => {
     view.mockResolvedValue({ bookingRequestId: request });
     cancel.mockResolvedValue({ status: "cancelled" });
     client.rpc.mockResolvedValue({
-      data: { status: "requested" },
+      data: {
+        status: "requested",
+        intentId: "90000000-0000-4000-8000-000000003810",
+      },
       error: null,
     });
     client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
@@ -202,6 +205,33 @@ describe("confirmed booking command authority", () => {
       },
     );
   });
+  it.each([
+    { status: "requested" },
+    { status: "requested", intentId: "malformed" },
+    { status: "unknown", intentId: "90000000-0000-4000-8000-000000003810" },
+  ])(
+    "does not confirm an exception with an invalid returned contract %j",
+    async (data) => {
+      resolve.mockResolvedValue({
+        userId: "actor",
+        role: "platform_administrator",
+      });
+      client.rpc.mockResolvedValue({ data, error: null });
+      expect(
+        await manageConfirmedBooking(
+          { status: "idle" },
+          form({
+            actorRole: "platform_administrator",
+            action: "refund",
+            reason: "Compensation",
+            price: "20",
+            fee: "0",
+          }),
+        ),
+      ).toEqual({ status: "unavailable" });
+      expect(refresh).not.toHaveBeenCalled();
+    },
+  );
   it.each([
     { action: "refund", price: "20", fee: "0", reason: "x" },
     { actorRole: "platform_administrator", category: "other", reason: "x" },

@@ -47,9 +47,11 @@ $$;
 create or replace function pg_temp.capture_execute(permit jsonb,outcome text default 'succeeded') returns jsonb language sql as $$
   select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
 $$;
+
 -- END PAYMENT EVIDENCE FIXTURE
--- BEGIN CANCELLATION FIXTURE
-create function pg_temp.seed_cancellation_booking(start_day date) returns void language plpgsql as $seed_function$
+
+-- Expand the preserved confirmation fixture into independently bound bookings.
+create function pg_temp.seed_refund_booking(slot integer) returns void language plpgsql as $seed_function$
 declare fixture text := $fixture$
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
@@ -136,40 +138,27 @@ insert into auth.users(id,aud,role,email,email_confirmed_at) values('10000000-00
 insert into public.account_contexts(user_id,role) values('10000000-0000-4000-8000-000000003801','platform_administrator');
 
 $fixture$;
+declare suffix text:=lpad(slot::text,3,'0');
+declare lifecycle text:='73000000-0000-4000-8000-000000'||suffix||'001';
+declare fingerprint text;
 begin
-  fixture:=replace(fixture,'2101-01-02',(start_day+1)::text);
-  fixture:=replace(fixture,'2101-01-01',start_day::text);
-  fixture:=replace(fixture,'2100-12-31',(start_day-1)::text);
+  fixture:=regexp_replace(fixture,'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-)[0-9a-f]{9}([0-9a-f]{3})', '\1'||'000000'||suffix||'\2','g');
+  fingerprint:=encode(extensions.digest('{"provider":{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"},"kind":"capture","paymentLifecycleId":"'||lifecycle||'","logicalOperationId":"'||lifecycle||':capture","attemptId":"'||lifecycle||':capture:attempt-2","amountFils":115000000,"currency":"IQD"}','sha256'),'hex');
+  fixture:=replace(fixture,'6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d',fingerprint);
+  fixture:=replace(fixture,'RC-REQ-0000000000001001','RC-REQ-'||lpad(slot::text,16,'0'));
+  fixture:=replace(fixture,'CONFIRMATION-HOLD-1','SCHEDULING-'||slot);
+  fixture:=replace(fixture,'confirmation-auth-request-1','scheduling-auth-request-'||slot);
+  fixture:=replace(fixture,'confirmation-auth-reference-1','scheduling-auth-reference-'||slot);
+  fixture:=replace(fixture,'confirmation-auth-movement-1','scheduling-auth-movement-'||slot);
+  fixture:=replace(fixture,'cancellation-admin@example.test','scheduling-admin-'||slot||'@example.test');
+  fixture:=replace(fixture,'+964750000100','+964750'||lpad(slot::text,6,'0'));
+  fixture:=replace(fixture,'confirmation_capture_lease','scheduling_lease_'||slot);
+  fixture:=replace(fixture,'confirmation_capture_result','scheduling_result_'||slot);
+  fixture:=replace(fixture,'confirmation_capture','scheduling_capture_'||slot);
   execute fixture;
 end;
 $seed_function$;
--- END CANCELLATION FIXTURE
-select no_plan();
-select pg_temp.seed_cancellation_booking('2101-01-01');
-set local role authenticated;
-select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
-select throws_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003810','Compensation','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}')$$,'42501',null,'customer cannot authorize an exception');
-select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
-select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);
-select lives_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003810','Compensation','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}')$$,'administrator explicitly reserves price and fee');
-select throws_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003811','Excess','{"bookingPriceFils":80000010,"bookingServiceFeeFils":4000000}')$$,'RC409',null,'pending allocation cannot be spent twice');
 
-select throws_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003810','Changed reason','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}')$$,'RC409',null,'changed payload cannot reuse the exception command');
-select lives_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003810','Compensation','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}')$$,'same command replays the original intent');
-select throws_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003812',' ','{"bookingPriceFils":10,"bookingServiceFeeFils":0}')$$,'22023',null,'blank administrator reason is denied');
-select throws_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003812','Fractional commission','{"bookingPriceFils":11,"bookingServiceFeeFils":0}')$$,'22023',null,'commission must remain exact in fils');
-select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal1"}',true);
-select throws_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003812','Weak assurance','{"bookingPriceFils":10,"bookingServiceFeeFils":0}')$$,'42501',null,'administrator requires strong authentication');
-reset role;
-select is((select count(*)::integer from public.booking_refund_intents where booking_request_id='60000000-0000-4000-8000-000000001001'),1,'one immutable reservation survives command replay');
-select ok((select actor_user_id='10000000-0000-4000-8000-000000003801' and reason='Compensation' and source='administrator' from public.booking_refund_intents where command_id='90000000-0000-4000-8000-000000003810'),'exception retains administrator attribution and reason');
-select throws_ok($$update public.booking_refund_intents set booking_price_fils=10$$,'RC409',null,'allocation history cannot be rewritten');
-select ok((select bool_and(relrowsecurity) from pg_class where oid in ('public.booking_refund_intents'::regclass,'public.booking_refund_attempts'::regclass)),'refund tables enforce Row Level Security');
-select ok(not has_table_privilege('authenticated','public.booking_refund_intents','SELECT') and not has_table_privilege('service_role','public.booking_refund_intents','INSERT'),'refund facts cannot bypass command authority');
-create temp table refund_test_values(key text primary key,value jsonb);
-grant all on refund_test_values to service_role,authenticated;
-insert into refund_test_values select 'first-intent',to_jsonb(id) from public.booking_refund_intents where command_id='90000000-0000-4000-8000-000000003810';
-create function pg_temp.refund_value(key text) returns jsonb language sql as $$select value from refund_test_values where refund_test_values.key=$1$$;
 create function pg_temp.refund_proposal(admission jsonb,outcome text) returns jsonb language sql as $$
   select jsonb_build_object('outcome',outcome,'providerRequestId','refund-request-'||(admission->>'operationId'),'providerReference','refund-reference-'||(admission->>'operationId'),
     'evidence',jsonb_build_object('operationId',admission->>'operationId','eventId','refund-event-'||(admission->>'operationId')||'-'||outcome,'provenance','fictional-provider','originalOutcome',outcome,'executedAt',clock_timestamp(),'occurredAt',case when outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
@@ -179,72 +168,116 @@ create function pg_temp.refund_record(admission jsonb,result jsonb) returns json
   select public.record_booking_request_payment_observation((admission->>'operationId')::uuid,result,
     jsonb_build_object('revision',public.get_booking_request_payment_observation_facts((admission->>'operationId')::uuid)->>'revision','recoveryState',null,'quarantineReason',null,'correctiveCaptureId',null));
 $$;
+
+select no_plan();
+create temp table scheduling_ids(slot integer primary key, request uuid, intent uuid, admission jsonb);
+create temp table scheduling_batches(sequence integer primary key, ids jsonb);
+grant all on scheduling_ids,scheduling_batches to authenticated,service_role;
+create function pg_temp.request_exception(slot integer) returns uuid language plpgsql as $$
+declare actor text:='10000000-0000-4000-8000-000000'||lpad(slot::text,3,'0')||'801';
+declare request uuid:=('60000000-0000-4000-8000-000000'||lpad(slot::text,3,'0')||'001')::uuid;
+declare result jsonb;
+begin
+  perform set_config('role','authenticated',true);
+  perform set_config('request.jwt.claim.sub',actor,true);
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',actor,'aal','aal2')::text,true);
+  result:=public.request_booking_refund_exception(request,gen_random_uuid(),'Scheduling compensation','{"bookingPriceFils":1000,"bookingServiceFeeFils":0}');
+  perform set_config('role','none',true);
+  return (result->>'intentId')::uuid;
+end;
+$$;
+do $$ begin
+  for slot in 101..151 loop
+    perform pg_temp.seed_refund_booking(slot);
+    insert into scheduling_ids values(slot,('60000000-0000-4000-8000-000000'||slot||'001')::uuid,pg_temp.request_exception(slot),null);
+  end loop;
+end $$;
 set local role service_role;
-insert into refund_test_values values('first-claim',public.claim_booking_refund((pg_temp.refund_value('first-intent')#>>'{}')::uuid));
-select is(pg_temp.refund_value('first-claim')->>'status','execute','first worker receives a fenced execution request');
-select is(public.claim_booking_refund((pg_temp.refund_value('first-intent')#>>'{}')::uuid)->>'status','processing','concurrent claim cannot execute before admission');
-select throws_ok($$select public.admit_booking_refund(jsonb_set(pg_temp.refund_value('first-claim')#>'{request,executionPermit}','{binding,captureOperationId}','"80000000-0000-4000-8000-000000000000"'))$$,'RC409',null,'forged capture binding cannot be admitted');
-savepoint closed_refund_attempt;
-insert into refund_test_values values('closed-admission',public.admit_booking_refund(pg_temp.refund_value('first-claim')#>'{request,executionPermit}'));
-insert into refund_test_values values('closed-effect',public.seal_simulated_payment_absence(pg_temp.refund_value('closed-admission')-array['purpose','binding','mode']));
-select pg_temp.refund_record(pg_temp.refund_value('closed-admission'),pg_temp.refund_value('closed-effect'));
-select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'reserved','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}'::jsonb,'closed attempt preserves the logical refund reservation');
-insert into refund_test_values values('replacement-claim',public.claim_booking_refund((pg_temp.refund_value('first-intent')#>>'{}')::uuid));
-select is(pg_temp.refund_value('replacement-claim')#>>'{request,executionPermit,generation}','2','verified absence permits a new physical generation for the same intent');
-select isnt(pg_temp.refund_value('replacement-claim')#>>'{request,attemptId}',pg_temp.refund_value('first-claim')#>>'{request,attemptId}','replacement generation has a different physical identity');
-select is(public.admit_booking_refund(pg_temp.refund_value('first-claim')#>'{request,executionPermit}')->>'mode','reconcile','stale admitted generation can only inquire about its original identity');
-select is(public.persist_simulated_payment_effect(pg_temp.refund_value('closed-admission')-array['purpose','binding','mode'],pg_temp.refund_proposal(pg_temp.refund_value('closed-admission'),'succeeded'))->>'outcome','not-executed','stale supplier execution cannot reopen a closed refund attempt');
-select is(public.admit_booking_refund(pg_temp.refund_value('replacement-claim')#>'{request,executionPermit}')->>'mode','execute','only the replacement generation has new execution authority');
-rollback to closed_refund_attempt;
-insert into refund_test_values values('first-admission',public.admit_booking_refund(pg_temp.refund_value('first-claim')#>'{request,executionPermit}'));
-insert into refund_test_values values('first-effect',public.persist_simulated_payment_effect(pg_temp.refund_value('first-admission')-array['purpose','binding','mode'],pg_temp.refund_proposal(pg_temp.refund_value('first-admission'),'succeeded')));
-select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')#>>'{refunded,bookingPriceFils}','0','supplier effect is not presented as returned before verified local recording');
-select is(public.claim_booking_refund((pg_temp.refund_value('first-intent')#>>'{}')::uuid)->>'status','query','restart discovers original admission rather than a new execute');
-select is(public.admit_booking_refund(pg_temp.refund_value('first-claim')#>'{request,executionPermit}')->>'mode','reconcile','duplicate execution permit becomes inquiry');
-select lives_ok($$select pg_temp.refund_record(pg_temp.refund_value('first-admission'),public.seal_simulated_payment_absence(pg_temp.refund_value('first-admission')-array['purpose','binding','mode']))$$,'restart records the supplier effect under original operation identity');
-select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'refunded','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}'::jsonb,'verified partial allocation is exact');
-select ok((public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->>'bookingRequestId')='60000000-0000-4000-8000-000000001001','valid partial refund is recognized by shared observation');
-select lives_ok($$select public.persist_simulated_payment_effect(pg_temp.refund_value('first-admission')-array['purpose','binding','mode'],pg_temp.refund_proposal(pg_temp.refund_value('first-admission'),'succeeded'))$$,'replayed supplier execution returns the same effect');
+do $$ declare item record; claim jsonb; admitted jsonb; effect jsonb; begin
+  for item in select * from scheduling_ids where slot<151 order by slot loop
+    claim:=public.claim_booking_refund(item.intent);
+    admitted:=public.admit_booking_refund(claim#>'{request,executionPermit}');
+    effect:=public.persist_simulated_payment_effect(admitted-array['purpose','binding','mode'],pg_temp.refund_proposal(admitted,'indeterminate'));
+    perform pg_temp.refund_record(admitted,effect);
+    update scheduling_ids set admission=admitted where slot=item.slot;
+  end loop;
+end $$;
+select throws_ok($$select public.claim_due_booking_refunds(null)$$,'22023',null,'null cannot claim an unbounded batch');
+select throws_ok($$select public.claim_due_booking_refunds(0)$$,'22023',null,'zero batch size is denied');
+select throws_ok($$select public.claim_due_booking_refunds(51)$$,'22023',null,'oversized batch is denied');
 reset role;
-select is((select physical_execution_count::integer from public.simulated_payment_effects where operation_id=(pg_temp.refund_value('first-admission')->>'operationId')::uuid),1,'interruption and replay cause exactly one physical execution');
-select is((select count(*)::integer from public.booking_notification_events where refund_intent_id=(pg_temp.refund_value('first-intent')#>>'{}')::uuid and event_kind='refund_returned'),2,'verified refund has one event per original recipient');
+select ok((select bool_and(refund_last_scheduled_at is null) from public.booking_requests),'invalid batches change no scheduling metadata');
+select ok(not has_function_privilege('authenticated','public.claim_due_booking_refunds(integer)','EXECUTE') and not has_function_privilege('anon','public.claim_due_booking_refunds(integer)','EXECUTE'),'only service scheduling authority can select a batch');
+create function pg_temp.business_fingerprint() returns text language sql as $$
+  select md5(jsonb_build_object(
+    'requests',(select jsonb_agg(to_jsonb(r)-'refund_last_scheduled_at' order by id) from public.booking_requests r),
+    'intents',(select jsonb_agg(to_jsonb(r) order by id) from public.booking_refund_intents r),
+    'attempts',(select jsonb_agg(to_jsonb(r) order by id) from public.booking_refund_attempts r),
+    'operations',(select jsonb_agg(to_jsonb(r) order by id) from public.payment_provider_operations r),
+    'observations',(select jsonb_agg(to_jsonb(r) order by id) from public.payment_provider_observations r),
+    'effects',(select jsonb_agg(to_jsonb(r) order by operation_id) from public.simulated_payment_effects r),
+    'history',(select jsonb_agg(to_jsonb(r) order by id) from public.booking_request_payment_history r)
+  )::text)
+$$;
+create temp table scheduling_business_before as select pg_temp.business_fingerprint() as fingerprint;
+set local role service_role;
+insert into scheduling_batches values(1,public.claim_due_booking_refunds(50));
+reset role;
+select is(pg_temp.business_fingerprint(),(select fingerprint from scheduling_business_before),'selection alone preserves allocations, identities, results, attempts and history');
+select is((select count(*)::integer from public.booking_requests where refund_last_scheduled_at is not null),50,'exactly the selected fifty timestamps advance');
+set local role service_role;
+select is(jsonb_array_length((select ids from scheduling_batches where sequence=1)),50,'batch is bounded to fifty');
+select ok(not (select ids from scheduling_batches where sequence=1) @> jsonb_build_array((select request from scheduling_ids where slot=151)),'first fifty older unknown refunds are selected first');
+do $$ declare item record; claim jsonb; result jsonb; begin
+  for item in select * from scheduling_ids where (select ids from scheduling_batches where sequence=1) @> jsonb_build_array(request) loop
+    claim:=public.claim_booking_refund(item.intent);
+    if claim->>'status'<>'query' then raise exception 'Expected inquiry'; end if;
+    result:=public.seal_simulated_payment_absence(item.admission-array['purpose','binding','mode']);
+    perform pg_temp.refund_record(item.admission,result);
+  end loop;
+end $$;
+insert into scheduling_batches values(2,public.claim_due_booking_refunds(50));
+select ok((select ids from scheduling_batches where sequence=2) @> jsonb_build_array((select request from scheduling_ids where slot=151)),'fifty repeated unknown inquiries cannot starve booking fifty-one');
+-- Repeated selection without any processing models a crash or unavailable runtime.
+insert into scheduling_batches values(3,public.claim_due_booking_refunds(50)),(4,public.claim_due_booking_refunds(50));
+select is((select count(distinct id)::integer from scheduling_batches cross join lateral jsonb_array_elements_text(ids) id where sequence in (3,4)),51,'every unresolved booking returns after selection without processing');
+select ok((select bool_and(jsonb_array_length(ids)=50 and (select count(distinct id) from jsonb_array_elements_text(ids) id)=50) from scheduling_batches),'each batch remains bounded and has no duplicate booking');
+reset role;
+-- Processing leases are eligible, but cannot monopolize later cancellations.
+select pg_temp.seed_refund_booking(152);
 set local role authenticated;
-select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);
-insert into refund_test_values values('second-intent',public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003813','Second partial','{"bookingPriceFils":20000000,"bookingServiceFeeFils":1000000}')->'intentId');
-select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
-select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","aal":"aal1"}',true);
-select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003814','cottage_owner','Unavailable',null,
-  jsonb_build_object('revision',public.get_booking_cancellation_facts('60000000-0000-4000-8000-000000001001','cottage_owner')->>'revision','refundObligation','{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb));
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000152001',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000152001","aal":"aal1"}',true);
+select public.commit_booking_cancellation('60000000-0000-4000-8000-000000152001',gen_random_uuid(),'cottage_owner','Unavailable',null,
+  jsonb_build_object('revision',public.get_booking_cancellation_facts('60000000-0000-4000-8000-000000152001','cottage_owner')->>'revision','refundObligation','{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb));
 set local role service_role;
-insert into refund_test_values values('second-claim',public.claim_booking_refund((pg_temp.refund_value('second-intent')#>>'{}')::uuid));
-insert into refund_test_values values('second-admission',public.admit_booking_refund(pg_temp.refund_value('second-claim')#>'{request,executionPermit}'));
-insert into refund_test_values values('second-effect',public.persist_simulated_payment_effect(pg_temp.refund_value('second-admission')-array['purpose','binding','mode'],pg_temp.refund_proposal(pg_temp.refund_value('second-admission'),'indeterminate')));
-select pg_temp.refund_record(pg_temp.refund_value('second-admission'),pg_temp.refund_value('second-effect'));
-select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'reserved','{"bookingPriceFils":20000000,"bookingServiceFeeFils":1000000}'::jsonb,'unknown partial reserves its explicit components');
-select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'obligation','{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb,'full original obligation survives a successful and an uncertain partial');
-select throws_ok($$select public.request_automatic_booking_refund('60000000-0000-4000-8000-000000001001',public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->>'revision','{"bookingPriceFils":60000000,"bookingServiceFeeFils":3000000}')$$,'RC409',null,'available capacity cannot trigger a top-up before uncertainty settles');
-savepoint uncertain_partial;
-insert into refund_test_values values('resolved',public.resolve_simulated_payment_effect(pg_temp.refund_value('second-admission')-array['purpose','binding','mode'],pg_temp.refund_value('second-effect')#>>'{evidence,eventId}',
-  jsonb_set(jsonb_set(pg_temp.refund_proposal(pg_temp.refund_value('second-admission'),'succeeded'),'{evidence,originalOutcome}','"indeterminate"'),'{evidence,executedAt}',pg_temp.refund_value('second-effect')#>'{evidence,executedAt}')));
-select pg_temp.refund_record(pg_temp.refund_value('second-admission'),pg_temp.refund_value('resolved'));
-select lives_ok($$select public.request_automatic_booking_refund('60000000-0000-4000-8000-000000001001',public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->>'revision','{"bookingPriceFils":60000000,"bookingServiceFeeFils":3000000}')$$,'resolved partial success permits only the remaining 60m price and 3m fee');
-rollback to uncertain_partial;
-insert into refund_test_values values('resolved',public.resolve_simulated_payment_effect(pg_temp.refund_value('second-admission')-array['purpose','binding','mode'],pg_temp.refund_value('second-effect')#>>'{evidence,eventId}',
-  jsonb_set(jsonb_set(pg_temp.refund_proposal(pg_temp.refund_value('second-admission'),'failed'),'{evidence,originalOutcome}','"indeterminate"'),'{evidence,executedAt}',pg_temp.refund_value('second-effect')#>'{evidence,executedAt}')));
-select pg_temp.refund_record(pg_temp.refund_value('second-admission'),pg_temp.refund_value('resolved'));
-select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'reserved','{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb,'verified failure releases only its unused reservation');
-select lives_ok($$select public.request_automatic_booking_refund('60000000-0000-4000-8000-000000001001',public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->>'revision','{"bookingPriceFils":80000000,"bookingServiceFeeFils":4000000}')$$,'resolved partial failure preserves full 80m price and 4m fee top-up');
+create temp table active_claim as select public.claim_booking_refund((select intent from scheduling_ids where slot=151)) as claim;
+select is(public.claim_booking_refund((select intent from scheduling_ids where slot=151))->>'status','processing','existing lease is genuinely still processing');
+insert into scheduling_batches values(5,public.claim_due_booking_refunds(50)),(6,public.claim_due_booking_refunds(50));
+select ok(exists(select 1 from scheduling_batches where sequence in (5,6) and ids @> '["60000000-0000-4000-8000-000000152001"]'::jsonb),'unknown and active processing cannot starve a new automatic cancellation obligation');
+select ok(exists(select 1 from scheduling_batches where sequence in (5,6) and ids @> jsonb_build_array((select request from scheduling_ids where slot=151))),'active processing remains eligible for later recovery');
+-- Resolve 151 and the cancellation, then create a genuinely new exception on 151.
+create temp table completed_admission as select public.admit_booking_refund((select claim#>'{request,executionPermit}' from active_claim)) as admission;
+select pg_temp.refund_record(admission,public.persist_simulated_payment_effect(admission-array['purpose','binding','mode'],pg_temp.refund_proposal(admission,'succeeded'))) from completed_admission;
+create temp table automatic_intent as select public.request_automatic_booking_refund('60000000-0000-4000-8000-000000152001',public.get_booking_refund_facts('60000000-0000-4000-8000-000000152001')->>'revision','{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}') as result;
+create temp table automatic_claim as select public.claim_booking_refund((public.get_booking_refund_facts('60000000-0000-4000-8000-000000152001')#>>'{intents,0,id}')::uuid) as claim;
+create temp table automatic_admission as select public.admit_booking_refund((select claim#>'{request,executionPermit}' from automatic_claim)) as admission;
+select pg_temp.refund_record(admission,public.persist_simulated_payment_effect(admission-array['purpose','binding','mode'],pg_temp.refund_proposal(admission,'succeeded'))) from automatic_admission;
+insert into scheduling_batches values(7,public.claim_due_booking_refunds(50));
+select is(jsonb_array_length((select ids from scheduling_batches where sequence=7)),50,'completed partial and full obligation leave only the fifty unknown refunds due');
 reset role;
-select is((select count(*)::integer from public.booking_refund_intents where booking_request_id='60000000-0000-4000-8000-000000001001'),3,'failed intent remains in immutable audit beside successful partial and full top-up');
-select is((select refund_booking_price_fils+refund_booking_service_fee_fils from public.booking_cancellations where booking_request_id='60000000-0000-4000-8000-000000001001'),115000000::bigint,'refund processing never edits the original cancellation obligation');
-insert into refund_test_values select 'topup-intent',to_jsonb(id) from public.booking_refund_intents where source='cancellation' and booking_request_id='60000000-0000-4000-8000-000000001001';
+select pg_temp.request_exception(151);
 set local role service_role;
-insert into refund_test_values values('topup-claim',public.claim_booking_refund((pg_temp.refund_value('topup-intent')#>>'{}')::uuid));
-insert into refund_test_values values('topup-admission',public.admit_booking_refund(pg_temp.refund_value('topup-claim')#>'{request,executionPermit}'));
-select pg_temp.refund_record(pg_temp.refund_value('topup-admission'),public.persist_simulated_payment_effect(pg_temp.refund_value('topup-admission')-array['purpose','binding','mode'],pg_temp.refund_proposal(pg_temp.refund_value('topup-admission'),'succeeded')));
-select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'refunded','{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb,'completed top-up returns the full original price and fee after partial failure');
-select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'reserved','{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb,'verified full return leaves no reserved capacity');
-select is(public.claim_due_booking_refunds(50),'[]'::jsonb,'fully returned cancellation has no further automatic provider work');
+insert into scheduling_batches values(8,public.claim_due_booking_refunds(1));
+select is((select ids->>0 from scheduling_batches where sequence=8),'60000000-0000-4000-8000-000000101001','old retry precedes the new due time of a previously completed booking');
+reset role;
+select pg_temp.seed_refund_booking(153);
+select pg_temp.request_exception(153);
+set local role service_role;
+insert into scheduling_batches values(9,public.claim_due_booking_refunds(1));
+select is((select ids->>0 from scheduling_batches where sequence=9),'60000000-0000-4000-8000-000000102001','new arrivals do not starve older outstanding retries');
+insert into scheduling_batches values(10,public.claim_due_booking_refunds(50)),(11,public.claim_due_booking_refunds(50));
+select ok(exists(select 1 from scheduling_batches where sequence in (10,11) and ids @> jsonb_build_array((select request from scheduling_ids where slot=151))),'re-eligible booking still progresses across bounded batches');
 reset role;
 select * from finish();
 rollback;

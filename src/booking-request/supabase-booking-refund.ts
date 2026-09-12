@@ -135,8 +135,8 @@ export class SupabaseBookingRefundRepository implements BookingRefundRepository 
       throw new Error("Refund work is invalid");
     return data;
   }
-  async due(limit: number): Promise<readonly string[]> {
-    const { data, error } = await this.client.rpc("due_booking_refunds", {
+  async claimDue(limit: number): Promise<readonly string[]> {
+    const { data, error } = await this.client.rpc("claim_due_booking_refunds", {
       target_limit: limit,
     });
     if (

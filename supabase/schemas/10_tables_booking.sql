@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS "public"."booking_requests" (
     "customer_name" "text" NOT NULL,
     "party_size" smallint NOT NULL,
     "booking_note" "text",
+    "refund_last_scheduled_at" timestamp with time zone,
     "status" "text" NOT NULL,
     "response_deadline" timestamp with time zone NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
