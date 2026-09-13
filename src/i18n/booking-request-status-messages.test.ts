@@ -14,12 +14,16 @@ describe("Booking Request lifecycle copy", () => {
     "maps every status and decline reason to %s user copy",
     (locale) => {
       for (const status of bookingRequestStatuses) {
-        expect(bookingRequestStatusMessages[locale][status]).not.toBe(status);
+        const label = bookingRequestStatusMessages[locale][status];
+        expect(label).toEqual(expect.any(String));
+        expect(label.trim()).not.toBe("");
+        expect(label).not.toBe(status);
       }
       for (const reason of bookingRequestDeclineReasons) {
-        expect(bookingRequestDeclineReasonMessages[locale][reason]).not.toBe(
-          reason,
-        );
+        const label = bookingRequestDeclineReasonMessages[locale][reason];
+        expect(label).toEqual(expect.any(String));
+        expect(label.trim()).not.toBe("");
+        expect(label).not.toBe(reason);
       }
     },
   );

@@ -46,17 +46,6 @@ test("preserves the selected Retreat shell around live discovery", async ({
   ).toHaveCount(0);
 });
 
-test("keeps the Retreat shell within the Arabic viewport", async ({ page }) => {
-  await page.goto("/ar");
-  const dimensions = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    document: document.documentElement.scrollWidth,
-  }));
-  expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
-  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("navigation", { name: "اللغة" })).toBeVisible();
-});
-
 test("shared sign-in and owner enrollment stay localized and keyboard-operable", async ({
   page,
 }, testInfo) => {
@@ -67,6 +56,11 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
     await expect(ownerLink).toHaveAttribute("href", copy.href);
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.locator("html")).toHaveAttribute("dir", copy.dir);
+    if (locale === "ar") {
+      await expect(
+        page.getByRole("navigation", { name: "اللغة" }),
+      ).toBeVisible();
+    }
     await expect(page.locator("html")).toHaveJSProperty(
       "scrollWidth",
       await page.locator("html").evaluate((element) => element.clientWidth),

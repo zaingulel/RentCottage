@@ -3,6 +3,20 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
+const deferSuccessfulRestoreMode = "--defer-successful-restore";
+const requestedModes = process.argv.slice(2);
+if (
+  requestedModes.length > 1 ||
+  (requestedModes.length === 1 &&
+    requestedModes[0] !== deferSuccessfulRestoreMode)
+) {
+  console.error(
+    `Usage: node scripts/verify-booking-notification-upgrade.mjs [${deferSuccessfulRestoreMode}]`,
+  );
+  process.exit(2);
+}
+const deferSuccessfulRestore = requestedModes[0] === deferSuccessfulRestoreMode;
+
 const harness = createLocalSupabaseConcurrencyHarness();
 const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
 if (
@@ -200,14 +214,16 @@ try {
 } catch (error) {
   failure = error;
 } finally {
-  try {
-    harness.guardDisposableLocalDatabase();
-    supabase(["db", "reset", "--local"]);
-  } catch (error) {
-    failure = new AggregateError(
-      [...(failure ? [failure] : []), error],
-      "Notification upgrade or disposable restoration failed",
-    );
+  if (failure || !deferSuccessfulRestore) {
+    try {
+      harness.guardDisposableLocalDatabase();
+      supabase(["db", "reset", "--local"]);
+    } catch (error) {
+      failure = new AggregateError(
+        [...(failure ? [failure] : []), error],
+        "Notification upgrade or disposable restoration failed",
+      );
+    }
   }
 }
 if (failure) throw failure;
