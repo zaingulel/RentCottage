@@ -82,7 +82,7 @@ test("request delivery states stay distinct, localized, and retain details on fa
       for (const label of [
         "Queued",
         "Delivery processing",
-        "Delivery failed; retry available",
+        "Delivery failed",
         "Delivery outcome uncertain; checking",
         "Delivered",
         "Delivery withheld because this notice is no longer eligible",
