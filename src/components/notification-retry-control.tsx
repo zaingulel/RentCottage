@@ -21,7 +21,7 @@ export function NotificationRetryControl({
 }: {
   locale: string;
   reference: string;
-  receiptId: string;
+  receiptId: string | null;
   eventId?: string;
   label: string;
   failed: string;
@@ -35,7 +35,9 @@ export function NotificationRetryControl({
     <form action={action}>
       <input type="hidden" name="locale" value={locale} />
       <input type="hidden" name="reference" value={reference} />
-      <input type="hidden" name="receiptId" value={receiptId} />
+      {receiptId ? (
+        <input type="hidden" name="receiptId" value={receiptId} />
+      ) : null}
       {eventId ? <input type="hidden" name="eventId" value={eventId} /> : null}
       <ActionButton
         type="submit"

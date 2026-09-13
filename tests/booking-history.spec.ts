@@ -143,12 +143,11 @@ test("same-phone reauthentication restores the same real history and owner unpai
   const baseCleanup = cleanupSource
     .split("const cleanup = `")[1]
     .split("`;\n\n")[0]
-    .replaceAll("${customerReceipt}", "82000000-0000-4000-8000-000000003502")
-    .replaceAll("${ownerReceipt}", "82000000-0000-4000-8000-000000003501")
     .replaceAll("${request}", "60000000-0000-4000-8000-000000003501")
     .replaceAll("${operation}", "81000000-0000-4000-8000-000000003501")
     .replaceAll("${confirmation}", "80000000-0000-4000-8000-000000003501");
   const unpaidCleanup = `set session_replication_role=replica;
+    delete from public.booking_notification_events where booking_request_id='${unpaidRequest}';
     delete from public.owner_request_notifications where booking_request_id='${unpaidRequest}';
     delete from public.booking_requests where id='${unpaidRequest}';
     delete from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000003511';

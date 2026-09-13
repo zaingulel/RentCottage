@@ -1,4 +1,13 @@
-import { render, screen } from "@testing-library/react";
+vi.mock("server-only", () => ({}));
+vi.mock("@/notification/notification-actions", () => ({
+  retryPaidConfirmationNotification: vi.fn(),
+}));
+vi.mock("@/notification/request-notification-status", () => ({
+  loadRequestNotificationStatus: vi
+    .fn()
+    .mockResolvedValue({ status: "unavailable" }),
+}));
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const { confirmed, financial, refresh, request } = vi.hoisted(() => ({
   confirmed: vi.fn(),
@@ -114,19 +123,31 @@ it("replaces an unpaid request with its authoritative payment status", async () 
     .mockResolvedValueOnce(ownerDisplayFixtures["capture-processing"])
     .mockResolvedValueOnce(ownerDisplayFixtures["payment-required-open"]);
   const view = render(await Page({ params: params("en") }));
-  expect(screen.getByRole("status")).toHaveTextContent(
-    "Payment confirmation pending",
-  );
+  expect(
+    within(screen.getByRole("article")).getByRole("status"),
+  ).toHaveTextContent("Payment confirmation pending");
   vi.advanceTimersToNextTimer();
   expect(refresh).toHaveBeenCalledOnce();
   view.rerender(await Page({ params: params("en") }));
-  expect(screen.getByRole("status")).toHaveTextContent(
-    "The Customer’s automatic payment failed",
-  );
+  expect(
+    within(screen.getByRole("article")).getByRole("status"),
+  ).toHaveTextContent("The Customer’s automatic payment failed");
 });
 it("keeps participant role isolation", async () => {
   confirmed.mockResolvedValue({ access: { actorRole: "customer" } });
   render(await Page({ params: params("en") }));
   expect(screen.getByRole("alert")).toHaveTextContent("Access recovery");
   expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+});
+
+it("keeps paid details visible when request delivery status cannot load", async () => {
+  render(await Page({ params: params("en") }));
+  expect(
+    screen.getByRole("heading", { name: "Confirmed booking" }),
+  ).toBeVisible();
+  expect(
+    screen.getByText(
+      "Notification delivery status is unavailable. Your request details remain available.",
+    ),
+  ).toBeVisible();
 });

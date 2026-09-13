@@ -56,9 +56,10 @@ const binding = (leased) => ({
   payloadSha256: leased.payloadSha256,
 });
 const cleanup = `set session_replication_role=replica;
-delete from public.booking_confirmation_notification_attempts where receipt_id in ('${customerReceipt}','${ownerReceipt}');
-delete from public.fictional_booking_confirmation_notification_effects where receipt_id in ('${customerReceipt}','${ownerReceipt}');
-delete from public.booking_confirmation_notification_work where receipt_id in ('${customerReceipt}','${ownerReceipt}');
+delete from public.booking_confirmation_notification_attempts where notification_id in (select notification_id from public.booking_confirmation_notification_work where booking_request_id='${request}');
+delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${request}';
+delete from public.booking_confirmation_notification_work where booking_request_id='${request}';
+delete from public.booking_notification_events where booking_request_id='${request}';
 delete from public.booking_request_confirmation_invalidations where booking_request_id='${request}';
 delete from public.booking_request_payment_required_expiry_work where booking_request_id='${request}';
 delete from public.payment_provider_operations where id='${operation}';

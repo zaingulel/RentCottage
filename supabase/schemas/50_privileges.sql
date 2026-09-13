@@ -1419,3 +1419,8 @@ REVOKE ALL ON FUNCTION public.booking_cancellation_source_facts(uuid) FROM PUBLI
 REVOKE ALL ON FUNCTION public.booking_owner_earnings_facts(uuid,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.booking_settlement_projection_facts_at(uuid,jsonb,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.booking_completion_eligibility_at(uuid,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.ensure_booking_request_notification_events(uuid),public.observe_booking_request_notification_source(),public.booking_request_notification_source_valid(public.booking_notification_events),public.guard_booking_request_notification_source(),public.booking_request_notification_is_current(public.booking_notification_events) FROM PUBLIC,anon,authenticated,service_role;
+
+REVOKE ALL ON FUNCTION public.list_booking_request_notification_status(text,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.list_booking_request_notification_status(text,text) TO authenticated;

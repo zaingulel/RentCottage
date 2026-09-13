@@ -1,3 +1,5 @@
+import { loadRequestNotificationStatus } from "@/notification/request-notification-status";
+import { RequestNotificationDetails } from "@/components/request-notification-details";
 import { loadBookingFinancialView } from "@/booking-request/request-booking-financial-view";
 import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
@@ -33,6 +35,17 @@ export default async function OwnerConfirmedBookingPage({
         returnTo={returnTo}
       />
     );
+  const requestDelivery = await loadRequestNotificationStatus(
+    reference,
+    "cottage_owner",
+  );
+  const notices = (
+    <RequestNotificationDetails
+      locale={locale}
+      reference={reference}
+      delivery={requestDelivery}
+    />
+  );
   let confirmed;
   let financial;
   let request;
@@ -51,6 +64,7 @@ export default async function OwnerConfirmedBookingPage({
     return (
       <main className="results-page">
         <BookingFinancialDetails locale={locale} view={financial} />
+        {notices}
       </main>
     );
   if (confirmed === null && request)
@@ -60,6 +74,7 @@ export default async function OwnerConfirmedBookingPage({
           locale={locale}
           notifications={[request]}
         />
+        {notices}
       </main>
     );
   if (confirmed === null)
@@ -97,6 +112,7 @@ export default async function OwnerConfirmedBookingPage({
       {financial ? (
         <BookingFinancialDetails locale={locale} view={financial} />
       ) : null}
+      {notices}
     </main>
   );
 }

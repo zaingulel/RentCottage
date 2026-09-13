@@ -105,3 +105,7 @@ CREATE INDEX booking_lifecycle_outcomes_period_end_idx ON public.booking_lifecyc
 
 CREATE UNIQUE INDEX booking_payout_commands_subject_unique ON public.booking_payout_commands(subject_id) WHERE subject_id IS NOT NULL;
 CREATE INDEX booking_payout_commands_request_history ON public.booking_payout_commands(booking_request_id,occurred_at,id);
+
+CREATE UNIQUE INDEX booking_notification_events_owner_source_idx ON public.booking_notification_events(owner_request_notification_id) WHERE owner_request_notification_id IS NOT NULL;
+CREATE UNIQUE INDEX booking_notification_events_status_source_idx ON public.booking_notification_events(request_status_notification_id) WHERE request_status_notification_id IS NOT NULL;
+CREATE UNIQUE INDEX booking_notification_events_recovery_source_idx ON public.booking_notification_events(booking_request_id,recovery_generation,event_kind,recipient_role) WHERE payment_history_id IS NOT NULL;

@@ -1194,7 +1194,7 @@ try {
   );
   assertEqual(
     harness.runSql(
-      "set role service_role; select count(*) from public.list_due_booking_confirmation_notifications(10);",
+      "set role service_role; select count(*) from public.list_due_booking_confirmation_notifications(10) candidate where candidate->>'receiptId' is not null and candidate->'event' is null;",
     ),
     "2",
     "Both byte-preserved receipt intents must become due notification candidates.",

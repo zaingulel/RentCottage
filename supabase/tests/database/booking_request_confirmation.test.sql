@@ -204,6 +204,8 @@ select throws_ok($$select public.finalize_booking_request_confirmation('60000000
 reset role;
 rollback to savepoint missing_bundle_component;
 
+create temp table notifications_before_failed_confirmation as
+  select coalesce(jsonb_agg(to_jsonb(event) order by event.id),'[]'::jsonb) events from public.booking_notification_events event;
 create function pg_temp.fail_owner_receipt() returns trigger language plpgsql as $$begin
   if new.recipient_role='cottage_owner' then raise exception 'injected second receipt failure'; end if;
   return new;
@@ -212,7 +214,7 @@ create trigger fail_owner_receipt before insert on public.booking_receipts for e
 set local role service_role;
 select throws_ok($$select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',(select result->'snapshot' from confirmation_capture))$$,'P0001','injected second receipt failure','second receipt failure rolls back the complete outcome');
 reset role;
-select ok((select status from public.cottage_booking_period_commitments)='pending_hold' and not exists(select 1 from public.booking_confirmations) and not exists(select 1 from public.booking_receipts) and not exists(select 1 from public.booking_notification_events),'receipt failure leaves no partial confirmation, receipt or reminder outcome');
+select ok((select status from public.cottage_booking_period_commitments)='pending_hold' and not exists(select 1 from public.booking_confirmations) and not exists(select 1 from public.booking_receipts) and (select coalesce(jsonb_agg(to_jsonb(event) order by event.id),'[]'::jsonb) from public.booking_notification_events event)=(select events from notifications_before_failed_confirmation),'receipt failure preserves prior request notices and leaves no partial confirmation, receipt or reminder outcome');
 drop trigger fail_owner_receipt on public.booking_receipts;
 
 set local role service_role;

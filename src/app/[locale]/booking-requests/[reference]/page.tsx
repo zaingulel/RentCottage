@@ -1,3 +1,5 @@
+import { loadRequestNotificationStatus } from "@/notification/request-notification-status";
+import { RequestNotificationDetails } from "@/components/request-notification-details";
 import { loadBookingFinancialView } from "@/booking-request/request-booking-financial-view";
 import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
@@ -40,6 +42,17 @@ export default async function CustomerBookingRequestPage({
         returnTo={returnTo}
       />
     );
+  const requestDelivery = await loadRequestNotificationStatus(
+    reference,
+    "customer",
+  );
+  const notices = (
+    <RequestNotificationDetails
+      locale={locale}
+      reference={reference}
+      delivery={requestDelivery}
+    />
+  );
   let confirmed;
   let financial;
   try {
@@ -74,6 +87,7 @@ export default async function CustomerBookingRequestPage({
     return (
       <main className="results-page">
         <BookingFinancialDetails locale={locale} view={financial} />
+        {notices}
       </main>
     );
   if (confirmed)
@@ -87,6 +101,7 @@ export default async function CustomerBookingRequestPage({
         {financial ? (
           <BookingFinancialDetails locale={locale} view={financial} />
         ) : null}
+        {notices}
       </main>
     );
   let request;
@@ -118,6 +133,7 @@ export default async function CustomerBookingRequestPage({
   return (
     <main className="results-page">
       <CustomerBookingRequestStatus locale={locale} request={request} />
+      {notices}
     </main>
   );
 }
