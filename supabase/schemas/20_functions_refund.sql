@@ -1,27 +1,40 @@
 SET check_function_bodies = false;
 
-CREATE OR REPLACE FUNCTION public.lock_booking_refund_source(target_booking_request_id uuid) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+CREATE OR REPLACE FUNCTION public.booking_refund_source_facts(target_booking_request_id uuid) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
 declare request public.booking_requests;
 declare confirmation public.booking_confirmations;
 declare snapshot public.booking_snapshots;
 declare capture public.payment_provider_operations;
 begin
-  select * into request from public.booking_requests where id=target_booking_request_id for update;
-  perform 1 from public.booking_request_capture_work where booking_request_id=request.id for update;
+  select * into request from public.booking_requests where id=target_booking_request_id;
   select * into confirmation from public.booking_confirmations where booking_request_id=request.id;
   select * into snapshot from public.booking_snapshots where id=request.booking_snapshot_id;
-  select * into capture from public.payment_provider_operations where id=confirmation.capture_operation_id for update;
+  select * into capture from public.payment_provider_operations where id=confirmation.capture_operation_id;
   if request.id is null or confirmation.id is null or snapshot.id is null or capture.id is null
     or capture.operation_kind is distinct from 'capture' or capture.current_outcome is distinct from 'succeeded'
     or capture.recorded_at is null or capture.movement_reference is null or capture.authoritative_outcome_at is null
     or (confirmation.booking_snapshot_id,confirmation.booking_period_commitment_id) is distinct from (snapshot.id,request.booking_period_commitment_id)
     or capture.amount_fils is distinct from ((snapshot.quote_payload->>'bookingPriceIqd')::bigint+(snapshot.quote_payload->>'serviceFeeIqd')::bigint)*1000
     or exists(select 1 from public.booking_request_confirmation_invalidations where booking_request_id=request.id)
-    or public.booking_request_payment_quarantined(request.id) then
+    or exists(select 1 from public.booking_request_payment_required_expiry_work where booking_request_id=request.id and state='quarantined') then
     raise exception 'Refund capture source is invalid' using errcode='RC409'; end if;
   return jsonb_build_object('bookingRequestId',request.id,'captureOperationId',capture.id,
     'captured',jsonb_build_object('bookingPriceFils',(snapshot.quote_payload->>'bookingPriceIqd')::bigint*1000,'bookingServiceFeeFils',(snapshot.quote_payload->>'serviceFeeIqd')::bigint*1000));
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.lock_booking_refund_source(target_booking_request_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare request public.booking_requests;
+begin
+  select * into request from public.booking_requests where id=target_booking_request_id for update;
+  perform 1 from public.booking_request_capture_work where booking_request_id=request.id for update;
+  perform capture.id from public.payment_provider_operations capture
+    join public.booking_confirmations confirmation on confirmation.capture_operation_id=capture.id
+    where confirmation.booking_request_id=request.id for update of capture;
+  -- A separate statement refreshes the read snapshot after any lock wait.
+  return public.booking_refund_source_facts(target_booking_request_id);
 end;
 $$;
 
@@ -34,17 +47,15 @@ LANGUAGE sql STABLE SET search_path='' AS $$
     where attempts.refund_intent_id=target_intent_id order by attempts.generation desc limit 1),'requested');
 $$;
 
--- All callers acquire the booking source lock before this capture lock. Capacity is
--- derived from immutable allocations and shared evidence, never a mutable balance.
-CREATE OR REPLACE FUNCTION public.booking_capture_refund_totals(target_capture_id uuid,target_captured jsonb) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+CREATE OR REPLACE FUNCTION public.booking_capture_refund_totals_facts(target_capture_id uuid,target_captured jsonb) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
 declare capture public.payment_provider_operations;
 declare owned record;
 declare state text;
 declare refunded_price bigint:=0; declare refunded_fee bigint:=0;
 declare reserved_price bigint:=0; declare reserved_fee bigint:=0;
 begin
-  select * into capture from public.payment_provider_operations where id=target_capture_id for update;
+  select * into capture from public.payment_provider_operations where id=target_capture_id;
   if capture.id is null or capture.operation_kind<>'capture' or capture.current_outcome<>'succeeded'
     or capture.amount_fils<>(target_captured->>'bookingPriceFils')::bigint+(target_captured->>'bookingServiceFeeFils')::bigint then
     raise exception 'Refund capacity capture is invalid' using errcode='RC409'; end if;
@@ -69,6 +80,15 @@ begin
     raise exception 'Refund allocations exceed the captured components' using errcode='RC409'; end if;
   return jsonb_build_object('refunded',jsonb_build_object('bookingPriceFils',refunded_price,'bookingServiceFeeFils',refunded_fee),
     'reserved',jsonb_build_object('bookingPriceFils',reserved_price,'bookingServiceFeeFils',reserved_fee));
+end;
+$$;
+
+-- All command callers acquire the booking source lock before this capture lock.
+CREATE OR REPLACE FUNCTION public.booking_capture_refund_totals(target_capture_id uuid,target_captured jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  perform 1 from public.payment_provider_operations where id=target_capture_id for update;
+  return public.booking_capture_refund_totals_facts(target_capture_id,target_captured);
 end;
 $$;
 

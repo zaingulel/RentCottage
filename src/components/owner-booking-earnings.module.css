@@ -1,0 +1,103 @@
+.summary,
+.details {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid #d5ddd7;
+  border-radius: 0.8rem;
+  background: #f8faf8;
+  color: #18352b;
+  overflow-wrap: anywhere;
+}
+
+.summary h2,
+.details h3,
+.details h4,
+.details p,
+.details ul {
+  margin: 0;
+}
+
+.details > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+}
+
+.status {
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: #e6eee8;
+  font-size: 0.9rem;
+}
+
+.status[data-status="blocked"],
+.status[data-status="attention"] {
+  background: #fff0d7;
+  color: #623d00;
+}
+
+.status[data-status="paid"],
+.status[data-status="eligible"] {
+  background: #dff1e5;
+  color: #164d2d;
+}
+
+.amounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.amounts > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.65rem;
+  border-radius: 0.55rem;
+  background: #fff;
+}
+
+.amounts dt,
+.note {
+  color: #4b6158;
+  font-size: 0.86rem;
+}
+
+.amounts dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.causes {
+  display: grid;
+  gap: 0.45rem;
+  padding-block-start: 0.2rem;
+}
+
+.causes ul {
+  display: grid;
+  gap: 0.35rem;
+  padding-inline-start: 1.25rem;
+}
+
+@media (max-width: 36rem) {
+  .summary,
+  .details {
+    padding: 0.8rem;
+  }
+
+  .amounts {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 24rem) {
+  .amounts {
+    grid-template-columns: 1fr;
+  }
+}

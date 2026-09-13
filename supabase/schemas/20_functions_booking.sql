@@ -1092,7 +1092,7 @@ begin
 end $$;
 
 CREATE OR REPLACE FUNCTION public.list_booking_history(target_actor_role text) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 declare actor uuid:=(select auth.uid()); declare context public.account_contexts;
 begin
   select * into context from public.account_contexts where user_id=actor;
@@ -1111,7 +1111,11 @@ begin
         'lastEndsAt',(select max(upper(period)) from unnest(commitments.access_ranges) period),'actorRole',target_actor_role,
         'status',case when access.paid_access
           then public.get_booking_lifecycle(requests.booking_request_reference,target_actor_role)->>'status'
-          else coalesce(public.booking_request_payment_status(requests),requests.status) end)) item
+          else coalesce(public.booking_request_payment_status(requests),requests.status) end))
+        ||case when target_actor_role='cottage_owner' then jsonb_build_object('ownerEarnings',case when access.paid_access
+          then public.booking_owner_earnings_facts(requests.id,statement_timestamp())
+          when confirmations.id is not null or public.booking_request_payment_status(requests) in ('capture-processing','payment-required','paid-confirmed')
+          then '{"status":"unavailable"}'::jsonb else '{"status":"not-captured"}'::jsonb end) else '{}'::jsonb end item
     from public.booking_requests requests
     join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id
     join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id
@@ -7415,7 +7419,7 @@ end;
 $$;
 
 CREATE OR REPLACE FUNCTION public.payment_provider_recorded_result(target public.payment_provider_operations) RETURNS jsonb
-LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
   select observations.result from public.payment_provider_observations observations where observations.operation_id=target.id
     and observations.result->>'outcome'=target.current_outcome
     and (observations.result->>'providerRequestId',observations.result->>'providerReference',observations.result->>'movementReference',observations.occurred_at)

@@ -11,6 +11,8 @@ import type { Locale } from "@/i18n/routing";
 import { BookingLifecycleDetails } from "./booking-lifecycle-details";
 import { BookingManagementControl } from "./booking-management-controls";
 import { NotificationRetryControl } from "./notification-retry-control";
+import { ownerBookingEarnings } from "@/booking-request/owner-booking-earnings";
+import { OwnerBookingEarningsDetails } from "./owner-booking-earnings";
 import styles from "./booking-financial-details.module.css";
 export function BookingFinancialDetails({
   locale,
@@ -20,8 +22,11 @@ export function BookingFinancialDetails({
   view: BookingFinancialView;
 }) {
   const p = bookingPayoutMessages[locale];
-  const c = bookingManagementMessages[locale],
-    isOwner = view.actorRole !== "customer";
+  const c = bookingManagementMessages[locale];
+  const ownerEarnings =
+    view.actorRole === "cottage_owner"
+      ? ownerBookingEarnings(view.ownerEarnings ?? { status: "unavailable" })
+      : null;
   const pending = view.refunds.some((r) =>
     ["requested", "processing", "unknown"].includes(r.state),
   );
@@ -111,7 +116,7 @@ export function BookingFinancialDetails({
               <dt>{c.originalTotal}</dt>
               <dd>{amount(refundAllocationTotal(view.captured))}</dd>
             </div>
-            {isOwner ? (
+            {view.actorRole === "platform_administrator" ? (
               <>
                 <div>
                   <dt>{c.originalCommission}</dt>
@@ -144,16 +149,20 @@ export function BookingFinancialDetails({
           <strong>
             {amount(refundAllocationTotal(view.cancellation.obligation))}
           </strong>
-          {presentation.fullRefundRequired && isOwner ? (
+          {presentation.fullRefundRequired && view.actorRole !== "customer" ? (
             <p>{c.noPayout}</p>
           ) : null}
         </div>
+      ) : null}
+      {ownerEarnings ? (
+        <OwnerBookingEarningsDetails locale={locale} earnings={ownerEarnings} />
       ) : null}
       <div data-testid="verified-refund">
         <h3>{c.returned}</h3>
         {components(view.refunded)}
       </div>
-      {isOwner && !presentation.fullRefundRequired ? (
+      {view.actorRole === "platform_administrator" &&
+      !presentation.fullRefundRequired ? (
         <div data-testid="owner-after-completed">
           <h3>{c.afterCompleted}</h3>
           <p>

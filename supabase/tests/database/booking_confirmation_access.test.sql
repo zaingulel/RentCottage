@@ -1,5 +1,5 @@
 begin;
-select plan(43);
+select plan(44);
 
 select has_function(
   'public',
@@ -183,6 +183,7 @@ select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')->>'acto
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501')#>>'{pricing,ownerNetFils}', '99000000', 'the Cottage Owner receives preserved Owner pricing');
 select ok(not (public.get_confirmed_booking_access('RC-REQ-0000000000003501')->'pricing' ? 'customerTotalIqd'), 'the Cottage Owner does not receive Customer fee data');
 select is((select value->>'actorRole' from jsonb_array_elements(public.list_booking_history('cottage_owner')) value), 'cottage_owner', 'the Cottage Owner history links through the Owner role');
+select is(public.list_booking_history('cottage_owner')#>>'{0,ownerEarnings,status}', 'unavailable', 'the Owner history retains its row and marks unavailable earnings when the legacy graph has no authoritative capture operation');
 reset role;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003503', true);

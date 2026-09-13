@@ -48,6 +48,38 @@ describe("Booking History parser", () => {
       },
     ]);
   });
+  it("requires an explicit earnings state on every owner row", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [
+        {
+          ...item,
+          actorRole: "cottage_owner",
+          ownerEarnings: { status: "not-captured" },
+        },
+      ],
+      error: null,
+    });
+    await expect(
+      listBookingHistory({ rpc } as never, "cottage_owner"),
+    ).resolves.toMatchObject([
+      { actorRole: "cottage_owner", ownerEarnings: { status: "not-captured" } },
+    ]);
+  });
+  it("marks contradictory owner earnings unavailable without losing the booking row", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [
+        {
+          ...item,
+          actorRole: "cottage_owner",
+          ownerEarnings: { status: "captured", captured: null },
+        },
+      ],
+      error: null,
+    });
+    await expect(
+      listBookingHistory({ rpc } as never, "cottage_owner"),
+    ).resolves.toMatchObject([{ ownerEarnings: { status: "unavailable" } }]);
+  });
   it("strips unexpected private data and requires a truthful outcome", async () => {
     const rpc = vi
       .fn()

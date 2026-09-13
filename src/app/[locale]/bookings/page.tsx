@@ -6,6 +6,11 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { loadBookingHistory } from "@/booking-request/request-booking-history";
 import { isLocale } from "@/i18n/routing";
 import { BookingHistoryList } from "@/components/booking-history-list";
+import {
+  ownerBookingEarnings,
+  ownerBookingEarningsTotals,
+} from "@/booking-request/owner-booking-earnings";
+import { OwnerBookingEarningsSummary } from "@/components/owner-booking-earnings";
 const copy = {
   en: {
     empty: "No booking requests yet.",
@@ -78,6 +83,16 @@ export default async function BookingHistoryPage({
         returnTo={returnTo}
       />
     );
+  const ownerTotals =
+    workspace === "owner"
+      ? ownerBookingEarningsTotals(
+          items.map((item) =>
+            ownerBookingEarnings(
+              item.ownerEarnings ?? { status: "unavailable" },
+            ),
+          ),
+        )
+      : null;
   return (
     <main className="results-page">
       <section className="booking-history">
@@ -86,6 +101,9 @@ export default async function BookingHistoryPage({
           <h1>{title}</h1>
         </header>
         <p>{accessMessages[locale].bookingHistoryIntro}</p>
+        {ownerTotals ? (
+          <OwnerBookingEarningsSummary locale={locale} totals={ownerTotals} />
+        ) : null}
         {items.length === 0 ? (
           <p>{copy[locale].empty}</p>
         ) : (

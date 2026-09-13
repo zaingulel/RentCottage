@@ -217,7 +217,7 @@ end;
 $$;
 
 CREATE OR REPLACE FUNCTION public.get_booking_lifecycle(target_reference text,target_actor_role text) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 declare actor uuid:=(select auth.uid()); declare context public.account_contexts; declare request public.booking_requests; declare lifecycle record; declare result jsonb;
 begin
   select * into context from public.account_contexts where user_id=actor;
@@ -251,9 +251,9 @@ begin
 end;
 $$;
 
-CREATE OR REPLACE FUNCTION public.booking_completion_eligibility(target_request_id uuid) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-declare request_id uuid:=target_request_id; declare maturity record; declare observed timestamptz:=clock_timestamp();
+CREATE OR REPLACE FUNCTION public.booking_completion_eligibility_at(target_request_id uuid,observed timestamptz) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+declare request_id uuid:=target_request_id; declare maturity record;
 begin
   select * into maturity from public.booking_completion_maturity where booking_request_id=request_id;
   if maturity.booking_request_id is null
@@ -267,6 +267,13 @@ begin
   return jsonb_build_object('status',maturity.outcome,'effectivePeriodEnd',maturity.effective_period_end,'assessedAt',maturity.assessed_at,
     'reviewExpiresAt',maturity.review_expires_at,'reviewAvailable',public.booking_review_is_available(maturity.effective_period_end,maturity.review_expires_at,observed),
     'payoutPrerequisiteAt',maturity.payout_prerequisite_at,'payoutPrerequisiteAvailable',observed>=maturity.payout_prerequisite_at);
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.booking_completion_eligibility(target_request_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  return public.booking_completion_eligibility_at(target_request_id,clock_timestamp());
 end;
 $$;
 

@@ -20,10 +20,15 @@ import {
   exactMarketplaceCommission,
 } from "@/payment/payment-refund-allocation";
 import type { BookingCancellationCommand } from "./booking-cancellation";
+import {
+  parseOwnerBookingEarningsAvailability,
+  type OwnerBookingEarningsFacts,
+} from "./owner-booking-earnings";
 export type BookingParticipantRole = BookingCancellationCommand["actorRole"];
 export interface BookingFinancialView {
   readonly payout?: BookingSettlementFacts;
   readonly ownerPayout?: BookingPayoutRecovery;
+  readonly ownerEarnings?: OwnerBookingEarningsFacts;
   readonly bookingRequestId: string;
   readonly bookingRequestReference: string;
   readonly bookingReference: string;
@@ -153,7 +158,8 @@ export function parseBookingFinancialView(
     v.actorRole !== actorRole ||
     (actorRole !== "platform_administrator" &&
       (v.audit !== undefined || v.payout !== undefined)) ||
-    (actorRole === "customer" && v.ownerPayout !== undefined)
+    (actorRole === "customer" && v.ownerPayout !== undefined) ||
+    (actorRole === "cottage_owner") !== (v.ownerEarnings !== undefined)
   )
     throw new Error("Invalid financial view binding");
   const captured = allocation(v.captured),
@@ -169,6 +175,11 @@ export function parseBookingFinancialView(
             v.ownerPayout ?? { status: "unavailable" },
           ),
         }),
+    ...(actorRole === "cottage_owner"
+      ? {
+          ownerEarnings: parseOwnerBookingEarningsAvailability(v.ownerEarnings),
+        }
+      : {}),
     bookingRequestId: uuid(v.bookingRequestId),
     bookingRequestReference: reference,
     bookingReference: text(v.bookingReference),

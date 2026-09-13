@@ -8,7 +8,38 @@ vi.mock("@/notification/notification-actions", () => ({
 }));
 import { BookingFinancialDetails } from "./booking-financial-details";
 import type { BookingFinancialView } from "@/booking-request/booking-financial-view";
+import type { OwnerBookingEarningsFacts } from "@/booking-request/owner-booking-earnings";
 const zero = { bookingPriceFils: 0, bookingServiceFeeFils: 0 };
+const ownerEarnings: Extract<
+  OwnerBookingEarningsFacts,
+  { status: "captured" }
+> = {
+  status: "captured",
+  captured: {
+    bookingPriceFils: 100000000,
+    bookingServiceFeeFils: 5000000,
+  },
+  refunded: zero,
+  reserved: { bookingPriceFils: 20000000, bookingServiceFeeFils: 0 },
+  obligation: zero,
+  marketplaceCommissionRateBasisPoints: 1000,
+  marketplaceCommissionAmountFils: 10000000,
+  refunds: [
+    {
+      state: "requested",
+      allocation: { bookingPriceFils: 20000000, bookingServiceFeeFils: 0 },
+    },
+  ],
+  maturity: {
+    status: "unavailable",
+    reviewAvailable: false,
+    payoutPrerequisiteAvailable: false,
+  },
+  administratorHoldActive: false,
+  disputes: [],
+  settlement: null,
+  recovery: { status: "unsettled" },
+};
 const financial: BookingFinancialView = {
   bookingRequestId: "60000000-0000-4000-8000-000000001001",
   bookingRequestReference: "RC-REQ-0000000000001001",
@@ -40,17 +71,18 @@ const financial: BookingFinancialView = {
     },
   ],
   notifications: [],
+  ownerEarnings,
 };
 describe("retained cancellation and refund details", () => {
   it("keeps pending approval distinct from actual returned money and owner share", () => {
     render(<BookingFinancialDetails locale="en" view={financial} />);
     expect(
-      within(screen.getByTestId("owner-after-completed")).getByText(
-        "IQD 90,000",
-      ),
-    ).toBeInTheDocument();
+      within(
+        screen.getByRole("region", { name: "Earnings and payout" }),
+      ).getAllByText("IQD 90,000"),
+    ).toHaveLength(2);
     expect(
-      screen.getByText("A refund is pending; this amount may change."),
+      screen.getByText("A refund is pending; these earnings may change."),
     ).toBeInTheDocument();
     expect(
       within(screen.getByTestId("verified-refund")).getAllByText("IQD 0"),
@@ -66,14 +98,25 @@ describe("retained cancellation and refund details", () => {
           refunded: financial.refunds[0].allocation,
           reserved: zero,
           refunds: [{ ...financial.refunds[0], state: "succeeded" }],
+          ownerEarnings: {
+            ...ownerEarnings,
+            refunded: financial.refunds[0].allocation,
+            reserved: zero,
+            refunds: [
+              {
+                state: "succeeded",
+                allocation: financial.refunds[0].allocation,
+              },
+            ],
+          },
         }}
       />,
     );
     expect(
-      within(screen.getByTestId("owner-after-completed")).getByText(
-        "IQD 72,000",
-      ),
-    ).toBeInTheDocument();
+      within(
+        screen.getByRole("region", { name: "Earnings and payout" }),
+      ).getAllByText("IQD 72,000"),
+    ).toHaveLength(2);
     expect(
       screen.queryByText("A refund is pending; this amount may change."),
     ).not.toBeInTheDocument();
@@ -95,6 +138,16 @@ describe("retained cancellation and refund details", () => {
               obligation: financial.captured,
             },
             refunds: [{ ...financial.refunds[0], state: "failed" }],
+            ownerEarnings: {
+              ...ownerEarnings,
+              obligation: financial.captured,
+              refunds: [
+                {
+                  state: "failed",
+                  allocation: financial.refunds[0].allocation,
+                },
+              ],
+            },
           }}
         />,
       );
@@ -105,6 +158,9 @@ describe("retained cancellation and refund details", () => {
       expect(
         screen.queryByTestId("owner-after-completed"),
       ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: /Earnings|الأرباح|داهات/ }),
+      ).toHaveTextContent(/IQD 0|IQD ٠/);
       expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     },
   );
@@ -275,6 +331,17 @@ describe("administrator payout investigation", () => {
       },
     ],
   };
+  it("preserves the administrator owner-share summary", () => {
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{ ...financial, actorRole: "platform_administrator", payout }}
+      />,
+    );
+    expect(screen.getByTestId("owner-after-completed")).toHaveTextContent(
+      "Owner share after completed refundsIQD 90,000",
+    );
+  });
   it.each([
     ["en", "Sep 12, 2026, 3:00 PM"],
     ["ar", "12\u200f/09\u200f/2026، 3:00 م"],
