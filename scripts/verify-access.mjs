@@ -673,7 +673,10 @@ export async function main(
       if (result.status !== 0) return result.status;
       result = await execute(
         "node",
-        ["scripts/verify-account-access-upgrade.mjs"],
+        [
+          "scripts/verify-account-access-upgrade.mjs",
+          "--defer-successful-restore",
+        ],
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;

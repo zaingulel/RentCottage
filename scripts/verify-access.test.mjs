@@ -119,7 +119,10 @@ const databasePreflightCommands = [
     ["scripts/verify-booking-request-payment-required-expiry-upgrade.mjs"],
   ],
   ["node", ["scripts/verify-booking-request-payment-history-upgrade.mjs"]],
-  ["node", ["scripts/verify-account-access-upgrade.mjs"]],
+  [
+    "node",
+    ["scripts/verify-account-access-upgrade.mjs", "--defer-successful-restore"],
+  ],
   [
     "node",
     [
@@ -1712,6 +1715,11 @@ describe("access verification command", () => {
       ["--defer-successful-restore"],
     ],
     ["verify-booking-request-lifecycle-upgrade.mjs", ["--unexpected"]],
+    ["verify-account-access-upgrade.mjs", ["--unexpected"]],
+    [
+      "verify-account-access-upgrade.mjs",
+      ["--defer-successful-restore", "--defer-successful-restore"],
+    ],
     ["verify-booking-notification-upgrade.mjs", ["--unexpected"]],
     [
       "verify-booking-notification-upgrade.mjs",
@@ -2142,6 +2150,10 @@ setInterval(() => {}, 1000);
 
   it.each([
     {
+      failed: "scripts/verify-account-access-upgrade.mjs",
+      successor: "scripts/verify-booking-notification-upgrade.mjs",
+    },
+    {
       failed: "scripts/verify-booking-notification-upgrade.mjs",
       successor: "scripts/verify-booking-preparation-reminder-upgrade.mjs",
     },
@@ -2180,6 +2192,48 @@ setInterval(() => {}, 1000);
       expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
     },
   );
+
+  it("stops before notification when interrupted at the deferred account boundary", async () => {
+    const run = ownedRun((command, args) => {
+      if (
+        command === "node" &&
+        args[0] === "scripts/verify-account-access-upgrade.mjs"
+      ) {
+        process.emit("SIGTERM");
+      }
+      return {
+        status: 0,
+        stdout:
+          command === "npx" &&
+          args.slice(0, 4).join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      };
+    });
+
+    expect(
+      await mainWithPreparedProject(["--database"], {
+        environment: {},
+        run,
+        stderr: vi.fn(),
+      }),
+    ).toBe(143);
+    expect(commands(run)).toContainEqual([
+      "node",
+      [
+        "scripts/verify-account-access-upgrade.mjs",
+        "--defer-successful-restore",
+      ],
+    ]);
+    expect(
+      run.mock.calls.some(
+        ([command, args]) =>
+          command === "node" &&
+          args[0] === "scripts/verify-booking-notification-upgrade.mjs",
+      ),
+    ).toBe(false);
+    expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
+  });
 
   it.each([
     {
