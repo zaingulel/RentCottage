@@ -130,11 +130,17 @@ export class SupabaseBookingNotificationStatusRepository {
   async listRequest(
     reference: string,
     actorRole: "customer" | "cottage_owner",
+    signal?: AbortSignal,
   ): Promise<readonly RequestNotificationStatus[]> {
-    const { data, error } = await this.client.rpc(
+    if (signal?.aborted)
+      throw new Error("Request notification status timed out");
+    const request = this.client.rpc(
       "list_booking_request_notification_status",
       { target_reference: reference, target_actor_role: actorRole },
     );
+    const { data, error } = await (signal
+      ? request.abortSignal(signal)
+      : request);
     if (error || !Array.isArray(data))
       throw new Error("Request notification status is unavailable");
     return data.map((value) => {
