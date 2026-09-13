@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
 import { build } from "esbuild";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
@@ -84,6 +85,17 @@ delete from public.account_contexts where user_id in ('${owner}','${customer}','
 delete from auth.users where id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003','10000000-0000-4000-8000-000000003801');
 set session_replication_role=origin;`;
 
+const secondCleanup = cleanup
+  .replaceAll("000000001001", "000000004181")
+  .replaceAll("000000001002", "000000004182")
+  .replaceAll("000000001003", "000000004183")
+  .replace(",'10000000-0000-4000-8000-000000003801'", "");
+const cleanFixtures = () => {
+  harness.guardDisposableLocalDatabase();
+  harness.runSql(secondCleanup);
+  harness.runSql(cleanup);
+};
+
 const sessions = [];
 const processes = [];
 const temp = mkdtempSync(join(tmpdir(), "rentcottage-payout-observer-"));
@@ -122,13 +134,228 @@ try {
     logLevel: "silent",
   });
   const seed = () => {
-    harness.runSql(cleanup);
+    cleanFixtures();
     harness.runSql(
       `${fixture("PAYMENT EVIDENCE FIXTURE")} ${fixture("COMPLETION FIXTURE")} select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3); begin;set local role service_role;select public.commit_booking_completion('${request}',(select value->>'revision' from public.list_due_booking_completions(50) value));commit;`,
     );
   };
   const literal = (value) =>
     `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
+  const ownerAuthority = `set local role authenticated;set local request.jwt.claim.sub='${owner}';`;
+  const history = `public.list_booking_history('cottage_owner')`;
+  const holdCommand = `${administrator}select public.record_booking_payout_command('${request}','90000000-0000-4000-8000-000000004180','place_hold','History concurrency hold',null,null,null);`;
+  seed();
+  const historyReader = harness.startSession(
+    `begin;set local application_name='owner_history_reader_first';${ownerAuthority}select ${history};select 'OWNER_HISTORY_READ';`,
+  );
+  sessions.push(historyReader);
+  await harness.waitForMarker(historyReader, "OWNER_HISTORY_READ");
+  const financialWriter = harness.startSession(
+    `begin;set local statement_timeout='10s';
+    select id from public.booking_requests where id='${request}' for update nowait;
+    select id from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001' for update nowait;
+    select booking_request_id from public.booking_request_capture_work where booking_request_id='${request}' for update nowait;
+    select id from public.payment_provider_operations where id=(select capture_operation_id from public.booking_confirmations where booking_request_id='${request}') for update nowait;
+    ${holdCommand}commit;`,
+    true,
+  );
+  sessions.push(financialWriter);
+  await harness.finishSession(financialWriter);
+  assert.equal(
+    JSON.parse(historyReader.stdout.split("\n")[0])[0].ownerEarnings
+      .administratorHoldActive,
+    false,
+  );
+  assert.equal(
+    harness.runSql(
+      `begin;${ownerAuthority}select ${history}#>>'{0,ownerEarnings,administratorHoldActive}';commit;`,
+    ),
+    "true",
+  );
+  await harness.finishSession(historyReader, { action: "rollback" });
+  console.log(
+    "Owner history leaves request, commitment, capture work and capture rows unlocked while a real hold commits.",
+  );
+  seed();
+  const beforeHold = JSON.parse(
+    harness.runSql(`begin;${ownerAuthority}select ${history};commit;`),
+  );
+  const historyWriter = harness.startSession(
+    `begin;set local application_name='owner_history_writer_first';${holdCommand}select 'OWNER_HOLD_UNCOMMITTED';`,
+  );
+  sessions.push(historyWriter);
+  await harness.waitForMarker(historyWriter, "OWNER_HOLD_UNCOMMITTED");
+  const concurrentHistory = harness.startSession(
+    `begin;set local statement_timeout='10s';${ownerAuthority}select ${history};commit;`,
+    true,
+  );
+  sessions.push(concurrentHistory);
+  await harness.finishSession(concurrentHistory);
+  assert.deepEqual(
+    JSON.parse(concurrentHistory.stdout),
+    beforeHold,
+    "history reads committed facts while the financial writer remains open",
+  );
+  await harness.finishSession(historyWriter, { action: "commit" });
+  assert.equal(
+    harness.runSql(
+      `begin;${ownerAuthority}select ${history}#>>'{0,ownerEarnings,administratorHoldActive}';commit;`,
+    ),
+    "true",
+  );
+  console.log(
+    "Owner history returns the previous committed facts during an uncommitted hold, then sees the committed hold.",
+  );
+
+  seed();
+  const secondRequest = "60000000-0000-4000-8000-000000004181";
+  // Reuse the genuine capture/completion fixture with distinct booking identities.
+  // Both cottages belong to the same owner; their customers and inventory are separate.
+  const secondFixture = fixture("COMPLETION FIXTURE")
+    .replaceAll("000000001001", "000000004181")
+    .replaceAll("000000001002", "000000004182")
+    .replaceAll("000000001003", "000000004183")
+    .replaceAll("+9647500001001", "+9647500004181")
+    .replaceAll("+9647500001002", "+9647500004182")
+    .replaceAll("+9647500001003", "+9647500004183")
+    .replaceAll("confirmation-auth-", "second-confirmation-auth-")
+    .replace(
+      "28d4ab70479df702acf9bb25ad91c2ddcd118bd75507dde1c874e0b015b7ac84",
+      "6546a821e131fab07bb3af675da6debf2ee6c28513b13b0c7f109eba096b734c",
+    )
+    .replaceAll("CONFIRMATION-HOLD-1", "CONFIRMATION-HOLD-2")
+    .replaceAll("10000000-0000-4000-8000-000000004181", owner)
+    .replace(
+      `('${owner}','authenticated','authenticated','+9647500004181',now()),`,
+      "",
+    )
+    .replace(`('${owner}','cottage_owner','approved'),`, "")
+    .replace(
+      "insert into auth.users(id,aud,role,email,email_confirmed_at) values('10000000-0000-4000-8000-000000003801','authenticated','authenticated','cancellation-admin@example.test',now());",
+      "",
+    )
+    .replace(
+      "insert into public.account_contexts(user_id,role) values('10000000-0000-4000-8000-000000003801','platform_administrator');",
+      "",
+    );
+  harness.runSql(`${fixture("PAYMENT EVIDENCE FIXTURE")} ${secondFixture}
+    select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3);
+    begin;set local role service_role;select public.commit_booking_completion('${secondRequest}',(select value->>'revision' from public.list_due_booking_completions(50) value where value->>'bookingRequestId'='${secondRequest}'));commit;`);
+  assert.deepEqual(JSON.parse(await child("settle")), { status: "settled" });
+  const beforeSnapshot = JSON.parse(
+    harness.runSql(`begin;${ownerAuthority}select ${history};commit;`),
+  );
+  assert.equal(beforeSnapshot.length, 2);
+  assert.deepEqual(
+    beforeSnapshot.map((row) => row.status),
+    ["completed", "completed"],
+  );
+  await build({
+    entryPoints: [
+      new URL(
+        "../src/booking-request/owner-booking-earnings.ts",
+        import.meta.url,
+      ).pathname,
+    ],
+    outfile: join(temp, "earnings.mjs"),
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    logLevel: "silent",
+  });
+  const {
+    parseOwnerBookingEarningsAvailability,
+    ownerBookingEarnings,
+    ownerBookingEarningsTotals,
+  } = await import(pathToFileURL(join(temp, "earnings.mjs")));
+  const project = (rows) => {
+    const earnings = rows.map((row) => ({
+      bookingRequestId: row.bookingRequestId,
+      ...ownerBookingEarnings(
+        parseOwnerBookingEarningsAvailability(row.ownerEarnings),
+      ),
+    }));
+    return { rows: earnings, totals: ownerBookingEarningsTotals(earnings) };
+  };
+  const beforeProjection = project(beforeSnapshot);
+  assert.deepEqual(beforeProjection.totals, {
+    status: "available",
+    expectedUnpaidPayoutFils: 90000000,
+    paidPayoutFils: 90000000,
+  });
+  const barrier = harness.startSession(
+    `begin;select pg_advisory_xact_lock(41,238);select 'HISTORY_BARRIER_HELD';`,
+  );
+  sessions.push(barrier);
+  await harness.waitForMarker(barrier, "HISTORY_BARRIER_HELD");
+  const snapshotReader = harness.startSession(
+    `begin;set local statement_timeout='15s';set local application_name='owner_history_snapshot';${ownerAuthority}
+    select ${history} from (select pg_advisory_xact_lock(41,238) offset 0) barrier;commit;`,
+    true,
+  );
+  sessions.push(snapshotReader);
+  await harness.waitForLock("owner_history_snapshot", snapshotReader);
+  assert.equal(
+    harness.runSql(
+      "select wait_event from pg_stat_activity where application_name='owner_history_snapshot'",
+    ),
+    "advisory",
+  );
+  let refundBoth = `begin;${fixture("PAYMENT EVIDENCE FIXTURE")}`;
+  for (const [index, booking] of [request, secondRequest].entries()) {
+    refundBoth += `${administrator}
+      create temp table history_refund_${index} as select public.request_booking_refund_exception('${booking}','90000000-0000-4000-8000-00000000418${index + 1}','Atomic history refund','{"bookingPriceFils":20000000,"bookingServiceFeeFils":0}') value;
+      grant select on history_refund_${index} to service_role;
+      set local role service_role;
+      create temp table history_refund_claim_${index} as select public.claim_booking_refund((select (value->>'intentId')::uuid from history_refund_${index})) value;
+      create temp table history_refund_admission_${index} as select public.admit_booking_refund((select value#>'{request,executionPermit}' from history_refund_claim_${index})) value;
+      select pg_temp.payment_fixture_result((select value from history_refund_admission_${index}),'succeeded');`;
+  }
+  // A single writer commits both complete refunds while the reader's statement is paused.
+  harness.runSql(`${refundBoth}commit;`);
+  await harness.finishSession(barrier, { action: "commit" });
+  await harness.finishSession(snapshotReader);
+  const heldSnapshot = JSON.parse(snapshotReader.stdout);
+  assert.deepEqual(
+    heldSnapshot,
+    beforeSnapshot,
+    "every nested read retains the outer statement snapshot across committed refunds",
+  );
+  assert.deepEqual(project(heldSnapshot), beforeProjection);
+  const afterSnapshot = JSON.parse(
+    harness.runSql(`begin;${ownerAuthority}select ${history};commit;`),
+  );
+  const afterProjection = project(afterSnapshot);
+  assert.deepEqual(afterProjection.totals, {
+    status: "available",
+    expectedUnpaidPayoutFils: 72000000,
+    paidPayoutFils: 90000000,
+  });
+  assert.deepEqual(
+    afterProjection.rows.map((row) => row.currentNetPayoutFils),
+    [72000000, 72000000],
+  );
+  const paid = afterProjection.rows.find(
+    (row) => row.bookingRequestId === request,
+  );
+  assert.equal(paid.paidPayoutFils, 90000000);
+  assert.equal(paid.recoveryBalanceFils, 18000000);
+  for (const row of afterSnapshot) {
+    assert.equal(row.ownerEarnings.refunded.bookingPriceFils, 20000000);
+    assert.deepEqual(row.ownerEarnings.reserved, {
+      bookingPriceFils: 0,
+      bookingServiceFeeFils: 0,
+    });
+    assert.deepEqual(row.ownerEarnings.refunds, [
+      {
+        state: "succeeded",
+        allocation: { bookingPriceFils: 20000000, bookingServiceFeeFils: 0 },
+      },
+    ]);
+  }
+  console.log(
+    "One history statement preserves both pre-refund rows and 90m expected/90m paid totals; the next sees both 20m refunds, 72m expected/90m paid and 18m recovery.",
+  );
   for (const scenario of [
     "hold-first",
     "refund-first",
@@ -306,7 +533,8 @@ try {
   for (const process of processes)
     if (process.exitCode === null) process.kill("SIGTERM");
   for (const session of sessions)
-    if (!session.exit) session.child.kill("SIGTERM");
-  harness.runSql(cleanup);
+    if (!session.exit)
+      await harness.finishSession(session, { action: "rollback" });
+  cleanFixtures();
   rmSync(temp, { recursive: true, force: true });
 }

@@ -1411,3 +1411,11 @@ GRANT EXECUTE ON FUNCTION public.request_booking_settlement(uuid,uuid,text,text,
 GRANT EXECUTE ON FUNCTION public.claim_booking_settlement(uuid),public.admit_booking_settlement(jsonb),public.record_booking_settlement_observation(uuid,jsonb) TO service_role;
 REVOKE ALL ON TABLE public.booking_settlement_receipts FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.booking_settlement_recovery(uuid,jsonb,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+
+-- Private snapshot readers inherit only their authorized caller's table access.
+REVOKE ALL ON FUNCTION public.booking_refund_source_facts(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_capture_refund_totals_facts(uuid,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_cancellation_source_facts(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_owner_earnings_facts(uuid,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_settlement_projection_facts_at(uuid,jsonb,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_completion_eligibility_at(uuid,timestamptz) FROM PUBLIC, anon, authenticated, service_role;

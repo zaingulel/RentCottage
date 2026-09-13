@@ -205,7 +205,7 @@ select is((select value#>>'{ownerEarnings,marketplaceCommissionAmountFils}' from
 select is((select value#>>'{ownerEarnings,refunded,bookingPriceFils}' from owner_detail),'20000000','completed real refund evidence changes current owner facts');
 select is((select value#>>'{ownerEarnings,settlement,amountFils}' from owner_detail),'90000000','stale requested settlement amount remains explicit beside the current 72m entitlement');
 select is((select value#>>'{ownerEarnings,settlement,state}' from owner_detail),'requested','unexecuted stored settlement remains requested');
-select is((select item->'ownerEarnings' from jsonb_array_elements((select value from owner_history)) item where item->>'bookingRequestId'='60000000-0000-4000-8000-000000001001'),(select value->'ownerEarnings' from owner_detail),'owner list and detail return the same locked projection');
+select is((select item->'ownerEarnings' from jsonb_array_elements((select value from owner_history)) item where item->>'bookingRequestId'='60000000-0000-4000-8000-000000001001'),(select value->'ownerEarnings' from owner_detail),'owner list and detail share the same validated earnings projection');
 select is((select item#>>'{ownerEarnings,status}' from jsonb_array_elements((select value from owner_history)) item where item->>'bookingRequestId'='60000000-0000-4000-8000-000000004101'),'not-captured','guarded pending request is explicit and non-earning');
 select ok(not ((select value->'ownerEarnings' from owner_detail)::text ~ 'commandId|actorUserId|reason|provider|observationId|historySequence|activeHoldIds|activeDisputeIds|incident|notification'),'owner earnings allowlist excludes administration, provider, identity, and incident details');
 select throws_ok($$select public.get_booking_settlement_facts('60000000-0000-4000-8000-000000001001')$$,'42501',null,'owner still cannot call administrator settlement facts');
@@ -227,6 +227,18 @@ reset role;
 select throws_ok($$select public.get_booking_financial_view('RC-REQ-0000000000001001','cottage_owner')$$,'42501',null,'anonymous actor cannot read owner earnings');
 select ok(not has_function_privilege('anon','public.booking_payout_command_facts(uuid,jsonb)','EXECUTE') and not has_function_privilege('authenticated','public.booking_payout_command_facts(uuid,jsonb)','EXECUTE') and not has_function_privilege('service_role','public.booking_payout_command_facts(uuid,jsonb)','EXECUTE'),'private payout helper has no API execution grants');
 select ok(not has_function_privilege('anon','public.booking_settlement_projection_facts(uuid,jsonb)','EXECUTE') and not has_function_privilege('authenticated','public.booking_settlement_projection_facts(uuid,jsonb)','EXECUTE') and not has_function_privilege('service_role','public.booking_settlement_projection_facts(uuid,jsonb)','EXECUTE'),'private settlement helper has no API execution grants');
+
+select ok(bool_and(not has_function_privilege(api_role,signature,'EXECUTE')),
+  'private snapshot readers cannot be invoked by any API role')
+from (values ('anon'),('authenticated'),('service_role')) roles(api_role)
+cross join (values
+  ('public.booking_refund_source_facts(uuid)'),
+  ('public.booking_capture_refund_totals_facts(uuid,jsonb)'),
+  ('public.booking_cancellation_source_facts(uuid)'),
+  ('public.booking_owner_earnings_facts(uuid,timestamptz)'),
+  ('public.booking_settlement_projection_facts_at(uuid,jsonb,timestamptz)'),
+  ('public.booking_completion_eligibility_at(uuid,timestamptz)')
+) readers(signature);
 
 select * from finish();
 rollback;
