@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { build } from "esbuild";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -61,6 +61,9 @@ test("complete customer and owner history stays role-specific, private, translat
   await page.addStyleTag({
     content: await readFile(join(process.cwd(), "src/app/globals.css"), "utf8"),
   });
+  await page.addStyleTag({
+    content: await readFile(testInfo.outputPath("booking-history.css"), "utf8"),
+  });
   await page.addScriptTag({ path: bundlePath });
 
   for (const locale of ["en", "ar", "ckb"] as const) {
@@ -76,6 +79,16 @@ test("complete customer and owner history stays role-specific, private, translat
       );
       const links = page.getByRole("link");
       await expect(links).toHaveCount(7);
+      await expect(
+        page.getByRole("region", {
+          name:
+            locale === "en"
+              ? "Earnings summary"
+              : locale === "ar"
+                ? "ملخص الأرباح"
+                : "پوختەی داهات",
+        }),
+      ).toHaveCount(role === "cottage_owner" ? 1 : 0);
       for (let index = 0; index < 7; index += 1) {
         await expect(links.nth(index)).toHaveAttribute(
           "href",
@@ -90,6 +103,13 @@ test("complete customer and owner history stays role-specific, private, translat
         path: testInfo.outputPath(`${locale}-${role}-history.png`),
         fullPage: true,
       });
+      if (role === "cottage_owner") {
+        mkdirSync(".agent-evidence/visual", { recursive: true });
+        await page.screenshot({
+          path: `.agent-evidence/visual/${testInfo.project.name}-${locale}-owner-earnings-history.png`,
+          fullPage: true,
+        });
+      }
     }
   }
 });
@@ -185,6 +205,38 @@ test("same-phone reauthentication restores the same real history and owner unpai
     }
     const customerId = await createVerifiedIdentity(customerPhone);
     const ownerId = await createVerifiedIdentity(ownerPhone);
+    expect(
+      harness.runSql(`update public.account_contexts
+        set role='cottage_owner',owner_approval_state='approved'
+        where user_id='${ownerId}' returning user_id`),
+    ).toBe(ownerId);
+
+    prepareLaterSignIn(ownerId, ownerPhone);
+    const emptyOwnerContext = await browser.newContext({ baseURL });
+    const emptyOwnerPage = await emptyOwnerContext.newPage();
+    await emptyOwnerPage.goto("/en/bookings?workspace=owner");
+    await verifyPhone(emptyOwnerPage, ownerPhone);
+    const emptySummary = emptyOwnerPage.getByRole("region", {
+      name: "Earnings summary",
+    });
+    await expect(emptySummary).toContainText("Expected unpaid payoutsIQD 0");
+    await expect(emptySummary).toContainText("Paid payoutsIQD 0");
+    await expect(
+      emptyOwnerPage.getByText("No booking requests yet.", { exact: true }),
+    ).toBeVisible();
+    await emptyOwnerPage.reload();
+    await expect(emptySummary).toContainText("Expected unpaid payoutsIQD 0");
+    await emptyOwnerContext.close();
+
+    prepareLaterSignIn(customerId, customerPhone);
+    const deniedContext = await browser.newContext({ baseURL });
+    const deniedPage = await deniedContext.newPage();
+    await deniedPage.goto("/en/bookings?workspace=owner");
+    await verifyPhone(deniedPage, customerPhone);
+    await expect(deniedPage.locator("main").getByRole("alert")).toContainText(
+      "This booking is not available to this account.",
+    );
+    await deniedContext.close();
     const dynamicSeed = source
       .slice(seedStart, seedEnd)
       .replace(
@@ -207,6 +259,25 @@ test("same-phone reauthentication restores the same real history and owner unpai
       select '${unpaidRequest}','${unpaidReference}',customer_user_id,owner_user_id,profile_id,'40000000-0000-4000-8000-000000003511','50000000-0000-4000-8000-000000003511','73000000-0000-4000-8000-000000003511','Returning Customer',party_size,'pending',response_deadline+interval '1 minute',created_at+interval '1 minute' from public.booking_requests where id='60000000-0000-4000-8000-000000003501';
       insert into public.owner_request_notifications(id,booking_request_id,owner_user_id,created_at) values('90000000-0000-4000-8000-000000003511','${unpaidRequest}','${ownerId}',clock_timestamp());
       set session_replication_role=origin;`);
+    const ownerRows = JSON.parse(
+      harness.runSql(`begin;
+        set local role authenticated;
+        do $$begin perform set_config('request.jwt.claims','{"sub":"${ownerId}","role":"authenticated","aal":"aal1"}',true); end$$;
+        select public.list_booking_history('cottage_owner');
+        rollback;`),
+    );
+    expect(ownerRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          bookingRequestReference: "RC-REQ-0000000000003501",
+          ownerEarnings: { status: "unavailable" },
+        }),
+        expect.objectContaining({
+          bookingRequestReference: unpaidReference,
+          ownerEarnings: { status: "not-captured" },
+        }),
+      ]),
+    );
 
     prepareLaterSignIn(customerId, customerPhone);
     const returningContext = await browser.newContext({ baseURL });
@@ -241,6 +312,19 @@ test("same-phone reauthentication restores the same real history and owner unpai
       ownerPage.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
     await ownerPage.goto("/en/bookings?workspace=owner");
+    await expect(
+      ownerPage.getByRole("region", { name: "Earnings summary" }),
+    ).toContainText(
+      "Earnings totals are unavailable. Check the booking records below for details.",
+    );
+    const unavailableLink = ownerPage.getByRole("link", {
+      name: /Preserved Cottage name.*CONFIRMED-BOOKING-35/,
+    });
+    await expect(
+      ownerPage.locator("li").filter({ has: unavailableLink }),
+    ).toContainText(
+      "Earnings are temporarily unavailable for this booking. No amount is shown until the record can be verified.",
+    );
     const unpaidLink = ownerPage.getByRole("link", {
       name: /Preserved Cottage name.*RC-REQ-0000000000003511/,
     });
@@ -248,6 +332,19 @@ test("same-phone reauthentication restores the same real history and owner unpai
       "href",
       `/en/owner/booking-requests/${unpaidReference}`,
     );
+    const unpaidItem = ownerPage.locator("li").filter({ has: unpaidLink });
+    await expect(unpaidItem).toContainText(
+      "Payment has not been collected for this request, so it has no earnings yet.",
+    );
+    await ownerPage.reload();
+    await expect(unpaidItem).toContainText(
+      "Payment has not been collected for this request, so it has no earnings yet.",
+    );
+    mkdirSync(".agent-evidence/visual", { recursive: true });
+    await ownerPage.screenshot({
+      path: ".agent-evidence/visual/real-owner-unavailable-history.png",
+      fullPage: true,
+    });
     await unpaidLink.click();
     const card = ownerPage.getByRole("article", { name: unpaidReference });
     await expect(card).toContainText("Returning Customer");

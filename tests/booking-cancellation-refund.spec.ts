@@ -10,6 +10,8 @@ import { getBookingFinancialView } from "../src/booking-request/booking-financia
 import { triggerScheduled } from "./fixtures/trigger-scheduled";
 import { bookingPayoutMessages as payoutMessages } from "../src/i18n/administrator-payment-history-messages";
 import { bookingManagementMessages as messages } from "../src/i18n/booking-management-messages";
+import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/owner-booking-earnings-messages";
+import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
 )("../scripts/local-supabase-concurrency-harness.mjs") as {
@@ -165,6 +167,12 @@ async function participant(
     bookingServiceFeeFils: 5000000,
   });
   expect(financial).not.toHaveProperty("audit");
+  if (role === "cottage_owner") {
+    expect(financial?.ownerEarnings).toBeDefined();
+    expect(ownerBookingEarnings(financial!.ownerEarnings!).status).not.toBe(
+      "unavailable",
+    );
+  }
   if (!baseURL) throw new Error("Missing browser origin");
   await context.addCookies(
     values.map(({ name, value, options }) => ({
@@ -235,6 +243,11 @@ async function snapshots(
       path: `.agent-evidence/visible-screenshots/${project}-${label}-${locale}.png`,
       fullPage: true,
     });
+    if (role === "cottage_owner")
+      await page.screenshot({
+        path: `.agent-evidence/visual/${project}-${label}-${locale}.png`,
+        fullPage: true,
+      });
     if (role === "platform_administrator")
       await page
         .getByRole("region", { name: messages[locale].title })
@@ -356,7 +369,23 @@ test.describe("retained cancellation and refund controls", () => {
     try {
       await participant(ownerContext, owner, baseURL);
       const ownerPage = await ownerContext.newPage();
+      await ownerPage.goto(`/en/bookings?workspace=owner`);
+      const summary = ownerPage.getByRole("region", {
+        name: earningsMessages.en.summaryTitle,
+      });
+      await expect(summary).toContainText("Paid payoutsIQD 99,000");
+      await expect(summary).toContainText("Expected unpaid payoutsIQD 0");
+      await ownerPage.reload();
+      await expect(summary).toContainText("Paid payoutsIQD 99,000");
+      mkdirSync(".agent-evidence/visual", { recursive: true });
+      await ownerPage.screenshot({
+        path: ".agent-evidence/visual/worker-real-owner-paid-history.png",
+        fullPage: true,
+      });
       await ownerPage.goto(`/en/owner/booking-requests/${reference}`);
+      await expect(
+        ownerPage.getByRole("region", { name: earningsMessages.en.title }),
+      ).toContainText("Recorded paid payoutIQD 99,000");
       await expect(
         ownerPage.getByText("PRIVATE payout review", { exact: true }),
       ).toHaveCount(0);
@@ -364,6 +393,12 @@ test.describe("retained cancellation and refund controls", () => {
         ownerPage.getByRole("region", { name: p.title }),
       ).toHaveCount(0);
       await expect(ownerPage.getByTestId("settlement-recovery")).toHaveCount(0);
+      await snapshots(
+        ownerPage,
+        "cottage_owner",
+        info.project.name,
+        "owner-paid-earnings",
+      );
     } finally {
       await ownerContext.close();
     }
@@ -491,10 +526,12 @@ test.describe("retained cancellation and refund controls", () => {
       const ownerPage = await ownerContext.newPage();
       await ownerPage.goto(`${baseURL}/en/owner/booking-requests/${reference}`);
       await expect(
-        ownerPage.getByTestId("owner-after-completed"),
+        ownerPage.getByRole("region", { name: earningsMessages.en.title }),
       ).toContainText("IQD 99,000");
       await expect(
-        ownerPage.getByText(messages.en.pendingWarning, { exact: true }),
+        ownerPage.getByText(earningsMessages.en.causes["refund-pending"], {
+          exact: true,
+        }),
       ).toBeVisible();
       await expect(
         ownerPage.getByText("PRIVATE first compensation", { exact: true }),
@@ -502,7 +539,7 @@ test.describe("retained cancellation and refund controls", () => {
       expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await ownerPage.reload();
       await expect(
-        ownerPage.getByTestId("owner-after-completed"),
+        ownerPage.getByRole("region", { name: earningsMessages.en.title }),
       ).toContainText("IQD 81,000");
       await expect(ownerPage.getByTestId("verified-refund")).toContainText(
         "IQD 20,000.001",
@@ -526,7 +563,7 @@ test.describe("retained cancellation and refund controls", () => {
       expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await ownerPage.goto(`${baseURL}/en/owner/booking-requests/${reference}`);
       await expect(
-        ownerPage.getByTestId("owner-after-completed"),
+        ownerPage.getByRole("region", { name: earningsMessages.en.title }),
       ).toContainText("IQD 81,000");
       await expect(ownerPage.getByTestId("verified-refund")).toContainText(
         "IQD 20,000.003",

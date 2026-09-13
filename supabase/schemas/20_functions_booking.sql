@@ -1117,7 +1117,11 @@ begin
         and (public.booking_request_payment_status(requests)='paid-confirmed' or exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=requests.id))
       order by requests.id
     loop
-      financial:=public.get_booking_financial_view(booking.booking_request_reference,'cottage_owner');
+      begin
+        financial:=public.get_booking_financial_view(booking.booking_request_reference,'cottage_owner');
+      exception when sqlstate 'RC409' then
+        financial:=null;
+      end;
       earnings_by_request:=earnings_by_request||jsonb_build_object(booking.id::text,coalesce(financial->'ownerEarnings','{"status":"unavailable"}'::jsonb));
     end loop;
   end if;
