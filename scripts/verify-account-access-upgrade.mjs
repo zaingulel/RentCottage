@@ -28,6 +28,7 @@ const tables = {
 };
 
 export function verifyAccountAccessUpgrade({
+  deferSuccessfulRestore = false,
   environment = process.env,
   harness = createLocalSupabaseConcurrencyHarness({ environment }),
   runSupabase,
@@ -244,18 +245,39 @@ export function verifyAccountAccessUpgrade({
   } catch (error) {
     failure = error;
   } finally {
-    try {
-      harness.guardDisposableLocalDatabase();
-      run(["db", "reset", "--local"]);
-    } catch (error) {
-      failure = new AggregateError(
-        [...(failure ? [failure] : []), error],
-        "Account upgrade proof or disposable schema restoration failed",
-      );
+    if (failure || !deferSuccessfulRestore) {
+      try {
+        harness.guardDisposableLocalDatabase();
+        run(["db", "reset", "--local"]);
+      } catch (error) {
+        failure = new AggregateError(
+          [...(failure ? [failure] : []), error],
+          "Account upgrade proof or disposable schema restoration failed",
+        );
+      }
     }
   }
   if (failure) throw failure;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-  verifyAccountAccessUpgrade();
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  const deferSuccessfulRestoreMode = "--defer-successful-restore";
+  const requestedModes = process.argv.slice(2);
+  if (
+    requestedModes.length > 1 ||
+    (requestedModes.length === 1 &&
+      requestedModes[0] !== deferSuccessfulRestoreMode)
+  ) {
+    console.error(
+      `Usage: node scripts/verify-account-access-upgrade.mjs [${deferSuccessfulRestoreMode}]`,
+    );
+    process.exitCode = 2;
+  } else {
+    verifyAccountAccessUpgrade({
+      deferSuccessfulRestore: requestedModes[0] === deferSuccessfulRestoreMode,
+    });
+  }
+}
