@@ -1,7 +1,11 @@
+import {
+  isRequestNoticeKind,
+  type RequestNoticeKind,
+} from "./booking-request-notice";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type BookingNotificationStatus = {
-  readonly receiptId: string;
+  readonly receiptId: string | null;
   readonly eventId?: string;
   readonly state:
     | "pending"
@@ -81,7 +85,7 @@ function parse(value: unknown): BookingNotificationStatus {
   const v = value as Record<string, unknown> | null;
   if (
     !v ||
-    !uuid(v.receiptId) ||
+    (!uuid(v.receiptId) && !(v.receiptId === null && uuid(v.eventId))) ||
     (v.eventId !== undefined && !uuid(v.eventId)) ||
     ![
       "pending",
@@ -109,7 +113,7 @@ function parse(value: unknown): BookingNotificationStatus {
 
 export class SupabaseBookingNotificationStatusRepository {
   constructor(private readonly client: SupabaseClient) {}
-  async get(receiptId: string, eventId?: string) {
+  async get(receiptId: string | null, eventId?: string) {
     const { data, error } = await this.client.rpc(
       "get_booking_confirmation_notification_status",
       {
@@ -123,7 +127,40 @@ export class SupabaseBookingNotificationStatusRepository {
       throw new Error("Database returned invalid notification status binding");
     return status;
   }
-  async retry(receiptId: string, eventId?: string) {
+  async listRequest(
+    reference: string,
+    actorRole: "customer" | "cottage_owner",
+  ): Promise<readonly RequestNotificationStatus[]> {
+    const { data, error } = await this.client.rpc(
+      "list_booking_request_notification_status",
+      { target_reference: reference, target_actor_role: actorRole },
+    );
+    if (error || !Array.isArray(data))
+      throw new Error("Request notification status is unavailable");
+    return data.map((value) => {
+      const status = parse(value);
+      if (
+        status.receiptId !== null ||
+        !uuid(status.eventId) ||
+        !isRequestNoticeKind(value.kind) ||
+        !timestamp(value.createdAt) ||
+        typeof value.retryAllowed !== "boolean" ||
+        (value.retryAllowed && status.state !== "retryable")
+      )
+        throw new Error(
+          "Database returned invalid request notification status",
+        );
+      return {
+        ...status,
+        receiptId: null,
+        eventId: status.eventId,
+        kind: value.kind,
+        createdAt: value.createdAt,
+        retryAllowed: value.retryAllowed,
+      };
+    });
+  }
+  async retry(receiptId: string | null, eventId?: string) {
     const { data, error } = await this.client.rpc(
       "retry_booking_confirmation_notification",
       {
@@ -136,3 +173,11 @@ export class SupabaseBookingNotificationStatusRepository {
     return { status: "queued" as const };
   }
 }
+
+export type RequestNotificationStatus = BookingNotificationStatus & {
+  readonly receiptId: null;
+  readonly eventId: string;
+  readonly kind: RequestNoticeKind;
+  readonly createdAt: string;
+  readonly retryAllowed: boolean;
+};

@@ -69,6 +69,9 @@ const supportCleanup = (
   .replaceAll("${requestId}", supportRequest)
   .replaceAll("00000000100", "00000000151");
 const fixtureCleanup = `begin;
+  alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
+  delete from public.booking_notification_events where booking_request_id='60000000-0000-4000-8000-000000001371';
+  alter table public.booking_notification_events enable trigger reject_booking_notification_events_change;
   alter table public.booking_request_payment_history disable trigger reject_booking_request_payment_history_change;
   delete from public.booking_request_payment_history
   where payment_lifecycle_id = '73000000-0000-4000-8000-000000001371';

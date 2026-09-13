@@ -675,6 +675,11 @@ const cleanup = `begin;
   drop table if exists public.test_booking_request_expiry_stale_work;
   drop table if exists public.test_booking_request_cutoff_stale_work;
   drop table if exists public.test_booking_request_boundary_durable_operation;
+  alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
+  delete from public.booking_notification_events events
+  using public.booking_requests requests
+  where events.booking_request_id=requests.id and requests.customer_user_id='${customerId}';
+  alter table public.booking_notification_events enable trigger reject_booking_notification_events_change;
   alter table public.booking_request_payment_history disable trigger reject_booking_request_payment_history_change;
   delete from public.booking_request_payment_history
   where payment_lifecycle_id in (

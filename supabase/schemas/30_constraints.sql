@@ -1003,3 +1003,7 @@ ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement
 ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement_receipts_operation_fkey FOREIGN KEY (operation_id) REFERENCES public.payment_provider_operations(id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement_receipts_observation_fkey FOREIGN KEY (observation_id) REFERENCES public.payment_provider_observations(id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement_receipts_history_fkey FOREIGN KEY (history_sequence) REFERENCES public.booking_request_payment_history(sequence) ON DELETE RESTRICT;
+
+ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_owner_source_fkey FOREIGN KEY(owner_request_notification_id) REFERENCES public.owner_request_notifications(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_status_source_fkey FOREIGN KEY(request_status_notification_id) REFERENCES public.booking_request_status_notifications(id) ON DELETE RESTRICT;
+ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_history_source_fkey FOREIGN KEY(payment_history_id) REFERENCES public.booking_request_payment_history(id) ON DELETE RESTRICT;

@@ -21,7 +21,8 @@ export async function retryPaidConfirmationNotification(
   if (
     typeof locale !== "string" ||
     typeof reference !== "string" ||
-    typeof receiptId !== "string" ||
+    (receiptId !== null && typeof receiptId !== "string") ||
+    (receiptId === null && eventId === null) ||
     (eventId !== null &&
       (typeof eventId !== "string" ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -29,9 +30,10 @@ export async function retryPaidConfirmationNotification(
         ))) ||
     !isLocale(locale) ||
     !/^RC-REQ-[A-F0-9]{16}$/.test(reference) ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      receiptId,
-    )
+    (receiptId !== null &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        receiptId,
+      ))
   )
     return { status: "invalid" };
   try {

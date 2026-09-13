@@ -1,3 +1,8 @@
+import {
+  bookingRequestNotice,
+  isRequestNoticeKind,
+  type RequestNoticeEvent,
+} from "./booking-request-notice";
 import { refundAllocationTotal } from "@/payment/payment-refund-allocation";
 import {
   bookingEventNotice,
@@ -44,6 +49,14 @@ function validPayload(
       ? "booking-requests"
       : "owner/booking-requests"
   }/${base.bookingRequestReference}`;
+  if (base.receiptId === null) {
+    const expected = bookingRequestNotice(base);
+    return (
+      payload !== null &&
+      Object.keys(payload).length === Object.keys(expected).length &&
+      Object.entries(expected).every(([key, value]) => payload[key] === value)
+    );
+  }
   if (base.event) {
     const event = base.event;
     const expected = bookingEventNotice({ ...base, event });
@@ -79,13 +92,53 @@ function parseCandidate(value: unknown): NotificationCandidate {
   const v = row(value);
   if (
     !v ||
-    !uuid(v.receiptId) ||
+    (v.receiptId !== null && !uuid(v.receiptId)) ||
     !uuid(v.recipientUserId) ||
     !["customer", "cottage_owner"].includes(String(v.recipientRole)) ||
     !text(v.bookingRequestReference) ||
-    !text(v.bookingReference) ||
+    (v.bookingReference !== null && !text(v.bookingReference)) ||
     !["ar", "ckb", "en"].includes(String(v.locale))
   )
+    throw new Error("Database returned an invalid notification candidate");
+  if (v.receiptId === null) {
+    const event = row(v.event);
+    if (
+      v.bookingReference !== null ||
+      !event ||
+      !uuid(event.id) ||
+      !uuid(event.sourceId) ||
+      !isRequestNoticeKind(event.kind) ||
+      !(
+        event.deadlineAt === null ||
+        (text(event.deadlineAt) && !Number.isNaN(Date.parse(event.deadlineAt)))
+      ) ||
+      [
+        "request_accepted",
+        "request_declined",
+        "request_withdrawn",
+        "request_expired",
+      ].includes(event.kind) !==
+        (event.deadlineAt === null) ||
+      (event.kind === "request_new" && v.recipientRole !== "cottage_owner") ||
+      ((event.kind === "request_payment_required" ||
+        event.kind.startsWith("recovery_")) &&
+        v.recipientRole !== "customer") ||
+      Object.keys(event).length !== 4
+    )
+      throw new Error(
+        "Database returned an invalid request notification event",
+      );
+    return {
+      receiptId: null,
+      bookingReference: null,
+      event: event as RequestNoticeEvent,
+      recipientUserId: v.recipientUserId,
+      recipientRole: v.recipientRole as NotificationCandidate["recipientRole"],
+      bookingRequestReference: v.bookingRequestReference,
+      locale: v.locale as NotificationCandidate["locale"],
+    };
+  }
+  if (!text(v.bookingReference))
     throw new Error("Database returned an invalid notification candidate");
   let event: BookingNoticeEvent | undefined;
   if (v.event !== undefined) {
@@ -270,7 +323,7 @@ export class SupabaseNotificationDeliveryRepository
     if (error)
       throw new Error("Notification binding preparation is unavailable");
   }
-  async lease(receiptId: string, eventId?: string) {
+  async lease(receiptId: string | null, eventId?: string) {
     const { data, error } = await this.client.rpc(
       "lease_booking_confirmation_notification_work",
       {

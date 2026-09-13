@@ -559,6 +559,18 @@ test("a verified Customer double-submit creates one Pending request and one mini
             ownerView.getByText(bookingTermsFixture("en").body),
           ).toBeVisible();
           for (const surface of [customerView, ownerView]) {
+            const deliveryTitle = {
+              en: "Request notification delivery",
+              ar: "تسليم إشعارات الطلب",
+              ckb: "گەیاندنی ئاگادارکردنەوەی داواکاری",
+            }[copy.locale];
+            const requestDelivery = surface.getByRole("region", {
+              name: deliveryTitle,
+            });
+            await expect(requestDelivery.getByRole("listitem")).not.toHaveCount(
+              0,
+            );
+            await expect(requestDelivery.getByRole("status")).toHaveCount(0);
             if (state === "paid-confirmed-incomplete") {
               await expect(
                 surface.getByRole("status", { name: copy.incomplete }),
@@ -672,6 +684,38 @@ test("a verified Customer double-submit creates one Pending request and one mini
       page.getByRole("heading", { name: "Confirmed booking" }),
     ).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole("status")).toContainText("Pending");
+    // The upgrade backfill helper shares identity with live producers. Exercise
+    // the actual authenticated pages and unchanged financial parser with both
+    // receiptless request events and receipt-bearing preparation events present.
+    const mixedNoticeIdentity = () =>
+      harness.runSql(
+        `select jsonb_agg(jsonb_build_object('id',e.id,'kind',e.event_kind,'receiptId',e.receipt_id) order by e.id) from public.booking_notification_events e join public.booking_requests q on q.id=e.booking_request_id where q.booking_request_reference='${requestReference}'`,
+      );
+    const mixedBeforeBackfill = mixedNoticeIdentity();
+    harness.runSql(
+      `select public.ensure_booking_request_notification_events(id) from public.booking_requests where booking_request_reference='${requestReference}';`,
+    );
+    expect(mixedNoticeIdentity()).toBe(mixedBeforeBackfill);
+    const mixedNotices = JSON.parse(mixedBeforeBackfill) as Array<{
+      kind: string;
+      receiptId: string | null;
+    }>;
+    expect(
+      mixedNotices.filter((n) => n.kind === "request_accepted"),
+    ).toHaveLength(2);
+    expect(
+      mixedNotices
+        .filter((n) => n.kind === "request_accepted")
+        .every((n) => n.receiptId === null),
+    ).toBe(true);
+    expect(
+      mixedNotices.filter((n) => n.kind === "preparation_reminder"),
+    ).toHaveLength(2);
+    expect(
+      mixedNotices
+        .filter((n) => n.kind === "preparation_reminder")
+        .every((n) => typeof n.receiptId === "string"),
+    ).toBe(true);
     await captureViews("paid-confirmed");
     const originalPrivateDirections = JSON.parse(
       harness.runSql(

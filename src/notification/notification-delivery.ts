@@ -1,4 +1,9 @@
 import {
+  bookingRequestNotice,
+  type BookingRequestNotice,
+  type RequestNoticeEvent,
+} from "./booking-request-notice";
+import {
   bookingEventNotice,
   type BookingEventNotice,
   type BookingNoticeEvent,
@@ -10,28 +15,39 @@ import {
   type PaidConfirmationRecipientRole,
 } from "./paid-confirmation-notice";
 
-export interface NotificationCandidate {
-  readonly receiptId: string;
-  readonly event?: BookingNoticeEvent;
+export type NotificationCandidate = {
   readonly recipientUserId: string;
   readonly recipientRole: PaidConfirmationRecipientRole;
   readonly bookingRequestReference: string;
-  readonly bookingReference: string;
   readonly locale: PaidConfirmationNoticeLocale;
-}
+} & (
+  | {
+      readonly receiptId: string;
+      readonly bookingReference: string;
+      readonly event?: BookingNoticeEvent;
+    }
+  | {
+      readonly receiptId: null;
+      readonly bookingReference: null;
+      readonly event: RequestNoticeEvent;
+    }
+);
 
-export interface NotificationBinding extends NotificationCandidate {
+export type NotificationBinding = NotificationCandidate & {
   readonly logicalId: string;
   readonly templateVersion: "paid-confirmation-v1" | "booking-event-v1";
-  readonly payload: PaidConfirmationNotice | BookingEventNotice;
-}
+  readonly payload:
+    | PaidConfirmationNotice
+    | BookingEventNotice
+    | BookingRequestNotice;
+};
 
-export interface NotificationLease extends NotificationBinding {
+export type NotificationLease = NotificationBinding & {
   readonly payloadSha256: string;
   readonly leaseGeneration: number;
   readonly leaseToken: string;
   readonly leaseExpiresAt: string;
-}
+};
 
 export type NotificationEffect = {
   readonly effectId: string;
@@ -66,7 +82,10 @@ export type NotificationDeliveryResult =
 export interface NotificationDeliveryRepository {
   listCandidates(limit: number): Promise<readonly NotificationCandidate[]>;
   prepare(binding: NotificationBinding): Promise<void>;
-  lease(receiptId: string, eventId?: string): Promise<NotificationLease | null>;
+  lease(
+    receiptId: string | null,
+    eventId?: string,
+  ): Promise<NotificationLease | null>;
   completeDelivered(
     lease: NotificationLease,
     effect: { readonly status: "found" | "delivered" } & NotificationEffect,
@@ -76,6 +95,13 @@ export interface NotificationDeliveryRepository {
 }
 
 function bindingFor(candidate: NotificationCandidate): NotificationBinding {
+  if (candidate.receiptId === null)
+    return {
+      ...candidate,
+      logicalId: `booking-event:${candidate.event.id}`,
+      templateVersion: "booking-event-v1",
+      payload: bookingRequestNotice(candidate),
+    };
   if (candidate.event)
     return {
       ...candidate,

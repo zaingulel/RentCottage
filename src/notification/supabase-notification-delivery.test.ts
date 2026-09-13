@@ -160,3 +160,46 @@ describe("event notification binding", () => {
     );
   });
 });
+
+describe("receiptless request notice binding", () => {
+  const candidate = {
+    receiptId: null,
+    bookingReference: null,
+    recipientUserId: "10000000-0000-4000-8000-000000001001",
+    recipientRole: "cottage_owner" as const,
+    bookingRequestReference: "RC-REQ-0000000000001001",
+    locale: "ar" as const,
+    event: {
+      id: "00000000-0000-4000-8000-000000000228",
+      sourceId: "00000000-0000-4000-8000-000000000229",
+      kind: "request_new" as const,
+      deadlineAt: "2101-01-01T08:00:00+00:00",
+    },
+  };
+  it("parses the selected source, role and language without a paid reference", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [candidate], error: null });
+    await expect(
+      new SupabaseNotificationDeliveryRepository({
+        rpc,
+      } as never).listCandidates(10),
+    ).resolves.toEqual([candidate]);
+  });
+  it.each([
+    {
+      ...candidate,
+      receiptId: "00000000-0000-4000-8000-000000000230",
+      bookingReference: "paid",
+    },
+    { ...candidate, recipientRole: "customer" },
+    { ...candidate, event: { ...candidate.event, sourceId: null } },
+    { ...candidate, event: { ...candidate.event, deadlineAt: null } },
+    { ...candidate, event: { ...candidate.event, phone: "private" } },
+  ])("rejects mismatched source/recipient/privacy %#", async (value) => {
+    const rpc = vi.fn().mockResolvedValue({ data: [value], error: null });
+    await expect(
+      new SupabaseNotificationDeliveryRepository({
+        rpc,
+      } as never).listCandidates(10),
+    ).rejects.toThrow(/invalid/);
+  });
+});

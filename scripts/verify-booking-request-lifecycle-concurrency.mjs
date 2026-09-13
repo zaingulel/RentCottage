@@ -1040,6 +1040,11 @@ function verify(label, expectedOperations, expectedLeaseGeneration = 2) {
 }
 
 const cleanup = `begin;
+  alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
+  delete from public.booking_notification_events events
+  using public.test_booking_request_lifecycle_fences fixture
+  where events.booking_request_id=fixture.booking_request_id;
+  alter table public.booking_notification_events enable trigger reject_booking_notification_events_change;
   delete from public.booking_request_status_notifications notifications
   using public.test_booking_request_lifecycle_fences fixture
   where notifications.booking_request_id = fixture.booking_request_id;

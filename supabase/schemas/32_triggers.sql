@@ -234,3 +234,8 @@ CREATE TRIGGER booking_payout_commands_immutable BEFORE UPDATE OR DELETE ON publ
 CREATE TRIGGER booking_settlement_intents_immutable BEFORE UPDATE OR DELETE ON public.booking_settlement_intents FOR EACH ROW EXECUTE FUNCTION public.reject_booking_cancellation_fact_change();
 CREATE TRIGGER booking_settlement_attempts_immutable BEFORE UPDATE OR DELETE ON public.booking_settlement_attempts FOR EACH ROW EXECUTE FUNCTION public.reject_booking_cancellation_fact_change();
 CREATE TRIGGER reject_booking_settlement_receipts_change BEFORE UPDATE OR DELETE ON public.booking_settlement_receipts FOR EACH ROW EXECUTE FUNCTION public.reject_booking_cancellation_fact_change();
+
+CREATE TRIGGER observe_request_notification_new AFTER INSERT ON public.owner_request_notifications FOR EACH ROW EXECUTE FUNCTION public.observe_booking_request_notification_source();
+CREATE TRIGGER observe_request_notification_status AFTER INSERT ON public.booking_request_status_notifications FOR EACH ROW EXECUTE FUNCTION public.observe_booking_request_notification_source();
+CREATE TRIGGER observe_request_notification_recovery AFTER INSERT ON public.booking_request_payment_history FOR EACH ROW EXECUTE FUNCTION public.observe_booking_request_notification_source();
+CREATE TRIGGER guard_booking_request_notification_source BEFORE INSERT ON public.booking_notification_events FOR EACH ROW EXECUTE FUNCTION public.guard_booking_request_notification_source();

@@ -36,15 +36,9 @@ test("scheduled worker delivers both due preparation reminders once", async ({
   const cleanup = cleanupSource
     .split("const cleanup = `")[1]
     .split("`;\n\n")[0]
-    .replaceAll("${customerReceipt}", "82000000-0000-4000-8000-000000003502")
-    .replaceAll("${ownerReceipt}", "82000000-0000-4000-8000-000000003501")
     .replaceAll("${request}", request)
     .replaceAll("${operation}", "81000000-0000-4000-8000-000000003501")
-    .replaceAll("${confirmation}", "80000000-0000-4000-8000-000000003501")
-    .replace(
-      "delete from public.booking_request_confirmation_invalidations",
-      `delete from public.booking_notification_events where booking_request_id='${request}';\ndelete from public.booking_request_confirmation_invalidations`,
-    );
+    .replaceAll("${confirmation}", "80000000-0000-4000-8000-000000003501");
   const observe = () =>
     JSON.parse(
       harness.runSql(
@@ -133,15 +127,12 @@ test("scheduled reminders suppress invalid work and recover existing effects", a
   const cleanup = cleanupSource
     .split("const cleanup = `")[1]
     .split("`;\n\n")[0]
-    .replaceAll("${customerReceipt}", "82000000-0000-4000-8000-000000003502")
-    .replaceAll("${ownerReceipt}", "82000000-0000-4000-8000-000000003501")
     .replaceAll("${request}", request)
     .replaceAll("${operation}", "81000000-0000-4000-8000-000000003501")
     .replaceAll("${confirmation}", "80000000-0000-4000-8000-000000003501")
     .replace(
       "delete from public.booking_request_confirmation_invalidations",
-      `delete from public.booking_notification_events where booking_request_id='${request}';
-delete from public.booking_cancellation_incidents where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${request}');
+      `delete from public.booking_cancellation_incidents where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${request}');
 delete from public.booking_cancellations where booking_request_id='${request}';
 delete from public.booking_incidents where booking_request_id='${request}';
 delete from public.booking_lifecycle_outcomes where booking_request_id='${request}';
@@ -216,7 +207,7 @@ delete from public.booking_request_confirmation_invalidations`,
     await tick();
     expect(state()).toMatchObject({ effects: 2 });
     harness.runSql(`set session_replication_role=replica;
-      update public.booking_confirmation_notification_work set state='uncertain',lease_token=null,lease_expires_at=null,last_outcome='unknown',supplier_delivery_reference=null,delivered_at=null where recipient_role='customer' and event_id is not null;
+      update public.booking_confirmation_notification_work set state='uncertain',lease_token=null,lease_expires_at=null,last_outcome='unknown',supplier_delivery_reference=null,delivered_at=null where recipient_role='customer' and event_id in (select id from public.booking_notification_events where booking_request_id='${request}' and event_kind='preparation_reminder');
       set session_replication_role=origin;`);
     const beforeRecovery = state();
     await tick();
@@ -232,9 +223,9 @@ delete from public.booking_request_confirmation_invalidations`,
     resetAt("23 hours");
     await tick();
     harness.runSql(`set session_replication_role=replica;
-      delete from public.booking_confirmation_notification_attempts where event_id is not null;
-      delete from public.fictional_booking_confirmation_notification_effects where event_id is not null;
-      update public.booking_confirmation_notification_work set state='retryable',lease_token=null,lease_expires_at=null,last_outcome='failed',supplier_delivery_reference=null,delivered_at=null where event_id is not null;
+      delete from public.booking_confirmation_notification_attempts where event_id in (select id from public.booking_notification_events where booking_request_id='${request}' and event_kind='preparation_reminder');
+      delete from public.fictional_booking_confirmation_notification_effects where event_id in (select id from public.booking_notification_events where booking_request_id='${request}' and event_kind='preparation_reminder');
+      update public.booking_confirmation_notification_work set state='retryable',lease_token=null,lease_expires_at=null,last_outcome='failed',supplier_delivery_reference=null,delivered_at=null where event_id in (select id from public.booking_notification_events where booking_request_id='${request}' and event_kind='preparation_reminder');
       set session_replication_role=origin;`);
     await tick();
     expect(state()).toMatchObject({

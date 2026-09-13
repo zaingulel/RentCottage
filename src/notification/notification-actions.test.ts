@@ -88,3 +88,29 @@ it("rejects a malformed event retry before constructing a client", async () => {
   ).resolves.toEqual({ status: "invalid" });
   expect(createClient).not.toHaveBeenCalled();
 });
+
+it("retries a request source without inventing a paid receipt", async () => {
+  enabled.mockReturnValue(true);
+  createClient.mockResolvedValue({});
+  retry.mockResolvedValue({ status: "queued" });
+  const data = form();
+  data.delete("receiptId");
+  data.set("eventId", "82000000-0000-4000-8000-000000003888");
+  await expect(
+    retryPaidConfirmationNotification({ status: "idle" }, data),
+  ).resolves.toEqual({ status: "queued" });
+  expect(retry).toHaveBeenCalledWith(
+    null,
+    "82000000-0000-4000-8000-000000003888",
+  );
+});
+it("rejects a receiptless retry unless it has a valid event", async () => {
+  enabled.mockReturnValue(true);
+  const data = form();
+  data.delete("receiptId");
+  data.set("eventId", "not-an-event");
+  await expect(
+    retryPaidConfirmationNotification({ status: "idle" }, data),
+  ).resolves.toEqual({ status: "invalid" });
+  expect(createClient).not.toHaveBeenCalled();
+});

@@ -1,3 +1,8 @@
+vi.mock("@/notification/request-notification-status", () => ({
+  loadRequestNotificationStatus: vi
+    .fn()
+    .mockResolvedValue({ status: "unavailable" }),
+}));
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -212,4 +217,24 @@ it("routes retained cancellation to safe history without reopening private acces
     request.bookingRequestReference,
     "customer",
   );
+});
+
+it("keeps request details visible when delivery status cannot load", async () => {
+  loadConfirmed.mockResolvedValue(null);
+  loadFinancial.mockResolvedValue(null);
+  loadRequest.mockResolvedValue(request);
+  render(
+    await CustomerBookingRequestPage({
+      params: Promise.resolve({
+        locale: "en",
+        reference: request.bookingRequestReference,
+      }),
+    }),
+  );
+  expect(screen.getByText("Fictional Riverside Cottage")).toBeVisible();
+  expect(
+    screen.getByText(
+      "Notification delivery status is unavailable. Your request details remain available.",
+    ),
+  ).toBeVisible();
 });
