@@ -29,10 +29,6 @@ if (
   );
 harness.guardDisposableLocalDatabase();
 const priorVersion = "20260912045645";
-const fixture = readFileSync(
-  "supabase/fixtures/legacy-booking-notification.sql",
-  "utf8",
-);
 const supabase = (args) => {
   const result = spawnSync("npx", ["supabase", ...args, "--workdir", workdir], {
     encoding: "utf8",
@@ -56,7 +52,7 @@ const withoutLease = (lease) =>
         !["leaseGeneration", "leaseToken", "leaseExpiresAt"].includes(key),
     ),
   );
-const seeded = (suffix, label) =>
+const seeded = (fixture, suffix, label) =>
   fixture
     .replaceAll("00000000350", `00000000${suffix}0`)
     .replaceAll("750000350", `750000${suffix}0`)
@@ -93,6 +89,10 @@ const snapshots = () =>
 
 let failure;
 try {
+  const fixture = readFileSync(
+    "supabase/fixtures/legacy-booking-notification.sql",
+    "utf8",
+  );
   supabase(["db", "reset", "--local", "--version", priorVersion]);
   assert.equal(
     harness.runSql(
@@ -107,7 +107,7 @@ try {
     ["88", "INVALID"],
     ["89", "LATE-FUTURE"],
   ])
-    harness.runSql(seeded(suffix, label));
+    harness.runSql(seeded(fixture, suffix, label));
 
   for (const [suffix, role, target] of [
     ["85", "customer", "pending"],

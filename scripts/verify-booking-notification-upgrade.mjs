@@ -29,10 +29,6 @@ if (
   );
 harness.guardDisposableLocalDatabase();
 const priorVersion = "20260911204525";
-const fixture = readFileSync(
-  "supabase/fixtures/legacy-booking-notification.sql",
-  "utf8",
-);
 const supabase = (args) => {
   const result = spawnSync("npx", ["supabase", ...args, "--workdir", workdir], {
     encoding: "utf8",
@@ -73,6 +69,10 @@ const snapshots = () =>
   );
 let failure;
 try {
+  const fixture = readFileSync(
+    "supabase/fixtures/legacy-booking-notification.sql",
+    "utf8",
+  );
   supabase(["db", "reset", "--local", "--version", priorVersion]);
   assert.equal(
     harness.runSql(

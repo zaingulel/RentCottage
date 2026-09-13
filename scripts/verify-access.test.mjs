@@ -228,9 +228,11 @@ function runUpgradeVerifier(
   args,
   {
     failCurrentReset = false,
+    failFixtureRead = false,
     failInitialOwnership = false,
     failPriorReset = false,
     failProof = false,
+    failTempDirectory = false,
     loseRestoreOwnership = false,
   } = {},
 ) {
@@ -238,7 +240,36 @@ function runUpgradeVerifier(
   const commandLog = join(fakeBin, "commands.log");
   const npxPath = join(fakeBin, "npx");
   const dockerPath = join(fakeBin, "docker");
+  const psPath = join(fakeBin, "ps");
+  const failurePatch = join(fakeBin, "failure-patch.mjs");
   const ownershipSeen = join(fakeBin, "ownership-seen");
+  writeFileSync(
+    failurePatch,
+    `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+
+const originalReadFileSync = fs.readFileSync;
+const originalMkdtempSync = fs.mkdtempSync;
+fs.readFileSync = function (path, ...args) {
+  if (
+    process.env.FAIL_FIXTURE_READ === "1" &&
+    (String(path).endsWith("legacy-booking-notification.sql") ||
+      String(path).endsWith("booking_settlement.test.sql"))
+  )
+    throw new Error("forced fixture read failure");
+  return originalReadFileSync.call(this, path, ...args);
+};
+fs.mkdtempSync = function (prefix, ...args) {
+  if (
+    process.env.FAIL_TEMP_DIRECTORY === "1" &&
+    String(prefix).includes("rentcottage-payout-upgrade-")
+  )
+    throw new Error("forced payout temp directory failure");
+  return originalMkdtempSync.call(this, prefix, ...args);
+};
+syncBuiltinESMExports();
+`,
+  );
   writeFileSync(
     npxPath,
     `#!/bin/sh
@@ -256,6 +287,7 @@ if [ "$FAIL_CURRENT_RESET" = "1" ]; then
 fi
 `,
   );
+  writeFileSync(psPath, "#!/bin/sh\nprintf '123 1 123 fixture process\\n'\n");
   writeFileSync(
     dockerPath,
     `#!/bin/sh
@@ -296,27 +328,36 @@ esac
   );
   chmodSync(npxPath, 0o755);
   chmodSync(dockerPath, 0o755);
+  chmodSync(psPath, 0o755);
 
   try {
     const result = spawnSync(
       process.execPath,
-      [resolve(process.cwd(), "scripts", script), ...args],
+      [
+        "--import",
+        failurePatch,
+        resolve(process.cwd(), "scripts", script),
+        ...args,
+      ],
       {
         encoding: "utf8",
         env: {
           ...process.env,
           COMMAND_LOG: commandLog,
           FAIL_CURRENT_RESET: failCurrentReset ? "1" : "0",
+          FAIL_FIXTURE_READ: failFixtureRead ? "1" : "0",
           FAIL_INITIAL_OWNERSHIP: failInitialOwnership ? "1" : "0",
           FAIL_PRIOR_RESET: failPriorReset ? "1" : "0",
           FAIL_PROOF: failProof ? "1" : "0",
+          FAIL_TEMP_DIRECTORY: failTempDirectory ? "1" : "0",
           FAIL_RESTORE_OWNERSHIP: loseRestoreOwnership ? "1" : "0",
           OWNERSHIP_SEEN: ownershipSeen,
           PATH: `${fakeBin}:${process.env.PATH}`,
           SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verifier-test",
           SUPABASE_LOCAL_PROJECT: "rentcottage-verifier-test",
           ...(script === "verify-booking-notification-upgrade.mjs" ||
-          script === "verify-booking-preparation-reminder-upgrade.mjs"
+          script === "verify-booking-preparation-reminder-upgrade.mjs" ||
+          script === "verify-booking-payout-upgrade.mjs"
             ? { SUPABASE_LOCAL_WORKDIR: process.cwd() }
             : {}),
         },
@@ -1761,10 +1802,13 @@ describe("access verification command", () => {
   it.each([
     "verify-booking-notification-upgrade.mjs",
     "verify-booking-preparation-reminder-upgrade.mjs",
+    "verify-booking-payout-upgrade.mjs",
   ])("rejects lost initial ownership before resetting in %s", (script) => {
     const { commands, result } = runUpgradeVerifier(
       script,
-      ["--defer-successful-restore"],
+      script === "verify-booking-payout-upgrade.mjs"
+        ? []
+        : ["--defer-successful-restore"],
       { failInitialOwnership: true },
     );
 
@@ -1774,6 +1818,85 @@ describe("access verification command", () => {
     );
     expect(commands).toMatch(/^docker inspect /);
     expect(commands).not.toContain("npx supabase");
+  });
+
+  it.each([
+    {
+      script: "verify-booking-notification-upgrade.mjs",
+      args: ["--defer-successful-restore"],
+      failure: { failFixtureRead: true },
+      message: "forced fixture read failure",
+    },
+    {
+      script: "verify-booking-preparation-reminder-upgrade.mjs",
+      args: ["--defer-successful-restore"],
+      failure: { failFixtureRead: true },
+      message: "forced fixture read failure",
+    },
+    {
+      script: "verify-booking-payout-upgrade.mjs",
+      args: [],
+      failure: { failFixtureRead: true },
+      message: "forced fixture read failure",
+    },
+    {
+      script: "verify-booking-payout-upgrade.mjs",
+      args: [],
+      failure: { failTempDirectory: true },
+      message: "forced payout temp directory failure",
+    },
+  ])(
+    "restores once without a historical reset after setup failure in $script",
+    ({ script, args, failure, message }) => {
+      const { commands, result } = runUpgradeVerifier(script, args, failure);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(message);
+      expect(commands.match(/docker inspect/g)).toHaveLength(2);
+      expect(commands).not.toContain("--version");
+      expect(commands).toMatch(/npx supabase db reset --local/);
+      expect(
+        commands.match(
+          /npx supabase db reset --local(?: --workdir [^\n]+)?\n/g,
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("preserves setup and restoration failures", () => {
+    const { commands, result } = runUpgradeVerifier(
+      "verify-booking-payout-upgrade.mjs",
+      [],
+      { failCurrentReset: true, failFixtureRead: true },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("forced fixture read failure");
+    expect(result.stderr).toContain("forced current reset failure");
+    expect(commands.match(/docker inspect/g)).toHaveLength(2);
+    expect(commands).not.toContain("--version");
+    expect(
+      commands.match(/npx supabase db reset --local(?: --workdir [^\n]+)?\n/g),
+    ).toHaveLength(1);
+  });
+
+  it("preserves setup failure when restoration ownership is lost", () => {
+    const { commands, result } = runUpgradeVerifier(
+      "verify-booking-payout-upgrade.mjs",
+      [],
+      { failTempDirectory: true, loseRestoreOwnership: true },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("forced payout temp directory failure");
+    expect(result.stderr).toContain(
+      "does not belong to this disposable local checkout",
+    );
+    expect(commands.match(/docker inspect/g)).toHaveLength(2);
+    expect(commands).not.toContain("--version");
+    expect(commands).not.toMatch(
+      /npx supabase db reset --local(?: --workdir [^\n]+)?\n/,
+    );
   });
 
   it.each([
