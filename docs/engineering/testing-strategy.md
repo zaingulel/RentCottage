@@ -45,6 +45,12 @@ replay protection, and atomic business receipts. The story's changed boundary de
 application tests do not replace database concurrency or security evidence, and database tests do not replace the
 application outcome proof.
 
+When a financial display introduces or changes database reads, the plan traces the complete reader dependency
+chain for locks and snapshot behaviour before reusing payment-command readers. Name real PostgreSQL observers proving that the
+read leaves payment writers free to proceed, completes against committed facts while a writer is uncommitted,
+and keeps displayed rows and totals in one consistent snapshot. Preserve command locking and fresh facts after
+lock waits when extracting shared readers; verify those affected command boundaries alongside the display.
+
 ## Regression sensitivity
 
 Every distinct material behaviour change needs one regression proof that fails when that behaviour is deliberately broken or reverted, then passes again after restoration. Prove it at the public seam selected for the behaviour; do not repeat mutation ceremony for every assertion, edge case or repair. Unchanged documentation and mechanical preservation work use existing evidence and create no new test or mutation ceremony.
@@ -141,4 +147,6 @@ migrations statement by statement and refuse that lock. Install with `npm ci`, w
 The logger's maintenance cost is one Node wrapper and its focused command/receipt tests, plus local disk space
 for appended receipts. Keep those tests aligned when the command or receipt contract changes.
 
-Agents report exact commands, exit codes, failures, skipped or inapplicable checks, and current screenshots for visible work. Command output is authoritative; prose is interpretation.
+Agents report exact commands, exit codes, failures, skipped or inapplicable checks, and current screenshots for visible work. Take pass, failure and skip counts from completed command results, keeping skipped cases separate from passes.
+The final handoff names significant findings discovered after initial verification or review, their disposition
+(repaired or disproved), and the evidence supporting it. Command output is authoritative; prose is interpretation.
