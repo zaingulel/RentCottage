@@ -399,6 +399,7 @@ export async function main(
   args,
   {
     environment = process.env,
+    cleanupCommandLimitMs = CLEANUP_COMMAND_LIMIT_MS,
     makeTemp = () => mkdtempSync(join(tmpdir(), "rentcottage-docker-config-")),
     prepareProject = prepareIsolatedSupabaseWorkdir,
     removeTemp = defaultRemoveTemp,
@@ -678,13 +679,19 @@ export async function main(
       if (result.status !== 0) return result.status;
       result = await execute(
         "node",
-        ["scripts/verify-booking-notification-upgrade.mjs"],
+        [
+          "scripts/verify-booking-notification-upgrade.mjs",
+          "--defer-successful-restore",
+        ],
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
       result = await execute(
         "node",
-        ["scripts/verify-booking-preparation-reminder-upgrade.mjs"],
+        [
+          "scripts/verify-booking-preparation-reminder-upgrade.mjs",
+          "--defer-successful-restore",
+        ],
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
@@ -1064,7 +1071,7 @@ export async function main(
           runCommand(command, args, {
             ...options,
             env: databaseConcurrencyEnvironment,
-            lifecycleLimit: CLEANUP_COMMAND_LIMIT_MS,
+            lifecycleLimit: cleanupCommandLimitMs,
           }),
         );
       } catch (error) {
@@ -1087,7 +1094,7 @@ export async function main(
           {
             cleanup: true,
             encoding: "utf8",
-            lifecycleLimit: CLEANUP_COMMAND_LIMIT_MS,
+            lifecycleLimit: cleanupCommandLimitMs,
             stdio: "pipe",
           },
         );

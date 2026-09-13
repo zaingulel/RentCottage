@@ -118,7 +118,7 @@ describe("retained cancellation and refund details", () => {
       ).getAllByText("IQD 72,000"),
     ).toHaveLength(2);
     expect(
-      screen.queryByText("A refund is pending; this amount may change."),
+      screen.queryByText("A refund is pending; these earnings may change."),
     ).not.toBeInTheDocument();
   });
   it.each([

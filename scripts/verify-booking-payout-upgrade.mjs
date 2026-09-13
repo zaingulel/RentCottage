@@ -15,14 +15,7 @@ if (
   throw new Error("Payout upgrade requires an isolated disposable project");
 harness.guardDisposableLocalDatabase();
 const priorVersion = "20260912134922";
-const source = readFileSync(
-  new URL(
-    "../supabase/tests/database/booking_settlement.test.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const fixture = (name) => {
+const fixture = (source, name) => {
   const start = source.indexOf(`-- BEGIN ${name}`),
     end = source.indexOf(`-- END ${name}`, start);
   if (start < 0 || end < 0) throw new Error(`Missing ${name}`);
@@ -90,9 +83,17 @@ const snapshots = () =>
       ),
     ]),
   );
-const temp = mkdtempSync(join(tmpdir(), "rentcottage-payout-upgrade-"));
 let failure;
+let temp;
 try {
+  const source = readFileSync(
+    new URL(
+      "../supabase/tests/database/booking_settlement.test.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  temp = mkdtempSync(join(tmpdir(), "rentcottage-payout-upgrade-"));
   await supabase(["db", "reset", "--local", "--version", priorVersion]);
   assert.equal(
     harness.runSql(
@@ -100,7 +101,7 @@ try {
     ),
     priorVersion,
   );
-  harness.runSql(`${fixture("PAYMENT EVIDENCE FIXTURE")} ${fixture("COMPLETION FIXTURE")} select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3);
+  harness.runSql(`${fixture(source, "PAYMENT EVIDENCE FIXTURE")} ${fixture(source, "COMPLETION FIXTURE")} select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3);
   begin;set local role service_role;select public.commit_booking_completion('${request}',(select value->>'revision' from public.list_due_booking_completions(50) value));commit;
   begin;${administrator}select public.request_booking_refund_exception('${request}','90000000-0000-4000-8000-000000002290','Pre-upgrade refund','{"bookingPriceFils":10000000,"bookingServiceFeeFils":0}');commit;
   set role service_role;create temp table upgrade_refund_claim as select public.claim_booking_refund((select (value->>'id')::uuid from jsonb_array_elements(public.get_booking_refund_facts('${request}')->'intents') value)) value;
@@ -185,10 +186,14 @@ try {
   for (const child of children)
     if (child.exitCode === null) child.kill("SIGTERM");
   try {
+    harness.guardDisposableLocalDatabase();
     await supabase(["db", "reset", "--local"]);
   } catch (error) {
-    failure ??= error;
+    failure = new AggregateError(
+      [...(failure ? [failure] : []), error],
+      "Payout upgrade or disposable restoration failed",
+    );
   }
-  rmSync(temp, { recursive: true, force: true });
+  if (temp) rmSync(temp, { recursive: true, force: true });
 }
 if (failure) throw failure;

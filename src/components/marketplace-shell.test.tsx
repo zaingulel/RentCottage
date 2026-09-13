@@ -1,12 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import { MarketplaceShell } from "./marketplace-shell";
 
 describe("MarketplaceShell", () => {
+  afterEach(() => vi.useRealTimers());
+
   const facets = {
     status: "loaded" as const,
     governorates: ["Baghdad", "Erbil"],
@@ -15,6 +17,8 @@ describe("MarketplaceShell", () => {
   };
 
   it("uses the selected Retreat prototype visual contract", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-21T20:59:59Z"));
     render(<MarketplaceShell initialLocale="en" facets={facets} />);
 
     expect(
@@ -29,12 +33,7 @@ describe("MarketplaceShell", () => {
     expect(screen.getByLabelText("Governorate (optional)")).toHaveValue("");
     expect(screen.getByLabelText("From Service Day")).toHaveAttribute(
       "min",
-      new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Baghdad",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date()),
+      "2026-08-21",
     );
     expect(screen.getByLabelText("Approximate area (optional)")).toHaveValue(
       "",
@@ -48,6 +47,18 @@ describe("MarketplaceShell", () => {
       screen.getByRole("button", { name: "Search available cottages" }),
     ).toBeVisible();
     expect(screen.queryByText("Visual direction")).not.toBeInTheDocument();
+  });
+
+  it("advances the minimum Service Day at Iraq midnight", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-21T21:00:00Z"));
+
+    render(<MarketplaceShell initialLocale="en" facets={facets} />);
+
+    expect(screen.getByLabelText("From Service Day")).toHaveAttribute(
+      "min",
+      "2026-08-22",
+    );
   });
 
   it("clears the missing-shift error once every Service Day is selected", async () => {

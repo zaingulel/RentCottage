@@ -3,6 +3,20 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
+const deferSuccessfulRestoreMode = "--defer-successful-restore";
+const requestedModes = process.argv.slice(2);
+if (
+  requestedModes.length > 1 ||
+  (requestedModes.length === 1 &&
+    requestedModes[0] !== deferSuccessfulRestoreMode)
+) {
+  console.error(
+    `Usage: node scripts/verify-booking-preparation-reminder-upgrade.mjs [${deferSuccessfulRestoreMode}]`,
+  );
+  process.exit(2);
+}
+const deferSuccessfulRestore = requestedModes[0] === deferSuccessfulRestoreMode;
+
 const harness = createLocalSupabaseConcurrencyHarness();
 const workdir = process.env.SUPABASE_LOCAL_WORKDIR;
 if (
@@ -15,10 +29,6 @@ if (
   );
 harness.guardDisposableLocalDatabase();
 const priorVersion = "20260912045645";
-const fixture = readFileSync(
-  "supabase/fixtures/legacy-booking-notification.sql",
-  "utf8",
-);
 const supabase = (args) => {
   const result = spawnSync("npx", ["supabase", ...args, "--workdir", workdir], {
     encoding: "utf8",
@@ -42,7 +52,7 @@ const withoutLease = (lease) =>
         !["leaseGeneration", "leaseToken", "leaseExpiresAt"].includes(key),
     ),
   );
-const seeded = (suffix, label) =>
+const seeded = (fixture, suffix, label) =>
   fixture
     .replaceAll("00000000350", `00000000${suffix}0`)
     .replaceAll("750000350", `750000${suffix}0`)
@@ -79,6 +89,10 @@ const snapshots = () =>
 
 let failure;
 try {
+  const fixture = readFileSync(
+    "supabase/fixtures/legacy-booking-notification.sql",
+    "utf8",
+  );
   supabase(["db", "reset", "--local", "--version", priorVersion]);
   assert.equal(
     harness.runSql(
@@ -93,7 +107,7 @@ try {
     ["88", "INVALID"],
     ["89", "LATE-FUTURE"],
   ])
-    harness.runSql(seeded(suffix, label));
+    harness.runSql(seeded(fixture, suffix, label));
 
   for (const [suffix, role, target] of [
     ["85", "customer", "pending"],
@@ -231,14 +245,16 @@ try {
 } catch (error) {
   failure = error;
 } finally {
-  try {
-    harness.guardDisposableLocalDatabase();
-    supabase(["db", "reset", "--local"]);
-  } catch (error) {
-    failure = new AggregateError(
-      [...(failure ? [failure] : []), error],
-      "Preparation reminder upgrade or disposable restoration failed",
-    );
+  if (failure || !deferSuccessfulRestore) {
+    try {
+      harness.guardDisposableLocalDatabase();
+      supabase(["db", "reset", "--local"]);
+    } catch (error) {
+      failure = new AggregateError(
+        [...(failure ? [failure] : []), error],
+        "Preparation reminder upgrade or disposable restoration failed",
+      );
+    }
   }
 }
 if (failure) throw failure;
