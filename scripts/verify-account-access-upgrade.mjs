@@ -65,7 +65,7 @@ export function verifyAccountAccessUpgrade({
       Object.entries(tables).map(([table, count]) => {
         const rows = JSON.parse(
           harness.runSql(
-            `select coalesce(jsonb_agg(to_jsonb(r) order by coalesce(to_jsonb(r)->>'id',to_jsonb(r)->>'user_id',to_jsonb(r)->>'booking_request_id',to_jsonb(r)->>'booking_period_commitment_id',to_jsonb(r)->>'claim_id'),to_jsonb(r)->>'service_day',to_jsonb(r)->>'shift_id'),'[]') from ${table} r;`,
+            `select coalesce(jsonb_agg(${table === "public.booking_request_submission_attempts" ? "'{\"conversation_id\":null}'::jsonb || to_jsonb(r)" : "to_jsonb(r)"} order by coalesce(to_jsonb(r)->>'id',to_jsonb(r)->>'user_id',to_jsonb(r)->>'booking_request_id',to_jsonb(r)->>'booking_period_commitment_id',to_jsonb(r)->>'claim_id'),to_jsonb(r)->>'service_day',to_jsonb(r)->>'shift_id'),'[]') from ${table} r;`,
           ),
         );
         assert.equal(

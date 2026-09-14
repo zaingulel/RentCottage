@@ -58,4 +58,4 @@ The local glossary and product requirements now reflect that approval. The live 
 
 Primary pages were read directly and compared across the platform-owned help and developer documentation. No private competitor APIs were called. No live booking flow, response-time claim, conversion improvement or user study is asserted. Native inquiry conversion and Vrbo's native repeat-booking/closure behaviour remain partly undocumented publicly. These gaps are recorded rather than filled from community anecdotes.
 
-This change is a research document only. Formatting and diff checks are appropriate; product, browser and database tests are not evidence for documentary research and were not rerun.
+During the research phase, this file was the only changed artifact, so formatting and diff checks were the appropriate evidence and product, browser and database tests were not rerun. The later implementation and its executable evidence are tracked separately with the issue 36 product change.

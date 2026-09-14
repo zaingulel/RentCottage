@@ -159,22 +159,49 @@ insert into public.cottage_marketplace_listings(profile_id,public_slug,state)
 values('20000000-0000-4000-8000-000000001001','cottage-20000000000040008000000000001001','published');
 set local role service_role;
 create temp table messaging_paid_conversation as
-select public.create_messaging_conversation(
+select public.open_messaging_conversation_for_booking(
   '10000000-0000-4000-8000-000000001002',
-  '20000000-0000-4000-8000-000000001001',
+  'RC-REQ-0000000000001001',
   '36000000-0000-4000-8000-000000001001'
 ) result;
+select is(
+  public.open_messaging_conversation_for_booking(
+    '10000000-0000-4000-8000-000000001001',
+    'RC-REQ-0000000000001001',
+    '36000000-0000-4000-8000-000000001006'
+  ) ->> 'conversationId',
+  (select result->>'conversationId' from messaging_paid_conversation),
+  'the current owner opens the same retained journey without rebinding it'
+);
+select is(
+  public.open_messaging_conversation_for_booking(
+    '10000000-0000-4000-8000-000000001003',
+    'RC-REQ-0000000000001001',
+    '36000000-0000-4000-8000-000000001007'
+  ) ->> 'status',
+  'access-required',
+  'another Customer cannot open a private booked journey'
+);
 reset role;
 grant select on messaging_paid_conversation to service_role;
-update public.booking_request_submission_attempts
-set conversation_id=(select (result->>'conversationId')::uuid from messaging_paid_conversation)
-where id='70000000-0000-4000-8000-000000001001';
-insert into public.messaging_conversation_booking_requests(
-  conversation_id,booking_request_id,submission_attempt_id
-) values(
-  (select (result->>'conversationId')::uuid from messaging_paid_conversation),
-  '60000000-0000-4000-8000-000000001001',
-  '70000000-0000-4000-8000-000000001001'
+select is(
+  (select result->>'status' from messaging_paid_conversation),
+  'created',
+  'a confirmed Booking opens messaging through its retained originating attempt'
+);
+select ok(
+  (select attempts.conversation_id = links.conversation_id
+      and attempts.id = links.submission_attempt_id
+      and attempts.booking_request_id = links.booking_request_id
+    from public.booking_request_submission_attempts attempts
+    join public.messaging_conversation_booking_requests links
+      on links.submission_attempt_id = attempts.id
+    where attempts.id = '70000000-0000-4000-8000-000000001001'),
+  'existing-booking entry binds only the retained attempt and creates no message history'
+);
+select is(
+  (select count(*) from public.messaging_conversations), 1::bigint,
+  'an ever-confirmed retained journey cannot be rebound to a second conversation'
 );
 select is(
   public.booking_request_payment_status(
@@ -274,6 +301,63 @@ select is(public.admit_messaging_message(
   '36000000-0000-4000-8000-000000001003','en','Call 0750 123 4567'
 )->>'status','sent','the real cancellation preserves paid-history contact permission');
 reset role;
+select is(
+  public.messaging_conversation_header(
+    (select (result->>'conversationId')::uuid from messaging_paid_conversation),
+    clock_timestamp()
+  )->>'canContinueBookingRequest','false',
+  'a cancelled ever-confirmed journey remains permanently unavailable for a new Booking Request'
+);
+set local role service_role;
+create temp table messaging_rebind_submission as
+select jsonb_build_object(
+      'locale', 'en',
+      'publicSlug', 'cottage-20000000000040008000000000001001',
+      'discoveryQuery', '{"from":"2101-01-01","to":"2101-01-01","guests":4,"selections":[{"serviceDay":"2101-01-01","kind":"shift","position":1}]}'::jsonb,
+      'quoteFingerprint', repeat('a', 64),
+      'contentVersion', 1,
+      'termsVersion', 'fictional-cancellation-v1',
+      'bookingPriceIqd', 110000,
+      'serviceFeeIqd', 5000,
+      'customerTotalIqd', 115000,
+      'firstStartsAt', '2101-01-01T08:00:00+03:00',
+      'conversationId', (select result->>'conversationId' from messaging_paid_conversation),
+      'intent', jsonb_build_object(
+        'customerName', 'Fictional Customer',
+        'partySize', 4,
+        'acceptedHouseRules', true,
+        'acceptedCancellationPolicy', true,
+        'acceptedMarketplaceTerms', true,
+        'cancellationPolicyVersion', 'rentcottage-mvp-2026-08-04',
+        'acceptanceEvidence', '{}'::jsonb,
+        'conversationId', (select result->>'conversationId' from messaging_paid_conversation)
+      )
+    ) submission;
+select is(
+  public.prepare_booking_request_submission(
+    '10000000-0000-4000-8000-000000001002',
+    '36000000-0000-4000-8000-000000001008',
+    (select submission from messaging_rebind_submission)
+  ) ->> 'status',
+  'invalid',
+  'the production submission boundary permanently rejects reusing a cancelled ever-confirmed journey'
+);
+select is(
+  public.prepare_booking_request_submission(
+    '10000000-0000-4000-8000-000000001002',
+    '36000000-0000-4000-8000-000000001009',
+    (select submission || jsonb_build_object(
+      'conversationId', independent.result->>'conversationId',
+      'intent', submission->'intent' || jsonb_build_object(
+        'conversationId', independent.result->>'conversationId'
+      )
+    ) from messaging_rebind_submission
+      cross join messaging_independent_conversation independent)
+  )->>'status',
+  'quote-stale',
+  'the same valid search with an independent journey reaches quote validation instead of the permanent-binding rejection'
+);
+reset role;
 select is((select count(*) from public.cottage_booking_period_occupancies where active),0::bigint,'all unstarted component shifts including bundle components become available');
 select ok((select (quote_payload,intent_payload,acceptance_evidence) from public.booking_snapshots)=(select (quote_payload,intent_payload,acceptance_evidence) from preserved_snapshot) and (select access_ranges from public.cottage_booking_period_commitments)=(select access_ranges from preserved_ranges),'purchased snapshot terms and access ranges stay intact');
 select ok((select count(*) from public.booking_confirmations)=1 and (select count(*) from public.booking_receipts)=2 and (select count(*) from public.payment_provider_operations where operation_kind='refund')=0,'cancellation preserves confirmation and receipts independently of supplier execution');
@@ -316,7 +400,7 @@ select pg_temp.seed_cancellation_booking((clock_timestamp() at time zone 'Asia/B
 create temp table original_ranges as select access_ranges from public.cottage_booking_period_commitments;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 set local role authenticated;
-select is(public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003805','customer',null,null,pg_temp.cancellation_decision('customer',false))->'refundObligation','{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb,'late customer cancellation has no automatic refund');
+select is((public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003805','customer',null,null,pg_temp.cancellation_decision('customer',false))->'refundObligation')::text,'{"bookingPriceFils": 0, "bookingServiceFeeFils": 0}'::text,'late customer cancellation has no automatic refund');
 reset role;
 select is((select active from public.cottage_booking_period_occupancies where shift_id='32000000-0000-4000-8000-000000001001' order by service_day limit 1),true,'started first component retains its original reservation');
 select is((select count(*) from public.cottage_booking_period_occupancies where active and service_day=(select max(service_day) from public.cottage_booking_period_occupancies)),0::bigint,'future bundle components are released after a booking has started');

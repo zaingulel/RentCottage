@@ -51,6 +51,10 @@ CREATE INDEX "messaging_messages_history_idx" ON "public"."messaging_messages" U
 
 CREATE INDEX "messaging_blocked_attempts_review_idx" ON "public"."messaging_send_attempts" USING "btree" ("occurred_at" DESC, "id") WHERE ("outcome" = 'blocked'::"text");
 
+CREATE INDEX "messaging_translations_message_idx" ON "public"."messaging_translations" USING "btree" ("message_id", "created_at", "id");
+
+CREATE INDEX "messaging_translation_reports_review_idx" ON "public"."messaging_translation_reports" USING "btree" ("created_at" DESC, "id" DESC);
+
 CREATE UNIQUE INDEX "cottage_booking_period_active_occupancy_unique" ON "public"."cottage_booking_period_occupancies" USING "btree" ("schedule_revision_id", "shift_id", "service_day") WHERE "active";
 
 CREATE INDEX "cottage_ownership_owner_user_id_idx" ON "public"."cottage_ownership" USING "btree" ("owner_user_id");

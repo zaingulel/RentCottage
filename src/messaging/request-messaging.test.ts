@@ -33,6 +33,9 @@ describe("request messaging", () => {
       createConversation: vi
         .fn()
         .mockResolvedValue({ status: "created", conversationId }),
+      openBookingConversation: vi
+        .fn()
+        .mockResolvedValue({ status: "created", conversationId }),
       send: vi.fn().mockResolvedValue({
         status: "sent",
         messageId: "55555555-5555-4555-8555-555555555555",
@@ -44,6 +47,10 @@ describe("request messaging", () => {
     );
 
     await messaging.createConversation(profileId, commandId);
+    await messaging.openBookingConversation(
+      "RC-REQ-0123456789ABCDEF",
+      commandId,
+    );
     await messaging.send({
       conversationId,
       commandId,
@@ -51,7 +58,7 @@ describe("request messaging", () => {
       originalBody: "Please prepare the garden.",
     });
 
-    expect(identityClient.auth.getUser).toHaveBeenCalledTimes(2);
+    expect(identityClient.auth.getUser).toHaveBeenCalledTimes(3);
     expect(repository.createConversation).toHaveBeenCalledWith({
       actorUserId: userId,
       profileId,
@@ -60,6 +67,11 @@ describe("request messaging", () => {
     expect(repository.send).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: userId, conversationId }),
     );
+    expect(repository.openBookingConversation).toHaveBeenCalledWith({
+      actorUserId: userId,
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      commandId,
+    });
   });
 
   it("overwrites a forged runtime actor with the authenticated user", async () => {
@@ -74,6 +86,7 @@ describe("request messaging", () => {
     resolveContext.mockResolvedValue({ userId, role: "customer" });
     const repository = {
       createConversation: vi.fn(),
+      openBookingConversation: vi.fn(),
       send: vi.fn().mockResolvedValue({
         status: "sent",
         messageId: "55555555-5555-4555-8555-555555555555",
@@ -112,6 +125,7 @@ describe("request messaging", () => {
     });
     const repository = {
       createConversation: vi.fn(),
+      openBookingConversation: vi.fn(),
       send: vi.fn(),
     };
     const messaging = createRequestMessaging(
@@ -125,6 +139,10 @@ describe("request messaging", () => {
       status: "access-required",
     });
     expect(repository.createConversation).not.toHaveBeenCalled();
+    await expect(
+      messaging.openBookingConversation("RC-REQ-0123456789ABCDEF", commandId),
+    ).resolves.toEqual({ status: "access-required" });
+    expect(repository.openBookingConversation).not.toHaveBeenCalled();
   });
 
   it("rejects a mismatched authenticated identity and account context", async () => {
@@ -142,6 +160,7 @@ describe("request messaging", () => {
     });
     const repository = {
       createConversation: vi.fn(),
+      openBookingConversation: vi.fn(),
       send: vi.fn(),
     };
 

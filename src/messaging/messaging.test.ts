@@ -14,6 +14,7 @@ describe("messaging", () => {
         status: "created",
         conversationId,
       }),
+      openBookingConversation: vi.fn(),
       send: vi.fn(),
     };
     const messaging = createMessaging(repository);
@@ -32,9 +33,35 @@ describe("messaging", () => {
     });
   });
 
+  it("forwards a validated retained booking journey to the repository", async () => {
+    const repository = {
+      createConversation: vi.fn(),
+      openBookingConversation: vi.fn().mockResolvedValue({
+        status: "created",
+        conversationId,
+      }),
+      send: vi.fn(),
+    };
+    const messaging = createMessaging(repository);
+
+    await expect(
+      messaging.openBookingConversation({
+        actorUserId: customerId,
+        bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+        commandId,
+      }),
+    ).resolves.toEqual({ status: "created", conversationId });
+    expect(repository.openBookingConversation).toHaveBeenCalledWith({
+      actorUserId: customerId,
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      commandId,
+    });
+  });
+
   it("trims surrounding whitespace at the service boundary", async () => {
     const repository = {
       createConversation: vi.fn(),
+      openBookingConversation: vi.fn(),
       send: vi.fn().mockResolvedValue({
         status: "sent",
         messageId: "55555555-5555-4555-8555-555555555555",
@@ -62,6 +89,7 @@ describe("messaging", () => {
   it("passes message text to the database for authoritative contact admission", async () => {
     const repository = {
       createConversation: vi.fn(),
+      openBookingConversation: vi.fn(),
       send: vi.fn().mockResolvedValue({
         status: "blocked",
         reason: "contact-restricted",

@@ -11,6 +11,7 @@ import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details"
 import { isLocale } from "@/i18n/routing";
 import { loadOwnerBookingRequest } from "@/booking-request/request-owner-booking-request-notifications";
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
+import { MessagingBookingLink } from "@/components/messaging-booking-link";
 
 const unavailableCopy = {
   en: "Confirmed booking is unavailable",
@@ -35,6 +36,9 @@ export default async function OwnerConfirmedBookingPage({
         returnTo={returnTo}
       />
     );
+  const messaging = (
+    <MessagingBookingLink locale={locale} reference={reference} />
+  );
   const requestDelivery = await loadRequestNotificationStatus(
     reference,
     "cottage_owner",
@@ -64,6 +68,7 @@ export default async function OwnerConfirmedBookingPage({
     return (
       <main className="results-page">
         <BookingFinancialDetails locale={locale} view={financial} />
+        {messaging}
         {notices}
       </main>
     );
@@ -74,6 +79,7 @@ export default async function OwnerConfirmedBookingPage({
           locale={locale}
           notifications={[request]}
         />
+        {messaging}
         {notices}
       </main>
     );
@@ -109,6 +115,7 @@ export default async function OwnerConfirmedBookingPage({
         {...confirmed}
         lifecycleStatus={financial?.lifecycle.status}
       />
+      {messaging}
       {financial ? (
         <BookingFinancialDetails locale={locale} view={financial} />
       ) : null}

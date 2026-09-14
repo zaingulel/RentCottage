@@ -58,6 +58,7 @@ const request = {
     requiresInside48HourNoRefundAcceptance: false,
   }),
 };
+const conversationId = "22222222-2222-4222-8222-222222222222";
 
 describe("Booking Request action boundary", () => {
   beforeEach(() => {
@@ -128,6 +129,24 @@ describe("Booking Request action boundary", () => {
         bookingNote: "Garden seating, please.",
       }),
     );
+  });
+
+  it("preserves an explicitly selected enquiry journey without inventing one", async () => {
+    await submitBookingRequest({ ...request, conversationId });
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId }),
+    );
+
+    submit.mockClear();
+    await submitBookingRequest(request);
+    expect(submit.mock.calls[0]?.[0]).not.toHaveProperty("conversationId");
+  });
+
+  it("rejects a malformed enquiry journey before provider work", async () => {
+    await expect(
+      submitBookingRequest({ ...request, conversationId: "not-a-uuid" }),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(createClient).not.toHaveBeenCalled();
   });
 
   it("normalizes a blank optional Booking Note to absence", async () => {

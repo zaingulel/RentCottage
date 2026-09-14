@@ -995,6 +995,27 @@ ALTER TABLE ONLY "public"."messaging_messages"
 ALTER TABLE ONLY "public"."messaging_messages"
     ADD CONSTRAINT "messaging_messages_sender_user_id_fkey" FOREIGN KEY ("sender_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
 
+ALTER TABLE ONLY "public"."messaging_translations"
+    ADD CONSTRAINT "messaging_translations_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."messaging_translations"
+    ADD CONSTRAINT "messaging_translations_cache_key" UNIQUE ("message_id", "target_language", "provider", "model", "prompt_version");
+
+ALTER TABLE ONLY "public"."messaging_translations"
+    ADD CONSTRAINT "messaging_translations_message_id_fkey" FOREIGN KEY ("message_id") REFERENCES "public"."messaging_messages"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_translation_reports"
+    ADD CONSTRAINT "messaging_translation_reports_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."messaging_translation_reports"
+    ADD CONSTRAINT "messaging_translation_reports_command_key" UNIQUE ("reporter_user_id", "command_id");
+
+ALTER TABLE ONLY "public"."messaging_translation_reports"
+    ADD CONSTRAINT "messaging_translation_reports_translation_id_fkey" FOREIGN KEY ("translation_id") REFERENCES "public"."messaging_translations"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_translation_reports"
+    ADD CONSTRAINT "messaging_translation_reports_reporter_user_id_fkey" FOREIGN KEY ("reporter_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
+
 ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_operation_fkey" FOREIGN KEY (operation_id) REFERENCES public.payment_provider_operations(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_event_key" UNIQUE (provider,environment,merchant_id,terminal_id,event_id);

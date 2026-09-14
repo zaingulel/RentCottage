@@ -1,14 +1,22 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadQuote, notFound, resolveAccountContext } = vi.hoisted(() => ({
+const {
+  listConversations,
+  getConversation,
+  loadQuote,
+  notFound,
+  resolveAccountContext,
+} = vi.hoisted(() => ({
+  listConversations: vi.fn(),
+  getConversation: vi.fn(),
   loadQuote: vi.fn(),
   notFound: vi.fn(),
   resolveAccountContext: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/navigation", () => ({ notFound }));
+vi.mock("next/navigation", () => ({ notFound, unstable_rethrow: vi.fn() }));
 vi.mock("@/booking-quote/request-booking-quote", () => ({
   loadPublicBookingQuote: loadQuote,
 }));
@@ -19,6 +27,12 @@ vi.mock("@/access/supabase-account-access", () => ({
   SupabaseAccountContextStore: class {
     resolve = resolveAccountContext;
   },
+}));
+vi.mock("@/messaging/request-messaging-runtime", () => ({
+  createRequestMessagingRuntime: vi.fn(async () => ({
+    enabled: true,
+    reader: { listConversations, getConversation },
+  })),
 }));
 
 import RequestPage from "./page";
@@ -117,6 +131,103 @@ describe("public Booking Quote page", () => {
     );
     expect(
       screen.queryByRole("heading", { name: "Verify your phone to continue" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("authorizes and preselects the exact eligible enquiry without passing private context to quote discovery", async () => {
+    const selectedConversationId = "22222222-2222-4222-8222-222222222222";
+    loadQuote.mockResolvedValue({
+      status: "quoted",
+      quote: {
+        slug: "cottage-00000000000040008000000000000029",
+        cottageName: "Quiet Garden",
+        contentVersion: 2,
+        houseRules: "No smoking",
+        termsVersion: "fictional-local-test-2026-08-22-v1",
+        marketplaceTerms: bookingTermsFixture("en"),
+        items: [
+          {
+            serviceDay: "2099-08-21",
+            kind: "shift",
+            position: 2,
+            displayName: "Evening",
+            startsAt: "2099-08-21T20:00:00+03:00",
+            endsAt: "2099-08-21T23:00:00+03:00",
+            crossesMidnight: false,
+            priceIqd: 100_000,
+          },
+        ],
+        bookingPriceIqd: 100_000,
+        serviceFeeIqd: 5_000,
+        customerTotalIqd: 105_000,
+        quoteFingerprint: "a".repeat(64),
+      },
+    });
+    resolveAccountContext.mockResolvedValue({
+      userId: "customer-1",
+      role: "customer",
+    });
+    listConversations.mockResolvedValue({
+      items: [
+        {
+          conversationId: selectedConversationId,
+          canContinueBookingRequest: true,
+          cottage: {
+            name: "Quiet Garden",
+            publicSlug: "cottage-00000000000040008000000000000029",
+          },
+          booking: null,
+        },
+        {
+          conversationId: "33333333-3333-4333-8333-333333333333",
+          canContinueBookingRequest: false,
+          cottage: {
+            name: "Confirmed journey",
+            publicSlug: "cottage-00000000000040008000000000000029",
+          },
+          booking: null,
+        },
+      ],
+      nextCursor: null,
+    });
+    getConversation.mockResolvedValue({
+      conversationId: selectedConversationId,
+      canContinueBookingRequest: true,
+      cottage: {
+        name: "Quiet Garden",
+        publicSlug: "cottage-00000000000040008000000000000029",
+      },
+      booking: null,
+    });
+
+    render(
+      await RequestPage({
+        params: Promise.resolve({
+          locale: "en",
+          slug: "cottage-00000000000040008000000000000029",
+        }),
+        searchParams: Promise.resolve({
+          from: "2099-08-21",
+          to: "2099-08-21",
+          selection: "2099-08-21:shift:2",
+          guests: "4",
+          conversation: selectedConversationId,
+        }),
+      }),
+    );
+
+    expect(loadQuote).toHaveBeenCalledWith(
+      "en",
+      "cottage-00000000000040008000000000000029",
+      expect.not.objectContaining({ conversation: expect.anything() }),
+    );
+    expect(getConversation).toHaveBeenCalledWith({
+      conversationId: selectedConversationId,
+      limit: 1,
+    });
+    expect(screen.getByLabelText(/Quiet Garden/)).toBeChecked();
+    expect(
+      screen.queryByLabelText(/Confirmed journey/),
     ).not.toBeInTheDocument();
   });
 

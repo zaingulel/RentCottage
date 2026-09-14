@@ -38,6 +38,35 @@ export function createRequestMessaging(
         return { status: "unavailable" as const };
       }
     },
+    async openBookingConversation(
+      bookingRequestReference: string,
+      commandId: string,
+    ) {
+      const actor = await actorUserId();
+      if (!actor) return { status: "access-required" as const };
+      try {
+        return await messaging.openBookingConversation({
+          actorUserId: actor,
+          bookingRequestReference,
+          commandId,
+        });
+      } catch {
+        return { status: "unavailable" as const };
+      }
+    },
+    async createConversationForCottage(publicSlug: string, commandId: string) {
+      const actor = await actorUserId();
+      if (!actor) return { status: "access-required" as const };
+      try {
+        return await messaging.createConversationForCottage({
+          actorUserId: actor,
+          publicSlug,
+          commandId,
+        });
+      } catch {
+        return { status: "unavailable" as const };
+      }
+    },
     async send(
       input: Omit<Parameters<MessagingRepository["send"]>[0], "actorUserId">,
     ) {

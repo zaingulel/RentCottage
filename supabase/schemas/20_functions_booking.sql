@@ -5341,8 +5341,6 @@ begin
     if exists (
       select 1
       from public.booking_request_submission_attempts attempts
-      left join public.booking_requests requests
-        on requests.id = attempts.booking_request_id
       where attempts.conversation_id = target_conversation_id
         and attempts.id is distinct from key_attempt.id
         and attempts.id is distinct from existing_attempt.id

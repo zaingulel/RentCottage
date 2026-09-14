@@ -27,6 +27,8 @@ export function BookingQuoteView({
   customerAccessUnavailable = false,
   bookingRequestUiPolicy,
   bookingRequestAcceptanceEvidence,
+  enquiryOptions = [],
+  selectedConversationId,
 }: {
   locale: Locale;
   slug: string;
@@ -38,9 +40,12 @@ export function BookingQuoteView({
   customerAccessUnavailable?: boolean;
   bookingRequestUiPolicy: BookingRequestUiPolicy | null;
   bookingRequestAcceptanceEvidence: BookingRequestAcceptanceEvidence | null;
+  enquiryOptions?: readonly { conversationId: string; label: string }[];
+  selectedConversationId?: string;
 }) {
   const copy = bookingQuoteMessages[locale];
   const cottageHref = `/${locale}/cottages/${slug}${queryString ? `?${queryString}` : ""}`;
+  const requestQueryString = `${queryString}${selectedConversationId ? `&conversation=${selectedConversationId}` : ""}`;
   if (result.status !== "quoted") {
     return (
       <main className="quote-page" dir={directionFor(locale)}>
@@ -49,7 +54,7 @@ export function BookingQuoteView({
           <LocaleLinks
             locale={locale}
             path={`/request/${slug}`}
-            queryString={queryString}
+            queryString={requestQueryString}
           />
         </header>
         <p role="alert">
@@ -72,7 +77,7 @@ export function BookingQuoteView({
         <LocaleLinks
           locale={locale}
           path={`/request/${slug}`}
-          queryString={queryString}
+          queryString={requestQueryString}
         />
       </header>
       <header className="quote-heading">
@@ -160,6 +165,9 @@ export function BookingQuoteView({
             customerAccessUnavailable={customerAccessUnavailable}
             uiPolicy={bookingRequestUiPolicy}
             acceptanceEvidence={bookingRequestAcceptanceEvidence}
+            enquiryOptions={enquiryOptions}
+            selectedConversationId={selectedConversationId}
+            returnTo={`/${locale}/request/${slug}?${requestQueryString}`}
           />
         </div>
         <aside className="quote-card quote-totals">

@@ -1,5 +1,5 @@
 import { hasCustomerCapability } from "@/access/account-access";
-import { notFound } from "next/navigation";
+import { notFound, unstable_rethrow } from "next/navigation";
 
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
@@ -19,6 +19,7 @@ import {
 } from "@/cottage-discovery/discovery-query";
 import { isLocale } from "@/i18n/routing";
 import { bookingRequestMessages } from "@/i18n/booking-request-messages";
+import { createRequestMessagingRuntime } from "@/messaging/request-messaging-runtime";
 
 export default async function RequestPage({
   params,
@@ -47,13 +48,24 @@ export default async function RequestPage({
   if (!isPublicCottageSlug(slug)) return notFound();
   const rawQuery = await searchParams;
   if (Object.keys(rawQuery).length === 0) notFound();
-  const parsed = parseCottageDiscoveryQuery(rawQuery);
+  const selectedConversationId =
+    typeof rawQuery.conversation === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      rawQuery.conversation,
+    )
+      ? rawQuery.conversation
+      : undefined;
+  if (rawQuery.conversation !== undefined && !selectedConversationId)
+    notFound();
+  const discoveryRawQuery = { ...rawQuery };
+  delete discoveryRawQuery.conversation;
+  const parsed = parseCottageDiscoveryQuery(discoveryRawQuery);
   if (parsed.status === "invalid") {
     return (
       <InvalidCottageSearch
         locale={locale}
         path={`/request/${slug}`}
-        queryString={preserveRawCottageDiscoveryQuery(rawQuery)}
+        queryString={preserveRawCottageDiscoveryQuery(discoveryRawQuery)}
       />
     );
   }
@@ -61,6 +73,7 @@ export default async function RequestPage({
   if (result.status === "not-found") notFound();
   let customerReady = false;
   let customerAccessUnavailable = false;
+  let enquiryOptions: { conversationId: string; label: string }[] = [];
   const evaluatedAt = new Date().toISOString();
   const uiPolicy =
     result.status === "quoted"
@@ -84,7 +97,46 @@ export default async function RequestPage({
         await createRequestSupabaseClient(),
       ).resolve();
       customerReady = hasCustomerCapability(context);
-    } catch {
+      if (customerReady) {
+        const runtime = await createRequestMessagingRuntime();
+        if (runtime.enabled) {
+          const inbox = await runtime.reader.listConversations({
+            limit: 50,
+            publicSlug: slug,
+          });
+          enquiryOptions = inbox.items
+            .filter((item) => item.canContinueBookingRequest)
+            .map((item) => ({
+              conversationId: item.conversationId,
+              label: item.booking?.bookingRequestReference ?? item.cottage.name,
+            }));
+          if (selectedConversationId) {
+            const selected = await runtime.reader.getConversation({
+              conversationId: selectedConversationId,
+              limit: 1,
+            });
+            if (
+              selected.cottage.publicSlug !== slug ||
+              !selected.canContinueBookingRequest
+            )
+              notFound();
+            if (
+              !enquiryOptions.some(
+                (item) => item.conversationId === selectedConversationId,
+              )
+            ) {
+              enquiryOptions.push({
+                conversationId: selected.conversationId,
+                label:
+                  selected.booking?.bookingRequestReference ??
+                  selected.cottage.name,
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      unstable_rethrow(error);
       customerAccessUnavailable = true;
       console.error("Booking Request Customer access check failed", {
         phase: "booking_request_customer_access",
@@ -104,6 +156,8 @@ export default async function RequestPage({
       customerAccessUnavailable={customerAccessUnavailable}
       bookingRequestUiPolicy={uiPolicy}
       bookingRequestAcceptanceEvidence={acceptanceEvidence}
+      enquiryOptions={enquiryOptions}
+      selectedConversationId={selectedConversationId}
     />
   );
 }

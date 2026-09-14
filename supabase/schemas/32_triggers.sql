@@ -244,3 +244,5 @@ CREATE TRIGGER messaging_conversations_immutable BEFORE UPDATE OR DELETE ON publ
 CREATE TRIGGER messaging_conversation_booking_requests_immutable BEFORE UPDATE OR DELETE ON public.messaging_conversation_booking_requests FOR EACH ROW EXECUTE FUNCTION public.reject_messaging_history_change();
 CREATE TRIGGER messaging_send_attempts_immutable BEFORE UPDATE OR DELETE ON public.messaging_send_attempts FOR EACH ROW EXECUTE FUNCTION public.reject_messaging_history_change();
 CREATE TRIGGER messaging_messages_immutable BEFORE UPDATE OR DELETE ON public.messaging_messages FOR EACH ROW EXECUTE FUNCTION public.reject_messaging_history_change();
+CREATE TRIGGER messaging_translations_immutable BEFORE UPDATE OR DELETE ON public.messaging_translations FOR EACH ROW EXECUTE FUNCTION public.reject_messaging_history_change();
+CREATE TRIGGER messaging_translation_reports_immutable BEFORE UPDATE OR DELETE ON public.messaging_translation_reports FOR EACH ROW EXECUTE FUNCTION public.reject_messaging_history_change();

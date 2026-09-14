@@ -79,7 +79,7 @@ const snapshots = () =>
     tables.map((table) => [
       table,
       harness.runSql(
-        `select coalesce(jsonb_agg(${table === "booking_refund_intents" ? "to_jsonb(r)-'dispute_resolution_id'" : "to_jsonb(r)"} order by to_jsonb(r)::text),'[]') from public.${table} r`,
+        `select coalesce(jsonb_agg(${table === "booking_refund_intents" ? "to_jsonb(r)-'dispute_resolution_id'" : table === "booking_request_submission_attempts" ? "'{\"conversation_id\":null}'::jsonb || to_jsonb(r)" : "to_jsonb(r)"} order by to_jsonb(r)::text),'[]') from public.${table} r`,
       ),
     ]),
   );

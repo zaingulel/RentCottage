@@ -128,6 +128,82 @@ describe("Booking Request form", () => {
     expect(screen.getByText("RC-REQ-AAAAAAAAAAAAAAAA")).toBeInTheDocument();
   });
 
+  it("submits the enquiry the customer explicitly selected", async () => {
+    submitBookingRequest.mockResolvedValue({ status: "invalid" });
+    const user = userEvent.setup();
+    const { container } = render(
+      <BookingRequestForm
+        customerReady
+        discoveryQuery={{
+          from: "2099-08-21",
+          to: "2099-08-21",
+          guests: 4,
+          amenities: [],
+          selections: [
+            { serviceDay: "2099-08-21", kind: "shift", position: 2 },
+          ],
+        }}
+        idempotencyKey="11111111-1111-4111-8111-111111111111"
+        locale="en"
+        quote={quote}
+        enquiryOptions={[
+          {
+            conversationId: "22222222-2222-4222-8222-222222222222",
+            label: "Existing garden enquiry",
+          },
+        ]}
+        {...policyProps("en")}
+      />,
+    );
+    await user.click(screen.getByLabelText(/Existing garden enquiry/));
+    fireEvent.submit(container.querySelector("form")!);
+    await vi.waitFor(() =>
+      expect(submitBookingRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: "22222222-2222-4222-8222-222222222222",
+        }),
+      ),
+    );
+  });
+
+  it("preserves the validated enquiry selected before the booking form opens", async () => {
+    submitBookingRequest.mockResolvedValue({ status: "invalid" });
+    const selectedConversationId = "22222222-2222-4222-8222-222222222222";
+    const { container } = render(
+      <BookingRequestForm
+        customerReady
+        discoveryQuery={{
+          from: "2099-08-21",
+          to: "2099-08-21",
+          guests: 4,
+          amenities: [],
+          selections: [
+            { serviceDay: "2099-08-21", kind: "shift", position: 2 },
+          ],
+        }}
+        idempotencyKey="11111111-1111-4111-8111-111111111111"
+        locale="en"
+        quote={quote}
+        enquiryOptions={[
+          {
+            conversationId: selectedConversationId,
+            label: "Existing garden enquiry",
+          },
+        ]}
+        selectedConversationId={selectedConversationId}
+        {...policyProps("en")}
+      />,
+    );
+
+    expect(screen.getByLabelText(/Existing garden enquiry/)).toBeChecked();
+    fireEvent.submit(container.querySelector("form")!);
+    await vi.waitFor(() =>
+      expect(submitBookingRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: selectedConversationId }),
+      ),
+    );
+  });
+
   it("shows inline phone verification instead of an unauthenticated submit button", () => {
     render(
       <BookingRequestForm
