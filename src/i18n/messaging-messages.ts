@@ -31,6 +31,7 @@ export const messagingMessages: Record<
     older: string;
     newer: string;
     continueEnquiry: string;
+    browseEnquiries: string;
     newEnquiry: string;
     newEnquiryHelp: string;
     messageCottage: string;
@@ -82,6 +83,7 @@ export const messagingMessages: Record<
     older: "Older messages",
     newer: "Back to newest",
     continueEnquiry: "Continue an existing enquiry",
+    browseEnquiries: "Browse all enquiries",
     newEnquiry: "Start an independent new enquiry",
     newEnquiryHelp: "Use a new enquiry for a different stay.",
     messageCottage: "Message this cottage",
@@ -131,6 +133,7 @@ export const messagingMessages: Record<
     older: "رسائل أقدم",
     newer: "العودة إلى الأحدث",
     continueEnquiry: "متابعة استفسار موجود",
+    browseEnquiries: "تصفح جميع الاستفسارات",
     newEnquiry: "بدء استفسار جديد مستقل",
     newEnquiryHelp: "استخدم استفساراً جديداً لإقامة مختلفة.",
     messageCottage: "مراسلة هذا البيت",
@@ -180,6 +183,7 @@ export const messagingMessages: Record<
     older: "نامە کۆنترەکان",
     newer: "گەڕانەوە بۆ نوێترین",
     continueEnquiry: "بەردەوامبوون لە پرسیارێکی هەبوو",
+    browseEnquiries: "هەموو پرسیارەکان ببینە",
     newEnquiry: "دەستپێکردنی پرسیارێکی نوێ و سەربەخۆ",
     newEnquiryHelp: "بۆ مانەوەیەکی جیاواز پرسیارێکی نوێ بەکاربهێنە.",
     messageCottage: "نامە بۆ ئەم کۆتێجە بنێرە",

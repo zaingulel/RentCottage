@@ -10,7 +10,10 @@ import type {
   BookingRequestUiPolicy,
 } from "@/booking-request/booking-request-policy";
 import type { PublicBookingQuote } from "@/booking-quote/booking-quote";
-import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
+import {
+  serializeCottageDiscoveryQuery,
+  type CottageDiscoveryQuery,
+} from "@/cottage-discovery/discovery-query";
 import { bookingQuoteMessages } from "@/i18n/booking-quote-messages";
 import {
   bookingRequestErrorMessage,
@@ -193,6 +196,11 @@ export function BookingRequestForm({
           </label>
         ))}
         <p>{messagingMessages[locale].newEnquiryHelp}</p>
+        <Link
+          href={`/${locale}/messages?cottage=${quote.slug}&${serializeCottageDiscoveryQuery(discoveryQuery)}`}
+        >
+          {messagingMessages[locale].browseEnquiries}
+        </Link>
       </fieldset>
       {uiPolicy.insideCutoff ? (
         <ActionFeedback kind="error">{copy.cutoffPassed}</ActionFeedback>

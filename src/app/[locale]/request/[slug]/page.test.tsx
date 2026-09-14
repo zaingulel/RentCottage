@@ -243,6 +243,26 @@ describe("public Booking Quote page", () => {
         conversationId: selectedConversationId,
         limit: 1,
       });
+      const browseLabels = {
+        en: "Browse all enquiries",
+        ar: "تصفح جميع الاستفسارات",
+        ckb: "هەموو پرسیارەکان ببینە",
+      };
+      const browseLink = screen.getByRole("link", {
+        name: browseLabels[locale],
+      });
+      const browseUrl = new URL(
+        browseLink.getAttribute("href")!,
+        "https://example.test",
+      );
+      expect(browseUrl.pathname).toBe(`/${locale}/messages`);
+      expect(Object.fromEntries(browseUrl.searchParams)).toEqual({
+        cottage: "cottage-00000000000040008000000000000029",
+        from: "2099-08-21",
+        to: "2099-08-21",
+        selection: "2099-08-21:shift:2",
+        guests: "4",
+      });
       expect(screen.getByLabelText(/Quiet Garden.*22222222/)).toBeChecked();
       // 23:30 UTC on August21 is02:30 on August22 in Iraq (+03:00).
       expect(
