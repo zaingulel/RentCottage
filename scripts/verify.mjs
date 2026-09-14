@@ -3,7 +3,7 @@ import { lstatSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const USAGE =
-  "Usage: npm run verify [-- [--baseline|--database|--browser] [--full]]";
+  "Usage: npm run verify [-- [--baseline|--database|--browser] [--full] [--plan]]";
 
 export const baselineVerificationSteps = [
   ["npm", ["run", "audit:production"]],
@@ -41,52 +41,23 @@ export const expensiveVerificationSteps = [
 ];
 
 const baselineOnlyPaths = new Set([
-  ".agents/roles/architect.md",
-  ".agents/roles/builder.md",
-  ".agents/roles/explorer.md",
-  ".agents/roles/oracle.md",
-  ".agents/roles/plan-reviewer.md",
-  ".agents/roles/reviewer.md",
-  ".agents/roles/security-reviewer.md",
-  ".agents/skills/closeout/SKILL.md",
-  ".agents/skills/handoff/SKILL.md",
-  ".agents/skills/resume/SKILL.md",
-  ".agents/skills/security-code-review/SKILL.md",
-  ".agents/templates/builder-handoff.md",
-  ".claude/agents/architect.md",
-  ".claude/agents/builder-lite.md",
-  ".claude/agents/builder-max.md",
-  ".claude/agents/builder.md",
-  ".claude/agents/explorer.md",
-  ".claude/agents/oracle.md",
-  ".claude/agents/plan-reviewer.md",
-  ".claude/agents/reviewer.md",
-  ".claude/agents/security-reviewer.md",
-  ".claude/templates/builder-handoff.md",
-  ".codex/agents/reviewer.toml",
-  ".codex/agents/security-reviewer.toml",
   ".github/pull_request_template.md",
   "AGENTS.md",
   "CLAUDE.md",
   "CONTEXT.md",
-  "docs/adr/0001-cloudflare-workers-supabase-stack.md",
-  "docs/agents/delivery.md",
-  "docs/agents/domain.md",
-  "docs/agents/issue-tracker.md",
-  "docs/agents/triage-labels.md",
-  "docs/commercial/founder-equity-discussion.md",
-  "docs/commercial/muntajaa-cost-plan.md",
-  "docs/demo.md",
-  "docs/discovery/client-questions.md",
-  "docs/discovery/design-brief.md",
-  "docs/engineering/coding-standards.md",
-  "docs/engineering/testing-strategy.md",
-  "docs/product/rentcottage-mvp-prd.md",
-  "docs/research/ajirly-and-iraq-booking-constraints.md",
-  "docs/research/rentcottage-unresolved-commercial-compliance-research.md",
   "scripts/run-log.mjs",
   "scripts/run-log.test.mjs",
 ]);
+
+function isBaselineOnlyPath(path) {
+  return (
+    baselineOnlyPaths.has(path) ||
+    /^\.agents\/(?:roles|skills|templates)\/.+\.md$/i.test(path) ||
+    /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
+    /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
+    /^docs\/.+\.(?:avif|docx|gif|jpe?g|md|png|svg|webp)$/i.test(path)
+  );
+}
 
 const browserOnlyPaths = new Set([
   "src/app/globals.css",
@@ -181,8 +152,8 @@ function diffChanges(cwd, args) {
   );
 }
 
-function regularOrAbsent(mode) {
-  return mode === "000000" || mode.startsWith("100");
+function nonExecutableRegularOrAbsent(mode) {
+  return mode === "000000" || mode === "100644";
 }
 
 function classifyChanges(changes) {
@@ -192,10 +163,17 @@ function classifyChanges(changes) {
 
   let browser = false;
   for (const change of changes) {
+    if (change.oldMode === "100755" || change.newMode === "100755") {
+      return {
+        browser: true,
+        database: true,
+        reason: `${change.path} is executable or has an executable-mode change`,
+      };
+    }
     if (
       change.status === "T" ||
-      !regularOrAbsent(change.oldMode) ||
-      !regularOrAbsent(change.newMode)
+      !nonExecutableRegularOrAbsent(change.oldMode) ||
+      !nonExecutableRegularOrAbsent(change.newMode)
     ) {
       return {
         browser: true,
@@ -207,7 +185,7 @@ function classifyChanges(changes) {
       browser = true;
       continue;
     }
-    if (!baselineOnlyPaths.has(change.path)) {
+    if (!isBaselineOnlyPath(change.path)) {
       return {
         browser: true,
         database: true,
@@ -230,7 +208,7 @@ function localSelection(cwd, stdout) {
   if (textOutput(cwd, ["rev-parse", "--is-shallow-repository"]) !== "false") {
     throw new Error("Git history is shallow");
   }
-  const mergeBase = textOutput(cwd, ["merge-base", "origin/main", "HEAD"]);
+  const mergeBase = uniqueMergeBase(cwd, "origin/main", "HEAD");
   const head = textOutput(cwd, ["rev-parse", "--verify", "HEAD^{commit}"]);
   stdout(`Git comparison: merge base ${mergeBase}; HEAD ${head}`);
 
@@ -254,7 +232,11 @@ function localSelection(cwd, stdout) {
     for (const path of untrackedText.slice(0, -1).split("\0")) {
       const stat = lstatSync(`${cwd}/${path}`);
       changes.push({
-        newMode: stat.isFile() ? "100644" : "120000",
+        newMode: stat.isFile()
+          ? (stat.mode & 0o111) === 0
+            ? "100644"
+            : "100755"
+          : "120000",
         oldMode: "000000",
         path,
         status: "A",
@@ -269,6 +251,15 @@ function resolveCommit(cwd, value, name) {
     throw new Error(`${name} commit identifier is missing or malformed`);
   }
   return textOutput(cwd, ["rev-parse", "--verify", `${value}^{commit}`]);
+}
+
+function uniqueMergeBase(cwd, left, right) {
+  const output = textOutput(cwd, ["merge-base", "--all", left, right]);
+  const mergeBases = output.split(/\s+/).filter(Boolean);
+  if (mergeBases.length !== 1) {
+    throw new Error("Git history does not have exactly one merge base");
+  }
+  return resolveCommit(cwd, mergeBases[0], "merge base");
 }
 
 function ciSelection(cwd, environment, stdout) {
@@ -286,9 +277,12 @@ function ciSelection(cwd, environment, stdout) {
       "checked-out commit does not have the expected merge parents",
     );
   }
-  stdout(`CI Git comparison: base ${base}; source ${source}; merge ${merge}`);
+  const mergeBase = uniqueMergeBase(cwd, base, source);
+  stdout(
+    `CI Git comparison: merge base ${mergeBase}; base ${base}; source ${source}; merge ${merge}`,
+  );
   return classifyChanges([
-    ...diffChanges(cwd, [`${base}..${source}`]),
+    ...diffChanges(cwd, [`${mergeBase}..${source}`]),
     ...diffChanges(cwd, [`${base}..${merge}`]),
   ]);
 }
@@ -321,13 +315,15 @@ export function main(
     stdout = console.log,
   } = {},
 ) {
-  const modes = args.filter((arg) => arg !== "--full");
+  const modes = args.filter((arg) => !["--full", "--plan"].includes(arg));
   if (
     modes.length > 1 ||
     new Set(args).size !== args.length ||
     args.some(
       (arg) =>
-        !["--baseline", "--database", "--browser", "--full"].includes(arg),
+        !["--baseline", "--database", "--browser", "--full", "--plan"].includes(
+          arg,
+        ),
     )
   ) {
     stderr(USAGE);
@@ -335,6 +331,7 @@ export function main(
   }
 
   const mode = modes[0];
+  const plan = args.includes("--plan");
   const baseline = mode === undefined || mode === "--baseline";
   const browser = mode === undefined || mode === "--browser";
   const verificationEnvironment = { ...environment, ...testEnvironment };
@@ -378,6 +375,16 @@ export function main(
     ...preparation,
     ...selectedServiceSteps,
   ];
+  if (plan) {
+    stdout(
+      `Verification scope: ${mode === undefined ? "all groups" : mode.slice(2)}`,
+    );
+    for (const [command, commandArgs] of steps) {
+      stdout(`Planned command: ${JSON.stringify([command, ...commandArgs])}`);
+    }
+    stdout("Plan only: no verification ran.");
+    return 0;
+  }
   for (let index = 0; index < steps.length; index += 1) {
     const [command, commandArgs] = steps[index];
     const result = run(command, commandArgs, verificationEnvironment, cwd);

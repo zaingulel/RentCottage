@@ -34,7 +34,9 @@ Follow this bounded sequence after approval:
 
 1. Confirm the exact branch, worktree, clean index, stopped writer, approved committed diff, local verification,
    and completed bounded internal review. Require the reviewed commit to equal `HEAD` and record it as
-   `CURRENT_PR_HEAD`.
+   `CURRENT_PR_HEAD`. Fetch `origin/main` and require it to be an ancestor of that head before starting hosted
+   checks. If the branch is behind, follow the same-outcome rebase and changed-head verification/review procedure
+   below before proceeding; auto-merge does not update a behind branch for us.
 2. Push with `git push --set-upstream origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`. Confirm the local branch now tracks the exact pull-request head remote ref; this retained remote-tracking ref supports ordinary branch deletion after a squash merge. If it later disappears, `closeout` owns the verified exact-head fallback. Create or update a draft pull request against `main` using the approved body. Re-read `state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels`; require the same repository, intended branch, draft state, base `main`, exact `CURRENT_PR_HEAD`, and no external-review label yet.
 3. Assess the complete pull-request diff under [Selective Greptile review](#selective-greptile-review). Record
    `Greptile needed` or `Greptile skipped` and one sentence why in the delivery packet. A skip needs no credit lookup,
@@ -46,7 +48,9 @@ Follow this bounded sequence after approval:
    purchase, or upgrade is authorised.
 4. Re-read the pull request and require the same open draft and exact head, resolved conversations, completed required
    local evidence, either a recorded `Greptile skipped` decision or a settled Greptile attempt, and no unresolved
-   finding. Mark it ready with `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`.
+   finding. Run the unscoped `npm run verify -- --plan` preflight for the complete current diff and reconcile any
+   unexpected route; this reports the planned commands and does not replace completed evidence. Mark it ready with
+   `gh pr ready <PR_NUMBER> --repo zaingulel/RentCottage`.
 5. GitHub's ready-only workflow checks the merge result. Require the current source-bound `test` check under
    strict current-base protection, then queue
    `gh pr merge <PR_NUMBER> --repo zaingulel/RentCottage --auto --squash --match-head-commit <CURRENT_PR_HEAD>`.
