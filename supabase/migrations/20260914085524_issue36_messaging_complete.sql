@@ -316,7 +316,7 @@ begin
     or ((target_cursor_at is null) <> (target_cursor_type is null))
     or (target_cursor_type is not null
       and target_cursor_type not in ('blocked', 'translation-report'))
-    or not public.is_platform_administrator('aal2') then
+    or public.is_platform_administrator('aal2') is not true then
     raise exception 'Messaging moderation is unavailable' using errcode = '42501';
   end if;
   return (
