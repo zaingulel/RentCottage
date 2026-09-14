@@ -265,6 +265,7 @@ function submissionPayload(input: SubmissionInput) {
     serviceFeeIqd: input.displayedQuote.serviceFeeIqd,
     customerTotalIqd: input.displayedQuote.customerTotalIqd,
     firstStartsAt: input.displayedQuote.firstStartsAt,
+    ...(input.conversationId ? { conversationId: input.conversationId } : {}),
     intent: {
       customerName: input.customerName,
       partySize: input.partySize,
@@ -275,6 +276,7 @@ function submissionPayload(input: SubmissionInput) {
       acceptedInside48HourNoRefund: input.acceptedInside48HourNoRefund,
       cancellationPolicyVersion: CANCELLATION_POLICY_VERSION,
       acceptanceEvidence: input.acceptanceEvidence,
+      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
     },
   };
 }

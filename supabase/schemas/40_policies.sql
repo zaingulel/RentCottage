@@ -13,6 +13,14 @@ SET default_table_access_method = "heap";
 
 CREATE POLICY "Account holder reads own context" ON "public"."account_contexts" FOR SELECT TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
 
+CREATE POLICY "Authorized readers see messaging conversations" ON "public"."messaging_conversations" FOR SELECT TO "authenticated" USING ((SELECT "public"."messaging_conversation_is_readable"("id")));
+
+CREATE POLICY "Authorized readers see messaging links" ON "public"."messaging_conversation_booking_requests" FOR SELECT TO "authenticated" USING ((SELECT "public"."messaging_conversation_is_readable"("conversation_id")));
+
+CREATE POLICY "Authorized readers see messaging history" ON "public"."messaging_messages" FOR SELECT TO "authenticated" USING ((SELECT "public"."messaging_conversation_is_readable"("conversation_id")));
+
+CREATE POLICY "MFA administrator reads messaging moderation attempts" ON "public"."messaging_send_attempts" FOR SELECT TO "authenticated" USING ((SELECT "public"."is_platform_administrator"('aal2'::"text")));
+
 CREATE POLICY "Applicant or MFA administrator reads Owner Applications" ON "public"."owner_applications" FOR SELECT TO "authenticated" USING ((("owner_user_id" = ( SELECT "auth"."uid"() AS "uid")) OR (("status" <> 'draft'::"public"."owner_application_status") AND ( SELECT "public"."is_platform_administrator"('aal2'::"text") AS "is_platform_administrator"))));
 
 CREATE POLICY "Applicant or MFA administrator reads renewal work" ON "public"."owner_application_renewal_work" FOR SELECT TO "authenticated" USING (((EXISTS ( SELECT 1
@@ -135,6 +143,14 @@ ALTER TABLE "public"."booking_request_submission_attempts" ENABLE ROW LEVEL SECU
 ALTER TABLE "public"."booking_requests" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."booking_snapshots" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."messaging_conversations" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."messaging_conversation_booking_requests" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."messaging_send_attempts" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."messaging_messages" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."booking_confirmation_notification_work" ENABLE ROW LEVEL SECURITY;
 

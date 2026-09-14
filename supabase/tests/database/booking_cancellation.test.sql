@@ -155,6 +155,62 @@ savepoint before_fixture;
 select pg_temp.seed_cancellation_booking('2101-01-01');
 savepoint confirmed;
 
+insert into public.cottage_marketplace_listings(profile_id,public_slug,state)
+values('20000000-0000-4000-8000-000000001001','cottage-20000000000040008000000000001001','published');
+set local role service_role;
+create temp table messaging_paid_conversation as
+select public.create_messaging_conversation(
+  '10000000-0000-4000-8000-000000001002',
+  '20000000-0000-4000-8000-000000001001',
+  '36000000-0000-4000-8000-000000001001'
+) result;
+reset role;
+grant select on messaging_paid_conversation to service_role;
+update public.booking_request_submission_attempts
+set conversation_id=(select (result->>'conversationId')::uuid from messaging_paid_conversation)
+where id='70000000-0000-4000-8000-000000001001';
+insert into public.messaging_conversation_booking_requests(
+  conversation_id,booking_request_id,submission_attempt_id
+) values(
+  (select (result->>'conversationId')::uuid from messaging_paid_conversation),
+  '60000000-0000-4000-8000-000000001001',
+  '70000000-0000-4000-8000-000000001001'
+);
+select is(
+  public.booking_request_payment_status(
+    (select requests from public.booking_requests requests
+      where id='60000000-0000-4000-8000-000000001001')
+  ),
+  'paid-confirmed',
+  'the real confirmation fixture establishes production paid access'
+);
+set local role service_role;
+select is(public.admit_messaging_message(
+  '10000000-0000-4000-8000-000000001002',
+  (select (result->>'conversationId')::uuid from messaging_paid_conversation),
+  '36000000-0000-4000-8000-000000001002','en','Call 0750 123 4567'
+)->>'status','sent','real paid confirmation independently permits contact details');
+reset role;
+select ok(not (select messages.contact_protected
+  from public.messaging_messages messages
+  join public.messaging_send_attempts attempts on attempts.id=messages.send_attempt_id
+  where attempts.command_id='36000000-0000-4000-8000-000000001002'),
+  'a paid message permanently records that contact protection was lifted at admission');
+set local role service_role;
+create temp table messaging_independent_conversation as
+select public.create_messaging_conversation(
+  '10000000-0000-4000-8000-000000001002',
+  '20000000-0000-4000-8000-000000001001',
+  '36000000-0000-4000-8000-000000001004'
+) result;
+select is((select result->>'status' from messaging_independent_conversation),'created','the same customer can start an independent future booking journey');
+select is(public.admit_messaging_message(
+  '10000000-0000-4000-8000-000000001002',
+  (select (result->>'conversationId')::uuid from messaging_independent_conversation),
+  '36000000-0000-4000-8000-000000001005','en','Call 0750 123 4567'
+)->>'status','blocked','one journey cannot borrow another journey paid contact permission');
+reset role;
+
 insert into public.cottage_shift_schedule_revisions(id,profile_id,revision,full_day_bundle_id) values('30000000-0000-4000-8000-000000003801','20000000-0000-4000-8000-000000001001',2,'31000000-0000-4000-8000-000000003801');
 select set_config('rentcottage.shift_schedule_write_revision_id','30000000-0000-4000-8000-000000003801',true);
 insert into public.cottage_shifts(id,schedule_revision_id,position,name,start_time,end_time) values
@@ -203,6 +259,21 @@ select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001'
 select is(jsonb_array_length(public.list_booking_history('cottage_owner')),1,'owner history retains the cancelled booking');
 reset role;
 select is((select status::text from public.cottage_booking_period_commitments),'cancelled_booking','cancellation ends the active customer conflict');
+select isnt(
+  public.booking_request_payment_status(
+    (select requests from public.booking_requests requests
+      where id='60000000-0000-4000-8000-000000001001')
+  ),
+  'paid-confirmed',
+  'cancellation ends the active paid-confirmed state'
+);
+set local role service_role;
+select is(public.admit_messaging_message(
+  '10000000-0000-4000-8000-000000001002',
+  (select (result->>'conversationId')::uuid from messaging_paid_conversation),
+  '36000000-0000-4000-8000-000000001003','en','Call 0750 123 4567'
+)->>'status','sent','the real cancellation preserves paid-history contact permission');
+reset role;
 select is((select count(*) from public.cottage_booking_period_occupancies where active),0::bigint,'all unstarted component shifts including bundle components become available');
 select ok((select (quote_payload,intent_payload,acceptance_evidence) from public.booking_snapshots)=(select (quote_payload,intent_payload,acceptance_evidence) from preserved_snapshot) and (select access_ranges from public.cottage_booking_period_commitments)=(select access_ranges from preserved_ranges),'purchased snapshot terms and access ranges stay intact');
 select ok((select count(*) from public.booking_confirmations)=1 and (select count(*) from public.booking_receipts)=2 and (select count(*) from public.payment_provider_operations where operation_kind='refund')=0,'cancellation preserves confirmation and receipts independently of supplier execution');

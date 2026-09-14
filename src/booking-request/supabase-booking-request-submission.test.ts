@@ -267,6 +267,57 @@ describe("Supabase Booking Request submission repository", () => {
     );
   });
 
+  it("keeps the legacy submission payload unchanged when no conversation is continued", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        status: "ready",
+        attemptId: "22222222-2222-4222-8222-222222222222",
+        paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+        paymentSnapshot: null,
+        providerIdentity: null,
+      },
+      error: null,
+    });
+    const client = { rpc };
+
+    await new SupabaseBookingRequestSubmissionRepository(
+      client as unknown as SupabaseClient,
+    ).prepare(input);
+
+    const submission = rpc.mock.calls[0]?.[1]?.target_submission;
+    expect(submission).not.toHaveProperty("conversationId");
+    expect(submission.intent).not.toHaveProperty("conversationId");
+  });
+
+  it("binds an explicitly continued inquiry in both submission and fingerprinted intent", async () => {
+    const client = clientWith({
+      data: {
+        status: "ready",
+        attemptId: "22222222-2222-4222-8222-222222222222",
+        paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+        paymentSnapshot: null,
+        providerIdentity: null,
+      },
+      error: null,
+    });
+    const conversationId = "44444444-4444-4444-8444-444444444444";
+
+    await new SupabaseBookingRequestSubmissionRepository(client).prepare({
+      ...input,
+      conversationId,
+    });
+
+    expect(client.rpc).toHaveBeenCalledWith(
+      "prepare_booking_request_submission",
+      expect.objectContaining({
+        target_submission: expect.objectContaining({
+          conversationId,
+          intent: expect.objectContaining({ conversationId }),
+        }),
+      }),
+    );
+  });
+
   it("fails closed for malformed database outcomes", async () => {
     const repository = new SupabaseBookingRequestSubmissionRepository(
       clientWith({

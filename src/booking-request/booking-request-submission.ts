@@ -28,6 +28,7 @@ export interface SubmissionInput {
   readonly idempotencyKey: string;
   readonly locale: Locale;
   readonly publicSlug: string;
+  readonly conversationId?: string;
   readonly discoveryQuery: CottageDiscoveryQuery;
   readonly displayedQuote: {
     readonly fingerprint: string;
@@ -165,6 +166,10 @@ function validInput(input: SubmissionInput): boolean {
     /^[0-9a-f-]{36}$/i.test(input.customerUserId) &&
     /^[0-9a-f-]{36}$/i.test(input.idempotencyKey) &&
     /^cottage-[0-9a-f]{32}$/.test(input.publicSlug) &&
+    (input.conversationId === undefined ||
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        input.conversationId,
+      )) &&
     /^[0-9a-f]{64}$/.test(input.displayedQuote.fingerprint) &&
     input.customerName === input.customerName.trim() &&
     input.customerName.length >= 2 &&

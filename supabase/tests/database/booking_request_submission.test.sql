@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(281);
+select plan(285);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -706,11 +706,31 @@ select is(
 reset role;
 
 set local role service_role;
+create temporary table submission_conversation as
+select public.create_messaging_conversation(
+  '00000000-0000-0000-0000-000000003202',
+  '30000000-0000-4000-8000-000000003201',
+  '36000000-0000-4000-8000-000000003201'
+) result;
+reset role;
+create temporary table journey_submission as
+select jsonb_set(
+  submission || jsonb_build_object(
+    'conversationId',
+    (select result->>'conversationId' from submission_conversation)
+  ),
+  '{intent,conversationId}',
+  to_jsonb((select result->>'conversationId' from submission_conversation))
+) submission
+from valid_submission;
+grant select on submission_conversation,journey_submission to service_role;
+
+set local role service_role;
 create temporary table prepared_submission as
 select public.prepare_booking_request_submission(
   '00000000-0000-0000-0000-000000003202',
   '11111111-1111-4111-8111-111111113201',
-  (select submission from valid_submission)
+  (select submission from journey_submission)
 ) as result;
 reset role;
 
@@ -724,7 +744,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'ready',
   'a pre-provider crash resumes the same durable Payment Lifecycle'
@@ -740,7 +760,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'quote-stale',
   'a pre-provider crash cannot resume against a stale price quote'
@@ -762,7 +782,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'quote-stale',
   'a pre-provider crash cannot resume after availability closes'
@@ -786,7 +806,7 @@ select is(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
     jsonb_set(
-      (select submission from valid_submission),
+      (select submission from journey_submission),
       '{intent,customerName}', '"Different Customer"'::jsonb
     )
   ) ->> 'status',
@@ -1435,7 +1455,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'reconciliation-required',
   'refresh after a potentially sent claim delegates recovery to the independent outbox'
@@ -2445,7 +2465,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) -> 'providerIdentity',
   '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb,
   'recovery returns the immutable provider identity with payment evidence'
@@ -2581,6 +2601,15 @@ grant select on finalized_submission to service_role;
 select is(
   (select result ->> 'status' from finalized_submission), 'pending',
   'successful authorization finalizes one Pending Booking Request'
+);
+select ok((select attempts.conversation_id=links.conversation_id
+    and attempts.id=links.submission_attempt_id
+    and attempts.booking_request_id=links.booking_request_id
+  from public.booking_request_submission_attempts attempts
+  join public.messaging_conversation_booking_requests links
+    on links.submission_attempt_id=attempts.id
+  where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission)),
+  'inquiry, attempt and finalized request link atomically'
 );
 select results_eq(
   $$select
@@ -2930,6 +2959,13 @@ select results_eq(
   $$values ('accepted'::text, 'pending_hold'::text, true, 2::integer)$$,
   'acceptance retains the Payment Authorisation and active Pending Hold while notifying both parties once'
 );
+set local role service_role;
+select is(public.admit_messaging_message(
+  (select customer_user_id from booking_request_lifecycle_target),
+  (select (result->>'conversationId')::uuid from submission_conversation),
+  '36000000-0000-4000-8000-000000003202','en','Call 0750 123 4567'
+)->>'status','blocked','owner acceptance without captured payment cannot permit contact details');
+reset role;
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
@@ -3150,6 +3186,25 @@ select results_eq(
   $$values ('withdrawn'::text)$$,
   'authoritative release persistence moves a processing withdrawal to withdrawn'
 );
+savepoint unresolved_journey_reuse;
+update public.booking_request_authorization_reconciliation_outbox
+set state='pending'
+where claim_id=(select id from public.booking_request_authorization_claims);
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  (select customer_user_id from booking_request_lifecycle_target),
+  '36000000-0000-4000-8000-000000003203',
+  (select submission from journey_submission)
+)->>'status','invalid','a terminal request cannot hide unresolved authorization reconciliation when reusing its inquiry');
+reset role;
+rollback to savepoint unresolved_journey_reuse;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  (select customer_user_id from booking_request_lifecycle_target),
+  '36000000-0000-4000-8000-000000003204',
+  (select submission from journey_submission)
+)->>'status','ready','a fully released unpaid request permits a new attempt in the same inquiry');
+reset role;
 rollback to savepoint booking_request_withdrawal_release;
 
 savepoint booking_request_postexpiry_admission_rejected;
@@ -4666,7 +4721,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'declined',
   'the original idempotency key projects the real terminal request status'
@@ -4726,7 +4781,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113297',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'bookingRequestReference',
   (select result ->> 'bookingRequestReference' from finalized_submission),
   'a fresh page key for the unchanged immutable intent returns the same request'
@@ -4747,7 +4802,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113296',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'bookingRequestReference',
   (select result ->> 'bookingRequestReference' from finalized_submission),
   'a finalized attempt returns its original result before current-quote rejection'

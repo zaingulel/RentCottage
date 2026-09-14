@@ -239,6 +239,7 @@ CREATE TABLE IF NOT EXISTS "public"."booking_request_submission_attempts" (
     "idempotency_key" "uuid" NOT NULL,
     "payment_lifecycle_id" "uuid" NOT NULL,
     "profile_id" "uuid" NOT NULL,
+    "conversation_id" "uuid",
     "locale" "public"."cottage_profile_source_language" NOT NULL,
     "public_slug" "text" NOT NULL,
     "requested_search" "jsonb" NOT NULL,

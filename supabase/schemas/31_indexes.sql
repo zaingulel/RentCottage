@@ -35,9 +35,21 @@ CREATE UNIQUE INDEX "booking_request_submission_active_intent_unique" ON "public
 
 CREATE INDEX "booking_request_submission_customer_idx" ON "public"."booking_request_submission_attempts" USING "btree" ("customer_user_id", "created_at" DESC);
 
+CREATE INDEX "booking_request_submission_conversation_idx" ON "public"."booking_request_submission_attempts" USING "btree" ("conversation_id", "created_at" DESC) WHERE ("conversation_id" IS NOT NULL);
+
 CREATE INDEX "booking_requests_customer_idx" ON "public"."booking_requests" USING "btree" ("customer_user_id", "created_at" DESC);
 
 CREATE INDEX "booking_requests_owner_idx" ON "public"."booking_requests" USING "btree" ("owner_user_id", "response_deadline");
+
+CREATE INDEX "messaging_conversations_customer_idx" ON "public"."messaging_conversations" USING "btree" ("customer_user_id", "created_at" DESC);
+
+CREATE INDEX "messaging_conversations_owner_idx" ON "public"."messaging_conversations" USING "btree" ("owner_user_id", "created_at" DESC);
+
+CREATE INDEX "messaging_conversation_requests_history_idx" ON "public"."messaging_conversation_booking_requests" USING "btree" ("conversation_id", "linked_at" DESC, "booking_request_id" DESC);
+
+CREATE INDEX "messaging_messages_history_idx" ON "public"."messaging_messages" USING "btree" ("conversation_id", "position");
+
+CREATE INDEX "messaging_blocked_attempts_review_idx" ON "public"."messaging_send_attempts" USING "btree" ("occurred_at" DESC, "id") WHERE ("outcome" = 'blocked'::"text");
 
 CREATE UNIQUE INDEX "cottage_booking_period_active_occupancy_unique" ON "public"."cottage_booking_period_occupancies" USING "btree" ("schedule_revision_id", "shift_id", "service_day") WHERE "active";
 

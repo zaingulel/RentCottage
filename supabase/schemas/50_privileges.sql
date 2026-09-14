@@ -1424,3 +1424,25 @@ REVOKE ALL ON FUNCTION public.ensure_booking_request_notification_events(uuid),p
 
 REVOKE ALL ON FUNCTION public.list_booking_request_notification_status(text,text) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.list_booking_request_notification_status(text,text) TO authenticated;
+
+REVOKE ALL ON TABLE public.messaging_conversations FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.messaging_conversation_booking_requests FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.messaging_send_attempts FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.messaging_messages FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON SEQUENCE public.messaging_messages_position_seq FROM PUBLIC,anon,authenticated,service_role;
+
+GRANT SELECT ON TABLE public.messaging_conversations TO authenticated;
+GRANT SELECT ON TABLE public.messaging_conversation_booking_requests TO authenticated;
+GRANT SELECT ON TABLE public.messaging_send_attempts TO authenticated;
+GRANT SELECT ON TABLE public.messaging_messages TO authenticated;
+
+REVOKE ALL ON FUNCTION public.contact_protection_text_is_safe(text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.messaging_writing_is_closed(timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.messaging_submission_attempt_is_resolved(uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.create_messaging_conversation(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.create_messaging_conversation(uuid,uuid,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.admit_messaging_message(uuid,uuid,uuid,public.cottage_profile_source_language,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.admit_messaging_message(uuid,uuid,uuid,public.cottage_profile_source_language,text) TO service_role;
+REVOKE ALL ON FUNCTION public.messaging_conversation_is_readable(uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.messaging_conversation_is_readable(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.reject_messaging_history_change() FROM PUBLIC,anon,authenticated,service_role;

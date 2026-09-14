@@ -393,6 +393,34 @@ select pg_temp.recovery_execute((select permit from correction_capture_permit),'
 select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',
   public.get_booking_request_payment_recovery_confirmation_evidence((select (result->>'attemptId')::uuid from correction_attempt)));
 reset role;
+insert into public.cottage_marketplace_listings(profile_id,public_slug,state)
+values('20000000-0000-4000-8000-000000001001','cottage-20000000000040008000000000001001','published');
+set local role service_role;
+create temp table messaging_correction_conversation as
+select public.create_messaging_conversation(
+  '10000000-0000-4000-8000-000000001002',
+  '20000000-0000-4000-8000-000000001001',
+  '36000000-0000-4000-8000-000000002001'
+) result;
+reset role;
+grant select on messaging_correction_conversation to service_role;
+update public.booking_request_submission_attempts
+set conversation_id=(select (result->>'conversationId')::uuid from messaging_correction_conversation)
+where id='70000000-0000-4000-8000-000000001001';
+insert into public.messaging_conversation_booking_requests(
+  conversation_id,booking_request_id,submission_attempt_id
+) values(
+  (select (result->>'conversationId')::uuid from messaging_correction_conversation),
+  '60000000-0000-4000-8000-000000001001',
+  '70000000-0000-4000-8000-000000001001'
+);
+set local role service_role;
+select is(public.admit_messaging_message(
+  '10000000-0000-4000-8000-000000001002',
+  (select (result->>'conversationId')::uuid from messaging_correction_conversation),
+  '36000000-0000-4000-8000-000000002002','en','Call 0750 123 4567'
+)->>'status','sent','real recovered confirmation permits contact details');
+reset role;
 create temp table immutable_confirmation as select to_jsonb(confirmations) snapshot from public.booking_confirmations confirmations;
 create temp table immutable_receipts as select jsonb_agg(to_jsonb(receipts) order by receipts.id) snapshot from public.booking_receipts receipts;
 create temp table observed_capture as select ledger.id,(select payment_required_deadline from public.booking_request_capture_work) deadline,jsonb_build_object(
@@ -422,6 +450,13 @@ reset role;
 select is((select to_jsonb(confirmations) from public.booking_confirmations confirmations),(select snapshot from immutable_confirmation),'historical confirmation is preserved byte for byte');
 select is((select jsonb_agg(to_jsonb(receipts) order by receipts.id) from public.booking_receipts receipts),(select snapshot from immutable_receipts),'historical receipts remain immutable');
 select is((select count(*) from public.booking_request_confirmation_invalidations),1::bigint,'one append-only invalidation removes active confirmation');
+set local role service_role;
+select is(public.admit_messaging_message(
+  '10000000-0000-4000-8000-000000001002',
+  (select (result->>'conversationId')::uuid from messaging_correction_conversation),
+  '36000000-0000-4000-8000-000000002003','en','Call 0750 123 4567'
+)->>'status','blocked','real confirmation invalidation removes contact permission');
+reset role;
 select is((select status::text from public.cottage_booking_period_commitments),'pending_hold','invalidated booking is an unconfirmed hold');
 select is((select count(*) from public.cottage_booking_period_occupancies where active),5::bigint,'invalidation retains every selected shift');
 select is((select count(*) from public.booking_request_payment_correction_observations where conflict),1::bigint,'changed receipt is preserved as conflict');
