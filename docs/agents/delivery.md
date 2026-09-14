@@ -83,9 +83,14 @@ final required Greptile attempt, not
 between that attempt and CI. An unchanged-head CI retry needs no new review. Return to the owner only when the repair
 or rebase changes product meaning, outcome, scope, risk, or the named outward actions.
 
-Keep this manual-request configuration and review-before-CI ordering consistent with Flow Metrics. RentCottage's
-selective review policy applies here only. The GitHub workflow enforces draft versus ready, not proof of the earlier
-review; the coordinator must verify the decision and any required attempt before changing that state. Greptile
+Keep this manual-request configuration and review-before-CI ordering consistent with Flow Metrics. The Greptile
+allowance is one pool shared with Flow Metrics: one organisation, one developer seat, the included credits per
+billing period plus the owner's overage. There is no per-repository split; each repository's own selection rules
+ration the pool, either repository spends from it, and once it is exhausted both record `UNAVAILABLE` until the
+period resets. The shape of the rule above, risk and uncertainty override category and line count, a skip is
+neither `UNAVAILABLE` nor a clean review, and the allowance is read before a request, is identical in Flow
+Metrics' `resume` skill; a change to it lands in both. The GitHub workflow enforces draft versus ready, not proof of
+the earlier review; the coordinator must verify the decision and any required attempt before changing that state. Greptile
 documents [manual-only configuration](https://www.greptile.com/docs/code-review/greptile-json-reference) and
 [explicit draft requests](https://www.greptile.com/docs/code-review/tips-recipes).
 
