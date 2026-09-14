@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
 
 import { formatIraqDateTime } from "@/i18n/format";
 import { messagingMessages } from "@/i18n/messaging-messages";
@@ -31,18 +32,25 @@ export function MessagingInbox({
         <ol className="messaging-inbox-list">
           {items.map((item) => (
             <li key={item.conversationId}>
-              <Link href={`/${locale}/messages/${item.conversationId}`}>
+              <Link
+                href={`/${locale}/messages/${item.conversationId}${contextQuery ? `?${contextQuery}` : ""}`}
+              >
                 <strong>{item.cottage.name}</strong>
                 {item.booking ? (
                   <span>
                     {item.booking.bookingRequestReference} ·{" "}
-                    {item.booking.requestStatus}
+                    {
+                      bookingRequestDisplayStatusMessages[locale][
+                        item.booking.paymentStatus ?? item.booking.requestStatus
+                      ]
+                    }
                   </span>
                 ) : null}
                 <span
+                  lang={item.preview?.originalLanguage ?? locale}
                   dir={directionFor(item.preview?.originalLanguage ?? locale)}
                 >
-                  {item.preview?.originalBody ?? copy.empty}
+                  {item.preview?.originalBody ?? copy.emptyMessages}
                 </span>
                 <time dateTime={item.activityAt}>
                   {formatIraqDateTime(item.activityAt, locale)}

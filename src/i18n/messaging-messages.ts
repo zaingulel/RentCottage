@@ -5,6 +5,11 @@ export const messagingMessages: Record<
   {
     inbox: string;
     empty: string;
+    emptyMessages: string;
+    categories: Record<
+      "contact" | "incorrect" | "unclear" | "inappropriate",
+      string
+    >;
     conversation: string;
     messages: string;
     send: string;
@@ -45,6 +50,13 @@ export const messagingMessages: Record<
   }
 > = {
   en: {
+    emptyMessages: "No messages yet.",
+    categories: {
+      contact: "Contact details",
+      incorrect: "Incorrect translation",
+      unclear: "Unclear translation",
+      inappropriate: "Inappropriate translation",
+    },
     inbox: "Messages",
     empty: "No conversations yet.",
     conversation: "Conversation",
@@ -88,6 +100,13 @@ export const messagingMessages: Record<
     bookedPeriod: "Booked period",
   },
   ar: {
+    emptyMessages: "لا توجد رسائل بعد.",
+    categories: {
+      contact: "تفاصيل الاتصال",
+      incorrect: "ترجمة غير صحيحة",
+      unclear: "ترجمة غير واضحة",
+      inappropriate: "ترجمة غير لائقة",
+    },
     inbox: "الرسائل",
     empty: "لا توجد محادثات بعد.",
     conversation: "المحادثة",
@@ -130,6 +149,13 @@ export const messagingMessages: Record<
     bookedPeriod: "فترة الحجز",
   },
   ckb: {
+    emptyMessages: "هێشتا هیچ نامەیەک نییە.",
+    categories: {
+      contact: "زانیاریی پەیوەندی",
+      incorrect: "وەرگێڕانی هەڵە",
+      unclear: "وەرگێڕانی ناڕوون",
+      inappropriate: "وەرگێڕانی نەگونجاو",
+    },
     inbox: "نامەکان",
     empty: "هێشتا هیچ گفتوگۆیەک نییە.",
     conversation: "گفتوگۆ",

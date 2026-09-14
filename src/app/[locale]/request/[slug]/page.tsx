@@ -19,6 +19,7 @@ import {
 } from "@/cottage-discovery/discovery-query";
 import { isLocale } from "@/i18n/routing";
 import { bookingRequestMessages } from "@/i18n/booking-request-messages";
+import { messagingEnquiryLabel } from "@/messaging/messaging-enquiry-label";
 import { createRequestMessagingRuntime } from "@/messaging/request-messaging-runtime";
 
 export default async function RequestPage({
@@ -108,7 +109,7 @@ export default async function RequestPage({
             .filter((item) => item.canContinueBookingRequest)
             .map((item) => ({
               conversationId: item.conversationId,
-              label: item.booking?.bookingRequestReference ?? item.cottage.name,
+              label: messagingEnquiryLabel(item, locale),
             }));
           if (selectedConversationId) {
             const selected = await runtime.reader.getConversation({
@@ -127,9 +128,7 @@ export default async function RequestPage({
             ) {
               enquiryOptions.push({
                 conversationId: selected.conversationId,
-                label:
-                  selected.booking?.bookingRequestReference ??
-                  selected.cottage.name,
+                label: messagingEnquiryLabel(selected, locale),
               });
             }
           }

@@ -1,3 +1,4 @@
+import { messagingEnquiryLabel } from "@/messaging/messaging-enquiry-label";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
@@ -118,7 +119,7 @@ export default async function MessagesPage({
                     href={`/${locale}/messages/${item.conversationId}${contextQuery ? `?${contextQuery}` : ""}`}
                   >
                     {messagingMessages[locale].continueEnquiry}:{" "}
-                    {item.cottage.name}
+                    {messagingEnquiryLabel(item, locale)}
                   </Link>
                   {contextQuery && item.canContinueBookingRequest ? (
                     <Link

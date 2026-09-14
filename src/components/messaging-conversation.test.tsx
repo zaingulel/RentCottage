@@ -62,12 +62,18 @@ describe("Messaging conversation", () => {
   it("labels saved fictional translation and exposes the original", async () => {
     const user = userEvent.setup();
     render(<MessagingConversation locale="en" conversation={conversation} />);
-    expect(screen.getByText("Could we use the garden?")).toBeInTheDocument();
+    expect(screen.getByText("Could we use the garden?")).toHaveAttribute(
+      "lang",
+      "en",
+    );
     expect(
       screen.getByText(/Fictional local-test translation/),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "View original" }));
-    expect(screen.getByText("هل يمكننا استخدام الحديقة؟")).toBeInTheDocument();
+    expect(screen.getByText("هل يمكننا استخدام الحديقة؟")).toHaveAttribute(
+      "lang",
+      "ar",
+    );
     expect(
       screen.queryByText(/Fictional local-test translation/),
     ).not.toBeInTheDocument();

@@ -275,6 +275,11 @@ export function MessagingConversation({
                   </p>
                 ) : null}
                 <p
+                  lang={
+                    original
+                      ? message.originalLanguage
+                      : translation.targetLanguage
+                  }
                   dir={directionFor(
                     original
                       ? message.originalLanguage

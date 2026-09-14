@@ -172,6 +172,7 @@ describe("public Booking Quote page", () => {
         {
           conversationId: selectedConversationId,
           canContinueBookingRequest: true,
+          createdAt: "2099-08-20T12:00:00Z",
           cottage: {
             name: "Quiet Garden",
             publicSlug: "cottage-00000000000040008000000000000029",
@@ -183,6 +184,16 @@ describe("public Booking Quote page", () => {
           canContinueBookingRequest: false,
           cottage: {
             name: "Confirmed journey",
+            publicSlug: "cottage-00000000000040008000000000000029",
+          },
+          booking: null,
+        },
+        {
+          conversationId: "44444444-4444-4444-8444-444444444444",
+          createdAt: "2099-08-20T13:00:00Z",
+          canContinueBookingRequest: true,
+          cottage: {
+            name: "Quiet Garden",
             publicSlug: "cottage-00000000000040008000000000000029",
           },
           booking: null,
@@ -225,7 +236,8 @@ describe("public Booking Quote page", () => {
       conversationId: selectedConversationId,
       limit: 1,
     });
-    expect(screen.getByLabelText(/Quiet Garden/)).toBeChecked();
+    expect(screen.getByLabelText(/Quiet Garden.*22222222/)).toBeChecked();
+    expect(screen.getByLabelText(/Quiet Garden.*44444444/)).not.toBeChecked();
     expect(
       screen.queryByLabelText(/Confirmed journey/),
     ).not.toBeInTheDocument();

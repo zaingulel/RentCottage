@@ -25,7 +25,7 @@ export function MessagingModeration({
                 <Link href={`/${locale}/messages/${item.conversationId}`}>
                   {item.actorRole === "customer" ? copy.customer : copy.owner}
                 </Link>{" "}
-                · {item.category} ·{" "}
+                · {copy.categories[item.category]} ·{" "}
                 {formatIraqDateTime(item.occurredAt, locale)}
               </p>
               <p>
@@ -36,15 +36,21 @@ export function MessagingModeration({
             <li key={item.reportId}>
               <strong>{copy.translationReports}</strong>
               <Link href={`/${locale}/messages/${item.conversationId}`}>
-                {item.category}
+                {copy.categories[item.category]}
               </Link>
-              <p dir={directionFor(item.originalLanguage)}>
+              <p
+                lang={item.originalLanguage}
+                dir={directionFor(item.originalLanguage)}
+              >
                 {item.originalBody}
               </p>
               <p className="translation-label">
                 {copy.automaticTranslation} · {copy.fictionalTranslation}
               </p>
-              <p dir={directionFor(item.targetLanguage)}>
+              <p
+                lang={item.targetLanguage}
+                dir={directionFor(item.targetLanguage)}
+              >
                 {item.translatedBody}
               </p>
               <small>
