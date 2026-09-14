@@ -1,5 +1,8 @@
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
+  globSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
@@ -76,6 +79,21 @@ function requiredCiSteps(mode) {
 
 const repositories = [];
 
+const currentRegularAgentDefinitions = globSync(
+  [
+    ".agents/roles/*.md",
+    ".agents/skills/*/SKILL.md",
+    ".agents/templates/*.md",
+    ".claude/agents/*.md",
+    ".claude/templates/*.md",
+    ".codex/agents/*.toml",
+  ],
+  { cwd: process.cwd() },
+).filter((path) => {
+  const stat = lstatSync(join(process.cwd(), path));
+  return stat.isFile() && (stat.mode & 0o111) === 0;
+});
+
 function git(cwd, args) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
   if (result.status !== 0) {
@@ -103,6 +121,31 @@ function createRepository() {
   git(repository, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
   git(repository, ["switch", "-c", "job/test"]);
   return repository;
+}
+
+function createCrissCrossRepository() {
+  const repository = createRepository();
+  const root = git(repository, ["rev-parse", "HEAD"]);
+  const leftOne = commit(
+    repository,
+    "AGENTS.md",
+    "left instructions\n",
+    "left one",
+  );
+  git(repository, ["switch", "-c", "right", root]);
+  const rightOne = commit(
+    repository,
+    "CONTEXT.md",
+    "right context\n",
+    "right one",
+  );
+  git(repository, ["switch", "job/test"]);
+  git(repository, ["merge", "--no-ff", rightOne, "-m", "left merge"]);
+  const left = git(repository, ["rev-parse", "HEAD"]);
+  git(repository, ["switch", "right"]);
+  git(repository, ["merge", "--no-ff", leftOne, "-m", "right merge"]);
+  const right = git(repository, ["rev-parse", "HEAD"]);
+  return { left, repository, right };
 }
 
 function commit(repository, path, contents, message = "change") {
@@ -144,7 +187,7 @@ describe("repository verification command", () => {
     expect(main(["unexpected"], { run, stderr })).toBe(2);
     expect(run).not.toHaveBeenCalled();
     expect(stderr).toHaveBeenCalledWith(
-      "Usage: npm run verify [-- [--baseline|--database|--browser] [--full]]",
+      "Usage: npm run verify [-- [--baseline|--database|--browser] [--full] [--plan]]",
     );
   });
 
@@ -202,6 +245,7 @@ describe("repository verification command", () => {
     ["--baseline", "--browser"],
     ["--baseline", "--database"],
     ["--full", "--full"],
+    ["--plan", "--plan"],
     ["--database", "--database"],
     ["--browser", "unexpected"],
   ])("rejects conflicting or malformed modes %j", (...args) => {
@@ -329,6 +373,16 @@ describe("repository verification command", () => {
 
   it.each([
     [
+      "builder-max runtime",
+      ".codex/agents/builder-max.toml",
+      "sandbox_mode = 'workspace-write'\n",
+    ],
+    [
+      "a future role definition",
+      ".agents/roles/release-captain.md",
+      "# Release captain\n",
+    ],
+    [
       "reviewer runtime",
       ".codex/agents/reviewer.toml",
       "sandbox_mode = 'workspace-write'\n",
@@ -357,6 +411,45 @@ describe("repository verification command", () => {
       );
     },
   );
+
+  it("keeps every current regular agent definition and future names on baseline evidence", () => {
+    const repository = createRepository();
+    const paths = [
+      ...currentRegularAgentDefinitions,
+      ".agents/roles/future-role.md",
+      ".agents/skills/future-skill/SKILL.md",
+      ".agents/templates/future-template.md",
+      ".claude/agents/future-agent.md",
+      ".claude/templates/future-template.md",
+      ".codex/agents/future-agent.toml",
+    ];
+    for (const path of paths)
+      write(repository, path, `definition for ${path}\n`);
+    git(repository, ["add", "."]);
+    git(repository, ["commit", "-m", "agent definitions"]);
+
+    const result = runVerification(repository);
+
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      requiredBaselineSteps,
+    );
+  });
+
+  it.each([
+    ["research prose", "docs/research/future-study.md"],
+    ["retained document", "docs/discovery/future-decisions.docx"],
+    ["documentation illustration", "docs/product/assets/future-map.png"],
+  ])("keeps %s on baseline evidence", (_label, path) => {
+    const repository = createRepository();
+    commit(repository, path, "fixture\n");
+
+    expect(
+      runVerification(repository).calls.map(([command, args]) => [
+        command,
+        args,
+      ]),
+    ).toEqual(requiredBaselineSteps);
+  });
 
   it.each([
     [
@@ -409,7 +502,6 @@ describe("repository verification command", () => {
     ["a test", "src/runtime.test.ts", "throw new Error('fixture');\n"],
     ["a dependency file", "package.json", "{}\n"],
     ["an asset", "docs/product/assets/runtime.json", "{}\n"],
-    ["an unknown document", "docs/new-runtime-fixture.md", "fixture\n"],
     [
       "the selector itself",
       "scripts/verify.mjs",
@@ -425,6 +517,16 @@ describe("repository verification command", () => {
       "public/_headers",
       "/assets/*\n  cache-control: no-cache\n",
     ],
+    ["an agent script", ".agents/roles/runtime.mjs", "export {};\n"],
+    ["an agent config", ".agents/roles/runtime.json", "{}\n"],
+    [
+      "an agent TypeScript file",
+      ".agents/skills/tool/runtime.ts",
+      "export {};\n",
+    ],
+    ["a docs script", "docs/research/runtime.js", "export {};\n"],
+    ["a category lookalike", ".agents-copy/roles/reviewer.md", "# Lookalike\n"],
+    ["a docs lookalike", "docs-copy/research/study.md", "# Lookalike\n"],
   ])("selects full verification for %s", (_label, path, contents) => {
     const repository = createRepository();
     commit(repository, path, contents);
@@ -520,8 +622,8 @@ describe("repository verification command", () => {
     );
 
     const renamedRepository = createRepository();
-    mkdirSync(join(renamedRepository, "docs"), { recursive: true });
-    git(renamedRepository, ["mv", "AGENTS.md", "docs/new-agent-manual.md"]);
+    mkdirSync(join(renamedRepository, "runtime"), { recursive: true });
+    git(renamedRepository, ["mv", "AGENTS.md", "runtime/new-agent-manual.md"]);
     git(renamedRepository, ["commit", "-m", "rename manual"]);
     expect(runVerification(renamedRepository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
@@ -544,6 +646,45 @@ describe("repository verification command", () => {
     symlinkSync("src/runtime.ts", join(changedRepository, "AGENTS.md"));
     git(changedRepository, ["add", "AGENTS.md"]);
     expect(runVerification(changedRepository).calls).toHaveLength(
+      requiredBaselineSteps.length + requiredExpensiveSteps.length,
+    );
+  });
+
+  it.each(["committed", "staged", "unstaged", "untracked"])(
+    "rejects %s executable agent prose",
+    (state) => {
+      const repository = createRepository();
+      const path = ".agents/roles/future-role.md";
+      write(repository, path, "# Future role\n");
+      if (state !== "untracked") {
+        git(repository, ["add", path]);
+        git(repository, ["commit", "-m", "non-executable role"]);
+      }
+      chmodSync(join(repository, path), 0o755);
+      if (state === "committed" || state === "staged") {
+        git(repository, ["add", path]);
+      }
+      if (state === "committed") {
+        git(repository, ["commit", "-m", "executable role"]);
+      }
+
+      const result = runVerification(repository);
+
+      expect(result.calls).toHaveLength(
+        requiredBaselineSteps.length + requiredExpensiveSteps.length,
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringMatching(/executable/i),
+      );
+    },
+  );
+
+  it("keeps mixed prose and runtime changes on full evidence", () => {
+    const repository = createRepository();
+    commit(repository, "docs/research/study.md", "# Study\n");
+    commit(repository, "src/runtime.ts", "export const value = 'changed';\n");
+
+    expect(runVerification(repository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
   });
@@ -616,10 +757,7 @@ describe("repository verification command", () => {
         requiredCiSteps(mode),
       );
       expect(result.stdout).toHaveBeenCalledWith(
-        expect.stringContaining(`base ${base}`),
-      );
-      expect(result.stdout).toHaveBeenCalledWith(
-        expect.stringContaining(`source ${source}`),
+        `CI Git comparison: merge base ${originalBase}; base ${base}; source ${source}; merge ${git(repository, ["rev-parse", "HEAD"])}`,
       );
     },
   );
@@ -632,6 +770,49 @@ describe("repository verification command", () => {
       const source = commit(repository, "AGENTS.md", "source instructions\n");
       git(repository, ["switch", "main"]);
       git(repository, ["merge", "--no-ff", source]);
+
+      const result = runVerification(repository, {
+        args: mode ? [mode] : [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_BASE_SHA: base,
+          VERIFY_SOURCE_SHA: source,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        mode ? [] : requiredBaselineSteps,
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("Expensive verification: skipped"),
+      );
+    },
+  );
+
+  it.each([
+    ["modification", undefined],
+    ["addition", "--database"],
+    ["deletion", "--browser"],
+  ])(
+    "ignores an advanced-base-only runtime %s in CI: %s",
+    (baseChange, mode) => {
+      const repository = createRepository();
+      const originalBase = git(repository, ["rev-parse", "HEAD"]);
+
+      git(repository, ["switch", "-c", "source", originalBase]);
+      const source = commit(repository, "AGENTS.md", "source instructions\n");
+      git(repository, ["switch", "main"]);
+      if (baseChange === "addition") {
+        commit(repository, "src/base-only.ts", "export const base = true;\n");
+      } else if (baseChange === "deletion") {
+        git(repository, ["rm", "src/runtime.ts"]);
+        git(repository, ["commit", "-m", "delete runtime on base"]);
+      } else {
+        commit(repository, "src/runtime.ts", "export const value = 'base';\n");
+      }
+      const base = git(repository, ["rev-parse", "HEAD"]);
+      git(repository, ["merge", "--no-ff", "source"]);
 
       const result = runVerification(repository, {
         args: mode ? [mode] : [],
@@ -679,6 +860,103 @@ describe("repository verification command", () => {
       );
       expect(result.stdout).toHaveBeenCalledWith(
         expect.stringContaining("src/runtime.ts requires full evidence"),
+      );
+    },
+  );
+
+  it("prints full and group-scoped plans from execution vectors without running them", () => {
+    const cases = [
+      {
+        args: ["--full"],
+        expected: [...requiredBaselineSteps, ...requiredExpensiveSteps],
+        scope: "all groups",
+      },
+      {
+        args: ["--database", "--full"],
+        expected: requiredDatabaseSteps,
+        scope: "database",
+      },
+    ];
+
+    for (const { args, expected, scope } of cases) {
+      const result = runVerification("/missing-git-evidence", {
+        args: [...args, "--plan"],
+      });
+      const planned = result.stdout.mock.calls
+        .map(([line]) => line)
+        .filter((line) => line.startsWith("Planned command: "))
+        .map((line) => JSON.parse(line.slice("Planned command: ".length)))
+        .map(([command, ...commandArgs]) => [command, commandArgs]);
+
+      expect(result.status).toBe(0);
+      expect(result.run).not.toHaveBeenCalled();
+      expect(planned).toEqual(expected);
+      expect(result.stdout).toHaveBeenCalledWith(
+        `Verification scope: ${scope}`,
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        "Plan only: no verification ran.",
+      );
+    }
+  });
+
+  it("prints the same narrow commands that execution consumes", () => {
+    const repository = createRepository();
+    commit(repository, "docs/research/study.md", "# Study\n");
+    const executed = runVerification(repository);
+    const planned = runVerification(repository, { args: ["--plan"] });
+    const plannedCommands = planned.stdout.mock.calls
+      .map(([line]) => line)
+      .filter((line) => line.startsWith("Planned command: "))
+      .map((line) => JSON.parse(line.slice("Planned command: ".length)))
+      .map(([command, ...args]) => [command, args]);
+
+    expect(planned.run).not.toHaveBeenCalled();
+    expect(plannedCommands).toEqual(
+      executed.calls.map(([command, args]) => [command, args]),
+    );
+  });
+
+  it("plans CI browser preparation without invoking the Chromium installer", () => {
+    const result = runVerification("/missing-git-evidence", {
+      args: ["--browser", "--full", "--plan"],
+      environment: { GITHUB_ACTIONS: "true" },
+    });
+
+    expect(result.run).not.toHaveBeenCalled();
+    expect(result.stdout).toHaveBeenCalledWith(
+      'Planned command: ["npx","playwright","install","--with-deps","chromium"]',
+    );
+  });
+
+  it.each(["local", "CI"])(
+    "fails closed when %s history has multiple merge bases",
+    (context) => {
+      const { left, repository, right } = createCrissCrossRepository();
+      let options = {};
+      if (context === "local") {
+        git(repository, ["update-ref", "refs/remotes/origin/main", left]);
+      } else {
+        git(repository, ["switch", "--detach", left]);
+        git(repository, ["merge", "--no-ff", right, "-m", "CI merge"]);
+        options = {
+          environment: {
+            GITHUB_ACTIONS: "true",
+            VERIFY_BASE_SHA: left,
+            VERIFY_SOURCE_SHA: right,
+          },
+        };
+      }
+
+      const result = runVerification(repository, options);
+
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        context === "CI"
+          ? requiredCiSteps(undefined)
+          : [...requiredBaselineSteps, ...requiredExpensiveSteps],
+      );
+      expect(result.stderr).toHaveBeenCalledWith(
+        expect.stringContaining("exactly one merge base"),
       );
     },
   );
