@@ -11,6 +11,7 @@ import { loadCustomerBookingRequest } from "@/booking-request/request-customer-b
 import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-booking-access";
 import { CustomerBookingRequestStatus } from "@/components/customer-booking-request-status";
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
+import { MessagingBookingLink } from "@/components/messaging-booking-link";
 import { isLocale } from "@/i18n/routing";
 
 const unavailableCopy = {
@@ -42,6 +43,9 @@ export default async function CustomerBookingRequestPage({
         returnTo={returnTo}
       />
     );
+  const messaging = (
+    <MessagingBookingLink locale={locale} reference={reference} />
+  );
   const requestDelivery = await loadRequestNotificationStatus(
     reference,
     "customer",
@@ -87,6 +91,7 @@ export default async function CustomerBookingRequestPage({
     return (
       <main className="results-page">
         <BookingFinancialDetails locale={locale} view={financial} />
+        {messaging}
         {notices}
       </main>
     );
@@ -98,6 +103,7 @@ export default async function CustomerBookingRequestPage({
           {...confirmed}
           lifecycleStatus={financial?.lifecycle.status}
         />
+        {messaging}
         {financial ? (
           <BookingFinancialDetails locale={locale} view={financial} />
         ) : null}
@@ -133,6 +139,7 @@ export default async function CustomerBookingRequestPage({
   return (
     <main className="results-page">
       <CustomerBookingRequestStatus locale={locale} request={request} />
+      {messaging}
       {notices}
     </main>
   );

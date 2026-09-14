@@ -659,6 +659,15 @@ ALTER TABLE ONLY "public"."booking_request_submission_attempts"
 ALTER TABLE ONLY "public"."booking_request_submission_attempts"
     ADD CONSTRAINT "booking_request_submission_attempts_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."owner_application_cottage_profiles"("id") ON DELETE RESTRICT;
 
+ALTER TABLE ONLY "public"."messaging_conversations"
+    ADD CONSTRAINT "messaging_conversations_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."messaging_conversations"
+    ADD CONSTRAINT "messaging_conversations_creation_command_key" UNIQUE ("customer_user_id", "creation_command_id");
+
+ALTER TABLE ONLY "public"."booking_request_submission_attempts"
+    ADD CONSTRAINT "booking_request_submission_attempts_conversation_id_fkey" FOREIGN KEY ("conversation_id") REFERENCES "public"."messaging_conversations"("id") ON DELETE RESTRICT;
+
 ALTER TABLE ONLY "public"."booking_requests"
     ADD CONSTRAINT "booking_requests_booking_period_commitment_id_fkey" FOREIGN KEY ("booking_period_commitment_id") REFERENCES "public"."cottage_booking_period_commitments"("id") ON DELETE RESTRICT;
 
@@ -934,6 +943,78 @@ ALTER TABLE ONLY "public"."payment_provider_operations"
 
 ALTER TABLE ONLY "public"."payment_provider_operations"
     ADD CONSTRAINT "simulated_payment_provider_operations_recovery_attempt_id_fkey" FOREIGN KEY ("recovery_attempt_id") REFERENCES "public"."booking_request_payment_recovery_attempts"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_conversations"
+    ADD CONSTRAINT "messaging_conversations_customer_user_id_fkey" FOREIGN KEY ("customer_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_conversations"
+    ADD CONSTRAINT "messaging_conversations_owner_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_conversations"
+    ADD CONSTRAINT "messaging_conversations_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."owner_application_cottage_profiles"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_conversation_booking_requests"
+    ADD CONSTRAINT "messaging_conversation_booking_requests_pkey" PRIMARY KEY ("booking_request_id");
+
+ALTER TABLE ONLY "public"."messaging_conversation_booking_requests"
+    ADD CONSTRAINT "messaging_conversation_booking_requests_attempt_key" UNIQUE ("submission_attempt_id");
+
+ALTER TABLE ONLY "public"."messaging_conversation_booking_requests"
+    ADD CONSTRAINT "messaging_conversation_booking_requests_conversation_id_fkey" FOREIGN KEY ("conversation_id") REFERENCES "public"."messaging_conversations"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_conversation_booking_requests"
+    ADD CONSTRAINT "messaging_conversation_booking_requests_request_id_fkey" FOREIGN KEY ("booking_request_id") REFERENCES "public"."booking_requests"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_conversation_booking_requests"
+    ADD CONSTRAINT "messaging_conversation_booking_requests_attempt_id_fkey" FOREIGN KEY ("submission_attempt_id") REFERENCES "public"."booking_request_submission_attempts"("id") ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY "public"."messaging_send_attempts"
+    ADD CONSTRAINT "messaging_send_attempts_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."messaging_send_attempts"
+    ADD CONSTRAINT "messaging_send_attempts_command_key" UNIQUE ("conversation_id", "command_id");
+
+ALTER TABLE ONLY "public"."messaging_send_attempts"
+    ADD CONSTRAINT "messaging_send_attempts_conversation_id_fkey" FOREIGN KEY ("conversation_id") REFERENCES "public"."messaging_conversations"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_send_attempts"
+    ADD CONSTRAINT "messaging_send_attempts_actor_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_messages"
+    ADD CONSTRAINT "messaging_messages_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."messaging_messages"
+    ADD CONSTRAINT "messaging_messages_send_attempt_id_key" UNIQUE ("send_attempt_id");
+
+ALTER TABLE ONLY "public"."messaging_messages"
+    ADD CONSTRAINT "messaging_messages_conversation_id_fkey" FOREIGN KEY ("conversation_id") REFERENCES "public"."messaging_conversations"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_messages"
+    ADD CONSTRAINT "messaging_messages_send_attempt_id_fkey" FOREIGN KEY ("send_attempt_id") REFERENCES "public"."messaging_send_attempts"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_messages"
+    ADD CONSTRAINT "messaging_messages_sender_user_id_fkey" FOREIGN KEY ("sender_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_translations"
+    ADD CONSTRAINT "messaging_translations_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."messaging_translations"
+    ADD CONSTRAINT "messaging_translations_cache_key" UNIQUE ("message_id", "target_language", "provider", "model", "prompt_version");
+
+ALTER TABLE ONLY "public"."messaging_translations"
+    ADD CONSTRAINT "messaging_translations_message_id_fkey" FOREIGN KEY ("message_id") REFERENCES "public"."messaging_messages"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_translation_reports"
+    ADD CONSTRAINT "messaging_translation_reports_pkey" PRIMARY KEY ("id");
+
+ALTER TABLE ONLY "public"."messaging_translation_reports"
+    ADD CONSTRAINT "messaging_translation_reports_command_key" UNIQUE ("reporter_user_id", "command_id");
+
+ALTER TABLE ONLY "public"."messaging_translation_reports"
+    ADD CONSTRAINT "messaging_translation_reports_translation_id_fkey" FOREIGN KEY ("translation_id") REFERENCES "public"."messaging_translations"("id") ON DELETE RESTRICT;
+
+ALTER TABLE ONLY "public"."messaging_translation_reports"
+    ADD CONSTRAINT "messaging_translation_reports_reporter_user_id_fkey" FOREIGN KEY ("reporter_user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."payment_provider_observations" ADD CONSTRAINT "payment_provider_observations_operation_fkey" FOREIGN KEY (operation_id) REFERENCES public.payment_provider_operations(id) ON DELETE RESTRICT;

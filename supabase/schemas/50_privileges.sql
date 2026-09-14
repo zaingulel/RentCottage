@@ -1424,3 +1424,48 @@ REVOKE ALL ON FUNCTION public.ensure_booking_request_notification_events(uuid),p
 
 REVOKE ALL ON FUNCTION public.list_booking_request_notification_status(text,text) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.list_booking_request_notification_status(text,text) TO authenticated;
+
+REVOKE ALL ON TABLE public.messaging_conversations FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.messaging_conversation_booking_requests FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.messaging_send_attempts FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.messaging_messages FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON SEQUENCE public.messaging_messages_position_seq FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.messaging_translations FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON TABLE public.messaging_translation_reports FROM PUBLIC,anon,authenticated,service_role;
+
+GRANT SELECT ON TABLE public.messaging_conversations TO authenticated;
+GRANT SELECT ON TABLE public.messaging_conversation_booking_requests TO authenticated;
+GRANT SELECT ON TABLE public.messaging_send_attempts TO authenticated;
+GRANT SELECT ON TABLE public.messaging_messages TO authenticated;
+GRANT SELECT ON TABLE public.messaging_translations TO authenticated;
+GRANT SELECT ON TABLE public.messaging_translation_reports TO authenticated;
+
+REVOKE ALL ON FUNCTION public.contact_protection_text_is_safe(text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.messaging_writing_is_closed(timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.messaging_submission_attempt_is_resolved(uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.create_messaging_conversation(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.create_messaging_conversation(uuid,uuid,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.create_messaging_conversation_for_cottage(uuid,text,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.create_messaging_conversation_for_cottage(uuid,text,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.open_messaging_conversation_for_booking(uuid,text,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.open_messaging_conversation_for_booking(uuid,text,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.messaging_booking_has_paid_access(uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.admit_messaging_message(uuid,uuid,uuid,public.cottage_profile_source_language,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.admit_messaging_message(uuid,uuid,uuid,public.cottage_profile_source_language,text) TO service_role;
+REVOKE ALL ON FUNCTION public.messaging_conversation_is_readable(uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.messaging_conversation_is_readable(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.messaging_actor_can_use_conversation(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.prepare_messaging_translation(uuid,uuid,public.cottage_profile_source_language,text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.prepare_messaging_translation(uuid,uuid,public.cottage_profile_source_language,text,text,text) TO service_role;
+REVOKE ALL ON FUNCTION public.save_messaging_translation(uuid,uuid,public.cottage_profile_source_language,text,text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.save_messaging_translation(uuid,uuid,public.cottage_profile_source_language,text,text,text,text) TO service_role;
+REVOKE ALL ON FUNCTION public.report_messaging_translation(uuid,uuid,uuid,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.report_messaging_translation(uuid,uuid,uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION public.messaging_conversation_header(uuid,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.get_messaging_conversation(uuid,bigint,integer) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.get_messaging_conversation(uuid,bigint,integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.list_messaging_conversations(timestamptz,uuid,integer,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.list_messaging_conversations(timestamptz,uuid,integer,text) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_messaging_moderation(timestamptz,uuid,text,integer) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.get_messaging_moderation(timestamptz,uuid,text,integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.reject_messaging_history_change() FROM PUBLIC,anon,authenticated,service_role;

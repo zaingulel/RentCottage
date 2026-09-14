@@ -710,6 +710,11 @@ export async function main(
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
       if (result.status !== 0) return result.status;
+      result = await execute("node", ["scripts/verify-messaging-upgrade.mjs"], {
+        env: databaseConcurrencyEnvironment,
+        stdio: "inherit",
+      });
+      if (result.status !== 0) return result.status;
       return 0;
     };
     if (databaseMode) {
@@ -899,6 +904,12 @@ export async function main(
       );
       if (cancellationConcurrency.status !== 0)
         return cancellationConcurrency.status;
+      const messagingConcurrency = await execute(
+        "node",
+        ["scripts/verify-messaging-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (messagingConcurrency.status !== 0) return messagingConcurrency.status;
       const completionConcurrency = await execute(
         "node",
         ["scripts/verify-booking-completion-concurrency.mjs"],
@@ -972,6 +983,7 @@ export async function main(
           "tests/administrator-payment-history.spec.ts",
           "tests/booking-history.spec.ts",
           "tests/request-notification-details.spec.ts",
+          "tests/messaging.spec.ts",
           "--project=mobile",
           "--project=desktop",
           "--workers=1",
@@ -1018,6 +1030,7 @@ export async function main(
           "tests/booking-request-access.spec.ts",
           "tests/administrator-payment-history.spec.ts",
           "tests/booking-cancellation-refund.spec.ts",
+          "tests/messaging.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",

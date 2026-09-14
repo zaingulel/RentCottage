@@ -10,7 +10,10 @@ import type {
   BookingRequestUiPolicy,
 } from "@/booking-request/booking-request-policy";
 import type { PublicBookingQuote } from "@/booking-quote/booking-quote";
-import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
+import {
+  serializeCottageDiscoveryQuery,
+  type CottageDiscoveryQuery,
+} from "@/cottage-discovery/discovery-query";
 import { bookingQuoteMessages } from "@/i18n/booking-quote-messages";
 import {
   bookingRequestErrorMessage,
@@ -18,6 +21,7 @@ import {
 } from "@/i18n/booking-request-messages";
 import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
+import { messagingMessages } from "@/i18n/messaging-messages";
 
 import {
   ActionButton,
@@ -36,6 +40,9 @@ export function BookingRequestForm({
   customerAccessUnavailable = false,
   uiPolicy,
   acceptanceEvidence,
+  enquiryOptions = [],
+  selectedConversationId,
+  returnTo,
 }: {
   locale: Locale;
   quote: PublicBookingQuote;
@@ -45,6 +52,9 @@ export function BookingRequestForm({
   customerAccessUnavailable?: boolean;
   uiPolicy: BookingRequestUiPolicy;
   acceptanceEvidence: BookingRequestAcceptanceEvidence;
+  enquiryOptions?: readonly { conversationId: string; label: string }[];
+  selectedConversationId?: string;
+  returnTo?: string;
 }) {
   const copy = bookingRequestMessages[locale];
   const quoteNotice = bookingQuoteMessages[locale].notice;
@@ -61,6 +71,9 @@ export function BookingRequestForm({
   const [acceptedInside48HourNoRefund, setAcceptedInside48HourNoRefund] =
     useState(false);
   const [result, setResult] = useState<SubmissionResult>();
+  const [conversationId, setConversationId] = useState(
+    selectedConversationId ?? "new",
+  );
   const { pending, run } = useExclusiveAction();
 
   if (result && "bookingRequestReference" in result) {
@@ -112,7 +125,11 @@ export function BookingRequestForm({
         <h2>{copy.verifyTitle}</h2>
         <p>{copy.verifyIntro}</p>
         <p className="quote-notice">{quoteNotice}</p>
-        <PhoneAccessForm locale={locale} onVerified={() => setVerified(true)} />
+        <PhoneAccessForm
+          locale={locale}
+          onVerified={() => setVerified(true)}
+          returnTo={returnTo}
+        />
       </section>
     );
   }
@@ -143,6 +160,7 @@ export function BookingRequestForm({
         acceptedMarketplaceTerms,
         acceptedInside48HourNoRefund,
         acceptanceEvidence,
+        ...(conversationId === "new" ? {} : { conversationId }),
       }),
     );
     if (response) setResult(response);
@@ -153,6 +171,37 @@ export function BookingRequestForm({
       <h2>{copy.formTitle}</h2>
       <p>{copy.formIntro}</p>
       <p className="quote-notice">{quoteNotice}</p>
+      <fieldset>
+        <legend>{messagingMessages[locale].continueEnquiry}</legend>
+        <label>
+          <input
+            type="radio"
+            name="conversation"
+            value="new"
+            checked={conversationId === "new"}
+            onChange={() => setConversationId("new")}
+          />
+          {messagingMessages[locale].newEnquiry}
+        </label>
+        {enquiryOptions.map((option) => (
+          <label key={option.conversationId}>
+            <input
+              type="radio"
+              name="conversation"
+              value={option.conversationId}
+              checked={conversationId === option.conversationId}
+              onChange={() => setConversationId(option.conversationId)}
+            />
+            {messagingMessages[locale].continueEnquiry}: {option.label}
+          </label>
+        ))}
+        <p>{messagingMessages[locale].newEnquiryHelp}</p>
+        <Link
+          href={`/${locale}/messages?cottage=${quote.slug}&${serializeCottageDiscoveryQuery(discoveryQuery)}`}
+        >
+          {messagingMessages[locale].browseEnquiries}
+        </Link>
+      </fieldset>
       {uiPolicy.insideCutoff ? (
         <ActionFeedback kind="error">{copy.cutoffPassed}</ActionFeedback>
       ) : (

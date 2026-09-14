@@ -122,7 +122,7 @@ function snapshot() {
       table,
       JSON.parse(
         harness.runSql(
-          `select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]') from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} rows;`,
+          `select coalesce(jsonb_agg(${table === "booking_request_submission_attempts" ? "'{\"conversation_id\":null}'::jsonb || to_jsonb(rows)" : "to_jsonb(rows)"} order by to_jsonb(rows)::text),'[]') from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} rows;`,
         ),
       ),
     ]),

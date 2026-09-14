@@ -305,6 +305,11 @@ max_frequency = "5s"
 9647550000001 = "123456"
 9647550000002 = "123456"
 
+# Independent messaging journeys, one phone per browser project.
+9647560000000 = "123456"
+9647560000001 = "123456"
+9647560000002 = "123456"
+
 # Configure logged in session timeouts.
 # [auth.sessions]
 # Force log out after the specified duration.

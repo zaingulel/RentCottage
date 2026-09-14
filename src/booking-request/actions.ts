@@ -94,11 +94,14 @@ function inputFrom(
   const normalizedNote =
     typeof input?.bookingNote === "string" ? input.bookingNote.trim() : "";
   const note = normalizedNote === "" ? null : normalizedNote;
+  const conversationId = input?.conversationId;
   const evidence = record(input?.acceptanceEvidence);
   if (
     !input ||
     typeof input.idempotencyKey !== "string" ||
     !uuid.test(input.idempotencyKey) ||
+    (conversationId !== undefined &&
+      (typeof conversationId !== "string" || !uuid.test(conversationId))) ||
     typeof input.locale !== "string" ||
     !isLocale(input.locale) ||
     typeof input.publicSlug !== "string" ||
@@ -155,6 +158,7 @@ function inputFrom(
   }
   return {
     idempotencyKey: input.idempotencyKey,
+    ...(typeof conversationId === "string" ? { conversationId } : {}),
     locale: input.locale,
     publicSlug: input.publicSlug,
     discoveryQuery: query,

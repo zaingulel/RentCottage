@@ -2847,3 +2847,92 @@ a:focus-visible {
   outline: 3px solid #a16b21;
   outline-offset: 2px;
 }
+
+.messaging-shell {
+  width: min(100%, 52rem);
+  margin-inline: auto;
+  padding: clamp(1rem, 3vw, 2rem);
+  background: #fffdf7;
+  border: 1px solid #d7dfd5;
+  border-radius: 1rem;
+}
+
+.messaging-inbox-list,
+.messaging-history {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.messaging-inbox-list a,
+.messaging-history article {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid #d7dfd5;
+  border-radius: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.messaging-inbox-list a span,
+.messaging-inbox-list a time {
+  display: block;
+}
+
+.message-customer article {
+  margin-inline-start: min(12%, 5rem);
+  background: #eef7f1;
+}
+
+.message-cottage_owner article {
+  margin-inline-end: min(12%, 5rem);
+  background: #f7f2e8;
+}
+
+.translation-label {
+  color: #675129;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.messaging-conversation-header dl,
+.messaging-shell form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.messaging-conversation-header dl > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.4fr) 1fr;
+  gap: 0.5rem;
+}
+
+.messaging-shell textarea,
+.messaging-shell select {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-block-start: 0.25rem;
+}
+
+.messaging-shell textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+@media (max-width: 40rem) {
+  .messaging-shell {
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  .message-customer article,
+  .message-cottage_owner article {
+    margin-inline: 0;
+  }
+
+  .messaging-conversation-header dl > div {
+    grid-template-columns: 1fr;
+  }
+}

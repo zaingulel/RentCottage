@@ -600,7 +600,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
           );
         }
         if (state === "payment-expiry-quarantined") {
-          for (const surface of [customerView, currentOwnerNotice]) {
+          const customerStatus = customerView.getByRole("region").filter({
+            has: customerView.getByRole("heading", { level: 1 }),
+          });
+          for (const surface of [customerStatus, currentOwnerNotice]) {
             await expect(surface.getByRole("status")).toContainText(
               copy.attention,
             );
@@ -1297,7 +1300,17 @@ test("a verified Customer double-submit creates one Pending request and one mini
         "Support needs to review this payment",
         { timeout: 15000 },
       );
-      await expect(page.getByRole("button")).toHaveCount(0);
+      await expect(
+        page
+          .getByRole("region")
+          .filter({
+            has: page.getByRole("heading", {
+              name: "Booking Request status",
+              exact: true,
+            }),
+          })
+          .getByRole("button"),
+      ).toHaveCount(0);
       const attention = await expiryGraph();
       expect(attention.expiry.state).toBe("quarantined");
       expect(attention.request.status).toBe("accepted");

@@ -5,6 +5,7 @@ import type { CottageDiscoveryProfileResult } from "@/cottage-discovery/supabase
 import { formatIqd } from "@/i18n/format";
 import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
+import { messagingMessages } from "@/i18n/messaging-messages";
 import { LocaleLinks } from "./locale-links";
 
 const copy = {
@@ -183,6 +184,12 @@ export function PublicCottageProfileView({
             href={`/${locale}/request/${cottage.slug}?${queryString}`}
           >
             {messages.quote}
+          </Link>
+          <Link
+            className="action-link action-secondary action-full"
+            href={`/${locale}/messages?cottage=${cottage.slug}&${queryString}`}
+          >
+            {messagingMessages[locale].messageCottage}
           </Link>
         </aside>
       </div>

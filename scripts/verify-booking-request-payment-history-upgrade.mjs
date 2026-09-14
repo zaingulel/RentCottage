@@ -90,7 +90,7 @@ function sourceHashes(beforeRefundScheduling = false) {
       createHash("sha256")
         .update(
           harness.runSql(
-            `select coalesce(jsonb_agg(${beforeRefundScheduling && table === "booking_requests" ? `to_jsonb(source)||'{"refund_last_scheduled_at":null}'::jsonb` : "to_jsonb(source)"} order by to_jsonb(source)::text),'[]') from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} source;`,
+            `select coalesce(jsonb_agg(${beforeRefundScheduling && table === "booking_requests" ? `to_jsonb(source)||'{"refund_last_scheduled_at":null}'::jsonb` : table === "booking_request_submission_attempts" ? "'{\"conversation_id\":null}'::jsonb || to_jsonb(source)" : "to_jsonb(source)"} order by to_jsonb(source)::text),'[]') from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} source;`,
           ),
         )
         .digest("hex"),

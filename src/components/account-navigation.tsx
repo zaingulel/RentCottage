@@ -6,6 +6,7 @@ import type { AccountContext } from "@/access/account-access";
 import { accountAccessHref } from "@/access/return-destination";
 import { accessMessages } from "@/i18n/access-messages";
 import { isLocale, type Locale } from "@/i18n/routing";
+import { messagingMessages } from "@/i18n/messaging-messages";
 
 export type NavigationAccount =
   | { status: "signed_out" }
@@ -62,12 +63,20 @@ export function AccountNavigation({
           <summary>{copy.account}</summary>
           <div>
             {account.context?.role === "platform_administrator" ? (
-              <Link href={`/${locale}/administrator/access`}>
-                {copy.administratorTitle}
-              </Link>
+              <>
+                <Link href={`/${locale}/administrator/access`}>
+                  {copy.administratorTitle}
+                </Link>
+                <Link href={`/${locale}/administrator/messages`}>
+                  {messagingMessages[locale].moderation}
+                </Link>
+              </>
             ) : (
               <>
                 <Link href={`/${locale}/bookings`}>{copy.myBookings}</Link>
+                <Link href={`/${locale}/messages`}>
+                  {accessMessages[locale].messages}
+                </Link>
                 {account.context?.role === "cottage_owner" ? (
                   <Link
                     href={`/${locale}/owner/${account.context.approvalState === "prospective" ? "application" : "cottages"}`}

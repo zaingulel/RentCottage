@@ -108,7 +108,9 @@ function snapshot(table, orderBy, omitAddedColumns = true) {
         (omitAddedColumns ? " - 'capture_execution_permit'" : "")
       : table === "booking_request_capture_work"
         ? "to_jsonb(rows) - 'recovery_operation_id'"
-        : "to_jsonb(rows)";
+        : table === "booking_request_submission_attempts"
+          ? "'{\"conversation_id\":null}'::jsonb || to_jsonb(rows)"
+          : "to_jsonb(rows)";
   return harness.runSql(`
     select coalesce(jsonb_agg(${projection} order by ${orderBy}), '[]'::jsonb)
     from ${table === "simulated_payment_provider_operations" ? historicalProviderOperationSource(paymentEvidenceInstalled) : `public.${table}`} rows;

@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(281);
+select plan(290);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -706,11 +706,92 @@ select is(
 reset role;
 
 set local role service_role;
+create temporary table submission_conversation as
+select public.create_messaging_conversation(
+  '00000000-0000-0000-0000-000000003202',
+  '30000000-0000-4000-8000-000000003201',
+  '36000000-0000-4000-8000-000000003201'
+) result;
+reset role;
+
+insert into public.owner_application_cottage_profiles (
+  id, owner_user_id, name, governorate, approximate_location, exact_address,
+  capacity, bedrooms, bathrooms, amenities, source_language, description,
+  house_rules, status
+) values (
+  '30000000-0000-4000-8000-000000003204',
+  '00000000-0000-0000-0000-000000003204',
+  'Other Submission Cottage', 'Baghdad', 'Mansour', 'Private address',
+  6, 2, 1, array['parking'], 'en', 'Description', 'No smoking', 'draft'
+);
+insert into public.cottage_marketplace_listings (profile_id, public_slug, state)
+values (
+  '30000000-0000-4000-8000-000000003204',
+  'cottage-30000000000040008000000000003204', 'published'
+);
+set local role service_role;
+create temporary table other_submission_conversation as
+select public.create_messaging_conversation(
+  '00000000-0000-0000-0000-000000003202',
+  '30000000-0000-4000-8000-000000003204',
+  '36000000-0000-4000-8000-000000003204'
+) result;
+select is(
+  public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003203',
+    '11111111-1111-4111-8111-111111113203',
+    (select jsonb_set(
+      submission || jsonb_build_object(
+        'conversationId',
+        (select result->>'conversationId' from submission_conversation)
+      ),
+      '{intent,conversationId}',
+      to_jsonb((select result->>'conversationId' from submission_conversation))
+    ) from valid_submission)
+  ) ->> 'status',
+  'invalid',
+  'a Customer cannot bind another Customer conversation to their submission'
+);
+select is(
+  public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003202',
+    '11111111-1111-4111-8111-111111113204',
+    (select jsonb_set(
+      submission || jsonb_build_object(
+        'conversationId',
+        (select result->>'conversationId' from other_submission_conversation)
+      ),
+      '{intent,conversationId}',
+      to_jsonb((select result->>'conversationId' from other_submission_conversation))
+    ) from valid_submission)
+  ) ->> 'status',
+  'invalid',
+  'a conversation for another cottage cannot bind to the displayed quote'
+);
+reset role;
+select is(
+  (select count(*) from public.booking_request_submission_attempts), 0::bigint,
+  'rejected conversation bindings create no payment attempt'
+);
+create temporary table journey_submission as
+select jsonb_set(
+  submission || jsonb_build_object(
+    'conversationId',
+    (select result->>'conversationId' from submission_conversation)
+  ),
+  '{intent,conversationId}',
+  to_jsonb((select result->>'conversationId' from submission_conversation))
+) submission
+from valid_submission;
+grant select on submission_conversation to service_role,authenticated;
+grant select on journey_submission to service_role;
+
+set local role service_role;
 create temporary table prepared_submission as
 select public.prepare_booking_request_submission(
   '00000000-0000-0000-0000-000000003202',
   '11111111-1111-4111-8111-111111113201',
-  (select submission from valid_submission)
+  (select submission from journey_submission)
 ) as result;
 reset role;
 
@@ -724,7 +805,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'ready',
   'a pre-provider crash resumes the same durable Payment Lifecycle'
@@ -740,7 +821,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'quote-stale',
   'a pre-provider crash cannot resume against a stale price quote'
@@ -762,7 +843,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'quote-stale',
   'a pre-provider crash cannot resume after availability closes'
@@ -786,7 +867,7 @@ select is(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
     jsonb_set(
-      (select submission from valid_submission),
+      (select submission from journey_submission),
       '{intent,customerName}', '"Different Customer"'::jsonb
     )
   ) ->> 'status',
@@ -1435,7 +1516,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'reconciliation-required',
   'refresh after a potentially sent claim delegates recovery to the independent outbox'
@@ -2445,7 +2526,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) -> 'providerIdentity',
   '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb,
   'recovery returns the immutable provider identity with payment evidence'
@@ -2581,6 +2662,30 @@ grant select on finalized_submission to service_role;
 select is(
   (select result ->> 'status' from finalized_submission), 'pending',
   'successful authorization finalizes one Pending Booking Request'
+);
+set local role service_role;
+select is(
+  public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003202',
+    '11111111-1111-4111-8111-111111113205',
+    (select jsonb_set(
+      submission,
+      '{intent,bookingNote}',
+      '"A distinct future request."'::jsonb
+    ) from journey_submission)
+  ) ->> 'status',
+  'invalid',
+  'a conversation already bound to a Booking Request cannot be rebound'
+);
+reset role;
+select ok((select attempts.conversation_id=links.conversation_id
+    and attempts.id=links.submission_attempt_id
+    and attempts.booking_request_id=links.booking_request_id
+  from public.booking_request_submission_attempts attempts
+  join public.messaging_conversation_booking_requests links
+    on links.submission_attempt_id=attempts.id
+  where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission)),
+  'inquiry, attempt and finalized request link atomically'
 );
 select results_eq(
   $$select
@@ -2930,6 +3035,13 @@ select results_eq(
   $$values ('accepted'::text, 'pending_hold'::text, true, 2::integer)$$,
   'acceptance retains the Payment Authorisation and active Pending Hold while notifying both parties once'
 );
+set local role service_role;
+select is(public.admit_messaging_message(
+  (select customer_user_id from booking_request_lifecycle_target),
+  (select (result->>'conversationId')::uuid from submission_conversation),
+  '36000000-0000-4000-8000-000000003202','en','Call 0750 123 4567'
+)->>'status','blocked','owner acceptance without captured payment cannot permit contact details');
+reset role;
 set local role authenticated;
 select set_config('request.jwt.claims',
   '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
@@ -3150,6 +3262,106 @@ select results_eq(
   $$values ('withdrawn'::text)$$,
   'authoritative release persistence moves a processing withdrawal to withdrawn'
 );
+savepoint unresolved_journey_reuse;
+update public.booking_request_authorization_reconciliation_outbox
+set state='pending'
+where claim_id=(select id from public.booking_request_authorization_claims);
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  (select customer_user_id from booking_request_lifecycle_target),
+  '36000000-0000-4000-8000-000000003203',
+  (select submission from journey_submission)
+)->>'status','invalid','a terminal request cannot hide unresolved authorization reconciliation when reusing its inquiry');
+reset role;
+rollback to savepoint unresolved_journey_reuse;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  (select customer_user_id from booking_request_lifecycle_target),
+  '36000000-0000-4000-8000-000000003204',
+  (select submission from journey_submission)
+)->>'status','ready','a fully released unpaid request permits a new attempt in the same inquiry');
+reset role;
+insert into public.booking_snapshots (
+  id, customer_user_id, profile_id, quote_fingerprint, intent_fingerprint,
+  quote_payload, intent_payload, booking_terms_version, booking_terms_locale,
+  booking_terms_body, booking_terms_sha256, cancellation_policy_version,
+  acceptance_locale, acceptance_evidence, acceptance_evidence_fingerprint,
+  marketplace_commission_rate_basis_points, marketplace_commission_amount_fils,
+  created_at
+)
+select '40000000-0000-4000-8000-000000003204', customer_user_id, profile_id,
+  quote_fingerprint, intent_fingerprint, quote_payload, intent_payload,
+  booking_terms_version, booking_terms_locale, booking_terms_body,
+  booking_terms_sha256, cancellation_policy_version, acceptance_locale,
+  acceptance_evidence, acceptance_evidence_fingerprint,
+  marketplace_commission_rate_basis_points, marketplace_commission_amount_fils,
+  clock_timestamp()
+from public.booking_snapshots limit 1;
+insert into public.cottage_booking_period_commitments (
+  id, customer_user_id, profile_id, schedule_revision_id,
+  commitment_reference, status, access_ranges, created_at
+)
+select '50000000-0000-4000-8000-000000003204', customer_user_id, profile_id,
+  schedule_revision_id, 'SECOND-JOURNEY-HOLD-3204', 'pending_hold',
+  access_ranges, clock_timestamp()
+from public.cottage_booking_period_commitments limit 1;
+with prepared as (
+  select *
+  from public.booking_request_submission_attempts attempts
+  where attempts.idempotency_key = '36000000-0000-4000-8000-000000003204'
+), timed as (select clock_timestamp() created_at)
+insert into public.booking_requests (
+  id, booking_request_reference, customer_user_id, owner_user_id, profile_id,
+  booking_snapshot_id, booking_period_commitment_id, payment_lifecycle_id,
+  customer_name, party_size, booking_note, status, response_deadline, created_at
+)
+select '60000000-0000-4000-8000-000000003204',
+  'RC-REQ-0000000000003204', prepared.customer_user_id,
+  (select owner_user_id from booking_request_lifecycle_target),
+  prepared.profile_id, '40000000-0000-4000-8000-000000003204',
+  '50000000-0000-4000-8000-000000003204', prepared.payment_lifecycle_id,
+  prepared.intent_payload->>'customerName',
+  (prepared.intent_payload->>'partySize')::smallint,
+  prepared.intent_payload->>'bookingNote', 'pending',
+  timed.created_at + interval '4 hours', timed.created_at
+from prepared cross join timed;
+update public.booking_request_submission_attempts attempts
+set booking_request_id = '60000000-0000-4000-8000-000000003204',
+  state = 'finalized', intent_dedupe_active = false,
+  updated_at = clock_timestamp()
+where attempts.idempotency_key = '36000000-0000-4000-8000-000000003204';
+insert into public.messaging_conversation_booking_requests (
+  conversation_id, booking_request_id, submission_attempt_id, linked_at
+)
+select attempts.conversation_id, attempts.booking_request_id, attempts.id,
+  clock_timestamp()
+from public.booking_request_submission_attempts attempts
+where attempts.idempotency_key = '36000000-0000-4000-8000-000000003204';
+select set_config(
+  'request.jwt.claim.sub',
+  (select customer_user_id::text from booking_request_lifecycle_target), true
+);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', (select customer_user_id from booking_request_lifecycle_target),
+    'aal', 'aal1'
+  )::text, true
+);
+set local role authenticated;
+select ok(
+  public.get_messaging_conversation(
+    (select (result->>'conversationId')::uuid from submission_conversation),null,50
+  )#>>'{booking,bookingRequestReference}' = 'RC-REQ-0000000000003204'
+  and jsonb_array_length(public.get_messaging_conversation(
+    (select (result->>'conversationId')::uuid from submission_conversation),null,50
+  )->'bookingHistory') = 2
+  and public.get_messaging_conversation(
+    (select (result->>'conversationId')::uuid from submission_conversation),null,50
+  )#>>'{bookingHistory,0,requestStatus}' = 'withdrawn',
+  'the reader selects the latest linked request and retains the earlier terminal outcome'
+);
+reset role;
 rollback to savepoint booking_request_withdrawal_release;
 
 savepoint booking_request_postexpiry_admission_rejected;
@@ -4666,7 +4878,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113201',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'status',
   'declined',
   'the original idempotency key projects the real terminal request status'
@@ -4726,7 +4938,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113297',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'bookingRequestReference',
   (select result ->> 'bookingRequestReference' from finalized_submission),
   'a fresh page key for the unchanged immutable intent returns the same request'
@@ -4747,7 +4959,7 @@ select is(
   public.prepare_booking_request_submission(
     '00000000-0000-0000-0000-000000003202',
     '11111111-1111-4111-8111-111111113296',
-    (select submission from valid_submission)
+    (select submission from journey_submission)
   ) ->> 'bookingRequestReference',
   (select result ->> 'bookingRequestReference' from finalized_submission),
   'a finalized attempt returns its original result before current-quote rejection'

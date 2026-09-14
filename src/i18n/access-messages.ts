@@ -8,6 +8,7 @@ export const accessMessages: Record<
     accessTitle: string;
     accessIntro: string;
     myBookings: string;
+    messages: string;
     ownerBookings: string;
     listCottage: string;
     manageCottages: string;
@@ -54,6 +55,7 @@ export const accessMessages: Record<
     accessIntro:
       "تحقق من هاتفك للعودة إلى حجوزاتك. يُنشأ حساب للأرقام الجديدة.",
     myBookings: "حجوزاتي",
+    messages: "الرسائل",
     ownerBookings: "حجوزات أكواخي",
     listCottage: "أدرج كوخك",
     manageCottages: "إدارة أكواخي",
@@ -102,6 +104,7 @@ export const accessMessages: Record<
     accessIntro:
       "ژمارەکەت پشتڕاست بکەرەوە بۆ گەڕانەوە بۆ حجزەکانت. بۆ ژمارەی نوێ هەژمار دروست دەکرێت.",
     myBookings: "حجزەکانم",
+    messages: "نامەکان",
     ownerBookings: "حجزەکانی کۆتێجەکانم",
     listCottage: "کۆتێجەکەت تۆمار بکە",
     manageCottages: "بەڕێوەبردنی کۆتێجەکانم",
@@ -153,6 +156,7 @@ export const accessMessages: Record<
     accessIntro:
       "Verify your phone to return to your bookings. New numbers create an account.",
     myBookings: "My bookings",
+    messages: "Messages",
     ownerBookings: "Bookings for my cottages",
     listCottage: "List your cottage",
     manageCottages: "Manage my cottages",

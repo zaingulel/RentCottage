@@ -602,7 +602,69 @@ $$;
 
 ALTER FUNCTION "public"."booking_request_claim_state_is_terminal"("target_state" "public"."booking_request_authorization_claim_state") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."booking_request_content_is_safe"("target_value" "text") RETURNS boolean
+CREATE OR REPLACE FUNCTION "public"."messaging_submission_attempt_is_resolved"(
+  "target_attempt_id" "uuid"
+) RETURNS boolean
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO ''
+    AS $$
+  select exists (
+      select 1
+      from public.booking_request_submission_attempts attempts
+      where attempts.id = target_attempt_id
+        and attempts.state in ('authorization_failed','released','expired','finalized')
+        and (
+          attempts.booking_request_id is null
+          or exists (
+            select 1
+            from public.booking_requests requests
+            where requests.id = attempts.booking_request_id
+              and requests.status in ('declined','withdrawn','expired')
+              and (
+                exists (
+                  select 1
+                  from public.booking_request_release_work release_work
+                  where release_work.booking_request_id = requests.id
+                    and release_work.state = 'complete'
+                )
+                or requests.status = 'expired' and exists (
+                  select 1
+                  from public.booking_request_payment_required_expiry_work expiry
+                  where expiry.booking_request_id = requests.id
+                    and expiry.state = 'complete'
+                )
+              )
+          )
+        )
+    )
+    and not exists (
+      select 1
+      from public.booking_request_authorization_claims claims
+      left join public.booking_request_authorization_reconciliation_outbox outbox
+        on outbox.claim_id = claims.id
+        and outbox.claim_generation = claims.generation
+      where claims.attempt_id = target_attempt_id
+        and (
+          not public.booking_request_claim_state_is_terminal(claims.state)
+          or outbox.claim_id is null
+          or outbox.state <> 'complete'
+          or outbox.observed_state_revision <> claims.state_revision
+          or exists (
+            select 1
+            from public.payment_provider_operations operations
+            where operations.claim_id = claims.id
+              and (
+                operations.current_outcome is null
+                or operations.current_outcome = 'indeterminate'
+              )
+          )
+        )
+    );
+$$;
+
+ALTER FUNCTION "public"."messaging_submission_attempt_is_resolved"("uuid") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."contact_protection_text_is_safe"("target_value" "text") RETURNS boolean
     LANGUAGE "sql" IMMUTABLE
     SET "search_path" TO ''
     AS $_$
@@ -627,6 +689,15 @@ CREATE OR REPLACE FUNCTION "public"."booking_request_content_is_safe"("target_va
     and value !~* '(^|[^[:alnum:]_])[[:alnum:]][[:alnum:]-]*[[:space:][:punct:]]+(dot|دوت|نقطة|دۆت)[[:space:][:punct:]]+[[:alpha:]]{2,63}([^[:alnum:]]|$)'
   from normalized;
 $_$;
+
+ALTER FUNCTION "public"."contact_protection_text_is_safe"("target_value" "text") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."booking_request_content_is_safe"("target_value" "text") RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO ''
+    AS $$
+  select public.contact_protection_text_is_safe(target_value);
+$$;
 
 ALTER FUNCTION "public"."booking_request_content_is_safe"("target_value" "text") OWNER TO "postgres";
 
@@ -3765,6 +3836,13 @@ begin
   set state = 'finalized', booking_request_id = request_id,
     updated_at = submission_created_at
   where id = target_attempt_id;
+  if attempt.conversation_id is not null then
+    insert into public.messaging_conversation_booking_requests (
+      conversation_id, booking_request_id, submission_attempt_id, linked_at
+    ) values (
+      attempt.conversation_id, request_id, attempt.id, submission_created_at
+    );
+  end if;
 
   return jsonb_build_object(
     'status', 'pending',
@@ -5087,6 +5165,7 @@ CREATE OR REPLACE FUNCTION "public"."prepare_booking_request_submission"("target
 declare target_locale public.cottage_profile_source_language;
 declare target_slug text;
 declare target_search jsonb;
+declare target_conversation_id uuid;
 declare displayed_fingerprint text;
 declare current_quote jsonb;
 declare current_profile_id uuid;
@@ -5100,6 +5179,7 @@ declare existing_attempt public.booking_request_submission_attempts;
 declare key_attempt public.booking_request_submission_attempts;
 declare inserted_attempt public.booking_request_submission_attempts;
 declare existing_projection jsonb;
+declare target_conversation public.messaging_conversations;
 begin
   if target_customer_user_id is null
     or target_idempotency_key is null
@@ -5124,6 +5204,14 @@ begin
     target_search := target_submission -> 'discoveryQuery';
     displayed_fingerprint := target_submission ->> 'quoteFingerprint';
     intent := target_submission -> 'intent';
+    if target_submission ? 'conversationId' then
+      target_conversation_id := (target_submission ->> 'conversationId')::uuid;
+      if intent ->> 'conversationId' is distinct from target_conversation_id::text then
+        return jsonb_build_object('status', 'invalid');
+      end if;
+    elsif intent ? 'conversationId' then
+      return jsonb_build_object('status', 'invalid');
+    end if;
     if target_slug is null
       or target_search is null
       or intent is null
@@ -5226,6 +5314,41 @@ begin
   if current_profile_id is null then
     return jsonb_build_object('status', 'quote-stale');
   end if;
+  if target_conversation_id is not null then
+    select * into target_conversation
+    from public.messaging_conversations conversations
+    where conversations.id = target_conversation_id
+    for update of conversations;
+    if target_conversation.id is null
+      or target_conversation.customer_user_id <> target_customer_user_id
+      or target_conversation.profile_id <> current_profile_id
+      or target_conversation.owner_user_id is distinct from (
+        select profiles.owner_user_id
+        from public.owner_application_cottage_profiles profiles
+        where profiles.id = current_profile_id
+      ) then
+      return jsonb_build_object('status', 'invalid');
+    end if;
+    if exists (
+      select 1
+      from public.messaging_conversation_booking_requests links
+      join public.booking_confirmations confirmations
+        on confirmations.booking_request_id = links.booking_request_id
+      where links.conversation_id = target_conversation_id
+    ) then
+      return jsonb_build_object('status', 'invalid');
+    end if;
+    if exists (
+      select 1
+      from public.booking_request_submission_attempts attempts
+      where attempts.conversation_id = target_conversation_id
+        and attempts.id is distinct from key_attempt.id
+        and attempts.id is distinct from existing_attempt.id
+        and not public.messaging_submission_attempt_is_resolved(attempts.id)
+    ) then
+      return jsonb_build_object('status', 'invalid');
+    end if;
+  end if;
   policy_evaluated_at := clock_timestamp();
 
   current_quote := public.get_public_booking_quote_with_fingerprint(
@@ -5278,12 +5401,12 @@ begin
 
   insert into public.booking_request_submission_attempts (
     customer_user_id, idempotency_key, payment_lifecycle_id,
-    profile_id, locale, public_slug, requested_search,
+    profile_id, conversation_id, locale, public_slug, requested_search,
     quote_fingerprint, quote_payload, intent_fingerprint, intent_payload,
     state
   ) values (
     target_customer_user_id, target_idempotency_key, gen_random_uuid(),
-    current_profile_id, target_locale, target_slug, target_search,
+    current_profile_id, target_conversation_id, target_locale, target_slug, target_search,
     displayed_fingerprint, current_quote - 'status', target_intent_fingerprint, intent,
     'authorizing'
   )
