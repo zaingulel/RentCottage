@@ -116,8 +116,8 @@ adds no factual claim. After two non-converging repair-and-scoped-review cycles,
 split, rescope, or stop.
 
 `docs/agents/delivery.md` selects Greptile from the complete diff's risk and uncertainty, then records a one-sentence
-needed or skipped reason. When needed, it is the sole external reviewer and is best-effort: check current credits,
-request it explicitly on the finished draft when available, and settle the review or confirmed unavailability before
+needed or skipped reason. When needed, it is the sole external reviewer and is best-effort: check current credits, one pool
+shared with Flow Metrics, request it explicitly on the finished draft when available, and settle the review or confirmed unavailability before
 marking ready for Continuous Integration (CI). `.greptile/config.json` disables automatic reviews. A changed head
 is reassessed; unchanged-head CI retries need none. An unavailable attempt does not replace local review, executable
 verification, required CI, conversation resolution, or ownership.
