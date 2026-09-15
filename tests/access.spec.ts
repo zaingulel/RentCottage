@@ -1989,7 +1989,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(
     page.getByRole("heading", { name: fixture!.name }),
   ).toBeVisible();
-  await expect(page.getByText("Total price: IQD 550,000")).toBeVisible();
+  await expect(
+    page.getByText("Total price", { exact: true }).locator(".."),
+  ).toContainText("IQD 550,000");
   await expectPrivateValuesAbsent();
   await waitForFonts();
   await page.screenshot({
@@ -2104,7 +2106,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     fullDayResult.getByText("Full-day bundle", { exact: false }),
   ).toHaveCount(2);
   await fullDayResult.getByRole("link", { name: "View cottage" }).click();
-  await expect(page.getByText("Total price: IQD 510,000")).toBeVisible();
+  await expect(
+    page.getByText("Total price", { exact: true }).locator(".."),
+  ).toContainText("IQD 510,000");
   await page.getByRole("link", { name: "Get exact quote" }).click();
   const fullDayItems = page.getByRole("listitem", {
     name: /Full-Day Bundle/,
