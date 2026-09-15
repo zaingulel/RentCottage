@@ -575,6 +575,7 @@ test("shared sign-in from the homepage returns a prospective owner to their priv
 }) => {
   await page.goto("/ckb");
   await page
+    .getByRole("banner")
     .getByRole("link", { name: "کۆتێجەکەت تۆمار بکە", exact: true })
     .click();
   await expect(page).toHaveURL(/\/ckb\/access\?returnTo=/);
@@ -2034,7 +2035,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     fullPage: true,
   });
   const quoteUrl = page.url();
-  await page.getByRole("link", { name: "کوردی" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "کوردی" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ckb");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
@@ -2053,7 +2054,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     path: testInfo.outputPath("ckb-public-booking-quote.png"),
     fullPage: true,
   });
-  await page.getByRole("link", { name: "العربية" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
@@ -2122,7 +2123,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   });
 
   await page.goto(english.toString());
-  await page.getByRole("link", { name: "کوردی" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "کوردی" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ckb")}\\?`),
   );
@@ -2155,7 +2156,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     path: testInfo.outputPath("ckb-public-cottage-profile.png"),
     fullPage: true,
   });
-  await page.getByRole("link", { name: "العربية" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ar")}\\?`),
   );
@@ -2293,7 +2294,10 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
     path: `test-results/account-menu-${testInfo.project.name}.png`,
     fullPage: true,
   });
-  await page.getByRole("link", { name: "List your cottage" }).click();
+  await page
+    .getByRole("banner")
+    .getByRole("link", { name: "List your cottage" })
+    .click();
   await expect(
     page.getByRole("heading", { name: "Become a Cottage Owner" }),
   ).toBeVisible();

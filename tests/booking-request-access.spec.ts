@@ -179,7 +179,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "العربية" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
     page.getByRole("heading", { name: "أرسل طلب الحجز" }),
@@ -188,7 +188,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     path: testInfo.outputPath("ar-booking-request-form.png"),
     fullPage: true,
   });
-  await page.getByRole("link", { name: "English" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "English" }).click();
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
   ).toBeVisible();
