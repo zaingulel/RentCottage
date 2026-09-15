@@ -2333,7 +2333,9 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page).toHaveURL(/\/en$/);
     await expect(
-      page.getByRole("link", { name: "Sign in", exact: true }),
+      page
+        .getByRole("banner")
+        .getByRole("link", { name: "Sign in", exact: true }),
     ).toBeVisible();
     await page.goto("/en/bookings");
     await expect(page.getByLabel("Iraqi phone number")).toBeVisible();

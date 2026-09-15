@@ -26,8 +26,10 @@ test("locale actions expose native semantics and visible interaction states", as
 }) => {
   await page.goto("/en");
 
-  const arabic = page.getByRole("button", { name: "العربية" });
-  await expect(arabic).toHaveAttribute("aria-pressed", "false");
+  const arabic = page
+    .getByRole("banner")
+    .getByRole("link", { name: "العربية" });
+  await expect(arabic).not.toHaveAttribute("aria-current", "page");
   await arabic.focus();
   const focused = arabic;
   await expect(focused).toBeFocused();
@@ -36,8 +38,10 @@ test("locale actions expose native semantics and visible interaction states", as
   ).not.toBe("none");
 
   await arabic.click();
-  await expect(arabic).toHaveAttribute("aria-pressed", "true");
   await expect(page).toHaveURL(/\/ar$/);
+  await expect(
+    page.getByRole("banner").getByRole("link", { name: "العربية" }),
+  ).toHaveAttribute("aria-current", "page");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
 });
 
@@ -89,7 +93,9 @@ for (const fixture of localeFixtures) {
     await expect(page.locator("p[role='alert']")).toHaveText(
       fixture.unavailable,
     );
-    const english = page.getByRole("button", { name: "English" });
+    const english = page
+      .getByRole("banner")
+      .getByRole("link", { name: "English" });
     await english.hover();
     await page.screenshot({
       path: testInfo.outputPath(`${fixture.locale}-marketplace-hover.png`),

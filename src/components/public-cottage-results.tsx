@@ -2,9 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 
 import type { CottageDiscoveryResult } from "@/cottage-discovery/supabase-cottage-discovery";
-import { formatIqd } from "@/i18n/format";
+import { formatIqd, formatServiceDay } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
-import { LocaleLinks } from "./locale-links";
+import { ActionLink } from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -15,6 +15,7 @@ const copy = {
     view: "اعرض البيت",
     back: "تعديل البحث",
     fullDay: "اليوم الكامل",
+    total: "الإجمالي",
   },
   ckb: {
     title: "کۆتێجە بەردەستەکان",
@@ -24,6 +25,7 @@ const copy = {
     view: "کۆتێجەکە ببینە",
     back: "گەڕانەکە بگۆڕە",
     fullDay: "هەموو ڕۆژ",
+    total: "کۆ",
   },
   en: {
     title: "Available cottages",
@@ -33,6 +35,7 @@ const copy = {
     view: "View cottage",
     back: "Change search",
     fullDay: "Full-day bundle",
+    total: "total",
   },
 } as const;
 
@@ -50,11 +53,6 @@ export function PublicCottageResults({
     <main className="results-page">
       <header className="results-header">
         <Link href={`/${locale}`}>{messages.back}</Link>
-        <LocaleLinks
-          locale={locale}
-          path="/results"
-          queryString={queryString}
-        />
       </header>
       <section className="results-intro">
         <p>RentCottage</p>
@@ -86,26 +84,35 @@ export function PublicCottageResults({
                   {messages.location}: {cottage.approximateLocation},{" "}
                   {cottage.governorate}
                 </p>
-                <strong>{formatIqd(cottage.totalPriceIqd, locale)}</strong>
-                <ul>
+                <div>
+                  <strong>{formatIqd(cottage.totalPriceIqd, locale)}</strong>
+                  <span>{messages.total}</span>
+                </div>
+                <ul className="result-shifts">
                   {cottage.selectedInventory.map((unit) => (
                     <li
                       key={`${unit.serviceDay}-${unit.kind}-${unit.position ?? "full"}`}
                     >
-                      {unit.serviceDay}:{" "}
-                      {unit.kind === "full-day" ? messages.fullDay : unit.name}{" "}
-                      ({unit.startTime}–{unit.endTime}) —{" "}
-                      {unit.priceIqd === null
-                        ? ""
-                        : formatIqd(unit.priceIqd, locale)}
+                      <span>
+                        {formatServiceDay(unit.serviceDay, locale)} ·{" "}
+                        {unit.kind === "full-day"
+                          ? messages.fullDay
+                          : unit.name}{" "}
+                        · {unit.startTime}–{unit.endTime}
+                      </span>
+                      {unit.priceIqd === null ? null : (
+                        <b>{formatIqd(unit.priceIqd, locale)}</b>
+                      )}
                     </li>
                   ))}
                 </ul>
-                <Link
+                <ActionLink
+                  kind="secondary"
+                  width="full"
                   href={`/${locale}/cottages/${cottage.slug}?${queryString}`}
                 >
                   {messages.view}
-                </Link>
+                </ActionLink>
               </div>
             </article>
           ))}

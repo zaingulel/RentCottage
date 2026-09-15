@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 const location = vi.hoisted(() => ({ pathname: "/en", query: "" }));
 vi.mock("next/navigation", () => ({
@@ -6,11 +6,20 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(location.query),
 }));
 vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
-import { AccountNavigation } from "./account-navigation";
-describe("shared account navigation", () => {
+import { SiteHeader } from "./site-header";
+
+function scrollTo(y: number) {
+  Object.defineProperty(window, "scrollY", { configurable: true, value: y });
+  act(() => {
+    fireEvent.scroll(window);
+  });
+}
+
+describe("shared site header", () => {
   beforeEach(() => {
     location.pathname = "/en";
     location.query = "";
+    scrollTo(0);
   });
   it.each(["en", "ar", "ckb"] as const)(
     "keeps permitted search and booking context in %s sign-in",
@@ -18,9 +27,7 @@ describe("shared account navigation", () => {
       location.pathname = `/${locale}/quote/river-house`;
       location.query =
         "from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01%3Ashift%3A1";
-      render(
-        <AccountNavigation locale="en" account={{ status: "signed_out" }} />,
-      );
+      render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
       const signIn = screen.getByRole("link", {
         name: { en: "Sign in", ar: "تسجيل الدخول", ckb: "چوونەژوورەوە" }[
           locale
@@ -36,18 +43,14 @@ describe("shared account navigation", () => {
     location.pathname = "/en/results";
     location.query =
       "from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01%3Ashift%3A1&token=private";
-    render(
-      <AccountNavigation locale="en" account={{ status: "signed_out" }} />,
-    );
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
       "/en/access?returnTo=%2Fen%2Fbookings",
     );
   });
   it("offers shared authentication separately from owner enrollment", () => {
-    render(
-      <AccountNavigation locale="en" account={{ status: "signed_out" }} />,
-    );
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
       "/en/access?returnTo=%2Fen%2Fbookings",
@@ -59,11 +62,61 @@ describe("shared account navigation", () => {
       "/en/access?returnTo=%2Fen%2Fowner%2Fapplication",
     );
   });
+  it("switches language through links that keep the current page and query", () => {
+    location.pathname = "/ar/results";
+    location.query = "from=2101-01-01&to=2101-01-01&guests=4";
+    render(<SiteHeader locale="ar" account={{ status: "signed_out" }} />);
+    expect(screen.getByRole("navigation", { name: "اللغة" })).toBeVisible();
+    const current = screen.getByRole("link", { name: "العربية" });
+    expect(current).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "کوردی" })).toHaveAttribute(
+      "href",
+      "/ckb/results?from=2101-01-01&to=2101-01-01&guests=4",
+    );
+    expect(screen.getByRole("link", { name: "English" })).not.toHaveAttribute(
+      "aria-current",
+    );
+    expect(screen.getByRole("link", { name: /ريف كوتج/ })).toHaveAttribute(
+      "href",
+      "/ar",
+    );
+  });
+  it("renders the landing header transparent and condenses it after scrolling", () => {
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    const header = screen.getByRole("banner");
+    expect(header).toHaveClass("site-header-landing");
+    expect(header).not.toHaveClass("site-header-solid");
+    scrollTo(141);
+    expect(header).toHaveClass("site-header-solid");
+    scrollTo(140);
+    expect(header).not.toHaveClass("site-header-solid");
+  });
+  it("renders a restored mid-page landing visit condensed on mount", () => {
+    scrollTo(500);
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    expect(screen.getByRole("banner")).toHaveClass("site-header-solid");
+  });
+  it("renders every other page with the static solid header", () => {
+    location.pathname = "/en/results";
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    const header = screen.getByRole("banner");
+    expect(header).toHaveClass("site-header-solid");
+    expect(header).not.toHaveClass("site-header-landing");
+    scrollTo(500);
+    expect(header).toHaveClass("site-header-solid");
+  });
+  it("reports an unavailable session in the account slot", () => {
+    render(<SiteHeader locale="en" account={{ status: "unavailable" }} />);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Account access is unavailable. Please try again.",
+    );
+    expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+  });
   it.each(["prospective", "approved", "expired", "suspended"] as const)(
     "keeps customer booking access for %s owners",
     (approvalState) => {
       render(
-        <AccountNavigation
+        <SiteHeader
           locale="en"
           account={{
             status: "authenticated",
@@ -75,6 +128,10 @@ describe("shared account navigation", () => {
       expect(screen.getByRole("link", { name: "My bookings" })).toHaveAttribute(
         "href",
         "/en/bookings",
+      );
+      expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute(
+        "href",
+        "/en/messages",
       );
       expect(
         screen.getByRole("link", {
@@ -94,7 +151,7 @@ describe("shared account navigation", () => {
   );
   it("closes the disclosure when choosing a destination", () => {
     render(
-      <AccountNavigation
+      <SiteHeader
         locale="en"
         account={{ status: "authenticated", context: { role: "customer" } }}
       />,
@@ -107,7 +164,7 @@ describe("shared account navigation", () => {
   });
   it("keeps administrator access separate", () => {
     render(
-      <AccountNavigation
+      <SiteHeader
         locale="en"
         account={{
           status: "authenticated",

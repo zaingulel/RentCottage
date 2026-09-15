@@ -1,24 +1,16 @@
-"use client";
-
 import Image from "next/image";
 import type { CottageDiscoveryFacetsResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import { messages } from "@/i18n/messages";
 import type { Locale } from "@/i18n/routing";
-import { useRoutedLocale } from "@/i18n/use-routed-locale";
 
-import { LocaleButtons } from "./locale-buttons";
 import { CottageDiscoveryForm } from "./cottage-discovery-form";
 
 interface MarketplaceShellProps {
-  initialLocale: Locale;
+  locale: Locale;
   facets: CottageDiscoveryFacetsResult;
 }
 
-export function MarketplaceShell({
-  initialLocale,
-  facets,
-}: MarketplaceShellProps) {
-  const { locale, changeLocale } = useRoutedLocale(initialLocale);
+export function MarketplaceShell({ locale, facets }: MarketplaceShellProps) {
   const copy = messages[locale];
 
   return (
@@ -34,19 +26,6 @@ export function MarketplaceShell({
           sizes="100vw"
         />
         <div className="retreat-shade" />
-        <div className="retreat-utility">
-          <a className="retreat-brand" href={`/${locale}`}>
-            <strong>{copy.brand}</strong>
-            <span>{copy.tagline}</span>
-          </a>
-          <div className="retreat-access">
-            <LocaleButtons
-              className="language-switcher"
-              locale={locale}
-              onChange={changeLocale}
-            />
-          </div>
-        </div>
         <div className="retreat-copy">
           <h1>{copy.heroTitle}</h1>
           <p>{copy.heroSubtitle}</p>

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const ownerSignIn = {
   en: {
+    brand: "RentCottage",
     label: "List your cottage",
     history: "Sign in",
     href: "/en/access?returnTo=%2Fen%2Fowner%2Fapplication",
@@ -9,6 +10,7 @@ const ownerSignIn = {
     dir: "ltr",
   },
   ar: {
+    brand: "ريف كوتج",
     label: "أدرج كوخك",
     history: "تسجيل الدخول",
     href: "/ar/access?returnTo=%2Far%2Fowner%2Fapplication",
@@ -16,6 +18,7 @@ const ownerSignIn = {
     dir: "rtl",
   },
   ckb: {
+    brand: "ڕێنت کۆتاج",
     label: "کۆتێجەکەت تۆمار بکە",
     history: "چوونەژوورەوە",
     href: "/ckb/access?returnTo=%2Fckb%2Fowner%2Fapplication",
@@ -51,7 +54,11 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
 }, testInfo) => {
   for (const [locale, copy] of Object.entries(ownerSignIn)) {
     await page.goto(`/${locale}`);
-    const ownerLink = page.getByRole("link", { name: copy.label, exact: true });
+    const header = page.getByRole("banner");
+    const ownerLink = header.getByRole("link", {
+      name: copy.label,
+      exact: true,
+    });
 
     await expect(ownerLink).toHaveAttribute("href", copy.href);
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
@@ -71,16 +78,20 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
       fullPage: true,
     });
     await page.keyboard.press("Tab");
-    await expect(
-      page
-        .getByRole("navigation", {
-          name:
-            locale === "en" ? "Account" : locale === "ar" ? "الحساب" : "هەژمار",
-        })
-        .getByRole("link", { name: "RentCottage", exact: true }),
-    ).toBeFocused();
+    await expect(header.getByRole("link", { name: copy.brand })).toBeFocused();
+    for (const language of ["العربية", "کوردی", "English"]) {
+      await page.keyboard.press("Tab");
+      await expect(
+        header
+          .getByRole("navigation", {
+            name:
+              locale === "en" ? "Language" : locale === "ar" ? "اللغة" : "زمان",
+          })
+          .getByRole("link", { name: language, exact: true }),
+      ).toBeFocused();
+    }
     await page.keyboard.press("Tab");
-    const historyLink = page.getByRole("link", {
+    const historyLink = header.getByRole("link", {
       name: copy.history,
       exact: true,
     });
@@ -122,7 +133,9 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
         fullPage: true,
       });
       await expect(
-        page.getByRole("link", { name: copy.label, exact: true }),
+        page
+          .getByRole("banner")
+          .getByRole("link", { name: copy.label, exact: true }),
       ).toBeVisible();
     }
   }
@@ -145,7 +158,9 @@ test("sign-in preserves the permitted search selection in every language", async
   })) {
     const destination = `/${locale}/results?${query}`;
     await page.goto(destination);
-    const signIn = page.getByRole("link", { name, exact: true });
+    const signIn = page
+      .getByRole("banner")
+      .getByRole("link", { name, exact: true });
     const href = `/${locale}/access?returnTo=${encodeURIComponent(destination)}`;
     await expect(signIn).toHaveAttribute("href", href);
     await signIn.click();

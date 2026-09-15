@@ -8,6 +8,7 @@ import {
   type CottageDiscoverySelection,
 } from "@/cottage-discovery/discovery-query";
 import type { CottageDiscoveryFacetsResult } from "@/cottage-discovery/supabase-cottage-discovery";
+import { formatServiceDay } from "@/i18n/format";
 import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
 import { ActionButton } from "./interaction-controls";
@@ -23,6 +24,8 @@ const copy = {
     shifts: "الفترات المطلوبة لكل يوم",
     shift: "الفترة",
     fullDay: "اليوم الكامل",
+    fullDayShort: "يوم كامل",
+    defaultsHint: "ينطبق على كل يوم خدمة. اختر تواريخك لتحديدها يومًا بيوم.",
     amenities: "المرافق",
     submit: "ابحث عن البيوت المتاحة",
     choose: "اختر فترة واحدة على الأقل لكل يوم.",
@@ -39,6 +42,9 @@ const copy = {
     shifts: "شیفتە داواکراوەکانی هەر ڕۆژ",
     shift: "شیفت",
     fullDay: "هەموو ڕۆژ",
+    fullDayShort: "هەموو ڕۆژ",
+    defaultsHint:
+      "بۆ هەموو ڕۆژێکی خزمەت جێبەجێ دەبێت. بەروارەکانت هەڵبژێرە بۆ دیاریکردنیان ڕۆژ بە ڕۆژ.",
     amenities: "خزمەتگوزارییەکان",
     submit: "گەڕان بۆ کۆتێجی بەردەست",
     choose: "بۆ هەر ڕۆژێک لانیکەم یەک شیفت هەڵبژێرە.",
@@ -55,6 +61,9 @@ const copy = {
     shifts: "Booking Period for each Service Day",
     shift: "Shift",
     fullDay: "Full-day bundle",
+    fullDayShort: "Full day",
+    defaultsHint:
+      "Applies to every Service Day. Choose your dates to set them day by day.",
     amenities: "Amenities",
     submit: "Search available cottages",
     choose: "Choose at least one shift for every Service Day.",
@@ -93,6 +102,15 @@ function serviceDays(from: string, to: string) {
   return days;
 }
 
+const bookingPeriods = ["1", "2", "3", "full-day"] as const;
+
+function toggleBookingPeriod(current: readonly string[], value: string) {
+  if (current.includes(value)) return current.filter((item) => item !== value);
+  return value === "full-day"
+    ? [value]
+    : [...current.filter((item) => item !== "full-day"), value];
+}
+
 export function CottageDiscoveryForm({
   locale,
   facets,
@@ -108,26 +126,16 @@ export function CottageDiscoveryForm({
   const [governorate, setGovernorate] = useState("");
   const [area, setArea] = useState("");
   const [amenities, setAmenities] = useState<string[]>([]);
+  const [defaults, setDefaults] = useState<string[]>([]);
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [invalid, setInvalid] = useState(false);
   const days = useMemo(() => serviceDays(from, to), [from, to]);
+  const effectiveSelection = (day: string) => selections[day] ?? defaults;
   const hasMissingSelection =
-    days.length === 0 || days.some((day) => !selections[day]?.length);
+    days.length === 0 || days.some((day) => !effectiveSelection(day).length);
 
-  function setDaySelection(day: string, value: string, checked: boolean) {
-    setSelections((current) => {
-      const existing = current[day] ?? [];
-      if (value === "full-day") {
-        return { ...current, [day]: checked ? [value] : [] };
-      }
-      const withoutFullDay = existing.filter((item) => item !== "full-day");
-      return {
-        ...current,
-        [day]: checked
-          ? [...withoutFullDay, value]
-          : withoutFullDay.filter((item) => item !== value),
-      };
-    });
+  function periodLabel(value: string, fullDayLabel: string) {
+    return value === "full-day" ? fullDayLabel : `${messages.shift} ${value}`;
   }
 
   if (facets.status === "unavailable")
@@ -146,7 +154,7 @@ export function CottageDiscoveryForm({
           return;
         }
         const requested: CottageDiscoverySelection[] = days.flatMap((day) =>
-          selections[day].map((selection) =>
+          effectiveSelection(day).map((selection) =>
             selection === "full-day"
               ? { serviceDay: day, kind: "full-day" as const }
               : {
@@ -230,42 +238,62 @@ export function CottageDiscoveryForm({
           </select>
         </label>
       </div>
-      {days.length > 0 ? (
-        <fieldset className="booking-period-filter">
-          <legend>{messages.shifts}</legend>
-          {days.map((day) => (
-            <fieldset key={day}>
-              <legend>{day}</legend>
-              {[1, 2, 3].map((position) => (
-                <label key={position}>
-                  <input
-                    type="checkbox"
-                    checked={(selections[day] ?? []).includes(String(position))}
-                    onChange={(event) =>
-                      setDaySelection(
-                        day,
-                        String(position),
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  {messages.shift} {position}
-                </label>
-              ))}
-              <label>
-                <input
-                  type="checkbox"
-                  checked={(selections[day] ?? []).includes("full-day")}
-                  onChange={(event) =>
-                    setDaySelection(day, "full-day", event.target.checked)
+      <fieldset className="booking-period-filter">
+        <legend>{messages.shifts}</legend>
+        {days.length > 0 ? (
+          days.map((day) => (
+            <div
+              key={day}
+              role="group"
+              aria-label={formatServiceDay(day, locale, { weekday: true })}
+            >
+              <span>{formatServiceDay(day, locale, { weekday: true })}</span>
+              {bookingPeriods.map((value) => (
+                <ActionButton
+                  key={value}
+                  kind="toggle"
+                  size="compact"
+                  type="button"
+                  pressed={effectiveSelection(day).includes(value)}
+                  onClick={() =>
+                    setSelections((current) => ({
+                      ...current,
+                      [day]: toggleBookingPeriod(
+                        current[day] ?? defaults,
+                        value,
+                      ),
+                    }))
                   }
-                />
-                {messages.fullDay}
-              </label>
-            </fieldset>
-          ))}
-        </fieldset>
-      ) : null}
+                >
+                  {periodLabel(value, messages.fullDayShort)}
+                </ActionButton>
+              ))}
+            </div>
+          ))
+        ) : (
+          <>
+            <div className="booking-period-defaults">
+              {bookingPeriods.map((value) => (
+                <ActionButton
+                  key={value}
+                  kind="toggle"
+                  size="compact"
+                  type="button"
+                  pressed={defaults.includes(value)}
+                  onClick={() =>
+                    setDefaults((current) =>
+                      toggleBookingPeriod(current, value),
+                    )
+                  }
+                >
+                  {periodLabel(value, messages.fullDay)}
+                </ActionButton>
+              ))}
+            </div>
+            <p>{messages.defaultsHint}</p>
+          </>
+        )}
+      </fieldset>
       <fieldset className="amenity-filter">
         <legend>{messages.amenities}</legend>
         <div>
