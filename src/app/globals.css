@@ -1085,9 +1085,6 @@ a {
   color: var(--muted);
 }
 
-.booking-summary > strong,
-.booking-summary > span,
-.booking-summary > small,
 .request-cottage > strong,
 .request-cottage > span,
 .request-cottage > small {
@@ -1161,8 +1158,6 @@ html[lang="ckb"] .booking-summary strong {
   line-height: 1.4;
 }
 
-.booking-summary > span,
-.booking-summary > small,
 .request-cottage > small {
   color: var(--muted);
 }
@@ -1186,11 +1181,6 @@ html[lang="ckb"] .booking-summary strong {
   color: var(--muted);
   font-size: 0.85rem;
   line-height: 1.6;
-}
-
-.booking-summary > small {
-  margin-block-start: 0.7rem;
-  text-align: center;
 }
 
 .request-layout {
@@ -2823,6 +2813,9 @@ a:focus-visible {
   background: #fffdf7;
   color: var(--ink);
   border-block-end: 1px solid var(--line);
+}
+
+.site-header-landing.site-header-solid {
   box-shadow: 0 0.5rem 1.5rem rgb(34 64 47 / 8%);
 }
 

@@ -61,7 +61,12 @@ export function SiteFooter({
         </div>
       </div>
       <div className="site-footer-bar">
-        <span>© {new Date().getFullYear()} RentCottage</span>
+        <span>
+          {copy.footerCopyright.replace(
+            "{year}",
+            String(new Date().getFullYear()),
+          )}
+        </span>
         <span>
           {locales.map((option) => messages[option].languageName).join(" · ")}
         </span>

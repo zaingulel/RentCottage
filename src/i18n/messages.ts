@@ -16,6 +16,7 @@ export interface MarketplaceMessages {
   footerSearch: string;
   footerOwners: string;
   footerOwnerApplication: string;
+  footerCopyright: string;
 }
 
 export const messages: Record<Locale, MarketplaceMessages> = {
@@ -41,6 +42,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     footerSearch: "ابحث عن البيوت المتاحة",
     footerOwners: "المالكون",
     footerOwnerApplication: "طلب المالك",
+    footerCopyright: "© {year} ريف كوتج",
   },
   ckb: {
     languageName: "کوردی",
@@ -66,6 +68,7 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     footerSearch: "گەڕان بۆ کۆتێجی بەردەست",
     footerOwners: "خاوەنەکان",
     footerOwnerApplication: "داواکاری خاوەن",
+    footerCopyright: "© {year} ڕێنت کۆتاج",
   },
   en: {
     languageName: "English",
@@ -91,5 +94,6 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     footerSearch: "Search available cottages",
     footerOwners: "Owners",
     footerOwnerApplication: "Owner application",
+    footerCopyright: "© {year} RentCottage",
   },
 };

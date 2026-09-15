@@ -52,15 +52,18 @@ describe("SiteFooter", () => {
   });
 
   it.each([
-    ["ar", "اكتشف", "المالكون", "اللغة"],
-    ["ckb", "بدۆزەرەوە", "خاوەنەکان", "زمان"],
+    ["ar", "اكتشف", "المالكون", "اللغة", "ريف كوتج"],
+    ["ckb", "بدۆزەرەوە", "خاوەنەکان", "زمان", "ڕێنت کۆتاج"],
   ] as const)(
     "localizes the footer headings and returns landing sign-in to bookings in %s",
-    (locale, discover, owners, language) => {
+    (locale, discover, owners, language, brand) => {
       render(<SiteFooter locale={locale} path="" queryString="" />);
       expect(screen.getByRole("navigation", { name: discover })).toBeVisible();
       expect(screen.getByRole("navigation", { name: owners })).toBeVisible();
       expect(screen.getByText(language)).toBeVisible();
+      expect(
+        screen.getByText(`© ${new Date().getFullYear()} ${brand}`),
+      ).toBeVisible();
       expect(
         screen.getByRole("link", {
           name: locale === "ar" ? "تسجيل الدخول" : "چوونەژوورەوە",
