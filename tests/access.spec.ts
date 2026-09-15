@@ -2044,7 +2044,13 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     fullPage: true,
   });
   const quoteUrl = page.url();
-  await page.getByRole("banner").getByRole("link", { name: "کوردی" }).click();
+  // Verification completes through the access page; wait for the header to
+  // settle on the request page before switching language.
+  const soraniLink = page
+    .getByRole("banner")
+    .getByRole("link", { name: "کوردی" });
+  await expect(soraniLink).toHaveAttribute("href", /^\/ckb\/request\//);
+  await soraniLink.click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ckb");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
