@@ -2,11 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 
 import type { CottageDiscoveryProfileResult } from "@/cottage-discovery/supabase-cottage-discovery";
-import { formatIqd } from "@/i18n/format";
+import { formatIqd, formatServiceDay } from "@/i18n/format";
 import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
 import { messagingMessages } from "@/i18n/messaging-messages";
-import { LocaleLinks } from "./locale-links";
 
 const copy = {
   ar: {
@@ -61,12 +60,10 @@ const copy = {
 
 export function PublicCottageProfileView({
   locale,
-  slug,
   result,
   queryString,
 }: {
   locale: Locale;
-  slug: string;
   result: CottageDiscoveryProfileResult;
   queryString: string;
 }) {
@@ -78,11 +75,6 @@ export function PublicCottageProfileView({
           <Link href={`/${locale}/results?${queryString}`}>
             {messages.back}
           </Link>
-          <LocaleLinks
-            locale={locale}
-            path={`/cottages/${slug}`}
-            queryString={queryString}
-          />
         </header>
         <p role="alert">{messages.unavailable}</p>
       </main>
@@ -92,11 +84,6 @@ export function PublicCottageProfileView({
     <main className="profile-page">
       <header className="results-header">
         <Link href={`/${locale}/results?${queryString}`}>{messages.back}</Link>
-        <LocaleLinks
-          locale={locale}
-          path={`/cottages/${cottage.slug}`}
-          queryString={queryString}
-        />
       </header>
       <div className="profile-layout">
         <div>
@@ -163,22 +150,32 @@ export function PublicCottageProfileView({
               <li
                 key={`${unit.serviceDay}-${unit.kind}-${unit.position ?? "full"}`}
               >
-                {unit.serviceDay}:{" "}
-                {unit.kind === "full-day" ? messages.fullDay : unit.name},{" "}
-                {unit.startTime}–{unit.endTime} —{" "}
-                {unit.priceIqd === null
-                  ? messages.noPrice
-                  : formatIqd(unit.priceIqd, locale)}
-                {unit.available ? "" : ` — ${messages.closed}`}
+                <span>
+                  {formatServiceDay(unit.serviceDay, locale, { weekday: true })}{" "}
+                  · {unit.kind === "full-day" ? messages.fullDay : unit.name}
+                  {unit.available ? "" : ` · ${messages.closed}`}
+                </span>
+                <span>
+                  <span>
+                    {unit.startTime}–{unit.endTime}
+                  </span>
+                  <b>
+                    {unit.priceIqd === null
+                      ? messages.noPrice
+                      : formatIqd(unit.priceIqd, locale)}
+                  </b>
+                </span>
               </li>
             ))}
           </ul>
-          <strong>
-            {messages.total}:{" "}
-            {cottage.totalPriceIqd === null
-              ? messages.noPrice
-              : formatIqd(cottage.totalPriceIqd, locale)}
-          </strong>
+          <p className="booking-total">
+            <span>{messages.total}</span>
+            <strong>
+              {cottage.totalPriceIqd === null
+                ? messages.noPrice
+                : formatIqd(cottage.totalPriceIqd, locale)}
+            </strong>
+          </p>
           <Link
             className="action-link action-primary action-full"
             href={`/${locale}/request/${cottage.slug}?${queryString}`}

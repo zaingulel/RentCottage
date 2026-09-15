@@ -13,7 +13,6 @@ import { bookingQuoteMessages } from "@/i18n/booking-quote-messages";
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import { directionFor, type Locale } from "@/i18n/routing";
 
-import { LocaleLinks } from "./locale-links";
 import { BookingRequestForm } from "./booking-request-form";
 
 export function BookingQuoteView({
@@ -51,11 +50,6 @@ export function BookingQuoteView({
       <main className="quote-page" dir={directionFor(locale)}>
         <header className="results-header">
           <Link href={cottageHref}>{copy.back}</Link>
-          <LocaleLinks
-            locale={locale}
-            path={`/request/${slug}`}
-            queryString={requestQueryString}
-          />
         </header>
         <p role="alert">
           {result.status === "selection-unavailable"
@@ -74,11 +68,6 @@ export function BookingQuoteView({
     <main className="quote-page" dir={directionFor(locale)}>
       <header className="results-header">
         <Link href={cottageHref}>{copy.back}</Link>
-        <LocaleLinks
-          locale={locale}
-          path={`/request/${slug}`}
-          queryString={requestQueryString}
-        />
       </header>
       <header className="quote-heading">
         <p>

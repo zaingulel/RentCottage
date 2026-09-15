@@ -695,7 +695,10 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       ["کوردی", "ckb", "rtl"],
       ["English", "en", "ltr"],
     ]) {
-      await page.getByRole("link", { name: language }).click();
+      await page
+        .getByRole("banner")
+        .getByRole("link", { name: language })
+        .click();
       const translatedUrl = new URL(cottageUrl);
       translatedUrl.pathname = cottageUrl.pathname.replace(
         /^\/en\//,

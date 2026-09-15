@@ -128,7 +128,7 @@ test("booking customer keeps the original while using fictional translations acr
     fullPage: true,
   });
 
-  await page.getByRole("link", { name: "العربية" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   expect(new URL(page.url()).searchParams.get("selection")).toBe(
     "2101-01-01:shift:1",
@@ -140,9 +140,11 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(arabicMessage.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
   );
-  await page.getByRole("link", { name: "العربية" }).focus();
+  await page.getByRole("banner").getByRole("link", { name: "العربية" }).focus();
   await page.keyboard.press("Tab");
-  const focusedLanguage = page.getByRole("link", { name: "کوردی" });
+  const focusedLanguage = page
+    .getByRole("banner")
+    .getByRole("link", { name: "کوردی" });
   await expect(focusedLanguage).toBeFocused();
   expect(
     await focusedLanguage.evaluate(

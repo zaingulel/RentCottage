@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { AccountNavigation } from "@/components/account-navigation";
+import { SiteHeader } from "@/components/site-header";
 import { resolveRequestAccount } from "@/access/request-account-context";
 import type { ReactNode } from "react";
 
@@ -45,7 +45,7 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} dir={directionFor(locale)}>
       <body>
-        <AccountNavigation locale={locale} account={navigationAccount} />
+        <SiteHeader locale={locale} account={navigationAccount} />
         {children}
       </body>
     </html>

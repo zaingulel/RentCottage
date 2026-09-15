@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "./format";
+import {
+  formatFilsAsIqd,
+  formatIqd,
+  formatIraqDateTime,
+  formatServiceDay,
+} from "./format";
 
 describe("localized formatting", () => {
   it("uses Western digits for Arabic prices to match property counts", () => {
@@ -40,5 +45,16 @@ describe("localized formatting", () => {
       "Aug 22, 2026, 2:30 AM",
     );
     expect(formatIraqDateTime("2026-08-21T23:30:00Z", "ar")).toContain("2:30");
+  });
+
+  it("formats Service Days as calendar dates without a time zone shift", () => {
+    expect(formatServiceDay("2026-09-22", "en")).toBe("Sep 22");
+    expect(formatServiceDay("2026-09-22", "en", { weekday: true })).toBe(
+      "Tue, Sep 22",
+    );
+    expect(formatServiceDay("2026-09-22", "ar")).toBe("22 أيلول");
+    expect(formatServiceDay("2026-09-22", "ckb", { weekday: true })).toBe(
+      "سێشەممە، ٢٢ی ئەیلوول",
+    );
   });
 });

@@ -106,10 +106,6 @@ describe("Messaging conversation", () => {
       "href",
       `/en/messages/${conversation.conversationId}?before=7&${contextQuery}`,
     );
-    expect(screen.getByRole("link", { name: "العربية" })).toHaveAttribute(
-      "href",
-      `/ar/messages/${conversation.conversationId}?before=9&${contextQuery}`,
-    );
   });
 
   it("keeps the original visible when translation is unavailable", async () => {

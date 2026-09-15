@@ -720,7 +720,7 @@ a {
 
 .retreat-hero {
   position: relative;
-  min-height: 68vh;
+  min-height: 70vh;
   display: flex;
   align-items: flex-end;
   color: #f7f1e1;
@@ -741,7 +741,6 @@ a {
   );
 }
 
-.retreat-utility,
 .retreat-copy,
 .retreat-search,
 .retreat-blurb,
@@ -766,7 +765,7 @@ a {
 }
 
 .results-header {
-  min-height: 4.5rem;
+  min-height: 3.25rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -776,16 +775,33 @@ a {
 
 .results-header > a {
   color: var(--green);
+  font-size: 0.92rem;
   font-weight: 700;
 }
 
-.results-languages {
+.language-links {
   direction: ltr;
   display: flex;
-  gap: 0.25rem;
+  width: fit-content;
+  gap: 0.2rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--background);
 }
 
-.results-languages .action-toggle[aria-pressed="true"] {
+.language-links a {
+  min-height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding-inline: 0.75rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.language-links a[aria-current="page"] {
   background: var(--green);
   color: #f6f1e3;
 }
@@ -844,7 +860,7 @@ a {
 
 .results-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
   gap: 1.35rem;
 }
 
@@ -916,7 +932,29 @@ a {
   display: flex;
   align-items: baseline;
   gap: 0.35rem;
-  margin-block: 1rem;
+  margin-block: 1rem 0.6rem;
+}
+
+.result-shifts {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+}
+
+.result-shifts li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--muted);
+}
+
+.result-shifts b {
+  color: var(--ink);
 }
 
 .result-content > div strong {
@@ -941,7 +979,7 @@ a {
   width: min(71.25rem, calc(100% - 2.25rem));
   margin: 2rem auto 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 23rem;
+  grid-template-columns: minmax(0, 1fr) minmax(min(100%, 18rem), 23rem);
   gap: 2.75rem;
   align-items: start;
 }
@@ -993,7 +1031,7 @@ a {
   margin-block: 1.5rem;
   padding: 1rem;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
   border: 1px solid var(--line);
   border-radius: 0.9rem;
@@ -1047,16 +1085,64 @@ a {
   color: var(--muted);
 }
 
-.booking-summary > strong,
-.booking-summary > span,
-.booking-summary > small,
 .request-cottage > strong,
 .request-cottage > span,
 .request-cottage > small {
   display: block;
 }
 
-.booking-summary > strong {
+.booking-summary h2 {
+  margin: 0 0 1rem;
+  color: var(--green);
+  font-family: var(--display);
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.booking-summary > ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.booking-summary > ul > li {
+  display: grid;
+  gap: 0.2rem;
+  padding-block-end: 0.55rem;
+  border-block-end: 1px solid var(--line);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.booking-summary > ul > li > span + span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.booking-summary > ul > li > span + span > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 400;
+}
+
+.booking-summary .booking-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+}
+
+.booking-summary .booking-total > span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.booking-summary .booking-total > strong {
   color: var(--green);
   font-size: 1.55rem;
 }
@@ -1072,8 +1158,6 @@ html[lang="ckb"] .booking-summary strong {
   line-height: 1.4;
 }
 
-.booking-summary > span,
-.booking-summary > small,
 .request-cottage > small {
   color: var(--muted);
 }
@@ -1085,6 +1169,10 @@ html[lang="ckb"] .booking-summary strong {
   font-weight: 600;
 }
 
+.booking-summary > .action-link + .action-link {
+  margin-block-start: 0.6rem;
+}
+
 .request-notice {
   margin: 0;
   padding: 0.8rem;
@@ -1093,11 +1181,6 @@ html[lang="ckb"] .booking-summary strong {
   color: var(--muted);
   font-size: 0.85rem;
   line-height: 1.6;
-}
-
-.booking-summary > small {
-  margin-block-start: 0.7rem;
-  text-align: center;
 }
 
 .request-layout {
@@ -1178,68 +1261,10 @@ html[lang="ckb"] .booking-summary strong {
   font-weight: 700;
 }
 
-.retreat-utility {
-  position: absolute;
-  z-index: 2;
-  inset-block-start: 1.4rem;
-  inset-inline: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.retreat-brand {
-  display: grid;
-  text-decoration: none;
-}
-
-.retreat-brand strong {
-  font-family: var(--display);
-  font-size: 1.5rem;
-  line-height: 1.2;
-}
-
-.retreat-brand span {
-  font-size: 0.78rem;
-  opacity: 0.84;
-}
-
-.retreat-access {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.55rem;
-}
-
-.language-switcher {
-  direction: ltr;
-  display: flex;
-  gap: 0.3rem;
-  padding: 0.3rem;
-  border: 1px solid rgb(247 241 225 / 25%);
-  border-radius: 999px;
-  background: rgb(22 19 13 / 42%);
-  backdrop-filter: blur(0.7rem);
-}
-
-.language-switcher .action-toggle {
-  border-color: transparent;
-  color: #f7f1e1;
-}
-
-.language-switcher .action-toggle[aria-pressed="true"] {
-  border-color: #f7f1e1;
-  background: #f7f1e1;
-  box-shadow: none;
-  color: var(--ink);
-}
-
 .retreat-copy {
   position: relative;
   z-index: 1;
-  padding-block: 9.5rem 8.5rem;
+  padding-block: 11rem 8.5rem;
 }
 
 .retreat-copy h1 {
@@ -1274,7 +1299,7 @@ html[lang="ckb"] .booking-summary strong {
 
 .search-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
   gap: 0.9rem;
 }
 
@@ -1313,17 +1338,43 @@ html[lang="ckb"] .booking-summary strong {
   border: 0;
 }
 
-.booking-period-filter > fieldset {
-  margin-block-start: 0.65rem;
+.booking-period-filter > [role="group"] {
+  margin-block-start: 0.5rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.45rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  padding: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  background: #fffef9;
 }
 
-.booking-period-filter label,
+.booking-period-filter > [role="group"] > span {
+  flex: 0 0 7rem;
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.booking-period-defaults {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.booking-period-defaults .action-toggle {
+  min-height: 2.4rem;
+  padding-inline: 0.85rem;
+  font-size: 0.82rem;
+}
+
+.booking-period-filter > p {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .amenity-filter label {
   display: inline-flex;
   align-items: center;
@@ -1472,7 +1523,7 @@ html[lang="ckb"] .booking-summary strong {
 
 .trusted-booking {
   display: grid;
-  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   overflow: hidden;
   border-radius: 1.5rem;
   background: var(--green);
@@ -1552,23 +1603,6 @@ a:focus-visible {
     min-height: 76vh;
   }
 
-  .retreat-utility {
-    align-items: center;
-  }
-
-  .retreat-brand strong {
-    font-size: 1.2rem;
-  }
-
-  .retreat-brand span {
-    display: none;
-  }
-
-  .language-switcher .action-toggle {
-    padding-inline: 0.6rem;
-    font-size: 0.7rem;
-  }
-
   .retreat-copy {
     padding-block-end: 7.5rem;
   }
@@ -1581,17 +1615,10 @@ a:focus-visible {
     margin-block-start: -4rem;
   }
 
-  .search-fields,
   .preview-grid,
-  .trusted-booking,
-  .results-grid,
   .profile-layout,
   .request-layout {
     grid-template-columns: 1fr;
-  }
-
-  .profile-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .profile-gallery .profile-main-image {
@@ -1613,7 +1640,6 @@ a:focus-visible {
 }
 
 @media (max-width: 420px) {
-  .retreat-utility,
   .retreat-copy,
   .retreat-search,
   .retreat-blurb,
@@ -1621,30 +1647,6 @@ a:focus-visible {
   .trusted-booking,
   .fictional-note {
     width: min(100% - 1.5rem, 71.25rem);
-  }
-
-  .retreat-utility {
-    inset-block-start: 0.85rem;
-    align-items: flex-start;
-  }
-
-  .retreat-access {
-    max-width: 12.5rem;
-  }
-
-  .retreat-access .action-link {
-    min-height: 2.25rem;
-    padding-inline: 0.7rem;
-    font-size: 0.78rem;
-  }
-
-  .language-switcher {
-    gap: 0;
-  }
-
-  .language-switcher .action-toggle {
-    min-height: 2rem;
-    padding-inline: 0.48rem;
   }
 
   .retreat-search {
@@ -2792,60 +2794,263 @@ a:focus-visible {
   }
 }
 
-.account-navigation {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.65rem max(1rem, calc((100vw - 1200px) / 2));
+.site-header {
+  z-index: 40;
+  background: transparent;
+  color: #f7f1e1;
+  transition:
+    background 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.site-header-landing {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+}
+
+.site-header-solid {
   background: #fffdf7;
-  color: #263d35;
-  border-bottom: 1px solid #d7dfd5;
+  color: var(--ink);
+  border-block-end: 1px solid var(--line);
 }
-.account-navigation a,
-.account-navigation button,
-.account-navigation summary {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
+
+.site-header-landing.site-header-solid {
+  box-shadow: 0 0.5rem 1.5rem rgb(34 64 47 / 8%);
 }
-.account-navigation > div {
+
+.site-header-row {
+  width: min(71.25rem, calc(100% - 2.25rem));
+  min-height: 4.75rem;
+  margin-inline: auto;
   display: flex;
   flex-wrap: wrap;
-  justify-content: end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding-block: 0.5rem;
+  transition: min-height 220ms ease;
 }
+
+.site-header-landing .site-header-row {
+  min-height: 5.25rem;
+}
+
+.site-header-landing.site-header-solid .site-header-row {
+  min-height: 4rem;
+}
+
+.site-brand {
+  display: grid;
+  text-decoration: none;
+}
+
+.site-brand strong {
+  font-family: var(--display);
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
+.site-header-landing:not(.site-header-solid) .site-brand strong {
+  font-size: 1.5rem;
+}
+
+.site-brand span {
+  color: rgb(247 241 225 / 72%);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.site-header-solid .site-brand strong {
+  color: var(--green);
+}
+
+.site-header-solid .site-brand span {
+  color: var(--gold);
+}
+
+.site-header-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.site-header:not(.site-header-solid) .language-links {
+  border-color: rgb(247 241 225 / 22%);
+  background: rgb(22 19 13 / 38%);
+  backdrop-filter: blur(0.7rem);
+}
+
+.site-header:not(.site-header-solid) .language-links a[aria-current="page"] {
+  background: #f7f1e1;
+  color: var(--ink);
+}
+
+.site-header-rule {
+  width: 1px;
+  height: 1.5rem;
+  background: rgb(247 241 225 / 22%);
+}
+
+.site-header-solid .site-header-rule {
+  background: var(--line);
+}
+
+.account-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.account-navigation > a,
+.account-navigation summary {
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgb(247 241 225 / 45%);
+  border-radius: 999px;
+  padding-inline: 1rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.site-header-solid .account-navigation > a,
+.site-header-solid .account-navigation summary {
+  border-color: rgb(34 64 47 / 28%);
+  color: var(--green);
+}
+
 .account-navigation details {
   position: relative;
 }
+
 .account-navigation summary {
   cursor: pointer;
-  list-style: revert;
+  list-style: none;
 }
+
+.account-navigation summary::-webkit-details-marker {
+  display: none;
+}
+
 .account-navigation details > div {
   position: absolute;
   z-index: 50;
   inset-inline-end: 0;
-  min-width: 230px;
+  min-width: 14.5rem;
+  margin-block-start: 0.5rem;
   padding: 0.5rem;
-  background: #fffdf7;
-  border: 1px solid #d7dfd5;
-  box-shadow: 0 8px 24px #0002;
+  border: 1px solid var(--line);
   border-radius: 0.75rem;
+  background: #fffdf7;
+  box-shadow: 0 0.5rem 1.5rem rgb(34 64 47 / 12%);
+  color: var(--ink);
 }
-.account-navigation details a {
+
+.account-navigation details a,
+.account-navigation details button {
+  min-height: 2.75rem;
   display: flex;
-}
-.account-navigation button {
-  background: transparent;
-  color: inherit;
+  align-items: center;
+  width: 100%;
   border: 0;
-  font: inherit;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  text-align: start;
+  text-decoration: none;
   cursor: pointer;
 }
-.account-navigation :focus-visible {
-  outline: 3px solid #a16b21;
-  outline-offset: 2px;
+
+.site-footer {
+  margin-block-start: 5rem;
+  border-block-start: 1px solid var(--line);
+  background: #f0e9db;
+}
+
+.site-footer-grid,
+.site-footer-bar {
+  width: min(71.25rem, calc(100% - 2.25rem));
+  margin-inline: auto;
+}
+
+.site-footer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 2rem;
+  padding-block: 3.25rem 2rem;
+}
+
+.site-footer-grid nav,
+.site-footer-language {
+  display: grid;
+  align-content: start;
+  gap: 0.6rem;
+}
+
+.site-footer-grid p {
+  margin: 0;
+}
+
+.site-footer-grid nav > p,
+.site-footer-language > p {
+  color: var(--green);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.site-footer-grid nav > a {
+  width: fit-content;
+  color: rgb(38 36 31 / 76%);
+  font-size: 0.92rem;
+  text-decoration: none;
+}
+
+.site-footer-brand {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.site-footer-brand strong {
+  color: var(--green);
+  font-family: var(--display);
+  font-size: 1.35rem;
+}
+
+.site-footer-brand span {
+  color: var(--gold);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.site-footer-brand p {
+  max-width: 24ch;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.site-footer-language .language-links {
+  background: var(--card);
+}
+
+.site-footer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding-block: 1.25rem 2.5rem;
+  border-block-start: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .messaging-shell {

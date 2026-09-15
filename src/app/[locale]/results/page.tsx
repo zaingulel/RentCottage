@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { PublicCottageResults } from "@/components/public-cottage-results";
 import { InvalidCottageSearch } from "@/components/invalid-cottage-search";
+import { SiteFooter } from "@/components/site-footer";
 import {
   parseCottageDiscoveryQuery,
   preserveRawCottageDiscoveryQuery,
@@ -22,20 +23,24 @@ export default async function ResultsPage({
   if (!isLocale(locale)) notFound();
   const parsed = parseCottageDiscoveryQuery(query);
   if (parsed.status === "invalid") {
+    const queryString = preserveRawCottageDiscoveryQuery(query);
     return (
-      <InvalidCottageSearch
-        locale={locale}
-        path="/results"
-        queryString={preserveRawCottageDiscoveryQuery(query)}
-      />
+      <>
+        <InvalidCottageSearch locale={locale} />
+        <SiteFooter locale={locale} path="/results" queryString={queryString} />
+      </>
     );
   }
   const result = await searchPublicCottages(locale, parsed.query);
+  const queryString = serializeCottageDiscoveryQuery(parsed.query);
   return (
-    <PublicCottageResults
-      locale={locale}
-      result={result}
-      queryString={serializeCottageDiscoveryQuery(parsed.query)}
-    />
+    <>
+      <PublicCottageResults
+        locale={locale}
+        result={result}
+        queryString={queryString}
+      />
+      <SiteFooter locale={locale} path="/results" queryString={queryString} />
+    </>
   );
 }

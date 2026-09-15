@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import type { Locale } from "@/i18n/routing";
-import { LocaleLinks } from "./locale-links";
 
 const copy = {
   ar: {
@@ -21,21 +20,12 @@ const copy = {
   },
 } as const;
 
-export function InvalidCottageSearch({
-  locale,
-  path,
-  queryString,
-}: {
-  locale: Locale;
-  path: string;
-  queryString: string;
-}) {
+export function InvalidCottageSearch({ locale }: { locale: Locale }) {
   const messages = copy[locale];
   return (
     <main className="results-page">
       <header className="results-header">
         <Link href={`/${locale}`}>{messages.back}</Link>
-        <LocaleLinks locale={locale} path={path} queryString={queryString} />
       </header>
       <section className="results-intro">
         <h1>{messages.title}</h1>

@@ -130,7 +130,7 @@ describe("Booking Quote view", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders localized right-to-left quote content and canonical locale links", () => {
+  it("renders localized right-to-left quote content", () => {
     const { container } = render(
       <BookingQuoteView
         locale="ar"
@@ -147,15 +147,6 @@ describe("Booking Quote view", () => {
     const item = screen.getByRole("listitem", { name: /الوردية 2/ });
     expect(item).toHaveTextContent("الوردية 2");
     expect(item).not.toHaveTextContent("Night");
-    const languages = screen.getByRole("navigation", { name: "اللغة" });
-    expect(
-      within(languages).getByRole("link", { name: "English" }),
-    ).toHaveAttribute(
-      "href",
-      expect.stringContaining(
-        `/en/request/${result.quote.slug}?from=2099-08-21`,
-      ),
-    );
   });
 
   it("uses localized Sorani shift positions without exposing owner names", () => {

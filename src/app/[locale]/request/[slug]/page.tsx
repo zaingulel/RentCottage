@@ -14,7 +14,6 @@ import { BookingQuoteView } from "@/components/booking-quote";
 import { InvalidCottageSearch } from "@/components/invalid-cottage-search";
 import {
   parseCottageDiscoveryQuery,
-  preserveRawCottageDiscoveryQuery,
   serializeCottageDiscoveryQuery,
 } from "@/cottage-discovery/discovery-query";
 import { isLocale } from "@/i18n/routing";
@@ -62,13 +61,7 @@ export default async function RequestPage({
   delete discoveryRawQuery.conversation;
   const parsed = parseCottageDiscoveryQuery(discoveryRawQuery);
   if (parsed.status === "invalid") {
-    return (
-      <InvalidCottageSearch
-        locale={locale}
-        path={`/request/${slug}`}
-        queryString={preserveRawCottageDiscoveryQuery(discoveryRawQuery)}
-      />
-    );
+    return <InvalidCottageSearch locale={locale} />;
   }
   const result = await loadPublicBookingQuote(locale, slug, parsed.query);
   if (result.status === "not-found") notFound();

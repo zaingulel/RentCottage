@@ -575,6 +575,7 @@ test("shared sign-in from the homepage returns a prospective owner to their priv
 }) => {
   await page.goto("/ckb");
   await page
+    .getByRole("banner")
     .getByRole("link", { name: "کۆتێجەکەت تۆمار بکە", exact: true })
     .click();
   await expect(page).toHaveURL(/\/ckb\/access\?returnTo=/);
@@ -1853,6 +1854,13 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   };
   const firstDay = serviceDay(1);
   const secondDay = serviceDay(2);
+  const serviceDayLabel = (day: string) =>
+    new Intl.DateTimeFormat("en-IQ", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    }).format(new Date(`${day}T00:00:00Z`));
   const fullDayEndDay =
     lastShift!.end_time < firstShift.start_time ? serviceDay(3) : secondDay;
   const formatEnglishIraqDateTime = (value: string) =>
@@ -1937,17 +1945,17 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await page.getByLabel("From Service Day").fill(firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
-    .getByRole("group", { name: firstDay })
-    .getByRole("checkbox", { name: `Shift ${firstShift.position}` })
-    .check();
+    .getByRole("group", { name: serviceDayLabel(firstDay) })
+    .getByRole("button", { name: `Shift ${firstShift.position}` })
+    .click();
   await page
-    .getByRole("group", { name: firstDay })
-    .getByRole("checkbox", { name: `Shift ${secondShift.position}` })
-    .check();
+    .getByRole("group", { name: serviceDayLabel(firstDay) })
+    .getByRole("button", { name: `Shift ${secondShift.position}` })
+    .click();
   await page
-    .getByRole("group", { name: secondDay })
-    .getByRole("checkbox", { name: `Shift ${firstShift.position}` })
-    .check();
+    .getByRole("group", { name: serviceDayLabel(secondDay) })
+    .getByRole("button", { name: `Shift ${firstShift.position}` })
+    .click();
   await page.getByRole("button", { name: "Search available cottages" }).click();
   const resultCard = page.locator("article").filter({
     has: page.locator(`a[href^="/en/cottages/${fixture!.slug}?"]`),
@@ -1981,7 +1989,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(
     page.getByRole("heading", { name: fixture!.name }),
   ).toBeVisible();
-  await expect(page.getByText("Total price: IQD 550,000")).toBeVisible();
+  await expect(
+    page.getByText("Total price", { exact: true }).locator(".."),
+  ).toContainText("IQD 550,000");
   await expectPrivateValuesAbsent();
   await waitForFonts();
   await page.screenshot({
@@ -2034,7 +2044,13 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     fullPage: true,
   });
   const quoteUrl = page.url();
-  await page.getByRole("link", { name: "کوردی" }).click();
+  // Verification completes through the access page; wait for the header to
+  // settle on the request page before switching language.
+  const soraniLink = page
+    .getByRole("banner")
+    .getByRole("link", { name: "کوردی" });
+  await expect(soraniLink).toHaveAttribute("href", /^\/ckb\/request\//);
+  await soraniLink.click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ckb");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
@@ -2053,7 +2069,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     path: testInfo.outputPath("ckb-public-booking-quote.png"),
     fullPage: true,
   });
-  await page.getByRole("link", { name: "العربية" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
@@ -2078,9 +2094,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await page.getByLabel("To Service Day").fill(secondDay);
   for (const day of [firstDay, secondDay]) {
     await page
-      .getByRole("group", { name: day })
-      .getByRole("checkbox", { name: "Full-day bundle" })
-      .check();
+      .getByRole("group", { name: serviceDayLabel(day) })
+      .getByRole("button", { name: "Full day", exact: true })
+      .click();
   }
   await page.getByRole("button", { name: "Search available cottages" }).click();
   const fullDayResult = page.locator("article").filter({
@@ -2096,7 +2112,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     fullDayResult.getByText("Full-day bundle", { exact: false }),
   ).toHaveCount(2);
   await fullDayResult.getByRole("link", { name: "View cottage" }).click();
-  await expect(page.getByText("Total price: IQD 510,000")).toBeVisible();
+  await expect(
+    page.getByText("Total price", { exact: true }).locator(".."),
+  ).toContainText("IQD 510,000");
   await page.getByRole("link", { name: "Get exact quote" }).click();
   const fullDayItems = page.getByRole("listitem", {
     name: /Full-Day Bundle/,
@@ -2122,7 +2140,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   });
 
   await page.goto(english.toString());
-  await page.getByRole("link", { name: "کوردی" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "کوردی" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ckb")}\\?`),
   );
@@ -2155,7 +2173,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     path: testInfo.outputPath("ckb-public-cottage-profile.png"),
     fullPage: true,
   });
-  await page.getByRole("link", { name: "العربية" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ar")}\\?`),
   );
@@ -2293,7 +2311,10 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
     path: `test-results/account-menu-${testInfo.project.name}.png`,
     fullPage: true,
   });
-  await page.getByRole("link", { name: "List your cottage" }).click();
+  await page
+    .getByRole("banner")
+    .getByRole("link", { name: "List your cottage" })
+    .click();
   await expect(
     page.getByRole("heading", { name: "Become a Cottage Owner" }),
   ).toBeVisible();
@@ -2333,7 +2354,9 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page).toHaveURL(/\/en$/);
     await expect(
-      page.getByRole("link", { name: "Sign in", exact: true }),
+      page
+        .getByRole("banner")
+        .getByRole("link", { name: "Sign in", exact: true }),
     ).toBeVisible();
     await page.goto("/en/bookings");
     await expect(page.getByLabel("Iraqi phone number")).toBeVisible();

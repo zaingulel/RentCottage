@@ -47,3 +47,16 @@ export function formatIraqDateTime(value: string, locale: Locale): string {
     timeZone: "Asia/Baghdad",
   }).format(new Date(value));
 }
+
+export function formatServiceDay(
+  serviceDay: string,
+  locale: Locale,
+  options: { weekday?: boolean } = {},
+): string {
+  return new Intl.DateTimeFormat(iraqIntlLocales[locale], {
+    ...(options.weekday ? { weekday: "short" } : {}),
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(`${serviceDay}T00:00:00Z`));
+}
