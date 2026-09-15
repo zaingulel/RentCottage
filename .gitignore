@@ -8,6 +8,7 @@ test-results/
 playwright-report/
 coverage/
 .agent-evidence/
+.demo/
 *.tsbuildinfo
 .env*
 .dev.vars*
