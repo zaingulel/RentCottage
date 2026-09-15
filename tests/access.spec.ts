@@ -2089,7 +2089,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   for (const day of [firstDay, secondDay]) {
     await page
       .getByRole("group", { name: serviceDayLabel(day) })
-      .getByRole("button", { name: "Full-day bundle" })
+      .getByRole("button", { name: "Full day", exact: true })
       .click();
   }
   await page.getByRole("button", { name: "Search available cottages" }).click();
