@@ -179,7 +179,16 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
   ).toBeVisible();
-  await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
+  // Verification completes through the access page; wait for the header to
+  // settle on the request page before switching language.
+  await expect(
+    page.getByRole("banner").getByText("Account", { exact: true }),
+  ).toBeVisible();
+  const arabic = page
+    .getByRole("banner")
+    .getByRole("link", { name: "العربية" });
+  await expect(arabic).toHaveAttribute("href", /^\/ar\/request\//);
+  await arabic.click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
     page.getByRole("heading", { name: "أرسل طلب الحجز" }),

@@ -1854,6 +1854,13 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   };
   const firstDay = serviceDay(1);
   const secondDay = serviceDay(2);
+  const serviceDayLabel = (day: string) =>
+    new Intl.DateTimeFormat("en-IQ", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    }).format(new Date(`${day}T00:00:00Z`));
   const fullDayEndDay =
     lastShift!.end_time < firstShift.start_time ? serviceDay(3) : secondDay;
   const formatEnglishIraqDateTime = (value: string) =>
@@ -1938,17 +1945,17 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await page.getByLabel("From Service Day").fill(firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
-    .getByRole("group", { name: firstDay })
-    .getByRole("checkbox", { name: `Shift ${firstShift.position}` })
-    .check();
+    .getByRole("group", { name: serviceDayLabel(firstDay) })
+    .getByRole("button", { name: `Shift ${firstShift.position}` })
+    .click();
   await page
-    .getByRole("group", { name: firstDay })
-    .getByRole("checkbox", { name: `Shift ${secondShift.position}` })
-    .check();
+    .getByRole("group", { name: serviceDayLabel(firstDay) })
+    .getByRole("button", { name: `Shift ${secondShift.position}` })
+    .click();
   await page
-    .getByRole("group", { name: secondDay })
-    .getByRole("checkbox", { name: `Shift ${firstShift.position}` })
-    .check();
+    .getByRole("group", { name: serviceDayLabel(secondDay) })
+    .getByRole("button", { name: `Shift ${firstShift.position}` })
+    .click();
   await page.getByRole("button", { name: "Search available cottages" }).click();
   const resultCard = page.locator("article").filter({
     has: page.locator(`a[href^="/en/cottages/${fixture!.slug}?"]`),
@@ -2079,9 +2086,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await page.getByLabel("To Service Day").fill(secondDay);
   for (const day of [firstDay, secondDay]) {
     await page
-      .getByRole("group", { name: day })
-      .getByRole("checkbox", { name: "Full-day bundle" })
-      .check();
+      .getByRole("group", { name: serviceDayLabel(day) })
+      .getByRole("button", { name: "Full-day bundle" })
+      .click();
   }
   await page.getByRole("button", { name: "Search available cottages" }).click();
   const fullDayResult = page.locator("article").filter({
