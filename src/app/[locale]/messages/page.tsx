@@ -6,7 +6,6 @@ import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import { MessagingInbox } from "@/components/messaging-inbox";
 import { MessagingStart } from "@/components/messaging-start";
-import { LocaleLinks } from "@/components/locale-links";
 import { messagingMessages } from "@/i18n/messaging-messages";
 import { isLocale } from "@/i18n/routing";
 import { createRequestMessagingRuntime } from "@/messaging/request-messaging-runtime";
@@ -97,17 +96,8 @@ export default async function MessagesPage({
     );
   }
   const related = cottage ? page.items : [];
-  const pageQuery = [
-    activityAt ? `activityAt=${encodeURIComponent(activityAt)}` : "",
-    conversationId ? `conversationId=${conversationId}` : "",
-    cottage ? `cottage=${cottage}` : "",
-    contextQuery ?? "",
-  ]
-    .filter(Boolean)
-    .join("&");
   return (
     <main className="results-page">
-      <LocaleLinks locale={locale} path="/messages" queryString={pageQuery} />
       {cottage && account.context.role !== "platform_administrator" ? (
         <section className="messaging-shell">
           <h1>{messagingMessages[locale].messageCottage}</h1>

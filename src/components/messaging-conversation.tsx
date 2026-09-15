@@ -14,7 +14,6 @@ import {
   translateMessagingMessage,
 } from "@/messaging/actions";
 import type { MessagingConversation as Conversation } from "@/messaging/supabase-messaging-reader";
-import { LocaleLinks } from "./locale-links";
 import {
   ActionButton,
   ActionFeedback,
@@ -135,12 +134,6 @@ export function MessagingConversation({
   const canMutate = conversation.actorRole !== "platform_administrator";
   const readOnly =
     forcedReadOnly || (conversation.booking?.writingClosed ?? false);
-  const detailQuery = [
-    beforePosition ? `before=${beforePosition}` : "",
-    contextQuery ?? "",
-  ]
-    .filter(Boolean)
-    .join("&");
   const scopedInboxQuery =
     conversation.cottage.publicSlug && contextQuery
       ? `cottage=${conversation.cottage.publicSlug}&${contextQuery}`
@@ -153,11 +146,6 @@ export function MessagingConversation({
         >
           {copy.inbox}
         </Link>
-        <LocaleLinks
-          locale={locale}
-          path={`/messages/${conversation.conversationId}`}
-          queryString={detailQuery}
-        />
         <p>{copy.conversation}</p>
         <h1>{conversation.cottage.name}</h1>
         {conversation.booking ? (
