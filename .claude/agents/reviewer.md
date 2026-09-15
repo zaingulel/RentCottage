@@ -1,8 +1,8 @@
 ---
 name: reviewer
 description: Read-only finished-change or scoped repair review against RentCottage Standards and Specification.
-model: fable
-effort: high
+model: opus
+effort: xhigh
 maxTurns: 90
 permissionMode: default
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
