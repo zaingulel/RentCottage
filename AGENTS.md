@@ -43,8 +43,10 @@ before editing. Plans name affected areas, expected behaviour, verification, mig
 
 1. **Work selection:** the owner approves the issue outcome and acceptance criteria, authorizing planning, builder
    routing, implementation, verification, and review within that outcome. Small understood adjacent repairs may
-   ride with the job when their risk is bounded and verifiable; disclose them in the pull request. A material
-   change to product meaning, outcome, scope, or risk requires owner approval.
+   ride with the job when their risk is bounded and verifiable; disclose them in the pull request. A discovered
+   defect or cleanup that needs work and does not ride with the job gets a GitHub issue before delivery approval;
+   disclosure in the pull request alone does not record it. A material change to product meaning, outcome, scope,
+   or risk requires owner approval.
 2. **Delivery approval:** the owner reviews one filled pull-request body containing the finished bundle and local
    evidence. Name any proposed external review explicitly, including Greptile access to the private pull-request
    diff when selected, and each proposed delivery action through ready, merge and exact cleanup.
