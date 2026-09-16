@@ -52,8 +52,8 @@ before editing. Plans name affected areas, expected behaviour, verification, mig
    evidence. Name any proposed external review explicitly, including Greptile access to the private pull-request
    diff when selected, and each proposed delivery action through ready, merge and cleanup.
    The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
-   hosted settings, and issue reconciliation require that authority. Moving the job's own card along the Status
-   columns as the job advances rides with the work selection.
+   hosted settings, and issue reconciliation require that authority. Moving the job's own card between Status
+   columns in either direction, and claiming its issue with an assignee, ride with the work selection.
    A current approval carries its named actions through merge and cleanup; confirmed reviewer-credit
    exhaustion under `docs/agents/delivery.md` does not require approval of those actions again.
 

@@ -82,11 +82,11 @@ worktree, verify its branch and exact base against that newly recorded commit in
 
 Assign one writer. Move the card to `In progress` with `node scripts/board-move.mjs <issue> "In progress"` and
 claim it with `gh issue edit <issue> --add-assignee @me`; active work with no assignee is reported as drift.
-Before dependent expensive work, verify
-the current execution lane has the required Docker access, browser availability, and log-write location through
-existing narrowly scoped permission mechanisms. Consult active owners and identify conflicting database instances,
-ports, shared paths, and heavy-verification capacity; defer only conflicting checks. Before a launch, record its
-job, worktree, command, and intended port in existing session evidence, excluding secrets.
+Before dependent expensive work, verify the current execution lane has the required Docker access, browser
+availability, and log-write location through existing narrowly scoped permission mechanisms. Consult active owners
+and identify conflicting database instances, ports, shared paths, and heavy-verification capacity; defer only
+conflicting checks. Before a launch, record its job, worktree, command, and intended port in existing session
+evidence, excluding secrets.
 Immediately after launch and before leaving it unattended, record the runtime session handle, process identifier, start identity,
 and relevant parent, group, or port. Repeat readiness when the execution lane or any relevant resource changes.
 Install dependencies in a fresh worktree, make the route explicit, then plan and build under

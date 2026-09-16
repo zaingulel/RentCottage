@@ -96,7 +96,8 @@ error, malformed JSON, or a zero-item read exits non-zero rather than printing a
 returning success. Drift also exits non-zero after printing the complete report.
 
 Writes go through two commands, never a raw `gh project item-add`, which leaves a card with no Status and no
-`Workstream`, or a raw `item-edit`, which skips the read-back:
+`Workstream`, or a raw `item-edit`, which takes hand-fetched ids and checks no Status name against the board's
+options:
 
 | Command | Use |
 |---|---|
