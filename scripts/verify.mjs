@@ -49,9 +49,40 @@ const baselineOnlyPaths = new Set([
   "scripts/run-log.test.mjs",
 ]);
 
+// The board and git-guard toolkit, proved by the node --test files npm test already runs.
+// Explicit names, never a scripts/lib/ wildcard: the same directory holds the Supabase,
+// Worker and browser fixtures, which need the expensive route. The three commands reach
+// only the GitHub API, so the expensive route has no evidence to offer them.
+const baselineOnlyToolingPaths = new Set([
+  "scripts/board.mjs",
+  "scripts/board-add.mjs",
+  "scripts/board-move.mjs",
+  "scripts/lib/board.mjs",
+  "scripts/lib/board.test.mjs",
+  "scripts/lib/board-add.mjs",
+  "scripts/lib/board-add.test.mjs",
+  "scripts/lib/board-cli.test.mjs",
+  "scripts/lib/board-config.mjs",
+  "scripts/lib/board-fixtures.mjs",
+  "scripts/lib/board-move.mjs",
+  "scripts/lib/board-move.test.mjs",
+  "scripts/lib/board-rules.mjs",
+  "scripts/lib/board-rules.test.mjs",
+  "scripts/lib/checkout-context.mjs",
+  "scripts/lib/checkout-context.test.mjs",
+  "scripts/lib/cli-flags.mjs",
+  "scripts/lib/cli-flags.test.mjs",
+  "scripts/lib/fake-gh.mjs",
+  "scripts/lib/gh-exec.mjs",
+  "scripts/lib/gh-exec.test.mjs",
+  "scripts/lib/unsafe-git.mjs",
+  "scripts/lib/unsafe-git.test.mjs",
+]);
+
 function isBaselineOnlyPath(path) {
   return (
     baselineOnlyPaths.has(path) ||
+    baselineOnlyToolingPaths.has(path) ||
     /^\.agents\/(?:roles|skills|templates)\/.+\.md$/i.test(path) ||
     /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
     /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
@@ -70,6 +101,33 @@ function isBrowserOnlyPath(path) {
   return (
     browserOnlyPaths.has(path) ||
     /^public\/uploads\/[^/]+\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(path)
+  );
+}
+
+const fullEvidenceRootPaths = new Set([
+  ".nvmrc",
+  "cloudflare-env.d.ts",
+  "custom-worker.ts",
+  "eslint.config.mjs",
+  "next-env.d.ts",
+  "next.config.ts",
+  "open-next.config.ts",
+  "package-lock.json",
+  "package.json",
+  "tsconfig.json",
+  "vitest.config.ts",
+  "vitest.setup.ts",
+  "wrangler.jsonc",
+]);
+
+function requiresFullEvidence(path) {
+  return (
+    fullEvidenceRootPaths.has(path) ||
+    /^(?:\.github\/workflows|public|scripts|src|supabase|tests|translation)\/.+$/.test(
+      path,
+    ) ||
+    /^playwright[^/]*\.config\.ts$/.test(path) ||
+    /^\.(?:env|dev\.vars)[^/]*\.example$/.test(path)
   );
 }
 
@@ -162,36 +220,38 @@ function classifyChanges(changes) {
   }
 
   let browser = false;
+  let fullReason;
+  const unclassified = new Set();
   for (const change of changes) {
     if (change.oldMode === "100755" || change.newMode === "100755") {
-      return {
-        browser: true,
-        database: true,
-        reason: `${change.path} is executable or has an executable-mode change`,
-      };
+      fullReason ??= `${change.path} is executable or has an executable-mode change`;
+      continue;
     }
     if (
       change.status === "T" ||
       !nonExecutableRegularOrAbsent(change.oldMode) ||
       !nonExecutableRegularOrAbsent(change.newMode)
     ) {
-      return {
-        browser: true,
-        database: true,
-        reason: `${change.path} has a symlink or file-type change`,
-      };
+      fullReason ??= `${change.path} has a symlink or file-type change`;
+      continue;
     }
+    if (isBaselineOnlyPath(change.path)) continue;
     if (isBrowserOnlyPath(change.path)) {
       browser = true;
       continue;
     }
-    if (!isBaselineOnlyPath(change.path)) {
-      return {
-        browser: true,
-        database: true,
-        reason: `${change.path} requires full evidence because no narrower route is verified; investigate its affected behaviour before convergence, with full verification as the unresolved fallback`,
-      };
+    if (requiresFullEvidence(change.path)) {
+      fullReason ??= `${change.path} requires full evidence`;
+      continue;
     }
+    unclassified.add(change.path);
+  }
+
+  if (unclassified.size > 0) {
+    return { unclassified: [...unclassified].sort() };
+  }
+  if (fullReason) {
+    return { browser: true, database: true, reason: fullReason };
   }
 
   const paths = [...new Set(changes.map(({ path }) => path))].sort();
@@ -340,6 +400,18 @@ export function main(
     : args.includes("--full")
       ? { browser: true, database: true, reason: "explicit --full" }
       : selectVerification(cwd, environment, stdout, stderr);
+  if (selection.unclassified) {
+    const count = selection.unclassified.length;
+    stderr(
+      [
+        `Verification stopped: ${count} changed ${count === 1 ? "path is" : "paths are"} not listed in any verification route.`,
+        ...selection.unclassified,
+        "Without a classification the fallback would select full verification, which runs the database and browser checks.",
+        "Nothing ran. Decide the route either by listing the paths above in scripts/verify.mjs, or by running again with an explicit --full, --baseline, --database or --browser.",
+      ].join("\n"),
+    );
+    return 3;
+  }
   const selectedDatabase = mode === "--browser" ? false : selection.database;
   const selectedBrowser = mode === "--database" ? false : selection.browser;
   const expensive = selectedDatabase || selectedBrowser;
