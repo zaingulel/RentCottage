@@ -52,8 +52,8 @@ research/design that still needs an owner decision. A partial first slice does n
 
 Rank credible work using the owner's current objective and the Project's recorded development rationale, then
 weigh dependency reach, complete user journeys, risk reduction, likely rework from unsettled upstream decisions,
-and external lead times. Explain why the recommendation should come next; issue number, item position and a
-ready label alone are insufficient. Keep hard prerequisites separate from preferred order and parallel capacity.
+and external lead times. Explain why the recommendation should come next; issue number, item position and
+board column alone are insufficient. Keep hard prerequisites separate from preferred order and parallel capacity.
 
 When missing producers, circular acceptance requirements, stale scope or launch-gate gaps invalidate the next
 work choice, recommend a concrete board repair first: name the affected issues, evidence, proposed scope/edge
@@ -80,7 +80,9 @@ switch, clean, stash, or pull the primary checkout to start a job. Safe local-ma
 reconciliation above. If the runtime already created the approved job
 worktree, verify its branch and exact base against that newly recorded commit instead of creating another.
 
-Assign one writer. Move the issue only under existing tracker authority. Before dependent expensive work, verify
+Assign one writer. Move the card to `In progress` with `node scripts/board-move.mjs <issue> "In progress"` and
+claim it with `gh issue edit <issue> --add-assignee @me`; active work with no assignee is reported as drift.
+Before dependent expensive work, verify
 the current execution lane has the required Docker access, browser availability, and log-write location through
 existing narrowly scoped permission mechanisms. Consult active owners and identify conflicting database instances,
 ports, shared paths, and heavy-verification capacity; defer only conflicting checks. Before a launch, record its

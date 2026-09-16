@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -275,6 +276,15 @@ describe("repository verification command", () => {
   it("keeps both verification groups in their approved order", () => {
     expect(baselineVerificationSteps).toEqual(requiredBaselineSteps);
     expect(expensiveVerificationSteps).toEqual(requiredExpensiveSteps);
+  });
+
+  it("chains the node:test suite into the test step the baseline runs", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+
+    expect(packageJson.scripts.test).toBe("vitest run && npm run test:scripts");
+    expect(packageJson.scripts["test:scripts"]).toBe(
+      'node --test "scripts/lib/*.test.mjs"',
+    );
   });
 
   it("runs every check with safe test bindings when full is explicit", () => {

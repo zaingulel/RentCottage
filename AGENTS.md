@@ -52,13 +52,15 @@ before editing. Plans name affected areas, expected behaviour, verification, mig
    evidence. Name any proposed external review explicitly, including Greptile access to the private pull-request
    diff when selected, and each proposed delivery action through ready, merge and cleanup.
    The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
-   hosted settings, and tracker mutation require that authority.
+   hosted settings, and issue reconciliation require that authority. Moving the job's own card along the Status
+   columns as the job advances rides with the work selection.
    A current approval carries its named actions through merge and cleanup; confirmed reviewer-credit
    exhaustion under `docs/agents/delivery.md` does not require approval of those actions again.
 
 Local commits on an approved job branch are green-slice construction state and need no separate approval.
 Destructive actions keep exact-target approval, except the merged-job branch and worktree removal `closeout`
-performs under the authorisation that already covered the merge.
+performs under the authorisation that already covered the merge, and the verifier-only worktree its local-main
+update creates and removes within one run.
 
 ## Native job lifecycle
 
@@ -68,8 +70,9 @@ performs under the authorisation that already covered the merge.
   stashed, cleaned or used as a prerequisite. Create `job/<issue>` directly from freshly fetched `origin/main` in
   one native worktree.
 - The root checkout is the integration checkout: it stays on `main`, and nothing is edited, branched, or
-  committed there; the git guard refuses the branching and committing half. Each job gets one worktree beside it
-  and the session starts inside that directory. Never a worktree inside a worktree.
+  committed there; the Claude Code git guard refuses the branching and committing half, and a Codex session
+  follows the rule as prose. Each job gets one worktree beside it and the session starts inside that directory.
+  Never a worktree inside a worktree.
 - One writer owns the job worktree. Other agents are read-only unless the coordinator explicitly hands the sole
   writer role to one builder and waits for it to stop.
 - Parallel tickets require demonstrably separate behaviour, files, migrations, providers/database seams, tests,

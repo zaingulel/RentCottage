@@ -95,8 +95,8 @@ pull-request references travel with each item, and every rule is answered off th
 error, malformed JSON, or a zero-item read exits non-zero rather than printing an empty "nothing to pick" and
 returning success. Drift also exits non-zero after printing the complete report.
 
-Writes go through two commands, never a raw `gh project item-add` or `item-edit`, which leave a card with no
-Status and no `Workstream`:
+Writes go through two commands, never a raw `gh project item-add`, which leaves a card with no Status and no
+`Workstream`, or a raw `item-edit`, which skips the read-back:
 
 | Command | Use |
 |---|---|
@@ -112,9 +112,9 @@ The scan reports these findings. An advisory row informs the next pick; every ot
 | 3 | open native blockers on a card outside `Backlog` and `Done` | advisory |
 | 4 | an in-flight card with no assignee | advisory |
 | 5 | a merged officially closing pull request over an open issue | gate |
-| 6 | an in-flight card with no closing pull request at all, merged or draft | advisory |
+| 6 | an in-flight card with no closing pull request at all, merged or draft; `Awaiting push` and epics are exempt | advisory |
 | 7 | an open epic whose every child issue is closed | gate |
-| 8 | an epic claimed in-flight with no children | gate |
+| 8 | an epic claimed in-flight with no children | advisory |
 | 9 | cards missing Status or `Workstream`; a mass outage summarises to one field-schema line instead of per-card blame | gate |
 
 Rules 3 and 5 read GitHub's native dependencies and officially closing references only. A pull request that merely
@@ -128,6 +128,9 @@ scan can tell a finished wrapper from an unstarted one.
 During `/resume`, overlap this board read with independent Git, open pull-request, and active-runtime ownership
 reads; inspect every result before shortlisting. Reuse board facts instead of fetching each card again.
 
+## Candidate fetch
+
+For up to three shortlisted issues, send one aliased `gh api graphql` query under `repository(owner: "zaingulel", name: "RentCottage")`, using an alias per `issue(number: N)`. Select `id number state body repository { nameWithOwner }` and `comments(first:100) { totalCount nodes { author { login } authorAssociation body createdAt url } pageInfo { hasNextPage endCursor } }`. Recheck each issue identity and open state against the board, require every alias, and reject GraphQL errors or malformed responses. Preserve comment attribution; a null author is deleted/unknown, not an owner decision. Require comment count to match returned nodes and `hasNextPage` to be false before recommending that candidate. If incomplete, explicitly fetch the missing comment pages with cursors and confirm completeness, or exclude that candidate and report the gap. Retry only the named failed source.
 
 ## Tracker changes
 

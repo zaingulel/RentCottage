@@ -17,6 +17,7 @@ Use this only for genuinely unfinished work. Finished work proceeds to delivery 
 4. If outward delivery is already authorised, push the exact branch and create or update its draft pull request.
    Otherwise present the filled body and request delivery approval; a local commit is not a substitute for a
    draft pull request.
-5. Leave the worktree registered and untouched. Keep the issue startable under the tracker procedure.
+5. Move the card to `Ready` with `node scripts/board-move.mjs <issue> Ready`, so the next session can pick it.
+6. Leave the worktree registered and untouched.
 
 Report the branch, commit, worktree, draft pull request when created, and one-line next step.
