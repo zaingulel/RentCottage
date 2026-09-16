@@ -62,7 +62,9 @@ binding.
 
 The board is GitHub Project 4. [`scripts/lib/board-config.mjs`](../../scripts/lib/board-config.mjs) is the single
 home for its strings: the project identity, the Status columns, the columns work is picked from, the terminal
-column, and the `Workstream` routing field with its approved options. A rename or a new option is one edit there.
+column, and the `Workstream` routing field with its approved options. A rename or a new option is one edit
+there, except that renaming `Backlog` or `Done` also means editing the two Project automations below that
+name them.
 
 - Status columns, in board order: `Backlog`, `Ready`, `In progress`, `Awaiting push`, `In review`, `Done`.
 - `Awaiting push` holds a card whose filled pull-request body is waiting for delivery approval; it waits on the
@@ -74,6 +76,31 @@ column, and the `Workstream` routing field with its approved options. A rename o
 - A closed issue belongs in `Done` and an open issue does not.
 - Active Codex task ownership is checked by the coordinator before moving an item into an in-flight column. The
   board verifier does not infer it.
+
+The built-in Project automations below are enabled and match Flowgauge's; `Auto-close issue`, `Pull request linked
+to issue` and `Pull request merged` stay disabled. They have no create or update API, only
+`deleteProjectV2Workflow`, so the owner sets them in the Projects UI. The `workflows` GraphQL field reads back
+each automation's name and enabled state; the triggers and effects below are readable only on the workflow's own
+page in that UI.
+
+| Automation | Trigger | Effect |
+|---|---|---|
+| `Auto-add sub-issues to project` | an item in the project gains sub-issues | adds them to the project |
+| `Auto-add to project` | a `RentCottage` item matching `is:issue is:open` is created or updated | adds it to the project |
+| `Auto-archive items` | an item matching `is:issue,pr is:closed updated:<@today-2w` | archives the card |
+| `Item added to project` | an issue or pull request is added | sets Status `Backlog` |
+| `Item closed` | an issue or pull request closes | sets Status `Done` |
+
+Three consequences the scan and the skills depend on:
+
+- `Item added to project` sets Status alone, so an auto-added card carries no `Workstream` and rule 9 reports it
+  as drift until one is set. Auto-add puts an issue on the board; it does not do `board-add.mjs`'s whole job.
+- `Item closed` writes `Done`, but `closeout` moves the card explicitly anyway, so a silently failed `Item closed`
+  is invisible rather than drift. A failed `Item added to project` is caught, because rule 9 sees the absent
+  Status.
+- An archived card leaves the `items` connection the reader walks, so the scan stops seeing it. Rule 1 in
+  particular cannot flag a closed card left outside `Done` once that card goes two weeks without an update. The
+  workflow's own page states that the `updated` operator makes the archive run every 12 hours.
 
 ## Board intake
 

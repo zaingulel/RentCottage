@@ -4,6 +4,9 @@
 // These values are facts about one live GitHub Projects board, not logic: an owner
 // rename, a project move, a Status rename or a routing-option change is a single
 // edit here rather than a hunt through five modules that each re-declared them.
+// One exception: renaming `Backlog` or `Done` also means editing the Project
+// automation that names it, which has no update API. The rule lives in
+// docs/agents/issue-tracker.md.
 // A second, differently-valued copy elsewhere is the bug this file exists to make
 // impossible. Every other toolkit file is byte-identical to Flowgauge's, so a fix
 // lands in both repositories as the same change; this file is the one that differs.
