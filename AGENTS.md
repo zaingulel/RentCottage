@@ -12,8 +12,9 @@ Skills own session steps. Product code does not carry a second workflow state ma
 | Agent seats | `.claude/agents/*.md` | `.codex/agents/*.toml` |
 | Isolated job | native Git worktree | native Git or Codex-managed worktree |
 
-Start or continue work with `resume`, park unfinished work with `handoff`, and run `closeout` after merge. Use
-`closeout`'s process reconciliation before normal completion or handoff and after a recoverable interruption.
+Start or continue work with `resume`, park unfinished work with `handoff`, and run `closeout` after merge. Run
+[`docs/agents/process-reconciliation.md`](docs/agents/process-reconciliation.md) before normal completion or
+handoff and after a recoverable interruption.
 
 ## Sources of truth
 
@@ -49,14 +50,17 @@ before editing. Plans name affected areas, expected behaviour, verification, mig
    or risk requires owner approval.
 2. **Delivery approval:** the owner reviews one filled pull-request body containing the finished bundle and local
    evidence. Name any proposed external review explicitly, including Greptile access to the private pull-request
-   diff when selected, and each proposed delivery action through ready, merge and exact cleanup.
+   diff when selected, and each proposed delivery action through ready, merge and cleanup.
    The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
-   hosted settings, and tracker mutation require that authority.
-   A current approval carries its named actions through merge and exact cleanup; confirmed reviewer-credit
+   hosted settings, and issue reconciliation require that authority. Moving the job's own card between Status
+   columns in either direction, and claiming its issue with an assignee, ride with the work selection.
+   A current approval carries its named actions through merge and cleanup; confirmed reviewer-credit
    exhaustion under `docs/agents/delivery.md` does not require approval of those actions again.
 
 Local commits on an approved job branch are green-slice construction state and need no separate approval.
-Destructive actions keep exact-target approval.
+Destructive actions keep exact-target approval, except the merged-job branch and worktree removal `closeout`
+performs under the authorisation that already covered the merge, and the verifier-only worktree its local-main
+update creates and removes within one run.
 
 ## Native job lifecycle
 
@@ -65,14 +69,19 @@ Destructive actions keep exact-target approval.
   stays on `main`; any topic, dirty, active, divergent or uncertain checkout is preserved and never switched,
   stashed, cleaned or used as a prerequisite. Create `job/<issue>` directly from freshly fetched `origin/main` in
   one native worktree.
+- The root checkout is the integration checkout: it stays on `main`, and nothing is edited, branched, or
+  committed there; the Claude Code git guard refuses the branching and committing half, and a Codex session
+  follows the rule as prose. Each job gets one worktree beside it and the session starts inside that directory.
+  Never a worktree inside a worktree.
 - One writer owns the job worktree. Other agents are read-only unless the coordinator explicitly hands the sole
   writer role to one builder and waits for it to stop.
 - Parallel tickets require demonstrably separate behaviour, files, migrations, providers/database seams, tests,
   and verification capacity. Separate worktrees alone do not prove independence.
 - Commit every coherent green slice locally. A draft pull request is the durable handoff for unfinished work and
   its `Not done` section names the next step. Leave its worktree in place.
-- `closeout` removes only an exact clean merged job worktree after the writer has stopped. Primary, current,
-  dirty, active, detached, foreign, or uncertain worktrees are retained and reported.
+- `closeout` runs the moment the merge lands, under the authorisation that covered it. It confirms the merge,
+  reconciles the issues the approved body names, moves their cards to Done, then deletes the job branch and
+  worktree and prunes.
 
 There is no allocator, synchronizer, lock service, sweeper, checkpoint, release wrapper, or worktree registry
 beyond Git's own inventory.
@@ -81,7 +90,7 @@ beyond Git's own inventory.
 
 The coordinator owns scope, integration, access and shared-resource readiness, verification, progress reporting,
 process-cleanup accountability, and owner communication. Builders prepare focused evidence and own the processes
-they start. `resume` owns launch readiness, `handoff` owns retained-process records, `closeout` owns process
+they start. `resume` owns launch readiness, `handoff` owns retained-process records, `closeout` owns post-merge
 reconciliation, and the testing strategy owns test preparation and retry reporting. For Codex, select the seat by
 its role and risk, then explicitly pass the model and reasoning effort from `.codex/agents/<seat>.toml`; these
 repository definitions take precedence over machine-wide model routing. Use the smallest useful team:

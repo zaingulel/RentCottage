@@ -37,7 +37,8 @@ Follow this bounded sequence after approval:
    `CURRENT_PR_HEAD`. Fetch `origin/main` and require it to be an ancestor of that head before starting hosted
    checks. If the branch is behind, follow the same-outcome rebase and changed-head verification/review procedure
    below before proceeding; auto-merge does not update a behind branch for us.
-2. Push with `git push --set-upstream origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`. Confirm the local branch now tracks the exact pull-request head remote ref; this retained remote-tracking ref supports ordinary branch deletion after a squash merge. If it later disappears, `closeout` owns the verified exact-head fallback. Create or update a draft pull request against `main` using the approved body. Re-read `state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels`; require the same repository, intended branch, draft state, base `main`, exact `CURRENT_PR_HEAD`, and no external-review label yet.
+2. Push with `git push --set-upstream origin refs/heads/<LOCAL_TOPIC_BRANCH>:refs/heads/<PR_HEAD_BRANCH>`. Confirm the local branch now tracks the exact pull-request head remote ref; this retained remote-tracking ref supports ordinary branch deletion after a squash merge. Create or update a draft pull request against `main` using the approved body. Move the card to `In review` with
+   `node scripts/board-move.mjs <issue> "In review"`. Re-read `state,isDraft,headRefOid,headRefName,headRepositoryOwner,isCrossRepository,baseRefName,labels`; require the same repository, intended branch, draft state, base `main`, exact `CURRENT_PR_HEAD`, and no external-review label yet.
 3. Assess the complete pull-request diff under [Selective Greptile review](#selective-greptile-review). Record
    `Greptile needed` or `Greptile skipped` and one sentence why in the delivery packet. A skip needs no credit lookup,
    label, or request and proceeds to step 4. When needed, check [current allowance](#current-allowance). Confirmed
@@ -111,7 +112,7 @@ the observed state and time and continue bounded observations during the approve
 necessary missing fact or new decision; elapsed waiting alone does not require permission to continue.
 Neither case proves exhaustion or a clean review, and neither reopens approval of the named delivery actions.
 Keep the original approval and its covered packet available when resuming; verify current ownership,
-head, required evidence, and exact cleanup targets before continuing its remaining actions.
+head, required evidence, and cleanup targets before continuing its remaining actions.
 
 ### Greptile attempt states
 
@@ -128,7 +129,7 @@ Provider unavailability or exhausted allowance is reportable rather than a merge
 
 Re-read the pull request until GitHub reports the exact approved head merged. If merge is pending, blocked, changed, or unknown, retain the worktree and report the state.
 
-After authoritative merge evidence, reconcile only the issue and Project entries named by the approved pull-request body, then run `npm run verify:board`. Unavailable or failing board evidence stops closeout. Run `closeout` for the exact approved job worktree and branch; it owns removal proofs, exact-ref operations, refusal rules, and safe local-main updates. Missed cleanup may reuse existing exact-target closeout approval; historical targets without it require a separate owner decision.
+After authoritative merge evidence, run `closeout`. It confirms the merge and the issues the approved body names, advances local `main`, then from that verifier checkout moves their cards to Done with `scripts/board-move.mjs` and checks the board with `node scripts/board.mjs --closeout`, and only then removes the job branch and worktree. `git branch -d` passes while the local remote-tracking ref survives GitHub's own branch deletion at merge; after a pruning fetch or `git push origin --delete` it refuses the squash-merged branch, and the only remedy is `-D` after confirming the pull request reports the branch tip as its merged head. Unavailable or failing board evidence stops closeout. Missed cleanup runs the same procedure in a later session.
 
 Preview or production deployment is a separate owner-approved operation under `.github/workflows/preview.yml`; ordinary code delivery does not imply deployment.
 
