@@ -75,21 +75,31 @@ column, and the `Workstream` routing field with its approved options. A rename o
 - Active Codex task ownership is checked by the coordinator before moving an item into an in-flight column. The
   board verifier does not infer it.
 
-Four built-in Project automations are enabled, matching Flowgauge. They have no create or update API, only
-`deleteProjectV2Workflow`, so they are set in the Projects UI by the owner and read back with the `workflows`
-GraphQL field:
+The board's built-in Project automations match Flowgauge's. They have no create or update API, only
+`deleteProjectV2Workflow`, so the owner sets them in the Projects UI. The `workflows` GraphQL field reads back
+each automation's name and enabled state; the trigger and effect below are readable only on the workflow's own
+page in that UI.
 
-| Automation | Configuration |
-|---|---|
-| `Auto-add to project` | repository `RentCottage`, filter `is:issue is:open` |
-| `Auto-archive items` | filter `is:issue,pr is:closed updated:<@today-2w` |
-| `Item added to project` | issue, pull request, sets Status `Backlog` |
-| `Item closed` | issue, pull request, sets Status `Done` |
+| Automation | Trigger | Effect |
+|---|---|---|
+| `Auto-add sub-issues to project` | an item in the project gains sub-issues | adds them to the project |
+| `Auto-add to project` | a `RentCottage` item matching `is:issue is:open` is created or updated | adds it to the project |
+| `Auto-archive items` | an item matching `is:issue,pr is:closed updated:<@today-2w`, rechecked every 12 hours | archives the card |
+| `Item added to project` | an issue or pull request is added | sets Status `Backlog` |
+| `Item closed` | an issue or pull request closes | sets Status `Done` |
 
-`Auto-add sub-issues to project` is enabled alongside them. `Item added to project` is why a new issue reaches the
-board in `Backlog` without `board-add.mjs`, and `Item closed` is why a closed issue reaches `Done`. Neither
-replaces an explicit move: `closeout` still runs `board-move.mjs` for every closed issue, so a silently failed
-automation surfaces as drift instead of as nothing.
+Three consequences the scan and the skills depend on:
+
+- `Item added to project` sets Status alone, so an auto-added card carries no `Workstream` and rule 9 reports it
+  as drift until one is set. Auto-add puts an issue on the board; it does not do `board-add.mjs`'s whole job.
+- `Item closed` writes `Done`, but `closeout` moves the card explicitly anyway, so a silently failed `Item closed`
+  is invisible rather than drift. A failed `Item added to project` is caught, because rule 9 sees the absent
+  Status.
+- An archived card leaves the `items` connection the reader walks, so the scan stops seeing it. Rule 1 in
+  particular cannot flag a closed card left outside `Done` once that card ages past two weeks.
+
+`Backlog` and `Done` are named inside `Item added to project` and `Item closed`, so renaming either Status option
+is not the single `board-config.mjs` edit described above: both automations and this table change with it.
 
 ## Board intake
 
