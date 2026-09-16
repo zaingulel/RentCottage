@@ -1,542 +1,887 @@
+// board.test.mjs — mutation-proof unit tests for the board read+filter+format logic.
+// Run: node --test scripts/lib/   (or `npm run test:scripts`)
+//
+// Guards the /resume Step-1 failure mode: ad-hoc board parsing broke on shell
+// quoting and silently mis-filtered. These pin the contract the CLI depends on —
+// pickable = Backlog+Ready only, one fused read that carries every field the board
+// rules judge a card on, fail-loud with a remedy on every malformed or truncated
+// response, and the routing view carrying #, status, title and labels.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { leanBoardPage, leanNode } from './board-fixtures.mjs';
 import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+  BOARD_OWNER,
+  BOARD_PROJECT_NUMBER,
+  BOARD_REPOSITORY,
+  PICKABLE_STATUSES,
+  ROUTING_FIELD,
+  ROUTING_OPTIONS,
+  STATUS_OPTIONS,
+} from './board-config.mjs';
+import {
+  fetchBoard,
+  boardQuery,
+  parseBoardArgs,
+  parseBoardPage,
+  pickable,
+  isContentUnresolved,
+  normalizeItem,
+  sortForDisplay,
+  formatRow,
+  formatList,
+  groupByRouting,
+  formatGrouped,
+} from './board.mjs';
 
-import { describe, expect, it, vi } from "vitest";
+// Routing values drawn from board-config so the same test judges either board. A board
+// needs at least three options for the ordering tests below; both repositories have them.
+const [ROUTING_A, ROUTING_B, ROUTING_C] = ROUTING_OPTIONS;
+// Deliberately not an option on any board. Sorts alphabetically before most option
+// names, so a grouping that fell back to alphabetical order would flip the head of the
+// lists below instead of keeping the unrecognised value last.
+const UNKNOWN_ROUTING = 'Brand';
 
-import { classifyBoard, fetchBoard, formatBoard } from "./board.mjs";
+// A representative board spanning pickable + non-pickable columns.
+const BOARD = {
+  items: [
+    { status: 'Ready', title: 'Funnel reader CLI', routing: ROUTING_B,
+      labels: ['type:task', 'autonomy:autonomous'], content: { number: 266 } },
+    { status: 'Backlog', title: 'Review batch 5',
+      labels: ['tripwire', 'plan-first'], content: { number: 264 } },
+    { status: 'Done', title: 'Already done', labels: [], content: { number: 293 } },
+    { status: 'In review', title: 'Mid flight', content: { number: 296 } },
+  ],
+};
 
-function connection(nodes, overrides = {}) {
-  return {
-    totalCount: nodes.length,
-    nodes,
-    pageInfo: { hasNextPage: false, endCursor: null },
-    ...overrides,
-  };
-}
+test('pickable keeps ONLY Backlog + Ready — excludes Done / In review', () => {
+  const nums = pickable(BOARD.items).map((i) => i.content.number).sort();
+  assert.deepEqual(nums, [264, 266]);
+  // Mutation guard: a Done item must never be pickable.
+  assert.equal(pickable(BOARD.items).some((i) => i.status === 'Done'), false);
+});
 
-function fieldValue(field, name) {
-  return { name, field: { name: field } };
-}
+test('PICKABLE_STATUSES is exactly the two draw columns', () => {
+  assert.deepEqual([...PICKABLE_STATUSES].sort(), ['Backlog', 'Ready']);
+});
 
-function issueItem({
-  number = 147,
-  title = "Fail fast and retry access verification independently",
-  state = "OPEN",
-  labels = ["ready-for-agent"],
-  assignees = [],
-  blockers = [],
-  status = "Backlog",
-  area = "Foundation & quality",
-  children = { total: 0, completed: 0 },
-  prs = [],
-} = {}) {
-  return {
-    id: `item-${number}`,
-    type: "ISSUE",
-    isArchived: false,
-    content: {
-      __typename: "Issue",
-      id: `issue-${number}`,
-      number,
-      title,
-      state,
-      repository: { nameWithOwner: "zaingulel/RentCottage" },
-      labels: connection(labels.map((name) => ({ name }))),
-      assignees: connection(assignees.map((login) => ({ login }))),
-      subIssuesSummary: children,
-      closedByPullRequestsReferences: connection(
-        prs.map((state, index) => ({
-          id: `pr-${index + 1}`,
-          number: index + 1,
-          state,
-          merged: state === "MERGED",
-          repository: { nameWithOwner: "zaingulel/RentCottage" },
-        })),
-      ),
-      blockedBy: connection(
-        blockers.map(({ number: blockerNumber, state: blockerState }) => ({
-          id: `issue-${blockerNumber}`,
-          number: blockerNumber,
-          state: blockerState,
-          repository: { nameWithOwner: "zaingulel/RentCottage" },
-        })),
-      ),
-    },
-    fieldValues: connection([
-      fieldValue("Status", status),
-      fieldValue("Area", area),
-    ]),
-  };
-}
+test('parseBoardArgs: the default read, each selection, and --closeout', () => {
+  assert.deepEqual(parseBoardArgs([]), { all: false, status: null, json: false, closeout: false });
+  assert.deepEqual(parseBoardArgs(['--all', '--json']), { all: true, status: null, json: true, closeout: false });
+  assert.deepEqual(parseBoardArgs(['--status=Ready']), { all: false, status: 'Ready', json: false, closeout: false });
+  assert.deepEqual(parseBoardArgs(['--closeout']), { all: false, status: null, json: false, closeout: true });
+});
 
-function projectPage(
-  items,
-  { totalCount = items.length, hasNextPage = false, endCursor = null } = {},
-) {
-  return JSON.stringify({
-    data: {
-      user: {
-        login: "zaingulel",
-        projectV2: {
-          id: "project-4",
-          number: 4,
-          title: "RentCottage",
-          closed: false,
-          owner: { login: "zaingulel" },
-          fields: connection([
-            {
-              id: "status-field",
-              name: "Status",
-              dataType: "SINGLE_SELECT",
-              options: [
-                "Backlog",
-                "Ready",
-                "In progress",
-                "In review",
-                "Done",
-              ].map((name) => ({ id: `${name}-id`, name })),
-            },
-            {
-              id: "area-field",
-              name: "Area",
-              dataType: "SINGLE_SELECT",
-              options: [
-                "Foundation & quality",
-                "Customer marketplace",
-                "Owner backoffice",
-                "Booking lifecycle",
-                "Administration & governance",
-              ].map((name) => ({ id: `${name}-id`, name })),
-            },
-          ]),
-          items: connection(items, {
-            totalCount,
-            pageInfo: { hasNextPage, endCursor },
-          }),
-        },
-      },
-    },
-  });
-}
+// #598's defect class: this command's exit code is a proof contract, so a typo must never
+// be discarded into a read that then certifies the board clean — nor into a metered read
+// that answers a question the operator did not ask.
+test('parseBoardArgs: fails loud on an unrecognised argument or a valueless --status=', () => {
+  for (const bad of ['--closout', '-closeout', '--closeout=true', '--status=', '--all=yes', 'Ready']) {
+    assert.throws(
+      () => parseBoardArgs([bad]),
+      (err) => err.message.includes(bad) && err.message.includes('usage: node scripts/board.mjs'),
+      bad,
+    );
+  }
+  assert.throws(() => parseBoardArgs(['--json', '--verbose']), /--verbose/);
+});
 
-function runBoardCommand(args, { ghExit = 0, ghOutput = "" } = {}) {
-  const directory = mkdtempSync(resolve(tmpdir(), "rentcottage-board-test-"));
-  const ghPath = resolve(directory, "gh");
-  const callsPath = resolve(directory, "gh-calls");
-  writeFileSync(
-    ghPath,
-    `#!/usr/bin/env bash
-set -u
-printf x >> "$BOARD_GH_CALLS"
-printf '%s' "$BOARD_GH_OUTPUT"
-exit "$BOARD_GH_EXIT"
-`,
+test('parseBoardArgs: --closeout is exclusive, --all and --status= are exclusive, and --status= may not repeat', () => {
+  // --closeout prints the scan alone, so any companion flag would promise output it never
+  // emits. Every pairing, so no single flag can slip through beside the proof gate.
+  for (const other of ['--all', '--json', '--status=Ready']) {
+    assert.throws(() => parseBoardArgs(['--closeout', other]), /--closeout takes no other argument/, other);
+    assert.throws(() => parseBoardArgs([other, '--closeout']), /--closeout takes no other argument/, other);
+  }
+  // --all with --status= selects by --all but would label the header with the status.
+  assert.throws(() => parseBoardArgs(['--all', '--status=Ready']), /--all and --status=Ready are exclusive/);
+  // A repeat silently kept the FIRST, so the answer was never the question asked.
+  assert.throws(
+    () => parseBoardArgs(['--status=Ready', '--status=Done']),
+    /only one --status= filter is allowed, got --status=Ready --status=Done/,
   );
-  chmodSync(ghPath, 0o755);
+});
 
-  const result = spawnSync(
-    process.execPath,
-    [resolve("scripts/board.mjs"), ...args],
+// STATUS_OPTIONS is the board's whole column vocabulary, so a value outside it selects
+// nothing — and the command would spend a metered read to report `Rady: 0 of 171
+// item(s)`, an answer to a question nobody asked (the same #598 defect class the
+// unrecognised-argument guard covers). Exact, never fuzzy: a near-miss the parser
+// "corrected" would answer a different question just as silently.
+test('parseBoardArgs: rejects a --status= value that is not a board column, and accepts every one that is', () => {
+  assert.throws(
+    () => parseBoardArgs(['--status=Rady']),
+    (err) => err.message.includes('--status=Rady is not a board column')
+      && STATUS_OPTIONS.every((column) => err.message.includes(column))
+      && err.message.includes('usage: node scripts/board.mjs'),
+  );
+  // Case is part of the name: the board has no lower-case column.
+  assert.throws(() => parseBoardArgs([`--status=${STATUS_OPTIONS[1].toLowerCase()}`]), /is not a board column/);
+  for (const column of STATUS_OPTIONS) {
+    assert.deepEqual(
+      parseBoardArgs([`--status=${column}`]),
+      { all: false, status: column, json: false, closeout: false },
+      column,
+    );
+  }
+});
+
+// #461: boardQuery/parseBoardPage replaced `gh project item-list` (203 GraphQL
+// points/read) with a ~2-points-per-page hand-rolled query. These values come from a
+// REAL captured page-1 response (2026-07-20, project 2). The shared builder supplies
+// the current connection counts and queried typenames; the empty `{}` unmatched-fragment
+// field values remain captured exactly, and so do the Model/Effort values the board
+// still carries and this reader deliberately ignores.
+const REAL_ISSUE_NODE = leanNode({
+  id: 'PVTI_lAHOA50uGs4BcfoOzgx01fY',
+  content: {
+    __typename: 'Issue',
+    number: 319,
+    title: 'Move refresh() and upsertChart into their own source pieces',
+    labels: [],
+  },
+  fieldValues: [
+    {},
+    { text: 'Move refresh() and upsertChart into their own source pieces', field: { name: 'Title' } },
+    { name: 'Done', field: { name: 'Status' } },
+    { name: ROUTING_B, field: { name: ROUTING_FIELD } },
+    { name: 'Sonnet 5', field: { name: 'Model' } },
+  ],
+});
+const REAL_LABELLED_NODE = leanNode({
+  id: 'PVTI_lAHOA50uGs4BcfoOzgxw3wE',
+  content: {
+    __typename: 'Issue',
+    number: 263,
+    title: 'Review batch 4 — interaction/desktop breaks',
+    labels: ['type:feature', 'area:ui', 'area:desktop', 'autonomy:supervised'],
+    assignees: [BOARD_OWNER],
+    blockers: [{ number: 261, state: 'OPEN' }, { number: 262, state: 'CLOSED' }],
+    closingPullRequests: [{ number: 1133, merged: true }],
+    subIssuesSummary: { total: 2, completed: 1 },
+  },
+  fieldValues: [
+    {},
+    {},
+    { text: 'Review batch 4 — interaction/desktop breaks', field: { name: 'Title' } },
+    { name: 'Done', field: { name: 'Status' } },
+    { name: 'Opus 4.8', field: { name: 'Model' } },
+    { name: 'high', field: { name: 'Effort' } },
+    { name: ROUTING_B, field: { name: ROUTING_FIELD } },
+  ],
+});
+// Captured before the query asked for `content { __typename }`. The typename is restored here
+// because a draft is numberless BY DESIGN: without it isContentUnresolved() would call this fixture an
+// unresolved read, so the canonical draft node would silently exercise the lagging-read path instead (#572).
+const REAL_DRAFT_NODE = leanNode({
+  id: 'PVTI_lAHOA50uGs4BcfoOzgx0mxg',
+  content: { __typename: 'DraftIssue' },
+  fieldValues: [
+    { text: 'Trial Blacksmith CI runners (free 3k min/mo) — maybe for a future project', field: { name: 'Title' } },
+    { name: 'Backlog', field: { name: 'Status' } },
+    { name: ROUTING_C, field: { name: ROUTING_FIELD } },
+  ],
+});
+const BOARD_PAGE = leanBoardPage(
+  [REAL_ISSUE_NODE, REAL_LABELLED_NODE, REAL_DRAFT_NODE],
+  {
+    pageInfo: {
+      hasNextPage: true,
+      endCursor: 'Y3Vyc29yOnYyOpK5MDAwMDAwMDAuMDA5MzQ1Nzk0MzkyNTIzM84Mz1dk',
+    },
+  },
+);
+
+// #1155: `gh api graphql --paginate` walks the pages itself, on exactly this contract —
+// a declared `$endCursor` variable fed to the items connection, and ONE pageInfo it can
+// find. A second pageInfo (say on labels) would have gh page the wrong connection.
+test('boardQuery declares the $endCursor variable gh --paginate walks on, and carries exactly one pageInfo', () => {
+  const q = boardQuery();
+  assert.match(q, /^query\(\$endCursor: String\) \{/);
+  assert.match(q, /items\(first:100, after:\$endCursor\)/);
+  assert.equal(q.split('pageInfo').length - 1, 1);
+  assert.match(q, /pageInfo \{ hasNextPage endCursor \}/);
+});
+
+test('boardQuery asks for every field the fused read carries, each capped sub-list with its totalCount', () => {
+  const q = boardQuery();
+  // Drop state or the summary and the epic passes fail the scan loud instead of two gh
+  // calls per epic quietly coming back (#1154).
+  assert.match(q, /\.\.\. on Issue \{ number title state repository \{ nameWithOwner \} subIssuesSummary \{ total completed \}/);
+  assert.match(q, /labels\(first:20\) \{ totalCount nodes \{ name \} \}/);
+  assert.match(q, /assignees\(first:20\) \{ totalCount nodes \{ login \} \}/);
+  assert.match(q, /blockedBy\(first:20\) \{ totalCount nodes \{ number state \} \}/);
+  assert.match(q, /closedByPullRequestsReferences\(first:20\) \{ totalCount nodes \{ number merged \} \}/);
+  assert.match(q, /items\(first:100, after:\$endCursor\) \{ totalCount/);
+  assert.match(q, /fieldValues\(first:20\) \{ totalCount/);
+});
+
+test('boardQuery asks for the project identity and field schema every page is checked against', () => {
+  const q = boardQuery();
+  assert.match(q, new RegExp(`user\\(login:"${BOARD_OWNER}"\\) \\{ login`));
+  assert.match(q, new RegExp(`projectV2\\(number:${BOARD_PROJECT_NUMBER}\\) \\{ id number closed`));
+  assert.match(q, /fields\(first:50\) \{ totalCount nodes \{ \.\.\. on ProjectV2FieldCommon \{ name dataType \}/);
+  assert.match(q, /\.\.\. on ProjectV2SingleSelectField \{ options \{ name \} \}/);
+});
+
+// #1155: the whole walk is ONE gh process. The executor is called once, with
+// `--paginate --slurp` and the $endCursor query, and hands back the slurped page
+// array; every walk check the page-by-page loop used to make now runs over that array.
+test('fetchBoard walks the slurped pages of one gh call in order and fails loud on malformed or failed reads', () => {
+  const firstPage = structuredClone(BOARD_PAGE);
+  firstPage.data.user.projectV2.items.totalCount = 2;
+  firstPage.data.user.projectV2.items.nodes = [REAL_ISSUE_NODE];
+  firstPage.data.user.projectV2.items.pageInfo = { hasNextPage: true, endCursor: 'page-one-cursor' };
+  const secondPage = structuredClone(BOARD_PAGE);
+  secondPage.data.user.projectV2.items.totalCount = 2;
+  secondPage.data.user.projectV2.items.nodes = [REAL_DRAFT_NODE];
+  secondPage.data.user.projectV2.items.pageInfo = { hasNextPage: false, endCursor: null };
+  const calls = [];
+  const items = fetchBoard((args) => {
+    calls.push(args);
+    return JSON.stringify([firstPage, secondPage]);
+  });
+
+  assert.deepEqual(items, [
     {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `${directory}:${process.env.PATH ?? ""}`,
-        BOARD_GH_CALLS: callsPath,
-        BOARD_GH_EXIT: String(ghExit),
-        BOARD_GH_OUTPUT: ghOutput,
-      },
+      id: 'PVTI_lAHOA50uGs4BcfoOzgx01fY', status: 'Done',
+      title: 'Move refresh() and upsertChart into their own source pieces',
+      routing: ROUTING_B, labels: [], assignees: [], blockers: [], closingPullRequests: [],
+      content: { __typename: 'Issue', number: 319, state: 'OPEN', subIssuesSummary: { total: 0, completed: 0 } },
     },
+    {
+      id: 'PVTI_lAHOA50uGs4BcfoOzgx0mxg', status: 'Backlog',
+      title: 'Trial Blacksmith CI runners (free 3k min/mo) — maybe for a future project',
+      routing: ROUTING_C, labels: [], assignees: [], blockers: [], closingPullRequests: [],
+      content: { __typename: 'DraftIssue' },
+    },
+  ]);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(0, 5), ['api', 'graphql', '--paginate', '--slurp', '-f']);
+  assert.equal(calls[0][5], `query=${boardQuery()}`);
+
+  // Unslurped output: a bare page object (what a one-page board yields without --slurp)
+  // or an empty walk is never a board.
+  assert.throws(() => fetchBoard(() => JSON.stringify(firstPage)), /--slurp/);
+  assert.throws(() => fetchBoard(() => '[]'), /--slurp/);
+  assert.throws(() => fetchBoard(() => '[[]]'), /--slurp/);
+  assert.throws(() => fetchBoard(() => '[{}]'), /board page/);
+  assert.throws(() => fetchBoard(() => { throw new Error('offline'); }), /offline/);
+
+  const missingCursorPage = structuredClone(firstPage);
+  missingCursorPage.data.user.projectV2.items.pageInfo.endCursor = null;
+  assert.throws(
+    () => fetchBoard(() => JSON.stringify([missingCursorPage, secondPage])),
+    /pagination.*endCursor/,
   );
-  const callCount = existsSync(callsPath)
-    ? readFileSync(callsPath, "utf8").length
-    : 0;
-  rmSync(directory, { recursive: true, force: true });
-  return { ...result, callCount };
-}
+  assert.throws(
+    () => fetchBoard(() => JSON.stringify([firstPage, firstPage, secondPage])),
+    /pagination.*repeated.*page-one-cursor/,
+  );
+  // gh stopped early: the final page still points onward.
+  assert.throws(
+    () => fetchBoard(() => JSON.stringify([firstPage])),
+    /incomplete board items read.*last page still reports hasNextPage.*rerun/i,
+  );
+  // A page after the one gh should have stopped on.
+  assert.throws(
+    () => fetchBoard(() => JSON.stringify([secondPage, secondPage])),
+    /incomplete board items read.*page 1 of 2 reports no next page.*rerun/i,
+  );
+});
 
-describe("Project 4 board intake", () => {
-  it("reads a complete snapshot in one GraphQL request without per-card calls", () => {
-    const execute = vi.fn(() => projectPage([issueItem()]));
+test('fetchBoard rejects a short read and accepts an exact one', () => {
+  const page = ({ totalCount, nodes = [REAL_ISSUE_NODE], hasNextPage = false, endCursor = null }) =>
+    leanBoardPage(nodes, { totalCount, pageInfo: { hasNextPage, endCursor } });
+  const fetchPages = (...pages) => fetchBoard(() => JSON.stringify(pages));
 
-    const board = fetchBoard(execute);
+  assert.equal(fetchPages(page({ totalCount: 1 })).length, 1);
+  assert.throws(
+    () => fetchPages(page({ totalCount: 2 })),
+    /incomplete board items read.*2.*1.*rerun/i,
+  );
 
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute.mock.calls[0][0].slice(0, 3)).toEqual([
-      "api",
-      "graphql",
-      "-f",
-    ]);
-    expect(board).toMatchObject({
-      project: {
-        owner: "zaingulel",
-        number: 4,
-        title: "RentCottage",
-        itemCount: 1,
-      },
-      items: [
-        {
-          number: 147,
-          status: "Backlog",
-          area: "Foundation & quality",
-          labels: ["ready-for-agent"],
-          assignees: [],
-          blockers: [],
-        },
-      ],
-    });
-  });
+  assert.throws(
+    () => fetchPages(
+      page({ totalCount: 2, hasNextPage: true, endCursor: 'next' }),
+      page({ totalCount: 3, nodes: [REAL_DRAFT_NODE] }),
+    ),
+    /incomplete board items read.*totalCount.*2.*3.*rerun/i,
+  );
+});
 
-  it("continues the Project items connection without issuing per-card requests", () => {
-    const execute = vi
-      .fn()
-      .mockReturnValueOnce(
-        projectPage([issueItem()], {
-          totalCount: 2,
-          hasNextPage: true,
-          endCursor: "next-page",
-        }),
-      )
-      .mockReturnValueOnce(
-        projectPage([issueItem({ number: 160 })], { totalCount: 2 }),
-      );
+// Guard 6: the walk must be one project's, read against one field schema. A page
+// answered for a different project, or read after the Status/routing options changed
+// mid-walk, is two half-boards spliced together — every rule downstream would judge
+// cards against a schema the read never saw whole.
+test('fetchBoard throws when the project identity or the field schema changes across pages', () => {
+  const first = leanBoardPage([REAL_ISSUE_NODE], { totalCount: 2, pageInfo: { hasNextPage: true, endCursor: 'c1' } });
+  const second = leanBoardPage([REAL_DRAFT_NODE], { totalCount: 2 });
+  const fetchPages = (...pages) => fetchBoard(() => JSON.stringify(pages));
 
-    const board = fetchBoard(execute);
+  assert.equal(fetchPages(first, second).length, 2);
 
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(execute.mock.calls[1][0][3]).toContain('after:"next-page"');
-    expect(board.items.map(({ number }) => number)).toEqual([147, 160]);
-  });
+  const otherProject = structuredClone(second);
+  otherProject.data.user.projectV2.id = 'PVT_someone_else';
+  assert.throws(() => fetchPages(first, otherProject), /project identity changed across pages.*rerun/i);
 
-  it("classifies every open item from status, ownership, labels, and native blockers", () => {
-    const execute = vi.fn(() =>
-      projectPage([
-        issueItem({ number: 147 }),
-        issueItem({
-          number: 148,
-          labels: ["ready-for-agent", "owner-gated"],
-        }),
-        issueItem({ number: 79, labels: ["ready-for-human"] }),
-        issueItem({
-          number: 161,
-          status: "In progress",
-          assignees: ["zaingulel"],
-          prs: ["OPEN"],
-        }),
-        issueItem({
-          number: 157,
-          blockers: [{ number: 147, state: "OPEN" }],
-        }),
-        issueItem({ number: 18, labels: [] }),
-        issueItem({ number: 162, labels: ["needs-info"] }),
-        issueItem({ number: 163, labels: ["wontfix"] }),
-      ]),
-    );
+  // A field added mid-walk: the per-page schema guard passes it (it is neither Status
+  // nor the routing field), so only the across-pages comparison can see it.
+  const otherSchema = structuredClone(second);
+  otherSchema.data.user.projectV2.fields.nodes.push({ name: 'Notes', dataType: 'TEXT' });
+  otherSchema.data.user.projectV2.fields.totalCount += 1;
+  assert.throws(() => fetchPages(first, otherSchema), /field schema changed across pages.*rerun/i);
+});
 
-    const report = classifyBoard(fetchBoard(execute));
-
-    expect(
-      report.items.map(({ number, classification, openBlockers }) => ({
-        number,
-        classification,
-        openBlockers,
-      })),
-    ).toEqual([
-      { number: 18, classification: "needs-triage", openBlockers: [] },
-      { number: 79, classification: "ready-for-human", openBlockers: [] },
-      { number: 147, classification: "ready", openBlockers: [] },
-      { number: 148, classification: "owner-gated", openBlockers: [] },
-      { number: 157, classification: "blocked", openBlockers: [147] },
-      { number: 161, classification: "active-owned", openBlockers: [] },
-      { number: 162, classification: "needs-info", openBlockers: [] },
-      { number: 163, classification: "wontfix", openBlockers: [] },
-    ]);
-  });
-
-  it("collects simultaneous lifecycle drift and excludes affected work from ready", () => {
-    const report = classifyBoard(
-      fetchBoard(() =>
-        projectPage([
-          issueItem({ number: 1, state: "CLOSED", status: "Ready" }),
-          issueItem({ number: 2, status: "Done" }),
-          issueItem({
-            number: 3,
-            status: "In progress",
-            blockers: [{ number: 9, state: "OPEN" }],
-          }),
-          issueItem({ number: 4 }),
-        ]),
-      ),
-    );
-    expect(report.schemaVersion).toBe(3);
-    expect(report.drift.map(({ number, code }) => [number, code])).toEqual([
-      [1, "closed-not-done"],
-      [2, "open-done"],
-      [3, "open-blockers"],
-      [3, "missing-assignee"],
-      [3, "check-ownership"],
-    ]);
-    expect(
-      report.items
-        .filter((item) => item.classification === "ready")
-        .map((item) => item.number),
-    ).toEqual([4]);
-    for (const finding of report.drift) {
-      expect(finding.title).toBeTruthy();
-      expect(finding.reason).toBeTruthy();
-      expect(finding.correction).toBeTruthy();
-      expect(formatBoard(report)).toContain(finding.reason);
-      expect(formatBoard(report)).toContain(finding.correction);
-    }
-  });
-
-  it("flags completed nonempty parent groups for review without claiming they shipped", () => {
-    const report = classifyBoard(
-      fetchBoard(() =>
-        projectPage([
-          issueItem({ number: 1, children: { total: 2, completed: 2 } }),
-          issueItem({ number: 2, children: { total: 2, completed: 1 } }),
-          issueItem({ number: 3 }),
-          issueItem({
-            number: 4,
-            state: "CLOSED",
-            status: "Done",
-            children: { total: 2, completed: 2 },
-          }),
-        ]),
-      ),
-    );
-    expect(report.drift.map(({ number, code }) => [number, code])).toEqual([
-      [1, "completed-children"],
-    ]);
-    expect(report.items[0].classification).toBe("drift");
-    expect(report.drift[0].correction).toContain("completion review");
-  });
-
-  it.each([
-    undefined,
-    { total: -1, completed: 0 },
-    { total: 1, completed: 2 },
-    { total: 1.5, completed: 1 },
-  ])("rejects malformed child summary %j", (children) => {
-    const item = issueItem();
-    item.content.subIssuesSummary = children;
-    expect(() => classifyBoard(fetchBoard(() => projectPage([item])))).toThrow(
-      "sub-issue summary is invalid",
-    );
-  });
-
-  it("uses official merged references and checks ownership only for active leaves without an open PR", () => {
-    const execute = vi.fn(() =>
-      projectPage([
-        issueItem({ number: 10, prs: ["MERGED", "OPEN"] }),
-        issueItem({
-          number: 11,
-          status: "In progress",
-          assignees: ["z"],
-          prs: ["CLOSED"],
-        }),
-        issueItem({
-          number: 12,
-          status: "In review",
-          assignees: ["z"],
-          prs: ["OPEN"],
-        }),
-        issueItem({
-          number: 13,
-          status: "In progress",
-          assignees: ["z"],
-          children: { total: 2, completed: 1 },
-        }),
-        issueItem({ number: 14, prs: ["CLOSED"] }),
-        issueItem({
-          number: 15,
-          state: "CLOSED",
-          status: "Done",
-          prs: ["MERGED"],
-        }),
-      ]),
-    );
-    const report = classifyBoard(fetchBoard(execute));
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute.mock.calls[0][0][3]).toContain("includeClosedPrs:true");
-    expect(report.drift.map(({ number, code }) => [number, code])).toEqual([
-      [10, "merged-closing-pr"],
-      [11, "check-ownership"],
-    ]);
-    expect(report.drift[0].correction).toContain("reopened");
-    expect(report.drift[1].correction).toContain(
-      "Check local/runtime ownership",
-    );
-    expect(
-      report.items
-        .filter((item) => item.classification === "ready")
-        .map((item) => item.number),
-    ).toEqual([14]);
-  });
-
-  it.each([
-    undefined,
-    connection([], { totalCount: 1 }),
-    connection([], { pageInfo: { hasNextPage: true, endCursor: "more" } }),
-    connection([null]),
-    connection([
-      {
-        id: "p",
-        number: 1,
-        state: "OPEN",
-        merged: true,
-        repository: { nameWithOwner: "zaingulel/RentCottage" },
-      },
-    ]),
-    connection([
-      {
-        id: "p",
-        number: 1,
-        state: "MERGED",
-        merged: true,
-        repository: { nameWithOwner: "other/repo" },
-      },
-    ]),
-  ])("rejects incomplete or invalid official PR evidence %j", (references) => {
-    const item = issueItem();
-    item.content.closedByPullRequestsReferences = references;
-    expect(() => classifyBoard(fetchBoard(() => projectPage([item])))).toThrow(
-      /closing pull requests/,
-    );
-  });
-
-  it("fails loudly instead of following a truncated per-card connection", () => {
-    const item = issueItem();
-    item.content.labels = connection([{ name: "ready-for-agent" }], {
-      totalCount: 2,
-      pageInfo: { hasNextPage: true, endCursor: "labels-page" },
-    });
-    const execute = vi.fn(() => projectPage([item]));
-
-    expect(() => fetchBoard(execute)).toThrow(
-      "#147 labels connection is truncated",
-    );
-    expect(execute).toHaveBeenCalledTimes(1);
-  });
-
-  it("fails loudly when an issue has duplicate routing field values", () => {
-    const item = issueItem();
-    item.fieldValues.nodes.push(fieldValue("Status", "Ready"));
-    item.fieldValues.totalCount += 1;
-    const execute = vi.fn(() => projectPage([item]));
-
-    expect(() => fetchBoard(execute)).toThrow(
-      "#147 requires exactly one Status field value",
-    );
-  });
-
-  it("accepts unrelated Project field types while requiring the two routing fields", () => {
-    const serialized = JSON.parse(projectPage([issueItem()]));
-    serialized.data.user.projectV2.fields.nodes.push({
-      id: "iteration-field",
-      name: "Iteration",
-      dataType: "ITERATION",
-    });
-    serialized.data.user.projectV2.fields.totalCount += 1;
-    const execute = vi.fn(() => JSON.stringify(serialized));
-
-    expect(classifyBoard(fetchBoard(execute)).items[0].classification).toBe(
-      "ready",
-    );
-  });
-
-  it("rejects a missing Project identity at the provider boundary", () => {
-    const serialized = JSON.parse(projectPage([issueItem()]));
-    serialized.data.user.projectV2.id = null;
-    const execute = vi.fn(() => JSON.stringify(serialized));
-
-    expect(() => fetchBoard(execute)).toThrow(
-      "RentCottage Project 4 identity or open state is invalid",
-    );
-  });
-
-  it("formats the same classified items for the human board intake", () => {
-    const execute = vi.fn(() =>
-      projectPage([
-        issueItem({ number: 147, title: "Retry access verification" }),
-        issueItem({
-          number: 157,
-          title: "Record the walkthrough",
-          blockers: [{ number: 147, state: "OPEN" }],
-        }),
-      ]),
-    );
-
-    expect(formatBoard(classifyBoard(fetchBoard(execute)))).toContain(
-      "ready (1)\n#147 [Backlog] Retry access verification",
-    );
-    expect(formatBoard(classifyBoard(fetchBoard(execute)))).toContain(
-      "blocked (1)\n#157 [Backlog] Record the walkthrough — open blockers: #147",
-    );
+test('parseBoardPage maps a fully-fielded issue card to the exact raw shape', () => {
+  const { items } = parseBoardPage(BOARD_PAGE);
+  assert.deepEqual(items[0], {
+    id: 'PVTI_lAHOA50uGs4BcfoOzgx01fY',
+    status: 'Done',
+    title: 'Move refresh() and upsertChart into their own source pieces',
+    routing: ROUTING_B,
+    labels: [],
+    assignees: [],
+    blockers: [],
+    closingPullRequests: [],
+    content: { __typename: 'Issue', number: 319, state: 'OPEN', subIssuesSummary: { total: 0, completed: 0 } },
   });
 });
 
-describe("verify:board command", () => {
-  it("rejects invalid arguments before contacting GitHub", () => {
-    const result = runBoardCommand(["--json", "unexpected"]);
-
-    expect(result.status).toBe(2);
-    expect(result.callCount).toBe(0);
-    expect(result.stderr).toContain("Usage: npm run verify:board -- [--json]");
+test('parseBoardPage carries labels, assignees, blockers and closing pull requests through one read', () => {
+  const { items } = parseBoardPage(BOARD_PAGE);
+  assert.deepEqual(items[1], {
+    id: 'PVTI_lAHOA50uGs4BcfoOzgxw3wE',
+    status: 'Done',
+    title: 'Review batch 4 — interaction/desktop breaks',
+    routing: ROUTING_B,
+    labels: ['type:feature', 'area:ui', 'area:desktop', 'autonomy:supervised'],
+    assignees: [BOARD_OWNER],
+    blockers: [{ number: 261, state: 'OPEN' }, { number: 262, state: 'CLOSED' }],
+    closingPullRequests: [{ number: 1133, merged: true }],
+    content: { __typename: 'Issue', number: 263, state: 'OPEN', subIssuesSummary: { total: 2, completed: 1 } },
   });
+  // The normalized card keeps only the OPEN blockers: a closed blocker blocks nothing.
+  assert.deepEqual(normalizeItem(items[1]).openBlockers, [261]);
+});
 
-  it.each([[[]], [["--json"]]])(
-    "prints all drift before returning failure for %j",
-    (args) => {
-      const result = runBoardCommand(args, {
-        ghOutput: projectPage([
-          issueItem({ number: 1, state: "CLOSED", status: "Backlog" }),
-          issueItem({ number: 2, status: "Done" }),
-        ]),
-      });
-      expect(result.status).toBe(1);
-      expect(result.callCount).toBe(1);
-      expect(result.stderr).toBe("");
-      if (args.length) {
-        const report = JSON.parse(result.stdout);
-        expect(report.schemaVersion).toBe(3);
-        expect(report.drift.map((item) => item.number)).toEqual([1, 2]);
-      } else {
-        expect(result.stdout).toContain("#1");
-        expect(result.stdout).toContain("#2");
-        expect(result.stdout).toContain("Lifecycle drift (2)");
-      }
-    },
+test('parseBoardPage carries a draft\'s __typename through with the Title fieldValue text fallback (no content.number)', () => {
+  const { items } = parseBoardPage(BOARD_PAGE);
+  assert.deepEqual(items[2], {
+    id: 'PVTI_lAHOA50uGs4BcfoOzgx0mxg',
+    status: 'Backlog',
+    title: 'Trial Blacksmith CI runners (free 3k min/mo) — maybe for a future project',
+    routing: ROUTING_C,
+    labels: [],
+    assignees: [],
+    blockers: [],
+    closingPullRequests: [],
+    content: { __typename: 'DraftIssue' },
+  });
+  // Feeds normalizeItem exactly like a real board item: no linked issue → null number. The typename
+  // is what keeps that numberlessness a DESIGN fact rather than an unresolved read (#572).
+  assert.equal(normalizeItem(items[2]).number, null);
+  assert.equal(isContentUnresolved(items[2]), false);
+});
+
+// NOT guards, deliberately: this board legitimately holds draft cards, pull-request
+// cards, and cards an item-add left with no Status and no routing value. They are
+// reported as drift rows downstream, so a parser that threw on them would strand
+// every session instead.
+test('parseBoardPage accepts the numberless and unfielded cards this board legitimately holds', () => {
+  const { items } = parseBoardPage(leanBoardPage([
+    leanNode({ id: 'PVTI_draft', content: { __typename: 'DraftIssue' }, title: 'a draft note', status: 'Backlog', routing: ROUTING_B }),
+    leanNode({ id: 'PVTI_pr', content: { __typename: 'PullRequest' }, title: 'a pull request card', status: 'Ready', routing: ROUTING_B }),
+    leanNode({ id: 'PVTI_no_status', content: { __typename: 'Issue', number: 11, title: 'no status' }, routing: ROUTING_B }),
+    leanNode({ id: 'PVTI_no_routing', content: { __typename: 'Issue', number: 12, title: 'no routing' }, status: 'Ready' }),
+  ]));
+
+  assert.deepEqual(items.map((i) => [i.id, i.status, i.routing]), [
+    ['PVTI_draft', 'Backlog', ROUTING_B],
+    ['PVTI_pr', 'Ready', ROUTING_B],
+    ['PVTI_no_status', null, ROUTING_B],
+    ['PVTI_no_routing', 'Ready', null],
+  ]);
+});
+
+test('fixture keeps unresolved content null until the board parser normalizes it', () => {
+  const unresolvedNode = leanNode({ id: 'PVTI_unresolved', content: null, status: 'In progress' });
+
+  assert.equal(unresolvedNode.content, null);
+  const { items } = parseBoardPage(leanBoardPage([unresolvedNode]));
+  assert.deepEqual(items[0].content, {});
+  assert.equal(isContentUnresolved(items[0]), true);
+});
+
+test('fixture rejects explicit field values mixed with named field shorthands', () => {
+  assert.throws(
+    () => leanNode({ fieldValues: [], status: 'Ready' }),
+    /either fieldValues or named field shorthands/,
   );
+});
 
-  it("returns a valid empty intake without extra requests", () => {
-    const result = runBoardCommand(["--json"], { ghOutput: projectPage([]) });
-    expect(result.status).toBe(0);
-    expect(result.callCount).toBe(1);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      schemaVersion: 3,
-      items: [],
-      drift: [],
-    });
-  });
+test('parseBoardPage passes pageInfo through as hasNextPage/endCursor', () => {
+  const page = parseBoardPage(BOARD_PAGE);
+  assert.equal(page.hasNextPage, true);
+  assert.equal(page.endCursor, 'Y3Vyc29yOnYyOpK5MDAwMDAwMDAuMDA5MzQ1Nzk0MzkyNTIzM84Mz1dk');
+  assert.equal(page.totalCount, 3);
+});
 
-  it("returns failure when the GitHub provider fails", () => {
-    const result = runBoardCommand(["--json"], { ghExit: 17 });
+// One numbered issue card, fully fielded — the base every guard test below mutates
+// into the malformed shape it is about.
+const guardNode = (content = {}, node = {}) => leanNode({
+  id: 'PVTI_guard',
+  content: { __typename: 'Issue', number: 9, title: 'a card', ...content },
+  status: 'Ready',
+  routing: ROUTING_B,
+  ...node,
+});
+const parseNodes = (...nodes) => parseBoardPage(leanBoardPage(nodes));
+const parseMutated = (mutate, nodes = [guardNode()]) => {
+  const page = leanBoardPage(nodes);
+  mutate(page.data.user.projectV2, page.data.user, page);
+  return parseBoardPage(page);
+};
 
-    expect(result.status).toBe(1);
-    expect(result.callCount).toBe(1);
-    expect(result.stderr).toContain(
-      "Board intake failed: GitHub CLI failed status=17 signal=none",
+// Guard 1. A read that came back as anything but one GraphQL data object is a failed
+// read, and must never be parsed into a small board.
+test('parseBoardPage throws on unparseable JSON, on a non-object, and on a response carrying GraphQL errors', () => {
+  assert.throws(() => parseBoardPage('{not json'), /board page JSON could not be parsed.*rerun the board read/s);
+  assert.throws(() => parseBoardPage('"a string"'), /board page.*not a GraphQL data object.*rerun the board read/s);
+  assert.throws(() => parseBoardPage(null), /board page.*not a GraphQL data object.*rerun the board read/s);
+  assert.throws(() => parseBoardPage({ data: null }), /board page carried no user data.*rerun the board read/s);
+  assert.throws(
+    () => parseBoardPage({ errors: [{ message: 'Could not resolve to a User' }] }),
+    /board read returned GraphQL errors: Could not resolve to a User/,
+  );
+});
+
+// Guard 2. `totalCount` is the only evidence a connection came back whole, so a
+// missing or non-integer one is a broken read, never a pass.
+test('parseBoardPage throws when a connection has no integer totalCount or no nodes array', () => {
+  for (const broken of [undefined, '1', -1, 1.5, null]) {
+    assert.throws(
+      () => parseMutated((project) => { project.items.totalCount = broken; }),
+      /malformed items connection.*integer totalCount.*rerun the board read/s,
     );
+  }
+  assert.throws(
+    () => parseMutated((project) => { project.items.nodes = null; }),
+    /malformed items connection.*nodes\[\] array.*rerun the board read/s,
+  );
+  assert.throws(
+    () => parseNodes(guardNode({ labels: { totalCount: '2', nodes: [] } })),
+    /malformed labels connection.*integer totalCount/s,
+  );
+  assert.throws(
+    () => parseMutated((project) => { project.fields.totalCount = undefined; }),
+    /malformed project fields connection.*integer totalCount/s,
+  );
+});
+
+// Guard 3. A card with more labels/assignees/blockers/closing references than the
+// `first:` cap would otherwise be silently narrowed (#464 review) — and a dropped
+// closing reference could hide the one merged pull request a shipped verdict turns on.
+test('parseBoardPage throws when any capped sub-list is truncated, naming the cap to raise', () => {
+  const truncated = (make) => ({ totalCount: 25, nodes: Array.from({ length: 20 }, (_, i) => make(i)) });
+  const cases = [
+    ['labels', guardNode({ labels: truncated((i) => ({ name: `l${i}` })) })],
+    ['assignees', guardNode({ assignees: truncated((i) => ({ login: `u${i}` })) })],
+    ['blockedBy', guardNode({ blockers: truncated((i) => ({ number: i + 1, state: 'OPEN' })) })],
+    ['closedByPullRequestsReferences', guardNode({ closingPullRequests: truncated((i) => ({ number: i + 1, merged: false })) })],
+  ];
+  for (const [what, node] of cases) {
+    assert.throws(
+      () => parseNodes(node),
+      new RegExp(`board item PVTI_guard has 25 ${what} but only 20 fetched — raise the ${what} first: cap in boardQuery`),
+    );
+  }
+
+  const fieldValuesNode = guardNode();
+  fieldValuesNode.fieldValues = { totalCount: 25, nodes: fieldValuesNode.fieldValues.nodes };
+  assert.throws(() => parseNodes(fieldValuesNode), /has 25 fieldValues but only 2 fetched.*raise the fieldValues first: cap in boardQuery/);
+
+  // Exactly at the cap → fine.
+  const full = { totalCount: 20, nodes: Array.from({ length: 20 }, (_, i) => ({ name: `l${i}` })) };
+  assert.equal(parseNodes(guardNode({ labels: full })).items[0].labels.length, 20);
+});
+
+// Guard 3b. The capped sub-lists are fetched WHOLE, so the count and the nodes must
+// agree in BOTH directions. A totalCount SMALLER than the nodes returned is an
+// under-reporting response, and it is not harmless: one merged closing reference
+// arriving under `totalCount: 0` is exactly what manufactures a false "shipped but
+// open" drift row against a card that is correctly parked.
+test('parseBoardPage throws when a capped sub-list reports FEWER than the nodes it carries', () => {
+  const cases = [
+    ['closedByPullRequestsReferences', 0, 1, guardNode({
+      closingPullRequests: { totalCount: 0, nodes: [{ number: 1133, merged: true }] },
+    })],
+    ['labels', 1, 2, guardNode({
+      labels: { totalCount: 1, nodes: [{ name: 'type:task' }, { name: 'plan-first' }] },
+    })],
+  ];
+  for (const [what, totalCount, fetched, node] of cases) {
+    assert.throws(
+      () => parseNodes(node),
+      new RegExp(
+        `board item PVTI_guard returned ${fetched} ${what} but reports totalCount ${totalCount}.*rerun the board read`,
+        's',
+      ),
+      what,
+    );
+  }
+});
+
+// Guard 3c. gh --paginate decides whether to ask for another page from this pair alone,
+// so a coerced one is a page decision made on a malformed value: a string "false" reads
+// as true, a missing hasNextPage as false, and either silently truncates or loops the
+// walk. A next page also has to say WHERE, so hasNextPage without a usable cursor is a
+// broken read rather than a walk that quietly stops.
+test('parseBoardPage throws on a non-boolean hasNextPage and on a next page with no usable cursor', () => {
+  for (const bad of ['true', 'false', 1, 0, null, undefined]) {
+    assert.throws(
+      () => parseMutated((project) => { project.items.pageInfo = { hasNextPage: bad, endCursor: 'c1' }; }),
+      /board page pagination carried no boolean hasNextPage.*rerun the board read/s,
+      String(bad),
+    );
+  }
+  assert.throws(
+    () => parseMutated((project) => { delete project.items.pageInfo; }),
+    /board page pagination carried no boolean hasNextPage/,
+  );
+  for (const cursor of [null, undefined, '', '   ', 7]) {
+    assert.throws(
+      () => parseMutated((project) => { project.items.pageInfo = { hasNextPage: true, endCursor: cursor }; }),
+      /board page pagination reports hasNextPage without a non-empty endCursor.*rerun the board read/s,
+      String(cursor),
+    );
+  }
+  // The final page legitimately carries a null cursor.
+  const last = parseMutated((project) => { project.items.pageInfo = { hasNextPage: false, endCursor: null }; });
+  assert.equal(last.hasNextPage, false);
+  assert.equal(last.endCursor, null);
+});
+
+// Guard 4. A single-select field holds one value per card. Two would make which one
+// the reader picked an accident of node order.
+test('parseBoardPage throws on a duplicate Status or routing value on one card', () => {
+  const duplicated = (name) => leanNode({
+    id: 'PVTI_guard',
+    content: { __typename: 'Issue', number: 9, title: 'a card' },
+    fieldValues: [
+      { name: name === 'Status' ? 'Ready' : ROUTING_B, field: { name } },
+      { name: name === 'Status' ? 'Backlog' : ROUTING_C, field: { name } },
+    ],
   });
+  assert.throws(() => parseNodes(duplicated('Status')), /board item PVTI_guard carried 2 "Status" values.*one value per card/s);
+  assert.throws(
+    () => parseNodes(duplicated(ROUTING_FIELD)),
+    new RegExp(`board item PVTI_guard carried 2 "${ROUTING_FIELD}" values`),
+  );
+});
+
+// Guard 5. Every page must be the configured project's. #572: an absence probe once
+// asked a different project than the board read it was confirming.
+test('parseBoardPage throws when a page is not the configured, open project', () => {
+  assert.throws(
+    () => parseMutated((project, user) => { user.login = 'someone-else'; }),
+    new RegExp(`answered for user "someone-else".*BOARD_OWNER is "${BOARD_OWNER}".*board-config\\.mjs`, 's'),
+  );
+  assert.throws(
+    () => parseMutated((project) => { project.number = 7; }),
+    new RegExp(`answered for project 7.*BOARD_PROJECT_NUMBER is ${BOARD_PROJECT_NUMBER}.*board-config\\.mjs`, 's'),
+  );
+  assert.throws(
+    () => parseMutated((project) => { project.id = '   '; }),
+    /carried no project id.*rerun the board read/s,
+  );
+  assert.throws(
+    () => parseMutated((project) => { project.closed = true; }),
+    /board project .* is closed.*reopen it.*board-config\.mjs/s,
+  );
+  assert.throws(
+    () => parseMutated((project) => { delete project.closed; }),
+    /carried no boolean closed flag.*rerun the board read/s,
+  );
+});
+
+// Guard 9. The reader's whole vocabulary is board-config's option lists; a live board
+// that no longer matches them is judged against names it does not have.
+test('parseBoardPage throws when Status or the routing field is missing, not single-select, or offers other options', () => {
+  const fieldIndex = { Status: 1, [ROUTING_FIELD]: 2 };
+  for (const [name, index] of Object.entries(fieldIndex)) {
+    assert.throws(
+      () => parseMutated((project) => { project.fields.nodes.splice(index, 1); project.fields.totalCount -= 1; }),
+      new RegExp(`board has no "${name}" field.*board-config\\.mjs`, 's'),
+    );
+    assert.throws(
+      () => parseMutated((project) => { project.fields.nodes[index].dataType = 'TEXT'; }),
+      new RegExp(`"${name}" is a TEXT field, not SINGLE_SELECT.*board-config\\.mjs`, 's'),
+    );
+    assert.throws(
+      () => parseMutated((project) => { project.fields.nodes[index].options.push({ name: 'Nope' }); }),
+      new RegExp(`"${name}" field offers .*Nope.*board-config\\.mjs configures`, 's'),
+    );
+  }
+  // The message names both sets so the operator can see which side moved.
+  assert.throws(
+    () => parseMutated((project) => { project.fields.nodes[1].options.pop(); }),
+    new RegExp(STATUS_OPTIONS.join(', ')),
+  );
+  assert.throws(
+    () => parseMutated((project) => { project.fields.nodes[2].options.pop(); }),
+    new RegExp(ROUTING_OPTIONS.join(', ')),
+  );
+});
+
+// Guard 10. A numbered Issue card is the shape every downstream rule judges, so a
+// field it came back malformed in stops the read rather than being defaulted: an
+// unmerged-looking closing reference or a missing state would silently flip a verdict.
+test('parseBoardPage throws on a malformed numbered Issue card', () => {
+  assert.throws(
+    () => parseNodes(guardNode({ state: 'DRAFT' })),
+    /board card #9 came back with state "DRAFT".*expected OPEN or CLOSED.*rerun the board read/s,
+  );
+  assert.throws(
+    () => parseNodes(guardNode({ state: null })),
+    /board card #9 came back with state "null".*expected OPEN or CLOSED/s,
+  );
+  for (const summary of [null, { total: 2 }, { total: 1, completed: 2 }, { total: -1, completed: 0 }]) {
+    assert.throws(
+      () => parseNodes(guardNode({ subIssuesSummary: summary })),
+      /board card #9 carried no usable sub-issue summary.*total.*completed.*rerun the board read/s,
+    );
+  }
+  for (const reference of [{ number: 5 }, { number: 5, merged: 'true' }, { merged: true }]) {
+    assert.throws(
+      () => parseNodes(guardNode({ closingPullRequests: [reference] })),
+      /board card #9 carried a closing pull-request reference without a number and a boolean merged flag.*rerun the board read/s,
+    );
+  }
+  for (const blocker of [{ number: 5 }, { state: 'OPEN' }, { number: 5, state: 'MERGED' }]) {
+    assert.throws(
+      () => parseNodes(guardNode({ blockers: [blocker] })),
+      /board card #9 carried a blocker without a number and an OPEN or CLOSED state.*rerun the board read/s,
+    );
+  }
+  assert.throws(
+    () => parseNodes(guardNode({ repository: { nameWithOwner: `${BOARD_OWNER}/other-repo` } })),
+    new RegExp(`board card #9 belongs to ${BOARD_OWNER}/other-repo, not ${BOARD_OWNER}/${BOARD_REPOSITORY}.*board-config\\.mjs`, 's'),
+  );
+  assert.throws(
+    () => parseNodes(guardNode({ repository: null })),
+    new RegExp(`board card #9 belongs to no repository, not ${BOARD_OWNER}/${BOARD_REPOSITORY}`, 's'),
+  );
+});
+
+// Guard 11. One issue, one card. Two cards for the same number make every count and
+// every per-card verdict ambiguous, and one of them is stale by definition.
+test('parseBoardPage and fetchBoard throw when the same issue number appears on two cards', () => {
+  const twice = [
+    guardNode({}, { id: 'PVTI_a' }),
+    guardNode({}, { id: 'PVTI_b' }),
+  ];
+  assert.throws(() => parseNodes(...twice), /issue #9 appears on 2 board cards.*remove the duplicate card/s);
+
+  // Across pages too: neither page is duplicated on its own.
+  const first = leanBoardPage([twice[0]], { totalCount: 2, pageInfo: { hasNextPage: true, endCursor: 'c1' } });
+  const second = leanBoardPage([twice[1]], { totalCount: 2 });
+  assert.throws(
+    () => fetchBoard(() => JSON.stringify([first, second])),
+    /issue #9 appears on 2 board cards.*remove the duplicate card/s,
+  );
+});
+
+// Guard 12. The item id is the card's own identity, so the SAME id twice is not two
+// cards but one card the response repeated — a doubled row and a doubled count out of a
+// read that never saw two. Distinct issue numbers, so guard 11 cannot be what fires.
+test('parseBoardPage and fetchBoard throw when the same item id is returned on two cards', () => {
+  const twice = [
+    guardNode({ number: 9 }, { id: 'PVTI_same' }),
+    guardNode({ number: 10 }, { id: 'PVTI_same' }),
+  ];
+  assert.throws(() => parseNodes(...twice), /board item PVTI_same was returned on 2 cards.*rerun the board read/s);
+
+  // Across pages too: neither page repeats the id on its own.
+  const first = leanBoardPage([twice[0]], { totalCount: 2, pageInfo: { hasNextPage: true, endCursor: 'c1' } });
+  const second = leanBoardPage([twice[1]], { totalCount: 2 });
+  assert.throws(
+    () => fetchBoard(() => JSON.stringify([first, second])),
+    /board item PVTI_same was returned on 2 cards.*rerun the board read/s,
+  );
+});
+
+test('normalizeItem flattens exactly the fields the board rules judge a card on', () => {
+  const { items } = parseBoardPage(BOARD_PAGE);
+  assert.deepEqual(normalizeItem(items[1]), {
+    number: 263,
+    status: 'Done',
+    title: 'Review batch 4 — interaction/desktop breaks',
+    routing: ROUTING_B,
+    labels: ['type:feature', 'area:ui', 'area:desktop', 'autonomy:supervised'],
+    state: 'OPEN',
+    assignees: [BOARD_OWNER],
+    openBlockers: [261],
+    closingPullRequests: [{ number: 1133, merged: true }],
+    subIssues: { total: 2, completed: 1 },
+  });
+  // Missing fields default, never throw (the "In review" item carries nothing but a number).
+  const bare = normalizeItem(BOARD.items[3]);
+  assert.equal(bare.number, 296);
+  assert.equal(bare.routing, null);
+  assert.equal(bare.state, null);
+  assert.equal(bare.subIssues, null);
+  assert.deepEqual(bare.labels, []);
+  assert.deepEqual(bare.openBlockers, []);
+});
+
+test('normalizeItem publishes the routing view only — no Model, no Effort, no internal unresolved-content flag', () => {
+  // `board --json` prints normalizeItem's output verbatim, so an internal flag added for
+  // issue-publish must never widen that published shape (#572), and the board's Model and
+  // Effort fields have left this reader entirely.
+  assert.deepEqual(Object.keys(normalizeItem(BOARD.items[0])).sort(), [
+    'assignees', 'closingPullRequests', 'labels', 'number', 'openBlockers',
+    'routing', 'state', 'status', 'subIssues', 'title',
+  ]);
+});
+
+test('sortForDisplay ranks Ready before Backlog, then ascending number', () => {
+  const sorted = sortForDisplay(pickable(BOARD.items)).map((i) => i.content.number);
+  assert.deepEqual(sorted, [266, 264]); // Ready(266) before Backlog(264) despite 266>264
+});
+
+test('formatRow renders #num, [status], title and labels — and no Model/Effort suffix', () => {
+  const row = formatRow(BOARD.items[1]);
+  assert.equal(row, '#264 [Backlog] Review batch 5\n    tripwire, plan-first');
+});
+
+test('formatRow degrades gracefully with no labels (— placeholder)', () => {
+  assert.equal(formatRow(BOARD.items[3]), '#296 [In review] Mid flight\n    —');
+});
+
+test('formatList orders then renders the given selection', () => {
+  const out = formatList(pickable(BOARD.items));
+  // #266 (Ready) block appears before #264 (Backlog) block.
+  assert.ok(out.indexOf('#266') < out.indexOf('#264'));
+  // It renders only what it was given — Done #293 is absent.
+  assert.equal(out.includes('#293'), false);
+});
+
+// The second routing option outnumbers the first (2 vs 1) and sorts earlier by number —
+// the mutation guard: a flat/number-ordered list would put #200 before #391.
+const ROUTED_ITEMS = [
+  { status: 'Backlog', title: 'Product A', routing: ROUTING_B, content: { number: 100 } },
+  { status: 'Backlog', title: 'Product B', routing: ROUTING_B, content: { number: 200 } },
+  { status: 'Backlog', title: 'GTM item', routing: ROUTING_A, content: { number: 391 } },
+  { status: 'Backlog', title: 'No routing', routing: null, content: { number: 500 } },
+  { status: 'Backlog', title: 'New field', routing: UNKNOWN_ROUTING, content: { number: 600 } },
+];
+
+test('groupByRouting puts the first routing option FIRST even though the second outnumbers it and sorts earlier by number', () => {
+  const groups = groupByRouting(ROUTED_ITEMS);
+  assert.equal(groups[0].routing, ROUTING_A);
+  assert.deepEqual(groups[0].items.map((i) => i.content.number), [391]);
+});
+
+test('groupByRouting keeps an unfielded item in the trailing Unfielded group — never dropped', () => {
+  const groups = groupByRouting(ROUTED_ITEMS);
+  const unfielded = groups.find((g) => g.routing === 'Unfielded');
+  assert.ok(unfielded);
+  assert.deepEqual(unfielded.items.map((i) => i.content.number), [500]);
+  // No item lost across the split.
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  assert.equal(total, ROUTED_ITEMS.length);
+});
+
+// An empty-string field is absent, not a group named "" — else the reader
+// renders a nameless `── (1) ──` heading.
+test('groupByRouting treats an empty-string routing value as Unfielded, not an unnamed group', () => {
+  const groups = groupByRouting([
+    { status: 'Backlog', title: 'Blank field', routing: '', content: { number: 700 } },
+  ]);
+  assert.deepEqual(groups.map((g) => g.routing), ['Unfielded']);
+});
+
+test('groupByRouting omits empty groups (no group for an option nothing is on)', () => {
+  const groups = groupByRouting(ROUTED_ITEMS);
+  assert.equal(groups.some((g) => g.routing === ROUTING_C), false);
+});
+
+test('groupByRouting surfaces an unrecognised routing value after the known ones, before Unfielded', () => {
+  const groups = groupByRouting(ROUTED_ITEMS);
+  assert.deepEqual(groups.map((g) => g.routing), [ROUTING_A, ROUTING_B, UNKNOWN_ROUTING, 'Unfielded']);
+});
+
+// Every routing option carries a card, plus one value that is not an option and must
+// still reach the unrecognised-value fallback AFTER all of them. The unknown value is
+// listed FIRST here, so input order cannot be what puts it last.
+const ALL_ROUTED_ITEMS = [
+  { status: 'Backlog', title: 'unknown item', routing: UNKNOWN_ROUTING, content: { number: 602 } },
+  ...ROUTING_OPTIONS.map((routing, index) => ({
+    status: 'Backlog', title: `${routing} item`, routing, content: { number: 603 + index },
+  })),
+];
+
+test('groupByRouting orders groups by ROUTING_OPTIONS and still falls back for a value outside it', () => {
+  const groups = groupByRouting(ALL_ROUTED_ITEMS);
+  // Board order, then the unrecognised value — whatever options the board declares.
+  assert.deepEqual(groups.map((g) => g.routing), [...ROUTING_OPTIONS, UNKNOWN_ROUTING]);
+  // The fallback survives the enumerated options: the unknown value is still caught, and
+  // is its own named group rather than being swept into Unfielded.
+  assert.deepEqual(
+    groups.find((g) => g.routing === UNKNOWN_ROUTING).items.map((i) => i.content.number),
+    [602],
+  );
+});
+
+test('formatGrouped renders the first routing option\'s heading before the second\'s', () => {
+  const out = formatGrouped(ROUTED_ITEMS);
+  assert.ok(out.indexOf(ROUTING_A) < out.indexOf(ROUTING_B));
+  assert.ok(out.includes(`── ${ROUTING_A} (1) ──`));
+  assert.ok(out.includes(`── ${ROUTING_B} (2) ──`));
+});
+
+test('formatGrouped warns when an unrecognised routing value is rendered without dropping or reordering its cards', () => {
+  const items = [
+    { status: 'Backlog', title: 'first option card', routing: ROUTING_A, content: { number: 701 } },
+    { status: 'Ready', title: 'second option card', routing: ROUTING_B, content: { number: 702 } },
+    { status: 'Backlog', title: 'unknown card', routing: UNKNOWN_ROUTING, content: { number: 703 } },
+    { status: 'Backlog', title: 'Unfielded card', content: { number: 704 } },
+  ];
+
+  const out = formatGrouped(items);
+  const headings = [ROUTING_A, ROUTING_B, UNKNOWN_ROUTING, 'Unfielded'];
+  const headingPositions = headings.map((routing) => out.indexOf(`── ${routing} (1) ──`));
+  assert.ok(headingPositions.every((position) => position >= 0));
+  assert.deepEqual([...headingPositions].sort((a, b) => a - b), headingPositions);
+  for (const number of [701, 702, 703, 704]) {
+    assert.equal(out.split(`#${number}`).length - 1, 1);
+  }
+  assert.ok(out.includes(`WARNING: unrecognised ${ROUTING_FIELD} value: ${UNKNOWN_ROUTING}`));
+  assert.ok(out.includes(`add ${UNKNOWN_ROUTING} to ROUTING_OPTIONS`));
+  assert.ok(out.includes('scripts/lib/board-config.mjs'));
+  assert.equal(out.includes(`unrecognised ${ROUTING_FIELD} value: Unfielded`), false);
+
+  const multipleUnknown = formatGrouped([
+    { status: 'Backlog', title: 'Zulu card', routing: 'Zulu', content: { number: 707 } },
+    { status: 'Backlog', title: 'Alpha card', routing: 'Alpha', content: { number: 708 } },
+  ]);
+  assert.ok(multipleUnknown.includes(`WARNING: unrecognised ${ROUTING_FIELD} values: Alpha, Zulu`));
+  assert.ok(multipleUnknown.indexOf('── Alpha (1) ──') < multipleUnknown.indexOf('── Zulu (1) ──'));
+  for (const number of [707, 708]) {
+    assert.equal(multipleUnknown.split(`#${number}`).length - 1, 1);
+  }
+
+  const syntheticUnfielded = formatGrouped([
+    { status: 'Backlog', title: 'Missing routing card', content: { number: 705 } },
+  ]);
+  assert.match(syntheticUnfielded, /── Unfielded \(1\) ──/);
+  assert.equal(syntheticUnfielded.split('#705').length - 1, 1);
+  assert.equal(syntheticUnfielded.includes(`WARNING: unrecognised ${ROUTING_FIELD}`), false);
+
+  const literalUnfielded = formatGrouped([
+    { status: 'Backlog', title: 'Literal Unfielded card', routing: 'Unfielded', content: { number: 706 } },
+  ]);
+  assert.match(literalUnfielded, /── Unfielded \(1\) ──/);
+  assert.equal(literalUnfielded.split('#706').length - 1, 1);
+  assert.ok(literalUnfielded.includes(`WARNING: unrecognised ${ROUTING_FIELD} value: Unfielded`));
 });

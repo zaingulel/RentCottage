@@ -127,6 +127,12 @@ const domainNodeTests = [
 
 const allTests = ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.mjs"];
 
+// The board toolkit and git guard under scripts/lib/ are ported verbatim from Flowgauge and
+// carry its node:test tests. `npm run test:scripts` runs them and `npm test` chains it after
+// this runner, so both suites still run; Vitest must not also collect them, because node:test
+// reports through its own runner and would fail here.
+const nodeTestScripts = ["scripts/lib/*.test.mjs"];
+
 export default defineConfig({
   resolve: { tsconfigPaths: true },
   test: {
@@ -146,7 +152,7 @@ export default defineConfig({
           environment: "jsdom",
           setupFiles: ["./vitest.setup.ts"],
           include: allTests,
-          exclude: [...defaultExclude, ...domainNodeTests],
+          exclude: [...defaultExclude, ...domainNodeTests, ...nodeTestScripts],
         },
       },
     ],
