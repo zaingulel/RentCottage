@@ -560,7 +560,22 @@ describe("repository verification command", () => {
       expect.stringMatching(/1 changed path is not listed/),
     );
     expect(result.stderr).toHaveBeenCalledWith(
-      expect.stringContaining("--full, --baseline, --database or --browser"),
+      expect.stringContaining(
+        "the fallback would select full verification, which runs the database and browser checks",
+      ),
+    );
+    // The remediation names only the two flags that bypass classification. The other two
+    // re-enter the selector and stop again, which the group-flag cases below prove, so
+    // offering them here would send the operator round the same loop.
+    expect(result.stderr).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "running again with an explicit --full or --baseline",
+      ),
+    );
+    expect(result.stderr).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "--database and --browser still consult it and stop here again",
+      ),
     );
   });
 

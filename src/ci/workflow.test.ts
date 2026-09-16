@@ -55,18 +55,26 @@ function readySteps(steps: Step[]): Step[] {
 // A sentinel no job result can take, so "absent" stays distinct from "empty".
 const UNSET = "@unset";
 
-// Reads one tab-separated combination per line and prints its exit status. The
-// aggregate body is sourced under the same options the workflow runs it with, so
+// Not a tab: tab is IFS whitespace, so bash folds a run of tabs into one delimiter and
+// an empty result would shift every later field left, silently testing the wrong
+// combination. The unit separator is not whitespace, so an empty field stays empty.
+const SEPARATOR = "\x1f";
+
+// Reads one combination per line and prints back the three values it actually read
+// alongside the exit status they produced. Echoing the values rather than the input
+// line number is what makes a transport fault visible: a combination that arrives
+// garbled keys its own result, so it cannot masquerade as the one that was intended.
+// The aggregate body is sourced under the same options the workflow runs it with, so
 // its `exit 1` leaves the subshell exactly as it leaves `bash -c`.
 const DRIVER = [
-  "while IFS=$'\\t' read -r label baseline database browser; do",
+  "while IFS=$'\\x1f' read -r baseline database browser; do",
   `  ( if [[ "$baseline" == "${UNSET}" ]]; then unset BASELINE_RESULT; else export BASELINE_RESULT="$baseline"; fi`,
   `    if [[ "$database" == "${UNSET}" ]]; then unset DATABASE_RESULT; else export DATABASE_RESULT="$database"; fi`,
   `    if [[ "$browser" == "${UNSET}" ]]; then unset BROWSER_RESULT; else export BROWSER_RESULT="$browser"; fi`,
   "    set -e",
   "    set -o pipefail",
   '    . "$AGGREGATE_SCRIPT" ) >/dev/null 2>&1',
-  `  printf '%s\\t%s\\n' "$label" "$?"`,
+  `  printf '%s\\x1f%s\\x1f%s\\x1f%s\\n' "$baseline" "$database" "$browser" "$?"`,
   "done",
 ].join("\n");
 
@@ -169,6 +177,9 @@ describe("pull-request CI", () => {
     },
   );
 
+  // The budget is deliberately far above the work: this test asserts which exit status
+  // each combination produces, never how fast a subprocess returns, so a loaded machine
+  // must not be able to turn it into a failure (#294).
   it("accepts only complete successful evidence in the actual aggregate shell", () => {
     const { workflow } = loadWorkflow();
     const aggregate = readySteps(workflow.jobs?.test.steps ?? [])[0];
@@ -200,9 +211,8 @@ describe("pull-request CI", () => {
     }
 
     // Every combination still runs the real step body, but as a subshell inside one
-    // bash rather than its own `bash -c`. Executing the bash binary 216 times costs
-    // ~2.3s and turned the default 5s budget into a timing assertion that failed
-    // under full-suite load; 216 forks of one shell cost ~0.2s (#294).
+    // bash rather than its own `bash -c`, so the cost is a fork per combination and
+    // not an exec of the bash binary (#294).
     const directory = mkdtempSync(join(tmpdir(), "aggregate-shell-"));
     const script = join(directory, "aggregate.sh");
     const env: NodeJS.ProcessEnv = { ...process.env };
@@ -235,8 +245,8 @@ describe("pull-request CI", () => {
           // Trailing newline: `read` reports failure on an unterminated final line
           // and the loop would skip the last combination.
           input: `${combinations
-            .map(({ baseline, database, browser }, index) =>
-              [index, cell(baseline), cell(database), cell(browser)].join("\t"),
+            .map(({ baseline, database, browser }) =>
+              [cell(baseline), cell(database), cell(browser)].join(SEPARATOR),
             )
             .join("\n")}\n`,
         },
@@ -249,8 +259,11 @@ describe("pull-request CI", () => {
           .split("\n")
           .filter((line) => line.length > 0)
           .map((line) => {
-            const [index, status] = line.split("\t");
-            return [label(combinations[Number(index)]), Number(status)];
+            const [baseline, database, browser, status] = line.split(SEPARATOR);
+            return [
+              JSON.stringify({ baseline, database, browser }),
+              Number(status),
+            ];
           }),
       );
     } finally {
@@ -269,7 +282,7 @@ describe("pull-request CI", () => {
         ]),
       ),
     );
-  });
+  }, 30_000);
 });
 
 describe("preview deployment boundary", () => {

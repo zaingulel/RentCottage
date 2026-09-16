@@ -47,13 +47,14 @@ const baselineOnlyPaths = new Set([
   "CONTEXT.md",
   "scripts/run-log.mjs",
   "scripts/run-log.test.mjs",
-]);
-
-// The board and git-guard toolkit, proved by the node --test files npm test already runs.
-// Explicit names, never a scripts/lib/ wildcard: the same directory holds the Supabase,
-// Worker and browser fixtures, which need the expensive route. The three commands reach
-// only the GitHub API, so the expensive route has no evidence to offer them.
-const baselineOnlyToolingPaths = new Set([
+  // The board and git-guard toolkit. Every module here is proved by the node --test
+  // files npm test already runs in baseline, and board.mjs and board-add.mjs are driven
+  // through their own entry points by board-cli.test.mjs and board-add.test.mjs.
+  // board-move.mjs has no test of its own: it is argv parsing over the proved moveCards
+  // and parseBatchArgs, and like the other two commands it reaches only the GitHub API,
+  // so the expensive route has no evidence to offer it either.
+  // Explicit names, never a scripts/lib/ wildcard: the same directory holds the
+  // Supabase, Worker and browser fixtures, which do need the expensive route.
   "scripts/board.mjs",
   "scripts/board-add.mjs",
   "scripts/board-move.mjs",
@@ -82,7 +83,6 @@ const baselineOnlyToolingPaths = new Set([
 function isBaselineOnlyPath(path) {
   return (
     baselineOnlyPaths.has(path) ||
-    baselineOnlyToolingPaths.has(path) ||
     /^\.agents\/(?:roles|skills|templates)\/.+\.md$/i.test(path) ||
     /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
     /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
@@ -407,7 +407,7 @@ export function main(
         `Verification stopped: ${count} changed ${count === 1 ? "path is" : "paths are"} not listed in any verification route.`,
         ...selection.unclassified,
         "Without a classification the fallback would select full verification, which runs the database and browser checks.",
-        "Nothing ran. Decide the route either by listing the paths above in scripts/verify.mjs, or by running again with an explicit --full, --baseline, --database or --browser.",
+        "Nothing ran. Decide the route either by listing the paths above in scripts/verify.mjs, or by running again with an explicit --full or --baseline. Only those two bypass classification; --database and --browser still consult it and stop here again.",
       ].join("\n"),
     );
     return 3;
