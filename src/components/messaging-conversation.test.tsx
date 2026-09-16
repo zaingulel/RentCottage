@@ -190,8 +190,16 @@ describe("Messaging conversation", () => {
     const button = screen.getByRole("button", {
       name: "Report poor translation",
     });
-    await user.click(button);
-    await user.click(button);
+    // Same settle requirement as the composer: the button disables while a report is
+    // in flight, so a retry arriving before it settles is swallowed (#294).
+    const reportAndSettle = async (calls: number) => {
+      await user.click(button);
+      await waitFor(() => expect(report).toHaveBeenCalledTimes(calls));
+      await waitFor(() => expect(button).toBeEnabled());
+    };
+
+    await reportAndSettle(1);
+    await reportAndSettle(2);
     expect(report.mock.calls[0]?.[0].commandId).toBe(
       report.mock.calls[1]?.[0].commandId,
     );
@@ -203,7 +211,7 @@ describe("Messaging conversation", () => {
       }),
     );
     await user.click(button);
-    expect(button).toBeDisabled();
+    await waitFor(() => expect(button).toBeDisabled());
     await user.click(button);
     expect(report).toHaveBeenCalledTimes(3);
     expect(report.mock.calls[2]?.[0].commandId).toBe(
