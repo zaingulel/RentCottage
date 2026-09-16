@@ -111,7 +111,7 @@ the observed state and time and continue bounded observations during the approve
 necessary missing fact or new decision; elapsed waiting alone does not require permission to continue.
 Neither case proves exhaustion or a clean review, and neither reopens approval of the named delivery actions.
 Keep the original approval and its covered packet available when resuming; verify current ownership,
-head, required evidence, and exact cleanup targets before continuing its remaining actions.
+head, required evidence, and cleanup targets before continuing its remaining actions.
 
 ### Greptile attempt states
 
@@ -128,7 +128,7 @@ Provider unavailability or exhausted allowance is reportable rather than a merge
 
 Re-read the pull request until GitHub reports the exact approved head merged. If merge is pending, blocked, changed, or unknown, retain the worktree and report the state.
 
-After authoritative merge evidence, reconcile only the issue and Project entries named by the approved pull-request body, then run `npm run verify:board`. Unavailable or failing board evidence stops closeout. Run `closeout` for the exact approved job worktree and branch; it owns removal proofs, exact-ref operations, refusal rules, and safe local-main updates. Missed cleanup may reuse existing exact-target closeout approval; historical targets without it require a separate owner decision.
+After authoritative merge evidence, run `closeout`. It reconciles only the issues the approved body names, moves their cards to Done with `scripts/board-move.mjs`, checks the board with `node scripts/board.mjs --closeout`, then removes the job branch and worktree and advances local `main`. Unavailable or failing board evidence stops closeout. Missed cleanup runs the same procedure in a later session.
 
 Preview or production deployment is a separate owner-approved operation under `.github/workflows/preview.yml`; ordinary code delivery does not imply deployment.
 

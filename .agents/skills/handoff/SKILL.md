@@ -10,7 +10,7 @@ Use this only for genuinely unfinished work. Finished work proceeds to delivery 
 
 1. Run the focused checks that describe the current slice. Commit the coherent green state locally on the exact
    `job/<issue>` branch with a work-in-progress message. Broken or ambiguous state is reported, not called green.
-2. Run [Process reconciliation](../closeout/SKILL.md#process-reconciliation). Carry its retained or uncertain
+2. Run process reconciliation under `docs/agents/process-reconciliation.md`. Carry its retained or uncertain
    process results into `Not done`.
 3. Fill `.github/pull_request_template.md`. In `Not done`, name what is finished, what remains, the next concrete
    step, known failing or unavailable evidence, retained or uncertain processes, and any owner decision still needed.

@@ -23,7 +23,7 @@ current evidence.
 Start these independent reads together and await every result in one bounded intake:
 
 - `git status --short --branch`, recent `origin/main` history, remotes, and `git worktree list --porcelain`;
-- `npm run verify:board -- --json`, one authoritative board snapshot and classification;
+- `npm run verify:board -- --json`, one authoritative snapshot of the pickable columns and the drift scan;
 - open pull requests and their draft/ready state;
 - active task ownership supplied by the runtime.
 
@@ -34,14 +34,13 @@ section before considering new work. Leave foreign work unchanged.
 
 For remaining local job branches and worktrees, read retained-process evidence, check their matching merged pull
 requests, and run `git worktree prune --dry-run --verbose`. For a recoverably interrupted prior task, run
-[Process reconciliation](../closeout/SKILL.md#process-reconciliation) before shortlisting; preserve a process with
-an active owner. Use [closeout](../closeout/SKILL.md) to assess missed cleanup. Complete only exact targets covered
-by existing closeout authority; otherwise report the proposed targets and why they remain. Keep unfinished and
+process reconciliation under `docs/agents/process-reconciliation.md` before shortlisting; preserve a process with
+an active owner. Use [closeout](../closeout/SKILL.md) to assess missed cleanup. Keep unfinished and
 active work excluded from cleanup. A historical cleanup decision does not prevent selecting unrelated work.
 
 ## Work pick
 
-After ownership and board classification narrow the shortlist, fetch bodies and attributed comments for at most
+After ownership and the board scan narrow the shortlist, fetch bodies and attributed comments for at most
 three credible issues in one aliased GraphQL query using the procedure in `docs/agents/issue-tracker.md`.
 An incomplete candidate stays out of recommendations until its named missing evidence is fetched.
 
@@ -96,8 +95,8 @@ the owner-approved pull-request body.
 
 ## Finish the approved job
 
-Include the exact branch and absolute worktree path in the filled pull-request body's proposed closeout actions.
+Include the branch and absolute worktree path in the filled pull-request body's proposed closeout actions.
 After delivery approval, follow `docs/agents/delivery.md` and watch the approved merge until it lands or reports a
 failure or blocker. When GitHub confirms `MERGED`, run [closeout](../closeout/SKILL.md) in the same session under
-that existing exact-target approval. Report the confirmed merge and cleanup result, including retained targets.
+the authorisation that covered the merge. Report the confirmed merge and the cleanup result.
 A queued merge is still pending; do not close out its worktree. Park genuinely unfinished work with `handoff`.

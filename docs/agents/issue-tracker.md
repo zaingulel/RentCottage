@@ -60,47 +60,70 @@ binding.
 
 ## Project status contract
 
-- `Ready`, `In progress`, and `In review` require an open issue with no open native blocker.
-- A closed issue must use `Done`; blocked open work cannot use `Ready`, `In progress`, or `In review`.
-- `Backlog` may contain blocked work or deliberately owner-gated unblocked work.
-- Give owner-gated work the orthogonal `owner-gated` label. It stays out of the ready list and cannot use an active Status without an approved claim.
-- Active Codex task ownership must be checked by the coordinator before selecting or changing an item to `Ready`. It is not inferred by the board verifier.
-- Every issue uses an approved existing Project Area. Missing or unknown Area and Status values stop selection.
+The board is GitHub Project 4. [`scripts/lib/board-config.mjs`](../../scripts/lib/board-config.mjs) is the single
+home for its strings: the project identity, the Status columns, the columns work is picked from, the terminal
+column, and the `Area` routing field with its approved options. A rename or a new option is one edit there.
+
+- Status columns, in board order: `Backlog`, `Ready`, `In progress`, `In review`, `Done`.
+- Work is picked from `Backlog` and `Ready`. Readiness is the column an issue sits in, not a label: nothing about
+  an issue's availability is inferred from its labels or its prose.
+- `Done` is the only terminal column, so a card closed as superseded or not planned moves there too.
+- Every card carries a Status and an `Area` from the approved option list. A card missing either is drift.
+- A closed issue belongs in `Done` and an open issue does not.
+- Active Codex task ownership is checked by the coordinator before moving an item into an in-flight column. The
+  board verifier does not infer it.
 
 ## Board intake
 
-Run `npm run verify:board` before selecting work and after any issue, dependency, Project membership, field, assignment, or status change. During `/resume`, use `npm run verify:board -- --json`. Project 4 is authoritative for current membership; adding or changing an issue does not require a repository manifest edit.
+One command reads the board and judges it from the same read, so the listing can never disagree with the verdict
+printed under it. Run it before selecting work and after any issue, dependency, Project membership, field,
+assignment, or status change.
 
-The command is read-only. It fetches Project 4 fields and up to 100 items in one GraphQL request, continuing only the Project item connection when GitHub reports another page. Labels, assignees, field values, native blockers, `subIssuesSummary { total completed }`, and officially closing pull-request references (`first:20, includeClosedPrs:true`) travel with each item; an incomplete per-item connection fails instead of starting per-card queries. Classification happens once in memory.
+| Command | Use |
+|---|---|
+| `npm run verify:board` | the pickable candidates grouped by `Area`, then the scan. `--all` shows every column, `--status=<name>` one column |
+| `npm run verify:board -- --json` | the same normalized selection on stdout for `/resume`, with the scan on stderr |
+| `node scripts/board.mjs --closeout` | the strict proof gate after a merge: the scan alone, sparing the advisory rows |
 
-The intake verifies the open Project identity, exact `Status` and `Area` options, complete item count, repository issue identity, issue state, labels, assignees, native blockers, lifecycle coherence, duplicates, and pagination. A malformed, archived, draft, pull-request, foreign, duplicate, truncated, or unknown required value exits non-zero. It does not freeze issue titles, acceptance-criteria prose, historical membership, or textual blocker sections.
+The read is read-only and fetches Project 4's fields and every item through one paginated GraphQL walk. Labels,
+assignees, field values, native blockers, `subIssuesSummary { total completed }`, and officially closing
+pull-request references travel with each item, and every rule is answered off those pages. It is fail-loud: a `gh`
+error, malformed JSON, or a zero-item read exits non-zero rather than printing an empty "nothing to pick" and
+returning success. Drift also exits non-zero after printing the complete report.
 
-With complete valid evidence, `--json` returns schema version 3, a `drift` array, and an entry for every open
-Project issue with its live Status, Area, labels, assignees, open blockers, and one classification. The classifier
-applies this precedence: an assignee or `In progress`/`In review` Status is `active-owned`; otherwise an open
-native blocker is `blocked`; otherwise no recognized triage label is the inferred `needs-triage` state. A literal
-`needs-triage`, `needs-info`, or `wontfix` label keeps that classification. For either single ready label,
-`owner-gated` overrides readiness; otherwise `ready-for-human` keeps that classification and `ready-for-agent`
-becomes `ready`. More than one recognized triage label is an intake failure. `needs-triage` and `needs-info` are
-code-recognized labels but do not currently exist in the tracker; `question` is not an alias for either one.
+Writes go through two commands, never a raw `gh project item-add` or `item-edit`, which leave a card with no
+Status and no `Area`:
 
-After that classification, any detected lifecycle-drift finding overrides the item classification to `drift`.
-Human output groups the same entries and prints every drift finding with issue number, title, reason, and proposed
-correction. Drift exits non-zero after printing the complete report; malformed or unavailable evidence remains an
-intake failure. See [`triage-labels.md`](triage-labels.md) for the literal live-label mapping. No inferred state or
-drift finding authorizes creating, applying, renaming, or removing a label.
+| Command | Use |
+|---|---|
+| `node scripts/board-add.mjs <issue#> <Status> <Area>` | put an issue on the board with both fields set |
+| `node scripts/board-move.mjs <issue#> <Status>`, or `--batch <issue>:<Status> ...` | move one card or many, resolving the shared field id once |
 
-Drift includes closed/non-Done and open/Done mismatches, open blockers with an unblocked Status, missing active assignees, officially closing merged pull requests on open issues, and open parents whose nonzero native child summary is fully completed. Merged references require owner review of completion or deliberately reopened scope. Completed children require parent acceptance review; the summary does not prove shipment or authorize closure.
+The scan reports these findings. An advisory row informs the next pick; every other row also fails `--closeout`:
 
-An active leaf without an open officially closing pull request is flagged to check local/runtime ownership. Closed unmerged pull requests do not establish ongoing work. Parents with children are excluded from this heuristic. No finding authorizes tracker repair or local cleanup, and drifted issues never appear as ready work.
+| # | Finding | Severity |
+|---|---|---|
+| 1 | issue closed but its card sits in a non-terminal column | gate |
+| 2 | issue open but its card sits in `Done` | gate |
+| 3 | open native blockers on a card outside `Backlog` and `Done` | advisory |
+| 4 | an in-flight card with no assignee | advisory |
+| 5 | a merged officially closing pull request over an open issue | gate |
+| 6 | an in-flight card with no closing pull request at all, merged or draft | advisory |
+| 7 | an open epic whose every child issue is closed | gate |
+| 8 | an epic claimed in-flight with no children | gate |
+| 9 | cards missing Status or `Area`; a mass outage summarises to one field-schema line instead of per-card blame | gate |
 
-`active-owned` means the board item has an assignee or an active Project Status; it is not proof that a Codex task is running. The coordinator still checks live task ownership, reads candidate issue bodies and attributed comments, chooses priority, and proves file and behaviour isolation before parallel work.
+Rules 3 and 5 read GitHub's native dependencies and officially closing references only. A pull request that merely
+mentions an issue is not proof of shipment, and a textual blocker section is not a contract. No finding authorises
+creating, applying, renaming, or removing a label, repairing the tracker, or local cleanup, and drifted issues
+never appear as ready work.
 
-During `/resume`, overlap this board read with independent Git, open pull-request, and active-runtime ownership reads; inspect every result before shortlisting. Reuse board facts instead of fetching each card again. One board request per page does not promise lower overall resume latency; measure live reads separately from planning and delivery.
+Rules 7 and 8 key off an epic label. RentCottage decomposes through native sub-issues and has no epic label, so
+`EPIC_LABELS` is empty and both rules stay inert until one exists.
 
-For up to three shortlisted issues, send one aliased `gh api graphql` query under `repository(owner: "zaingulel", name: "RentCottage")`, using an alias per `issue(number: N)`. Select `id number state body repository { nameWithOwner }` and `comments(first:100) { totalCount nodes { author { login } authorAssociation body createdAt url } pageInfo { hasNextPage endCursor } }`. Recheck each issue identity and open state against the board, require every alias, and reject GraphQL errors or malformed responses. Preserve comment attribution; a null author is deleted/unknown, not an owner decision. Require comment count to match returned nodes and `hasNextPage` to be false before recommending that candidate. If incomplete, explicitly fetch the missing comment pages with cursors and confirm completeness, or exclude that candidate and report the gap. Retry only the named failed source.
+During `/resume`, overlap this board read with independent Git, open pull-request, and active-runtime ownership
+reads; inspect every result before shortlisting. Reuse board facts instead of fetching each card again.
 
-Maintenance is one board query, parser, classifier, formatter, and focused test file. Remove them when Project 4 is retired as the authoritative selection surface or a native replacement supplies the same complete intake.
 
 ## Tracker changes
 
