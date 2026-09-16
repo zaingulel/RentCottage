@@ -48,10 +48,10 @@ const baselineOnlyPaths = new Set([
   "scripts/run-log.mjs",
   "scripts/run-log.test.mjs",
   // The board and git-guard toolkit. npm test proves these in baseline through the
-  // node --test suite, except board-move.mjs, which is argv parsing over the proved
-  // moveCards; their reach is the GitHub API and local Git, never Supabase, the Worker
-  // or a browser. Exact names, never a scripts/lib/ wildcard: the same directory holds
-  // the Supabase, Worker and browser fixtures, which do need the expensive route.
+  // node --test suite, except scripts/board-move.mjs, which is argv parsing over proved
+  // helpers; their reach is the GitHub API and local Git, never Supabase, the Worker or
+  // a browser. Exact names, never a scripts/lib/ wildcard: the same directory holds the
+  // Supabase, Worker and browser fixtures, which do need the expensive route.
   "scripts/board.mjs",
   "scripts/board-add.mjs",
   "scripts/board-move.mjs",

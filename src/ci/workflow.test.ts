@@ -62,8 +62,8 @@ const SEPARATOR = "\x1f";
 // Reads one combination per line and prints back the values it actually read with the
 // exit status they produced. Echoing the values, not the input line number, makes a
 // garbled combination key its own result rather than masquerade as the intended one.
-// The body is sourced under the same options the workflow runs it with, so its
-// `exit 1` leaves the subshell exactly as it leaves `bash -c`.
+// The body is sourced under `set -e`, as the workflow's default `bash -e` shell runs
+// it, so its `exit 1` leaves the subshell exactly as it leaves `bash -c`.
 const DRIVER = [
   "while IFS=$'\\x1f' read -r baseline database browser; do",
   `  ( if [[ "$baseline" == "${UNSET}" ]]; then unset BASELINE_RESULT; else export BASELINE_RESULT="$baseline"; fi`,
@@ -176,7 +176,8 @@ describe("pull-request CI", () => {
   );
 
   // The budget sits far above the work: this asserts which exit status each combination
-  // produces, never how fast a subprocess returns, so load cannot fail it (#294).
+  // produces, never how fast a subprocess returns, so load must not be able to fail it
+  // (#294).
   it("accepts only complete successful evidence in the actual aggregate shell", () => {
     const { workflow } = loadWorkflow();
     const aggregate = readySteps(workflow.jobs?.test.steps ?? [])[0];
@@ -218,7 +219,8 @@ describe("pull-request CI", () => {
     delete env.BROWSER_RESULT;
     env.AGGREGATE_SCRIPT = script;
     const cell = (value?: string) => (value === undefined ? UNSET : value);
-    // Keyed through `cell` so an absent result stays distinct from an empty one.
+    // Keyed through `cell` because `JSON.stringify` drops an undefined-valued key, so a
+    // raw label could never match the `@unset` the shell echoes back.
     const label = ({
       baseline,
       database,
