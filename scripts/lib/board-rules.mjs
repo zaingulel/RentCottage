@@ -232,7 +232,7 @@ function formatIdentities(numbers) {
 
 // 9. The #357–#361 failure mode: `gh project item-add` (and the bare "add item" UI
 // path) drops a card on the board with NO Status and NO routing value. Grouped views
-// then grow a phantom "No Status"/"No routing value" lane, and the card is invisible to
+// then grow a phantom "No Status"/"No Workstream" lane, and the card is invisible to
 // every status-scoped rule above (isInFlight(null) is false by design, the pickable set
 // never matches null). Draft cards (no issue number) live on the board too, so they are
 // flagged as well — this is the one rule a numberless card reaches.

@@ -599,5 +599,5 @@ export function formatGrouped(items) {
   // Keep the repository-owned priority and low-cost read; newly seen values must fail loud.
   const values = unknown.join(', ');
   const label = unknown.length === 1 ? 'value' : 'values';
-  return `${body}\n\nWARNING: unrecognised ${ROUTING_FIELD} ${label}: ${values}; add ${values} to ROUTING_OPTIONS in scripts/lib/board-config.mjs.`;
+  return `${body}\n\nWARNING: unrecognised ${ROUTING_FIELD} ${label}: ${values}; add ${values} to ROUTING_OPTIONS and update .agents/skills/to-issues/SKILL.md.`;
 }

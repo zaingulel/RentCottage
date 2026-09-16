@@ -12,20 +12,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BOARD_OWNER,
-  EPIC_LABELS,
   PICKABLE_STATUSES,
   ROUTING_FIELD,
-  STATUS_OPTIONS,
   TERMINAL_STATUSES,
   WAIT_STATUSES,
 } from './board-config.mjs';
-
-// The two rule inputs a board need not have. RentCottage has no epic label and, until
-// the wait column lands, no wait status; the rules that exist only for them are skipped
-// rather than asserted against a shape this board cannot produce.
-const EPIC_LABEL = EPIC_LABELS[0] ?? null;
-const WAIT_STATUS = WAIT_STATUSES[0] ?? null;
-const needsEpicLabel = EPIC_LABEL ? false : 'board-config names no epic label';
 import { leanBoardPage, leanNode } from './board-fixtures.mjs';
 import { parseBoardPage } from './board.mjs';
 import {
@@ -187,17 +178,15 @@ test('rule 5 — a merged closing pull request on an open issue is fatal drift a
   assert.equal(closeoutExit(drifted), 1);
 });
 
-test('rule 6 — a claim with no closing pull request at all is an advisory; an open one, an epic, and a wait column are not', () => {
+test('rule 6 — a claim with no closing pull request at all is an advisory; an open one, an epic, and Awaiting push are not', () => {
   const { drifted } = scan([
     { number: 1, status: 'In progress' },
     // twin: an open draft is exactly what an in-flight job looks like.
     { number: 2, status: 'In review', closingPullRequests: [{ number: 50, merged: false }] },
     // twin: a slice's "Closes #<slice>" creates no closing reference on the epic wrapper.
-    ...(EPIC_LABEL
-      ? [{ number: 3, status: 'In progress', labels: [EPIC_LABEL], subIssues: { total: 1, completed: 0 } }]
-      : []),
-    // twin: the wait column is the gap before any push has happened.
-    ...(WAIT_STATUS ? [{ number: 4, status: WAIT_STATUS }] : []),
+    { number: 3, status: 'In progress', labels: ['type:epic'], subIssues: { total: 1, completed: 0 } },
+    // twin: Awaiting push is the gap before any push has happened.
+    { number: 4, status: 'Awaiting push' },
   ]);
   assert.deepEqual(rowsFor(drifted, 1), [{
     number: 1,
@@ -207,17 +196,17 @@ test('rule 6 — a claim with no closing pull request at all is an advisory; an 
     advisory: true,
   }]);
   assert.deepEqual(rowsFor(drifted, 2), []);
-  if (EPIC_LABEL) assert.deepEqual(rowsFor(drifted, 3), []);
-  if (WAIT_STATUS) assert.deepEqual(rowsFor(drifted, 4), []);
+  assert.deepEqual(rowsFor(drifted, 3), []);
+  assert.deepEqual(rowsFor(drifted, 4), []);
   assert.equal(closeoutExit(drifted), 0);
 });
 
-test('rule 7 — an open epic whose every child is closed is fatal drift; one open child or zero children is not', { skip: needsEpicLabel }, () => {
+test('rule 7 — an open epic whose every child is closed is fatal drift; one open child or zero children is not', () => {
   const { drifted } = scan([
-    { number: 1, status: 'Ready', labels: [EPIC_LABEL], subIssues: { total: 3, completed: 3 } },
-    { number: 2, status: 'Ready', labels: [EPIC_LABEL], subIssues: { total: 2, completed: 1 } },
+    { number: 1, status: 'Ready', labels: ['type:epic'], subIssues: { total: 3, completed: 3 } },
+    { number: 2, status: 'Ready', labels: ['type:epic'], subIssues: { total: 2, completed: 1 } },
     // twin: nothing can be "all closed" with no children — that is rule 8's shape.
-    { number: 3, status: 'Ready', labels: [EPIC_LABEL], subIssues: { total: 0, completed: 0 } },
+    { number: 3, status: 'Ready', labels: ['type:epic'], subIssues: { total: 0, completed: 0 } },
   ]);
   assert.deepEqual(rowsFor(drifted, 1), [{
     number: 1,
@@ -230,12 +219,12 @@ test('rule 7 — an open epic whose every child is closed is fatal drift; one op
   assert.equal(closeoutExit(drifted), 1);
 });
 
-test('rule 8 — an epic claimed with no sub-issues is an advisory; one sub-issue or a card still in Ready is not', { skip: needsEpicLabel }, () => {
+test('rule 8 — an epic claimed with no sub-issues is an advisory; one sub-issue or a card still in Ready is not', () => {
   const { drifted } = scan([
-    { number: 1, status: 'In progress', labels: [EPIC_LABEL], subIssues: { total: 0, completed: 0 } },
-    { number: 2, status: 'In progress', labels: [EPIC_LABEL], subIssues: { total: 1, completed: 0 } },
+    { number: 1, status: 'In progress', labels: ['type:epic'], subIssues: { total: 0, completed: 0 } },
+    { number: 2, status: 'In progress', labels: ['type:epic'], subIssues: { total: 1, completed: 0 } },
     // twin: an undecomposed epic waiting in Ready is the normal pre-pick state.
-    { number: 3, status: 'Ready', labels: [EPIC_LABEL], subIssues: { total: 0, completed: 0 } },
+    { number: 3, status: 'Ready', labels: ['type:epic'], subIssues: { total: 0, completed: 0 } },
   ]);
   assert.deepEqual(rowsFor(drifted, 1), [{
     number: 1,
@@ -423,14 +412,12 @@ test('isInFlight: true for any column that is neither pickable nor terminal', ()
 });
 
 // The vocabulary is board-config's, not this module's: the pickable and terminal sets
-// are what isInFlight excludes, and a wait column is deliberately IN flight (a shipped
+// are what isInFlight excludes, and Awaiting push is deliberately IN flight (a shipped
 // card there is still drift) while being exempt from the stalled claim rule alone.
-// Asserted as the invariant rather than as one board's literal column names, so the
-// same test judges both repositories' configs.
-test('the pickable, terminal and wait columns are board-config\'s, and a wait column is still in-flight', () => {
-  for (const status of [...PICKABLE_STATUSES, ...TERMINAL_STATUSES, ...WAIT_STATUSES]) {
-    assert.ok(STATUS_OPTIONS.includes(status), `${status} is not one of STATUS_OPTIONS`);
-  }
+test('the pickable, terminal and wait columns are board-config\'s, and Awaiting push is still in-flight', () => {
+  assert.deepEqual([...PICKABLE_STATUSES].sort(), ['Backlog', 'Ready']);
+  assert.deepEqual(TERMINAL_STATUSES, ['Done']);
+  assert.deepEqual(WAIT_STATUSES, ['Awaiting push']);
   for (const status of [...PICKABLE_STATUSES, ...TERMINAL_STATUSES]) {
     assert.equal(isInFlight(status), false, status);
   }
@@ -439,11 +426,10 @@ test('the pickable, terminal and wait columns are board-config\'s, and a wait co
   }
 });
 
-test('isEpic: true for every board-config epic label, false otherwise', () => {
-  for (const label of EPIC_LABELS) {
-    assert.equal(isEpic({ labels: [label] }), true, label);
-    assert.equal(isEpic({ labels: ['area:ui', label] }), true, label);
-  }
+test('isEpic: true for the type:epic label (or legacy bare epic), false otherwise', () => {
+  assert.equal(isEpic({ labels: ['type:epic'] }), true);
+  assert.equal(isEpic({ labels: ['area:ui', 'type:epic'] }), true);
+  assert.equal(isEpic({ labels: ['epic'] }), true);
   assert.equal(isEpic({ labels: ['type:feature'] }), false);
   assert.equal(isEpic({ labels: [] }), false);
 });
@@ -606,7 +592,5 @@ test('scanOutcome: an unresolved card with blank fields is fatal to an ordinary 
   assert.equal(exitCode, 1);
   assert.equal(lines.filter((line) => line.includes('re-run the read')).length, 1);
   assert.equal(lines.join('\n').includes('set the field(s)'), false);
-  // The unfielded rule names this field below; its value is one board's fact, so assert
-  // only that there is one to name.
-  assert.ok(typeof ROUTING_FIELD === 'string' && ROUTING_FIELD.length > 0);
+  assert.equal(ROUTING_FIELD, 'Workstream'); // the field the unfielded rule names below
 });

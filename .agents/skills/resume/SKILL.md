@@ -95,7 +95,8 @@ the owner-approved pull-request body.
 
 ## Finish the approved job
 
-Include the branch and absolute worktree path in the filled pull-request body's proposed closeout actions.
+Move the card to `Awaiting push` with `node scripts/board-move.mjs <issue> "Awaiting push"` when presenting the
+filled pull-request body for delivery approval. Include the branch and absolute worktree path in the filled pull-request body's proposed closeout actions.
 After delivery approval, follow `docs/agents/delivery.md` and watch the approved merge until it lands or reports a
 failure or blocker. When GitHub confirms `MERGED`, run [closeout](../closeout/SKILL.md) in the same session under
 the authorisation that covered the merge. Report the confirmed merge and the cleanup result.

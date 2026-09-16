@@ -16,7 +16,7 @@
 // query that reads off the issue side instead of paging the whole board. `moveCards`
 // batches N pairs behind one status-field resolve, dropping a move to ~3 points.
 
-import { BOARD_OWNER, BOARD_PROJECT_NUMBER, BOARD_REPOSITORY, ROUTING_FIELD } from './board-config.mjs';
+import { BOARD_OWNER, BOARD_PROJECT_NUMBER, BOARD_REPOSITORY } from './board-config.mjs';
 
 // GraphQL for a single-select field (id + options) on project #2. Also carries the
 // project id, so one read resolves both.
@@ -80,12 +80,12 @@ function findProjectItemNode(json, issueNumber) {
   if (!Array.isArray(nodes)) throw new Error('issue projectItems JSON has no nodes[] array');
   const node = nodes.find((n) => n?.project?.number === BOARD_PROJECT_NUMBER);
   // Name the way forward: refusing without one is what pushed callers to a bare
-  // `gh project item-add`, which drops a card with no Status and no routing value — the
+  // `gh project item-add`, which drops a card with no Status and no Workstream — the
   // #357-#361 drift the board scan catches only after the fact.
   if (!node) {
     throw new Error(
-      `issue #${issueNumber} is not on the board — add it with Status and ${ROUTING_FIELD}: `
-      + `node scripts/board-add.mjs ${issueNumber} <Status> <${ROUTING_FIELD}>`,
+      `issue #${issueNumber} is not on the board — add it with Status and Workstream: `
+      + `node scripts/board-add.mjs ${issueNumber} <Status> <Workstream>`,
     );
   }
   return node;

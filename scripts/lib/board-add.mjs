@@ -1,9 +1,9 @@
 // board-add.mjs — pure id-resolution + orchestration for ADDING an issue to the
-// board with its Status and routing value already set.
+// board with its Status and Workstream already set.
 //
 // board-move.mjs correctly refuses an issue that has no card ("#N is not on the
 // board"), and the only scripted way forward was a bare `gh project item-add`,
-// which drops a card with NO Status and NO routing value — the #357-#361 failure mode
+// which drops a card with NO Status and NO Workstream — the #357-#361 failure mode
 // the board scan's `unfieldedDrift` rule exists to catch AFTER the fact. This is
 // the seam that prevents it, so that check goes back to being a backstop rather
 // than the routine way these are found. `exec(args) → stdout` is injectable so this
@@ -98,7 +98,7 @@ function shellArgument(value) {
 
 // Put issue #issueNumber on the board with BOTH fields set, and return
 // `{ issueNumber, itemId, statusName, workstreamName }`. Every id is resolved BEFORE
-// the card is created, so an unknown Status or routing name fails without leaving
+// the card is created, so an unknown Status or Workstream name fails without leaving
 // an unfielded card behind. A failed field update throws naming which field(s) the
 // card was left without — a partial add is never swallowed.
 export function addIssueToBoard({ issueNumber, statusName, workstreamName }, exec) {

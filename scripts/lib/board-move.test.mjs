@@ -8,11 +8,7 @@ import {
   parseBatchArgs,
   moveCards,
 } from './board-move.mjs';
-import { BOARD_PROJECT_NUMBER, ROUTING_FIELD } from './board-config.mjs';
-
-// Any project that is NOT the board, so "belongs to another project" stays true
-// whatever project number board-config names.
-const OTHER_PROJECT = BOARD_PROJECT_NUMBER + 1;
+import { BOARD_PROJECT_NUMBER } from './board-config.mjs';
 
 // Shapes mirror the real `gh api graphql` payloads (verified live against project 2
 // while fixing #461). Expected ids are independent literals.
@@ -59,17 +55,17 @@ test('parseSingleSelectField throws (fail-loud) when the Status field is missing
   );
 });
 
-// board-add.mjs reads the routing field through this same parser, so the non-default
+// board-add.mjs reads Workstream through this same parser, so the non-default
 // fieldName path needs its own coverage: without it the parameter is only ever
-// exercised on its default and a routing-field failure could name the wrong field.
+// exercised on its default and a Workstream failure could name the wrong field.
 test('parseSingleSelectField names a non-default field in both fail-loud messages', () => {
   assert.throws(
-    () => parseSingleSelectField({ data: { user: { projectV2: {} } } }, ROUTING_FIELD),
-    new RegExp(`${ROUTING_FIELD.toLowerCase()}-field JSON has no project id`),
+    () => parseSingleSelectField({ data: { user: { projectV2: {} } } }, 'Workstream'),
+    /workstream-field JSON has no project id/,
   );
   assert.throws(
-    () => parseSingleSelectField({ data: { user: { projectV2: { id: 'PVT_x' } } } }, ROUTING_FIELD),
-    new RegExp(`no "${ROUTING_FIELD}" field on the project`),
+    () => parseSingleSelectField({ data: { user: { projectV2: { id: 'PVT_x' } } } }, 'Workstream'),
+    /no "Workstream" field on the project/,
   );
 });
 
@@ -86,9 +82,9 @@ test('optionIdFor throws on an unknown status, naming the valid options', () => 
   assert.throws(() => optionIdFor(options, 'Bogus'), /unknown Status "Bogus".*Done/s);
 });
 
-test('parseIssueItemId picks the board project node among others; throws when not on the board', () => {
+test('parseIssueItemId picks the board node among others; throws when not on the board', () => {
   const json = issueItemJson([
-    { id: 'item-other-project', project: { number: OTHER_PROJECT } },
+    { id: 'item-other-project', project: { number: 7 } },
     { id: 'item-a', project: { number: BOARD_PROJECT_NUMBER } },
   ]);
   assert.equal(parseIssueItemId(json, 453), 'item-a');
@@ -96,11 +92,8 @@ test('parseIssueItemId picks the board project node among others; throws when no
   // scripted way forward. Without the pointer the caller falls back to a bare
   // `gh project item-add` and leaves an unfielded card behind.
   assert.throws(
-    () => parseIssueItemId(issueItemJson([{ id: 'x', project: { number: OTHER_PROJECT } }]), 999),
-    new RegExp(
-      `#999 is not on the board — add it with Status and ${ROUTING_FIELD}: `
-      + `node scripts/board-add\\.mjs 999 <Status> <${ROUTING_FIELD}>`,
-    ),
+    () => parseIssueItemId(issueItemJson([{ id: 'x', project: { number: 7 } }]), 999),
+    /#999 is not on the board — add it with Status and Workstream: node scripts\/board-add\.mjs 999 <Status> <Workstream>/,
   );
 });
 
@@ -108,13 +101,13 @@ test('parseIssueItemId throws (fail-loud) on malformed JSON', () => {
   assert.throws(() => parseIssueItemId({ data: { repository: { issue: {} } } }, 453), /no nodes\[\] array/);
 });
 
-test('parseIssueItemStatus reads the board project node\'s current Status name, or null with no value', () => {
+test('parseIssueItemStatus reads the board node\'s current Status name, or null with no value', () => {
   const withStatus = issueItemJson([{ id: 'item-a', project: { number: BOARD_PROJECT_NUMBER }, status: { name: 'Done' } }]);
   assert.equal(parseIssueItemStatus(withStatus, 453), 'Done');
   const withoutStatus = issueItemJson([{ id: 'item-b', project: { number: BOARD_PROJECT_NUMBER } }]);
   assert.equal(parseIssueItemStatus(withoutStatus, 453), null);
   assert.throws(
-    () => parseIssueItemStatus(issueItemJson([{ id: 'x', project: { number: OTHER_PROJECT } }]), 999),
+    () => parseIssueItemStatus(issueItemJson([{ id: 'x', project: { number: 7 } }]), 999),
     /#999 is not on the board/,
   );
 });

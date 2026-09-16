@@ -34,18 +34,10 @@ import {
   formatGrouped,
 } from './board.mjs';
 
-// Routing values drawn from board-config so the same test judges either board. A board
-// needs at least three options for the ordering tests below; both repositories have them.
-const [ROUTING_A, ROUTING_B, ROUTING_C] = ROUTING_OPTIONS;
-// Deliberately not an option on any board. Sorts alphabetically before most option
-// names, so a grouping that fell back to alphabetical order would flip the head of the
-// lists below instead of keeping the unrecognised value last.
-const UNKNOWN_ROUTING = 'Brand';
-
 // A representative board spanning pickable + non-pickable columns.
 const BOARD = {
   items: [
-    { status: 'Ready', title: 'Funnel reader CLI', routing: ROUTING_B,
+    { status: 'Ready', title: 'Funnel reader CLI', routing: 'Product',
       labels: ['type:task', 'autonomy:autonomous'], content: { number: 266 } },
     { status: 'Backlog', title: 'Review batch 5',
       labels: ['tripwire', 'plan-first'], content: { number: 264 } },
@@ -143,7 +135,7 @@ const REAL_ISSUE_NODE = leanNode({
     {},
     { text: 'Move refresh() and upsertChart into their own source pieces', field: { name: 'Title' } },
     { name: 'Done', field: { name: 'Status' } },
-    { name: ROUTING_B, field: { name: ROUTING_FIELD } },
+    { name: 'Product', field: { name: 'Workstream' } },
     { name: 'Sonnet 5', field: { name: 'Model' } },
   ],
 });
@@ -166,7 +158,7 @@ const REAL_LABELLED_NODE = leanNode({
     { name: 'Done', field: { name: 'Status' } },
     { name: 'Opus 4.8', field: { name: 'Model' } },
     { name: 'high', field: { name: 'Effort' } },
-    { name: ROUTING_B, field: { name: ROUTING_FIELD } },
+    { name: 'Product', field: { name: 'Workstream' } },
   ],
 });
 // Captured before the query asked for `content { __typename }`. The typename is restored here
@@ -178,7 +170,7 @@ const REAL_DRAFT_NODE = leanNode({
   fieldValues: [
     { text: 'Trial Blacksmith CI runners (free 3k min/mo) — maybe for a future project', field: { name: 'Title' } },
     { name: 'Backlog', field: { name: 'Status' } },
-    { name: ROUTING_C, field: { name: ROUTING_FIELD } },
+    { name: 'Platform', field: { name: 'Workstream' } },
   ],
 });
 const BOARD_PAGE = leanBoardPage(
@@ -245,13 +237,13 @@ test('fetchBoard walks the slurped pages of one gh call in order and fails loud 
     {
       id: 'PVTI_lAHOA50uGs4BcfoOzgx01fY', status: 'Done',
       title: 'Move refresh() and upsertChart into their own source pieces',
-      routing: ROUTING_B, labels: [], assignees: [], blockers: [], closingPullRequests: [],
+      routing: 'Product', labels: [], assignees: [], blockers: [], closingPullRequests: [],
       content: { __typename: 'Issue', number: 319, state: 'OPEN', subIssuesSummary: { total: 0, completed: 0 } },
     },
     {
       id: 'PVTI_lAHOA50uGs4BcfoOzgx0mxg', status: 'Backlog',
       title: 'Trial Blacksmith CI runners (free 3k min/mo) — maybe for a future project',
-      routing: ROUTING_C, labels: [], assignees: [], blockers: [], closingPullRequests: [],
+      routing: 'Platform', labels: [], assignees: [], blockers: [], closingPullRequests: [],
       content: { __typename: 'DraftIssue' },
     },
   ]);
@@ -338,7 +330,7 @@ test('parseBoardPage maps a fully-fielded issue card to the exact raw shape', ()
     id: 'PVTI_lAHOA50uGs4BcfoOzgx01fY',
     status: 'Done',
     title: 'Move refresh() and upsertChart into their own source pieces',
-    routing: ROUTING_B,
+    routing: 'Product',
     labels: [],
     assignees: [],
     blockers: [],
@@ -353,7 +345,7 @@ test('parseBoardPage carries labels, assignees, blockers and closing pull reques
     id: 'PVTI_lAHOA50uGs4BcfoOzgxw3wE',
     status: 'Done',
     title: 'Review batch 4 — interaction/desktop breaks',
-    routing: ROUTING_B,
+    routing: 'Product',
     labels: ['type:feature', 'area:ui', 'area:desktop', 'autonomy:supervised'],
     assignees: [BOARD_OWNER],
     blockers: [{ number: 261, state: 'OPEN' }, { number: 262, state: 'CLOSED' }],
@@ -370,7 +362,7 @@ test('parseBoardPage carries a draft\'s __typename through with the Title fieldV
     id: 'PVTI_lAHOA50uGs4BcfoOzgx0mxg',
     status: 'Backlog',
     title: 'Trial Blacksmith CI runners (free 3k min/mo) — maybe for a future project',
-    routing: ROUTING_C,
+    routing: 'Platform',
     labels: [],
     assignees: [],
     blockers: [],
@@ -389,16 +381,16 @@ test('parseBoardPage carries a draft\'s __typename through with the Title fieldV
 // every session instead.
 test('parseBoardPage accepts the numberless and unfielded cards this board legitimately holds', () => {
   const { items } = parseBoardPage(leanBoardPage([
-    leanNode({ id: 'PVTI_draft', content: { __typename: 'DraftIssue' }, title: 'a draft note', status: 'Backlog', routing: ROUTING_B }),
-    leanNode({ id: 'PVTI_pr', content: { __typename: 'PullRequest' }, title: 'a pull request card', status: 'Ready', routing: ROUTING_B }),
-    leanNode({ id: 'PVTI_no_status', content: { __typename: 'Issue', number: 11, title: 'no status' }, routing: ROUTING_B }),
+    leanNode({ id: 'PVTI_draft', content: { __typename: 'DraftIssue' }, title: 'a draft note', status: 'Backlog', routing: 'Product' }),
+    leanNode({ id: 'PVTI_pr', content: { __typename: 'PullRequest' }, title: 'a pull request card', status: 'Ready', routing: 'Product' }),
+    leanNode({ id: 'PVTI_no_status', content: { __typename: 'Issue', number: 11, title: 'no status' }, routing: 'Product' }),
     leanNode({ id: 'PVTI_no_routing', content: { __typename: 'Issue', number: 12, title: 'no routing' }, status: 'Ready' }),
   ]));
 
   assert.deepEqual(items.map((i) => [i.id, i.status, i.routing]), [
-    ['PVTI_draft', 'Backlog', ROUTING_B],
-    ['PVTI_pr', 'Ready', ROUTING_B],
-    ['PVTI_no_status', null, ROUTING_B],
+    ['PVTI_draft', 'Backlog', 'Product'],
+    ['PVTI_pr', 'Ready', 'Product'],
+    ['PVTI_no_status', null, 'Product'],
     ['PVTI_no_routing', 'Ready', null],
   ]);
 });
@@ -432,7 +424,7 @@ const guardNode = (content = {}, node = {}) => leanNode({
   id: 'PVTI_guard',
   content: { __typename: 'Issue', number: 9, title: 'a card', ...content },
   status: 'Ready',
-  routing: ROUTING_B,
+  routing: 'Product',
   ...node,
 });
 const parseNodes = (...nodes) => parseBoardPage(leanBoardPage(nodes));
@@ -568,8 +560,8 @@ test('parseBoardPage throws on a duplicate Status or routing value on one card',
     id: 'PVTI_guard',
     content: { __typename: 'Issue', number: 9, title: 'a card' },
     fieldValues: [
-      { name: name === 'Status' ? 'Ready' : ROUTING_B, field: { name } },
-      { name: name === 'Status' ? 'Backlog' : ROUTING_C, field: { name } },
+      { name: name === 'Status' ? 'Ready' : 'Product', field: { name } },
+      { name: name === 'Status' ? 'Backlog' : 'Platform', field: { name } },
     ],
   });
   assert.throws(() => parseNodes(duplicated('Status')), /board item PVTI_guard carried 2 "Status" values.*one value per card/s);
@@ -716,7 +708,7 @@ test('normalizeItem flattens exactly the fields the board rules judge a card on'
     number: 263,
     status: 'Done',
     title: 'Review batch 4 — interaction/desktop breaks',
-    routing: ROUTING_B,
+    routing: 'Product',
     labels: ['type:feature', 'area:ui', 'area:desktop', 'autonomy:supervised'],
     state: 'OPEN',
     assignees: [BOARD_OWNER],
@@ -766,19 +758,19 @@ test('formatList orders then renders the given selection', () => {
   assert.equal(out.includes('#293'), false);
 });
 
-// The second routing option outnumbers the first (2 vs 1) and sorts earlier by number —
+// Product outnumbers Go-to-market (2 vs 1) and sorts earlier by number —
 // the mutation guard: a flat/number-ordered list would put #200 before #391.
 const ROUTED_ITEMS = [
-  { status: 'Backlog', title: 'Product A', routing: ROUTING_B, content: { number: 100 } },
-  { status: 'Backlog', title: 'Product B', routing: ROUTING_B, content: { number: 200 } },
-  { status: 'Backlog', title: 'GTM item', routing: ROUTING_A, content: { number: 391 } },
+  { status: 'Backlog', title: 'Product A', routing: 'Product', content: { number: 100 } },
+  { status: 'Backlog', title: 'Product B', routing: 'Product', content: { number: 200 } },
+  { status: 'Backlog', title: 'GTM item', routing: 'Go-to-market', content: { number: 391 } },
   { status: 'Backlog', title: 'No routing', routing: null, content: { number: 500 } },
-  { status: 'Backlog', title: 'New field', routing: UNKNOWN_ROUTING, content: { number: 600 } },
+  { status: 'Backlog', title: 'New field', routing: 'Legal', content: { number: 600 } },
 ];
 
-test('groupByRouting puts the first routing option FIRST even though the second outnumbers it and sorts earlier by number', () => {
+test('groupByRouting puts Go-to-market FIRST even though Product outnumbers it and sorts earlier by number', () => {
   const groups = groupByRouting(ROUTED_ITEMS);
-  assert.equal(groups[0].routing, ROUTING_A);
+  assert.equal(groups[0].routing, 'Go-to-market');
   assert.deepEqual(groups[0].items.map((i) => i.content.number), [391]);
 });
 
@@ -801,71 +793,79 @@ test('groupByRouting treats an empty-string routing value as Unfielded, not an u
   assert.deepEqual(groups.map((g) => g.routing), ['Unfielded']);
 });
 
-test('groupByRouting omits empty groups (no group for an option nothing is on)', () => {
+test('groupByRouting omits empty groups (no Platform group when nothing is on it)', () => {
   const groups = groupByRouting(ROUTED_ITEMS);
-  assert.equal(groups.some((g) => g.routing === ROUTING_C), false);
+  assert.equal(groups.some((g) => g.routing === 'Platform'), false);
 });
 
 test('groupByRouting surfaces an unrecognised routing value after the known ones, before Unfielded', () => {
   const groups = groupByRouting(ROUTED_ITEMS);
-  assert.deepEqual(groups.map((g) => g.routing), [ROUTING_A, ROUTING_B, UNKNOWN_ROUTING, 'Unfielded']);
+  assert.deepEqual(groups.map((g) => g.routing), ['Go-to-market', 'Product', 'Legal', 'Unfielded']);
 });
 
-// Every routing option carries a card, plus one value that is not an option and must
-// still reach the unrecognised-value fallback AFTER all of them. The unknown value is
-// listed FIRST here, so input order cannot be what puts it last.
+// Every routing option carries a card, plus Brand, which is not an option and must
+// still reach the unrecognised-value fallback AFTER all of them. Brand sorts
+// alphabetically before two of the three names, so a grouping that fell back to
+// alphabetical order would flip the head of this list.
 const ALL_ROUTED_ITEMS = [
-  { status: 'Backlog', title: 'unknown item', routing: UNKNOWN_ROUTING, content: { number: 602 } },
-  ...ROUTING_OPTIONS.map((routing, index) => ({
-    status: 'Backlog', title: `${routing} item`, routing, content: { number: 603 + index },
-  })),
+  { status: 'Backlog', title: 'Brand item', routing: 'Brand', content: { number: 602 } },
+  { status: 'Backlog', title: 'Platform item', routing: 'Platform', content: { number: 603 } },
+  { status: 'Backlog', title: 'Product item', routing: 'Product', content: { number: 604 } },
+  { status: 'Backlog', title: 'GTM item', routing: 'Go-to-market', content: { number: 605 } },
 ];
 
 test('groupByRouting orders groups by ROUTING_OPTIONS and still falls back for a value outside it', () => {
+  // The live board's routing field offers exactly these three. Pinned literally
+  // so adding a fourth option, or reordering them, fails here first.
+  assert.deepEqual(ROUTING_OPTIONS, ['Go-to-market', 'Product', 'Platform']);
   const groups = groupByRouting(ALL_ROUTED_ITEMS);
-  // Board order, then the unrecognised value — whatever options the board declares.
-  assert.deepEqual(groups.map((g) => g.routing), [...ROUTING_OPTIONS, UNKNOWN_ROUTING]);
-  // The fallback survives the enumerated options: the unknown value is still caught, and
-  // is its own named group rather than being swept into Unfielded.
+  assert.deepEqual(groups.map((g) => g.routing), [
+    'Go-to-market',
+    'Product',
+    'Platform',
+    'Brand',
+  ]);
+  // The fallback survives the enumerated options: Brand is still caught, and is its
+  // own named group rather than being swept into Unfielded.
   assert.deepEqual(
-    groups.find((g) => g.routing === UNKNOWN_ROUTING).items.map((i) => i.content.number),
+    groups.find((g) => g.routing === 'Brand').items.map((i) => i.content.number),
     [602],
   );
 });
 
-test('formatGrouped renders the first routing option\'s heading before the second\'s', () => {
+test('formatGrouped renders the Go-to-market heading before the Product heading', () => {
   const out = formatGrouped(ROUTED_ITEMS);
-  assert.ok(out.indexOf(ROUTING_A) < out.indexOf(ROUTING_B));
-  assert.ok(out.includes(`── ${ROUTING_A} (1) ──`));
-  assert.ok(out.includes(`── ${ROUTING_B} (2) ──`));
+  assert.ok(out.indexOf('Go-to-market') < out.indexOf('Product'));
+  assert.match(out, /── Go-to-market \(1\) ──/);
+  assert.match(out, /── Product \(2\) ──/);
 });
 
 test('formatGrouped warns when an unrecognised routing value is rendered without dropping or reordering its cards', () => {
   const items = [
-    { status: 'Backlog', title: 'first option card', routing: ROUTING_A, content: { number: 701 } },
-    { status: 'Ready', title: 'second option card', routing: ROUTING_B, content: { number: 702 } },
-    { status: 'Backlog', title: 'unknown card', routing: UNKNOWN_ROUTING, content: { number: 703 } },
+    { status: 'Backlog', title: 'Go-to-market card', routing: 'Go-to-market', content: { number: 701 } },
+    { status: 'Ready', title: 'Product card', routing: 'Product', content: { number: 702 } },
+    { status: 'Backlog', title: 'Research card', routing: 'Research', content: { number: 703 } },
     { status: 'Backlog', title: 'Unfielded card', content: { number: 704 } },
   ];
 
   const out = formatGrouped(items);
-  const headings = [ROUTING_A, ROUTING_B, UNKNOWN_ROUTING, 'Unfielded'];
+  const headings = ['Go-to-market', 'Product', 'Research', 'Unfielded'];
   const headingPositions = headings.map((routing) => out.indexOf(`── ${routing} (1) ──`));
   assert.ok(headingPositions.every((position) => position >= 0));
   assert.deepEqual([...headingPositions].sort((a, b) => a - b), headingPositions);
   for (const number of [701, 702, 703, 704]) {
     assert.equal(out.split(`#${number}`).length - 1, 1);
   }
-  assert.ok(out.includes(`WARNING: unrecognised ${ROUTING_FIELD} value: ${UNKNOWN_ROUTING}`));
-  assert.ok(out.includes(`add ${UNKNOWN_ROUTING} to ROUTING_OPTIONS`));
-  assert.ok(out.includes('scripts/lib/board-config.mjs'));
-  assert.equal(out.includes(`unrecognised ${ROUTING_FIELD} value: Unfielded`), false);
+  assert.match(out, /WARNING: unrecognised Workstream value: Research/);
+  assert.match(out, /add Research to ROUTING_OPTIONS/);
+  assert.match(out, /\.agents\/skills\/to-issues\/SKILL\.md/);
+  assert.doesNotMatch(out, /unrecognised Workstream value: Unfielded/);
 
   const multipleUnknown = formatGrouped([
     { status: 'Backlog', title: 'Zulu card', routing: 'Zulu', content: { number: 707 } },
     { status: 'Backlog', title: 'Alpha card', routing: 'Alpha', content: { number: 708 } },
   ]);
-  assert.ok(multipleUnknown.includes(`WARNING: unrecognised ${ROUTING_FIELD} values: Alpha, Zulu`));
+  assert.match(multipleUnknown, /WARNING: unrecognised Workstream values: Alpha, Zulu/);
   assert.ok(multipleUnknown.indexOf('── Alpha (1) ──') < multipleUnknown.indexOf('── Zulu (1) ──'));
   for (const number of [707, 708]) {
     assert.equal(multipleUnknown.split(`#${number}`).length - 1, 1);
@@ -876,12 +876,12 @@ test('formatGrouped warns when an unrecognised routing value is rendered without
   ]);
   assert.match(syntheticUnfielded, /── Unfielded \(1\) ──/);
   assert.equal(syntheticUnfielded.split('#705').length - 1, 1);
-  assert.equal(syntheticUnfielded.includes(`WARNING: unrecognised ${ROUTING_FIELD}`), false);
+  assert.doesNotMatch(syntheticUnfielded, /WARNING: unrecognised Workstream/);
 
   const literalUnfielded = formatGrouped([
     { status: 'Backlog', title: 'Literal Unfielded card', routing: 'Unfielded', content: { number: 706 } },
   ]);
   assert.match(literalUnfielded, /── Unfielded \(1\) ──/);
   assert.equal(literalUnfielded.split('#706').length - 1, 1);
-  assert.ok(literalUnfielded.includes(`WARNING: unrecognised ${ROUTING_FIELD} value: Unfielded`));
+  assert.match(literalUnfielded, /WARNING: unrecognised Workstream value: Unfielded/);
 });

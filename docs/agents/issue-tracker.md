@@ -33,7 +33,7 @@ Publication is complete only when all applicable tracker surfaces agree:
 
 1. Create each GitHub issue with its approved title, detailed acceptance criteria, and configured labels.
 2. Add its approved native GitHub dependency edges.
-3. Add the issue to Project 4 and set its approved `Area` and dependency-safe `Status`.
+3. Add the issue to Project 4 and set its approved `Workstream` and dependency-safe `Status`.
 4. Re-read issues, native dependencies, Project membership, and Project fields from GitHub after the writes. Never verify from the request payload or cached local mapping.
 5. Run `npm run verify:board` and require exit status zero.
 
@@ -62,13 +62,15 @@ binding.
 
 The board is GitHub Project 4. [`scripts/lib/board-config.mjs`](../../scripts/lib/board-config.mjs) is the single
 home for its strings: the project identity, the Status columns, the columns work is picked from, the terminal
-column, and the `Area` routing field with its approved options. A rename or a new option is one edit there.
+column, and the `Workstream` routing field with its approved options. A rename or a new option is one edit there.
 
-- Status columns, in board order: `Backlog`, `Ready`, `In progress`, `In review`, `Done`.
+- Status columns, in board order: `Backlog`, `Ready`, `In progress`, `Awaiting push`, `In review`, `Done`.
+- `Awaiting push` holds a card whose filled pull-request body is waiting for delivery approval; it waits on the
+  owner, not on a session.
 - Work is picked from `Backlog` and `Ready`. Readiness is the column an issue sits in, not a label: nothing about
   an issue's availability is inferred from its labels or its prose.
 - `Done` is the only terminal column, so a card closed as superseded or not planned moves there too.
-- Every card carries a Status and an `Area` from the approved option list. A card missing either is drift.
+- Every card carries a Status and a `Workstream` from the approved option list. A card missing either is drift.
 - A closed issue belongs in `Done` and an open issue does not.
 - Active Codex task ownership is checked by the coordinator before moving an item into an in-flight column. The
   board verifier does not infer it.
@@ -81,9 +83,11 @@ assignment, or status change.
 
 | Command | Use |
 |---|---|
-| `npm run verify:board` | the pickable candidates grouped by `Area`, then the scan. `--all` shows every column, `--status=<name>` one column |
+| `npm run verify:board` | the pickable candidates grouped by `Workstream`, then the scan. `--all` shows every column, `--status=<name>` one column |
 | `npm run verify:board -- --json` | the same normalized selection on stdout for `/resume`, with the scan on stderr |
 | `node scripts/board.mjs --closeout` | the strict proof gate after a merge: the scan alone, sparing the advisory rows |
+
+`npm run verify:board` is `node scripts/board.mjs`; the two spellings are one program.
 
 The read is read-only and fetches Project 4's fields and every item through one paginated GraphQL walk. Labels,
 assignees, field values, native blockers, `subIssuesSummary { total completed }`, and officially closing
@@ -92,11 +96,11 @@ error, malformed JSON, or a zero-item read exits non-zero rather than printing a
 returning success. Drift also exits non-zero after printing the complete report.
 
 Writes go through two commands, never a raw `gh project item-add` or `item-edit`, which leave a card with no
-Status and no `Area`:
+Status and no `Workstream`:
 
 | Command | Use |
 |---|---|
-| `node scripts/board-add.mjs <issue#> <Status> <Area>` | put an issue on the board with both fields set |
+| `node scripts/board-add.mjs <issue#> <Status> <Workstream>` | put an issue on the board with both fields set |
 | `node scripts/board-move.mjs <issue#> <Status>`, or `--batch <issue>:<Status> ...` | move one card or many, resolving the shared field id once |
 
 The scan reports these findings. An advisory row informs the next pick; every other row also fails `--closeout`:
@@ -111,15 +115,15 @@ The scan reports these findings. An advisory row informs the next pick; every ot
 | 6 | an in-flight card with no closing pull request at all, merged or draft | advisory |
 | 7 | an open epic whose every child issue is closed | gate |
 | 8 | an epic claimed in-flight with no children | gate |
-| 9 | cards missing Status or `Area`; a mass outage summarises to one field-schema line instead of per-card blame | gate |
+| 9 | cards missing Status or `Workstream`; a mass outage summarises to one field-schema line instead of per-card blame | gate |
 
 Rules 3 and 5 read GitHub's native dependencies and officially closing references only. A pull request that merely
 mentions an issue is not proof of shipment, and a textual blocker section is not a contract. No finding authorises
 creating, applying, renaming, or removing a label, repairing the tracker, or local cleanup, and drifted issues
 never appear as ready work.
 
-Rules 7 and 8 key off an epic label. RentCottage decomposes through native sub-issues and has no epic label, so
-`EPIC_LABELS` is empty and both rules stay inert until one exists.
+Rules 7 and 8 key off the `type:epic` label. Apply it to an issue that exists to wrap native sub-issues, so the
+scan can tell a finished wrapper from an unstarted one.
 
 During `/resume`, overlap this board read with independent Git, open pull-request, and active-runtime ownership
 reads; inspect every result before shortlisting. Reuse board facts instead of fetching each card again.

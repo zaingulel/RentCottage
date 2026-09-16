@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BOARD_OWNER, BOARD_REPOSITORY, ROUTING_FIELD } from './board-config.mjs';
+import { BOARD_OWNER, BOARD_REPOSITORY } from './board-config.mjs';
 import { issueNodeIdQuery, parseIssueNodeId, addIssueToBoard } from './board-add.mjs';
 import { main as boardAddMain } from '../board-add.mjs';
 
@@ -28,7 +28,7 @@ function fieldJson(fieldId, options) {
 function projectItemFieldsJson(status, workstream) {
   const values = [
     ...(status == null ? [] : [{ name: status, field: { name: 'Status' } }]),
-    ...(workstream == null ? [] : [{ name: workstream, field: { name: ROUTING_FIELD } }]),
+    ...(workstream == null ? [] : [{ name: workstream, field: { name: 'Workstream' } }]),
   ];
   return { data: { node: { fieldValues: { totalCount: values.length, nodes: values } } } };
 }
@@ -47,7 +47,7 @@ function recordingExec({ itemId = 'PVTI_item543', failOn = null, nodeIdJson, add
       return JSON.stringify(nodeIdJson ?? { data: { repository: { issue: { id: ISSUE_NODE_ID } } } });
     }
     if (query.includes('field(name:"Status")')) return JSON.stringify(fieldJson('PVTSSF_status', STATUS_OPTIONS));
-    if (query.includes(`field(name:"${ROUTING_FIELD}")`)) {
+    if (query.includes('field(name:"Workstream")')) {
       return JSON.stringify(fieldJson('PVTSSF_workstream', WORKSTREAM_OPTIONS));
     }
     if (query.includes('addProjectV2ItemById')) {
@@ -81,7 +81,7 @@ test('parseIssueNodeId returns the id and throws (fail-loud) on a missing or emp
 
 // The whole point of the seam: a card must never land on the board unfielded (the
 // #357-#361 drift), so BOTH updateProjectV2ItemFieldValue mutations must fire.
-test('addIssueToBoard adds the card and sets BOTH Status and the routing field, in that call order', () => {
+test('addIssueToBoard adds the card and sets BOTH Status and Workstream, in that call order', () => {
   const { exec, calls } = recordingExec();
   const result = addIssueToBoard(
     { issueNumber: 543, statusName: 'Ready', workstreamName: 'Self-improvement loop' },
@@ -98,7 +98,7 @@ test('addIssueToBoard adds the card and sets BOTH Status and the routing field, 
   for (const call of calls) assert.deepEqual(call.slice(0, 3), ['api', 'graphql', '-f']);
   assert.match(calls[0][3], /issue\(number:543\) \{ id \}/);
   assert.match(calls[1][3], /field\(name:"Status"\)/);
-  assert.match(calls[2][3], new RegExp(`field\\(name:"${ROUTING_FIELD}"\\)`));
+  assert.match(calls[2][3], /field\(name:"Workstream"\)/);
   assert.match(calls[3][3], /addProjectV2ItemById/);
   assert.match(calls[3][3], new RegExp(`projectId:"${PROJECT_ID}"`));
   assert.match(calls[3][3], new RegExp(`contentId:"${ISSUE_NODE_ID}"`));
@@ -154,12 +154,12 @@ test('board-add reports authoritative outcomes after an unknown field mutation r
     {
       name: 'landed before its response was lost',
       remoteFields: projectItemFieldsJson('Ready', null),
-      expectedOutcome: new RegExp(`observed Status = Ready, ${ROUTING_FIELD} is unset`),
+      expectedOutcome: /observed Status = Ready, Workstream is unset/,
     },
     {
       name: 'rejected by GitHub',
       remoteFields: projectItemFieldsJson(null, null),
-      expectedOutcome: new RegExp(`observed Status is unset, ${ROUTING_FIELD} is unset`),
+      expectedOutcome: /observed Status is unset, Workstream is unset/,
     },
   ]) {
     const { exec, calls } = recordingExec({
@@ -237,26 +237,26 @@ test('board-add reports authoritative outcomes after an unknown field mutation r
   }
 });
 
-test('addIssueToBoard throws on an unknown Status or routing name, listing the valid options', () => {
+test('addIssueToBoard throws on an unknown Status or Workstream name, listing the valid options', () => {
   const bad = recordingExec();
   assert.throws(
     () => addIssueToBoard({ issueNumber: 543, statusName: 'Bogus', workstreamName: 'Platform' }, bad.exec),
     // Assert the field label, not just the value: both fields resolve through the shared
     // optionIdFor, so a wrong label here would send the reader to the wrong field — the
-    // same defect the routing-field half below is written to catch.
+    // same defect the Workstream half below is written to catch.
     /unknown Status "Bogus".*Ready, In progress/s,
   );
   const badWorkstream = recordingExec();
   assert.throws(
     () => addIssueToBoard({ issueNumber: 543, statusName: 'Ready', workstreamName: 'Nope' }, badWorkstream.exec),
-    // The message must name the routing field, not Status: both fields resolve through
-    // the shared optionIdFor, and a routing typo labelled "unknown Status" sends the
+    // The message must name Workstream, not Status: both fields resolve through the
+    // shared optionIdFor, and a Workstream typo labelled "unknown Status" sends the
     // reader to the wrong field.
-    new RegExp(`unknown ${ROUTING_FIELD} "Nope".*Platform, Self-improvement loop`, 's'),
+    /unknown Workstream "Nope".*Platform, Self-improvement loop/s,
   );
   // Neither typo may leave a card behind: the add mutation never ran.
   assert.equal(ran(bad.calls, 'addProjectV2ItemById'), false, 'added a card for an unknown Status');
-  assert.equal(ran(badWorkstream.calls, 'addProjectV2ItemById'), false, `added a card for an unknown ${ROUTING_FIELD}`);
+  assert.equal(ran(badWorkstream.calls, 'addProjectV2ItemById'), false, 'added a card for an unknown Workstream');
 });
 
 // issueNumber is interpolated into the GraphQL query string, so an unvalidated value
@@ -300,7 +300,7 @@ test('board-add CLI reports both fields on success and drives the injected execu
   assert.equal(code, 0);
   assert.deepEqual(logs, [
     'board-add: #543 on the board (item PVTI_item543)',
-    `board-add: Status = In progress, ${ROUTING_FIELD} = Platform`,
+    'board-add: Status = In progress, Workstream = Platform',
   ]);
   assert.equal(errors.length, 0);
   assert.equal(calls.length, 6, 'the CLI must drive the injected executor, not a real gh');
@@ -315,7 +315,7 @@ test('board-add CLI fails loud on a wrong argument count, without calling GitHub
       ghExec: () => { called += 1; return ''; },
     });
     assert.equal(code, 1, `exit code for ${JSON.stringify(badArgs)}`);
-    assert.match(errors[0], new RegExp(`usage: node scripts/board-add\\.mjs <issue#> <Status> <${ROUTING_FIELD}>`));
+    assert.match(errors[0], /usage: node scripts\/board-add\.mjs <issue#> <Status> <Workstream>/);
     assert.equal(called, 0, `GitHub was called for ${JSON.stringify(badArgs)}`);
   }
 });
