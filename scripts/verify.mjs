@@ -47,14 +47,11 @@ const baselineOnlyPaths = new Set([
   "CONTEXT.md",
   "scripts/run-log.mjs",
   "scripts/run-log.test.mjs",
-  // The board and git-guard toolkit. Every module here is proved by the node --test
-  // files npm test already runs in baseline, and board.mjs and board-add.mjs are driven
-  // through their own entry points by board-cli.test.mjs and board-add.test.mjs.
-  // board-move.mjs has no test of its own: it is argv parsing over the proved moveCards
-  // and parseBatchArgs, and like the other two commands it reaches only the GitHub API,
-  // so the expensive route has no evidence to offer it either.
-  // Explicit names, never a scripts/lib/ wildcard: the same directory holds the
-  // Supabase, Worker and browser fixtures, which do need the expensive route.
+  // The board and git-guard toolkit. npm test proves these in baseline through the
+  // node --test suite, except board-move.mjs, which is argv parsing over the proved
+  // moveCards; their reach is the GitHub API and local Git, never Supabase, the Worker
+  // or a browser. Exact names, never a scripts/lib/ wildcard: the same directory holds
+  // the Supabase, Worker and browser fixtures, which do need the expensive route.
   "scripts/board.mjs",
   "scripts/board-add.mjs",
   "scripts/board-move.mjs",

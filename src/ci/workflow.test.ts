@@ -56,16 +56,14 @@ function readySteps(steps: Step[]): Step[] {
 const UNSET = "@unset";
 
 // Not a tab: tab is IFS whitespace, so bash folds a run of tabs into one delimiter and
-// an empty result would shift every later field left, silently testing the wrong
-// combination. The unit separator is not whitespace, so an empty field stays empty.
+// an empty result shifts every later field left. The unit separator is not whitespace.
 const SEPARATOR = "\x1f";
 
-// Reads one combination per line and prints back the three values it actually read
-// alongside the exit status they produced. Echoing the values rather than the input
-// line number is what makes a transport fault visible: a combination that arrives
-// garbled keys its own result, so it cannot masquerade as the one that was intended.
-// The aggregate body is sourced under the same options the workflow runs it with, so
-// its `exit 1` leaves the subshell exactly as it leaves `bash -c`.
+// Reads one combination per line and prints back the values it actually read with the
+// exit status they produced. Echoing the values, not the input line number, makes a
+// garbled combination key its own result rather than masquerade as the intended one.
+// The body is sourced under the same options the workflow runs it with, so its
+// `exit 1` leaves the subshell exactly as it leaves `bash -c`.
 const DRIVER = [
   "while IFS=$'\\x1f' read -r baseline database browser; do",
   `  ( if [[ "$baseline" == "${UNSET}" ]]; then unset BASELINE_RESULT; else export BASELINE_RESULT="$baseline"; fi`,
@@ -177,9 +175,8 @@ describe("pull-request CI", () => {
     },
   );
 
-  // The budget is deliberately far above the work: this test asserts which exit status
-  // each combination produces, never how fast a subprocess returns, so a loaded machine
-  // must not be able to turn it into a failure (#294).
+  // The budget sits far above the work: this asserts which exit status each combination
+  // produces, never how fast a subprocess returns, so load cannot fail it (#294).
   it("accepts only complete successful evidence in the actual aggregate shell", () => {
     const { workflow } = loadWorkflow();
     const aggregate = readySteps(workflow.jobs?.test.steps ?? [])[0];
@@ -221,8 +218,7 @@ describe("pull-request CI", () => {
     delete env.BROWSER_RESULT;
     env.AGGREGATE_SCRIPT = script;
     const cell = (value?: string) => (value === undefined ? UNSET : value);
-    // Keyed through `cell` so an absent result stays distinct from an empty one,
-    // which `JSON.stringify` would otherwise collapse by dropping the key.
+    // Keyed through `cell` so an absent result stays distinct from an empty one.
     const label = ({
       baseline,
       database,
