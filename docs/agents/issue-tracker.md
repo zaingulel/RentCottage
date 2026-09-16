@@ -75,6 +75,22 @@ column, and the `Workstream` routing field with its approved options. A rename o
 - Active Codex task ownership is checked by the coordinator before moving an item into an in-flight column. The
   board verifier does not infer it.
 
+Four built-in Project automations are enabled, matching Flowgauge. They have no create or update API, only
+`deleteProjectV2Workflow`, so they are set in the Projects UI by the owner and read back with the `workflows`
+GraphQL field:
+
+| Automation | Configuration |
+|---|---|
+| `Auto-add to project` | repository `RentCottage`, filter `is:issue is:open` |
+| `Auto-archive items` | filter `is:issue,pr is:closed updated:<@today-2w` |
+| `Item added to project` | issue, pull request, sets Status `Backlog` |
+| `Item closed` | issue, pull request, sets Status `Done` |
+
+`Auto-add sub-issues to project` is enabled alongside them. `Item added to project` is why a new issue reaches the
+board in `Backlog` without `board-add.mjs`, and `Item closed` is why a closed issue reaches `Done`. Neither
+replaces an explicit move: `closeout` still runs `board-move.mjs` for every closed issue, so a silently failed
+automation surfaces as drift instead of as nothing.
+
 ## Board intake
 
 One command reads the board and judges it from the same read, so the listing can never disagree with the verdict
