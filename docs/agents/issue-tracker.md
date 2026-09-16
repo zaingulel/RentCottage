@@ -133,6 +133,10 @@ reads; inspect every result before shortlisting. Reuse board facts instead of fe
 
 Use GitHub's native issue, dependency, assignment, pull-request, and Project operations under the applicable owner authority. Read the exact target before a write, make only the intended mutation, read it back, then run `npm run verify:board`. Unavailable or failing evidence stops selection or closeout. There is no local publication manifest, fingerprint transaction, mutable reconciler, or persistent Project credential.
 
+Changing a single-select field's option list with `updateProjectV2Field` replaces every option with a new id and
+blanks that field on every card. Snapshot each card's value first, then restore it against the new ids and diff the
+read-back against the snapshot before touching anything else.
+
 ## When a skill says "fetch the relevant ticket"
 
 Run `gh issue view <number> --comments`.
