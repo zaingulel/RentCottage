@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -136,14 +136,24 @@ describe("Messaging conversation", () => {
     send.mockResolvedValue({ status: "unavailable" });
     render(<MessagingConversation locale="en" conversation={conversation} />);
     const textbox = screen.getByRole("textbox", { name: "Message" });
+    // The composer disables the textarea and relabels the button while a send is in
+    // flight, so an interaction that arrives before it settles is dropped: the retry
+    // click misses the button and the follow-up keystrokes never rotate the key. Wait
+    // for the send to register and the composer to accept input again (#294).
+    const sendAndSettle = async (calls: number) => {
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(calls));
+      await waitFor(() => expect(textbox).toBeEnabled());
+    };
+
     await user.type(textbox, "First draft");
-    await user.click(screen.getByRole("button", { name: "Send message" }));
-    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await sendAndSettle(1);
+    await sendAndSettle(2);
     expect(send.mock.calls[0]?.[0].commandId).toBe(
       send.mock.calls[1]?.[0].commandId,
     );
     await user.type(textbox, " changed");
-    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await sendAndSettle(3);
     expect(send.mock.calls[2]?.[0].commandId).not.toBe(
       send.mock.calls[1]?.[0].commandId,
     );
