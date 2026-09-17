@@ -21,7 +21,7 @@ values
   ('00000000-0000-0000-0000-000000000001', 'authenticated', 'authenticated', null, null, '+9647500000000', now()),
   ('00000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', null, null, '+9647500000001', now()),
   ('00000000-0000-0000-0000-000000000003', 'authenticated', 'authenticated', null, null, '+9647500000002', now()),
-  ('00000000-0000-0000-0000-000000000004', 'authenticated', 'authenticated', 'admin@example.com', now(), null, null),
+  ('00000000-0000-0000-0000-000000000004', 'authenticated', 'authenticated', 'admin@example.com', now(), '+9647500000004', now()),
   ('00000000-0000-0000-0000-000000000005', 'authenticated', 'authenticated', null, null, '+9647500000003', now());
 
 insert into public.account_contexts (user_id, role, owner_approval_state)
