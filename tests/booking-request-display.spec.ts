@@ -1,8 +1,8 @@
 import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-request-status-messages";
 import { expect, test } from "@playwright/test";
 import { build } from "esbuild";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+
+import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
 
 declare global {
   interface Window {
@@ -77,9 +77,7 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
   await page.setContent(
     '<meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root"></main>',
   );
-  await page.addStyleTag({
-    content: await readFile(join(process.cwd(), "src/app/globals.css"), "utf8"),
-  });
+  await page.addStyleTag({ content: await readApplicationStylesheet() });
   await page.addScriptTag({ path: bundlePath });
 
   for (const locale of [

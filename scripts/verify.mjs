@@ -88,6 +88,8 @@ function isBaselineOnlyPath(path) {
 }
 
 const browserOnlyPaths = new Set([
+  "src/app/fonts.css",
+  "src/app/fonts.test.ts",
   "src/app/globals.css",
   "tests/booking-request-display.spec.ts",
   "tests/interaction-controls.spec.ts",
@@ -97,6 +99,7 @@ const browserOnlyPaths = new Set([
 function isBrowserOnlyPath(path) {
   return (
     browserOnlyPaths.has(path) ||
+    /^public\/fonts\/[^/]+\.(?:txt|woff2)$/i.test(path) ||
     /^public\/uploads\/[^/]+\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(path)
   );
 }

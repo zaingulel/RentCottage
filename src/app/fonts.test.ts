@@ -28,10 +28,16 @@ describe("self-hosted web fonts", () => {
     expect(sources).not.toMatch(/url\(["']?https?:/);
   });
 
+  it("imports the faces into the application stylesheet", () => {
+    expect(stylesheet("globals.css")).toMatch(/@import\s+"\.\/fonts\.css";/);
+  });
+
   it("points every face at a font file that exists", () => {
     const faces = declaredFaces();
 
-    expect(faces).toHaveLength(23);
+    expect(
+      faces.map((face) => `${face.family} ${face.weight} ${face.file}`),
+    ).toHaveLength(23);
     for (const face of faces) {
       expect(face.file).toBeDefined();
       expect(existsSync(join(fontDirectory, face.file!))).toBe(true);
@@ -47,7 +53,11 @@ describe("self-hosted web fonts", () => {
       weights.set(face.family!, seen);
     }
 
-    expect(Object.fromEntries(weights)).toEqual({
+    const declared = Object.fromEntries(
+      [...weights].map(([family, values]) => [family, [...values].sort()]),
+    );
+
+    expect(declared).toEqual({
       Almarai: ["400", "700", "800"],
       Changa: ["500", "600", "700"],
       Karla: ["400", "500", "600", "700"],

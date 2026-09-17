@@ -469,6 +469,18 @@ describe("repository verification command", () => {
     ],
     ["bundled image", "public/uploads/hero.png", "image bytes\n"],
     [
+      "self-hosted font stylesheet",
+      "src/app/fonts.css",
+      '@font-face { font-family: "Karla"; }\n',
+    ],
+    [
+      "self-hosted font test",
+      "src/app/fonts.test.ts",
+      "test('fonts', () => {});\n",
+    ],
+    ["self-hosted font file", "public/fonts/karla-latin.woff2", "font bytes\n"],
+    ["font licence", "public/fonts/OFL-karla.txt", "licence text\n"],
+    [
       "shell journey",
       "tests/marketplace-shell.spec.ts",
       "test('shell', () => {});\n",

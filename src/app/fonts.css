@@ -1,5 +1,4 @@
 /* Self-hosted from the Google Fonts css2 API so no page load leaves this origin.
-   Licences ship beside the files in public/fonts as OFL-<family>.txt.
    Changa and Karla are variable fonts: one file per subset serves every weight,
    so several rules below deliberately share a src. Almarai is static per weight.
    To change a weight or family, regenerate this whole file against css2 rather
