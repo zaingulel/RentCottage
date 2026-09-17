@@ -38,6 +38,10 @@ Review the week's merged changes for anything that alters the visible journey, l
 database schema, Worker payment processing, or private participant details. Update this walkthrough when the
 meeting story changes; do not add failure-path chapters unless that week's completed work needs them.
 
+Retire any upgrade proof whose migration every environment has now moved past, deleting its observer, its legacy
+fixture and its invocation in the database preflight of `scripts/verify-access.mjs`, and keeping any fixture a
+surviving proof still reads. [`docs/engineering/testing-strategy.md`](engineering/testing-strategy.md) owns the rule.
+
 Set the stable local identity in every terminal used for the demo:
 
 ```sh
