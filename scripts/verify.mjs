@@ -48,8 +48,9 @@ const baselineOnlyPaths = new Set([
   "scripts/run-log.mjs",
   "scripts/run-log.test.mjs",
   // The self-hosted font unit test and the licences it reads. npm test proves both in
-  // baseline; neither reaches Supabase, the Worker or a browser. The .woff2 files and
-  // fonts.css do change rendering, so they stay on the browser route above.
+  // baseline. The licences ship from public/ like any asset, but their text cannot
+  // change a rendered page or the Worker's behaviour. The .woff2 files and fonts.css
+  // do change rendering, so they stay on the browser route.
   "public/fonts/OFL-almarai.txt",
   "public/fonts/OFL-changa.txt",
   "public/fonts/OFL-karla.txt",

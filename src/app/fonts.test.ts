@@ -17,6 +17,7 @@ function declaredFaces() {
     weight: body.match(/font-weight:\s*(\d+)/)?.[1],
     display: body.match(/font-display:\s*(\w+)/)?.[1],
     file: body.match(/url\("\/fonts\/([^"]+)"\)/)?.[1],
+    range: body.match(/unicode-range:\s*([^;]+);/)?.[1].replace(/\s+/g, " "),
   }));
 }
 
@@ -63,10 +64,29 @@ describe("self-hosted web fonts", () => {
       "Karla 700 karla-latin.woff2",
     ]);
     for (const face of faces) {
-      expect(face.file).toBeDefined();
       expect(existsSync(join(fontDirectory, face.file!))).toBe(true);
       expect(face.display).toBe("swap");
     }
+  });
+
+  it("keeps every subset on the character range its script needs", () => {
+    const ranges = new Map<string, Set<string>>();
+    for (const face of declaredFaces()) {
+      const subset = face.file!.match(/-(arabic|latin-ext|latin)\.woff2$/)?.[1];
+      expect(subset).toBeDefined();
+      expect(face.range).toBeDefined();
+      ranges.set(subset!, (ranges.get(subset!) ?? new Set()).add(face.range!));
+    }
+
+    // A face that lost its unicode-range or borrowed another subset's puts a
+    // second value in that subset's set, so the counts below stop matching.
+    expect(
+      Object.fromEntries(
+        [...ranges].map(([subset, seen]) => [subset, seen.size]),
+      ),
+    ).toEqual({ arabic: 1, latin: 1, "latin-ext": 1 });
+    expect([...ranges.get("arabic")!][0]).toContain("U+0600-06FF");
+    expect([...ranges.get("latin")!][0]).toContain("U+0000-00FF");
   });
 
   it("declares the weights the design tokens depend on", () => {

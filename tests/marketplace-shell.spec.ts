@@ -49,6 +49,31 @@ test("preserves the selected Retreat shell around live discovery", async ({
   ).toHaveCount(0);
 });
 
+test("loads every asset, fonts included, from this origin alone", async ({
+  page,
+}) => {
+  const origins = new Set<string>();
+  const faces = new Set<string>();
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    origins.add(url.origin);
+    if (url.pathname.endsWith(".woff2")) faces.add(url.pathname);
+  });
+
+  for (const locale of Object.keys(ownerSignIn)) {
+    await page.goto(`/${locale}`);
+    await page.evaluate(() => document.fonts.ready);
+  }
+
+  expect([...origins]).toEqual([new URL(page.url()).origin]);
+  // Arabic and Kurdish render in Almarai and Changa, so a run that served no
+  // Arabic face proves nothing about where the fonts came from.
+  expect(
+    [...faces].filter((path) => path.includes("-arabic")),
+    `served font files: ${[...faces].join(", ") || "none"}`,
+  ).not.toHaveLength(0);
+});
+
 test("shared sign-in and owner enrollment stay localized and keyboard-operable", async ({
   page,
 }, testInfo) => {
