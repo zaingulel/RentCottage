@@ -84,7 +84,6 @@ describe("self-hosted web fonts", () => {
     const ranges = new Map<string, Set<string>>();
     for (const face of declaredFaces()) {
       const subset = face.file!.match(/-(arabic|latin-ext|latin)\.woff2$/)?.[1];
-      expect(subset).toBeDefined();
       expect(face.range).toBeDefined();
       ranges.set(subset!, (ranges.get(subset!) ?? new Set()).add(face.range!));
     }
@@ -92,15 +91,19 @@ describe("self-hosted web fonts", () => {
     // Pinning the ranges themselves, not just their consistency, is what makes
     // this "preserved": regenerating fonts.css rewrites every face of a subset
     // at once, so a narrowed subset stays self-consistent and would otherwise
-    // pass. A deliberate regeneration is meant to land here as a red to read.
+    // pass. Compare block by block, or the red is two 600-character strings
+    // side by side and the reader has to find the difference by eye.
     expect(
       Object.fromEntries(
-        [...ranges].map(([subset, seen]) => [subset, [...seen]]),
+        [...ranges].map(([subset, seen]) => [
+          subset,
+          [...seen].map((range) => range.split(", ")),
+        ]),
       ),
     ).toEqual({
-      arabic: [arabicRange],
-      latin: [latinRange],
-      "latin-ext": [latinExtendedRange],
+      arabic: [arabicRange.split(", ")],
+      latin: [latinRange.split(", ")],
+      "latin-ext": [latinExtendedRange.split(", ")],
     });
   });
 
