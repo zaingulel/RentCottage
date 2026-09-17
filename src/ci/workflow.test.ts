@@ -1,8 +1,9 @@
 // @vitest-environment node
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -50,6 +51,30 @@ function readySteps(steps: Step[]): Step[] {
     (step) => step.if === "github.event.pull_request.draft == false",
   );
 }
+
+// A sentinel no job result can take, so "absent" stays distinct from "empty".
+const UNSET = "@unset";
+
+// Not a tab: tab is IFS whitespace, so bash folds a run of tabs into one delimiter and
+// an empty result shifts every later field left. The unit separator is not whitespace.
+const SEPARATOR = "\x1f";
+
+// Reads one combination per line and prints back the values it actually read with the
+// exit status they produced. Echoing the values, not the input line number, makes a
+// garbled combination key its own result rather than masquerade as the intended one.
+// The body is sourced under `set -e`, as the workflow's default `bash -e` shell runs
+// it, so its `exit 1` leaves the subshell exactly as it leaves `bash -c`.
+const DRIVER = [
+  "while IFS=$'\\x1f' read -r baseline database browser; do",
+  `  ( if [[ "$baseline" == "${UNSET}" ]]; then unset BASELINE_RESULT; else export BASELINE_RESULT="$baseline"; fi`,
+  `    if [[ "$database" == "${UNSET}" ]]; then unset DATABASE_RESULT; else export DATABASE_RESULT="$database"; fi`,
+  `    if [[ "$browser" == "${UNSET}" ]]; then unset BROWSER_RESULT; else export BROWSER_RESULT="$browser"; fi`,
+  "    set -e",
+  "    set -o pipefail",
+  '    . "$AGGREGATE_SCRIPT" ) >/dev/null 2>&1',
+  `  printf '%s\\x1f%s\\x1f%s\\x1f%s\\n' "$baseline" "$database" "$browser" "$?"`,
+  "done",
+].join("\n");
 
 describe("pull-request CI", () => {
   it("runs from pull-request events and has no manual quality dispatch", () => {
@@ -150,6 +175,9 @@ describe("pull-request CI", () => {
     },
   );
 
+  // The budget sits far above the work: this asserts which exit status each combination
+  // produces, never how fast a subprocess returns, so load must not be able to fail it
+  // (#294).
   it("accepts only complete successful evidence in the actual aggregate shell", () => {
     const { workflow } = loadWorkflow();
     const aggregate = readySteps(workflow.jobs?.test.steps ?? [])[0];
@@ -167,45 +195,92 @@ describe("pull-request CI", () => {
       "",
       undefined,
     ];
+    const combinations: {
+      baseline?: string;
+      database?: string;
+      browser?: string;
+    }[] = [];
     for (const baseline of results) {
       for (const database of results) {
         for (const browser of results) {
-          const env: NodeJS.ProcessEnv = { ...process.env };
-          delete env.BASELINE_RESULT;
-          delete env.DATABASE_RESULT;
-          delete env.BROWSER_RESULT;
-          if (baseline !== undefined) env.BASELINE_RESULT = baseline;
-          if (database !== undefined) env.DATABASE_RESULT = database;
-          if (browser !== undefined) env.BROWSER_RESULT = browser;
-          const result = spawnSync(
-            "bash",
-            [
-              "--noprofile",
-              "--norc",
-              "-e",
-              "-o",
-              "pipefail",
-              "-c",
-              aggregate.run as string,
-            ],
-            { env, encoding: "utf8" },
-          );
-          expect(result.error).toBeUndefined();
-          expect(result.signal).toBeNull();
-          expect(
-            result.status,
-            JSON.stringify({ baseline, database, browser }),
-          ).toBe(
-            baseline === "success" &&
-              database === "success" &&
-              browser === "success"
-              ? 0
-              : 1,
-          );
+          combinations.push({ baseline, database, browser });
         }
       }
     }
-  });
+
+    // Every combination still runs the real step body, but as a subshell inside one
+    // bash rather than its own `bash -c`, so the cost is a fork per combination and
+    // not an exec of the bash binary (#294).
+    const directory = mkdtempSync(join(tmpdir(), "aggregate-shell-"));
+    const script = join(directory, "aggregate.sh");
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.BASELINE_RESULT;
+    delete env.DATABASE_RESULT;
+    delete env.BROWSER_RESULT;
+    env.AGGREGATE_SCRIPT = script;
+    const cell = (value?: string) => (value === undefined ? UNSET : value);
+    // Keyed through `cell` because `JSON.stringify` drops an undefined-valued key, so a
+    // raw label could never match the `@unset` the shell echoes back.
+    const label = ({
+      baseline,
+      database,
+      browser,
+    }: (typeof combinations)[number]) =>
+      JSON.stringify({
+        baseline: cell(baseline),
+        database: cell(database),
+        browser: cell(browser),
+      });
+    let statuses: Record<string, number>;
+    try {
+      writeFileSync(script, aggregate.run as string);
+      const result = spawnSync(
+        "bash",
+        ["--noprofile", "--norc", "-c", DRIVER],
+        {
+          encoding: "utf8",
+          env,
+          // Trailing newline: `read` reports failure on an unterminated final line
+          // and the loop would skip the last combination.
+          input: `${combinations
+            .map(({ baseline, database, browser }) =>
+              [cell(baseline), cell(database), cell(browser)].join(SEPARATOR),
+            )
+            .join("\n")}\n`,
+        },
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.signal).toBeNull();
+      expect(result.stderr).toBe("");
+      statuses = Object.fromEntries(
+        result.stdout
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .map((line) => {
+            const [baseline, database, browser, status] = line.split(SEPARATOR);
+            return [
+              JSON.stringify({ baseline, database, browser }),
+              Number(status),
+            ];
+          }),
+      );
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+
+    expect(statuses).toEqual(
+      Object.fromEntries(
+        combinations.map((combination) => [
+          label(combination),
+          combination.baseline === "success" &&
+          combination.database === "success" &&
+          combination.browser === "success"
+            ? 0
+            : 1,
+        ]),
+      ),
+    );
+  }, 30_000);
 });
 
 describe("preview deployment boundary", () => {

@@ -511,7 +511,6 @@ describe("repository verification command", () => {
     ["runtime code", "src/runtime.ts", "export const value = 'changed';\n"],
     ["a test", "src/runtime.test.ts", "throw new Error('fixture');\n"],
     ["a dependency file", "package.json", "{}\n"],
-    ["an asset", "docs/product/assets/runtime.json", "{}\n"],
     [
       "the selector itself",
       "scripts/verify.mjs",
@@ -527,16 +526,6 @@ describe("repository verification command", () => {
       "public/_headers",
       "/assets/*\n  cache-control: no-cache\n",
     ],
-    ["an agent script", ".agents/roles/runtime.mjs", "export {};\n"],
-    ["an agent config", ".agents/roles/runtime.json", "{}\n"],
-    [
-      "an agent TypeScript file",
-      ".agents/skills/tool/runtime.ts",
-      "export {};\n",
-    ],
-    ["a docs script", "docs/research/runtime.js", "export {};\n"],
-    ["a category lookalike", ".agents-copy/roles/reviewer.md", "# Lookalike\n"],
-    ["a docs lookalike", "docs-copy/research/study.md", "# Lookalike\n"],
   ])("selects full verification for %s", (_label, path, contents) => {
     const repository = createRepository();
     commit(repository, path, contents);
@@ -556,15 +545,206 @@ describe("repository verification command", () => {
     );
   });
 
-  it("explains that an unknown path needs investigation before the full fallback", () => {
+  it("stops without running anything when a changed path is unclassified", () => {
     const repository = createRepository();
+    commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(3);
+    expect(result.run).not.toHaveBeenCalled();
+    expect(result.stderr).toHaveBeenCalledWith(
+      expect.stringContaining(".prettierrc.json"),
+    );
+    expect(result.stderr).toHaveBeenCalledWith(
+      expect.stringMatching(/1 changed path is not listed/),
+    );
+    expect(result.stderr).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "the fallback would select full verification, which runs the database and browser checks",
+      ),
+    );
+    // The remediation names only the two flags that bypass classification. The other two
+    // re-enter the selector and stop again, which the group-flag cases below prove, so
+    // offering them here would send the operator round the same loop.
+    expect(result.stderr).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "running again with an explicit --full or --baseline",
+      ),
+    );
+    expect(result.stderr).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "--database and --browser still consult it and stop here again",
+      ),
+    );
+  });
+
+  it("names only the unclassified path when a classified path also changed", () => {
+    const repository = createRepository();
+    commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+    commit(repository, "src/runtime.ts", "export const value = 'changed';\n");
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(3);
+    expect(result.run).not.toHaveBeenCalled();
+    const report = result.stderr.mock.calls.map(([line]) => line).join("\n");
+    expect(report).toContain(".prettierrc.json");
+    expect(report).not.toContain("src/runtime.ts");
+    expect(report).toMatch(/1 changed path is not listed/);
+  });
+
+  it("counts every unclassified path in one report", () => {
+    const repository = createRepository();
+    commit(repository, ".prettierrc.json", '{ "semi": true }\n');
     commit(repository, "unknown-runtime.fixture", "runtime\n");
 
     const result = runVerification(repository);
 
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringMatching(/unknown-runtime\.fixture.*investigate.*full/i),
+    expect(result.status).toBe(3);
+    const report = result.stderr.mock.calls.map(([line]) => line).join("\n");
+    expect(report).toMatch(/2 changed paths are not listed/);
+    expect(report).toContain(".prettierrc.json\nunknown-runtime.fixture");
+  });
+
+  it.each(["--database", "--browser", "--plan"])(
+    "stops %s on an unclassified path because each one still selects a route",
+    (mode) => {
+      const repository = createRepository();
+      commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+
+      const result = runVerification(repository, { args: [mode] });
+
+      expect(result.status).toBe(3);
+      expect(result.run).not.toHaveBeenCalled();
+      expect(result.stderr).toHaveBeenCalledWith(
+        expect.stringContaining(".prettierrc.json"),
+      );
+    },
+  );
+
+  it.each(["--full", "--baseline"])(
+    "lets %s confirm the route while an unclassified path is present",
+    (mode) => {
+      const repository = createRepository();
+      commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+
+      const result = runVerification(repository, { args: [mode] });
+
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        mode === "--baseline"
+          ? requiredBaselineSteps
+          : [...requiredBaselineSteps, ...requiredExpensiveSteps],
+      );
+      expect(result.stderr).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["an asset", "docs/product/assets/runtime.json", "{}\n"],
+    ["an agent script", ".agents/roles/runtime.mjs", "export {};\n"],
+    ["an agent config", ".agents/roles/runtime.json", "{}\n"],
+    [
+      "an agent TypeScript file",
+      ".agents/skills/tool/runtime.ts",
+      "export {};\n",
+    ],
+    ["a docs script", "docs/research/runtime.js", "export {};\n"],
+    ["a category lookalike", ".agents-copy/roles/reviewer.md", "# Lookalike\n"],
+    ["a docs lookalike", "docs-copy/research/study.md", "# Lookalike\n"],
+  ])("refuses to treat %s as approved prose", (_label, path, contents) => {
+    const repository = createRepository();
+    commit(repository, path, contents);
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(3);
+    expect(result.run).not.toHaveBeenCalled();
+    expect(result.stderr).toHaveBeenCalledWith(expect.stringContaining(path));
+  });
+
+  it.each([
+    [
+      "board configuration",
+      "scripts/lib/board-config.mjs",
+      "export const BOARD_PROJECT_NUMBER = 4;\n",
+    ],
+    [
+      "a board test",
+      "scripts/lib/board-rules.test.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "the end-to-end board CLI test",
+      "scripts/lib/board-cli.test.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "the board command",
+      "scripts/board.mjs",
+      "export const main = () => 0;\n",
+    ],
+    [
+      "the board-add command",
+      "scripts/board-add.mjs",
+      "export const main = () => 0;\n",
+    ],
+    [
+      "the board-move command",
+      "scripts/board-move.mjs",
+      "export const main = () => 0;\n",
+    ],
+  ])("keeps %s on baseline evidence", (_label, path, contents) => {
+    const repository = createRepository();
+    commit(repository, path, contents);
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      requiredBaselineSteps,
     );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining("Database verification: skipped"),
+    );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining("Browser verification: skipped"),
+    );
+  });
+
+  it.each([
+    [
+      "the browser fixtures",
+      "scripts/lib/access-browser-fixtures.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "the access fixture users",
+      "scripts/lib/access-fixture-users.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "the payment upgrade worker",
+      "scripts/lib/booking-request-payment-upgrade-worker.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "a migration",
+      "supabase/migrations/20260101000000_fixture.sql",
+      "-- sql\n",
+    ],
+  ])("keeps %s on full evidence", (_label, path, contents) => {
+    const repository = createRepository();
+    commit(repository, path, contents);
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
   });
 
   it("lets --full bypass documentation selection", () => {
@@ -609,7 +789,7 @@ describe("repository verification command", () => {
           "export const value = 'initial';\n",
         );
       },
-      (repository) => write(repository, "unknown-runtime.fixture", "runtime\n"),
+      (repository) => write(repository, "src/untracked.ts", "export {};\n"),
     ];
 
     for (const arrange of cases) {
@@ -632,8 +812,8 @@ describe("repository verification command", () => {
     );
 
     const renamedRepository = createRepository();
-    mkdirSync(join(renamedRepository, "runtime"), { recursive: true });
-    git(renamedRepository, ["mv", "AGENTS.md", "runtime/new-agent-manual.md"]);
+    mkdirSync(join(renamedRepository, "src"), { recursive: true });
+    git(renamedRepository, ["mv", "AGENTS.md", "src/new-agent-manual.md"]);
     git(renamedRepository, ["commit", "-m", "rename manual"]);
     expect(runVerification(renamedRepository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
