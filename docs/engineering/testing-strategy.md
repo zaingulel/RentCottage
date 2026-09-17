@@ -131,8 +131,7 @@ An upgrade proof lives only while an environment can still be behind its migrati
 proves: a `scripts/verify-<change>-upgrade.mjs` observer, any legacy fixture it seeds, and one invocation in the
 database preflight of `scripts/verify-access.mjs`, so the job's own route and its continuous integration run it.
 Delete all three at the first weekly refresh under [`docs/demo.md`](../demo.md) after every environment has moved
-past that migration, keeping any fixture a surviving proof still reads. A shipped migration never changes, so the
-per-diff database route carries only the upgrade proofs of the migrations that diff itself adds.
+past that migration, keeping any fixture a surviving proof still reads.
 
 An orchestration migration follows the same declared-schema rule. Change only the affected flow, preserve its
 Integrity Core in the schema declaration and generated migration, and prove that no required atomic transaction was

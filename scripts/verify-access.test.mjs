@@ -1978,7 +1978,6 @@ setInterval(() => {}, 1000);
     ).toMatchObject({ ...localEnvironment, ...databaseIdentity });
 
     for (const [command, args] of [
-      ...databasePreflightCommands.filter(([command]) => command === "node"),
       ["node", ["scripts/verify-account-access-concurrency.mjs"]],
       [
         "node",

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(18);
 
 select has_table(
   'public',
@@ -153,6 +153,13 @@ select throws_ok(
   '42501',
   null,
   'an MFA-authenticated Platform Administrator cannot mutate another account context'
+);
+
+select throws_ok(
+  $$select public.claim_marketplace_role('cottage_owner')$$,
+  'RC001',
+  'This identity already has a different marketplace role',
+  'a Platform Administrator cannot claim a marketplace role'
 );
 
 select * from finish();

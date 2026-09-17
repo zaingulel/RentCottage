@@ -38,10 +38,6 @@ Review the week's merged changes for anything that alters the visible journey, l
 database schema, Worker payment processing, or private participant details. Update this walkthrough when the
 meeting story changes; do not add failure-path chapters unless that week's completed work needs them.
 
-Retire any upgrade proof whose migration every environment has now moved past, deleting its observer, its legacy
-fixture and its invocation in the database preflight of `scripts/verify-access.mjs`, and keeping any fixture a
-surviving proof still reads. [`docs/engineering/testing-strategy.md`](engineering/testing-strategy.md) owns the rule.
-
 Set the stable local identity in every terminal used for the demo:
 
 ```sh
@@ -73,6 +69,10 @@ Start the dedicated project and apply only missing migrations through Supabase's
 SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase start --workdir "$SUPABASE_LOCAL_WORKDIR"
 SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase migration up --local --workdir "$SUPABASE_LOCAL_WORKDIR"
 ```
+
+Once that upgrade reports no pending migration here and every other environment has moved past it too, retire the
+upgrade proofs of the migrations it applied, following
+[`docs/engineering/testing-strategy.md`](engineering/testing-strategy.md).
 
 For a confirmed brand-new, empty database only, map its environment, create the synthetic desktop fixture once,
 and validate it:
