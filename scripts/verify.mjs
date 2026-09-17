@@ -47,6 +47,14 @@ const baselineOnlyPaths = new Set([
   "CONTEXT.md",
   "scripts/run-log.mjs",
   "scripts/run-log.test.mjs",
+  // The self-hosted font unit test and the licences it reads. npm test proves both in
+  // baseline. The licences ship from public/ like any asset, but their text cannot
+  // change a rendered page or the Worker's behaviour. The .woff2 files and fonts.css
+  // do change rendering, so they stay on the browser route.
+  "public/fonts/OFL-almarai.txt",
+  "public/fonts/OFL-changa.txt",
+  "public/fonts/OFL-karla.txt",
+  "src/app/fonts.test.ts",
   // The board and git-guard toolkit. npm test proves these in baseline through the
   // node --test suite, except scripts/board-move.mjs, which is argv parsing over proved
   // helpers; their reach is the GitHub API and local Git, never Supabase, the Worker or
@@ -88,6 +96,7 @@ function isBaselineOnlyPath(path) {
 }
 
 const browserOnlyPaths = new Set([
+  "src/app/fonts.css",
   "src/app/globals.css",
   "tests/booking-request-display.spec.ts",
   "tests/interaction-controls.spec.ts",
@@ -97,6 +106,7 @@ const browserOnlyPaths = new Set([
 function isBrowserOnlyPath(path) {
   return (
     browserOnlyPaths.has(path) ||
+    /^public\/fonts\/[^/]+\.woff2$/i.test(path) ||
     /^public\/uploads\/[^/]+\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(path)
   );
 }

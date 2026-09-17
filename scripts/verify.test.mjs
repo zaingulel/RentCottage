@@ -469,6 +469,12 @@ describe("repository verification command", () => {
     ],
     ["bundled image", "public/uploads/hero.png", "image bytes\n"],
     [
+      "self-hosted font stylesheet",
+      "src/app/fonts.css",
+      '@font-face { font-family: "Karla"; }\n',
+    ],
+    ["self-hosted font file", "public/fonts/karla-latin.woff2", "font bytes\n"],
+    [
       "shell journey",
       "tests/marketplace-shell.spec.ts",
       "test('shell', () => {});\n",
@@ -695,6 +701,12 @@ describe("repository verification command", () => {
       "scripts/board-move.mjs",
       "export const main = () => 0;\n",
     ],
+    [
+      "the self-hosted font test",
+      "src/app/fonts.test.ts",
+      "test('fonts', () => {});\n",
+    ],
+    ["a font licence", "public/fonts/OFL-karla.txt", "licence text\n"],
   ])("keeps %s on baseline evidence", (_label, path, contents) => {
     const repository = createRepository();
     commit(repository, path, contents);

@@ -4,7 +4,8 @@ import { build } from "esbuild";
 import { mkdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+
+import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
 
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
@@ -58,9 +59,7 @@ test("complete customer and owner history stays role-specific, private, translat
   await page.setContent(
     '<meta name="viewport" content="width=device-width, initial-scale=1"><main class="results-page"><section class="booking-history" id="fixture-root"></section></main>',
   );
-  await page.addStyleTag({
-    content: await readFile(join(process.cwd(), "src/app/globals.css"), "utf8"),
-  });
+  await page.addStyleTag({ content: await readApplicationStylesheet() });
   await page.addStyleTag({
     content: await readFile(testInfo.outputPath("booking-history.css"), "utf8"),
   });
