@@ -37,7 +37,31 @@ describe("self-hosted web fonts", () => {
 
     expect(
       faces.map((face) => `${face.family} ${face.weight} ${face.file}`),
-    ).toHaveLength(23);
+    ).toEqual([
+      "Almarai 400 almarai-400-arabic.woff2",
+      "Almarai 400 almarai-400-latin.woff2",
+      "Almarai 700 almarai-700-arabic.woff2",
+      "Almarai 700 almarai-700-latin.woff2",
+      "Almarai 800 almarai-800-arabic.woff2",
+      "Almarai 800 almarai-800-latin.woff2",
+      "Changa 500 changa-arabic.woff2",
+      "Changa 500 changa-latin-ext.woff2",
+      "Changa 500 changa-latin.woff2",
+      "Changa 600 changa-arabic.woff2",
+      "Changa 600 changa-latin-ext.woff2",
+      "Changa 600 changa-latin.woff2",
+      "Changa 700 changa-arabic.woff2",
+      "Changa 700 changa-latin-ext.woff2",
+      "Changa 700 changa-latin.woff2",
+      "Karla 400 karla-latin-ext.woff2",
+      "Karla 400 karla-latin.woff2",
+      "Karla 500 karla-latin-ext.woff2",
+      "Karla 500 karla-latin.woff2",
+      "Karla 600 karla-latin-ext.woff2",
+      "Karla 600 karla-latin.woff2",
+      "Karla 700 karla-latin-ext.woff2",
+      "Karla 700 karla-latin.woff2",
+    ]);
     for (const face of faces) {
       expect(face.file).toBeDefined();
       expect(existsSync(join(fontDirectory, face.file!))).toBe(true);
