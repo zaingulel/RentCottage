@@ -70,6 +70,9 @@ SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase start --workdir "$SUPA
 SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase migration up --local --workdir "$SUPABASE_LOCAL_WORKDIR"
 ```
 
+After that upgrade, retire every upgrade proof that
+[`docs/engineering/testing-strategy.md`](engineering/testing-strategy.md) now calls expired.
+
 For a confirmed brand-new, empty database only, map its environment, create the synthetic desktop fixture once,
 and validate it:
 

@@ -1,4 +1,4 @@
--- Frozen fictional pre-214 records. Hand-authored expectations are in the upgrade observer.
+-- Frozen fictional pre-214 records, seeded by the account access concurrency proof.
 -- Replica mode builds the historical paid projection without replaying provider effects; no live contacts.
 set session_replication_role = replica;
 insert into auth.users (id, aud, role, phone, phone_confirmed_at) values

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(18);
 
 select has_table(
   'public',
@@ -21,7 +21,8 @@ values
   ('00000000-0000-0000-0000-000000000001', 'authenticated', 'authenticated', null, null, '+9647500000000', now()),
   ('00000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', null, null, '+9647500000001', now()),
   ('00000000-0000-0000-0000-000000000003', 'authenticated', 'authenticated', null, null, '+9647500000002', now()),
-  ('00000000-0000-0000-0000-000000000004', 'authenticated', 'authenticated', 'admin@example.com', now(), null, null),
+  -- A confirmed phone keeps the role claim below on the administrator guard instead of the verified phone guard.
+  ('00000000-0000-0000-0000-000000000004', 'authenticated', 'authenticated', 'admin@example.com', now(), '+9647500000004', now()),
   ('00000000-0000-0000-0000-000000000005', 'authenticated', 'authenticated', null, null, '+9647500000003', now());
 
 insert into public.account_contexts (user_id, role, owner_approval_state)
@@ -153,6 +154,13 @@ select throws_ok(
   '42501',
   null,
   'an MFA-authenticated Platform Administrator cannot mutate another account context'
+);
+
+select throws_ok(
+  $$select public.claim_marketplace_role('cottage_owner')$$,
+  'RC001',
+  'This identity already has a different marketplace role',
+  'a Platform Administrator cannot claim a marketplace role'
 );
 
 select * from finish();

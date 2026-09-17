@@ -127,6 +127,12 @@ hand-written data, policy, trigger and grant changes. Before broad convergence, 
 observer from the shipped baseline against the final migration, including existing eligible and ineligible
 records; an empty schema diff does not prove a data backfill.
 
+An upgrade proof lives only while an environment can still be behind its migration. Add it with the migration it
+proves: a `scripts/verify-<change>-upgrade.mjs` observer, any legacy fixture it seeds, and one invocation in the
+database preflight of `scripts/verify-access.mjs`, so the job's own route and its continuous integration run it.
+Delete them, and whatever they leave orphaned, at the first weekly refresh under [`docs/demo.md`](../demo.md)
+after every environment has moved past that migration, keeping any fixture a surviving proof still reads.
+
 An orchestration migration follows the same declared-schema rule. Change only the affected flow, preserve its
 Integrity Core in the schema declaration and generated migration, and prove that no required atomic transaction was
 split across application calls.

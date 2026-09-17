@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-// One exact fictional request, shared by its SQL, concurrency, upgrade and Worker observers.
+// One exact fictional request, shared by its SQL, concurrency and Worker observers.
 export const request = "60000000-0000-4000-8000-000000001001";
 export const owner = "10000000-0000-4000-8000-000000001001";
 export const customer = "10000000-0000-4000-8000-000000001002";

@@ -91,55 +91,6 @@ const emptyDeclaredSchemaDiff = JSON.stringify({
 const databasePreflightCommands = [
   declaredSchemaDiffCommand,
   ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
-  [
-    "node",
-    [
-      "scripts/verify-cottage-profile-draft-concurrency.mjs",
-      "--verify-migration-preflight",
-      "--defer-successful-restore",
-    ],
-  ],
-  [
-    "node",
-    [
-      "scripts/verify-booking-period-hold-concurrency.mjs",
-      "--verify-migration-preflight",
-    ],
-  ],
-  [
-    "node",
-    [
-      "scripts/verify-booking-request-lifecycle-upgrade.mjs",
-      "--defer-successful-restore",
-    ],
-  ],
-  ["node", ["scripts/verify-booking-request-capture-work-upgrade.mjs"]],
-  [
-    "node",
-    ["scripts/verify-booking-request-payment-required-expiry-upgrade.mjs"],
-  ],
-  ["node", ["scripts/verify-booking-request-payment-history-upgrade.mjs"]],
-  [
-    "node",
-    ["scripts/verify-account-access-upgrade.mjs", "--defer-successful-restore"],
-  ],
-  [
-    "node",
-    [
-      "scripts/verify-booking-notification-upgrade.mjs",
-      "--defer-successful-restore",
-    ],
-  ],
-  [
-    "node",
-    [
-      "scripts/verify-booking-preparation-reminder-upgrade.mjs",
-      "--defer-successful-restore",
-    ],
-  ],
-  ["node", ["scripts/verify-booking-payout-upgrade.mjs"]],
-  ["node", ["scripts/verify-booking-request-notification-upgrade.mjs"]],
-  ["node", ["scripts/verify-messaging-upgrade.mjs"]],
 ];
 const databaseCheckCommands = [
   ["node", ["scripts/verify-access-fixture-contract.mjs"]],
@@ -233,155 +184,6 @@ const browserCommands = [
   ],
   ["node", ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"]],
 ];
-
-function runUpgradeVerifier(
-  script,
-  args,
-  {
-    failCurrentReset = false,
-    failFixtureRead = false,
-    failInitialOwnership = false,
-    failPriorReset = false,
-    failProof = false,
-    failTempDirectory = false,
-    loseRestoreOwnership = false,
-  } = {},
-) {
-  const fakeBin = mkdtempSync(join(tmpdir(), "rentcottage-upgrade-verifier-"));
-  const commandLog = join(fakeBin, "commands.log");
-  const npxPath = join(fakeBin, "npx");
-  const dockerPath = join(fakeBin, "docker");
-  const psPath = join(fakeBin, "ps");
-  const failurePatch = join(fakeBin, "failure-patch.mjs");
-  const ownershipSeen = join(fakeBin, "ownership-seen");
-  writeFileSync(
-    failurePatch,
-    `import fs from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
-
-const originalReadFileSync = fs.readFileSync;
-const originalMkdtempSync = fs.mkdtempSync;
-fs.readFileSync = function (path, ...args) {
-  if (
-    process.env.FAIL_FIXTURE_READ === "1" &&
-    (String(path).endsWith("legacy-booking-notification.sql") ||
-      String(path).endsWith("booking_settlement.test.sql"))
-  )
-    throw new Error("forced fixture read failure");
-  return originalReadFileSync.call(this, path, ...args);
-};
-fs.mkdtempSync = function (prefix, ...args) {
-  if (
-    process.env.FAIL_TEMP_DIRECTORY === "1" &&
-    String(prefix).includes("rentcottage-payout-upgrade-")
-  )
-    throw new Error("forced payout temp directory failure");
-  return originalMkdtempSync.call(this, prefix, ...args);
-};
-syncBuiltinESMExports();
-`,
-  );
-  writeFileSync(
-    npxPath,
-    `#!/bin/sh
-printf 'npx %s\\n' "$*" >> "$COMMAND_LOG"
-case "$FAIL_PRIOR_RESET:$*" in
-  1:*--version*) printf 'forced prior reset failure\\n' >&2; exit 7 ;;
-esac
-if [ "$FAIL_CURRENT_RESET" = "1" ]; then
-  case "$*" in
-    "supabase db reset --local"|"supabase db reset --local --workdir "*)
-  printf 'forced current reset failure\\n' >&2
-  exit 9
-  ;;
-  esac
-fi
-`,
-  );
-  writeFileSync(psPath, "#!/bin/sh\nprintf '123 1 123 fixture process\\n'\n");
-  writeFileSync(
-    dockerPath,
-    `#!/bin/sh
-printf 'docker %s\\n' "$*" >> "$COMMAND_LOG"
-if [ "$1" = "inspect" ]; then
-  if [ "$FAIL_INITIAL_OWNERSHIP" = "1" ]; then
-    printf 'foreign-project|%s\\n' "$PWD"
-    exit 0
-  fi
-  if [ "$FAIL_RESTORE_OWNERSHIP" = "1" ] && [ -f "$OWNERSHIP_SEEN" ]; then
-    printf 'foreign-project|%s\\n' "$PWD"
-    exit 0
-  fi
-  : > "$OWNERSHIP_SEEN"
-  printf '%s|%s\\n' "$SUPABASE_LOCAL_PROJECT" "$PWD"
-  exit 0
-fi
-sql=$(cat)
-sql=$(printf '%s\\n' "$sql" | sed '/-- BEGIN PAYMENT EVIDENCE FIXTURE/,/-- END PAYMENT EVIDENCE FIXTURE/d')
-if [ "$FAIL_PROOF" = "1" ]; then
-  case "$sql" in
-    *"select max(version)"*|*"owner_application_cottage_profiles where owner_user_id"*)
-      printf 'forced proof failure\\n' >&2
-      exit 8
-      ;;
-  esac
-fi
-case "$sql" in
-  *"select max(version)"*) printf '20260822090100\\n' ;;
-  *"bool_and(name = 'Preserved private cottage'"*) printf '1|t|1|2\\n' ;;
-  *"owner_application_cottage_profiles where owner_user_id"*) printf '21|Preserved private cottage|Private orchard gate|Turn after the old bridge|Preserved description|Preserved rules|1|2\\n' ;;
-  *"begin_booking_request_authorization_claim"*) printf '%s\\n' '{"status":"ready","executionPermit":{"claimId":"96000000-0000-4000-8000-000000000633","generation":1,"idempotencyKey":"booking-request:96000000-0000-4000-8000-000000000633:1","notAfter":"2101-01-01T00:00:00.000Z","purpose":"booking-request-authorization"}}' ;;
-  *"reload_booking_request_payment_operation"*) printf 'RC409\\n' >&2; exit 1 ;;
-  *"pg_temp.payment_query"*|*"pg_temp.payment_execute"*) printf '%s\\n' '{"outcome":"succeeded","providerRequestId":"request","providerReference":"reference","movementReference":"movement"}' ;;
-  *"VERBOSITY verbose"*"create_owner_cottage_profile_draft"*|*"VERBOSITY verbose"*"restore_administrator_cottage_profile_draft"*) printf 'RC420\\n' >&2; exit 1 ;;
-esac
-`,
-  );
-  chmodSync(npxPath, 0o755);
-  chmodSync(dockerPath, 0o755);
-  chmodSync(psPath, 0o755);
-
-  try {
-    const result = spawnSync(
-      process.execPath,
-      [
-        "--import",
-        failurePatch,
-        resolve(process.cwd(), "scripts", script),
-        ...args,
-      ],
-      {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          COMMAND_LOG: commandLog,
-          FAIL_CURRENT_RESET: failCurrentReset ? "1" : "0",
-          FAIL_FIXTURE_READ: failFixtureRead ? "1" : "0",
-          FAIL_INITIAL_OWNERSHIP: failInitialOwnership ? "1" : "0",
-          FAIL_PRIOR_RESET: failPriorReset ? "1" : "0",
-          FAIL_PROOF: failProof ? "1" : "0",
-          FAIL_TEMP_DIRECTORY: failTempDirectory ? "1" : "0",
-          FAIL_RESTORE_OWNERSHIP: loseRestoreOwnership ? "1" : "0",
-          OWNERSHIP_SEEN: ownershipSeen,
-          PATH: `${fakeBin}:${process.env.PATH}`,
-          SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verifier-test",
-          SUPABASE_LOCAL_PROJECT: "rentcottage-verifier-test",
-          ...(script === "verify-booking-notification-upgrade.mjs" ||
-          script === "verify-booking-preparation-reminder-upgrade.mjs" ||
-          script === "verify-booking-payout-upgrade.mjs"
-            ? { SUPABASE_LOCAL_WORKDIR: process.cwd() }
-            : {}),
-        },
-      },
-    );
-    return {
-      commands: existsSync(commandLog) ? readFileSync(commandLog, "utf8") : "",
-      result,
-    };
-  } finally {
-    rmSync(fakeBin, { recursive: true, force: true });
-  }
-}
 
 function ownedRun(
   implementation,
@@ -1547,20 +1349,17 @@ describe("access verification command", () => {
         if (command === "npx" && args[0] === "supabase")
           expect(args.slice(-2)).toEqual(["--workdir", workdir]);
       }
-      for (const script of [
-        "scripts/verify-account-access-upgrade.mjs",
-        "scripts/verify-account-access-concurrency.mjs",
-      ]) {
-        const invocation = run.mock.calls.find(
-          ([command, args]) => command === "node" && args[0] === script,
-        );
-        expect(invocation).toBeDefined();
-        expect(invocation[2].env).toMatchObject({
-          SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
-          SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
-          SUPABASE_LOCAL_WORKDIR: workdir,
-        });
-      }
+      const concurrency = run.mock.calls.find(
+        ([command, args]) =>
+          command === "node" &&
+          args[0] === "scripts/verify-account-access-concurrency.mjs",
+      );
+      expect(concurrency).toBeDefined();
+      expect(concurrency[2].env).toMatchObject({
+        SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+        SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+        SUPABASE_LOCAL_WORKDIR: workdir,
+      });
       const browser = run.mock.calls.find(
         ([command, args]) => command === "npx" && args[0] === "playwright",
       );
@@ -1697,288 +1496,6 @@ describe("access verification command", () => {
         rmSync(stateRoot, { recursive: true, force: true });
       }
     }
-  });
-
-  it("rejects Cottage Profile verifier arguments before authentication or database access", () => {
-    const verifier = resolve(
-      process.cwd(),
-      "scripts/verify-cottage-profile-draft-concurrency.mjs",
-    );
-    const result = spawnSync(process.execPath, [verifier, "--unexpected"], {
-      encoding: "utf8",
-      env: {},
-    });
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(
-      "Usage: node scripts/verify-cottage-profile-draft-concurrency.mjs [--verify-migration-preflight [--defer-successful-restore]]",
-    );
-    expect(result.stderr).not.toContain("SUPABASE_URL");
-    expect(result.stderr).not.toContain("Docker");
-  });
-
-  it.each([
-    [
-      "verify-cottage-profile-draft-concurrency.mjs",
-      ["--defer-successful-restore"],
-    ],
-    ["verify-booking-request-lifecycle-upgrade.mjs", ["--unexpected"]],
-    ["verify-account-access-upgrade.mjs", ["--unexpected"]],
-    [
-      "verify-account-access-upgrade.mjs",
-      ["--defer-successful-restore", "--defer-successful-restore"],
-    ],
-    ["verify-booking-notification-upgrade.mjs", ["--unexpected"]],
-    [
-      "verify-booking-notification-upgrade.mjs",
-      ["--defer-successful-restore", "--defer-successful-restore"],
-    ],
-    ["verify-booking-preparation-reminder-upgrade.mjs", ["--unexpected"]],
-    [
-      "verify-booking-preparation-reminder-upgrade.mjs",
-      ["--defer-successful-restore", "--defer-successful-restore"],
-    ],
-  ])(
-    "rejects invalid restore deferral arguments before subprocess work in %s",
-    (script, args) => {
-      const { commands, result } = runUpgradeVerifier(script, args);
-
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain("Usage: node scripts/");
-      expect(commands).toBe("");
-    },
-  );
-
-  it.each([
-    [
-      "verify-cottage-profile-draft-concurrency.mjs",
-      ["--verify-migration-preflight"],
-    ],
-    ["verify-booking-request-lifecycle-upgrade.mjs", []],
-  ])(
-    "restores the current schema by default after %s succeeds",
-    (script, args) => {
-      const { commands, result } = runUpgradeVerifier(script, args);
-
-      expect(result.status, result.stderr).toBe(0);
-      expect(commands).toContain("npx supabase db reset --local --version");
-      expect(commands.match(/npx supabase db reset --local\n/g)).toHaveLength(
-        1,
-      );
-    },
-  );
-
-  it.each([
-    [
-      "verify-cottage-profile-draft-concurrency.mjs",
-      ["--verify-migration-preflight", "--defer-successful-restore"],
-    ],
-    [
-      "verify-booking-request-lifecycle-upgrade.mjs",
-      ["--defer-successful-restore"],
-    ],
-  ])(
-    "defers only the successful current-schema restore for %s",
-    (script, args) => {
-      const { commands, result } = runUpgradeVerifier(script, args);
-
-      expect(result.status, result.stderr).toBe(0);
-      expect(commands).toContain("npx supabase db reset --local --version");
-      expect(commands).not.toMatch(/npx supabase db reset --local\n/);
-    },
-  );
-
-  it.each([
-    [
-      "verify-cottage-profile-draft-concurrency.mjs",
-      ["--verify-migration-preflight", "--defer-successful-restore"],
-    ],
-    [
-      "verify-booking-request-lifecycle-upgrade.mjs",
-      ["--defer-successful-restore"],
-    ],
-  ])(
-    "restores the current schema after %s fails with deferral requested",
-    (script, args) => {
-      for (const failure of [
-        { failPriorReset: true, message: "forced prior reset failure" },
-        { failProof: true, message: "forced proof failure" },
-      ]) {
-        const { commands, result } = runUpgradeVerifier(script, args, failure);
-
-        expect(result.status).not.toBe(0);
-        expect(result.stderr).toContain(failure.message);
-        expect(commands.match(/npx supabase db reset --local\n/g)).toHaveLength(
-          1,
-        );
-      }
-    },
-  );
-
-  it.each([
-    "verify-booking-notification-upgrade.mjs",
-    "verify-booking-preparation-reminder-upgrade.mjs",
-    "verify-booking-payout-upgrade.mjs",
-  ])("rejects lost initial ownership before resetting in %s", (script) => {
-    const { commands, result } = runUpgradeVerifier(
-      script,
-      script === "verify-booking-payout-upgrade.mjs"
-        ? []
-        : ["--defer-successful-restore"],
-      { failInitialOwnership: true },
-    );
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(
-      "does not belong to this disposable local checkout",
-    );
-    expect(commands).toMatch(/^docker inspect /);
-    expect(commands).not.toContain("npx supabase");
-  });
-
-  it.each([
-    {
-      script: "verify-booking-notification-upgrade.mjs",
-      args: ["--defer-successful-restore"],
-      failure: { failFixtureRead: true },
-      message: "forced fixture read failure",
-    },
-    {
-      script: "verify-booking-preparation-reminder-upgrade.mjs",
-      args: ["--defer-successful-restore"],
-      failure: { failFixtureRead: true },
-      message: "forced fixture read failure",
-    },
-    {
-      script: "verify-booking-payout-upgrade.mjs",
-      args: [],
-      failure: { failFixtureRead: true },
-      message: "forced fixture read failure",
-    },
-    {
-      script: "verify-booking-payout-upgrade.mjs",
-      args: [],
-      failure: { failTempDirectory: true },
-      message: "forced payout temp directory failure",
-    },
-  ])(
-    "restores once without a historical reset after setup failure in $script",
-    ({ script, args, failure, message }) => {
-      const { commands, result } = runUpgradeVerifier(script, args, failure);
-
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain(message);
-      expect(commands.match(/docker inspect/g)).toHaveLength(2);
-      expect(commands).not.toContain("--version");
-      expect(commands).toMatch(/npx supabase db reset --local/);
-      expect(
-        commands.match(
-          /npx supabase db reset --local(?: --workdir [^\n]+)?\n/g,
-        ),
-      ).toHaveLength(1);
-    },
-  );
-
-  it("preserves setup and restoration failures", () => {
-    const { commands, result } = runUpgradeVerifier(
-      "verify-booking-payout-upgrade.mjs",
-      [],
-      { failCurrentReset: true, failFixtureRead: true },
-    );
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("forced fixture read failure");
-    expect(result.stderr).toContain("forced current reset failure");
-    expect(commands.match(/docker inspect/g)).toHaveLength(2);
-    expect(commands).not.toContain("--version");
-    expect(
-      commands.match(/npx supabase db reset --local(?: --workdir [^\n]+)?\n/g),
-    ).toHaveLength(1);
-  });
-
-  it("preserves setup failure when restoration ownership is lost", () => {
-    const { commands, result } = runUpgradeVerifier(
-      "verify-booking-payout-upgrade.mjs",
-      [],
-      { failTempDirectory: true, loseRestoreOwnership: true },
-    );
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("forced payout temp directory failure");
-    expect(result.stderr).toContain(
-      "does not belong to this disposable local checkout",
-    );
-    expect(commands.match(/docker inspect/g)).toHaveLength(2);
-    expect(commands).not.toContain("--version");
-    expect(commands).not.toMatch(
-      /npx supabase db reset --local(?: --workdir [^\n]+)?\n/,
-    );
-  });
-
-  it.each([
-    "verify-booking-notification-upgrade.mjs",
-    "verify-booking-preparation-reminder-upgrade.mjs",
-  ])(
-    "restores the current schema after historical reset or proof failure in %s",
-    (script) => {
-      for (const failure of [
-        { failPriorReset: true, message: "forced prior reset failure" },
-        { failProof: true, message: "forced proof failure" },
-      ]) {
-        const { commands, result } = runUpgradeVerifier(
-          script,
-          ["--defer-successful-restore"],
-          failure,
-        );
-
-        expect(result.status).not.toBe(0);
-        expect(result.stderr).toContain(failure.message);
-        expect(
-          commands.match(
-            /npx supabase db reset --local(?: --workdir [^\n]+)?\n/g,
-          ),
-        ).toHaveLength(1);
-      }
-    },
-  );
-
-  it.each([
-    "verify-booking-notification-upgrade.mjs",
-    "verify-booking-preparation-reminder-upgrade.mjs",
-  ])("preserves proof and restoration failures in %s", (script) => {
-    const { commands, result } = runUpgradeVerifier(
-      script,
-      ["--defer-successful-restore"],
-      { failCurrentReset: true, failProof: true },
-    );
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("forced proof failure");
-    expect(result.stderr).toContain("forced current reset failure");
-    expect(
-      commands.match(/npx supabase db reset --local(?: --workdir [^\n]+)?\n/g),
-    ).toHaveLength(1);
-  });
-
-  it.each([
-    "verify-booking-notification-upgrade.mjs",
-    "verify-booking-preparation-reminder-upgrade.mjs",
-  ])("fails closed when restoration ownership is lost in %s", (script) => {
-    const { commands, result } = runUpgradeVerifier(
-      script,
-      ["--defer-successful-restore"],
-      { failProof: true, loseRestoreOwnership: true },
-    );
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("forced proof failure");
-    expect(result.stderr).toContain(
-      "does not belong to this disposable local checkout",
-    );
-    expect(commands.match(/docker inspect/g)).toHaveLength(2);
-    expect(commands).not.toMatch(
-      /npx supabase db reset --local(?: --workdir [^\n]+)?\n/,
-    );
   });
 
   it("rejects arguments before starting Docker or Supabase", async () => {
@@ -2154,93 +1671,6 @@ setInterval(() => {}, 1000);
       ownershipCommand,
       stopCommand,
     ]);
-  });
-
-  it.each([
-    {
-      failed: "scripts/verify-account-access-upgrade.mjs",
-      successor: "scripts/verify-booking-notification-upgrade.mjs",
-    },
-    {
-      failed: "scripts/verify-booking-notification-upgrade.mjs",
-      successor: "scripts/verify-booking-preparation-reminder-upgrade.mjs",
-    },
-    {
-      failed: "scripts/verify-booking-preparation-reminder-upgrade.mjs",
-      successor: "scripts/verify-booking-payout-upgrade.mjs",
-    },
-  ])(
-    "stops before $successor when $failed fails",
-    async ({ failed, successor }) => {
-      const run = ownedRun((command, args) => ({
-        status: command === "node" && args[0] === failed ? 7 : 0,
-        stdout:
-          command === "npx" &&
-          args.slice(0, 4).join(" ") === "supabase status -o json"
-            ? localCredentials
-            : "",
-      }));
-
-      expect(
-        await mainWithPreparedProject(["--database"], {
-          environment: {},
-          run,
-          stderr: vi.fn(),
-        }),
-      ).toBe(7);
-      expect(commands(run)).toContainEqual([
-        "node",
-        [failed, "--defer-successful-restore"],
-      ]);
-      expect(
-        run.mock.calls.some(
-          ([command, args]) => command === "node" && args[0] === successor,
-        ),
-      ).toBe(false);
-      expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
-    },
-  );
-
-  it("stops before notification when interrupted at the deferred account boundary", async () => {
-    const run = ownedRun((command, args) => {
-      if (
-        command === "node" &&
-        args[0] === "scripts/verify-account-access-upgrade.mjs"
-      ) {
-        process.emit("SIGTERM");
-      }
-      return {
-        status: 0,
-        stdout:
-          command === "npx" &&
-          args.slice(0, 4).join(" ") === "supabase status -o json"
-            ? localCredentials
-            : "",
-      };
-    });
-
-    expect(
-      await mainWithPreparedProject(["--database"], {
-        environment: {},
-        run,
-        stderr: vi.fn(),
-      }),
-    ).toBe(143);
-    expect(commands(run)).toContainEqual([
-      "node",
-      [
-        "scripts/verify-account-access-upgrade.mjs",
-        "--defer-successful-restore",
-      ],
-    ]);
-    expect(
-      run.mock.calls.some(
-        ([command, args]) =>
-          command === "node" &&
-          args[0] === "scripts/verify-booking-notification-upgrade.mjs",
-      ),
-    ).toBe(false);
-    expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
   });
 
   it.each([
@@ -2548,7 +1978,6 @@ setInterval(() => {}, 1000);
     ).toMatchObject({ ...localEnvironment, ...databaseIdentity });
 
     for (const [command, args] of [
-      ...databasePreflightCommands.filter(([command]) => command === "node"),
       ["node", ["scripts/verify-account-access-concurrency.mjs"]],
       [
         "node",
@@ -2807,7 +2236,13 @@ setInterval(() => {}, 1000);
         '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
       ],
     ]);
-    expect(run.mock.calls[5][2].env).toMatchObject({
+    const accountConcurrency = run.mock.calls.find(
+      ([command, args]) =>
+        command === "node" &&
+        args[0] === "scripts/verify-account-access-concurrency.mjs",
+    );
+    expect(accountConcurrency).toBeDefined();
+    expect(accountConcurrency[2].env).toMatchObject({
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-issue-32-v3",
       SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3",
       SUPABASE_LOCAL_WORKDIR: isolatedWorkdir,
