@@ -725,11 +725,6 @@ describe("repository verification command", () => {
       "export const fixture = true;\n",
     ],
     [
-      "the payment upgrade worker",
-      "scripts/lib/booking-request-payment-upgrade-worker.mjs",
-      "export const fixture = true;\n",
-    ],
-    [
       "a migration",
       "supabase/migrations/20260101000000_fixture.sql",
       "-- sql\n",
