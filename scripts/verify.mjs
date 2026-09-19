@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const USAGE =
@@ -147,6 +147,70 @@ const testEnvironment = {
   SUPABASE_SECRET_KEY: "local-test-secret",
   PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
 };
+
+const lockedDependencies = ["wrangler", "workerd"];
+
+function lockfileVersion(cwd, packageName) {
+  try {
+    const lockfile = JSON.parse(
+      readFileSync(`${cwd}/package-lock.json`, "utf8"),
+    );
+    const version = lockfile.packages?.[`node_modules/${packageName}`]?.version;
+    return typeof version === "string" && version.length > 0
+      ? { value: version }
+      : {
+          problem:
+            "expected version cannot be established from package-lock.json",
+        };
+  } catch {
+    return {
+      problem: "expected version cannot be established from package-lock.json",
+    };
+  }
+}
+
+function installedVersion(cwd, packageName) {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(`${cwd}/node_modules/${packageName}/package.json`, "utf8"),
+    );
+    return typeof manifest.version === "string" && manifest.version.length > 0
+      ? { value: manifest.version }
+      : { problem: "observed installed version is unreadable" };
+  } catch (error) {
+    return {
+      problem:
+        error && typeof error === "object" && error.code === "ENOENT"
+          ? "observed installed version missing"
+          : "observed installed version is unreadable",
+    };
+  }
+}
+
+function checkLockedDependencies(cwd, stderr) {
+  const failures = [];
+  for (const packageName of lockedDependencies) {
+    const expected = lockfileVersion(cwd, packageName);
+    const observed = installedVersion(cwd, packageName);
+    if (expected.value === observed.value && expected.value !== undefined) {
+      continue;
+    }
+    failures.push(
+      `- ${packageName}: ${
+        expected.value ? `expected ${expected.value}` : expected.problem
+      }; ${observed.value ? `observed ${observed.value}` : observed.problem}.`,
+    );
+  }
+  if (failures.length === 0) return true;
+  stderr(
+    [
+      "Dependency preflight stopped verification:",
+      ...failures,
+      "Run npm ci to install the locked dependencies before verification.",
+    ].join("\n"),
+  );
+  return false;
+}
 
 function runStep(command, args, environment, cwd) {
   return spawnSync(command, args, {
@@ -461,9 +525,15 @@ export function main(
     for (const [command, commandArgs] of steps) {
       stdout(`Planned command: ${JSON.stringify([command, ...commandArgs])}`);
     }
+    stdout(
+      steps.length > 0
+        ? "Dependency preflight: Wrangler and Workerd will be checked before execution; not run in plan-only mode."
+        : "Dependency preflight: unnecessary because no verification commands are selected.",
+    );
     stdout("Plan only: no verification ran.");
     return 0;
   }
+  if (steps.length > 0 && !checkLockedDependencies(cwd, stderr)) return 1;
   for (let index = 0; index < steps.length; index += 1) {
     const [command, commandArgs] = steps[index];
     const result = run(command, commandArgs, verificationEnvironment, cwd);
