@@ -694,42 +694,6 @@ describe("repository verification command", () => {
     );
   });
 
-  it("keeps the complete mixed issue 310 path set on full evidence", () => {
-    const repository = createRepository();
-    const paths = [
-      ".agents/templates/planner-handoff.md",
-      ".agents/templates/builder-handoff.md",
-      "scripts/lib/handoff-check.mjs",
-      "scripts/lib/handoff-check.test.mjs",
-      "scripts/lib/handoff-hook-adapters.mjs",
-      "scripts/lib/handoff-hook-adapters.test.mjs",
-      "scripts/lib/handoff-hook-runtime.mjs",
-      "scripts/lib/handoff-hooks.test.mjs",
-      ".claude/hooks/check-builder-handoff.mjs",
-      ".codex/hooks/check-builder-handoff.mjs",
-      ".codex/hooks.json",
-      ".claude/settings.json",
-      "AGENTS.md",
-      ".agents/skills/resume/SKILL.md",
-      ".agents/roles/architect.md",
-      ".agents/roles/builder.md",
-      "scripts/verify.mjs",
-      "scripts/verify.test.mjs",
-    ];
-    for (const path of paths)
-      write(repository, path, `issue 310 fixture for ${path}\n`);
-    git(repository, ["add", "."]);
-    git(repository, ["commit", "-m", "complete issue 310 change"]);
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual([
-      ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
-    ]);
-  });
-
   it.each([
     ["another Claude hook", ".claude/hooks/other-hook.mjs"],
     ["another Codex hook", ".codex/hooks/other-hook.mjs"],

@@ -62,6 +62,13 @@ Destructive actions keep exact-target approval, except the merged-job branch and
 performs under the authorisation that already covered the merge, and the verifier-only worktree its local-main
 update creates and removes within one run.
 
+When approved work says to copy, port, inherit, mirror, or use the same shape as a named implementation, that
+implementation is part of the approved outcome. Inspect its current source before planning and preserve its
+structure and behaviour; adapt only repository-specific names, paths, fixtures, and provider payloads. Stronger
+validation, an extra abstraction or runtime layer, or another behavioural deviation is a material change that
+returns to the owner. Conflicting acceptance wording stops for clarification instead of being reconciled by
+invention.
+
 ## Native job lifecycle
 
 - Resume fetches `origin/main` before intake, reads the fetched manual and `resume`/`closeout` instructions, then

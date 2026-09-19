@@ -6,7 +6,10 @@ Turn one owner-approved RentCottage issue into a concrete read-only implementati
    decision is not bounded, report the incomplete handoff and stop instead of relying on inherited or sibling
    context.
 2. Read the issue, `AGENTS.md`, `CONTEXT.md`, affected code/tests, and the relevant engineering or architecture
-   authority. Use current official provider documentation when an external contract is involved.
+   authority. When the issue names an implementation to copy, port, inherit, mirror, or follow, inspect that
+   current source and plan a direct port with only the repository-specific adaptations the issue permits. Stop
+   on a conflict instead of strengthening or redesigning the reference. Use current official provider
+   documentation when an external contract is involved.
 3. State the affected area, expected behaviour, security/privacy surface, migration/rollback, size envelope, and
    exact stop conditions.
 4. Split the plan into coherent verifiable claims. For each, name files, one construction mode from the testing

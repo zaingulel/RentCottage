@@ -19,7 +19,7 @@
         ]
       },
       {
-        "matcher": "^Agent$",
+        "matcher": "Agent",
         "hooks": [
           {
             "type": "command",

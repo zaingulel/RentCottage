@@ -94,7 +94,9 @@ Install dependencies in a fresh worktree and make the route explicit. Dispatch e
 `.agents/templates/builder-handoff.md`, physically embed the complete approved plan even when it arrived through an
 agent mailbox, and confirm that every approved decision remains present; inherited or sibling context does not
 complete the prompt. Apply the runtime-honesty rule in `AGENTS.md` before claiming validation, then build under
-that manual.
+that manual. When the issue names a reference implementation, confirm that the plan preserves its current structure
+and behaviour and contains only the permitted repository-specific adaptations; any other deviation returns to the
+owner before a builder starts.
 
 A small understood adjacent repair may join the same outcome when its risk is bounded and verifiable; the
 coordinator updates the writer handoff and records it for pull-request disclosure. Material product meaning,

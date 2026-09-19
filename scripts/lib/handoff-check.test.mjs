@@ -1,46 +1,29 @@
+// handoff-check.test.mjs — the prompt-side builder and architect handoff contract.
+// Every blocking rule has a case that turns green if the rule is removed. The required-field
+// lists are spelled out here, not imported, so dropping a field from the guard turns the test
+// for that field red instead of deleting it.
+
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { test } from "node:test";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { checkHandoff } from "./handoff-check.mjs";
+import {
+  checkHandoff,
+  BUILDER_REQUIREMENTS,
+  ARCHITECT_REQUIREMENTS,
+} from "./handoff-check.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-
-const VALID_ARCHITECT = [
-  "Decision: define one shared handoff validator",
-  "Scope: prompt structure only",
-  "Discovery: inspect the shared role charters and existing templates",
-  "Judgment: keep provider payload mapping outside the validator",
-  "Deliverable: a file-level implementation plan",
-  "Stop condition: return the complete bounded plan",
-].join("\n");
-
-const VALID_BUILDER = [
-  "Slice: Validate complete builder handoffs",
-  "Claim: malformed readable builder handoffs are rejected",
-  "Construction mode: strict-tdd",
-  "Working directory: /tmp/rentcottage-issue-310",
-  "",
-  "Implementation plan:",
-  "  1. Add a pure validator.",
-  "  2. Prove its public outcomes.",
-  "",
-  "Files allowed for this claim:",
-  "  - scripts/lib/handoff-check.mjs",
-  "  - scripts/lib/handoff-check.test.mjs",
-  "",
-  "Evidence landing with this claim:",
-  "  - Node test coverage through checkHandoff.",
-  "",
-  "Observer: Node's test runner calling the public checkHandoff seam",
-  "Independent oracle: issue 310 acceptance criteria",
-  "Focused verification: npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs",
-  "Stop condition: the focused observer passes and writing stops",
-].join("\n");
-
-const ARCHITECT_FIELDS = [
+const EXPECTED_BUILDER_FIELDS = [
+  "Slice",
+  "Claim",
+  "Construction mode",
+  "Focused verification command",
+  "Stop condition",
+  "Working directory",
+];
+const EXPECTED_ARCHITECT_FIELDS = [
   "Decision",
   "Scope",
   "Discovery",
@@ -48,650 +31,320 @@ const ARCHITECT_FIELDS = [
   "Deliverable",
   "Stop condition",
 ];
-const BUILDER_SCALAR_FIELDS = [
-  "Slice",
-  "Claim",
-  "Construction mode",
-  "Working directory",
-  "Observer",
-  "Independent oracle",
-  "Focused verification",
-  "Stop condition",
-];
-const BUILDER_MULTILINE_FIELDS = [
-  "Implementation plan",
-  "Files allowed for this claim",
-  "Evidence landing with this claim",
-];
-function assertRejected(result, expectedReason) {
-  assert.equal(result.outcome, "rejected");
-  assert.match(result.reason, expectedReason);
-}
 
-function replaceScalar(prompt, field, value) {
+const GOOD_BUILDER = [
+  "Slice: Booking-request card shows the pending state",
+  "Claim: a pending booking request renders the expected status copy",
+  "Construction mode: evidence-required",
+  "Plan:",
+  "- edit the status component and its focused test",
+  "Files to edit:",
+  "- src/components/customer-booking-request-status.tsx",
+  "Evidence that lands with this slice:",
+  "- src/components/customer-booking-request-status.test.tsx",
+  "Focused verification command: npx vitest run src/components/customer-booking-request-status.test.tsx",
+  "Stop condition: the focused test passes and lint is clean",
+  "Working directory: /tmp/jobs/310",
+  "",
+  "Standing contract: report what you verified; end with the literal line final on-disk state = fixed",
+].join("\n");
+
+const GOOD_ARCHITECT = [
+  "Decision: where the pending-state copy lives",
+  "Scope: the booking-request status component only",
+  "Discovery: read the component and its focused test",
+  "Judgment: copy placement, not booking lifecycle meaning",
+  "Deliverable: a file-level plan with one claim",
+  "Stop condition: plan delivered in full",
+].join("\n");
+
+function withLine(prompt, field, replacement) {
   return prompt
     .split("\n")
-    .map((line) =>
-      line.startsWith(`${field}:`)
-        ? `${field}:${value === "" ? "" : ` ${value}`}`
-        : line,
-    )
+    .map((line) => (line.startsWith(`${field}:`) ? replacement : line))
     .join("\n");
-}
-
-function removeScalar(prompt, field) {
-  return prompt
-    .split("\n")
-    .filter((line) => !line.startsWith(`${field}:`))
-    .join("\n");
-}
-
-function replaceMultiline(prompt, field, continuationLines) {
-  const lines = prompt.split("\n");
-  const start = lines.indexOf(`${field}:`);
-  assert.notEqual(start, -1, `fixture contains ${field}`);
-  let end = start + 1;
-  while (
-    end < lines.length &&
-    (lines[end].trim() === "" || /^\s/.test(lines[end]))
-  )
-    end += 1;
-  return [
-    ...lines.slice(0, start),
-    `${field}:`,
-    ...continuationLines,
-    ...lines.slice(end),
-  ].join("\n");
-}
-
-function removeMultiline(prompt, field) {
-  const lines = prompt.split("\n");
-  const start = lines.indexOf(`${field}:`);
-  assert.notEqual(start, -1, `fixture contains ${field}`);
-  let end = start + 1;
-  while (
-    end < lines.length &&
-    (lines[end].trim() === "" || /^\s/.test(lines[end]))
-  )
-    end += 1;
-  return [...lines.slice(0, start), ...lines.slice(end)].join("\n");
 }
 
 function filledTemplate(relativePath, values) {
   const source = readFileSync(resolve(ROOT, relativePath), "utf8");
-  const marker = "---8<---";
-  const prompt = source
-    .slice(source.lastIndexOf(marker) + marker.length)
-    .trimStart();
-  return prompt.replace(
-    /{{([A-Z][A-Z0-9_]*)}}/g,
-    (slotText, slot, offset, completePrompt) => {
-      assert.ok(Object.hasOwn(values, slot), `fixture supplies ${slotText}`);
-      const lineStart = completePrompt.lastIndexOf("\n", offset) + 1;
-      const prefix = completePrompt.slice(lineStart, offset);
-      const continuationIndent = /^[\t ]*$/.test(prefix) ? prefix : "";
-      return String(values[slot]).replaceAll("\n", `\n${continuationIndent}`);
-    },
-  );
+  const body = source.slice(source.lastIndexOf("---8<---") + "---8<---".length);
+  return body.replace(/{{([A-Z][A-Z0-9_]*)}}/g, (_match, slot) => {
+    if (!(slot in values))
+      throw new Error(`no sample value for template slot ${slot}`);
+    return values[slot];
+  });
 }
 
-test("returns explicit outcomes for guarded and out-of-scope seats", () => {
+test("the guard's required-field lists are the documented ones", () => {
+  assert.deepEqual(BUILDER_REQUIREMENTS, EXPECTED_BUILDER_FIELDS);
+  assert.deepEqual(ARCHITECT_REQUIREMENTS, EXPECTED_ARCHITECT_FIELDS);
+});
+
+test("a filled builder handoff passes for all three builder seats", () => {
   assert.deepEqual(
-    checkHandoff({ agentType: "architect", prompt: VALID_ARCHITECT }),
-    {
-      outcome: "validated",
-    },
-  );
-  for (const agentType of ["builder-lite", "builder", "builder-max"]) {
-    assert.deepEqual(checkHandoff({ agentType, prompt: VALID_BUILDER }), {
-      outcome: "validated",
-    });
-  }
-  assert.deepEqual(
-    checkHandoff({
-      agentType: "reviewer",
-      prompt: "Review the committed diff.",
-    }),
-    {
-      outcome: "out-of-scope",
-    },
-  );
-});
-
-test("unavailable normalized input is explicit while readable empty guarded prompts are rejected", () => {
-  for (const input of [
-    null,
-    undefined,
-    {},
-    { agentType: 42, prompt: VALID_BUILDER },
-  ]) {
-    assert.equal(checkHandoff(input).outcome, "unvalidated");
-  }
-  for (const agentType of [
-    "architect",
-    "builder-lite",
-    "builder",
-    "builder-max",
-  ]) {
-    assert.equal(checkHandoff({ agentType }).outcome, "unvalidated");
-    assert.equal(
-      checkHandoff({ agentType, prompt: 42 }).outcome,
-      "unvalidated",
-    );
-    assertRejected(checkHandoff({ agentType, prompt: "" }), /required field/i);
-  }
-});
-
-test("every architect field rejects when missing, empty, repeated, or placeholder-filled", () => {
-  for (const field of ARCHITECT_FIELDS) {
-    assertRejected(
-      checkHandoff({
-        agentType: "architect",
-        prompt: removeScalar(VALID_ARCHITECT, field),
-      }),
-      new RegExp(field, "i"),
-    );
-    assertRejected(
-      checkHandoff({
-        agentType: "architect",
-        prompt: replaceScalar(VALID_ARCHITECT, field, ""),
-      }),
-      new RegExp(field, "i"),
-    );
-    assertRejected(
-      checkHandoff({
-        agentType: "architect",
-        prompt: `${VALID_ARCHITECT}\n${field}: repeated`,
-      }),
-      new RegExp(field, "i"),
-    );
-    for (const placeholder of [
-      "...",
-      "<describe this field>",
-      "TODO",
-      "TBD",
-      "{{SLOT}}",
-    ]) {
-      assertRejected(
-        checkHandoff({
-          agentType: "architect",
-          prompt: replaceScalar(VALID_ARCHITECT, field, placeholder),
-        }),
-        new RegExp(field, "i"),
-      );
-    }
-  }
-});
-
-test("every builder scalar field rejects when missing, empty, repeated, or placeholder-filled", () => {
-  for (const field of BUILDER_SCALAR_FIELDS) {
-    assertRejected(
-      checkHandoff({
-        agentType: "builder",
-        prompt: removeScalar(VALID_BUILDER, field),
-      }),
-      new RegExp(field, "i"),
-    );
-    assertRejected(
-      checkHandoff({
-        agentType: "builder",
-        prompt: replaceScalar(VALID_BUILDER, field, ""),
-      }),
-      new RegExp(field, "i"),
-    );
-    assertRejected(
-      checkHandoff({
-        agentType: "builder",
-        prompt: `${VALID_BUILDER}\n${field}: repeated`,
-      }),
-      new RegExp(field, "i"),
-    );
-    for (const placeholder of [
-      "...",
-      "<describe this field>",
-      "TODO",
-      "TBD",
-      "{{SLOT}}",
-    ]) {
-      assertRejected(
-        checkHandoff({
-          agentType: "builder",
-          prompt: replaceScalar(VALID_BUILDER, field, placeholder),
-        }),
-        new RegExp(field, "i"),
-      );
-    }
-  }
-});
-
-test("every builder multiline field rejects when missing, empty, repeated, or entirely placeholder-filled", () => {
-  for (const field of BUILDER_MULTILINE_FIELDS) {
-    assertRejected(
-      checkHandoff({
-        agentType: "builder",
-        prompt: removeMultiline(VALID_BUILDER, field),
-      }),
-      new RegExp(field, "i"),
-    );
-    assertRejected(
-      checkHandoff({
-        agentType: "builder",
-        prompt: replaceMultiline(VALID_BUILDER, field, []),
-      }),
-      new RegExp(field, "i"),
-    );
-    assertRejected(
-      checkHandoff({
-        agentType: "builder",
-        prompt: `${VALID_BUILDER}\n${field}:\n  - repeated`,
-      }),
-      new RegExp(field, "i"),
-    );
-    for (const placeholder of [
-      "...",
-      "<describe this field>",
-      "TODO",
-      "TBD",
-      "{{SLOT}}",
-    ]) {
-      assertRejected(
-        checkHandoff({
-          agentType: "builder",
-          prompt: replaceMultiline(VALID_BUILDER, field, [
-            `  - ${placeholder}`,
-          ]),
-        }),
-        new RegExp(field, "i"),
-      );
-    }
-  }
-});
-
-test("multiline placeholder rejection applies to the whole value, not one placeholder line", () => {
-  const allPlaceholders = replaceMultiline(
-    VALID_BUILDER,
-    "Evidence landing with this claim",
-    ["  - TODO: name the test", "  - <name the observer>", "  - TBD"],
-  );
-  assertRejected(
-    checkHandoff({ agentType: "builder", prompt: allPlaceholders }),
-    /Evidence landing.*placeholder/i,
-  );
-
-  const partlyFilled = replaceMultiline(
-    VALID_BUILDER,
-    "Evidence landing with this claim",
-    [
-      "  - TODO: add the edge case",
-      "  - scripts/lib/handoff-check.test.mjs proves the public outcome",
-    ],
+    checkHandoff({ subagent_type: "builder", prompt: GOOD_BUILDER }),
+    { ok: true },
   );
   assert.deepEqual(
-    checkHandoff({ agentType: "builder", prompt: partlyFilled }),
-    { outcome: "validated" },
-  );
-});
-
-test("implementation plan rejects reference-only lines while accepting concrete work grounded in prior code", () => {
-  for (const reference of [
-    "Use the plan above.",
-    "Use the architect plan from the preceding sibling result.",
-    "Same as earlier.",
-    "Follow the prior implementation plan.",
-    "Apply the preceding instructions.",
-    "Use inherited material.",
-    "See the sibling result.",
-    "Implement the architect-result.",
-    "Follow the conversation.",
-    "Use the context.",
-  ]) {
-    const prompt = replaceMultiline(VALID_BUILDER, "Implementation plan", [
-      `  1. ${reference}`,
-    ]);
-    assertRejected(
-      checkHandoff({ agentType: "builder", prompt }),
-      /Implementation plan.*prior context|prior context.*Implementation plan/i,
-    );
-  }
-
-  const concrete = replaceMultiline(VALID_BUILDER, "Implementation plan", [
-    "  1. Inspect the prior implementation, then add absolute-path validation in scripts/lib/handoff-check.mjs.",
-  ]);
-  assert.deepEqual(checkHandoff({ agentType: "builder", prompt: concrete }), {
-    outcome: "validated",
-  });
-});
-
-test("multiline fields require indented continuations and protect embedded plan labels", () => {
-  for (const field of BUILDER_MULTILINE_FIELDS) {
-    const inlineValue = VALID_BUILDER.replace(
-      `${field}:`,
-      `${field}: content on the label line`,
-    );
-    assertRejected(
-      checkHandoff({ agentType: "builder", prompt: inlineValue }),
-      new RegExp(`${field}.*continuation`, "i"),
-    );
-  }
-
-  const unindented = replaceMultiline(VALID_BUILDER, "Implementation plan", [
-    "1. Add the validator.",
-  ]);
-  assertRejected(
-    checkHandoff({ agentType: "builder", prompt: unindented }),
-    /Implementation plan.*indent/i,
-  );
-
-  const accidentalOuterClaim = replaceMultiline(
-    VALID_BUILDER,
-    "Implementation plan",
-    ["Claim: this looks like another outer claim"],
-  );
-  const accidentalResult = checkHandoff({
-    agentType: "builder",
-    prompt: accidentalOuterClaim,
-  });
-  assertRejected(accidentalResult, /Claim.*repeated|repeated.*Claim/i);
-
-  const embeddedClaims = replaceMultiline(
-    VALID_BUILDER,
-    "Implementation plan",
-    [
-      "  Claim 1:",
-      "    Add the shared parser and focused test.",
-      "  Claim: embedded labels stay inside the plan when indented.",
-      "  Focused verification: this embedded label is plan content, not an outer field.",
-      "  Claim 2:",
-      "    Add runtime adapters in a later slice.",
-    ],
+    checkHandoff({ subagent_type: "builder-max", prompt: GOOD_BUILDER }),
+    { ok: true },
   );
   assert.deepEqual(
-    checkHandoff({ agentType: "builder-max", prompt: embeddedClaims }),
-    {
-      outcome: "validated",
-    },
+    checkHandoff({ subagent_type: "builder-lite", prompt: GOOD_BUILDER }),
+    { ok: true },
   );
 });
 
-test("remaining template slots are rejected in scalar, multiline, and incidental prose", () => {
-  const scalar = replaceScalar(
-    VALID_ARCHITECT,
-    "Decision",
-    "Keep {{PRIVATE-SENTINEL}} in the decision",
+test("builder-lite is guarded exactly like builder: a missing required line blocks", () => {
+  const missing = withLine(GOOD_BUILDER, "Stop condition", "");
+  assert.equal(
+    checkHandoff({ subagent_type: "builder", prompt: missing }).ok,
+    false,
   );
-  const scalarResult = checkHandoff({ agentType: "architect", prompt: scalar });
-  assertRejected(scalarResult, /1 unfilled template slot/i);
-  assert.doesNotMatch(scalarResult.reason, /PRIVATE-SENTINEL/);
-
-  const multiline = replaceMultiline(VALID_BUILDER, "Implementation plan", [
-    "  Implement {{PRIVATE-SENTINEL}} after discovery.",
-  ]);
-  const multilineResult = checkHandoff({
-    agentType: "builder",
-    prompt: multiline,
-  });
-  assertRejected(multilineResult, /1 unfilled template slot/i);
-  assert.doesNotMatch(multilineResult.reason, /PRIVATE-SENTINEL/);
-
-  const incidental = `${VALID_BUILDER}\nStanding contract: report {{PRIVATE-SENTINEL}} and {{SECOND-SENTINEL}}.`;
-  const incidentalResult = checkHandoff({
-    agentType: "builder",
-    prompt: incidental,
-  });
-  assertRejected(incidentalResult, /2 unfilled template slots/i);
-  assert.doesNotMatch(
-    incidentalResult.reason,
-    /PRIVATE-SENTINEL|SECOND-SENTINEL/,
+  assert.equal(
+    checkHandoff({ subagent_type: "builder-lite", prompt: missing }).ok,
+    false,
   );
 });
 
-test("one rejection reports several simultaneous defects", () => {
-  let malformed = removeScalar(VALID_BUILDER, "Slice");
-  malformed = replaceScalar(malformed, "Construction mode", "vibes");
-  malformed = replaceScalar(malformed, "Focused verification", "same as above");
-  malformed += "\nStop condition: repeated\nIncidental: {{LEFT_OPEN}}";
-  const result = checkHandoff({ agentType: "builder", prompt: malformed });
-  assert.equal(result.outcome, "rejected");
-  for (const fragment of [
-    "Slice",
-    "Construction mode",
-    "Focused verification",
-    "Stop condition",
-    "1 unfilled template slot",
-  ]) {
-    assert.match(
-      result.reason,
-      new RegExp(fragment.replace(/[{}]/g, "\\$&"), "i"),
-    );
-  }
-  assert.doesNotMatch(result.reason, /LEFT_OPEN/);
-});
-
-test("readable rejections name the applicable repository template exactly once", () => {
-  const cases = [
-    {
-      result: checkHandoff({
-        agentType: "architect",
-        prompt: removeScalar(VALID_ARCHITECT, "Decision"),
-      }),
-      template: ".agents/templates/planner-handoff.md",
-    },
-    {
-      result: checkHandoff({
-        agentType: "builder",
-        prompt: removeScalar(VALID_BUILDER, "Claim"),
-      }),
-      template: ".agents/templates/builder-handoff.md",
-    },
-  ];
-
-  for (const { result, template } of cases) {
-    assert.equal(result.outcome, "rejected");
-    assert.equal(result.reason.split(template).length - 1, 1, template);
-  }
-});
-
-test("construction mode accepts only the three exact testing-strategy values", () => {
-  for (const mode of ["strict-tdd", "evidence-required", "preservation"]) {
-    const prompt = replaceScalar(VALID_BUILDER, "Construction mode", mode);
-    assert.equal(
-      checkHandoff({ agentType: "builder", prompt }).outcome,
-      "validated",
-    );
-  }
-  for (const mode of [
-    "Strict-TDD",
-    "strict-tdd with tests",
-    "strict-tdd evidence-required",
-    "preserve",
-  ]) {
-    const prompt = replaceScalar(VALID_BUILDER, "Construction mode", mode);
-    assertRejected(
-      checkHandoff({ agentType: "builder", prompt }),
-      /Construction mode.*exactly/i,
-    );
-  }
-});
-
-test("working directory must be an absolute path", () => {
-  for (const workingDirectory of [
-    "private/tmp/rentcottage-issue-310",
-    "./rentcottage-issue-310",
-    "rentcottage-issue-310",
-  ]) {
-    const prompt = replaceScalar(
-      VALID_BUILDER,
-      "Working directory",
-      workingDirectory,
-    );
-    assertRejected(
-      checkHandoff({ agentType: "builder", prompt }),
-      /Working directory.*absolute/i,
-    );
-  }
-});
-
-test("focused verification accepts only logged focused observer commands", () => {
-  const commands = [
-    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs",
-    "npm run run-log -- issue 310 validator -- NODE_OPTIONS='--conditions react-server' node --test \"scripts/lib/handoff-check.test.mjs\"",
-    "npm run run-log -- issue-310-vitest -- CI=1 npx vitest run src/example.test.ts --retry=0",
-    "npm run run-log -- issue-310-browser -- CI=1 npx playwright test tests/example.spec.ts --project=desktop --retries=0",
-  ];
-  for (const command of commands) {
-    const prompt = replaceScalar(
-      VALID_BUILDER,
-      "Focused verification",
-      command,
-    );
-    assert.equal(
-      checkHandoff({ agentType: "builder", prompt }).outcome,
-      "validated",
-      command,
-    );
-  }
-});
-
-test("focused verification rejects unlogged, unlabeled, targetless, compound, and convergence commands", () => {
-  const invalid = [
-    "same as above",
-    "run the focused tests",
-    "npm test",
-    "node --test scripts/lib/handoff-check.test.mjs",
-    "NODE_OPTIONS=--trace-warnings node --test scripts/lib/handoff-check.test.mjs",
-    "npx vitest run src/example.test.ts --retry=0",
-    "npx playwright test tests/example.spec.ts --project=desktop",
-    "npm run run-log -- -- node --test scripts/lib/handoff-check.test.mjs",
-    "npm run run-log -- issue-310-validator -- node --test --test-reporter=spec",
-    "npm run run-log -- issue-310-validator -- npx vitest run --retry=0",
-    "npm run run-log -- issue-310-validator -- npx playwright test --project=desktop",
-    "npm run run-log -- issue-310-validator -- node --test",
-    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs && npm run verify",
-    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs; npm test",
-    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs || npm run verify",
-    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs | tee evidence.log",
-    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs $(npm run verify)",
-    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs npm run verify",
-    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs tests",
-    "npm run run-log -- issue-310-validator -- npm run verify",
-    "npm run run-log -- issue-310-validator -- npm test",
-    "npm run run-log -- issue-310-validator -- node --test .",
-    "npm run run-log -- issue-310-validator -- npx vitest run .",
-    "npm run run-log -- issue-310-validator -- npx playwright test tests",
-    "<exact command>",
-    "TODO",
-  ];
-  for (const command of invalid) {
-    const prompt = replaceScalar(
-      VALID_BUILDER,
-      "Focused verification",
-      command,
-    );
-    assertRejected(
-      checkHandoff({ agentType: "builder", prompt }),
-      /Focused verification/i,
-    );
-  }
-});
-
-test("positive builder-owned mutation, revert, or restore testing instructions are rejected", () => {
-  const forbidden = [
-    "Builder: mutate the validation rule, run the observer, restore the implementation, and rerun it.",
-    "Deliberately revert the check and rerun the test before returning.",
-    "You must prove mutation sensitivity by changing the implementation.",
-    "Perform the mutation test and restore the source.",
-    "Builder must mutate the validator; the coordinator will restore it later.",
-    "The coordinator will review the evidence after Builder restores the source.",
-    "Builder owns mutation testing while the coordinator owns convergence.",
-    "Do not stop until you mutate the implementation and run the observer.",
-  ];
-  for (const instruction of forbidden) {
-    const result = checkHandoff({
-      agentType: "builder-max",
-      prompt: `${VALID_BUILDER}\n${instruction}`,
-    });
-    assertRejected(result, /mutation.*coordinator|coordinator.*mutation/i);
-  }
-});
-
-test("coordinator-owned, negated, and benign mutation wording remains valid", () => {
-  const allowed = [
-    "Coordinator-only after the writer stops: mutate one rule, run the observer red, restore it, and rerun green.",
-    "Do not mutate, revert, or restore the implementation.",
-    "The coordinator owns mutation testing and restoration.",
-    "Coordinator: revert the validator, run the observer red, and restore the source.",
-    "Land a mutation-proven test with the change.",
-    "The test must be mutation-proven.",
-    "Add the restore-account test.",
-  ];
-  for (const instruction of allowed) {
-    const result = checkHandoff({
-      agentType: "builder-lite",
-      prompt: `${VALID_BUILDER}\n${instruction}`,
-    });
-    assert.deepEqual(result, { outcome: "validated" }, instruction);
-  }
-});
-
-test("the real filled planner template validates for architect", () => {
-  const prompt = filledTemplate(".agents/templates/planner-handoff.md", {
-    DECISION: "choose the shared validator boundary",
-    SCOPE: "architect and builder handoff structure",
-    DISCOVERY:
-      "read the hook payload contracts, role charters, and existing builder template",
-    JUDGMENT: "keep provider mapping outside the pure structure validator",
-    DELIVERABLE: "a complete implementation plan with bounded claims",
-    STOP_CONDITION: "return the full plan without editing",
-  });
-  assert.deepEqual(checkHandoff({ agentType: "architect", prompt }), {
-    outcome: "validated",
-  });
-});
-
-test("the real filled builder template validates a substantial multi-claim plan for every builder seat", () => {
+test("the real builder template, filled, passes the guard and carries every required line", () => {
   const prompt = filledTemplate(".agents/templates/builder-handoff.md", {
-    SLICE_TITLE: "Complete handoff enforcement",
-    CLAIM:
-      "all readable architect and builder handoffs carry complete bounded structure",
-    CONSTRUCTION_MODE: "strict-tdd",
-    WORKTREE_ROOT: "/tmp/rentcottage issue 310",
-    PLAN: [
-      "1. Shared validator.",
-      "   Claim: validate every required scalar and multiline field.",
-      "   Focused verification: exercise the public pure seam.",
-      "2. Runtime adapters.",
-      "   Claim: preserve validated, rejected, unvalidated, and out-of-scope outcomes.",
-      "   Stop condition: provider wrappers never guess at opaque payloads.",
-      "3. Instruction ownership.",
-      "   Claim: builders receive the whole approved plan after a mailbox handoff.",
-      "4. Verification routing.",
-      "   Claim: exact hook and configuration paths select full evidence.",
-    ].join("\n"),
-    FILES: [
-      "- scripts/lib/handoff-check.mjs",
-      "- scripts/lib/handoff-check.test.mjs",
-      "- .agents/templates/planner-handoff.md",
-      "- .agents/templates/builder-handoff.md",
-    ].join("\n"),
-    TEST: [
-      "- Every required field is independently removed, emptied, repeated, and placeholder-filled.",
-      "- The real filled templates pass through the public seam.",
-    ].join("\n"),
-    OBSERVER:
-      "Node's test runner calling checkHandoff and reading the templates from disk",
-    INDEPENDENT_ORACLE:
-      "issue 310 acceptance criteria and the testing strategy",
+    SLICE_TITLE: "Booking-request pending state",
+    CLAIM: "the card renders pending copy for a pending booking request",
+    CONSTRUCTION_MODE: "evidence-required",
+    WORKTREE_ROOT: "/tmp/jobs/310",
+    PLAN: "Edit the status component; add the focused test.",
+    FILES: "- src/components/customer-booking-request-status.tsx",
+    TEST: "- src/components/customer-booking-request-status.test.tsx",
+    OBSERVER: "the rendered status text",
+    INDEPENDENT_ORACLE: "the acceptance criterion's exact copy",
     FOCUSED_TEST_COMMAND:
-      "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs",
-    STOP_CONDITION:
-      "the exact focused observer passes with at least one matched test and writing stops",
+      "npx vitest run src/components/customer-booking-request-status.test.tsx",
+    STOP_CONDITION: "focused test green, lint clean",
   });
-
-  for (const agentType of ["builder-lite", "builder", "builder-max"]) {
-    assert.deepEqual(
-      checkHandoff({ agentType, prompt }),
-      { outcome: "validated" },
-      agentType,
+  assert.deepEqual(checkHandoff({ subagent_type: "builder", prompt }), {
+    ok: true,
+  });
+  for (const field of EXPECTED_BUILDER_FIELDS) {
+    assert.equal(
+      prompt.split("\n").filter((line) => line.startsWith(`${field}:`)).length,
+      1,
+      `template must carry one '${field}:' line`,
     );
   }
+});
+
+test("the real architect template, filled, passes the guard", () => {
+  const prompt = filledTemplate(".agents/templates/planner-handoff.md", {
+    DECISION: "where the copy lives",
+    SCOPE: "the card only",
+    DISCOVERY: "read the renderer",
+    JUDGMENT: "placement",
+    DELIVERABLE: "a plan",
+    STOP_CONDITION: "plan delivered in full",
+  });
+  assert.deepEqual(checkHandoff({ subagent_type: "architect", prompt }), {
+    ok: true,
+  });
+});
+
+test("every required builder line blocks when missing, duplicated, or empty", () => {
+  for (const field of EXPECTED_BUILDER_FIELDS) {
+    const missing = GOOD_BUILDER.split("\n")
+      .filter((line) => !line.startsWith(`${field}:`))
+      .join("\n");
+    assert.match(
+      checkHandoff({ subagent_type: "builder", prompt: missing }).reason,
+      new RegExp(`'${field}:'`),
+    );
+    const empty = withLine(GOOD_BUILDER, field, `${field}:   `);
+    assert.equal(
+      checkHandoff({ subagent_type: "builder", prompt: empty }).ok,
+      false,
+      `${field} empty`,
+    );
+    const duplicated = `${GOOD_BUILDER}\n${field}: again`;
+    assert.equal(
+      checkHandoff({ subagent_type: "builder", prompt: duplicated }).ok,
+      false,
+      `${field} duplicated`,
+    );
+  }
+});
+
+test("an unfilled template slot blocks and names the slot", () => {
+  const prompt = withLine(
+    GOOD_BUILDER,
+    "Stop condition",
+    "Stop condition: {{STOP_CONDITION}}",
+  );
+  const result = checkHandoff({ subagent_type: "builder", prompt });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /{{STOP_CONDITION}}/);
+});
+
+test("the construction mode must be one of the three testing-strategy modes", () => {
+  const prompt = withLine(
+    GOOD_BUILDER,
+    "Construction mode",
+    "Construction mode: vibes",
+  );
+  const result = checkHandoff({ subagent_type: "builder", prompt });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /strict-tdd, evidence-required, preservation/);
+  for (const mode of ["strict-tdd", "evidence-required", "preservation"]) {
+    assert.equal(
+      checkHandoff({
+        subagent_type: "builder",
+        prompt: withLine(
+          GOOD_BUILDER,
+          "Construction mode",
+          `Construction mode: ${mode}`,
+        ),
+      }).ok,
+      true,
+    );
+  }
+});
+
+test("a placeholder focused verification command blocks", () => {
+  for (const placeholder of ["...", "<command>"]) {
+    const prompt = withLine(
+      GOOD_BUILDER,
+      "Focused verification command",
+      `Focused verification command: ${placeholder}`,
+    );
+    const result = checkHandoff({ subagent_type: "builder", prompt });
+    assert.equal(result.ok, false, placeholder);
+    assert.match(result.reason, /placeholder/);
+  }
+});
+
+test("an instruction to self-verify mutation-sensitivity blocks, even negated", () => {
+  for (const phrase of [
+    "Then verify mutation-sensitivity yourself by reverting.",
+    "You do NOT need to prove the mutation-sensitivity.",
+    "Re-prove your own test before reporting.",
+  ]) {
+    const result = checkHandoff({
+      subagent_type: "builder",
+      prompt: `${GOOD_BUILDER}\n${phrase}`,
+    });
+    assert.equal(result.ok, false, phrase);
+    assert.match(result.reason, /self-mutation-testing/);
+  }
+});
+
+test("the benign 'mutation-proven test' phrasing is allowed", () => {
+  const prompt = `${GOOD_BUILDER}\nLand a mutation-proven test with the change.`;
+  assert.equal(checkHandoff({ subagent_type: "builder", prompt }).ok, true);
+});
+
+test("a filled architect handoff passes and each missing line blocks", () => {
+  assert.deepEqual(
+    checkHandoff({ subagent_type: "architect", prompt: GOOD_ARCHITECT }),
+    { ok: true },
+  );
+  for (const field of EXPECTED_ARCHITECT_FIELDS) {
+    const missing = GOOD_ARCHITECT.split("\n")
+      .filter((line) => !line.startsWith(`${field}:`))
+      .join("\n");
+    assert.match(
+      checkHandoff({ subagent_type: "architect", prompt: missing }).reason,
+      new RegExp(`'${field}:'`),
+    );
+  }
+  const unfilled = withLine(GOOD_ARCHITECT, "Scope", "Scope: {{SCOPE}}");
+  assert.match(
+    checkHandoff({ subagent_type: "architect", prompt: unfilled }).reason,
+    /{{SCOPE}}/,
+  );
+});
+
+test("a handoff with several defects is rejected once, naming every one", () => {
+  const withoutSlice = GOOD_BUILDER.split("\n")
+    .filter((line) => !line.startsWith("Slice:"))
+    .join("\n");
+  const twoDefects = withLine(
+    withoutSlice,
+    "Construction mode",
+    "Construction mode: vibes",
+  );
+  const result = checkHandoff({ subagent_type: "builder", prompt: twoDefects });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /'Slice:'/);
+  assert.match(result.reason, /'vibes'/);
+  assert.equal(
+    result.reason.split(".agents/templates/builder-handoff.md").length - 1,
+    1,
+  );
+
+  const twoSlots = withLine(
+    withLine(
+      GOOD_BUILDER,
+      "Stop condition",
+      "Stop condition: {{STOP_CONDITION}}",
+    ),
+    "Claim",
+    "Claim: {{CLAIM}}",
+  );
+  const slots = checkHandoff({ subagent_type: "builder", prompt: twoSlots });
+  assert.equal(slots.ok, false);
+  assert.match(slots.reason, /{{STOP_CONDITION}}/);
+  assert.match(slots.reason, /{{CLAIM}}/);
+
+  const architect = GOOD_ARCHITECT.split("\n")
+    .filter(
+      (line) => !line.startsWith("Decision:") && !line.startsWith("Scope:"),
+    )
+    .join("\n");
+  const architectResult = checkHandoff({
+    subagent_type: "architect",
+    prompt: architect,
+  });
+  assert.equal(architectResult.ok, false);
+  assert.match(architectResult.reason, /'Decision:'/);
+  assert.match(architectResult.reason, /'Scope:'/);
+});
+
+test("the construction-mode and missing-line rejections say how the line is written", () => {
+  const vibes = checkHandoff({
+    subagent_type: "builder",
+    prompt: withLine(
+      GOOD_BUILDER,
+      "Construction mode",
+      "Construction mode: vibes",
+    ),
+  });
+  assert.match(vibes.reason, /alone on its line/);
+  assert.match(vibes.reason, /two handoffs/);
+  const missingSlice = GOOD_BUILDER.split("\n")
+    .filter((line) => !line.startsWith("Slice:"))
+    .join("\n");
+  assert.match(
+    checkHandoff({ subagent_type: "builder", prompt: missingSlice }).reason,
+    /on the same line/,
+  );
+  const missingMode = GOOD_BUILDER.split("\n")
+    .filter((line) => !line.startsWith("Construction mode:"))
+    .join("\n");
+  const missingModeResult = checkHandoff({
+    subagent_type: "builder",
+    prompt: missingMode,
+  });
+  assert.match(missingModeResult.reason, /alone on its line/);
+  assert.match(missingModeResult.reason, /two handoffs/);
+});
+
+test("other agent types and malformed input pass through", () => {
+  assert.deepEqual(
+    checkHandoff({ subagent_type: "reviewer", prompt: "review the diff" }),
+    { ok: true },
+  );
+  assert.deepEqual(checkHandoff({ subagent_type: "explorer" }), { ok: true });
+  assert.deepEqual(checkHandoff(null), { ok: true });
+  assert.deepEqual(
+    checkHandoff({ subagent_type: "builder", prompt: 42 }).ok,
+    false,
+  );
 });
