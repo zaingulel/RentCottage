@@ -5,16 +5,13 @@ Builder handoff template. Everything ABOVE the ---8<--- line is documentation; t
 drops the contract, whether or not this template was used.
 
 Why each line is load-bearing:
-- Builders are capped at their turn budget with NO warning, so each handoff carries one coherent,
-  independently verifiable claim.
+- Each handoff carries one coherent, independently verifiable claim so an interruption leaves a bounded state.
 - The construction mode and its evidence are fixed before dispatch; a builder cannot select or downgrade them.
-- Mutation-proofing by revert is the COORDINATOR's convergence step; a builder capped mid-revert-cycle ships
-  the mutated source.
+- Mutation-proofing by revert is the COORDINATOR's convergence step; builders never leave source deliberately
+  mutated.
 - A builder's report is text to the coordinator, so it can never display a screenshot to the owner.
-- A result missing the literal sentinel line means the builder was CAPPED, not finished: `git diff` before
-  touching the tree, and never resume a capped builder. The remaining work, including the capped builder's own
-  checks and its report against every handoff item, goes to a fresh builder as a smaller slice; the session
-  never finishes a capped slice or declares it done.
+- A result missing the literal sentinel line does not establish completion. Inspect `git diff` and the agent's
+  status before touching the tree or deciding the next bounded handoff.
 - A builder that hits consequential judgment mid-build STOPS AND ASKS instead of guessing.
 
 Each labelled value sits on its label's line. `Construction mode:` holds exactly one of `strict-tdd`,

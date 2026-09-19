@@ -63,6 +63,8 @@ anything should merge or split. Iterate until the owner approves; create nothing
   `builder`, or `builder-max`, per the routing rule in `AGENTS.md`). Do not record model names or reasoning settings.
 - Use the sensitive-surface classification in `AGENTS.md` to name any required Security review.
 - Choose one Project 4 Workstream from `scripts/lib/board-config.mjs`.
+- Choose only configured labels that express the issue's actual tracker role. A parent wrapper with native
+  sub-issues gets `type:epic`, because Project 4's epic rules depend on that label.
 
 ### 6. Publish to the board, in dependency order
 
@@ -75,14 +77,15 @@ Workstream.
 ```bash
 gh issue create --repo zaingulel/RentCottage \
   --title "..." \
+  --label "<approved configured labels>" \
   --blocked-by <N>[,<N>...] \
   --body "..."
 ```
 
-Omit `--blocked-by` when the issue has none. Blockers and parents live in GitHub's native links, never only in the
-body. Because GitHub creates the issue before adding dependency links, a failed create may already have made the
-issue without printing its number. Find it by exact title before retrying, then add only the missing approved link
-instead of creating a duplicate.
+Omit `--label` when no configured label applies and `--blocked-by` when the issue has no blocker. Blockers and
+parents live in GitHub's native links, never only in the body. Because GitHub creates the issue before adding
+dependency links, a failed create may already have made the issue without printing its number. Find it by exact
+title before retrying, then add only the missing approved link instead of creating a duplicate.
 
 **b. Board, with Status and Workstream, in one idempotent step (once per issue):**
 
@@ -145,7 +148,7 @@ Choose exactly one honest outcome:
 
 - `No documentation change: <reason>.`
 - `Update <authoritative document>: <what changes>.`
-</issue-template>
+  </issue-template>
 
 For a new or substantially rewritten Booking or Payment story, use the acceptance structure required by
 `docs/agents/issue-tracker.md`. Testing mode, observers, commands, and mutations belong to the architect's later
