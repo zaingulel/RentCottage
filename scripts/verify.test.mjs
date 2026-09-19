@@ -530,6 +530,38 @@ describe("repository verification command", () => {
       "scripts/run-log.test.mjs",
       "export const fixture = true;\n",
     ],
+    [
+      "Claude handoff hook",
+      ".claude/hooks/check-builder-handoff.mjs",
+      "export const fixture = true;\n",
+    ],
+    ["Claude hook registration", ".claude/settings.json", "{}\n"],
+    ["Codex hook registration", ".codex/hooks.json", "{}\n"],
+    [
+      "Codex handoff hook",
+      ".codex/hooks/check-builder-handoff.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "Codex handoff adapter",
+      "scripts/lib/codex-hook-adapters.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "Codex handoff adapter test",
+      "scripts/lib/codex-hook-adapters.test.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "shared handoff validator",
+      "scripts/lib/handoff-check.mjs",
+      "export const fixture = true;\n",
+    ],
+    [
+      "shared handoff validator test",
+      "scripts/lib/handoff-check.test.mjs",
+      "export const fixture = true;\n",
+    ],
   ])(
     "keeps reviewed workflow-only %s on baseline evidence",
     (_label, path, contents) => {

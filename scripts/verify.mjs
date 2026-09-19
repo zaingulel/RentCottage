@@ -55,10 +55,10 @@ const baselineOnlyPaths = new Set([
   "public/fonts/OFL-changa.txt",
   "public/fonts/OFL-karla.txt",
   "src/app/fonts.test.ts",
-  // The board and git-guard toolkit. npm test proves these in baseline through the
+  // The board, git-guard and agent-handoff toolkits. npm test proves these in baseline through the
   // node --test suite, except scripts/board-move.mjs, which is argv parsing over proved
-  // helpers; their reach is the GitHub API and local Git, never Supabase, the Worker or
-  // a browser. Exact names, never a scripts/lib/ wildcard: the same directory holds the
+  // helpers; their reach is GitHub, local Git or agent dispatch, never Supabase, the Worker or
+  // a browser. Exact names, never directory wildcards: these directories also hold
   // Supabase, Worker and browser fixtures, which do need the expensive route.
   "scripts/board.mjs",
   "scripts/board-add.mjs",
@@ -81,8 +81,16 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/fake-gh.mjs",
   "scripts/lib/gh-exec.mjs",
   "scripts/lib/gh-exec.test.mjs",
+  "scripts/lib/codex-hook-adapters.mjs",
+  "scripts/lib/codex-hook-adapters.test.mjs",
+  "scripts/lib/handoff-check.mjs",
+  "scripts/lib/handoff-check.test.mjs",
   "scripts/lib/unsafe-git.mjs",
   "scripts/lib/unsafe-git.test.mjs",
+  ".claude/hooks/check-builder-handoff.mjs",
+  ".claude/settings.json",
+  ".codex/hooks.json",
+  ".codex/hooks/check-builder-handoff.mjs",
 ]);
 
 function isBaselineOnlyPath(path) {
