@@ -1,18 +1,28 @@
-<!-- Fill every slot. Hand one coherent claim to exactly one writer. -->
+<!--
+Builder handoff template. Everything below the ---8<--- line is the shared prompt for
+builder-lite, builder, and builder-max dispatches. Fill every slot and hand one coherent
+claim to exactly one writer. Keep each multiline value on indented continuation lines;
+this preserves embedded labels inside the complete approved plan.
+-->
+
+---8<---
 
 Slice: {{SLICE_TITLE}}
 Claim: {{CLAIM}}
 Construction mode: {{CONSTRUCTION_MODE}}
 Working directory: {{WORKTREE_ROOT}}
 
+<!-- prettier-ignore -->
 Implementation plan:
-{{PLAN}}
+  {{PLAN}}
 
+<!-- prettier-ignore -->
 Files allowed for this claim:
-{{FILES}}
+  {{FILES}}
 
+<!-- prettier-ignore -->
 Evidence landing with this claim:
-{{TEST}}
+  {{TEST}}
 
 Observer: {{OBSERVER}}
 Independent oracle: {{INDEPENDENT_ORACLE}}
