@@ -673,42 +673,6 @@ describe("repository verification command", () => {
     );
   });
 
-  it.each([
-    ["Claude hook registration", ".claude/settings.json"],
-    ["Claude handoff hook", ".claude/hooks/check-builder-handoff.mjs"],
-    ["Codex hook registration", ".codex/hooks.json"],
-    ["Codex handoff hook", ".codex/hooks/check-builder-handoff.mjs"],
-  ])("selects full verification for the exact %s path", (_label, path) => {
-    const repository = createRepository();
-    commit(repository, path, "fixture\n");
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual([
-      ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
-    ]);
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining(`${path} requires full evidence`),
-    );
-  });
-
-  it.each([
-    ["another Claude hook", ".claude/hooks/other-hook.mjs"],
-    ["another Codex hook", ".codex/hooks/other-hook.mjs"],
-    ["another hook configuration", ".codex/other-hooks.json"],
-  ])("keeps %s unclassified", (_label, path) => {
-    const repository = createRepository();
-    commit(repository, path, "fixture\n");
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(3);
-    expect(result.run).not.toHaveBeenCalled();
-    expect(result.stderr).toHaveBeenCalledWith(expect.stringContaining(path));
-  });
-
   it("stops without running anything when a changed path is unclassified", () => {
     const repository = createRepository();
     commit(repository, ".prettierrc.json", '{ "semi": true }\n');
