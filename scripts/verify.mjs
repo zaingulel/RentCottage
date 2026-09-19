@@ -127,9 +127,17 @@ const fullEvidenceRootPaths = new Set([
   "wrangler.jsonc",
 ]);
 
+const fullEvidenceWorkflowPaths = new Set([
+  ".claude/settings.json",
+  ".claude/hooks/check-builder-handoff.mjs",
+  ".codex/hooks.json",
+  ".codex/hooks/check-builder-handoff.mjs",
+]);
+
 function requiresFullEvidence(path) {
   return (
     fullEvidenceRootPaths.has(path) ||
+    fullEvidenceWorkflowPaths.has(path) ||
     /^(?:\.github\/workflows|public|scripts|src|supabase|tests|translation)\/.+$/.test(
       path,
     ) ||
