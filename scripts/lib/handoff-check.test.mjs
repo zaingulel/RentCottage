@@ -63,8 +63,6 @@ const BUILDER_MULTILINE_FIELDS = [
   "Files allowed for this claim",
   "Evidence landing with this claim",
 ];
-const BUILDER_FIELDS = [...BUILDER_SCALAR_FIELDS, ...BUILDER_MULTILINE_FIELDS];
-
 function assertRejected(result, expectedReason) {
   assert.equal(result.outcome, "rejected");
   assert.match(result.reason, expectedReason);
