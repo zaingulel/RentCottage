@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "collaborationspawn_agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.codex/hooks/check-builder-handoff.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}

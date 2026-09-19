@@ -2,17 +2,23 @@
 
 Turn one owner-approved RentCottage issue into a concrete read-only implementation plan.
 
-1. Read the issue, `AGENTS.md`, `CONTEXT.md`, affected code/tests, and the relevant engineering or architecture
-   authority. Use current official provider documentation when an external contract is involved.
-2. State the affected area, expected behaviour, security/privacy surface, migration/rollback, size envelope, and
+1. Accept only a dispatch filled from `.agents/templates/planner-handoff.md`. If any field is missing or the
+   decision is not bounded, report the incomplete handoff and stop instead of relying on inherited or sibling
+   context.
+2. Read the issue, `AGENTS.md`, `CONTEXT.md`, affected code/tests, and the relevant engineering or architecture
+   authority. When the issue names an implementation to copy, port, inherit, mirror, or follow, inspect that
+   current source and plan a direct port with only the repository-specific adaptations the issue permits. Stop
+   on a conflict instead of strengthening or redesigning the reference. Use current official provider
+   documentation when an external contract is involved.
+3. State the affected area, expected behaviour, security/privacy surface, migration/rollback, size envelope, and
    exact stop conditions.
-3. Split the plan into coherent verifiable claims. For each, name files, one construction mode from the testing
+4. Split the plan into coherent verifiable claims. For each, name files, one construction mode from the testing
    strategy, observer, independent oracle, plausible mutation or protected preservation contract, and focused
    command.
-4. Recommend `builder-lite` for established bounded work with strong verification, `builder` for cross-cutting
+5. Recommend `builder-lite` for established bounded work with strong verification, `builder` for cross-cutting
    work whose material uncertainty and rollback are controlled, and `builder-max` for high-consequence ambiguity,
    weak rollback/verification, or a retry after failed implementation.
-5. Confirm every named path/symbol exists and every planned deletion has no surviving caller. Flag unresolved
+6. Confirm every named path/symbol exists and every planned deletion has no surviving caller. Flag unresolved
    owner choices instead of encoding them.
 
 Produce the plan only. Do not edit, install, test, commit, or mutate GitHub.

@@ -89,11 +89,20 @@ conflicting checks. Before a launch, record its job, worktree, command, and inte
 evidence, excluding secrets.
 Immediately after launch and before leaving it unattended, record the runtime session handle, process identifier, start identity,
 and relevant parent, group, or port. Repeat readiness when the execution lane or any relevant resource changes.
-Install dependencies in a fresh worktree, make the route explicit, then plan and build under
-`AGENTS.md`. A small understood adjacent repair may join the same outcome when its risk is bounded and verifiable;
-the coordinator updates the writer handoff and records it for pull-request disclosure. Material product meaning,
-outcome, scope, or risk changes return to the owner. Commit each coherent green slice locally. Delivery waits for
-the owner-approved pull-request body.
+Install dependencies in a fresh worktree and make the route explicit. Dispatch each architect with a filled
+`.agents/templates/planner-handoff.md`. Before dispatching `builder-lite`, `builder`, or `builder-max`, fill
+`.agents/templates/builder-handoff.md`, physically embed the complete approved plan even when it arrived through an
+agent mailbox, and confirm that every approved decision remains present; inherited or sibling context does not
+complete the prompt. Apply the runtime-honesty rule in `AGENTS.md` before claiming validation, then build under
+that manual. When the issue names a reference implementation, confirm that the plan preserves its current structure
+and behaviour and contains only the permitted repository-specific adaptations; any other deviation returns to the
+owner before a builder starts.
+
+A small understood adjacent repair may join the same outcome when its risk is bounded and verifiable; the
+coordinator updates the writer handoff and records it for pull-request disclosure. Material product meaning,
+outcome, scope, or risk changes return to the owner. After each writer stops, the coordinator performs any required
+mutation restoration and complete convergence, then commits each coherent green slice and owns review and delivery.
+Delivery waits for the owner-approved pull-request body.
 
 ## Finish the approved job
 

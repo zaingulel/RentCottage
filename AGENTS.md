@@ -62,6 +62,13 @@ Destructive actions keep exact-target approval, except the merged-job branch and
 performs under the authorisation that already covered the merge, and the verifier-only worktree its local-main
 update creates and removes within one run.
 
+When approved work says to copy, port, inherit, mirror, or use the same shape as a named implementation, that
+implementation is part of the approved outcome. Inspect its current source before planning and preserve its
+structure and behaviour; adapt only repository-specific names, paths, fixtures, and provider payloads. Stronger
+validation, an extra abstraction or runtime layer, or another behavioural deviation is a material change that
+returns to the owner. Conflicting acceptance wording stops for clarification instead of being reconciled by
+invention.
+
 ## Native job lifecycle
 
 - Resume fetches `origin/main` before intake, reads the fetched manual and `resume`/`closeout` instructions, then
@@ -106,17 +113,30 @@ repository definitions take precedence over machine-wide model routing. Use the 
 - `oracle` is an exceptional read-only escalation for a twice-stalled diagnosis, unresolved architecture
   tiebreak, or independent high-consequence derivation. It is not a routine rung.
 
+Dispatch every architect with a filled [planner handoff template](.agents/templates/planner-handoff.md). Dispatch
+every `builder-lite`, `builder`, and `builder-max` with a filled
+[builder handoff template](.agents/templates/builder-handoff.md) whose prompt physically contains the complete
+approved implementation plan, including after an agent mailbox handoff; sibling or inherited context is not a
+substitute. Before dispatch, the coordinator confirms that the embedded plan preserves every approved decision,
+because the structural hook cannot determine whether arbitrary prose is semantically complete.
+
 Planning manifests request read-only runtime defaults. Reviewers use existing narrow permission escalation to run
 required tests and browsers and may write temporary evidence, but must not edit implementation, tests, or agent
 instructions. The coordinator verifies the effective runtime, records the reviewed commit, and confirms its
 tracked source is unchanged after evidence runs.
 Specialist fan-out beyond these seats needs owner approval for that job.
 
+Checked-in hook configuration and process tests prove the repository contract, not that an already-running runtime
+loaded or trusted a changed hook. When dispatch input or hook activation cannot be inspected, report that limitation
+explicitly; do not claim that validation ran.
+
 ## Construction and review
 
 Choose `strict-tdd`, `evidence-required`, or `preservation` under the testing
-strategy. Builders run focused evidence; the coordinator owns mutation proof and the applicable `npm run verify`
-convergence route. Use `diagnosing-bugs` for hard or repeated failures.
+strategy. Builders edit only the files and run only the focused evidence named in their handoff. After the writer
+stops, the coordinator owns deliberate mutation, revert and restoration proof, complete convergence including the
+applicable `npm run verify` route, commits, review, and delivery. Use `diagnosing-bugs` for hard or repeated
+failures.
 
 Finish construction by verifying, committing, and confirming that no intended change remains outside the commit.
 Run `security-code-review` to route one fresh Standards instance and one fresh Specification instance against the
