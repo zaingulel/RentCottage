@@ -103,6 +103,10 @@ The plan is a preflight: it runs no verification and supplies no pass evidence. 
 unexpected broad or narrow route against the affected consumers before execution; use `--full` while scope remains
 unresolved.
 
+Before its first selected command, executable verification compares the installed Wrangler and Workerd versions with
+their `package-lock.json` entries. A missing, malformed or mismatched record stops execution and tells the operator to
+run `npm ci`; it never repairs dependencies automatically. Plan-only output names that pending check but does not run it.
+
 Run focused checks, intentional red/restored green proofs, and convergence through `npm run run-log -- <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.

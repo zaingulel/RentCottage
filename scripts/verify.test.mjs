@@ -62,6 +62,11 @@ const requiredBrowserSteps = [
   ...requiredExpensiveSteps.slice(1),
 ];
 
+const lockedDependencyVersions = {
+  wrangler: "4.130.0",
+  workerd: "1.20260908.1",
+};
+
 function requiredCiSteps(mode) {
   const chromium = [
     "npx",
@@ -109,6 +114,39 @@ function write(repository, path, contents) {
   writeFileSync(target, contents);
 }
 
+function writeDependencyMetadata(
+  repository,
+  {
+    lockVersions = lockedDependencyVersions,
+    installedVersions = lockedDependencyVersions,
+  } = {},
+) {
+  write(
+    repository,
+    "package-lock.json",
+    `${JSON.stringify(
+      {
+        lockfileVersion: 3,
+        packages: Object.fromEntries(
+          Object.entries(lockVersions).map(([name, version]) => [
+            `node_modules/${name}`,
+            { version },
+          ]),
+        ),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  for (const [name, version] of Object.entries(installedVersions)) {
+    write(
+      repository,
+      `node_modules/${name}/package.json`,
+      `${JSON.stringify({ name, version }, null, 2)}\n`,
+    );
+  }
+}
+
 function createRepository() {
   const repository = mkdtempSync(join(tmpdir(), "rentcottage-verify-"));
   repositories.push(repository);
@@ -116,7 +154,9 @@ function createRepository() {
   git(repository, ["config", "user.name", "Verification Test"]);
   git(repository, ["config", "user.email", "verify@example.test"]);
   write(repository, "AGENTS.md", "initial instructions\n");
+  write(repository, ".gitignore", "node_modules/\n");
   write(repository, "src/runtime.ts", "export const value = 'initial';\n");
+  writeDependencyMetadata(repository);
   git(repository, ["add", "."]);
   git(repository, ["commit", "-m", "initial"]);
   git(repository, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
@@ -193,7 +233,7 @@ describe("repository verification command", () => {
   });
 
   it("runs the baseline independently without selecting services", () => {
-    const result = runVerification("/missing-git-evidence", {
+    const result = runVerification(createRepository(), {
       args: ["--baseline"],
     });
     expect(result.status).toBe(0);
@@ -259,7 +299,7 @@ describe("repository verification command", () => {
   it.each(["--baseline", "--database", "--browser"])(
     "installs Chromium only for the full browser mode in CI: %s",
     (mode) => {
-      const result = runVerification("/missing-git-evidence", {
+      const result = runVerification(createRepository(), {
         args: [mode, "--full"],
         environment: { GITHUB_ACTIONS: "true" },
       });
@@ -288,6 +328,7 @@ describe("repository verification command", () => {
   });
 
   it("runs every check with safe test bindings when full is explicit", () => {
+    const repository = createRepository();
     const run = vi.fn(() => ({ status: 0 }));
     const expectedEnvironment = {
       EXISTING: "kept",
@@ -300,9 +341,13 @@ describe("repository verification command", () => {
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     };
 
-    expect(main(["--full"], { environment: { EXISTING: "kept" }, run })).toBe(
-      0,
-    );
+    expect(
+      main(["--full"], {
+        cwd: repository,
+        environment: { EXISTING: "kept" },
+        run,
+      }),
+    ).toBe(0);
     expect(run).toHaveBeenCalledTimes(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
@@ -311,13 +356,88 @@ describe("repository verification command", () => {
     }
   });
 
+  it("stops before every selected command when installed Wrangler or Workerd differs from the lockfile", () => {
+    const repository = createRepository();
+    writeDependencyMetadata(repository, {
+      installedVersions: {
+        wrangler: "4.122.0",
+        workerd: "1.20260811.1",
+      },
+    });
+    const result = runVerification(repository, { args: ["--full"] });
+
+    expect(result.status).toBe(1);
+    expect(result.run).not.toHaveBeenCalled();
+    const report = result.stderr.mock.calls.map(([line]) => line).join("\n");
+    expect(report).toContain("wrangler");
+    expect(report).toContain("expected 4.130.0");
+    expect(report).toContain("observed 4.122.0");
+    expect(report).toContain("workerd");
+    expect(report).toContain("expected 1.20260908.1");
+    expect(report).toContain("observed 1.20260811.1");
+    expect(report).toContain("npm ci");
+  });
+
+  it("does not execute when dependency metadata is missing or malformed", () => {
+    const repository = createRepository();
+    write(repository, "package-lock.json", "{ malformed\n");
+    rmSync(join(repository, "node_modules/workerd/package.json"));
+
+    const result = runVerification(repository, { args: ["--full"] });
+
+    expect(result.status).toBe(1);
+    expect(result.run).not.toHaveBeenCalled();
+    const report = result.stderr.mock.calls.map(([line]) => line).join("\n");
+    expect(report).toContain("wrangler");
+    expect(report).toContain("expected version cannot be established");
+    expect(report).toContain("workerd");
+    expect(report).toContain("observed installed version missing");
+    expect(report).toContain("npm ci");
+  });
+
+  it("keeps plan-only output non-mutating when dependency metadata is unavailable", () => {
+    const repository = createRepository();
+    rmSync(join(repository, "package-lock.json"));
+    rmSync(join(repository, "node_modules/wrangler/package.json"));
+
+    const result = runVerification(repository, { args: ["--full", "--plan"] });
+
+    expect(result.status).toBe(0);
+    expect(result.run).not.toHaveBeenCalled();
+    expect(result.stdout).toHaveBeenCalledWith(
+      "Dependency preflight: Wrangler and Workerd will be checked before execution; not run in plan-only mode.",
+    );
+  });
+
+  it("skips the dependency preflight when no verification commands are selected", () => {
+    const repository = createRepository();
+    commit(repository, "AGENTS.md", "updated instructions\n");
+    rmSync(join(repository, "node_modules/wrangler/package.json"));
+    rmSync(join(repository, "node_modules/workerd/package.json"));
+
+    const executed = runVerification(repository, { args: ["--database"] });
+    const planned = runVerification(repository, {
+      args: ["--database", "--plan"],
+    });
+
+    expect(executed.status).toBe(0);
+    expect(executed.run).not.toHaveBeenCalled();
+    expect(planned.status).toBe(0);
+    expect(planned.run).not.toHaveBeenCalled();
+    expect(planned.stdout).toHaveBeenCalledWith(
+      "Dependency preflight: unnecessary because no verification commands are selected.",
+    );
+  });
+
   it("does not reuse a placeholder Worker build unless compilation succeeds", () => {
+    const repository = createRepository();
     const run = vi.fn((command, args) => ({
       status:
         command === "npm" && args.join(" ") === "run build:worker" ? 8 : 0,
     }));
     expect(
       main(["--browser", "--full"], {
+        cwd: repository,
         environment: {},
         run,
         stdout: vi.fn(),
@@ -331,13 +451,14 @@ describe("repository verification command", () => {
   });
 
   it("stops immediately and preserves a failing exit code", () => {
+    const repository = createRepository();
     const run = vi
       .fn()
       .mockReturnValueOnce({ status: 0 })
       .mockReturnValueOnce({ status: 7 });
     const stderr = vi.fn();
 
-    expect(main(["--full"], { run, stderr })).toBe(7);
+    expect(main(["--full"], { cwd: repository, run, stderr })).toBe(7);
     expect(run).toHaveBeenCalledTimes(2);
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining("later selected checks were not reached"),
@@ -345,19 +466,20 @@ describe("repository verification command", () => {
   });
 
   it("fails loudly when a verification executable cannot start or is signalled", () => {
+    const repository = createRepository();
     const stderr = vi.fn();
     const run = vi.fn(() => ({
       error: new Error("executable unavailable"),
       status: null,
     }));
 
-    expect(main(["--full"], { run, stderr })).toBe(1);
+    expect(main(["--full"], { cwd: repository, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining("Unable to run npm: executable unavailable"),
     );
 
     run.mockReturnValue({ signal: "SIGTERM", status: null });
-    expect(main(["--full"], { run, stderr })).toBe(1);
+    expect(main(["--full"], { cwd: repository, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining("Unable to run npm: terminated by SIGTERM"),
     );
@@ -909,6 +1031,7 @@ describe("repository verification command", () => {
       `file://${source}`,
       shallowRepository,
     ]);
+    writeDependencyMetadata(shallowRepository);
     const shallow = runVerification(shallowRepository);
     expect(shallow.calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
