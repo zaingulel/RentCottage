@@ -703,6 +703,7 @@ describe("repository verification command", () => {
       "scripts/lib/handoff-check.test.mjs",
       "scripts/lib/handoff-hook-adapters.mjs",
       "scripts/lib/handoff-hook-adapters.test.mjs",
+      "scripts/lib/handoff-hook-runtime.mjs",
       "scripts/lib/handoff-hooks.test.mjs",
       ".claude/hooks/check-builder-handoff.mjs",
       ".codex/hooks/check-builder-handoff.mjs",

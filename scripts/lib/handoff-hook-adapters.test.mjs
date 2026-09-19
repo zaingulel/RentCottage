@@ -37,7 +37,7 @@ const VALID_BUILDER = [
   "",
   "Observer: Node's test runner at the public process boundary",
   "Independent oracle: issue 310 and provider hook contracts",
-  "Focused verification: node --test scripts/lib/handoff-hook-adapters.test.mjs",
+  "Focused verification: npm run run-log -- issue-310-adapters -- node --test scripts/lib/handoff-hook-adapters.test.mjs",
   "Stop condition: focused evidence passes and writing stops",
 ].join("\n");
 

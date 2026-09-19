@@ -1,29 +1,6 @@
 #!/usr/bin/env node
 
 import { checkClaudeHandoff } from "../../scripts/lib/handoff-hook-adapters.mjs";
+import { runHandoffHook } from "../../scripts/lib/handoff-hook-runtime.mjs";
 
-let raw = "";
-for await (const chunk of process.stdin) raw += chunk;
-
-let result;
-try {
-  result = checkClaudeHandoff(JSON.parse(raw));
-} catch {
-  result = { outcome: "unvalidated", reason: "hook input was not valid JSON" };
-}
-
-if (result.outcome === "rejected") {
-  console.error(result.reason);
-  process.exit(2);
-}
-
-if (result.outcome === "unvalidated") {
-  console.log(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        additionalContext: `Handoff contract NOT validated: ${result.reason}`,
-      },
-    }),
-  );
-}
+process.exitCode = await runHandoffHook(checkClaudeHandoff);

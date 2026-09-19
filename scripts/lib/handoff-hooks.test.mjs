@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const CLAUDE_WRAPPER = ".claude/hooks/check-builder-handoff.mjs";
 const CODEX_WRAPPER = ".codex/hooks/check-builder-handoff.mjs";
+const SHARED_RUNTIME = "scripts/lib/handoff-hook-runtime.mjs";
 
 const VALID_ARCHITECT = [
   "Decision: define the runtime hook boundary",
@@ -45,7 +46,7 @@ const VALID_BUILDER = [
   "",
   "Observer: Node's test runner at the public process boundary",
   "Independent oracle: issue 310 and provider hook contracts",
-  "Focused verification: node --test scripts/lib/handoff-hooks.test.mjs",
+  "Focused verification: npm run run-log -- issue-310-hooks -- node --test scripts/lib/handoff-hooks.test.mjs",
   "Stop condition: focused evidence passes and writing stops",
 ].join("\n");
 
@@ -93,6 +94,15 @@ function assertNotValidated(result, secret = "") {
   }
 }
 
+test("both provider entry points delegate process handling to the shared runtime", () => {
+  for (const relativePath of [CLAUDE_WRAPPER, CODEX_WRAPPER]) {
+    const source = readFileSync(resolve(ROOT, relativePath), "utf8");
+    assert.match(source, /import \{ runHandoffHook \} from/);
+    assert.match(source, /await runHandoffHook\(/);
+    assert.doesNotMatch(source, /process\.stdin|JSON\.parse|result\.outcome/);
+  }
+});
+
 test("both real wrappers pass every valid guarded seat without a false success claim", () => {
   for (const provider of PROVIDERS) {
     for (const [agentType, prompt] of [
@@ -117,9 +127,18 @@ test("both real wrappers pass every valid guarded seat without a false success c
 });
 
 test("both real wrappers block readable invalid and empty guarded handoffs without echoing prompts", () => {
-  const secret = "PRIVATE-HANDOFF-CONTENT";
   for (const provider of PROVIDERS) {
-    for (const prompt of [`Claim: ${secret}`, ""]) {
+    for (const { prompt, secret } of [
+      {
+        prompt: "Claim: PRIVATE-HANDOFF-CONTENT",
+        secret: "PRIVATE-HANDOFF-CONTENT",
+      },
+      { prompt: "", secret: "" },
+      {
+        prompt: `${VALID_BUILDER}\nIncidental: {{PRIVATE-SENTINEL}}`,
+        secret: "PRIVATE-SENTINEL",
+      },
+    ]) {
       const result = runNodeWrapper(
         provider.script,
         provider.payload("builder", prompt),
@@ -128,7 +147,7 @@ test("both real wrappers block readable invalid and empty guarded handoffs witho
       assert.match(result.stderr, /Handoff rejected:/);
       assert.match(result.stderr, /.agents\/templates\/builder-handoff\.md/);
       assert.equal(result.stdout, "");
-      assert.doesNotMatch(result.stderr, new RegExp(secret));
+      if (secret) assert.doesNotMatch(result.stderr, new RegExp(secret));
     }
   }
 });
@@ -247,6 +266,7 @@ test("configured commands execute the real wrappers from a temporary Git checkou
     for (const relativePath of [
       CLAUDE_WRAPPER,
       CODEX_WRAPPER,
+      SHARED_RUNTIME,
       "scripts/lib/handoff-hook-adapters.mjs",
       "scripts/lib/handoff-check.mjs",
     ]) {

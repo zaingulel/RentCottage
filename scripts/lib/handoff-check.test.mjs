@@ -36,7 +36,7 @@ const VALID_BUILDER = [
   "",
   "Observer: Node's test runner calling the public checkHandoff seam",
   "Independent oracle: issue 310 acceptance criteria",
-  "Focused verification: node --test scripts/lib/handoff-check.test.mjs",
+  "Focused verification: npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs",
   "Stop condition: the focused observer passes and writing stops",
 ].join("\n");
 
@@ -332,6 +332,36 @@ test("multiline placeholder rejection applies to the whole value, not one placeh
   );
 });
 
+test("implementation plan rejects reference-only lines while accepting concrete work grounded in prior code", () => {
+  for (const reference of [
+    "Use the plan above.",
+    "Use the architect plan from the preceding sibling result.",
+    "Same as earlier.",
+    "Follow the prior implementation plan.",
+    "Apply the preceding instructions.",
+    "Use inherited material.",
+    "See the sibling result.",
+    "Implement the architect-result.",
+    "Follow the conversation.",
+    "Use the context.",
+  ]) {
+    const prompt = replaceMultiline(VALID_BUILDER, "Implementation plan", [
+      `  1. ${reference}`,
+    ]);
+    assertRejected(
+      checkHandoff({ agentType: "builder", prompt }),
+      /Implementation plan.*prior context|prior context.*Implementation plan/i,
+    );
+  }
+
+  const concrete = replaceMultiline(VALID_BUILDER, "Implementation plan", [
+    "  1. Inspect the prior implementation, then add absolute-path validation in scripts/lib/handoff-check.mjs.",
+  ]);
+  assert.deepEqual(checkHandoff({ agentType: "builder", prompt: concrete }), {
+    outcome: "validated",
+  });
+});
+
 test("multiline fields require indented continuations and protect embedded plan labels", () => {
   for (const field of BUILDER_MULTILINE_FIELDS) {
     const inlineValue = VALID_BUILDER.replace(
@@ -387,25 +417,31 @@ test("remaining template slots are rejected in scalar, multiline, and incidental
   const scalar = replaceScalar(
     VALID_ARCHITECT,
     "Decision",
-    "Keep {{DECISION_DETAIL}} in the decision",
+    "Keep {{PRIVATE-SENTINEL}} in the decision",
   );
-  assertRejected(
-    checkHandoff({ agentType: "architect", prompt: scalar }),
-    /{{DECISION_DETAIL}}/,
-  );
+  const scalarResult = checkHandoff({ agentType: "architect", prompt: scalar });
+  assertRejected(scalarResult, /1 unfilled template slot/i);
+  assert.doesNotMatch(scalarResult.reason, /PRIVATE-SENTINEL/);
 
   const multiline = replaceMultiline(VALID_BUILDER, "Implementation plan", [
-    "  Implement {{UNFILLED_STEP}} after discovery.",
+    "  Implement {{PRIVATE-SENTINEL}} after discovery.",
   ]);
-  assertRejected(
-    checkHandoff({ agentType: "builder", prompt: multiline }),
-    /{{UNFILLED_STEP}}/,
-  );
+  const multilineResult = checkHandoff({
+    agentType: "builder",
+    prompt: multiline,
+  });
+  assertRejected(multilineResult, /1 unfilled template slot/i);
+  assert.doesNotMatch(multilineResult.reason, /PRIVATE-SENTINEL/);
 
-  const incidental = `${VALID_BUILDER}\nStanding contract: report {{FINAL_STATE}}.`;
-  assertRejected(
-    checkHandoff({ agentType: "builder", prompt: incidental }),
-    /{{FINAL_STATE}}/,
+  const incidental = `${VALID_BUILDER}\nStanding contract: report {{PRIVATE-SENTINEL}} and {{SECOND-SENTINEL}}.`;
+  const incidentalResult = checkHandoff({
+    agentType: "builder",
+    prompt: incidental,
+  });
+  assertRejected(incidentalResult, /2 unfilled template slots/i);
+  assert.doesNotMatch(
+    incidentalResult.reason,
+    /PRIVATE-SENTINEL|SECOND-SENTINEL/,
   );
 });
 
@@ -421,13 +457,14 @@ test("one rejection reports several simultaneous defects", () => {
     "Construction mode",
     "Focused verification",
     "Stop condition",
-    "{{LEFT_OPEN}}",
+    "1 unfilled template slot",
   ]) {
     assert.match(
       result.reason,
       new RegExp(fragment.replace(/[{}]/g, "\\$&"), "i"),
     );
   }
+  assert.doesNotMatch(result.reason, /LEFT_OPEN/);
 });
 
 test("readable rejections name the applicable repository template exactly once", () => {
@@ -476,14 +513,30 @@ test("construction mode accepts only the three exact testing-strategy values", (
   }
 });
 
-test("focused verification accepts concrete direct and run-log observer commands", () => {
+test("working directory must be an absolute path", () => {
+  for (const workingDirectory of [
+    "private/tmp/rentcottage-issue-310",
+    "./rentcottage-issue-310",
+    "rentcottage-issue-310",
+  ]) {
+    const prompt = replaceScalar(
+      VALID_BUILDER,
+      "Working directory",
+      workingDirectory,
+    );
+    assertRejected(
+      checkHandoff({ agentType: "builder", prompt }),
+      /Working directory.*absolute/i,
+    );
+  }
+});
+
+test("focused verification accepts only logged focused observer commands", () => {
   const commands = [
-    "node --test scripts/lib/handoff-check.test.mjs",
-    "NODE_OPTIONS='--conditions react-server' node --test \"scripts/lib/handoff-check.test.mjs\"",
-    "npx vitest run src/example.test.ts --retry=0",
-    "CI=1 npx playwright test tests/example.spec.ts --project=desktop --retries=0",
     "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs",
-    "CI=1 npm run run-log -- issue 310 validator -- NODE_OPTIONS=--trace-warnings node --test scripts/lib/handoff-check.test.mjs",
+    "npm run run-log -- issue 310 validator -- NODE_OPTIONS='--conditions react-server' node --test \"scripts/lib/handoff-check.test.mjs\"",
+    "npm run run-log -- issue-310-vitest -- CI=1 npx vitest run src/example.test.ts --retry=0",
+    "npm run run-log -- issue-310-browser -- CI=1 npx playwright test tests/example.spec.ts --project=desktop --retries=0",
   ];
   for (const command of commands) {
     const prompt = replaceScalar(
@@ -499,15 +552,32 @@ test("focused verification accepts concrete direct and run-log observer commands
   }
 });
 
-test("focused verification rejects prose, references, placeholders, and observer commands without arguments", () => {
+test("focused verification rejects unlogged, unlabeled, targetless, compound, and convergence commands", () => {
   const invalid = [
     "same as above",
     "run the focused tests",
     "npm test",
-    "node --test",
-    "npx vitest run",
-    "npx playwright test",
+    "node --test scripts/lib/handoff-check.test.mjs",
+    "NODE_OPTIONS=--trace-warnings node --test scripts/lib/handoff-check.test.mjs",
+    "npx vitest run src/example.test.ts --retry=0",
+    "npx playwright test tests/example.spec.ts --project=desktop",
+    "npm run run-log -- -- node --test scripts/lib/handoff-check.test.mjs",
+    "npm run run-log -- issue-310-validator -- node --test --test-reporter=spec",
+    "npm run run-log -- issue-310-validator -- npx vitest run --retry=0",
+    "npm run run-log -- issue-310-validator -- npx playwright test --project=desktop",
     "npm run run-log -- issue-310-validator -- node --test",
+    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs && npm run verify",
+    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs; npm test",
+    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs || npm run verify",
+    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs | tee evidence.log",
+    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs $(npm run verify)",
+    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs npm run verify",
+    "npm run run-log -- issue-310-validator -- node --test scripts/lib/handoff-check.test.mjs tests",
+    "npm run run-log -- issue-310-validator -- npm run verify",
+    "npm run run-log -- issue-310-validator -- npm test",
+    "npm run run-log -- issue-310-validator -- node --test .",
+    "npm run run-log -- issue-310-validator -- npx vitest run .",
+    "npm run run-log -- issue-310-validator -- npx playwright test tests",
     "<exact command>",
     "TODO",
   ];
@@ -530,6 +600,10 @@ test("positive builder-owned mutation, revert, or restore testing instructions a
     "Deliberately revert the check and rerun the test before returning.",
     "You must prove mutation sensitivity by changing the implementation.",
     "Perform the mutation test and restore the source.",
+    "Builder must mutate the validator; the coordinator will restore it later.",
+    "The coordinator will review the evidence after Builder restores the source.",
+    "Builder owns mutation testing while the coordinator owns convergence.",
+    "Do not stop until you mutate the implementation and run the observer.",
   ];
   for (const instruction of forbidden) {
     const result = checkHandoff({
@@ -545,8 +619,10 @@ test("coordinator-owned, negated, and benign mutation wording remains valid", ()
     "Coordinator-only after the writer stops: mutate one rule, run the observer red, restore it, and rerun green.",
     "Do not mutate, revert, or restore the implementation.",
     "The coordinator owns mutation testing and restoration.",
+    "Coordinator: revert the validator, run the observer red, and restore the source.",
     "Land a mutation-proven test with the change.",
     "The test must be mutation-proven.",
+    "Add the restore-account test.",
   ];
   for (const instruction of allowed) {
     const result = checkHandoff({
