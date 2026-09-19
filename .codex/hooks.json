@@ -1,0 +1,16 @@
+{
+  "description": "Validate architect and builder handoffs before dispatch.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(spawn_agent|Agent)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/check-builder-handoff.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}
