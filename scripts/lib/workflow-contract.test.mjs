@@ -174,6 +174,29 @@ test("handoff requires explicit owner authorization before remote publication", 
     /(?:invocation|request)[\s\S]{0,120}explicitly nam(?:es|ing)[\s\S]{0,160}push[\s\S]{0,160}draft[\s\S]{0,160}satisf(?:ies|y)/i,
     "an invocation that explicitly names push and draft publication must satisfy the authorization gate",
   );
+
+  const resume = readFileSync(
+    resolve(ROOT, ".agents/skills/resume/SKILL.md"),
+    "utf8",
+  );
+  const parkingStart = resume.indexOf("## Parking");
+  assert.notEqual(parkingStart, -1, "resume must retain its Parking section");
+  const parking = resume.slice(parkingStart);
+  assert.doesNotMatch(
+    parking,
+    /commit what exists,\s*push the branch/i,
+    "Parking must not retain the unconditional commit-and-push shortcut",
+  );
+  assert.match(
+    parking,
+    /bare[\s\S]{0,120}(?:handoff|park)[\s\S]{0,160}does not authori[sz]e remote publication/i,
+    "Parking must limit a bare handoff or park request to non-publication work",
+  );
+  assert.match(
+    parking,
+    /handoff skill[\s\S]{0,160}explicit publication.authori[sz]ation gate[\s\S]{0,160}before[\s\S]{0,160}(?:push|draft pull-request)/i,
+    "Parking must route push and draft pull-request publication through handoff's explicit authorization gate",
+  );
 });
 
 test("Git permits job branch deletion only after its linked worktree is removed", () => {

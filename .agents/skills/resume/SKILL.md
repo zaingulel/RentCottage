@@ -196,5 +196,8 @@ and [draft requests](https://www.greptile.com/docs/code-review/tips-recipes).
 
 ## Parking
 
-`handoff` when the work is genuinely unfinished: commit what exists, push the branch, write the "Not done"
-section, and return the card to `Ready`. The next session finds it in step 1.
+`handoff` when the work is genuinely unfinished: commit what exists and prepare the draft pull-request body
+locally. A bare `handoff` or `park` request does not authorize remote publication. Follow the handoff skill's
+explicit publication-authorization gate before pushing the branch or creating or updating a draft pull request.
+After authorized publication, keep **Not done** current and return the card to `Ready`. The next session finds it
+in step 1.
