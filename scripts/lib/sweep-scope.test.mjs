@@ -110,6 +110,7 @@ test('renderedLinkMarkup refuses the shapes GitHub renders into a link the text 
   assert.deepEqual([...renderedLinkMarkup(diff)].sort(), [
     '&#46;', '&#47;', '&#x2F;', '&sol;',
     '//angled.example.icu', '//collector.example.icu/in', '//raw.example.icu/in', '//reference.example.icu/in',
+    '//split.example.icu/in',
     '](', '](',
     'https:\\/\\/collector.example.icu/in', 'https:\\/\\/escaped.example.icu', 'https:\\/\\/img.example.icu/p.gif',
   ].filter((v, i, a) => a.indexOf(v) === i).sort());
@@ -156,6 +157,73 @@ test('renderedLinkMarkup detects a split reference inside nested blockquote cont
     '+> > //collector.example.icu/path',
   ].join('\n');
   assert.deepEqual(renderedLinkMarkup(diff), ['[ref]:', '//collector.example.icu/path']);
+});
+
+test('renderedLinkMarkup detects a split reference inside an unordered-list container', () => {
+  const diff = [
+    'diff --git a/docs/X.md b/docs/X.md',
+    '--- a/docs/X.md',
+    '+++ b/docs/X.md',
+    '@@ -0,0 +1,4 @@',
+    '+[view][ref]',
+    '+',
+    '+- [ref]:',
+    '+  //collector.example.icu/path',
+  ].join('\n');
+  assert.deepEqual(renderedLinkMarkup(diff), ['[ref]:', '//collector.example.icu/path']);
+});
+
+test('renderedLinkMarkup detects a split reference inside an ordered-list container', () => {
+  const diff = [
+    'diff --git a/docs/X.md b/docs/X.md',
+    '--- a/docs/X.md',
+    '+++ b/docs/X.md',
+    '@@ -0,0 +1,4 @@',
+    '+[view][ref]',
+    '+',
+    '+1. [ref]:',
+    '+   //collector.example.icu/path',
+  ].join('\n');
+  assert.deepEqual(renderedLinkMarkup(diff), ['[ref]:', '//collector.example.icu/path']);
+});
+
+test('renderedLinkMarkup detects a split reference inside blockquote and list containers', () => {
+  const diff = [
+    'diff --git a/docs/X.md b/docs/X.md',
+    '--- a/docs/X.md',
+    '+++ b/docs/X.md',
+    '@@ -0,0 +1,4 @@',
+    '+> [view][ref]',
+    '+>',
+    '+> - [ref]:',
+    '+>   //collector.example.icu/path',
+  ].join('\n');
+  assert.deepEqual(renderedLinkMarkup(diff), ['[ref]:', '//collector.example.icu/path']);
+});
+
+test('renderedLinkMarkup resets deferred openings at hunk and file boundaries', () => {
+  const diff = [
+    'diff --git a/docs/X.md b/docs/X.md',
+    '--- a/docs/X.md',
+    '+++ b/docs/X.md',
+    '@@ -1 +1,2 @@',
+    '+added prose',
+    ' [ref]:',
+    '@@ -5,0 +7 @@',
+    '+//hunk.example.icu/path',
+    'diff --git a/docs/Y.md b/docs/Y.md',
+    '--- a/docs/Y.md',
+    '+++ b/docs/Y.md',
+    '@@ -1 +1,2 @@',
+    '+added prose',
+    ' [view](',
+    'diff --git a/docs/Z.md b/docs/Z.md',
+    '--- a/docs/Z.md',
+    '+++ b/docs/Z.md',
+    '@@ -1,0 +2 @@',
+    '+//file.example.icu/path)',
+  ].join('\n');
+  assert.deepEqual(renderedLinkMarkup(diff), []);
 });
 
 test('renderedLinkMarkup accepts standalone protocol-relative prose and fenced JavaScript comments', () => {
@@ -283,6 +351,14 @@ test('the check refuses a blockquote-wrapped split reference destination', () =>
   const r = repo('Existing prose.\n');
   r.write('docs/ALLOWED.md', '> [view][ref]\n>\n> [ref]:\n> //collector.example.icu/path\n');
   const result = r.check(r.commit('blockquote split reference destination'));
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /\/\/collector\.example\.icu\/path is markup GitHub would render/);
+});
+
+test('the check refuses a destination added below an existing inline-link opening', () => {
+  const r = repo('[view](\n');
+  r.write('docs/ALLOWED.md', '[view](\n//collector.example.icu/path)\n');
+  const result = r.check(r.commit('split inline-link destination'));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /\/\/collector\.example\.icu\/path is markup GitHub would render/);
 });

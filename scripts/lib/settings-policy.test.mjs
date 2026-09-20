@@ -1,4 +1,4 @@
-// settings-policy.test.mjs — the agent-shell permission policy in .claude/settings.json.
+// settings-policy.test.mjs — the Claude agent-shell and Codex browser permission policies.
 //
 // The allow list is a security policy: every entry runs without a prompt. It must stay the
 // three read-mostly board scripts, and the hook set must stay exactly the guards this

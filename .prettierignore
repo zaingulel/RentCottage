@@ -62,6 +62,7 @@ scripts/lib/doc-lint-citations.mjs
 scripts/lib/doc-lint-links.mjs
 scripts/lib/prepush.test.mjs
 scripts/lib/sweep-scope.mjs
+scripts/sweep-scope-check.mjs
 scripts/lib/sweep-scope-workflow.test.mjs
 scripts/lib/sweep-scope.test.mjs
 scripts/lib/test-output-filter.mjs

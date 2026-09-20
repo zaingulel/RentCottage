@@ -105,43 +105,65 @@ const DESTINATION = /(?:\]\(|^\s*\[[^\]\n]+\]:\s*|\b(?:href|src)\s*=\s*["']?)<?(
 const DEFERRED_REFERENCE_OPENING = /^\s*(\[[^\]\n]+\]:)\s*$/;
 const DESTINATION_CONTINUATION =
   /^\s*<?(\/\/[^\s)>]*|(?:[a-z][a-z0-9+.-]*:)?(?:\\\/){2}[^\s)>]*)>?/i;
+const LINE_FINAL_INLINE_LINK_OPENING = /\]\(\s*$/;
 
 function markdownFlow(text) {
-  const container = text.match(/^(?: {0,3}>\s*)+/)?.[0] ?? '';
+  const quoteContainer = text.match(/^(?: {0,3}> ?)+/)?.[0] ?? '';
+  const afterQuote = text.slice(quoteContainer.length);
+  const listContainer = afterQuote.match(/^(?: {0,3})(?:[-+*]|\d{1,9}[.)])[ \t]+/)?.[0] ?? '';
   return {
-    quoteDepth: [...container].filter((character) => character === '>').length,
-    text: text.slice(container.length),
+    quoteDepth: [...quoteContainer].filter((character) => character === '>').length,
+    listIndent: listContainer ? listContainer.length : null,
+    text: afterQuote.slice(listContainer.length),
+    unlistedText: afterQuote,
   };
 }
 
+function destinationContinuation(flow, deferredContainer) {
+  if (flow.quoteDepth !== deferredContainer.quoteDepth) return null;
+  let text = flow.unlistedText;
+  if (deferredContainer.listIndent !== null) {
+    const indentation = text.match(/^[ \t]*/)[0].length;
+    if (indentation < deferredContainer.listIndent) return null;
+    text = text.slice(deferredContainer.listIndent);
+  }
+  return text.match(DESTINATION_CONTINUATION)?.[1] ?? null;
+}
+
 // Every added fragment that matches one of those shapes, in order of first appearance. Context is
-// consulted only to pair a deferred reference opening with the immediately following destination in
-// the same hunk and blockquote depth; it never becomes a reported fragment itself.
+// consulted only to pair a deferred reference or line-final inline opening with the immediately
+// following destination in the same hunk and Markdown container; it never becomes a reported
+// fragment itself.
 export function renderedLinkMarkup(unifiedDiff) {
   const fragments = [];
-  let deferredQuoteDepth = null;
+  let deferredContainer = null;
   for (const line of diffContentLines(unifiedDiff)) {
     if (!line) {
-      deferredQuoteDepth = null;
+      deferredContainer = null;
       continue;
     }
-    const { quoteDepth, text } = markdownFlow(line.text);
+    const flow = markdownFlow(line.text);
+    const { text } = flow;
     const deferredReference = text.match(DEFERRED_REFERENCE_OPENING);
+    const deferredInline = text.match(LINE_FINAL_INLINE_LINK_OPENING);
+    const nextDeferredContainer = deferredReference || deferredInline
+      ? { quoteDepth: flow.quoteDepth, listIndent: flow.listIndent }
+      : null;
     if (!line.added) {
-      deferredQuoteDepth = deferredReference ? quoteDepth : null;
+      deferredContainer = nextDeferredContainer;
       continue;
     }
     fragments.push(...[...text.matchAll(CHARACTER_REFERENCE)].map((m) => m[0]));
     fragments.push(...[...text.matchAll(INDIRECT_LINK_OPENING)].map((m) => m[0]));
     if (deferredReference) fragments.push(deferredReference[1]);
-    if (deferredQuoteDepth === quoteDepth) {
-      const destinationContinuation = text.match(DESTINATION_CONTINUATION);
-      if (destinationContinuation) fragments.push(destinationContinuation[1]);
+    if (deferredContainer) {
+      const destination = destinationContinuation(flow, deferredContainer);
+      if (destination) fragments.push(destination);
     }
     for (const m of text.matchAll(DESTINATION)) {
       if (m[1].startsWith('//') || m[1].includes('\\')) fragments.push(m[1]);
     }
-    deferredQuoteDepth = deferredReference ? quoteDepth : null;
+    deferredContainer = nextDeferredContainer;
   }
   return [...new Set(fragments)];
 }
