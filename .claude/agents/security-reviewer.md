@@ -3,7 +3,7 @@ name: security-reviewer
 description: Conditional read-only security review for finished RentCottage changes classified as touching a sensitive surface.
 model: fable
 effort: high
-maxTurns: 60
+maxTurns: 90
 permissionMode: default
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 color: yellow

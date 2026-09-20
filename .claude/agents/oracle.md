@@ -3,7 +3,7 @@ name: oracle
 description: Exceptional read-only RentCottage reasoning for a twice-stalled diagnosis, architecture tiebreak, or independent high-consequence derivation.
 model: fable
 effort: high
-maxTurns: 60
+maxTurns: 90
 permissionMode: plan
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 color: green
