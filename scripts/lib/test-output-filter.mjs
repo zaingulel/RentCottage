@@ -29,7 +29,10 @@ const RUNNERS = [
   /^npm\s+test(\s|$)/,
   /^npm\s+run\s+test:\S+(\s|$)/,
 ];
-const RUN_LOG = /^npm\s+run\s+run-log\s+--\s+(.+?)\s+--\s+(.+)$/;
+const RUN_LOGS = [
+  /^npm\s+run\s+run-log\s+--\s+(.+?)\s+--\s+(.+)$/,
+  /^node\s+scripts\/run-log\.mjs\s+(.+?)\s+--\s+(.+)$/,
+];
 
 // One optional `cd <path> && ` prefix is preserved verbatim; the path may be quoted or bare.
 const CD_PREFIX = /^cd\s+("[^"]*"|'[^']*'|[^\s'"|;&<>$`()]+)\s+&&\s+/;
@@ -51,7 +54,7 @@ export function rewriteTestCommand(command) {
   if (cd && SUSPICIOUS_CD_PREFIX.test(cd[0])) return null;
   const runner = cd ? raw.slice(cd[0].length) : raw;
   if (COMPOUND.test(runner)) return null;
-  const logged = runner.match(RUN_LOG);
+  const logged = RUN_LOGS.map((pattern) => runner.match(pattern)).find(Boolean);
   const executable = logged ? logged[2] : runner;
   if (!RUNNERS.some((pattern) => pattern.test(executable))) return null;
   // `exit $__fg_status` is unconditional and last, so nothing the filter does — including

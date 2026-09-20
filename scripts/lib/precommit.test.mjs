@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -145,5 +146,56 @@ test("pre-commit refuses a staged validator deletion beside an agent edit", () =
     const result = run(repo, "pre-commit");
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /staged for deletion/);
+  });
+});
+
+test("pre-commit fails before a failed temporary allocation can target the live checkout", () => {
+  withRepo((repo) => {
+    writeFileSync(
+      join(repo, ".claude", "agents", "reviewer.md"),
+      '---\nname: reviewer\ndescription: "Updated fixture"\nmodel: opus\n---\nReview.\n',
+    );
+    writeFileSync(
+      join(repo, ".codex", "agents", "reviewer.toml"),
+      'name = "reviewer"\ndescription = "Updated fixture"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nReview.\n"""\n',
+    );
+    git(
+      repo,
+      "add",
+      ".claude/agents/reviewer.md",
+      ".codex/agents/reviewer.toml",
+    );
+
+    const sentinel = join(repo, "live-checkout-sentinel");
+    writeFileSync(sentinel, "preserve the live checkout\n");
+    const fakeBin = join(repo, "fake-bin");
+    mkdirSync(fakeBin);
+    const fakeMktemp = join(fakeBin, "mktemp");
+    writeFileSync(
+      fakeMktemp,
+      '#!/bin/sh\nprintf "%s\\n" "$PRECOMMIT_LIVE_CHECKOUT"\nexit 1\n',
+    );
+    chmodSync(fakeMktemp, 0o755);
+
+    const result = spawnSync("sh", [join(repo, ".githooks", "pre-commit")], {
+      cwd: repo,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${fakeBin}:${process.env.PATH}`,
+        PRECOMMIT_LIVE_CHECKOUT: repo,
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.equal(
+      existsSync(repo),
+      true,
+      "the live checkout must remain intact",
+    );
+    assert.equal(
+      readFileSync(sentinel, "utf8"),
+      "preserve the live checkout\n",
+    );
   });
 });

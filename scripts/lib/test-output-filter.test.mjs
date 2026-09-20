@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,14 +19,14 @@ import { rewriteTestCommand, filterRunnerOutput } from './test-output-filter.mjs
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 // Runs a rewritten command exactly as a Bash tool call would, and returns what reaches the agent.
-function runRewritten(command) {
+function runRewritten(command, cwd = ROOT) {
   const rewritten = rewriteTestCommand(command);
   assert.ok(rewritten, `expected ${command} to be rewritten`);
   // NODE_TEST_CONTEXT is inherited from THIS test process; leaving it set makes the nested
   // `node --test` skip its files with a recursion warning, so the case would prove nothing.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
-  const run = spawnSync('bash', ['-c', rewritten], { cwd: ROOT, encoding: 'utf8', env });
+  const run = spawnSync('bash', ['-c', rewritten], { cwd, encoding: 'utf8', env });
   return { status: run.status, surfaced: `${run.stdout}${run.stderr}` };
 }
 
@@ -34,6 +34,29 @@ function fixture(name, source) {
   const file = join(mkdtempSync(join(tmpdir(), 'workflow-filter-')), name);
   writeFileSync(file, source);
   return file;
+}
+
+function withRunLogRepo(fn) {
+  const repo = mkdtempSync(join(tmpdir(), 'workflow-filter-run-log-'));
+  try {
+    mkdirSync(join(repo, 'scripts'));
+    writeFileSync(
+      join(repo, 'scripts', 'run-log.mjs'),
+      readFileSync(join(ROOT, 'scripts', 'run-log.mjs')),
+    );
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({
+      private: true,
+      scripts: { 'run-log': 'node scripts/run-log.mjs' },
+    }));
+    const initialized = spawnSync('git', ['init', '-q', '-b', 'job/filter'], {
+      cwd: repo,
+      encoding: 'utf8',
+    });
+    assert.equal(initialized.status, 0, initialized.stderr);
+    fn(repo);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 }
 
 test('test output filtering condenses green runs, keeps red runs loud, and never touches exit status', async (t) => {
@@ -123,16 +146,51 @@ test('test output filtering condenses green runs, keeps red runs loud, and never
     }
   });
 
+  await t.test('the workflow direct run-log command wraps only known runners without granting permission', () => {
+    const direct = 'node scripts/run-log.mjs focused scripts -- node --test scripts/lib/board.test.mjs';
+    const rewritten = rewriteTestCommand(direct);
+    assert.ok(rewritten);
+    assert.match(rewritten, /node scripts\/run-log\.mjs focused scripts -- node --test scripts\/lib\/board\.test\.mjs/);
+    assert.ok(rewritten.endsWith('exit $__fg_status'));
+
+    const hook = resolve(ROOT, '.claude/hooks/filter-test-output.mjs');
+    const run = spawnSync('node', [hook], {
+      input: JSON.stringify({ tool_input: { command: direct, timeout: 600000 } }),
+      encoding: 'utf8',
+    });
+    assert.equal(run.status, 0);
+    const payload = JSON.parse(run.stdout);
+    assert.equal('permissionDecision' in payload.hookSpecificOutput, false);
+    assert.equal('permissionDecisionReason' in payload.hookSpecificOutput, false);
+    assert.deepEqual(payload.hookSpecificOutput.updatedInput, {
+      command: rewritten,
+      timeout: 600000,
+    });
+
+    for (const command of [
+      'node scripts/run-log.mjs suspicious\rlabel -- node --test scripts/lib/board.test.mjs',
+      'node scripts/run-log.mjs suspicious\nlabel -- node --test scripts/lib/board.test.mjs',
+      'node scripts/run-log.mjs `printf label` -- node --test scripts/lib/board.test.mjs',
+      'node scripts/run-log.mjs $(printf label) -- node --test scripts/lib/board.test.mjs',
+      'node scripts/run-log.mjs git state -- git status',
+      'node scripts/run-log.mjs misleading -- echo node --test scripts/lib/board.test.mjs',
+    ]) {
+      assert.equal(rewriteTestCommand(command), null, `expected no rewrite for: ${JSON.stringify(command)}`);
+    }
+  });
+
   await t.test('a green runner wrapped by run-log executes and condenses as one command', () => {
-    const file = fixture('logged-green.test.mjs',
-      "import { test } from 'node:test';\ntest('logged detail that should be dropped', () => {});\n");
-    const wrapped = `npm run run-log -- output filter green -- node --test ${file}`;
-    const rewritten = rewriteTestCommand(wrapped);
-    assert.ok(rewritten?.includes(`${wrapped} >"$__fg_out" 2>&1`));
-    const { status, surfaced } = runRewritten(wrapped);
-    assert.equal(status, 0, surfaced);
-    assert.match(surfaced, /green run condensed to summary/);
-    assert.doesNotMatch(surfaced, /logged detail that should be dropped/);
+    withRunLogRepo((repo) => {
+      const file = fixture('logged-green.test.mjs',
+        "import { test } from 'node:test';\ntest('logged detail that should be dropped', () => {});\n");
+      const wrapped = `npm run run-log -- output filter green -- node --test ${file}`;
+      const rewritten = rewriteTestCommand(wrapped);
+      assert.ok(rewritten?.includes(`${wrapped} >"$__fg_out" 2>&1`));
+      const { status, surfaced } = runRewritten(wrapped, repo);
+      assert.equal(status, 0, surfaced);
+      assert.match(surfaced, /green run condensed to summary/);
+      assert.doesNotMatch(surfaced, /logged detail that should be dropped/);
+    });
   });
 
   await t.test('a TAP-format green run condenses to its TAP summary', () => {

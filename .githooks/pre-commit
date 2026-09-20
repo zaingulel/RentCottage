@@ -19,7 +19,18 @@ fi
 # --- Agent-definition guard (BLOCKS) -----------------------------------------
 if echo "$staged" | grep -qE '^\.(claude|codex)/agents/.*\.(md|toml)$'; then
   if git -C "$repo_root" cat-file -e :scripts/lib/check-agents.mjs 2>/dev/null; then
-    agent_snap=$(cd "$(mktemp -d)" && pwd -P)
+    if ! agent_snap_allocated=$(mktemp -d); then
+      echo "✖ pre-commit: could not allocate a temporary directory for staged agent validation." >&2
+      exit 1
+    fi
+    if ! agent_snap=$(cd "$agent_snap_allocated" && pwd -P); then
+      echo "✖ pre-commit: could not resolve the temporary directory for staged agent validation." >&2
+      exit 1
+    fi
+    if [ -z "$agent_snap" ] || [ "$agent_snap" = "$repo_root" ]; then
+      echo "✖ pre-commit: refused an unsafe temporary directory for staged agent validation." >&2
+      exit 1
+    fi
     if ! git -C "$repo_root" ls-files -z -- .claude/agents .codex/agents scripts/lib/check-agents.mjs >"$agent_snap/staged.list" \
       || ! xargs -0 sh -c 'snap=$1 root=$2; shift 2; for p; do mkdir -p "$snap/$(dirname "$p")" && git -C "$root" cat-file blob ":$p" >"$snap/$p" || exit 255; done' sh "$agent_snap" "$repo_root" <"$agent_snap/staged.list"; then
       rm -rf "$agent_snap"

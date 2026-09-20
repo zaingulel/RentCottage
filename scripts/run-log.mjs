@@ -51,6 +51,7 @@ try {
   console.log(line);
 } catch (error) {
   console.error(`run-log: could not write receipt (${error?.code ?? error?.message ?? error})`);
+  if (exitCode === 0) exitCode = 1;
 }
 if (signal) process.kill(process.pid, signal);
 process.exit(exitCode);

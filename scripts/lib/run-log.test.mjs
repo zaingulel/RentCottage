@@ -89,6 +89,24 @@ test('a receipt-write failure cannot replace the child exit or signal result', (
   });
 });
 
+test('a successful child is incomplete evidence when its receipt cannot be written', () => {
+  withRepo((repo) => {
+    writeFileSync(join(repo, '.claude'), 'blocks the receipt directory');
+
+    const result = run(repo, [
+      'green without receipt',
+      '--',
+      process.execPath,
+      '-e',
+      'process.exit(0)',
+    ]);
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /run-log: could not write receipt/);
+    assert.equal(readFileSync(join(repo, '.claude'), 'utf8'), 'blocks the receipt directory');
+  });
+});
+
 test('a missing label or command is a usage error and writes nothing', () => {
   withRepo((repo) => {
     assert.equal(run(repo, ['--', 'true']).status, 2);
