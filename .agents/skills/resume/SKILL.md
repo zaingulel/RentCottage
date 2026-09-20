@@ -46,7 +46,7 @@ Read the candidate cards' bodies and comments in one call, one alias per issue, 
 per card.
 
 ```sh
-gh api graphql -f query='{ repository(owner:"zaingulel", name:"RentCottage") { i1155: issue(number:1155) { ...Card } i970: issue(number:970) { ...Card } } } fragment Card on Issue { number title body comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
+gh api graphql -f query='{ repository(owner:"zaingulel", name:"RentCottage") { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
 ```
 
 State the session's own model in one line, then always present this table, even for one candidate:

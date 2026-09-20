@@ -1,12 +1,11 @@
-# This tracked workflow is an inactive documentation-maintenance dependency, not proof that a routine,
-# schedule, required check, or no-bypass repository rule has been configured. If explicitly activated,
-# the documentation sweep lands its own pull request, so this check owns the mechanical rules of
-# docs/DOC-SWEEP.md. It runs on pull_request_target so the workflow
-# file, the check script, and its library all come from `main`, never from the pull request it
-# judges; the pull request's commits are read as git objects and nothing from that tree is executed,
-# which is why no dependency install appears here. It runs on every pull request and passes at once
-# when the head branch is neither the sweep's nor its day-after triage's (docs/SWEEP-TRIAGE.md, held to
-# the same scope table), so branch protection can require it without a skip ever reading as success.
+# This tracked guard runs on pull-request events. It evaluates documentation-sweep and day-after
+# triage branches against the scope rules in docs/DOC-SWEEP.md, and exits successfully without
+# checking scope on ordinary branches. Committing this file does not establish a required check or
+# activate the maintenance routine, its schedule, or its publication environment.
+#
+# pull_request_target keeps the workflow file, check script, and library on `main`, never the pull
+# request it judges. The pull request's commits are read as git objects and nothing from that tree is
+# executed, which is why no dependency install appears here.
 name: sweep-scope
 on:
   pull_request_target:
@@ -23,11 +22,11 @@ jobs:
     steps:
       # No `ref`: on pull_request_target the checkout is the base branch, which is the point.
       # fetch-depth 0 brings every branch head, so the pull request's commits are present as objects.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
       - env:

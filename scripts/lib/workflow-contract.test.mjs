@@ -18,37 +18,6 @@ const CODEX_GIT_REGISTRATION = `      {
         ]
       },`;
 
-const REVIEW_LINE =
-  /^Review: tier=(document|code|sign-off) rounds=([1-9]\d*) raised=(0|[1-9]\d*) fixed=(0|[1-9]\d*) dismissed=(0|[1-9]\d*) deferred=(0|[1-9]\d*)[ \t]*\r?$/;
-
-function visibleReviewLines(body) {
-  const withoutComments = body.replace(/<!--[\s\S]*?-->/g, "");
-  const visible = [];
-  let fence = null;
-  for (const line of withoutComments.split("\n")) {
-    const marker = line.match(/^\s*(```+|~~~+)/)?.[1];
-    if (marker) {
-      if (fence === null) fence = marker[0];
-      else if (marker[0] === fence) fence = null;
-      continue;
-    }
-    if (fence === null) visible.push(line);
-  }
-  return visible.filter((line) => REVIEW_LINE.test(line));
-}
-
-function reviewLineProblems(body) {
-  const lines = visibleReviewLines(body);
-  if (lines.length !== 1)
-    return [`expected exactly one valid review line, found ${lines.length}`];
-  const [, , rounds, raised, fixed, dismissed, deferred] =
-    lines[0].match(REVIEW_LINE);
-  const counts = [rounds, raised, fixed, dismissed, deferred].map(Number);
-  return counts[1] === counts[2] + counts[3] + counts[4]
-    ? []
-    : ["raised must equal fixed + dismissed + deferred"];
-}
-
 test("the Codex Bash registration preserves the reference bytes and exactly one handoff registration", () => {
   const source = readFileSync(resolve(ROOT, ".codex/hooks.json"), "utf8");
   assert.equal(source.split(CODEX_GIT_REGISTRATION).length - 1, 1);
@@ -65,26 +34,81 @@ test("the Codex Bash registration preserves the reference bytes and exactly one 
   );
 });
 
-test("the review line requires six ordered fields and settles every raised finding", () => {
-  const valid =
-    "## Review\nReview: tier=code rounds=2 raised=6 fixed=4 dismissed=1 deferred=1\n";
-  assert.deepEqual(reviewLineProblems(valid), []);
-  assert.deepEqual(reviewLineProblems(valid.replace("raised=6", "raised=7")), [
-    "raised must equal fixed + dismissed + deferred",
-  ]);
-  assert.match(
-    reviewLineProblems(valid.replace("rounds=2", "rounds=0"))[0],
-    /found 0/,
+test("the real repository review line has one specified format and the template and skills point at it", () => {
+  // Hand-written from the owner-approved format and slot, never extracted from a repo file, so
+  // drift in the manual's example or the template cannot silently redefine what the test accepts.
+  const REVIEW_LINE =
+    /^Review: tier=(document|code|sign-off) rounds=([1-9]\d*) raised=(0|[1-9]\d*) fixed=(0|[1-9]\d*) dismissed=(0|[1-9]\d*) deferred=(0|[1-9]\d*)\s*$/;
+  const REVIEW_SLOT =
+    "Review: tier= rounds= raised= fixed= dismissed= deferred=";
+  const assertValidLine = (line, where) => {
+    const match = REVIEW_LINE.exec(line ?? "");
+    assert.ok(
+      match,
+      `${where}: example review line ${JSON.stringify(line)} no longer matches the approved format`,
+    );
+    assert.equal(
+      Number(match[3]),
+      Number(match[4]) + Number(match[5]) + Number(match[6]),
+      `${where}: example review line has raised not equal to fixed plus dismissed plus deferred`,
+    );
+  };
+
+  const manual = readFileSync(
+    resolve(ROOT, "docs/AI-WORKFLOW.md"),
+    "utf8",
+  ).split("\n");
+  const heading = manual.indexOf("## The review line");
+  assert.ok(
+    heading >= 0,
+    'docs/AI-WORKFLOW.md lost its "## The review line" section',
   );
-  assert.match(
-    reviewLineProblems(
-      valid.replace("raised=6 fixed=4", "fixed=4 raised=6"),
-    )[0],
-    /found 0/,
+  const next = manual.findIndex(
+    (line, index) => index > heading && line.startsWith("## "),
   );
-  assert.match(reviewLineProblems(`${valid}${valid}`)[0], /found 2/);
-  assert.match(reviewLineProblems(`\`\`\`md\n${valid}\`\`\`\n`)[0], /found 0/);
-  assert.match(reviewLineProblems(`<!-- ${valid} -->\n`)[0], /found 0/);
+  const section = manual.slice(heading, next === -1 ? undefined : next);
+  const fence = section.indexOf("```");
+  assert.ok(
+    fence >= 0,
+    "the review line section in docs/AI-WORKFLOW.md lost its fenced example",
+  );
+  assertValidLine(section[fence + 1], "docs/AI-WORKFLOW.md");
+
+  const template = readFileSync(
+    resolve(ROOT, ".github/pull_request_template.md"),
+    "utf8",
+  );
+  assertValidLine(
+    /for example `([^`]*)`/.exec(template)?.[1],
+    ".github/pull_request_template.md",
+  );
+  assert.deepEqual(
+    template.split("\n").filter((line) => REVIEW_LINE.test(line)),
+    [],
+    "the pull request template has a line a parser would read as a real review line",
+  );
+  assert.equal(
+    template.split("\n").filter((line) => line.trimEnd() === REVIEW_SLOT)
+      .length,
+    1,
+    `the pull request template's review line slot "${REVIEW_SLOT}" is missing, duplicated or reshaped`,
+  );
+  assert.ok(
+    template.includes("docs/AI-WORKFLOW.md"),
+    "the pull request template no longer names docs/AI-WORKFLOW.md for the review line format",
+  );
+
+  for (const skill of [
+    ".agents/skills/resume/SKILL.md",
+    ".agents/skills/closeout/SKILL.md",
+  ]) {
+    assert.ok(
+      readFileSync(resolve(ROOT, skill), "utf8").includes(
+        "docs/AI-WORKFLOW.md#the-review-line",
+      ),
+      `${skill} no longer links to docs/AI-WORKFLOW.md#the-review-line`,
+    );
+  }
 });
 
 test("closeout removes the linked job worktree before deleting its branch", () => {

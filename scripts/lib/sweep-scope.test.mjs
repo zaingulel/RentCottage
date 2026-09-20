@@ -132,6 +132,7 @@ test("renderedLinkMarkup refuses the shapes GitHub renders into a link the text 
       "//collector.example.icu/in",
       "//raw.example.icu/in",
       "//reference.example.icu/in",
+      "//split.example.icu/in",
       "](",
       "](",
       "https:\\/\\/collector.example.icu/in",
@@ -142,8 +143,40 @@ test("renderedLinkMarkup refuses the shapes GitHub renders into a link the text 
       .sort(),
   );
 });
+
+test("renderedLinkMarkup refuses split reference definitions and destination continuation forms", () => {
+  const diff = [
+    "diff --git a/docs/X.md b/docs/X.md",
+    "--- a/docs/X.md",
+    "+++ b/docs/X.md",
+    "@@ -0,0 +1,12 @@",
+    "+[view][ref]",
+    "+",
+    "+[ref]:",
+    "+//collector.example.icu/path",
+    "+[angled]:",
+    "+<//angled.example.icu/path>",
+    "+[escaped]:",
+    "+https:\\/\\/escaped.example.icu/path",
+    "+[relative]:",
+    "+\\/\\/relative.example.icu/path",
+  ].join("\n");
+  assert.deepEqual(renderedLinkMarkup(diff), [
+    "[ref]:",
+    "//collector.example.icu/path",
+    "[angled]:",
+    "//angled.example.icu/path",
+    "[escaped]:",
+    "https:\\/\\/escaped.example.icu/path",
+    "[relative]:",
+    "\\/\\/relative.example.icu/path",
+  ]);
+});
+
 // A throwaway repository whose base commit carries a two-row scope table and one allowed document.
-function repo() {
+function repo(
+  allowedText = "The app lives at https://app.flowgauge.app and nowhere else.\n",
+) {
   const dir = mkdtempSync(join(tmpdir(), "sweep-scope-"));
   const git = (...args) =>
     execFileSync("git", args, {
@@ -163,10 +196,7 @@ function repo() {
     "docs/DOC-SWEEP.md",
     "# manual\n\n| May edit | Never edit |\n|---|---|\n| `docs/ALLOWED.md` | `docs/DOC-SWEEP.md`, `src/` |\n",
   );
-  write(
-    "docs/ALLOWED.md",
-    "The app lives at https://app.flowgauge.app and nowhere else.\n",
-  );
+  write("docs/ALLOWED.md", allowedText);
   write("src/code.js", "export const x = 1;\n");
   git("add", "-A");
   git("commit", "-q", "-m", "base");
@@ -266,6 +296,21 @@ test("the check refuses rendered-link markup outright, naming the fragment", () 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /&#47; is markup GitHub would render/);
 });
+
+test("the check refuses a destination continuation added below an existing reference opening", () => {
+  const r = repo("[view][ref]\n\n[ref]:\n");
+  r.write(
+    "docs/ALLOWED.md",
+    "[view][ref]\n\n[ref]:\n//collector.example.icu/path\n",
+  );
+  const result = r.check(r.commit("split reference destination"));
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stderr,
+    /\/\/collector\.example\.icu\/path is markup GitHub would render/,
+  );
+});
+
 test("the check rejects missing or unresolvable commits instead of reporting a clean diff", () => {
   const r = repo();
   const noArgs = spawnSync("node", [SCRIPT], {

@@ -7,7 +7,7 @@
 // another rule inside extractPathRefs. Pure by design: node:path only, no fs —
 // existence stays injectable exactly like checkPathRefs's existsFn.
 
-import path from "node:path";
+import path from 'node:path';
 
 // Targets that are not repo paths: any URI scheme (http, mailto, tel, ftp…) or
 // a pure in-page anchor. The scheme charset deliberately excludes the dot RFC
@@ -34,7 +34,7 @@ const REF_DEF_RE = /^ {0,3}\[[^\]]+\]:\s+(\S+)/;
 // exactly what this scan catches.
 export function extractMarkdownLinks(markdownText) {
   const links = [];
-  const lines = markdownText.split("\n");
+  const lines = markdownText.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const raws = [];
     let m;
@@ -45,17 +45,12 @@ export function extractMarkdownLinks(markdownText) {
     for (const raw of raws) {
       // `<docs/guide.md>` is CommonMark's angle-bracket destination form; the
       // brackets are delimiters, not part of the path.
-      const unwrapped = raw.replace(/^<(.*)>$/, "$1");
+      const unwrapped = raw.replace(/^<(.*)>$/, '$1');
       // `//cdn.example.com/x.md` is protocol-relative, so scheme-less but still
       // not a repo path.
-      if (
-        EXTERNAL_RE.test(unwrapped) ||
-        unwrapped.startsWith("//") ||
-        unwrapped.startsWith("#")
-      )
-        continue;
-      let target = unwrapped.replace(/#.*$/, ""); // strip a trailing #anchor fragment
-      target = target.replace(/:\d+$/, ""); // strip a trailing :NNN line suffix
+      if (EXTERNAL_RE.test(unwrapped) || unwrapped.startsWith('//') || unwrapped.startsWith('#')) continue;
+      let target = unwrapped.replace(/#.*$/, ''); // strip a trailing #anchor fragment
+      target = target.replace(/:\d+$/, ''); // strip a trailing :NNN line suffix
       if (!target) continue;
       links.push({ target, line: i + 1 });
     }
@@ -67,10 +62,8 @@ export function extractMarkdownLinks(markdownText) {
 // repo-relative, posix), or null when the resolution escapes the repo root —
 // an escaping link can never name a repo file, so it is dead by construction.
 export function resolveLinkTarget(containingRel, target) {
-  const resolved = path.posix.normalize(
-    path.posix.join(path.posix.dirname(containingRel), target),
-  );
-  if (resolved === ".." || resolved.startsWith("../")) return null;
+  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(containingRel), target));
+  if (resolved === '..' || resolved.startsWith('../')) return null;
   return resolved;
 }
 
@@ -80,8 +73,7 @@ export function checkMarkdownLinks(containingRel, markdownText, existsFn) {
   const dead = [];
   for (const { target, line } of extractMarkdownLinks(markdownText)) {
     const resolved = resolveLinkTarget(containingRel, target);
-    if (resolved === null || !existsFn(resolved))
-      dead.push({ target, resolved, line });
+    if (resolved === null || !existsFn(resolved)) dead.push({ target, resolved, line });
   }
   return dead;
 }

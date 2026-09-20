@@ -13,10 +13,10 @@
 // hash sequence; neither belongs to the name a citation quotes.
 export function extractManualHeadings(markdownText) {
   const headings = new Set();
-  for (const line of markdownText.split("\n")) {
+  for (const line of markdownText.split('\n')) {
     const m = line.match(/^ {0,3}#{1,6}(?:[ \t]+(.*?))?[ \t]*$/);
     if (!m) continue;
-    const name = (m[1] ?? "").replace(/[ \t]+#+[ \t]*$/, "").trim();
+    const name = (m[1] ?? '').replace(/[ \t]+#+[ \t]*$/, '').trim();
     if (name) headings.add(name);
   }
   return headings;
@@ -32,8 +32,7 @@ export function extractManualHeadings(markdownText) {
 // written as inline code (`` `CLAUDE.md`'s "Architecture seams" ``) and the
 // possessive is optional (`CLAUDE.md "Reference map"`); both shapes are in
 // live use, so neither may be silently skipped.
-const CITATION_RE =
-  /`?(CLAUDE|AGENTS)\.md`?(?:['’]s)?\s+["“]([^"”]{1,120}?)["”]/g;
+const CITATION_RE = /`?(CLAUDE|AGENTS)\.md`?(?:['’]s)?\s+["“]([^"”]{1,120}?)["”]/g;
 
 export function extractHeadingCitations(markdownText) {
   const citations = [];
@@ -43,7 +42,7 @@ export function extractHeadingCitations(markdownText) {
     citations.push({
       manual: `${m[1]}.md`,
       heading: normalizeHeading(m[2]),
-      line: markdownText.slice(0, m.index).split("\n").length,
+      line: markdownText.slice(0, m.index).split('\n').length,
     });
   }
   return citations;
@@ -53,19 +52,14 @@ export function extractHeadingCitations(markdownText) {
 // wrapping and terminal punctuation inside the quotes; the heading it cites
 // carries neither.
 function normalizeHeading(raw) {
-  return raw
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[.,;:]$/, "")
-    .trim();
+  return raw.replace(/\s+/g, ' ').trim().replace(/[.,;:]$/, '').trim();
 }
 
 // citations, {CLAUDE.md, AGENTS.md} → Set<heading> (Map or plain object) →
 // the citations whose own manual has no such heading.
 export function checkHeadingCitations(citations, headingsByManual) {
-  const headingsFor = (manual) =>
-    headingsByManual instanceof Map
-      ? headingsByManual.get(manual)
-      : headingsByManual[manual];
+  const headingsFor = (manual) => (headingsByManual instanceof Map
+    ? headingsByManual.get(manual)
+    : headingsByManual[manual]);
   return citations.filter((c) => !headingsFor(c.manual)?.has(c.heading));
 }

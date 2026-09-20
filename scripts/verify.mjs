@@ -47,7 +47,6 @@ const baselineOnlyPaths = new Set([
   "CONTEXT.md",
   "scripts/run-log.mjs",
   "scripts/lib/run-log.test.mjs",
-  ".agents/skills/security-code-review/agents/openai.yaml",
   // The self-hosted font unit test and the licences it reads. npm test proves both in
   // baseline. The licences ship from public/ like any asset, but their text cannot
   // change a rendered page or the Worker's behaviour. The .woff2 files and fonts.css
@@ -143,6 +142,7 @@ function isBaselineOnlyPath(path) {
   return (
     baselineOnlyPaths.has(path) ||
     /^\.agents\/(?:roles|skills|templates)\/.+\.md$/i.test(path) ||
+    /^\.agents\/skills\/[^/]+\/agents\/openai\.yaml$/i.test(path) ||
     /^\.agents\/upstream\/mattpocock-skills\/(?:LICENSE|.+\.(?:md|yaml))$/i.test(
       path,
     ) ||

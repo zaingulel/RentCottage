@@ -2,6 +2,34 @@
 # Seatbelt sandbox. Prompt for every RentCottage browser entry point; keep
 # ordinary Node, Vitest, lint and type checks in workspace-write.
 prefix_rule(
+    pattern = ["npm", "run", "verify"],
+    decision = "prompt",
+    justification = "RentCottage aggregate verification can launch Playwright browsers blocked by Seatbelt",
+    match = [
+        "npm run verify",
+        "npm run verify -- --browser",
+        "npm run verify -- --full",
+    ],
+    not_match = [
+        "npm run verify:preview -- https://preview.example.test",
+        "npm run test:scripts",
+        "npm run lint",
+        "npm run typecheck",
+    ],
+)
+
+prefix_rule(
+    pattern = ["npm", "run", "verify:access"],
+    decision = "prompt",
+    justification = "RentCottage aggregate access verification launches Playwright browsers blocked by Seatbelt",
+    match = ["npm run verify:access"],
+    not_match = [
+        "npm run verify:access:database",
+        "npm run test:scripts",
+    ],
+)
+
+prefix_rule(
     pattern = ["npm", "run", "test:browser"],
     decision = "prompt",
     justification = "RentCottage browser tests launch Playwright browsers blocked by Seatbelt",
@@ -23,6 +51,14 @@ prefix_rule(
     justification = "Browser access verification launches Playwright browsers blocked by Seatbelt",
     match = ["npm run verify:access:browser"],
     not_match = ["npm run verify:access:database"],
+)
+
+prefix_rule(
+    pattern = ["npx", "--yes", "playwright"],
+    decision = "prompt",
+    justification = "A direct Playwright invocation launches a browser the sandbox blocks",
+    match = ["npx --yes playwright test tests/marketplace-shell.spec.ts"],
+    not_match = ["npx --yes vitest run", "npx vitest run"],
 )
 
 prefix_rule(

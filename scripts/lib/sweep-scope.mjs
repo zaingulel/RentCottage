@@ -108,6 +108,9 @@ const CHARACTER_REFERENCE =
 const INDIRECT_LINK_OPENING = /\]\((?=\s|<|$)/gm;
 const DESTINATION =
   /(?:\]\(|^\s*\[[^\]\n]+\]:\s*|\b(?:href|src)\s*=\s*["']?)<?([^\s)>"']*)/gim;
+const DEFERRED_REFERENCE_OPENING = /^\s*(\[[^\]\n]+\]:)\s*$/;
+const DESTINATION_CONTINUATION =
+  /^\s*<?(\/\/[^\s)>]*|(?:[a-z][a-z0-9+.-]*:)?(?:\\\/){2}[^\s)>]*)>?/i;
 // Every fragment on an added line that matches one of those shapes, in order of first appearance.
 export function renderedLinkMarkup(unifiedDiff) {
   const fragments = [];
@@ -116,6 +119,10 @@ export function renderedLinkMarkup(unifiedDiff) {
     fragments.push(
       ...[...text.matchAll(INDIRECT_LINK_OPENING)].map((m) => m[0]),
     );
+    const deferredReference = text.match(DEFERRED_REFERENCE_OPENING);
+    if (deferredReference) fragments.push(deferredReference[1]);
+    const destinationContinuation = text.match(DESTINATION_CONTINUATION);
+    if (destinationContinuation) fragments.push(destinationContinuation[1]);
     for (const m of text.matchAll(DESTINATION)) {
       if (m[1].startsWith("//") || m[1].includes("\\")) fragments.push(m[1]);
     }

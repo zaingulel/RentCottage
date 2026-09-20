@@ -11,7 +11,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -62,6 +63,13 @@ const requiredBrowserSteps = [
   ...requiredExpensiveSteps.slice(1),
 ];
 
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const explicitNodeWorkflowEntries = [
+  "scripts/doc-lint.mjs",
+  ".claude/hooks/filter-test-output.mjs",
+  ".claude/hooks/test-output-filter-run.mjs",
+];
+
 const lockedDependencyVersions = {
   wrangler: "4.130.0",
   workerd: "1.20260908.1",
@@ -107,6 +115,50 @@ function git(cwd, args) {
   }
   return result.stdout.trim();
 }
+
+it("keeps explicit Node workflow entry points non-executable for baseline eligibility", () => {
+  for (const path of explicitNodeWorkflowEntries) {
+    const trackedMode = git(ROOT, ["ls-files", "--stage", "--", path]).split(
+      /\s/,
+    )[0];
+    expect(trackedMode, `${path} must be tracked`).toMatch(/^100(?:644|755)$/);
+    expect(
+      lstatSync(join(ROOT, path)).mode & 0o111,
+      `${path} on-disk mode`,
+    ).toBe(0);
+
+    const repository = createRepository();
+    write(repository, path, "export {};\n");
+    chmodSync(join(repository, path), 0o755);
+    git(repository, ["add", path]);
+    git(repository, ["commit", "-m", `executable ${path}`]);
+    const rejected = runVerification(repository);
+    expect(rejected.calls).toHaveLength(
+      requiredBaselineSteps.length + requiredExpensiveSteps.length,
+    );
+    expect(rejected.stdout).toHaveBeenCalledWith(
+      expect.stringContaining(`${path} is executable`),
+    );
+  }
+});
+
+it("keeps browser permission rules on the real aggregate and Playwright command prefixes", () => {
+  const rules = readFileSync(
+    join(ROOT, ".codex/rules/playwright.rules"),
+    "utf8",
+  );
+  for (const pattern of [
+    '["npm", "run", "verify"]',
+    '["npm", "run", "verify:access"]',
+    '["npx", "--yes", "playwright"]',
+  ]) {
+    expect(
+      rules.split(`pattern = ${pattern}`).length - 1,
+      `${pattern} permission count`,
+    ).toBe(1);
+  }
+  expect(rules).not.toContain('pattern = ["npm", "run", "verify:preview"]');
+});
 
 function write(repository, path, contents) {
   const target = join(repository, path);
@@ -515,9 +567,9 @@ describe("repository verification command", () => {
       "# Release captain\n",
     ],
     [
-      "deleted security review skill metadata",
-      ".agents/skills/security-code-review/agents/openai.yaml",
-      "interface:\n  display_name: Security Code Review\n",
+      "arbitrary native skill metadata",
+      ".agents/skills/future-publisher/agents/openai.yaml",
+      "interface:\n  display_name: Future Publisher\n",
     ],
     [
       "reviewer runtime",

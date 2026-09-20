@@ -33,8 +33,8 @@ PostgreSQL function, move that affected orchestration and leave untouched flows 
 - Match the surrounding naming, idioms, and comment density. Remove imports, variables, functions, and files orphaned by the current change.
 - Keep static checks authoritative across browser, Node.js, and Worker code. A locally justified lint exception stays
   at its site with the shortest load-bearing reason; code is not distorted to appease a wrong lint rule.
-- Preserve deterministic line endings and byte-significant fixtures through `.gitattributes` and their invariant
-  evidence.
+- Preserve byte-significant fixtures and shared copied files, use their declared identity checks, and respect the
+  exact formatting exclusions that protect their bytes.
 
 ## Security and privacy
 

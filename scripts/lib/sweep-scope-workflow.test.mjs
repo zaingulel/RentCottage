@@ -1,10 +1,11 @@
-// sweep-scope-workflow.test.mjs — the safe shape required before the tracked `sweep-scope` workflow is activated in
+// sweep-scope-workflow.test.mjs — the safe shape of the tracked `sweep-scope` guard in
 // .github/workflows/sweep-scope.yml.
 //
-// The check judges a pull request the sweep opened and lands itself, so the enforcer must not come
+// The guard judges a pull request the sweep or triage routine opened, so the enforcer must not come
 // from the pull request it judges: the workflow runs on pull_request_target, checks out the base
 // branch, executes nothing from the pull request's tree, and passes at once off a sweep or triage
-// branch so branch protection can require it. Each assertion goes red if the corresponding line is removed
+// branch. Tracked bytes do not prove a maintenance routine, schedule, required check, or publication
+// environment is active. Each assertion goes red if the corresponding line is removed
 // (`docs/engineering/testing-strategy.md`, a deterministic guard over the committed bytes).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,6 +20,20 @@ const WORKFLOW = readFileSync(
   ),
   "utf8",
 );
+test("the workflow pins every action to its approved immutable revision", () => {
+  assert.match(
+    WORKFLOW,
+    /^\s+- uses: actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7$/m,
+  );
+  assert.match(
+    WORKFLOW,
+    /^\s+- uses: actions\/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6$/m,
+  );
+  assert.doesNotMatch(
+    WORKFLOW,
+    /^\s+- uses: actions\/(?:checkout|setup-node)@v\d+$/m,
+  );
+});
 test("the check runs from the base branch on pull_request_target, on every pull request event the suite uses", () => {
   assert.match(
     WORKFLOW,
@@ -30,6 +45,13 @@ test("the check runs from the base branch on pull_request_target, on every pull 
     "a ref on the checkout would fetch the pull request's tree",
   );
   assert.match(WORKFLOW, /fetch-depth: 0/);
+});
+test("the guard keeps one bounded run per pull request", () => {
+  assert.match(
+    WORKFLOW,
+    /^concurrency:\n  group: sweep-scope-pr-\$\{\{ github\.event\.pull_request\.number \}\}\n  cancel-in-progress: true$/m,
+  );
+  assert.match(WORKFLOW, /^    timeout-minutes: 5$/m);
 });
 test("the check executes nothing from the pull request and holds a read-only token", () => {
   assert.match(WORKFLOW, /^permissions:\n  contents: read$/m);
@@ -51,7 +73,7 @@ function runBlock() {
   assert.ok(m, "the check step must have a run block");
   return m[1].replace(/^ {10}/gm, "");
 }
-test("a pull request off a sweep or triage branch passes at once, so requiring the check never blocks ordinary work", () => {
+test("a pull request off a sweep or triage branch passes at once without checking ordinary work", () => {
   const result = spawnSync("bash", ["-c", runBlock()], {
     env: {
       ...process.env,

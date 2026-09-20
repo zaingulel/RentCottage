@@ -1,8 +1,9 @@
 # Inactive documentation sweep
 
 This is the version-controlled manual for a possible cloud documentation sweep. The routine is **not active**.
-The tracked workflow and scope checker are executable contract material, not proof that a schedule, publication
-authority, provider environment, or hosted protection has been configured.
+The checked-in guard workflow runs on pull-request events and immediately no-ops ordinary branches. That workflow
+and its scope checker are executable contract material, not proof that the maintenance routine, a schedule,
+publication authority, provider environment, or hosted required-check protection has been configured.
 
 ## Purpose
 
@@ -47,9 +48,10 @@ It refuses:
   occur in the base tree; and
 - markup GitHub would render as a link while hiding the destination from the source text.
 
-`.github/workflows/sweep-scope.yml` executes the tracked checker from the base branch and never runs code from the
-pull-request tree. That YAML is not enforcement proof. Before publication is authorized, the owner must separately
-configure a source-bound hosted `sweep-scope` protection with no administrator bypass and verify the setting live.
+`.github/workflows/sweep-scope.yml` runs on pull-request events, no-ops branches outside the sweep and triage
+prefixes, executes the tracked checker from the base branch, and never runs code from the pull-request tree. That
+YAML is not enforcement proof. Before publication is authorized, the owner must separately configure a
+source-bound hosted `sweep-scope` protection with no administrator bypass and verify the setting live.
 
 ## Activation prerequisites
 

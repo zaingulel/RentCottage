@@ -51,3 +51,18 @@ scripts/lib/unsafe-git.test.mjs
 scripts/run-log.mjs
 scripts/lib/run-log.test.mjs
 .agents/upstream/mattpocock-skills
+
+# Shared workflow-control sources keep Flowgauge-compatible bytes. The test files
+# with RentCottage fixtures stay excluded so formatting does not rewrite their shared sections.
+.claude/hooks/filter-test-output.mjs
+.claude/hooks/test-output-filter-run.mjs
+scripts/lib/check-agents.mjs
+scripts/lib/codex-hook-adapters.test.mjs
+scripts/lib/doc-lint-citations.mjs
+scripts/lib/doc-lint-links.mjs
+scripts/lib/prepush.test.mjs
+scripts/lib/sweep-scope.mjs
+scripts/lib/sweep-scope-workflow.test.mjs
+scripts/lib/sweep-scope.test.mjs
+scripts/lib/test-output-filter.mjs
+scripts/lib/test-output-filter.test.mjs

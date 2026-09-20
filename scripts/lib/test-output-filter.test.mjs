@@ -227,17 +227,32 @@ test("test output filtering condenses green runs, keeps red runs loud, and never
       const hook = resolve(ROOT, ".claude/hooks/filter-test-output.mjs");
       const command = "node --test scripts/lib/board.test.mjs";
       const rewrite = spawnSync("node", [hook], {
-        input: JSON.stringify({ tool_input: { command } }),
+        input: JSON.stringify({
+          tool_input: {
+            command,
+            timeout: 600000,
+            run_in_background: false,
+            description: "focused script tests",
+            future_field: { nested: 1 },
+          },
+        }),
         encoding: "utf8",
       });
       assert.equal(rewrite.status, 0);
       const payload = JSON.parse(rewrite.stdout);
       assert.equal(payload.hookSpecificOutput.hookEventName, "PreToolUse");
-      assert.equal(payload.hookSpecificOutput.permissionDecision, "allow");
+      assert.equal("permissionDecision" in payload.hookSpecificOutput, false);
       assert.equal(
-        payload.hookSpecificOutput.updatedInput.command,
-        rewriteTestCommand(command),
+        "permissionDecisionReason" in payload.hookSpecificOutput,
+        false,
       );
+      assert.deepEqual(payload.hookSpecificOutput.updatedInput, {
+        command: rewriteTestCommand(command),
+        timeout: 600000,
+        run_in_background: false,
+        description: "focused script tests",
+        future_field: { nested: 1 },
+      });
 
       const untouched = spawnSync("node", [hook], {
         input: JSON.stringify({ tool_input: { command: "git status" } }),
@@ -245,6 +260,29 @@ test("test output filtering condenses green runs, keeps red runs loud, and never
       });
       assert.equal(untouched.status, 0);
       assert.equal(untouched.stdout, "");
+    },
+  );
+
+  await t.test(
+    "the hook leaves suspicious quoted cd prefixes untouched for normal permission evaluation",
+    () => {
+      const hook = resolve(ROOT, ".claude/hooks/filter-test-output.mjs");
+      for (const command of [
+        'cd "$(printf /tmp)" && npm test',
+        'cd "`printf /tmp`" && npm test',
+        'cd "/tmp\nrepo" && npm test',
+      ]) {
+        const run = spawnSync("node", [hook], {
+          input: JSON.stringify({ tool_input: { command } }),
+          encoding: "utf8",
+        });
+        assert.equal(run.status, 0);
+        assert.equal(
+          run.stdout,
+          "",
+          `expected no rewrite for: ${JSON.stringify(command)}`,
+        );
+      }
     },
   );
 });

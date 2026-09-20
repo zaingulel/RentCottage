@@ -157,8 +157,9 @@ The diagram is the whole path from a card to a merged commit. In words:
 - **Delivery by GitHub.** Marking the pull request ready after any required review attempt settles starts continuous
   integration. An unchanged-commit CI retry needs no further Greptile review. The merge is always queued as a GitHub auto-merge, which GitHub completes
   only when the required source-bound `test` check is green and conversations are resolved; no agent merges
-  directly. The tracked documentation sweep workflow is inactive until its external publication authority,
-  schedule, provider, and required hosted protection are explicitly configured.
+  directly. The checked-in `sweep-scope` guard runs on pull-request events and immediately no-ops ordinary branches.
+  It does not activate the documentation maintenance routine: its schedule, external environment, publication
+  authority, provider, and required-check setting remain unconfigured.
 - **Closeout.** The moment the merge lands, the same session confirms it, moves the card, pulls main, and
   removes the branch and worktree. Rulings the owner made during the session go to the issue or the manual
   that owns the topic, never to a new document.
@@ -293,10 +294,11 @@ diff and run the applicable baseline, database, and browser evidence. CI runs fr
 only the branch head, so it tests what would land. The selector fails loud on an unclassified path, malformed Git
 evidence, or a dependency preflight mismatch.
 
-The tracked `sweep-scope` workflow defines the guard required before a future automated documentation routine may
-publish. It reads the scope table from the base commit so a branch cannot widen its own authority. The repository
-does not claim that workflow, a schedule, or hosted protection is active: activation requires the external setup
-listed in `docs/DOC-SWEEP.md` and owner authority.
+The tracked `sweep-scope` workflow is a pull-request guard: it runs on pull-request events, no-ops branches outside
+the sweep and triage prefixes, and reads the scope table from the base commit so a branch cannot widen its own
+authority. Its presence does not activate the documentation maintenance routine or configure its schedule,
+external environment, publication authority, provider, or hosted required-check setting. Those need the external
+setup listed in `docs/DOC-SWEEP.md` and owner authority.
 
 ## Sources of truth
 
