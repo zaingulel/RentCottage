@@ -10,8 +10,8 @@ import { blockReason } from './unsafe-git.mjs';
 
 const REASON_CREATE = "gh pr create without --draft skips the draft review: open it as a draft (--draft/-d) so Greptile reviews it before CI runs";
 const REASON_MERGE = 'gh pr merge without --auto merges whatever the checks say (an admin token is not bound by branch protection); use `gh pr merge --auto --squash <pr>` so GitHub merges only once the required test check is green';
-const REASON_COMMIT_NO_VERIFY = 'git commit --no-verify skips the concat-identity + stats pre-commit gate';
-const REASON_PUSH_NO_VERIFY = 'git push --no-verify skips the lint pre-push gate';
+const REASON_COMMIT_NO_VERIFY = 'git commit --no-verify skips the staged agent-definition pre-commit gate';
+const REASON_PUSH_NO_VERIFY = 'git push --no-verify skips the lint and script-suite pre-push gate';
 const REASON_PUSH_FORCE = 'git push --force is unsafe (use --force-with-lease for a rebase)';
 const REASON_FILTER_BRANCH = 'git filter-branch rewrites history';
 
@@ -367,7 +367,7 @@ const JOB = `${ROOT}/.claude/worktrees/1170`;
 const isRootCheckout = (dir) => dir === ROOT || (dir.startsWith(`${ROOT}/`) && !dir.startsWith(`${ROOT}/.claude/worktrees/`));
 const inRoot = { cwd: ROOT, isRootCheckout };
 const inJob = { cwd: JOB, isRootCheckout };
-const rootReason = (subcommand) => `git ${subcommand} in the integration checkout: the root stays on main and nothing is branched, switched, or committed there — open a job checkout beside it with git worktree add and run it from there`;
+const rootReason = (subcommand) => `git ${subcommand} in the integration checkout: the root stays on main and nothing is branched, switched, or committed there — open a job checkout with git worktree add and run it from there`;
 
 test('ANTI-REGRESSION 1170: branch work in the root checkout is refused; the same call in a worktree passes', () => {
   const branchWork = {

@@ -1,0 +1,47 @@
+# This tracked workflow is an inactive documentation-maintenance dependency, not proof that a routine,
+# schedule, required check, or no-bypass repository rule has been configured. If explicitly activated,
+# the documentation sweep lands its own pull request, so this check owns the mechanical rules of
+# docs/DOC-SWEEP.md. It runs on pull_request_target so the workflow
+# file, the check script, and its library all come from `main`, never from the pull request it
+# judges; the pull request's commits are read as git objects and nothing from that tree is executed,
+# which is why no dependency install appears here. It runs on every pull request and passes at once
+# when the head branch is neither the sweep's nor its day-after triage's (docs/SWEEP-TRIAGE.md, held to
+# the same scope table), so branch protection can require it without a skip ever reading as success.
+name: sweep-scope
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+concurrency:
+  group: sweep-scope-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  sweep-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No `ref`: on pull_request_target the checkout is the base branch, which is the point.
+      # fetch-depth 0 brings every branch head, so the pull request's commits are present as objects.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_REF" != docs-sweep/* && "$HEAD_REF" != docs-triage/* ]]; then
+            echo "sweep-scope: $HEAD_REF is not a sweep or triage branch; nothing to check"
+            exit 0
+          fi
+          if ! git cat-file -e "$HEAD_SHA^{commit}"; then
+            echo "sweep-scope: head $HEAD_SHA was not fetched; a later push re-runs this check" >&2
+            exit 1
+          fi
+          node scripts/sweep-scope-check.mjs "$BASE_SHA" "$HEAD_SHA"

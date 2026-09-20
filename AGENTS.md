@@ -1,176 +1,148 @@
 # RentCottage operating manual
 
-The issue owns the outcome, Git owns shipped and in-flight work, and GitHub owns planning and pull-request state.
-Skills own session steps. Product code does not carry a second workflow state machine.
+The always-loaded contract for every agent runtime: skills own the steps, hooks own what must never happen, git
+owns all state. A rule a test or hook enforces is named here, not restated.
 
-## Runtime map
+## Runtime notes
 
-| Surface | Claude Code | Codex |
-|---|---|---|
-| Manual | `CLAUDE.md` imports this file | reads this file |
-| Skills | `.claude/skills/<name>` links to `.agents/skills/<name>` | `.agents/skills/<name>/SKILL.md` |
-| Agent seats | `.claude/agents/*.md` | `.codex/agents/*.toml` |
-| Isolated job | native Git worktree | native Git or Codex-managed worktree |
+Claude Code reads this file through `CLAUDE.md`, which adds its own notes; Codex reads it directly and prompts
+before a browser run (`.codex/rules/playwright.rules`). Skills are shared in `.agents/skills/`; the agent seats in
+`.claude/agents/` and `.codex/agents/` carry the same charters. Ten of those skills link to verbatim copies of
+mattpocock/skills at commit 5b15a47f2d7150f545fbcacbfe381787fc0230dc in `.agents/upstream/mattpocock-skills/`, with
+its licence; they are never edited in place, an update replaces them whole, and Codex invokes any skill as
+`$<name>`. The tracker and triage vocabulary those copies expect to have been provided is
+[docs/agents/issue-tracker.md](docs/agents/issue-tracker.md). The root checkout is the integration checkout: it stays on `main`,
+and nothing is edited, branched, or committed there; the git guard refuses the branching and committing half. Resume
+fetches before intake, reads the fetched manual and `resume`/`closeout` instructions, and uses closeout's safe
+procedure to advance the actual clean idle `main` checkout before board evidence or decisions. A topic, dirty,
+active, divergent or uncertain checkout is preserved.
+Each job gets one native worktree beside the repository and the session starts inside it, never a worktree inside
+another job worktree. Codex-managed worktrees are acceptable when Codex owns their lifecycle. The root checkout is
+never switched, stashed, cleaned, or used as the prerequisite for a job.
 
-Start or continue work with `resume`, park unfinished work with `handoff`, and run `closeout` after merge. Run
-[`docs/agents/process-reconciliation.md`](docs/agents/process-reconciliation.md) before normal completion or
-handoff and after a recoverable interruption.
+The session that talks to the owner coordinates: it plans the cards that need no architect, hands every edit to
+a builder seat, settles reviews, and delivers; it never builds. Residual judgment that would make a handoff
+unreliable is resolved in the plan or the slice is split smaller. The costliest model of each family, Fable on
+Claude and Astra on Codex, is reached only through the `architect`, `oracle` and `security-reviewer` seats; the
+session and the builders run on the tier below.
+
+## Codex model routing
+
+For this project, `.codex/agents/*.toml` owns model and reasoning settings and supersedes machine-wide model
+routing defaults. Read the selected role's settings and pass them explicitly when dispatching. Use `builder`
+for bounded substantive implementation, `builder-max` from the outset when uncertainty or failure consequence
+warrants deeper reasoning, and `builder-lite` only for mechanical edits with strong verification and no
+remaining judgment. `explorer` locates code; interpretation belongs to the planning or review roles. The
+`oracle` is the escalation seat and defaults to its configured effort; override to `max` only for a specifically
+justified escalation, stating the unresolved reasoning problem in the dispatch. Every other seat, on either
+runtime, is dispatched at its configured model and effort, never overridden. Keep task-specific routing choices
+out of the tracker.
 
 ## Sources of truth
 
-- **Planned work:** GitHub Issues, native dependencies, and Project 4. The tracker procedure is
-  [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
-- **Shipped work:** `origin/main`, Git history, and passing checks.
-- **In-flight work:** one `job/<issue>` branch, one native worktree, and its draft pull request.
-- **Product meaning:** [`CONTEXT.md`](CONTEXT.md), accepted architecture decisions, and
-  [`docs/agents/domain.md`](docs/agents/domain.md).
-- **Engineering evidence:** [`docs/engineering/coding-standards.md`](docs/engineering/coding-standards.md) and
-  [`docs/engineering/testing-strategy.md`](docs/engineering/testing-strategy.md).
+Planned work: the board card and its acceptance criteria (`node scripts/board.mjs`). Shipped work: `git log`
+and passing checks, never a prose status claim. In-flight work: a branch and its draft pull request. Durable
+constraints: this manual, [CONTEXT.md](CONTEXT.md), accepted architecture decisions, and the engineering and
+tracker authorities linked below. History: git.
 
-When these authorities conflict, stop, explain the conflict, recommend a resolution, and leave the decision with
-the owner. Chat history is not durable project state.
+Start every owner-facing decision in plain language before any workflow vocabulary: what happened, what the owner
+must decide, the options. The owner reads pull request descriptions and screenshots, not diffs; write for that
+reader. `resume` starts or continues a session, `handoff` parks unfinished work, `closeout` follows a merge.
 
-## Product and boundary map
+## Product
 
 RentCottage is a trilingual cottage marketplace. `src/` contains the Next.js application and product logic;
-`supabase/` owns database changes and Row Level Security; `scripts/` contains product, provider, deployment, and
-tracker verification; `.github/workflows/preview.yml` owns preview deployment.
+`supabase/` owns declared database objects, migrations and Row Level Security; `scripts/` contains product,
+provider, deployment and verification tooling; `custom-worker.ts` and `wrangler.jsonc` define the Cloudflare
+Worker boundary. [CONTEXT.md](CONTEXT.md) owns product meaning and canonical language.
 
-Authentication, authorization, payments, personal data, database migrations, security/privacy boundaries,
-destructive data changes, and new user-facing behaviour with no settled design require a concrete plan
-before editing. Plans name affected areas, expected behaviour, verification, migration, and rollback.
+## Hard constraints
+
+- Authentication, authorization, payments, personal data, private owner-verification files, database migrations,
+  Row Level Security, destructive data changes, and new user-facing behaviour with no settled design are
+  plan-first surfaces. The plan names behaviour, evidence, migration and rollback before editing.
+- PostgreSQL owns the atomic Integrity Core; TypeScript application services own orchestration. Do not move a
+  concurrency, authorization, deadline, idempotency, fencing, history or receipt invariant into a page or route.
+- Payment and notification work is fail-loud, idempotent and recovery-safe. Provider acceptance is not completed
+  delivery; durable authoritative state and the reader contracts remain the proof.
+- Customer, Cottage Owner and Platform Administrator paths receive minimum access. Private address, contact,
+  payment, audit and verification data never leaks into public or pre-confirmation surfaces.
+- Arabic and Sorani right-to-left presentation, English left-to-right presentation, accessibility, responsive
+  behaviour and translation fallback are product contracts, not polish.
+- Next.js behaviour follows the installed version's guide under `node_modules/next/dist/docs/`; Cloudflare Worker
+  compatibility and the client-secret scan remain independent evidence classes.
+
+## Architecture seams
+
+Read [CONTEXT.md](CONTEXT.md), [docs/agents/domain.md](docs/agents/domain.md), and accepted architecture decisions
+before changing a domain seam. Follow [ADR 0002](docs/adr/0002-database-integrity-application-orchestration.md)
+for the database/application boundary. Change declared database objects under `supabase/schemas/`, generate and
+inspect the migration, and land both together. Preserve the product preparation and cleanup rules in
+[docs/engineering/testing-strategy.md](docs/engineering/testing-strategy.md).
 
 ## Owner gates
 
-1. **Work selection:** the owner approves the issue outcome and acceptance criteria, authorizing planning, builder
-   routing, implementation, verification, and review within that outcome. Small understood adjacent repairs may
-   ride with the job when their risk is bounded and verifiable; disclose them in the pull request. A discovered
-   defect or cleanup that needs work and does not ride with the job gets a GitHub issue before delivery approval;
-   disclosure in the pull request alone does not record it. A material change to product meaning, outcome, scope,
-   or risk requires owner approval.
-2. **Delivery approval:** the owner reviews one filled pull-request body containing the finished bundle and local
-   evidence. Name any proposed external review explicitly, including Greptile access to the private pull-request
-   diff when selected, and each proposed delivery action through ready, merge and cleanup.
-   The approval covers only the outward actions it names. Push, pull-request creation, merge, deployment,
-   hosted settings, and issue reconciliation require that authority. Moving the job's own card between Status
-   columns in either direction, and claiming its issue with an assignee, ride with the work selection.
-   A current approval carries its named actions through merge and cleanup; confirmed reviewer-credit
-   exhaustion under `docs/agents/delivery.md` does not require approval of those actions again.
+1. **Work-pick** is the owner's pick of one row of the `resume` candidate table, which approves that card's
+   outcome and acceptance criteria as written and starts the job; no criteria list is shown and no second yes is
+   asked. New product meaning and unsettled user-facing design need owner direction plus domain grounding;
+   authentication, authorization, payments, personal data, schema/migrations and other trust-boundary changes
+   need explicit sign-off and a named anti-regression test.
+2. **Push authorisation** is one yes to the filled pull request body and its screenshot, and any owner
+   instruction to push is that yes. It covers the whole deliver sequence in the `resume` skill, push to
+   auto-squash merge, with no fresh yes inside it. `closeout` follows the merge unasked.
 
-Local commits on an approved job branch are green-slice construction state and need no separate approval.
-Destructive actions keep exact-target approval, except the merged-job branch and worktree removal `closeout`
-performs under the authorisation that already covered the merge, and the verifier-only worktree its local-main
-update creates and removes within one run.
+A material change to the approved outcome, product meaning, or a trade-off goes back to the owner as a
+plain-language decision before it is built; a parser, state machine, or framework the outcome did not name is
+such a change. Anything short of that which the job surfaces and can sensibly finish in the same job, in the
+same files under the same tests, rides along and is named in the pull request body; a follow-up card is filed,
+without asking, only for work that genuinely cannot. Destructive actions keep exact-target approval.
 
-When approved work says to copy, port, inherit, mirror, or use the same shape as a named implementation, that
-implementation is part of the approved outcome. Inspect its current source before planning and preserve its
-structure and behaviour; adapt only repository-specific names, paths, fixtures, and provider payloads. Stronger
-validation, an extra abstraction or runtime layer, or another behavioural deviation is a material change that
-returns to the owner. Conflicting acceptance wording stops for clarification instead of being reconciled by
-invention.
+## Domain-first discipline
 
-## Native job lifecycle
+[CONTEXT.md](CONTEXT.md) holds canonical product terms and [docs/agents/domain.md](docs/agents/domain.md) explains
+their code boundaries. Accepted architecture decisions own technical boundaries. Ground a live provider or
+platform integration in current official documentation before planning exact permissions, payloads and failure
+semantics. Competitors are interface prior art only and never override RentCottage's agreed product meaning.
 
-- Resume fetches `origin/main` before intake, reads the fetched manual and `resume`/`closeout` instructions, then
-  uses `closeout`'s safe local-main procedure before board evidence or a work decision. The normal starting root
-  stays on `main`; any topic, dirty, active, divergent or uncertain checkout is preserved and never switched,
-  stashed, cleaned or used as a prerequisite. Create `job/<issue>` directly from freshly fetched `origin/main` in
-  one native worktree.
-- The root checkout is the integration checkout: it stays on `main`, and nothing is edited, branched, or
-  committed there; the Claude Code git guard refuses the branching and committing half, and a Codex session
-  follows the rule as prose. Each job gets one worktree beside it and the session starts inside that directory.
-  Never a worktree inside a worktree.
-- One writer owns the job worktree. Other agents are read-only unless the coordinator explicitly hands the sole
-  writer role to one builder and waits for it to stop.
-- Parallel tickets require demonstrably separate behaviour, files, migrations, providers/database seams, tests,
-  and verification capacity. Separate worktrees alone do not prove independence.
-- Commit every coherent green slice locally. A draft pull request is the durable handoff for unfinished work and
-  its `Not done` section names the next step. Leave its worktree in place.
-- `closeout` runs the moment the merge lands, under the authorisation that covered it. It confirms the merge,
-  reconciles the issues the approved body names, moves their cards to Done, then deletes the job branch and
-  worktree and prunes.
+## Coding standards and the executed test bar
 
-There is no allocator, synchronizer, lock service, sweeper, checkpoint, release wrapper, or worktree registry
-beyond Git's own inventory.
+[docs/engineering/coding-standards.md](docs/engineering/coding-standards.md) owns how first-party code is written.
+[docs/engineering/testing-strategy.md](docs/engineering/testing-strategy.md) owns the evidence every claim needs, run through
+`node scripts/run-log.mjs` so the pull request body quotes exit codes a script wrote.
 
-## Team and routing
+## Review and visual verification
 
-The coordinator owns scope, integration, access and shared-resource readiness, verification, progress reporting,
-process-cleanup accountability, and owner communication. Builders prepare focused evidence and own the processes
-they start. `resume` owns launch readiness, `handoff` owns retained-process records, `closeout` owns post-merge
-reconciliation, and the testing strategy owns test preparation and retry reporting. For Codex, select the seat by
-its role and risk, then explicitly pass the model and reasoning effort from `.codex/agents/<seat>.toml`; these
-repository definitions take precedence over machine-wide model routing. Use the smallest useful team:
+One fresh review of the final tree before the pull request opens, by the tier the `resume` skill defines: the session
+itself for documents; for code and agent instruction, the `reviewer` charter run by the model family that did not
+write the diff (`cross-review`), with the skill's route when that family's seat is unavailable; `security-reviewer`
+only when a change widens authentication, authorization, payment or personal-data access, credential custody,
+provider-webhook trust, Row Level Security, public/private data exposure, or an injection boundary. Greptile is
+metered from one pool shared with Flowgauge and RentCottage and reviews a draft only for the
+sign-off tier, every thread fixed or dismissed with a reason before the draft is marked ready. The `resume` skill
+owns the tiers, the allowance lookup, the cross-family substitution route when the other family's seat cannot be
+reached, and Greptile's own best-effort provider-unavailability exception; `.greptile/config.json` disables automatic
+reviews so marking ready starts CI without requesting another Greptile review.
 
-- `explorer` locates code and evidence without judging or editing.
-- `architect` produces a concrete plan; `plan-reviewer` challenges a fixed high-risk plan once.
-- `builder-lite`, `builder`, and `builder-max` are bounded writer tiers. The coordinator chooses from issue risk,
-  residual judgment, uncertainty, rollback, and verification strength, then names the seat explicitly.
-- Two fresh `reviewer` instances perform the independent Standards and Specification lanes. Repository seat
-  routing overrides generic agent selection in the managed `code-review` skill.
-- `security-reviewer` joins that round as a separate lane only when `security-code-review` classifies a sensitive
-  surface.
-- `oracle` is an exceptional read-only escalation for a twice-stalled diagnosis, unresolved architecture
-  tiebreak, or independent high-consequence derivation. It is not a routine rung.
+Visual work is complete only after the changed interaction has been driven in the applicable Next.js or Worker
+surface across the required desktop, mobile, right-to-left and accessibility states, with a current screenshot
+displayed inline in chat; push authorisation waits for that image.
 
-Dispatch every architect with a filled [planner handoff template](.agents/templates/planner-handoff.md). Dispatch
-every `builder-lite`, `builder`, and `builder-max` with a filled
-[builder handoff template](.agents/templates/builder-handoff.md) whose prompt physically contains the complete
-approved implementation plan, including after an agent mailbox handoff; sibling or inherited context is not a
-substitute. Before dispatch, the coordinator confirms that the embedded plan preserves every approved decision,
-because the structural hook cannot determine whether arbitrary prose is semantically complete.
+## Publication and machinery
 
-Planning manifests request read-only runtime defaults. Reviewers use existing narrow permission escalation to run
-required tests and browsers and may write temporary evidence, but must not edit implementation, tests, or agent
-instructions. The coordinator verifies the effective runtime, records the reviewed commit, and confirms its
-tracked source is unchanged after evidence runs.
-Specialist fan-out beyond these seats needs owner approval for that job.
+Push only with owner authorisation, through a draft pull request. The optional documentation sweep and day-after
+triage are inactive until their external environment, hosted protection and schedule are separately authorised;
+their bounded contracts are [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and
+[docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md). New executable machinery in the workflow itself
+(a script, hook, gate, or workflow job; never product code or its tests) needs one of: a control failure a
+sentence here or in a skill could not prevent twice, the same measurable friction across three independent jobs,
+a required new runtime or provider integration, or externally imposed security or platform drift. Prefer a native
+feature over custom code, a hook over a script, and a sentence over a hook.
 
-Checked-in hook configuration and process tests prove the repository contract, not that an already-running runtime
-loaded or trusted a changed hook. When dispatch input or hook activation cannot be inspected, report that limitation
-explicitly; do not claim that validation ran.
+## Shared workflow adoption
 
-## Construction and review
-
-Choose `strict-tdd`, `evidence-required`, or `preservation` under the testing
-strategy. Builders edit only the files and run only the focused evidence named in their handoff. After the writer
-stops, the coordinator owns deliberate mutation, revert and restoration proof, complete convergence including the
-applicable `npm run verify` route, commits, review, and delivery. Use `diagnosing-bugs` for hard or repeated
-failures.
-
-Finish construction by verifying, committing, and confirming that no intended change remains outside the commit.
-Run `security-code-review` to route one fresh Standards instance and one fresh Specification instance against the
-same committed job diff, plus a separate Security instance when classified sensitive. Preserve each context and
-verdict. A true bounded finding returns to the sole writer. Commit the repair after focused verification, then
-review only that repair delta and what it could break in each implicated lane. No review follows a repair that
-adds no factual claim. After two non-converging repair-and-scoped-review cycles, stop and return to the owner to
-split, rescope, or stop.
-
-`docs/agents/delivery.md` selects Greptile from the complete diff's risk and uncertainty, then records a one-sentence
-needed or skipped reason. When needed, it is the sole external reviewer and is best-effort: check current credits,
-which come from one pool shared with Flow Metrics with no per-repository split, rationed by each repository's own
-selection rules and, once exhausted, `UNAVAILABLE` for both until the period resets; request it explicitly on the
-finished draft when available, and settle the review or confirmed unavailability before marking ready for Continuous
-Integration (CI). `.greptile/config.json` disables automatic reviews. A changed head is reassessed; unchanged-head CI
-retries need none. An unavailable attempt does not replace local review, executable verification, required CI,
-conversation resolution, or ownership.
-
-## Delivery and CI
-
-Load [`docs/agents/delivery.md`](docs/agents/delivery.md) only after delivery approval. Finished work opens as a
-draft pull request. Marking it ready starts GitHub's merge-result CI and exposes the single required `test` check.
-Queue the approved merge with GitHub auto-merge and squash; GitHub waits for current required checks and resolved
-conversations. Preview deployment remains a separate owner-approved operation under `.github/workflows/preview.yml`.
-
-The hosted `main` ruleset requires the source-bound `test` check with current-base strictness and conversation
-resolution. Auto-merge is enabled. A change to either hosted setting is verified immediately after mutation.
-
-## Workflow machinery
-
-Prefer Git, GitHub, an existing test, and a precise issue over executable orchestration. New workflow machinery
-requires separate owner approval plus a repeated demonstrated control failure, recurring measured friction, a
-required provider/runtime integration, or an externally imposed security/platform change. State its maintenance
-cost and removal condition before implementation.
+Shared workflow changes name every adopter, currently Flowgauge and RentCottage, and link every required adopter
+update in delivery and tracker evidence. The shared change remains partial until all required adopter updates land.
+An intentional repository-specific exception requires owner agreement and is recorded where the workflow rule lives.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

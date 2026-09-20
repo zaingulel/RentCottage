@@ -6,7 +6,7 @@
 // `closeout: false`, print the scan on the wrong stream, or drop the exit code, and
 // every other test in this repository would stay green while the session-start and
 // closeout bookends silently degraded to report-only. Only the real process can observe
-// that, so these spawn it against a fake `gh` first on PATH.
+// that, so these spawn it against a fake `gh` reached through `BOARD_TOOLKIT_GH`.
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';

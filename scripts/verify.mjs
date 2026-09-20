@@ -46,7 +46,8 @@ const baselineOnlyPaths = new Set([
   "CLAUDE.md",
   "CONTEXT.md",
   "scripts/run-log.mjs",
-  "scripts/run-log.test.mjs",
+  "scripts/lib/run-log.test.mjs",
+  ".agents/skills/security-code-review/agents/openai.yaml",
   // The self-hosted font unit test and the licences it reads. npm test proves both in
   // baseline. The licences ship from public/ like any asset, but their text cannot
   // change a rendered page or the Worker's behaviour. The .woff2 files and fonts.css
@@ -63,6 +64,9 @@ const baselineOnlyPaths = new Set([
   "scripts/board.mjs",
   "scripts/board-add.mjs",
   "scripts/board-move.mjs",
+  "scripts/verify-issue-publish.mjs",
+  "scripts/doc-lint.mjs",
+  "scripts/sweep-scope-check.mjs",
   "scripts/lib/board.mjs",
   "scripts/lib/board.test.mjs",
   "scripts/lib/board-add.mjs",
@@ -72,6 +76,7 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/board-fixtures.mjs",
   "scripts/lib/board-move.mjs",
   "scripts/lib/board-move.test.mjs",
+  "scripts/lib/board-portability.test.mjs",
   "scripts/lib/board-rules.mjs",
   "scripts/lib/board-rules.test.mjs",
   "scripts/lib/checkout-context.mjs",
@@ -81,22 +86,66 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/fake-gh.mjs",
   "scripts/lib/gh-exec.mjs",
   "scripts/lib/gh-exec.test.mjs",
+  "scripts/lib/issue-publish.mjs",
+  "scripts/lib/issue-publish.test.mjs",
+  "scripts/lib/check-agents.mjs",
+  "scripts/lib/check-agents.test.mjs",
   "scripts/lib/codex-hook-adapters.mjs",
   "scripts/lib/codex-hook-adapters.test.mjs",
   "scripts/lib/handoff-check.mjs",
   "scripts/lib/handoff-check.test.mjs",
+  "scripts/lib/precommit.test.mjs",
+  "scripts/lib/prepush.test.mjs",
+  "scripts/lib/settings-policy.test.mjs",
+  "scripts/lib/sweep-scope.mjs",
+  "scripts/lib/sweep-scope.test.mjs",
+  "scripts/lib/sweep-scope-workflow.test.mjs",
+  "scripts/lib/test-output-filter.mjs",
+  "scripts/lib/test-output-filter.test.mjs",
   "scripts/lib/unsafe-git.mjs",
   "scripts/lib/unsafe-git.test.mjs",
+  "scripts/lib/verify-green.test.mjs",
+  "scripts/lib/workflow-contract.test.mjs",
+  "scripts/lib/doc-lint.mjs",
+  "scripts/lib/doc-lint.test.mjs",
+  "scripts/lib/doc-lint-links.mjs",
+  "scripts/lib/doc-lint-links.test.mjs",
+  "scripts/lib/doc-lint-citations.mjs",
+  "scripts/lib/doc-lint-citations.test.mjs",
+  ".githooks/README.md",
+  ".githooks/pre-commit",
+  ".githooks/pre-merge-commit",
+  ".githooks/pre-push",
+  ".claude/hooks/block-unsafe-git.mjs",
   ".claude/hooks/check-builder-handoff.mjs",
+  ".claude/hooks/filter-test-output.mjs",
+  ".claude/hooks/test-output-filter-run.mjs",
+  ".claude/hooks/verify-green.sh",
   ".claude/settings.json",
   ".codex/hooks.json",
+  ".codex/hooks/block-unsafe-git.mjs",
   ".codex/hooks/check-builder-handoff.mjs",
+  ".codex/hooks/verify-green.sh",
+  ".codex/rules/playwright.rules",
+]);
+
+// These are executable command entry points by design. Their exact paths are baseline-only, but a
+// chmod between executable and non-executable still selects full evidence. No directory wildcard may
+// enter this set.
+const baselineExecutablePaths = new Set([
+  ".githooks/pre-commit",
+  ".githooks/pre-merge-commit",
+  ".githooks/pre-push",
+  "scripts/board.mjs",
 ]);
 
 function isBaselineOnlyPath(path) {
   return (
     baselineOnlyPaths.has(path) ||
     /^\.agents\/(?:roles|skills|templates)\/.+\.md$/i.test(path) ||
+    /^\.agents\/upstream\/mattpocock-skills\/(?:LICENSE|.+\.(?:md|yaml))$/i.test(
+      path,
+    ) ||
     /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
     /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
     /^docs\/.+\.(?:avif|docx|gif|jpe?g|md|png|svg|webp)$/i.test(path)
@@ -120,7 +169,10 @@ function isBrowserOnlyPath(path) {
 }
 
 const fullEvidenceRootPaths = new Set([
+  ".gitignore",
   ".nvmrc",
+  ".prettierignore",
+  ".prettierrc.json",
   "cloudflare-env.d.ts",
   "custom-worker.ts",
   "eslint.config.mjs",
@@ -303,6 +355,14 @@ function classifyChanges(changes) {
   const unclassified = new Set();
   for (const change of changes) {
     if (change.oldMode === "100755" || change.newMode === "100755") {
+      if (
+        baselineExecutablePaths.has(change.path) &&
+        [change.oldMode, change.newMode].every(
+          (mode) => mode === "000000" || mode === "100755",
+        )
+      ) {
+        continue;
+      }
       fullReason ??= `${change.path} is executable or has an executable-mode change`;
       continue;
     }

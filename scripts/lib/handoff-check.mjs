@@ -1,7 +1,7 @@
 // Shared prompt-side agent-spawn contracts behind the thin Claude and Codex hooks.
 //
 // Builder handoffs (`builder-lite`, `builder`, and `builder-max` share one charter): the prompt must be a filled
-// copy of .agents/templates/builder-handoff.md; handoff-check.test.mjs fills the real template
+// copy of .claude/templates/builder-handoff.md; handoff-check.test.mjs fills the real template
 // and pins that it passes. The guard checks the lines that make a handoff bounded and
 // verifiable, not the prose around them:
 //   1. exactly one non-empty line for each required field;
@@ -9,7 +9,7 @@
 //   3. a real focused verification command, never a placeholder;
 //   4. no unfilled `{{SLOT}}` anywhere;
 //   5. no instruction to self-verify mutation-sensitivity by revert (that cycle is the
-//      coordinator's convergence step; a builder capped mid-cycle ships mutated source).
+//      orchestrator's convergence step; a builder capped mid-cycle ships mutated source).
 // Every failed check is reported together in one rejection, so a session fixes the handoff in one re-send.
 // Architect handoffs: a filled copy of .agents/templates/planner-handoff.md.
 // Any other agent type passes through untouched.
@@ -92,7 +92,7 @@ export function checkHandoff(toolInput) {
     const problems = [];
     if (SELF_MUTATION_RE.test(prompt)) {
       problems.push(
-        "instructs self-mutation-testing (the revert cycle is the coordinator's convergence step)",
+        "instructs self-mutation-testing (the revert cycle is the orchestrator's convergence step)",
       );
     }
     problems.push(
@@ -116,7 +116,7 @@ export function checkHandoff(toolInput) {
     return rejection(
       "builder",
       problems,
-      ".agents/templates/builder-handoff.md",
+      ".claude/templates/builder-handoff.md",
     );
   }
 

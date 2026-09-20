@@ -10,9 +10,10 @@ Two shapes, one publish pipeline: **decompose** a plan/spec/Epic into ordered, b
 routing, body shape, publish, and verify are identical).
 
 Codex or Claude may invoke this skill, but Step 4 (owner approval) is a HARD gate on every ordinary model-invoked
-proposal: create NOTHING on the board until the owner approves. The exception is a follow-up issue, in `Backlog`,
-for work an approved job surfaces and genuinely cannot finish, filed under the "Owner gates" rule in `AGENTS.md`.
-That exception skips the Step 4 approval gate, not the native-links or verification rules.
+proposal: create NOTHING on the board until the owner approves. The exceptions are a follow-up card, in `Backlog`,
+for work an approved job surfaces and genuinely cannot finish under the "Owner gates" rule in `AGENTS.md`, and a
+card the inactive documentation triage routine may create only after its external authority is configured. An
+exception skips the Step 4 approval gate, not the native-link, board-field, or verification rules.
 
 Read [`docs/agents/issue-tracker.md`](../../../docs/agents/issue-tracker.md) before drafting or publishing. It owns
 the tracker commands, native dependency rules, Project 4 fields, special Booking and Payment acceptance shape, and
@@ -22,8 +23,7 @@ authoritative read-back checks.
 
 ### 1. Gather context
 
-Work from the plan/spec/Epic in the conversation. If the owner passes an issue number, fetch its body and comments
-first:
+Work from the plan/spec/Epic in the conversation. If the owner passes an issue number, fetch it first:
 
 ```bash
 gh issue view 310 --repo zaingulel/RentCottage --json title,body,comments --jq '.title, .body, (.comments[] | "--- comment by \(.author.login) (\(.authorAssociation)) ---", .body)'
@@ -34,22 +34,19 @@ Preserve attributed owner decisions and distinguish them from other comments.
 
 ### 2. Explore the codebase (optional)
 
-Read enough relevant code, `CONTEXT.md`, accepted architecture decisions, and engineering evidence to ground the
-breakdown in real seams and project vocabulary. If a slice needs groundwork first, that prefactor is its own
-slice, ordered first.
-
-A named reference implementation is normative. Inspect its current source before drafting. Preserve its structure
-and behaviour, and adapt only names, paths, fixtures, provider payloads, and repository configuration. Stronger
-validation, extra abstractions, or another runtime layer are material scope changes. If the requested outcome and
-the reference conflict, stop with the exact conflict for the owner.
+Read enough relevant code, `CONTEXT.md`, accepted architecture decisions, and engineering authorities to ground the
+breakdown in real seams and project vocabulary. If a slice needs groundwork first, that prefactor is its own slice,
+ordered first. A named reference implementation is normative: preserve its structure and behaviour and adapt only
+the repository-specific names, paths, fixtures, provider payloads, and configuration the approved work allows.
 
 ### 3. Draft vertical slices
 
 Single bug/idea → one issue in the Step-7 shape, route it (Step 5), then Step 4. Otherwise break the plan into
 tracer-bullet issues: each a thin vertical slice cutting through every required layer end-to-end, never a
-horizontal data/API/UI/test layer. Each slice is demonstrable or verifiable on its own and sized to a bounded
-builder handoff; an open-ended "build the whole feature" splits further. Native blockers represent genuine start
-constraints, not a preferred order.
+horizontal database/API/interface/test layer. Each slice is demonstrable or verifiable on its own and sized to a
+bounded builder handoff; an open-ended "build the whole feature" splits further. Native blockers represent genuine
+start constraints, not a preferred order. Parallel candidacy additionally requires independent files, product
+seams, tests, migrations/providers, and verification capacity.
 
 ### 4. Quiz the owner
 
@@ -62,15 +59,14 @@ anything should merge or split. Iterate until the owner approves; create nothing
 - **Required capabilities:** the planning, build, review, or specialist capability the slice needs (`builder-lite`,
   `builder`, or `builder-max`, per the routing rule in `AGENTS.md`). Do not record model names or reasoning settings.
 - Use the sensitive-surface classification in `AGENTS.md` to name any required Security review.
-- Choose one Project 4 Workstream from `scripts/lib/board-config.mjs`.
-- Choose only configured labels that express the issue's actual tracker role. A parent wrapper with native
-  sub-issues gets `type:epic`, because Project 4's epic rules depend on that label.
+- Choose one Project 4 Workstream from `scripts/lib/board-config.mjs` and only configured labels that describe the
+  issue's real tracker role. A parent wrapper with native sub-issues gets `type:epic`.
 
 ### 6. Publish to the board, in dependency order
 
-Publish blockers first: a blocker must exist before a later issue can link to it. If you create a new parent Epic,
-it is a board item too—run a-b for it and link every child as a native sub-issue (Step c). Every item gets a
-Workstream.
+Publish blockers first: a blocker must exist before a later issue can link to it. If you CREATED a new parent
+Epic, it is a board item too — run a-b for it and link every child as a native sub-issue (step c). Every item gets
+a Workstream.
 
 **a. Create:**
 
@@ -82,10 +78,13 @@ gh issue create --repo zaingulel/RentCottage \
   --body "..."
 ```
 
-Omit `--label` when no configured label applies and `--blocked-by` when the issue has no blocker. Blockers and
-parents live in GitHub's native links, never only in the body. Because GitHub creates the issue before adding
-dependency links, a failed create may already have made the issue without printing its number. Find it by exact
-title before retrying, then add only the missing approved link instead of creating a duplicate.
+`--blocked-by` takes each owner-approved blocker and needs gh 2.94 or later; omit it when the slice has none. A
+blocker and a parent live only in GitHub's built-in links, never in the body. The link is a second call after
+creation, so step 8 reads it back. A blocker added after creation uses `gh issue edit <N> --add-blocked-by <M>`.
+Because gh creates the issue before it adds the links, a failed create carrying `--blocked-by` may already have
+made the issue without printing its number: find it by exact title before retrying,
+`gh issue list --repo zaingulel/RentCottage --state all --author @me --limit 20 --json number,title --jq '.[] | select(.title == "<title>") | .number'`,
+and add the missing link with `gh issue edit <N> --add-blocked-by <M>` instead of creating again.
 
 **b. Board, with Status and Workstream, in one idempotent step (once per issue):**
 
@@ -93,10 +92,9 @@ title before retrying, then add only the missing approved link instead of creati
 node scripts/board-add.mjs <ISSUE_N> Backlog <Workstream>
 ```
 
-Use `board-move.mjs` only to move an existing card, never to create one. New items stay in `Backlog` until the
-owner promotes them.
+Use `board-move.mjs` only to move an existing card, never to create one.
 
-**c. Link each child to its parent Epic as a native sub-issue** (a Markdown checklist is not a sub-issue):
+**c. Link each child to its parent Epic as a native sub-issue** (a markdown checklist is NOT a sub-issue):
 
 ```bash
 PARENT=$(gh issue view <EPIC_N> --repo zaingulel/RentCottage --json id --jq .id)
@@ -106,18 +104,20 @@ gh api graphql \
   -f p="$PARENT" -f c="$CHILD"
 ```
 
+New backlog items go to **Backlog** until the owner promotes them.
+
 <workstream-convention>
 
-The Workstream options are the `ROUTING_OPTIONS` in `scripts/lib/board-config.mjs`. Product behaviour and product
-engineering → **Product**; launch, legal, supplier, promotion, and owner content → **Go-to-market**; tooling,
-infrastructure, developer experience, and process machinery → **Platform**.
+The Workstream options are the `ROUTING_OPTIONS` in `scripts/lib/board-config.mjs`. Product
+feature/booking/payment/engineering → **Product**; GTM/launch/legal/promo, including the owner's own content →
+**Go-to-market**; tooling/infra/dev-experience/process machinery → **Platform**.
 
 </workstream-convention>
 
 ### 7. Issue body shape
 
-Keep implementation file paths and code snippets out of the body unless a prototype encodes an approved decision
-more precisely than prose; the planner and builder inspect current code at handoff time.
+Keep file paths and code snippets OUT of the body; point to the relevant doc, since the builder rereads the real
+code at handoff time.
 
 <issue-template>
 ## Problem
@@ -147,8 +147,9 @@ The existing contracts that remain unchanged and adjacent work excluded from thi
 Choose exactly one honest outcome:
 
 - `No documentation change: <reason>.`
-- `Update <authoritative document>: <what changes>.`
-  </issue-template>
+- `Update <authoritative doc>: <what changes>.`
+
+</issue-template>
 
 For a new or substantially rewritten Booking or Payment story, use the acceptance structure required by
 `docs/agents/issue-tracker.md`. Testing mode, observers, commands, and mutations belong to the architect's later
@@ -158,17 +159,30 @@ Do not close or edit a source or parent Epic unless the owner approved that exac
 
 ### 8. Verify the publish (fail loud, do not skip)
 
-Re-read every published issue body, native blocker and parent relationship, Project membership, Status, and
-Workstream from GitHub. Compare each read to the owner-approved proposal, then run:
+Run the shared verifier once with the Epic followed by every child (a standalone issue takes one number):
 
 ```bash
-npm run verify:board
+node scripts/verify-issue-publish.mjs <EPIC_N> <CHILD_N...>
 ```
 
-Missing, extra, unavailable, truncated, or failing read-back evidence is incomplete publication. Fix only the
-approved target and repeat the authoritative read; never create a duplicate as a retry.
+Report its three results: board presence, Statuses and Workstreams, native child count. On failure, read WHICH
+failure: `absent from the board` means the publication genuinely failed — fix before reporting ready; `is archived
+on the board` means unarchive that card, never add a second; `is on the board but not in this board read` and
+`is not on this board read` mean the read lagged — re-run the verifier, never add again; `could not confirm
+whether` means fix the named cause. A silent skip here is the exact failure this skill already made once.
+
+Then read every published issue's blockers back from GitHub and report them against the owner-approved list; a
+missing or extra link is a failure to fix before reporting ready:
+
+```bash
+gh api repos/zaingulel/RentCottage/issues/<N>/dependencies/blocked_by --jq '.[].number'
+```
+
+Re-read each issue body and its native parent relationship, compare every surface with the approved proposal,
+then run `npm run verify:board`. Missing, extra, unavailable, truncated, or failing read-back evidence is incomplete
+publication; fix only the approved target and never create a duplicate as a retry.
 
 ## Example
 
 Decomposing a booking Epic: first slice any genuine authorization or persistence prefactor, then one vertical issue
-per demonstrable journey, never "the database", "the API", "the UI", and "the tests" as separate issues.
+per demonstrable journey, never "the database", "the API", "the interface", and "the tests" as separate issues.

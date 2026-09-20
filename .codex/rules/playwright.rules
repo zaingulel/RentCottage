@@ -1,0 +1,34 @@
+# Playwright launches browsers whose macOS services are blocked by the Codex
+# Seatbelt sandbox. Prompt for every RentCottage browser entry point; keep
+# ordinary Node, Vitest, lint and type checks in workspace-write.
+prefix_rule(
+    pattern = ["npm", "run", "test:browser"],
+    decision = "prompt",
+    justification = "RentCottage browser tests launch Playwright browsers blocked by Seatbelt",
+    match = ["npm run test:browser"],
+    not_match = ["npm run test:scripts"],
+)
+
+prefix_rule(
+    pattern = ["npm", "run", "smoke:preview"],
+    decision = "prompt",
+    justification = "The Worker preview smoke test launches a Playwright browser blocked by Seatbelt",
+    match = ["npm run smoke:preview"],
+    not_match = ["npm run typecheck"],
+)
+
+prefix_rule(
+    pattern = ["npm", "run", "verify:access:browser"],
+    decision = "prompt",
+    justification = "Browser access verification launches Playwright browsers blocked by Seatbelt",
+    match = ["npm run verify:access:browser"],
+    not_match = ["npm run verify:access:database"],
+)
+
+prefix_rule(
+    pattern = ["npx", "playwright"],
+    decision = "prompt",
+    justification = "A direct Playwright invocation launches a browser the sandbox blocks",
+    match = ["npx playwright test tests/marketplace-shell.spec.ts"],
+    not_match = ["npx vitest run"],
+)

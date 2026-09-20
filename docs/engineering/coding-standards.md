@@ -11,6 +11,7 @@ These standards apply prospectively. They do not authorize repository-wide renam
 - Keep calculations, deadlines, booking transitions, authorization decisions, and complete marketplace actions out of page components and route handlers. Put them behind named domain or application-service interfaces.
 - Keep payment, translation, notification, storage, and identity suppliers behind narrow replaceable interfaces. Supplier Software Development Kit types must not enter domain logic.
 - Do not build speculative abstractions or configuration for one use.
+- Keep first-party code free of dead paths, redundant guards, leftover scaffolding, and needless duplication.
 
 ## Database and application boundary
 
@@ -30,6 +31,10 @@ PostgreSQL function, move that affected orchestration and leave untouched flows 
 - Treat accessibility, Arabic and Sorani right-to-left layout, translation fallbacks, responsive behaviour, and accurate accessible names as interface contracts.
 - Let code explain what happens. Comments preserve only the shortest load-bearing reason for a non-obvious invariant, external quirk, unit, side effect, exception, or test-validity trap.
 - Match the surrounding naming, idioms, and comment density. Remove imports, variables, functions, and files orphaned by the current change.
+- Keep static checks authoritative across browser, Node.js, and Worker code. A locally justified lint exception stays
+  at its site with the shortest load-bearing reason; code is not distorted to appease a wrong lint rule.
+- Preserve deterministic line endings and byte-significant fixtures through `.gitattributes` and their invariant
+  evidence.
 
 ## Security and privacy
 
@@ -47,3 +52,13 @@ These requirements apply only when an agent-facing command is already part of th
 - Distinguish success, valid zero, no-op, incomplete evidence, and failure through authoritative exit status.
 - Keep stable commands in `package.json`; continuous integration must call the same verification interface used locally.
 - Agent command receipts may record exact arguments and result metadata, but never environment values or command output. Put secrets in the environment rather than arguments or labels.
+
+## Test economics
+
+- Reuse expensive fixtures only when isolation and semantic equivalence are demonstrated. Construction-asserting
+  and origin-sensitive evidence keeps fresh fixtures.
+- Prefer injected execution seams for external-command doubles. When the real subprocess is the subject, keep the
+  smallest representative positive and negative wire proofs so a wrapper that never calls the logic cannot pass.
+- Split a test file expected to dominate the suite's critical path by concern at birth. This is an advisory budget,
+  not a wall-clock gate.
+- New harness machinery declares its recurring cost and a legitimate consolidation or retirement condition.

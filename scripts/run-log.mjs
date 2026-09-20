@@ -1,99 +1,50 @@
-import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+// run-log.mjs — run a command and append what happened to the branch's work log.
+//
+//   node scripts/run-log.mjs <label words> -- <command> [args...]
+//
+// The label is plain unquoted words; the first bare `--` ends it.
+//
+// The log lives at .claude/worklog/<branch>.md (gitignored, machine-local). Each line records
+// the time, the label, the exact command, and the exit code the command actually returned, so
+// the evidence section of a pull request can quote lines a script wrote rather than lines a
+// model asserted. A command that could not be started at all is
+// logged as `spawn failed (<code>)` and exits 127, so it can never read as a red run.
+// Nothing else reads the log; there is no state.
 
-const USAGE =
-  "Usage: node scripts/run-log.mjs <label words> -- <command> [args...]";
+import { spawnSync } from 'node:child_process';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 
-function parseArguments(args) {
-  const separator = args.indexOf("--");
-  if (separator < 1 || separator === args.length - 1) return null;
-  return {
-    argv: args.slice(separator + 1),
-    label: args.slice(0, separator).join(" "),
-  };
+const args = process.argv.slice(2);
+const separator = args.indexOf('--');
+if (separator < 1 || separator === args.length - 1) {
+  console.error('usage: node scripts/run-log.mjs <label words> -- <command> [args...]');
+  process.exit(2);
 }
+const label = args.slice(0, separator).join(' ');
+const command = args.slice(separator + 1);
 
-function saveReceipt(cwd, receipt) {
-  const directory = join(cwd, ".agent-evidence");
-  mkdirSync(directory, { recursive: true });
-  const path = join(directory, "runs.jsonl");
-  appendFileSync(path, `${JSON.stringify(receipt)}\n`);
-  return path;
+const branch = spawnSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).stdout.trim() || 'detached';
+const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim() || process.cwd();
+const dir = join(root, '.claude', 'worklog');
+mkdirSync(dir, { recursive: true });
+const logFile = join(dir, `${branch.replace(/[^A-Za-z0-9._-]+/g, '_')}.md`);
+
+const started = new Date().toISOString();
+const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', shell: false });
+let outcome;
+let exitCode;
+if (result.error) {
+  outcome = `spawn failed (${result.error.code ?? result.error.message})`;
+  exitCode = 127;
+} else if (result.status === null) {
+  outcome = `killed by ${result.signal}`;
+  exitCode = 128;
+} else {
+  outcome = `exit ${result.status}`;
+  exitCode = result.status;
 }
-
-export function main(
-  args,
-  {
-    cwd = process.cwd(),
-    run = spawnSync,
-    stderr = console.error,
-    stdout = console.log,
-    timestamp = () => new Date().toISOString(),
-    signalHandler,
-  } = {},
-) {
-  const parsed = parseArguments(args);
-  if (!parsed) {
-    stderr(USAGE);
-    return 2;
-  }
-
-  const [command, ...commandArgs] = parsed.argv;
-  const execution = run(command, commandArgs, {
-    cwd,
-    env: process.env,
-    shell: false,
-    stdio: "inherit",
-  });
-  const result = execution.error
-    ? {
-        kind: "spawn-error",
-        code: execution.error.code ?? null,
-        message: execution.error.message,
-      }
-    : execution.signal
-      ? { kind: "signal", signal: execution.signal }
-      : { kind: "exit", status: execution.status ?? 1 };
-
-  try {
-    const receiptPath = saveReceipt(cwd, {
-      timestamp: timestamp(),
-      label: parsed.label,
-      argv: parsed.argv,
-      cwd,
-      result,
-    });
-    stdout(
-      `Run receipt: ${receiptPath} (${result.kind === "exit" ? `exit ${result.status}` : result.kind})`,
-    );
-  } catch (error) {
-    stderr(
-      `Unable to save run receipt: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    if (result.kind === "exit") return result.status || 1;
-  }
-
-  if (result.kind === "spawn-error") {
-    stderr(`Unable to start ${command}: ${result.message}`);
-    return 1;
-  }
-  if (result.kind === "signal") {
-    stderr(`${command} was terminated by ${result.signal}`);
-    signalHandler?.(result.signal);
-    return 1;
-  }
-  return result.status;
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let terminatingSignal;
-  const exitCode = main(process.argv.slice(2), {
-    signalHandler: (signal) => {
-      terminatingSignal = signal;
-    },
-  });
-  if (terminatingSignal) process.kill(process.pid, terminatingSignal);
-  else process.exitCode = exitCode;
-}
+const line = `- ${started} | ${label} | \`${command.join(' ')}\` | ${outcome}`;
+appendFileSync(logFile, `${line}\n`);
+console.log(line);
+process.exit(exitCode);

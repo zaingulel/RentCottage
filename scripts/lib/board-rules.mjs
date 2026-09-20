@@ -18,7 +18,7 @@ import {
 } from './board-config.mjs';
 
 // Every column word in every reason below comes from board-config.mjs, so a Status
-// rename is one edit there and not a hunt through nine reason strings. Both lists are
+// rename is one edit there and not a hunt through eight reason strings. Both lists are
 // in board order: the backlog column first, then ready, and Done ends the line.
 const [BACKLOG, READY] = PICKABLE_STATUSES;
 const [DONE] = TERMINAL_STATUSES;
@@ -88,37 +88,27 @@ export function unassignedClaimDrift(card) {
   return advisory(card, `claimed in "${card.status}" with no assignee — assign the session's owner (gh issue edit ${card.number} --add-assignee @me) or return it to ${PICKABLE_PHRASE}`);
 }
 
-// 5. The original #319 failure mode: the work shipped and the board never heard. Only
-// the OFFICIALLY closing pull requests count — a pull request that merely mentions the
-// issue is not proof of shipment (#618 carries one such mention because #620's body
-// named it as a follow-up). Any column: a merged closing pull request over an open
-// issue is wrong wherever the card sits.
-export function shippedButOpenDrift(card) {
-  if (card.state !== 'OPEN') return null;
-  const merged = card.closingPullRequests.filter((pr) => pr.merged).map((pr) => `#${pr.number}`);
-  if (merged.length === 0) return null;
-  return row(card, `shipped in ${merged.join(', ')} but issue still open — close it and move the card to ${DONE}`);
-}
-
-// 6. The #654 failure mode, the reverse direction of #319: a card CLAIMED into an
+// 5. The #654 failure mode, the reverse direction of #319: a card CLAIMED into an
 // in-flight column that then produced nothing — #646 and #618 sat stranded for days
 // while both mandatory bookends reported clean. Evidence is closing pull-request
 // existence, merged or NOT: an open draft is exactly what an in-flight job looks like.
 // Not commits — a commit scan would have to infer the lane branch from a naming
 // convention, and an unresolved branch would conclude work exists and go quiet,
 // manufacturing a fresh false-clean in the one case this rule exists for.
-// Two exemptions: Awaiting push is the gap between local review passing and push
+// Three exemptions: Awaiting push is the gap between local review passing and push
 // authorisation, before any push has happened, so no closing pull request is the
-// expected shape there; and a slice's "Closes #<slice>" creates no closing reference on
-// its EPIC, so an epic whose slices are building has the stalled shape (rule 8 is what
-// covers an epic claim instead).
+// expected shape there; a slice's "Closes #<slice>" creates no closing reference on
+// its EPIC, so an epic whose slices are building has the stalled shape (rule 7 is what
+// covers an epic claim instead); and a parked card waits on an answer from outside the
+// session, not on a session, so no closing pull request is the expected shape there too
+// (rules 3, 4 and 7 still judge it).
 export function stalledClaimDrift(card) {
-  if (card.state !== 'OPEN' || !isInFlight(card.status)) return null;
+  if (card.state !== 'OPEN' || !isInFlight(card.status) || card.parked) return null;
   if (WAIT_STATUSES.includes(card.status) || isEpic(card) || card.closingPullRequests.length > 0) return null;
   return advisory(card, `claimed in "${card.status}" but no closing pull request exists — if no session is actively building it, resume it or return it to ${READY}`);
 }
 
-// 7. The #337 failure mode: an epic still OPEN and not terminal whose every child is
+// 6. The #337 failure mode: an epic still OPEN and not terminal whose every child is
 // closed — the work is done and only the wrapper lingers (#337 sat in Ready after all
 // 13 slices shipped). No other rule sees it: the epic's own issue is open, and no
 // merged pull request references the wrapper. An epic with zero children is never
@@ -131,7 +121,7 @@ export function epicDoneDrift(card) {
   return row(card, `epic open but all ${total} child issues closed — close it and move to ${DONE}`);
 }
 
-// 8. The #660 failure mode, in the gap between rules 6 and 7: an epic claimed in-flight
+// 7. The #660 failure mode, in the gap between rules 5 and 6: an epic claimed in-flight
 // whose decomposition never happened sits claimed indefinitely while every scan reports
 // clean. Zero children is what makes the case unambiguous — there is nothing in flight
 // beneath the claim. Scoped to active work, so an undecomposed epic waiting in Backlog
@@ -189,7 +179,7 @@ export function unreadableCards(items) {
       id: i.id,
       status: i.status,
       title: i.title,
-      _hasBlankField: !i.status || !i.routing,
+      _hasBlankField: !i.status || Boolean(ROUTING_FIELD && !i.routing),
       reason: 'card content could not be read on this scan — nothing is known about it, including whether it drifted; re-run the read',
     }));
 }
@@ -230,7 +220,7 @@ function formatIdentities(numbers) {
   return omitted > 0 ? `${listed.join(', ')} (+${omitted} more not listed)` : listed.join(', ');
 }
 
-// 9. The #357–#361 failure mode: `gh project item-add` (and the bare "add item" UI
+// 8. The #357–#361 failure mode: `gh project item-add` (and the bare "add item" UI
 // path) drops a card on the board with NO Status and NO routing value. Grouped views
 // then grow a phantom "No Status"/"No Workstream" lane, and the card is invisible to
 // every status-scoped rule above (isInFlight(null) is false by design, the pickable set
@@ -244,10 +234,10 @@ function formatIdentities(numbers) {
 // EXPLANATION is, never whether the scan reports what it found (a misfiring hypothesis
 // must not cost facts).
 export function unfieldedDrift(cards) {
-  const missing = { Status: [], [ROUTING_FIELD]: [] };
+  const missing = { Status: [], ...(ROUTING_FIELD ? { [ROUTING_FIELD]: [] } : {}) };
   for (const card of cards) {
     if (!card.status) missing.Status.push(card.number ?? null);
-    if (!card.routing) missing[ROUTING_FIELD].push(card.number ?? null);
+    if (ROUTING_FIELD && !card.routing) missing[ROUTING_FIELD].push(card.number ?? null);
   }
   const drift = [];
   const summarised = [];
@@ -276,16 +266,15 @@ export function unfieldedDrift(cards) {
   return drift;
 }
 
-// The eight per-card rules, in report order. scanBoard calls every one of them on every
+// The seven per-card rules, in report order. scanBoard calls every one of them on every
 // readable card: the rules are disjoint only where their conditions make them so (a
-// CLOSED card cannot also be shipped-but-open), and a card genuinely breaking two rules
+// CLOSED card cannot also be open in Done), and a card genuinely breaking two rules
 // is told both things.
 const CARD_RULES = [
   closedNotDoneDrift,
   openInTerminalDrift,
   blockedClaimDrift,
   unassignedClaimDrift,
-  shippedButOpenDrift,
   stalledClaimDrift,
   epicDoneDrift,
   epicUnstartedDrift,

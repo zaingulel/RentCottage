@@ -1,5 +1,6 @@
 // board-add.mjs — pure id-resolution + orchestration for ADDING an issue to the
-// board with its Status and Workstream already set.
+// board with its Status and routing field (Workstream here) already set; a board
+// configured with no routing field sets Status only.
 //
 // board-move.mjs correctly refuses an issue that has no card ("#N is not on the
 // board"), and the only scripted way forward was a bare `gh project item-add`,
@@ -76,7 +77,7 @@ function parseProjectItemFields(json, itemId) {
   const fields = {};
   for (const value of fieldValues.nodes) {
     const fieldName = value?.field?.name;
-    if (fieldName !== 'Status' && fieldName !== ROUTING_FIELD) continue;
+    if (fieldName !== 'Status' && (!ROUTING_FIELD || fieldName !== ROUTING_FIELD)) continue;
     if (typeof value.name !== 'string' || value.name === '') {
       throw new Error(`board item ${itemId} ${fieldName} field value was malformed`);
     }
@@ -96,9 +97,10 @@ function shellArgument(value) {
   return `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 }
 
-// Put issue #issueNumber on the board with BOTH fields set, and return
-// `{ issueNumber, itemId, statusName, workstreamName }`. Every id is resolved BEFORE
-// the card is created, so an unknown Status or Workstream name fails without leaving
+// Put issue #issueNumber on the board with Status and, when ROUTING_FIELD is configured,
+// the routing field set, and return `{ issueNumber, itemId, statusName, workstreamName }`
+// (workstreamName is undefined with no routing field). Every id is resolved BEFORE
+// the card is created, so an unknown Status or routing name fails without leaving
 // an unfielded card behind. A failed field update throws naming which field(s) the
 // card was left without — a partial add is never swallowed.
 export function addIssueToBoard({ issueNumber, statusName, workstreamName }, exec) {
@@ -110,25 +112,31 @@ export function addIssueToBoard({ issueNumber, statusName, workstreamName }, exe
   if (typeof statusName !== 'string' || !statusName.trim()) {
     throw new Error(`invalid status name: ${JSON.stringify(statusName)}`);
   }
-  if (typeof workstreamName !== 'string' || !workstreamName.trim()) {
+  if (ROUTING_FIELD && (typeof workstreamName !== 'string' || !workstreamName.trim())) {
     throw new Error(`invalid workstream name: ${JSON.stringify(workstreamName)}`);
   }
   const query = (q) => exec(['api', 'graphql', '-f', `query=${q}`]);
 
   const contentId = parseIssueNodeId(query(issueNodeIdQuery(issueNumber)), issueNumber);
   const status = parseSingleSelectField(query(singleSelectFieldQuery('Status')), 'Status');
-  const workstream = parseSingleSelectField(query(singleSelectFieldQuery(ROUTING_FIELD)), ROUTING_FIELD);
   const updates = [
     { fieldName: 'Status', fieldId: status.fieldId, optionId: optionIdFor(status.options, statusName) },
-    { fieldName: ROUTING_FIELD, fieldId: workstream.fieldId, optionId: optionIdFor(workstream.options, workstreamName, ROUTING_FIELD) },
   ];
+  if (ROUTING_FIELD) {
+    const workstream = parseSingleSelectField(query(singleSelectFieldQuery(ROUTING_FIELD)), ROUTING_FIELD);
+    updates.push(
+      { fieldName: ROUTING_FIELD, fieldId: workstream.fieldId, optionId: optionIdFor(workstream.options, workstreamName, ROUTING_FIELD) },
+    );
+  }
 
   const itemId = parseAddedItemId(query(addItemMutation(status.projectId, contentId)), issueNumber);
   for (let i = 0; i < updates.length; i++) {
     try {
       query(setFieldMutation(status.projectId, itemId, updates[i].fieldId, updates[i].optionId));
     } catch (err) {
-      const retry = `node scripts/board-add.mjs ${issueNumber} ${shellArgument(statusName)} ${shellArgument(workstreamName)}`;
+      const retry = [`node scripts/board-add.mjs ${issueNumber}`, shellArgument(statusName)]
+        .concat(ROUTING_FIELD ? [shellArgument(workstreamName)] : [])
+        .join(' ');
       let fields;
       try {
         fields = parseProjectItemFields(query(projectItemFieldsQuery(itemId)), itemId);

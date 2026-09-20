@@ -2,11 +2,30 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.codex/hooks/block-unsafe-git.mjs\""
+          }
+        ]
+      },
+      {
         "matcher": "collaborationspawn_agent",
         "hooks": [
           {
             "type": "command",
             "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.codex/hooks/check-builder-handoff.mjs\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.codex/hooks/verify-green.sh\""
           }
         ]
       }

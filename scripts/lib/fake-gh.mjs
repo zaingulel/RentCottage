@@ -1,31 +1,38 @@
-// Shared PATH-prepended fake `gh` scaffold for the gh-calling CLI tests.
+// Shared fake `gh` scaffold for the gh-calling CLI tests.
 //
-// Owns only the plumbing: a temporary bin directory, the executable bit, per-run calls files, and
-// the PATH-prepending environment. Each test file supplies its own `gh` script source, so reply
-// behaviour and call-log format stay with the test that asserts on them.
+// Reached through `BOARD_TOOLKIT_GH`, never the search path: on Windows `execFile("gh")` resolves
+// only `gh.exe` through CreateProcess, so an extensionless stand-in dropped on the search path is
+// never run and the test silently reaches LIVE GitHub instead. The override carries an argv prefix,
+// so the stand-in runs as `<node> <shim>` and needs no shell, no executable bit and no search-path
+// edit.
 //
-// Keys in `env(extra)` override the helper's defaults, PATH included, which is the supported way for
-// a caller to compose its own PATH precedence (the board CLI tests rely on it). The second
+// Owns only the plumbing: a temporary directory, the shim file, per-run calls files, and the
+// environment carrying the override. Each test file supplies its own `gh` script source, so reply
+// behaviour and call-log format stay with the test that asserts on them. The source runs as
+// CommonJS, so it may `require`; a leading shebang is ignored, as it is for any Node entry point.
+//
+// Keys in `env(extra)` override the helper's defaults, `BOARD_TOOLKIT_GH` included. The second
 // argument is a list of key names, `env(extra, ['GH_TOKEN'])`, deleted after that composition, so a
 // credential-absence test can state the key is absent instead of omitting it and inheriting
 // whatever the ambient environment exports.
 //
 // Recurring cost: negligible — one mkdtemp and one file write per importing test file.
-// Removal condition: retire when the gh-calling CLI tests stop faking `gh` via PATH.
+// Removal condition: retire when the gh-calling CLI tests stop faking `gh`.
 
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export function installFakeGh(prefix, ghScript) {
   const root = mkdtempSync(join(tmpdir(), prefix));
-  const fakeGh = join(root, 'gh');
-  writeFileSync(fakeGh, ghScript);
-  chmodSync(fakeGh, 0o755);
+  // .cjs so the script source may `require`, whatever the nearest package.json declares.
+  const shim = join(root, 'gh.cjs');
+  writeFileSync(shim, ghScript);
+  // What a caller must hold in the environment for a `gh` call to reach this shim.
+  const override = JSON.stringify([process.execPath, shim]);
 
   let runCount = 0;
   return {
-    root,
     // A fresh calls path per run, never reused, so one run's log cannot satisfy another run's
     // "no external call happened" assertion.
     newCallsFile: () => join(root, `gh-calls-${runCount++}`),
@@ -49,7 +56,7 @@ export function installFakeGh(prefix, ghScript) {
           `removeKeys must be an array of key names, got: ${removeKeys === null ? 'null' : typeof removeKeys}`,
         );
       }
-      const composed = { ...process.env, PATH: `${root}:${process.env.PATH}`, ...extra };
+      const composed = { ...process.env, BOARD_TOOLKIT_GH: override, ...extra };
       for (const key of removeKeys) delete composed[key];
       return composed;
     },

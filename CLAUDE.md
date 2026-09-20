@@ -2,7 +2,11 @@
 
 ## Claude Code
 
-- Invoke repository skills as `/<name>`; `.claude/skills/` links to the shared `.agents/skills/` sources.
-- Agent seats are adapters around the shared charters in `.agents/roles/`.
-- The coordinator remains the only writer unless it hands one bounded slice to one builder and waits for it to
-  stop.
+- Skills, first-party and vendored upstream alike, are invoked as `/<name>`.
+- When the owner asks for a screenshot, display it inline in chat; a subagent cannot.
+
+## Compact instructions
+
+Keep the approved plan's location, the card's acceptance criteria, the worklog path, the current slice and its
+state, and the evidence still owed. Drop discovery output: file listings, search results and file contents, which
+can be read again.

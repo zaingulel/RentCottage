@@ -8,6 +8,8 @@ test-results/
 playwright-report/
 coverage/
 .agent-evidence/
+.claude/worklog/
+.worktrees/
 .demo/
 *.tsbuildinfo
 .env*

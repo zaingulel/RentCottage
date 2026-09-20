@@ -10,8 +10,10 @@
 
 import {
   BOARD_OWNER,
+  BOARD_OWNER_TYPE,
   BOARD_PROJECT_NUMBER,
   BOARD_REPOSITORY,
+  PARKED_LANE,
   ROUTING_FIELD,
   ROUTING_OPTIONS,
   STATUS_OPTIONS,
@@ -41,7 +43,11 @@ export function leanNode({
   title,
   status,
   routing,
+  lane,
 } = {}) {
+  if (lane !== undefined && !PARKED_LANE) {
+    throw new Error('leanNode: lane was passed but board-config.mjs configures no PARKED_LANE');
+  }
   let normalizedContent = content;
   if (content != null && content.__typename === 'Issue') {
     const { labels, assignees, blockers, closingPullRequests, ...rest } = content;
@@ -60,7 +66,8 @@ export function leanNode({
   const generatedFieldValues = [
     title != null ? { text: title, field: { name: 'Title' } } : null,
     status != null ? { name: status, field: { name: 'Status' } } : null,
-    routing != null ? { name: routing, field: { name: ROUTING_FIELD } } : null,
+    ROUTING_FIELD && routing != null ? { name: routing, field: { name: ROUTING_FIELD } } : null,
+    lane != null ? { name: lane, field: { name: PARKED_LANE.field } } : null,
   ].filter(Boolean);
   if (fieldValues !== undefined && generatedFieldValues.length > 0) {
     throw new Error('leanNode: pass either fieldValues or named field shorthands, not both');
@@ -79,7 +86,12 @@ function fieldSchema() {
   return [
     { name: 'Title', dataType: 'TITLE' },
     { name: 'Status', dataType: 'SINGLE_SELECT', options: STATUS_OPTIONS.map((name) => ({ name })) },
-    { name: ROUTING_FIELD, dataType: 'SINGLE_SELECT', options: ROUTING_OPTIONS.map((name) => ({ name })) },
+    ...(ROUTING_FIELD
+      ? [{ name: ROUTING_FIELD, dataType: 'SINGLE_SELECT', options: ROUTING_OPTIONS.map((name) => ({ name })) }]
+      : []),
+    ...(PARKED_LANE
+      ? [{ name: PARKED_LANE.field, dataType: 'SINGLE_SELECT', options: [{ name: PARKED_LANE.option }] }]
+      : []),
   ];
 }
 
@@ -92,7 +104,7 @@ export function leanBoardPage(
 ) {
   return {
     data: {
-      user: {
+      [BOARD_OWNER_TYPE]: {
         login: BOARD_OWNER,
         projectV2: {
           id: 'PVT_fixture',

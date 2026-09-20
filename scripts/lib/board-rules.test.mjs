@@ -1,4 +1,4 @@
-// board-rules.test.mjs — mutation-proof unit tests for the nine board drift rules.
+// board-rules.test.mjs — mutation-proof unit tests for the eight board drift rules.
 // Run: node --test scripts/lib/   (or `npm run test:scripts`)
 //
 // The rules are judged from ONE board read, so every rule test drives the real
@@ -18,14 +18,17 @@ import {
   WAIT_STATUSES,
 } from './board-config.mjs';
 import { leanBoardPage, leanNode } from './board-fixtures.mjs';
-import { parseBoardPage } from './board.mjs';
+import { normalizeItem, parseBoardPage } from './board.mjs';
 import {
+  blockedClaimDrift,
   formatDrift,
   formatUnreadable,
   isEpic,
   isInFlight,
   scanBoard,
   scanOutcome,
+  stalledClaimDrift,
+  unassignedClaimDrift,
   unfieldedDrift,
   unreadableBlock,
   unreadableCards,
@@ -116,14 +119,14 @@ test('rule 3 — an open native blocker on non-Backlog work is an advisory; a cl
       number: 1,
       status: 'In progress',
       blockers: [{ number: 5, state: 'OPEN' }, { number: 6, state: 'OPEN' }],
-      closingPullRequests: [{ number: 9, merged: false }],
+      closingPullRequests: [{ number: 9 }],
     },
     // twin: the blocker has closed, so it blocks nothing.
     {
       number: 2,
       status: 'In progress',
       blockers: [{ number: 7, state: 'CLOSED' }],
-      closingPullRequests: [{ number: 10, merged: false }],
+      closingPullRequests: [{ number: 10 }],
     },
     // twin: already where a blocked card belongs.
     { number: 3, status: 'Backlog', blockers: [{ number: 8, state: 'OPEN' }] },
@@ -142,8 +145,8 @@ test('rule 3 — an open native blocker on non-Backlog work is an advisory; a cl
 
 test('rule 4 — active work with no assignee is an advisory; an assigned card and a card still in Ready are not', () => {
   const { drifted } = scan([
-    { number: 1, status: 'In progress', assignees: [], closingPullRequests: [{ number: 9, merged: false }] },
-    { number: 2, status: 'In progress', assignees: [BOARD_OWNER], closingPullRequests: [{ number: 10, merged: false }] },
+    { number: 1, status: 'In progress', assignees: [], closingPullRequests: [{ number: 9 }] },
+    { number: 2, status: 'In progress', assignees: [BOARD_OWNER], closingPullRequests: [{ number: 10 }] },
     { number: 3, status: 'Ready', assignees: [] }, // twin: nothing is claimed yet
   ]);
   assert.deepEqual(rowsFor(drifted, 1), [{
@@ -158,31 +161,32 @@ test('rule 4 — active work with no assignee is an advisory; an assigned card a
   assert.equal(closeoutExit(drifted), 0);
 });
 
-test('rule 5 — a merged closing pull request on an open issue is fatal drift and names every merged one; an unmerged closing reference is not', () => {
+// GitHub closes an issue when its closing pull request merges into the default branch,
+// and every merge here goes to main, so an OPEN issue with a merged closing pull
+// request was reopened on purpose. Its live state decides: no column reports it as
+// shipped, and the closed and Done-but-open cases stay with rules 1 and 2.
+test('an open issue whose closing pull request merged is not reported as shipped in any column; its live state decides', () => {
+  const merged = [{ number: 40, merged: true }];
   const { drifted } = scan([
-    {
-      number: 1,
-      status: 'In progress',
-      closingPullRequests: [{ number: 40, merged: true }, { number: 41, merged: false }, { number: 42, merged: true }],
-    },
-    // twin: an open closing pull request is work genuinely in flight, not a shipment.
-    { number: 2, status: 'In review', closingPullRequests: [{ number: 43, merged: false }] },
+    { number: 1, status: 'In progress', closingPullRequests: merged },
+    { number: 2, status: 'Ready', closingPullRequests: merged },
+    { number: 3, status: 'Done', closingPullRequests: merged },
+    { number: 4, status: 'In review', state: 'CLOSED', closingPullRequests: merged },
   ]);
-  assert.deepEqual(rowsFor(drifted, 1), [{
-    number: 1,
-    status: 'In progress',
-    title: 'card 1',
-    reason: 'shipped in #40, #42 but issue still open — close it and move the card to Done',
-  }]);
+  assert.deepEqual(drifted.filter((d) => d.reason.includes('shipped')), []);
+  assert.deepEqual(rowsFor(drifted, 1), []);
   assert.deepEqual(rowsFor(drifted, 2), []);
-  assert.equal(closeoutExit(drifted), 1);
+  assert.deepEqual(rowsFor(drifted, 3).map((d) => d.reason), [
+    'issue open but card in "Done" — close the issue or move the card back to Backlog or Ready',
+  ]);
+  assert.deepEqual(rowsFor(drifted, 4).map((d) => d.reason), ['issue closed but card still in "In review" (not Done)']);
 });
 
-test('rule 6 — a claim with no closing pull request at all is an advisory; an open one, an epic, and Awaiting push are not', () => {
+test('rule 5 — a claim with no closing pull request at all is an advisory; an open one, an epic, and Awaiting push are not', () => {
   const { drifted } = scan([
     { number: 1, status: 'In progress' },
     // twin: an open draft is exactly what an in-flight job looks like.
-    { number: 2, status: 'In review', closingPullRequests: [{ number: 50, merged: false }] },
+    { number: 2, status: 'In review', closingPullRequests: [{ number: 50 }] },
     // twin: a slice's "Closes #<slice>" creates no closing reference on the epic wrapper.
     { number: 3, status: 'In progress', labels: ['type:epic'], subIssues: { total: 1, completed: 0 } },
     // twin: Awaiting push is the gap before any push has happened.
@@ -201,11 +205,47 @@ test('rule 6 — a claim with no closing pull request at all is an advisory; an 
   assert.equal(closeoutExit(drifted), 0);
 });
 
-test('rule 7 — an open epic whose every child is closed is fatal drift; one open child or zero children is not', () => {
+// Flowgauge configures no parked lane, so no card this file's board read produces is
+// parked: these call the rules on the normalized card with `parked` set, and the
+// copied-toolkit read that really parks one is board-portability.test.mjs's.
+const normalizedCard = (facts) => normalizeItem(parsedLeanItems([issueNode(facts)])[0]);
+
+test('rule 5 — a parked claim with no closing pull request is not stalled; the identical unparked card is', () => {
+  const claim = normalizedCard({ number: 1, status: 'In progress' });
+  assert.equal(stalledClaimDrift({ ...claim, parked: true }), null);
+  assert.deepEqual(stalledClaimDrift({ ...claim, parked: false }), {
+    number: 1,
+    status: 'In progress',
+    title: 'card 1',
+    reason: 'claimed in "In progress" but no closing pull request exists — if no session is actively building it, resume it or return it to Ready',
+    advisory: true,
+  });
+});
+
+test('a parked claim is still reported by rule 4 when unassigned and by rule 3 when an open blocker holds it', () => {
+  const unassigned = { ...normalizedCard({ number: 1, status: 'In progress', assignees: [] }), parked: true };
+  assert.deepEqual(unassignedClaimDrift(unassigned), {
+    number: 1,
+    status: 'In progress',
+    title: 'card 1',
+    reason: 'claimed in "In progress" with no assignee — assign the session\'s owner (gh issue edit 1 --add-assignee @me) or return it to Backlog or Ready',
+    advisory: true,
+  });
+  const blocked = { ...normalizedCard({ number: 2, status: 'In progress', blockers: [{ number: 5, state: 'OPEN' }] }), parked: true };
+  assert.deepEqual(blockedClaimDrift(blocked), {
+    number: 2,
+    status: 'In progress',
+    title: 'card 2',
+    reason: 'in "In progress" but blocked by open #5 — move it to Backlog until the blockers close',
+    advisory: true,
+  });
+});
+
+test('rule 6 — an open epic whose every child is closed is fatal drift; one open child or zero children is not', () => {
   const { drifted } = scan([
     { number: 1, status: 'Ready', labels: ['type:epic'], subIssues: { total: 3, completed: 3 } },
     { number: 2, status: 'Ready', labels: ['type:epic'], subIssues: { total: 2, completed: 1 } },
-    // twin: nothing can be "all closed" with no children — that is rule 8's shape.
+    // twin: nothing can be "all closed" with no children — that is rule 7's shape.
     { number: 3, status: 'Ready', labels: ['type:epic'], subIssues: { total: 0, completed: 0 } },
   ]);
   assert.deepEqual(rowsFor(drifted, 1), [{
@@ -219,7 +259,7 @@ test('rule 7 — an open epic whose every child is closed is fatal drift; one op
   assert.equal(closeoutExit(drifted), 1);
 });
 
-test('rule 8 — an epic claimed with no sub-issues is an advisory; one sub-issue or a card still in Ready is not', () => {
+test('rule 7 — an epic claimed with no sub-issues is an advisory; one sub-issue or a card still in Ready is not', () => {
   const { drifted } = scan([
     { number: 1, status: 'In progress', labels: ['type:epic'], subIssues: { total: 0, completed: 0 } },
     { number: 2, status: 'In progress', labels: ['type:epic'], subIssues: { total: 1, completed: 0 } },
@@ -243,7 +283,7 @@ test('rule 8 — an epic claimed with no sub-issues is an advisory; one sub-issu
 // and hides the card from every status-scoped rule above (isInFlight(null) is false,
 // the pickable set never matches null). Draft cards live on the board too, so they are
 // judged here as well — this is the one rule a numberless card can reach.
-test('rule 9 — a card missing Status or the routing field is fatal drift, including a draft; a fully fielded card is not', () => {
+test('rule 8 — a card missing Status or the routing field is fatal drift, including a draft; a fully fielded card is not', () => {
   const { drifted } = scanBoard(parsedLeanItems([
     leanNode({ id: 'PVTI_draft', content: { __typename: 'DraftIssue' }, title: 'draft note' }),
     issueNode({ number: 2, status: 'Ready' }), // twin: fully fielded
@@ -259,7 +299,7 @@ test('rule 9 — a card missing Status or the routing field is fatal drift, incl
   assert.equal(formatDrift(drifted[0]).includes('undefined'), false);
 });
 
-test('rule 9 names exactly the missing field(s) — no more, no less — and never a fully fielded card', () => {
+test('rule 8 names exactly the missing field(s) — no more, no less — and never a fully fielded card', () => {
   const drift = unfieldedDrift([
     { number: 357, status: null, routing: null, title: 'both missing' },
     { number: 358, status: 'Backlog', routing: null, title: 'routing missing' },
@@ -288,7 +328,7 @@ function unfieldedCards(count, field, from = 1000) {
   }));
 }
 
-test('rule 9: many cards missing the SAME field summarise to one field-schema overwrite line, not per-card item-add blame', () => {
+test('rule 8: many cards missing the SAME field summarise to one field-schema overwrite line, not per-card item-add blame', () => {
   const drift = unfieldedDrift(unfieldedCards(30, ROUTING_FIELD));
   assert.equal(drift.length, 1);
   assert.match(drift[0].reason, /field-schema overwrite/);
@@ -311,7 +351,7 @@ test('rule 9: many cards missing the SAME field summarise to one field-schema ov
   assert.match(line, new RegExp(ROUTING_FIELD));
 });
 
-test('rule 9: a scattered mass unfielding lists the card numbers and says how many it omitted', () => {
+test('rule 8: a scattered mass unfielding lists the card numbers and says how many it omitted', () => {
   // Non-contiguous numbers (every other one) cannot collapse to a range, so this is
   // the path where the identity list can grow unreadably long — and the one where a
   // silent drop would reintroduce the defect above in smaller form. 26 cards stepping
@@ -335,7 +375,7 @@ test('rule 9: a scattered mass unfielding lists the card numbers and says how ma
   assert.match(drift[0].reason, /\+6 more/); // 26 - 20
 });
 
-test('rule 9: at the threshold the ordinary per-card item-add entries are produced', () => {
+test('rule 8: at the threshold the ordinary per-card item-add entries are produced', () => {
   const drift = unfieldedDrift(unfieldedCards(25, ROUTING_FIELD));
   assert.deepEqual(
     drift.map((d) => d.number),
@@ -349,7 +389,7 @@ test('rule 9: at the threshold the ordinary per-card item-add entries are produc
   }
 });
 
-test('rule 9: BOUNDARY — six cards missing a field are item-add territory, so every card is still named', () => {
+test('rule 8: BOUNDARY — six cards missing a field are item-add territory, so every card is still named', () => {
   // Six cards is the ORIGINAL #357–#361 shape (that incident was five). At this scale
   // a schema-overwrite verdict would be flat wrong — an overwrite clears EVERY card
   // carrying the field — and suppressing the numbers would strip exactly the
@@ -359,7 +399,7 @@ test('rule 9: BOUNDARY — six cards missing a field are item-add territory, so 
   assert.equal(drift.some((d) => /field-schema overwrite/.test(d.reason)), false);
 });
 
-test('rule 9: a card missing both fields where only one crossed the threshold is reported once per cause, never twice', () => {
+test('rule 8: a card missing both fields where only one crossed the threshold is reported once per cause, never twice', () => {
   const cards = [
     ...unfieldedCards(30, ROUTING_FIELD),
     { number: 2000, status: null, routing: null, title: 'both missing' },
@@ -376,16 +416,6 @@ test('rule 9: a card missing both fields where only one crossed the threshold is
   assert.equal(perCard.reason.includes(ROUTING_FIELD), false);
   // And no second entry for the same card.
   assert.equal(drift.filter((d) => d.number === 2000).length, 1);
-});
-
-// Rules 1 and 5 describe the same card in two ways once it is closed AND shipped. The
-// closed fact is the actionable one, and rule 5's OPEN condition is what keeps the
-// second row from being reported — widen it and this card grows a duplicate.
-test('a card that is both CLOSED and shipped yields exactly one row, from rule 1', () => {
-  const { drifted } = scan([
-    { number: 1, status: 'In review', state: 'CLOSED', closingPullRequests: [{ number: 44, merged: true }] },
-  ]);
-  assert.deepEqual(drifted.map((d) => d.reason), ['issue closed but card still in "In review" (not Done)']);
 });
 
 // #600: an unresolved card keeps its field values, so the unfielded rule would happily
@@ -435,8 +465,8 @@ test('isEpic: true for the type:epic label (or legacy bare epic), false otherwis
 });
 
 test('formatDrift: renders #number, the column and the reason', () => {
-  const line = formatDrift({ number: 319, status: 'In progress', title: 'Move refresh()', reason: 'shipped in #325' });
-  assert.equal(line, '#319 [In progress] Move refresh() — shipped in #325');
+  const line = formatDrift({ number: 319, status: 'In progress', title: 'Move refresh()', reason: 'issue closed but card still in "In progress" (not Done)' });
+  assert.equal(line, '#319 [In progress] Move refresh() — issue closed but card still in "In progress" (not Done)');
 });
 
 // The #600 failure mode: a card whose GraphQL content did not resolve keeps its
@@ -498,7 +528,7 @@ test('unreadableCards: flags a card whose content did not resolve, never a draft
 // exit 1 when drift is present, or when a card was unreadable AND this is a closeout
 // scan; the unqualified clean sentence only when the scan covered the whole board.
 const UNQUALIFIED_CLEAN = 'board: no drift found.';
-const DRIFTED_CARD = { number: 319, status: 'In progress', title: 'Move refresh()', reason: 'shipped in #325' };
+const DRIFTED_CARD = { number: 319, status: 'In progress', title: 'Move refresh()', reason: 'issue closed but card still in "In progress" (not Done)' };
 const SCAN_MATRIX = [
   { drift: false, unread: false, closeout: false, exitCode: 0 },
   { drift: false, unread: false, closeout: true, exitCode: 0 },
@@ -544,7 +574,7 @@ test('scanOutcome: an advisory row fails an ordinary scan but never strands the 
   // …and the run that survives never claims a clean board over a printed drift row.
   assert.equal(closeout.lines.some((line) => line.includes(UNQUALIFIED_CLEAN)), false);
 
-  // Every fatal class keeps its behaviour: a shipped card still fails the proof gate.
+  // Every fatal class keeps its behaviour: a closed card left in flight still fails the proof gate.
   assert.equal(scanOutcome({ drifted: [DRIFTED_CARD], unreadable: [], closeout: true }).exitCode, 1);
   assert.equal(scanOutcome({ drifted: [DRIFTED_CARD, advisoryRow], unreadable: [], closeout: true }).exitCode, 1);
 });

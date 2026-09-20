@@ -77,7 +77,7 @@ name them.
 - Active Codex task ownership is checked by the coordinator before moving an item into an in-flight column. The
   board verifier does not infer it.
 
-The built-in Project automations below are enabled and match Flowgauge's; `Auto-close issue`, `Pull request linked
+The built-in Project automations below are enabled; `Auto-close issue`, `Pull request linked
 to issue` and `Pull request merged` stay disabled. They have no create or update API, only
 `deleteProjectV2Workflow`, so the owner sets them in the Projects UI. The `workflows` GraphQL field reads back
 each automation's name and enabled state; the triggers and effects below are readable only on the workflow's own

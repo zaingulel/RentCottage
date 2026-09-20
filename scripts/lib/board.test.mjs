@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { leanBoardPage, leanNode } from './board-fixtures.mjs';
 import {
   BOARD_OWNER,
+  BOARD_OWNER_TYPE,
   BOARD_PROJECT_NUMBER,
   BOARD_REPOSITORY,
   PICKABLE_STATUSES,
@@ -24,6 +25,7 @@ import {
   boardQuery,
   parseBoardArgs,
   parseBoardPage,
+  parkedLine,
   pickable,
   isContentUnresolved,
   normalizeItem,
@@ -51,6 +53,11 @@ test('pickable keeps ONLY Backlog + Ready — excludes Done / In review', () => 
   assert.deepEqual(nums, [264, 266]);
   // Mutation guard: a Done item must never be pickable.
   assert.equal(pickable(BOARD.items).some((i) => i.status === 'Done'), false);
+});
+
+test("parkedLine prints nothing under Flowgauge's own config, which parks no lane", () => {
+  const laned = { status: 'Ready', lane: 'To Sebastiano', content: { number: 12 } };
+  assert.equal(parkedLine([...BOARD.items, laned], parseBoardArgs([])), null);
 });
 
 test('PICKABLE_STATUSES is exactly the two draw columns', () => {
@@ -148,7 +155,7 @@ const REAL_LABELLED_NODE = leanNode({
     labels: ['type:feature', 'area:ui', 'area:desktop', 'autonomy:supervised'],
     assignees: [BOARD_OWNER],
     blockers: [{ number: 261, state: 'OPEN' }, { number: 262, state: 'CLOSED' }],
-    closingPullRequests: [{ number: 1133, merged: true }],
+    closingPullRequests: [{ number: 1133 }],
     subIssuesSummary: { total: 2, completed: 1 },
   },
   fieldValues: [
@@ -202,7 +209,7 @@ test('boardQuery asks for every field the fused read carries, each capped sub-li
   assert.match(q, /labels\(first:20\) \{ totalCount nodes \{ name \} \}/);
   assert.match(q, /assignees\(first:20\) \{ totalCount nodes \{ login \} \}/);
   assert.match(q, /blockedBy\(first:20\) \{ totalCount nodes \{ number state \} \}/);
-  assert.match(q, /closedByPullRequestsReferences\(first:20\) \{ totalCount nodes \{ number merged \} \}/);
+  assert.match(q, /closedByPullRequestsReferences\(first:20\) \{ totalCount nodes \{ number \} \}/);
   assert.match(q, /items\(first:100, after:\$endCursor\) \{ totalCount/);
   assert.match(q, /fieldValues\(first:20\) \{ totalCount/);
 });
@@ -349,7 +356,7 @@ test('parseBoardPage carries labels, assignees, blockers and closing pull reques
     labels: ['type:feature', 'area:ui', 'area:desktop', 'autonomy:supervised'],
     assignees: [BOARD_OWNER],
     blockers: [{ number: 261, state: 'OPEN' }, { number: 262, state: 'CLOSED' }],
-    closingPullRequests: [{ number: 1133, merged: true }],
+    closingPullRequests: [{ number: 1133 }],
     content: { __typename: 'Issue', number: 263, state: 'OPEN', subIssuesSummary: { total: 2, completed: 1 } },
   });
   // The normalized card keeps only the OPEN blockers: a closed blocker blocks nothing.
@@ -472,14 +479,14 @@ test('parseBoardPage throws when a connection has no integer totalCount or no no
 
 // Guard 3. A card with more labels/assignees/blockers/closing references than the
 // `first:` cap would otherwise be silently narrowed (#464 review) — and a dropped
-// closing reference could hide the one merged pull request a shipped verdict turns on.
+// closing reference would make an in-flight claim read as stalled.
 test('parseBoardPage throws when any capped sub-list is truncated, naming the cap to raise', () => {
   const truncated = (make) => ({ totalCount: 25, nodes: Array.from({ length: 20 }, (_, i) => make(i)) });
   const cases = [
     ['labels', guardNode({ labels: truncated((i) => ({ name: `l${i}` })) })],
     ['assignees', guardNode({ assignees: truncated((i) => ({ login: `u${i}` })) })],
     ['blockedBy', guardNode({ blockers: truncated((i) => ({ number: i + 1, state: 'OPEN' })) })],
-    ['closedByPullRequestsReferences', guardNode({ closingPullRequests: truncated((i) => ({ number: i + 1, merged: false })) })],
+    ['closedByPullRequestsReferences', guardNode({ closingPullRequests: truncated((i) => ({ number: i + 1 })) })],
   ];
   for (const [what, node] of cases) {
     assert.throws(
@@ -499,13 +506,13 @@ test('parseBoardPage throws when any capped sub-list is truncated, naming the ca
 
 // Guard 3b. The capped sub-lists are fetched WHOLE, so the count and the nodes must
 // agree in BOTH directions. A totalCount SMALLER than the nodes returned is an
-// under-reporting response, and it is not harmless: one merged closing reference
-// arriving under `totalCount: 0` is exactly what manufactures a false "shipped but
-// open" drift row against a card that is correctly parked.
+// under-reporting response, and it is not harmless: a closing reference arriving under
+// `totalCount: 0` comes from a response that contradicts itself, and closing references
+// are what decide whether an in-flight claim reads as stalled.
 test('parseBoardPage throws when a capped sub-list reports FEWER than the nodes it carries', () => {
   const cases = [
     ['closedByPullRequestsReferences', 0, 1, guardNode({
-      closingPullRequests: { totalCount: 0, nodes: [{ number: 1133, merged: true }] },
+      closingPullRequests: { totalCount: 0, nodes: [{ number: 1133 }] },
     })],
     ['labels', 1, 2, guardNode({
       labels: { totalCount: 1, nodes: [{ name: 'type:task' }, { name: 'plan-first' }] },
@@ -627,7 +634,7 @@ test('parseBoardPage throws when Status or the routing field is missing, not sin
 
 // Guard 10. A numbered Issue card is the shape every downstream rule judges, so a
 // field it came back malformed in stops the read rather than being defaulted: an
-// unmerged-looking closing reference or a missing state would silently flip a verdict.
+// unnumbered closing reference or a missing state would silently flip a verdict.
 test('parseBoardPage throws on a malformed numbered Issue card', () => {
   assert.throws(
     () => parseNodes(guardNode({ state: 'DRAFT' })),
@@ -643,10 +650,10 @@ test('parseBoardPage throws on a malformed numbered Issue card', () => {
       /board card #9 carried no usable sub-issue summary.*total.*completed.*rerun the board read/s,
     );
   }
-  for (const reference of [{ number: 5 }, { number: 5, merged: 'true' }, { merged: true }]) {
+  for (const reference of [{}, { number: 0 }, { number: '5' }]) {
     assert.throws(
       () => parseNodes(guardNode({ closingPullRequests: [reference] })),
-      /board card #9 carried a closing pull-request reference without a number and a boolean merged flag.*rerun the board read/s,
+      /board card #9 carried a closing pull-request reference without a number.*rerun the board read/s,
     );
   }
   for (const blocker of [{ number: 5 }, { state: 'OPEN' }, { number: 5, state: 'MERGED' }]) {
@@ -709,11 +716,12 @@ test('normalizeItem flattens exactly the fields the board rules judge a card on'
     status: 'Done',
     title: 'Review batch 4 — interaction/desktop breaks',
     routing: 'Product',
+    parked: false,
     labels: ['type:feature', 'area:ui', 'area:desktop', 'autonomy:supervised'],
     state: 'OPEN',
     assignees: [BOARD_OWNER],
     openBlockers: [261],
-    closingPullRequests: [{ number: 1133, merged: true }],
+    closingPullRequests: [{ number: 1133 }],
     subIssues: { total: 2, completed: 1 },
   });
   // Missing fields default, never throw (the "In review" item carries nothing but a number).
@@ -732,7 +740,7 @@ test('normalizeItem publishes the routing view only — no Model, no Effort, no 
   // Effort fields have left this reader entirely.
   assert.deepEqual(Object.keys(normalizeItem(BOARD.items[0])).sort(), [
     'assignees', 'closingPullRequests', 'labels', 'number', 'openBlockers',
-    'routing', 'state', 'status', 'subIssues', 'title',
+    'parked', 'routing', 'state', 'status', 'subIssues', 'title',
   ]);
 });
 
@@ -818,6 +826,8 @@ test('groupByRouting orders groups by ROUTING_OPTIONS and still falls back for a
   // The live board's routing field offers exactly these three. Pinned literally
   // so adding a fourth option, or reordering them, fails here first.
   assert.deepEqual(ROUTING_OPTIONS, ['Go-to-market', 'Product', 'Platform']);
+  // The live board belongs to a personal account, so it is read under the `user` root.
+  assert.equal(BOARD_OWNER_TYPE, 'user');
   const groups = groupByRouting(ALL_ROUTED_ITEMS);
   assert.deepEqual(groups.map((g) => g.routing), [
     'Go-to-market',
@@ -857,8 +867,10 @@ test('formatGrouped warns when an unrecognised routing value is rendered without
     assert.equal(out.split(`#${number}`).length - 1, 1);
   }
   assert.match(out, /WARNING: unrecognised Workstream value: Research/);
-  assert.match(out, /add Research to ROUTING_OPTIONS/);
-  assert.match(out, /\.agents\/skills\/to-issues\/SKILL\.md/);
+  assert.match(out, /add Research to ROUTING_OPTIONS in scripts\/lib\/board-config\.mjs\./);
+  // The skill is one repository's file and this toolkit is copied verbatim into another; the
+  // warning must name the config that travels with it, never a path that may not exist there.
+  assert.doesNotMatch(out, /\.agents\/skills\/to-issues\/SKILL\.md/);
   assert.doesNotMatch(out, /unrecognised Workstream value: Unfielded/);
 
   const multipleUnknown = formatGrouped([

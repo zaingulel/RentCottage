@@ -22,14 +22,14 @@
 // scripts/lib/board-rules.mjs is answered off those pages.
 //
 // A thin shell: every decision (what to select, what to print, what to exit with) lives
-// in the pure parseBoardArgs/scanBoard/scanOutcome, so this file holds no judgment of
-// its own and the whole contract is unit-testable.
+// in the pure parseBoardArgs/scanBoard/scanOutcome/parkedLine, so this file holds no
+// judgment of its own and the whole contract is unit-testable.
 
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { ghExec } from './lib/gh-exec.mjs';
 import { BOARD_OWNER, BOARD_PROJECT_NUMBER, BOARD_REPOSITORY, PICKABLE_STATUSES } from './lib/board-config.mjs';
-import { fetchBoard, formatGrouped, normalizeItem, parseBoardArgs, pickable } from './lib/board.mjs';
+import { fetchBoard, formatGrouped, normalizeItem, parseBoardArgs, parkedLine, pickable } from './lib/board.mjs';
 import { scanBoard, scanOutcome } from './lib/board-rules.mjs';
 
 function main() {
@@ -58,6 +58,10 @@ function main() {
     return;
   }
 
+  // Under --json stdout is a document a caller parses, so the scan goes to stderr rather
+  // than corrupting it; the verdict still reaches the operator and still sets the exit code.
+  const report = args.json ? console.error : console.log;
+
   // --closeout certifies the board and nothing else, so it prints no listing at all.
   if (!args.closeout) {
     const selected = args.all
@@ -72,12 +76,11 @@ function main() {
       console.log(`Board ${BOARD_OWNER}/${BOARD_REPOSITORY} project ${BOARD_PROJECT_NUMBER} — ${label}: ${selected.length} of ${items.length} item(s)\n`);
       console.log(formatGrouped(selected));
     }
+    const parkedNote = parkedLine(items, args);
+    if (parkedNote) report(parkedNote);
   }
 
   const { lines, exitCode } = scanOutcome({ ...scanBoard(items), closeout: args.closeout });
-  // Under --json stdout is a document a caller parses, so the scan goes to stderr rather
-  // than corrupting it; the verdict still reaches the operator and still sets the exit code.
-  const report = args.json ? console.error : console.log;
   for (const line of lines) report(line);
   process.exitCode = exitCode;
 }

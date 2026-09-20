@@ -3,8 +3,8 @@
 // test coverage; each hook stays a thin stdin/stderr/exit-code shell around blockReason().
 //
 // Six plain rules, judged on the actual command segments of an agent's shell call:
-//   git commit --no-verify   -> skips the concat-identity + stats pre-commit hook
-//   git push --no-verify     -> skips the lint pre-push hook
+//   git commit --no-verify   -> skips the staged agent-definition pre-commit hook
+//   git push --no-verify     -> skips the lint and script-suite pre-push hook
 //   git push --force / -f    -> unsafe overwrite (--force-with-lease is ALLOWED)
 //   git filter-branch        -> history rewrite
 //   gh pr create (no --draft)-> skips the draft review before the metered suite
@@ -14,7 +14,7 @@
 //   rebase / am in the root checkout
 //                            -> the root is the integration checkout: it stays on main and
 //                                nothing is branched, switched, or committed there; a job runs in
-//                                a linked worktree beside it. Judged only when the hook passes
+//                                a linked worktree. Judged only when the hook passes
 //                                `checkout` ({ cwd, isRootCheckout(dir) }, resolved by git in
 //                                scripts/lib/checkout-context.mjs); `git switch main`,
 //                                `git branch -d`, pulls, and worktree upkeep stay allowed
@@ -119,10 +119,10 @@ export function blockReason(cmd, checkout) {
   const NO_VERIFY = /(?:^|\s)--no-verify(?:\s|=|$)/;
   const ruleReason = (s) => {
     if (GIT_COMMIT.test(s) && NO_VERIFY.test(s)) {
-      return "git commit --no-verify skips the concat-identity + stats pre-commit gate";
+      return "git commit --no-verify skips the staged agent-definition pre-commit gate";
     }
     if (GIT_PUSH.test(s) && NO_VERIFY.test(s)) {
-      return "git push --no-verify skips the lint pre-push gate";
+      return "git push --no-verify skips the lint and script-suite pre-push gate";
     }
     if (GIT_PUSH.test(s) && /(?:^|\s)(?:--force(?!-with-lease)|-f)(?:\s|$)/.test(s)) {
       return "git push --force is unsafe (use --force-with-lease for a rebase)";
@@ -201,7 +201,7 @@ export function blockReason(cmd, checkout) {
     const hops = [...options.matchAll(/(?:^|\s)-C\s+(\S+)/g)].map((hop) => hop[1]);
     const at = dirs.map((dir) => hops.reduce(relocate, dir));
     if (!at.some((dir) => dir !== null && checkout.isRootCheckout(dir))) return '';
-    return `git ${subcommand} in the integration checkout: the root stays on main and nothing is branched, switched, or committed there — open a job checkout beside it with git worktree add and run it from there`;
+    return `git ${subcommand} in the integration checkout: the root stays on main and nothing is branched, switched, or committed there — open a job checkout with git worktree add and run it from there`;
   };
   // The separator AFTER each segment is kept: the integration-checkout walk needs to know whether a
   // `cd` that fails would stop the chain (`&&`) or let it run on where it was (`;`, a newline, `||`),
