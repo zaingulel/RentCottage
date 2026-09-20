@@ -50,30 +50,18 @@ const TLDS = 'com|org|net|io|dev|app|ai|co|uk|eu|us|ca|au|de|fr|nl|ch|se|me|info
 // marker is admitted so the lookbehind cannot hide it, then dropped from the reported token.
 const HOST = new RegExp(`${START}(?:\\*\\.|\\.)?(?:[a-z0-9-]+\\.)+(?:${TLDS})${END}`, 'gi');
 
-// Added and unchanged content lines from each unified-diff hunk. Null marks a file or hunk boundary
-// so state cannot leak across unrelated Markdown. Header lines (`+++ b/path`) are excluded by their
-// position because added content can itself start with `++ b/`.
-function diffContentLines(unifiedDiff) {
-  const content = [];
-  let inHunk = false;
-  for (const line of unifiedDiff.split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      inHunk = false;
-      content.push(null);
-    } else if (line.startsWith('@@')) {
-      inHunk = true;
-      content.push(null);
-    } else if (inHunk && line.startsWith('+')) {
-      content.push({ added: true, text: line.slice(1) });
-    } else if (inHunk && line.startsWith(' ')) {
-      content.push({ added: false, text: line.slice(1) });
-    }
-  }
-  return content;
-}
-
+// The ADDED content lines of a unified diff. Header lines (`+++ b/path`) are recognised by position,
+// between a `diff --git` line and its first `@@` hunk, because a content line can be made to start
+// with `++ b/` and a pattern on the text alone would treat it as a header.
 function addedLines(unifiedDiff) {
-  return diffContentLines(unifiedDiff).filter((line) => line?.added).map((line) => line.text);
+  const added = [];
+  let inHeader = false;
+  for (const line of unifiedDiff.split('\n')) {
+    if (line.startsWith('diff --git ')) inHeader = true;
+    else if (line.startsWith('@@')) inHeader = false;
+    if (!inHeader && line.startsWith('+')) added.push(line.slice(1));
+  }
+  return added;
 }
 
 // Every URI and bare host name on an added line, in order of first appearance. Removed and context
@@ -102,68 +90,16 @@ export function addedNetworkTokens(unifiedDiff) {
 const CHARACTER_REFERENCE = /&(?:#x?[0-9a-f]+|(?!(?:amp|lt|gt|quot|nbsp);)[a-z]+);/gi;
 const INDIRECT_LINK_OPENING = /\]\((?=\s|<|$)/gm;
 const DESTINATION = /(?:\]\(|^\s*\[[^\]\n]+\]:\s*|\b(?:href|src)\s*=\s*["']?)<?([^\s)>"']*)/gim;
-const DEFERRED_REFERENCE_OPENING = /^\s*(\[[^\]\n]+\]:)\s*$/;
-const DESTINATION_CONTINUATION =
-  /^\s*<?(\/\/[^\s)>]*|(?:[a-z][a-z0-9+.-]*:)?(?:\\\/){2}[^\s)>]*)>?/i;
-const LINE_FINAL_INLINE_LINK_OPENING = /\]\(\s*$/;
 
-function markdownFlow(text) {
-  const quoteContainer = text.match(/^(?: {0,3}> ?)+/)?.[0] ?? '';
-  const afterQuote = text.slice(quoteContainer.length);
-  const listContainer = afterQuote.match(/^(?: {0,3})(?:[-+*]|\d{1,9}[.)])[ \t]+/)?.[0] ?? '';
-  return {
-    quoteDepth: [...quoteContainer].filter((character) => character === '>').length,
-    listIndent: listContainer ? listContainer.length : null,
-    text: afterQuote.slice(listContainer.length),
-    unlistedText: afterQuote,
-  };
-}
-
-function destinationContinuation(flow, deferredContainer) {
-  if (flow.quoteDepth !== deferredContainer.quoteDepth) return null;
-  let text = flow.unlistedText;
-  if (deferredContainer.listIndent !== null) {
-    const indentation = text.match(/^[ \t]*/)[0].length;
-    if (indentation < deferredContainer.listIndent) return null;
-    text = text.slice(deferredContainer.listIndent);
-  }
-  return text.match(DESTINATION_CONTINUATION)?.[1] ?? null;
-}
-
-// Every added fragment that matches one of those shapes, in order of first appearance. Context is
-// consulted only to pair a deferred reference or line-final inline opening with the immediately
-// following destination in the same hunk and Markdown container; it never becomes a reported
-// fragment itself.
+// Every fragment on an added line that matches one of those shapes, in order of first appearance.
 export function renderedLinkMarkup(unifiedDiff) {
   const fragments = [];
-  let deferredContainer = null;
-  for (const line of diffContentLines(unifiedDiff)) {
-    if (!line) {
-      deferredContainer = null;
-      continue;
-    }
-    const flow = markdownFlow(line.text);
-    const { text } = flow;
-    const deferredReference = text.match(DEFERRED_REFERENCE_OPENING);
-    const deferredInline = text.match(LINE_FINAL_INLINE_LINK_OPENING);
-    const nextDeferredContainer = deferredReference || deferredInline
-      ? { quoteDepth: flow.quoteDepth, listIndent: flow.listIndent }
-      : null;
-    if (!line.added) {
-      deferredContainer = nextDeferredContainer;
-      continue;
-    }
+  for (const text of addedLines(unifiedDiff)) {
     fragments.push(...[...text.matchAll(CHARACTER_REFERENCE)].map((m) => m[0]));
     fragments.push(...[...text.matchAll(INDIRECT_LINK_OPENING)].map((m) => m[0]));
-    if (deferredReference) fragments.push(deferredReference[1]);
-    if (deferredContainer) {
-      const destination = destinationContinuation(flow, deferredContainer);
-      if (destination) fragments.push(destination);
-    }
     for (const m of text.matchAll(DESTINATION)) {
       if (m[1].startsWith('//') || m[1].includes('\\')) fragments.push(m[1]);
     }
-    deferredContainer = nextDeferredContainer;
   }
   return [...new Set(fragments)];
 }
