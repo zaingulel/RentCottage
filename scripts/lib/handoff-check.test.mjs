@@ -65,6 +65,7 @@ function withLine(prompt, field, replacement) {
     .join("\n");
 }
 
+// Fill every {{SLOT}} below the ---8<--- line of a template with a sample value.
 function filledTemplate(relativePath, values) {
   const source = readFileSync(resolve(ROOT, relativePath), "utf8");
   const body = source.slice(source.lastIndexOf("---8<---") + "---8<---".length);
@@ -95,6 +96,7 @@ test("a filled builder handoff passes for all three builder seats", () => {
   );
 });
 
+// Mutation: drop `builder-lite` from the guarded set and this handoff passes through as an unknown type.
 test("builder-lite is guarded exactly like builder: a missing required line blocks", () => {
   const missing = withLine(GOOD_BUILDER, "Stop condition", "");
   assert.equal(
@@ -108,7 +110,7 @@ test("builder-lite is guarded exactly like builder: a missing required line bloc
 });
 
 test("the real builder template, filled, passes the guard and carries every required line", () => {
-  const prompt = filledTemplate(".agents/templates/builder-handoff.md", {
+  const prompt = filledTemplate(".claude/templates/builder-handoff.md", {
     SLICE_TITLE: "Booking-request pending state",
     CLAIM: "the card renders pending copy for a pending booking request",
     CONSTRUCTION_MODE: "evidence-required",
@@ -275,7 +277,7 @@ test("a handoff with several defects is rejected once, naming every one", () => 
   assert.match(result.reason, /'Slice:'/);
   assert.match(result.reason, /'vibes'/);
   assert.equal(
-    result.reason.split(".agents/templates/builder-handoff.md").length - 1,
+    result.reason.split(".claude/templates/builder-handoff.md").length - 1,
     1,
   );
 

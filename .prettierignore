@@ -18,9 +18,12 @@ CONTEXT.md
 # turn every future sync into a manual merge. scripts/lib/board-config.mjs is the one
 # file that is RentCottage's own, and it keeps the toolkit's style for the same reason.
 .claude/hooks/block-unsafe-git.mjs
+.codex/hooks.json
+.codex/hooks/block-unsafe-git.mjs
 scripts/board.mjs
 scripts/board-add.mjs
 scripts/board-move.mjs
+scripts/verify-issue-publish.mjs
 scripts/lib/board.mjs
 scripts/lib/board.test.mjs
 scripts/lib/board-add.mjs
@@ -30,6 +33,7 @@ scripts/lib/board-config.mjs
 scripts/lib/board-fixtures.mjs
 scripts/lib/board-move.mjs
 scripts/lib/board-move.test.mjs
+scripts/lib/board-portability.test.mjs
 scripts/lib/board-rules.mjs
 scripts/lib/board-rules.test.mjs
 scripts/lib/checkout-context.mjs
@@ -39,5 +43,27 @@ scripts/lib/cli-flags.test.mjs
 scripts/lib/fake-gh.mjs
 scripts/lib/gh-exec.mjs
 scripts/lib/gh-exec.test.mjs
+scripts/lib/issue-publish.mjs
+scripts/lib/issue-publish.test.mjs
+scripts/lib/codex-hook-adapters.mjs
 scripts/lib/unsafe-git.mjs
 scripts/lib/unsafe-git.test.mjs
+scripts/run-log.mjs
+scripts/lib/run-log.test.mjs
+.agents/upstream/mattpocock-skills
+
+# Shared workflow-control sources keep Flowgauge-compatible bytes. The test files
+# with RentCottage fixtures stay excluded so formatting does not rewrite their shared sections.
+.claude/hooks/filter-test-output.mjs
+.claude/hooks/test-output-filter-run.mjs
+scripts/lib/check-agents.mjs
+scripts/lib/codex-hook-adapters.test.mjs
+scripts/lib/doc-lint-citations.mjs
+scripts/lib/doc-lint-links.mjs
+scripts/lib/prepush.test.mjs
+scripts/lib/sweep-scope.mjs
+scripts/sweep-scope-check.mjs
+scripts/lib/sweep-scope-workflow.test.mjs
+scripts/lib/sweep-scope.test.mjs
+scripts/lib/test-output-filter.mjs
+scripts/lib/test-output-filter.test.mjs

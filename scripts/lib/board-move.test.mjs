@@ -1,16 +1,21 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   parseSingleSelectField,
   optionIdFor,
   parseIssueItemId,
-  parseIssueItemStatus,
+  parseIssueItemValue,
   parseBatchArgs,
   moveCards,
+  moveLanes,
 } from './board-move.mjs';
 import { BOARD_PROJECT_NUMBER } from './board-config.mjs';
+import { installFakeGh } from './fake-gh.mjs';
 
-// Shapes mirror the real `gh api graphql` payloads (verified live against project 2
+// Shapes mirror the real `gh api graphql` payloads (verified live against the board
 // while fixing #461). Expected ids are independent literals.
 const STATUS_FIELD_JSON = {
   data: {
@@ -82,9 +87,9 @@ test('optionIdFor throws on an unknown status, naming the valid options', () => 
   assert.throws(() => optionIdFor(options, 'Bogus'), /unknown Status "Bogus".*Done/s);
 });
 
-test('parseIssueItemId picks the board node among others; throws when not on the board', () => {
+test('parseIssueItemId picks the configured project\'s node among others; throws when not on the board', () => {
   const json = issueItemJson([
-    { id: 'item-other-project', project: { number: 7 } },
+    { id: 'item-other-project', project: { number: BOARD_PROJECT_NUMBER + 1 } },
     { id: 'item-a', project: { number: BOARD_PROJECT_NUMBER } },
   ]);
   assert.equal(parseIssueItemId(json, 453), 'item-a');
@@ -92,7 +97,7 @@ test('parseIssueItemId picks the board node among others; throws when not on the
   // scripted way forward. Without the pointer the caller falls back to a bare
   // `gh project item-add` and leaves an unfielded card behind.
   assert.throws(
-    () => parseIssueItemId(issueItemJson([{ id: 'x', project: { number: 7 } }]), 999),
+    () => parseIssueItemId(issueItemJson([{ id: 'x', project: { number: BOARD_PROJECT_NUMBER + 1 } }]), 999),
     /#999 is not on the board — add it with Status and Workstream: node scripts\/board-add\.mjs 999 <Status> <Workstream>/,
   );
 });
@@ -101,13 +106,13 @@ test('parseIssueItemId throws (fail-loud) on malformed JSON', () => {
   assert.throws(() => parseIssueItemId({ data: { repository: { issue: {} } } }, 453), /no nodes\[\] array/);
 });
 
-test('parseIssueItemStatus reads the board node\'s current Status name, or null with no value', () => {
-  const withStatus = issueItemJson([{ id: 'item-a', project: { number: BOARD_PROJECT_NUMBER }, status: { name: 'Done' } }]);
-  assert.equal(parseIssueItemStatus(withStatus, 453), 'Done');
-  const withoutStatus = issueItemJson([{ id: 'item-b', project: { number: BOARD_PROJECT_NUMBER } }]);
-  assert.equal(parseIssueItemStatus(withoutStatus, 453), null);
+test('parseIssueItemValue reads the configured project\'s node\'s current field value, or null with no value', () => {
+  const withStatus = issueItemJson([{ id: 'item-a', project: { number: BOARD_PROJECT_NUMBER }, value: { name: 'Done' } }]);
+  assert.equal(parseIssueItemValue(withStatus, 453), 'Done');
+  const withoutStatus = issueItemJson([{ id: 'item-b', project: { number: BOARD_PROJECT_NUMBER }, value: null }]);
+  assert.equal(parseIssueItemValue(withoutStatus, 453), null);
   assert.throws(
-    () => parseIssueItemStatus(issueItemJson([{ id: 'x', project: { number: 7 } }]), 999),
+    () => parseIssueItemValue(issueItemJson([{ id: 'x', project: { number: BOARD_PROJECT_NUMBER + 1 } }]), 999),
     /#999 is not on the board/,
   );
 });
@@ -124,6 +129,16 @@ test('parseBatchArgs throws on a malformed pair', () => {
   assert.throws(() => parseBatchArgs(['abc:Done'])); // non-numeric issue
   assert.throws(() => parseBatchArgs(['453:'])); // empty status
   assert.throws(() => parseBatchArgs([':Done'])); // missing issue number
+});
+
+// A `--lane` typo must be described as a Lane, not sent to the reader as a Status.
+test('parseBatchArgs names the value label it is given in its errors, not Status', () => {
+  assert.throws(() => parseBatchArgs(['12'], 'Lane'), {
+    message: 'malformed batch pair "12" — expected "<issue#>:<Lane>"',
+  });
+  assert.throws(() => parseBatchArgs(['12:'], 'Lane'), {
+    message: 'malformed batch pair "12:" — lane must not be empty',
+  });
 });
 
 // Records every exec() call so we can assert the exact call count + order — the
@@ -143,7 +158,7 @@ function recordingExec(itemIdByIssue, currentStatusByIssue = {}) {
       return JSON.stringify(issueItemJson([{
         id: itemIdByIssue[issueNumber],
         project: { number: BOARD_PROJECT_NUMBER },
-        ...(status ? { status: { name: status } } : {}),
+        value: status ? { name: status } : null,
       }]));
     }
     return '';
@@ -160,7 +175,7 @@ test('moveCards over 3 pairs issues exactly 1 status-field query, 3 issue resolv
   ];
   const completed = moveCards(pairs, exec);
 
-  assert.deepEqual(completed, pairs.map((p) => ({ ...p, skipped: false })));
+  assert.deepEqual(completed, pairs.map((p) => ({ ...p, skipped: false, cleared: false })));
   assert.equal(calls.length, 7);
   assert.deepEqual(calls[0].slice(0, 3), ['api', 'graphql', '-f']);
   assert.match(calls[0][3], new RegExp(`projectV2\\(number:${BOARD_PROJECT_NUMBER}\\)`));
@@ -185,7 +200,7 @@ test('moveCards over 3 pairs issues exactly 1 status-field query, 3 issue resolv
 test('moveCards over a single pair issues exactly 1 status-field query + 1 issue resolve + 1 item-edit', () => {
   const { exec, calls } = recordingExec({ 272: 'item-272' });
   const completed = moveCards([{ issueNumber: 272, statusName: 'Done' }], exec);
-  assert.deepEqual(completed, [{ issueNumber: 272, statusName: 'Done', skipped: false }]);
+  assert.deepEqual(completed, [{ issueNumber: 272, statusName: 'Done', skipped: false, cleared: false }]);
   assert.equal(calls.length, 3);
   assert.match(calls[0][3], new RegExp(`projectV2\\(number:${BOARD_PROJECT_NUMBER}\\)`));
   assert.match(calls[1][3], /issue\(number:272\)/);
@@ -197,7 +212,7 @@ test('moveCards over a single pair issues exactly 1 status-field query + 1 issue
 test('moveCards skips the item-edit when the card is already at the target Status', () => {
   const { exec, calls } = recordingExec({ 272: 'item-272' }, { 272: 'Done' });
   const completed = moveCards([{ issueNumber: 272, statusName: 'Done' }], exec);
-  assert.deepEqual(completed, [{ issueNumber: 272, statusName: 'Done', skipped: true }]);
+  assert.deepEqual(completed, [{ issueNumber: 272, statusName: 'Done', skipped: true, cleared: false }]);
   // Only the status-field query and the issue resolve ran — no item-edit.
   assert.equal(calls.length, 2);
   assert.ok(calls.every((c) => c[0] !== 'project'), JSON.stringify(calls));
@@ -210,7 +225,7 @@ test('moveCards skips are case-insensitive and still write when the current Stat
 
   const { exec: writeExec, calls: writeCalls } = recordingExec({ 272: 'item-272' }, { 272: 'In review' });
   const completed = moveCards([{ issueNumber: 272, statusName: 'Done' }], writeExec);
-  assert.deepEqual(completed, [{ issueNumber: 272, statusName: 'Done', skipped: false }]);
+  assert.deepEqual(completed, [{ issueNumber: 272, statusName: 'Done', skipped: false, cleared: false }]);
   assert.ok(writeCalls.some((c) => c[0] === 'project'), 'a real status difference must still write');
 });
 
@@ -251,4 +266,37 @@ test('moveCards rejects a non-integer issue number and an empty status before qu
   );
   // Only the shared status-field query may have run — never an issue resolve.
   assert.ok(calls.every((c) => !c.join(' ').includes('projectItems')), 'issue resolve ran on invalid input');
+});
+
+const NO_PARKED_LANE = '--lane needs a parked lane, but scripts/lib/board-config.mjs sets PARKED_LANE = null';
+
+test('moveLanes with no parked lane configured fails loud naming board-config.mjs before any gh call', () => {
+  const { exec, calls } = recordingExec({ 12: 'item-12' });
+  assert.throws(() => moveLanes([{ issueNumber: 12, statusName: 'none' }], exec), { message: NO_PARKED_LANE });
+  assert.deepEqual(calls, []);
+});
+
+// Only the real process shows the CLI wires `--lane` to moveLanes and reports its refusal:
+// any `gh` call fails the stand-in loud (exit 2) and is logged, so a lane write that
+// reached GitHub before the refusal shows in the calls file.
+const fakeGh = installFakeGh('board-move-cli-', `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+appendFileSync(process.env.FAKE_GH_CALLS, args.join(' ') + '\\n');
+process.stderr.write('unexpected gh invocation: ' + args.join(' '));
+process.exitCode = 2;
+`);
+after(() => fakeGh.cleanup());
+
+test('board-move --lane with no parked lane configured exits 1 naming board-config.mjs and never calls gh', () => {
+  const callsFile = fakeGh.newCallsFile();
+  writeFileSync(callsFile, '');
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL('../board-move.mjs', import.meta.url)), '--lane', '12:none'], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: fakeGh.env({ FAKE_GH_CALLS: callsFile }),
+  });
+  assert.equal(run.status, 1, run.stderr);
+  assert.equal(run.stderr, `board-move: ${NO_PARKED_LANE}\n`);
+  assert.equal(readFileSync(callsFile, 'utf8'), '');
 });

@@ -2,15 +2,44 @@
 
 This is RentCottage's evidence-selection authority. The selected issue defines the required outcome, `CONTEXT.md` defines domain invariants, accepted architecture decision records define technical boundaries, and this document defines how to prove them. A more specific product, domain, architecture, or issue decision wins on a direct conflict.
 
-## Choose evidence from the claim
+## Evidence decision path
 
-1. State the observable behaviour or invariant.
-2. Choose the cheapest observer that can genuinely prove it.
-3. Add a real-boundary test only when that boundary creates distinct risk.
-4. Derive expected values from the requirement, a domain decision, a hand-worked example, a provider contract, or a known-good fixture. Do not copy the implementation's calculation.
-5. Assert public contracts and persisted business outcomes, not private calls or page internals.
+1. **Name the claim.** A test protects one observable behaviour or invariant; “production code was added” is not
+   a claim. Test count and coverage percentage are not correctness targets because every test is recurring cost.
+2. **Choose the cheapest valid observer.** Use an observer that can actually see the claim, not the most impressive
+   environment available.
+3. **Add a real-boundary proof only for distinct boundary risk.** The risk being retired is dishonest wiring, not a
+   quota.
+4. **Keep the oracle independent.** Expected values come from requirements, domain decisions, a hand-worked
+   example, a provider contract, or a known-good fixture, never a copy of the production calculation.
+5. **Prove discrimination, not activity.** Valid evidence accepts the intended behaviour, rejects a plausible wrong
+   behaviour, and still accepts an equivalent correct implementation. At convergence, execute one plausible
+   mutation per distinct material claim unless its approved construction mode is `preservation`.
+6. **Bound the feedback.** Run focused evidence during construction and applicable integrated evidence once at
+   convergence. A further broad rerun needs a named reason.
+7. **Stop or escalate.** When retries stop producing new information, stop. Diagnose a browser or automated-judge
+   failure as a possible oracle defect before treating it as an implementation defect. Run a new or strengthened
+   test by its full title; zero matches is failed verification. Invoke fail-loud scripts directly so their exit
+   status remains authoritative.
 
 Test count and coverage percentage are not correctness targets. Functional green does not replace TypeScript, lint, database security, accessibility, build, runtime, or visual evidence when the change touches those evidence classes. Each change applies only the classes needed for its claims. A missing, skipped, unavailable, or unclassified required observation is not a pass.
+
+## Evidence routes
+
+Prefer interaction evidence at the real public interface.
+
+| Concern | Cheapest valid observer | What it does not prove |
+|---|---|---|
+| Pure calculation or policy | Direct Vitest or Node test on the extracted domain function | That a caller is wired to it |
+| Command or subprocess wrapper | Unit evidence on extracted logic plus the smallest positive and negative wire proof | The caller's real credentials or provider environment |
+| Repository or storage boundary | A demonstrated-isolated temporary repository or disposable database fixture | Product behaviour above the stored state |
+| User-visible product behaviour | Playwright driving the applicable built Next.js or Worker journey and asserting the rendered result | The internal calculation that produced it |
+| Schema, policy, constraint, trigger, concurrency, or migration invariant | Real disposable PostgreSQL and Supabase evidence | Browser or Worker wiring |
+| Structural, documentation, privacy, or forbidden-pattern invariant | A deterministic mechanical guard over the committed bytes | Whether the guarded product behaviour is correct |
+
+A security, privacy, authorization, or money-changing invariant needs a named anti-regression test in the same
+change. A viewport assertion begins with a starting-state guard and uses a retrying assertion rather than a fixed
+wait.
 
 ## Construction modes
 
@@ -111,6 +140,15 @@ Run focused checks, intentional red/restored green proofs, and convergence throu
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.
 
+## Evidence economics
+
+An expensive test or piece of machinery declares the distinct risk it covers, its recurring cost, and a legitimate
+consolidation or retirement condition. Reuse expensive fixtures through cloning only where isolation and semantic
+equivalence are proven. Keep construction-asserting and origin-sensitive tests on fresh fixtures. Prefer injected
+execution seams for doubling external commands; where a real subprocess is the subject, retain the smallest
+representative positive and negative wire proof. Performance budgets stay advisory and name the environment where
+they were measured.
+
 ## Declared schema
 
 `supabase/schemas/` declares the complete public schema in dependency order: extensions, types, tables by domain,
@@ -154,7 +192,7 @@ migrations statement by statement and refuse that lock. Install with `npm ci`, w
 
 ## Stable commands
 
-- `npm run verify` is the local and continuous-integration gate. It always audits production dependencies, checks formatting, lint and strict TypeScript, runs Vitest, regenerates Cloudflare types and checks their drift. The selector independently names database and browser evidence. Regular non-executable Markdown in the established agent-role, skill and template directories, direct Codex agent TOML definitions, documentation Markdown, retained DOCX documents and documentation illustrations use baseline because their current consumers do not enter the application build, database, Worker or browser runtime. Root manuals, the pull-request template and run-log pair remain exact baseline exceptions. Global presentation CSS, the self-hosted web font files, ordinary bundled images, and the exact shell/display Playwright specifications add browser evidence without database evidence. Executable files, scripts, TypeScript, JSON and other runtime or configuration inputs remain full even when placed under a prose directory, except for the individually named board and git-guard toolkit under `scripts/` and `scripts/lib/`, which is baseline because `npm test` already proves it through the `node --test` suite, apart from `scripts/board-move.mjs`, which is argv parsing over proved helpers. The toolkit's reach is the GitHub API and local Git, never Supabase, the Worker or a browser. That exception is a list of exact paths and never a directory wildcard, because the same directory holds Supabase, Worker and browser fixtures that do need the full route. The self-hosted font unit test and the font licences it reads are a further exact-path baseline exception, because `npm test` is their only observer and neither their content nor its loss can change a rendered page, the Worker's behaviour or the database; the font files themselves change rendering and stay on the browser route. A new consumer or configuration boundary requires this classification to be re-evaluated, and a mixed complete diff takes the strongest route selected by any path. A path that matches no route at all is not a reason to run everything: the selector names those paths, states that the fallback would otherwise be full verification, runs nothing and exits 3, so the route is classified once rather than paid for on every run. An unclassified path outranks every classified route and every full-evidence trigger the diff itself carries, a selector self-change, shared configuration, a symlink and an executable-mode change included: a mixed diff holding one still exits 3 rather than taking the full route, so a missing classification cannot hide behind a route that would have run anyway. Selector self-changes, shared configuration, symlinks and file-type or executable-mode changes take the full fallback once every changed path is classified; shallow or missing history, malformed Git evidence and multiple merge bases take it unconditionally, because they stop classification before it starts. Either way there is no question a human can answer faster. The local selector unions the source contribution from the unique `origin/main` merge base, staged and unstaged changes, and untracked files. CI unions the source contribution from the unique base/source merge base with the checked-out merge result's delta from the current base. `npm run verify -- --full` selects exhaustive convergence evidence. The full route requires Docker because access checks start an isolated local Supabase database and prove its policies directly.
+- `npm run verify` is the local and continuous-integration gate. It always audits production dependencies, checks formatting, lint and strict TypeScript, runs Vitest, regenerates Cloudflare types and checks their drift. The selector independently names database and browser evidence. Regular non-executable Markdown in the established skill and template directories, direct Claude/Codex seat definitions, documentation Markdown, retained DOCX documents and documentation illustrations use baseline because their current consumers do not enter the application build, database, Worker or browser runtime. Root manuals, the pull-request template and run-log pair remain exact baseline exceptions. Global presentation CSS, the self-hosted web font files, ordinary bundled images, and the exact shell/display Playwright specifications add browser evidence without database evidence. Executable files, scripts, TypeScript, JSON and other runtime or configuration inputs remain full even when placed under a prose directory, except for the individually named board and workflow-control toolkit paths in `scripts/verify.mjs`, which are baseline because `npm test` already proves them through the `node --test` suite. Four exact executable entry points are baseline only while they stay executable; a chmod or any unnamed executable remains full. The toolkit's reach is GitHub, local Git, documentation, or agent dispatch, never Supabase, the Worker or a browser. That exception is an exact list and never a directory wildcard, because the same directories hold Supabase, Worker and browser fixtures that need the full route. The self-hosted font unit test and the font licences it reads are a further exact-path baseline exception, because `npm test` is their only observer and neither their content nor its loss can change a rendered page, the Worker's behaviour or the database; the font files themselves change rendering and stay on the browser route. A new consumer or configuration boundary requires this classification to be re-evaluated, and a mixed complete diff takes the strongest route selected by any path. A path that matches no route at all is not a reason to run everything: the selector names those paths, states that the fallback would otherwise be full verification, runs nothing and exits 3, so the route is classified once rather than paid for on every run. An unclassified path outranks every classified route and every full-evidence trigger the diff itself carries, a selector self-change, shared configuration, a symlink and an executable-mode change included: a mixed diff holding one still exits 3 rather than taking the full route, so a missing classification cannot hide behind a route that would have run anyway. Selector self-changes, shared configuration, symlinks and file-type or executable-mode changes take the full fallback once every changed path is classified; shallow or missing history, malformed Git evidence and multiple merge bases take it unconditionally, because they stop classification before it starts. Either way there is no question a human can answer faster. The local selector unions the source contribution from the unique `origin/main` merge base, staged and unstaged changes, and untracked files. CI unions the source contribution from the unique base/source merge base with the checked-out merge result's delta from the current base. `npm run verify -- --full` selects exhaustive convergence evidence. The full route requires Docker because access checks start an isolated local Supabase database and prove its policies directly.
   The exact Claude Code and Codex hook registrations, handoff wrappers, shared validator, Codex adapter and their
   focused tests are a further baseline exception. Their reach is agent tooling plus local Git and GitHub
   operations, and `npm test` proves their policy and payload mapping; database, Worker and browser evidence observe
@@ -165,7 +203,8 @@ migrations statement by statement and refuse that lock. Install with `npm ci`, w
 - Browser verification builds the Worker once with real local Supabase credentials for access and scheduled expiry, then builds it separately with placeholder credentials for the client-secret scan and smoke. Internal Worker journeys select `playwright.worker-prebuilt.config.ts` only after the corresponding build succeeds. Next.js access and shell journeys keep their own normal Next.js builds; OpenNext standalone output is not reused by `next start`. Default browser commands still compile, and all preview configurations refuse existing servers so an occupied port cannot supply stale evidence. The prebuilt configuration accepts only Worker mode.
 - `npm run verify:preview -- <https-preview-url>` checks the hosted Arabic shell and live Supabase health boundary, then records the exact Git commit and preview origin. It rejects missing or malformed arguments before network access. Loopback Hypertext Transfer Protocol is allowed only for local diagnosis.
 - `npm run verify:board` performs the read-only live Project 4 intake required by `docs/agents/issue-tracker.md`; it is not part of the code-quality gate because it depends on current GitHub planning state.
-- `npm run run-log -- <label words> -- <command> <args>` runs exact argument vectors without a shell and appends a local `.agent-evidence/runs.jsonl` receipt with the completion time, label, working directory, arguments, and exit, signal, or spawn result. Pass secrets through the environment, never the label or arguments; command output and environment values are not captured. The receipt is ignored and local to the worktree. This small recovery aid should be removed if it stops helping long-session evidence retrieval or duplicates an authoritative platform record.
+- `npm run lint:docs` checks the documentation corpus for the stable prose invariants owned by `scripts/doc-lint.mjs`; the inactive documentation sweep runs it before and after edits.
+- `npm run run-log -- <label words> -- <command> <args>` runs exact argument vectors without a shell and appends one Markdown receipt to `.claude/worklog/<branch>.md` with the completion time, label, exact arguments, and exit, signal, or spawn result. Pass secrets through the environment, never the label or arguments; command output and environment values are not captured. The receipt is ignored and local to the worktree. This small recovery aid should be removed if it stops helping long-session evidence retrieval or duplicates an authoritative platform record.
 
 The logger's maintenance cost is one Node wrapper and its focused command/receipt tests, plus local disk space
 for appended receipts. Keep those tests aligned when the command or receipt contract changes.

@@ -11,7 +11,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -62,6 +63,13 @@ const requiredBrowserSteps = [
   ...requiredExpensiveSteps.slice(1),
 ];
 
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const explicitNodeWorkflowEntries = [
+  "scripts/doc-lint.mjs",
+  ".claude/hooks/filter-test-output.mjs",
+  ".claude/hooks/test-output-filter-run.mjs",
+];
+
 const lockedDependencyVersions = {
   wrangler: "4.130.0",
   workerd: "1.20260908.1",
@@ -107,6 +115,32 @@ function git(cwd, args) {
   }
   return result.stdout.trim();
 }
+
+it("keeps explicit Node workflow entry points non-executable for baseline eligibility", () => {
+  for (const path of explicitNodeWorkflowEntries) {
+    const trackedMode = git(ROOT, ["ls-files", "--stage", "--", path]).split(
+      /\s/,
+    )[0];
+    expect(trackedMode, `${path} must be tracked`).toBe("100644");
+    expect(
+      lstatSync(join(ROOT, path)).mode & 0o111,
+      `${path} on-disk mode`,
+    ).toBe(0);
+
+    const repository = createRepository();
+    write(repository, path, "export {};\n");
+    chmodSync(join(repository, path), 0o755);
+    git(repository, ["add", path]);
+    git(repository, ["commit", "-m", `executable ${path}`]);
+    const rejected = runVerification(repository);
+    expect(rejected.calls).toHaveLength(
+      requiredBaselineSteps.length + requiredExpensiveSteps.length,
+    );
+    expect(rejected.stdout).toHaveBeenCalledWith(
+      expect.stringContaining(`${path} is executable`),
+    );
+  }
+});
 
 function write(repository, path, contents) {
   const target = join(repository, path);
@@ -515,6 +549,11 @@ describe("repository verification command", () => {
       "# Release captain\n",
     ],
     [
+      "arbitrary native skill metadata",
+      ".agents/skills/future-publisher/agents/openai.yaml",
+      "interface:\n  display_name: Future Publisher\n",
+    ],
+    [
       "reviewer runtime",
       ".codex/agents/reviewer.toml",
       "sandbox_mode = 'workspace-write'\n",
@@ -527,7 +566,7 @@ describe("repository verification command", () => {
     ["run logger", "scripts/run-log.mjs", "export const fixture = true;\n"],
     [
       "run logger test",
-      "scripts/run-log.test.mjs",
+      "scripts/lib/run-log.test.mjs",
       "export const fixture = true;\n",
     ],
     [
@@ -562,6 +601,91 @@ describe("repository verification command", () => {
       "scripts/lib/handoff-check.test.mjs",
       "export const fixture = true;\n",
     ],
+    ["documentation checker", "scripts/doc-lint.mjs", "export {};\n"],
+    [
+      "documentation checker library",
+      "scripts/lib/doc-lint.mjs",
+      "export {};\n",
+    ],
+    [
+      "documentation checker tests",
+      "scripts/lib/doc-lint.test.mjs",
+      "export {};\n",
+    ],
+    [
+      "documentation link checker",
+      "scripts/lib/doc-lint-links.mjs",
+      "export {};\n",
+    ],
+    [
+      "documentation citation checker",
+      "scripts/lib/doc-lint-citations.mjs",
+      "export {};\n",
+    ],
+    ["agent validator", "scripts/lib/check-agents.mjs", "export {};\n"],
+    [
+      "agent validator tests",
+      "scripts/lib/check-agents.test.mjs",
+      "export {};\n",
+    ],
+    ["output filter", "scripts/lib/test-output-filter.mjs", "export {};\n"],
+    [
+      "output filter tests",
+      "scripts/lib/test-output-filter.test.mjs",
+      "export {};\n",
+    ],
+    ["settings policy", "scripts/lib/settings-policy.test.mjs", "export {};\n"],
+    ["pre-commit contract", "scripts/lib/precommit.test.mjs", "export {};\n"],
+    ["pre-push contract", "scripts/lib/prepush.test.mjs", "export {};\n"],
+    [
+      "verify-green contract",
+      "scripts/lib/verify-green.test.mjs",
+      "export {};\n",
+    ],
+    ["sweep scope entry", "scripts/sweep-scope-check.mjs", "export {};\n"],
+    ["sweep scope library", "scripts/lib/sweep-scope.mjs", "export {};\n"],
+    ["sweep scope tests", "scripts/lib/sweep-scope.test.mjs", "export {};\n"],
+    [
+      "sweep workflow contract",
+      "scripts/lib/sweep-scope-workflow.test.mjs",
+      "export {};\n",
+    ],
+    [
+      "workflow contract",
+      "scripts/lib/workflow-contract.test.mjs",
+      "export {};\n",
+    ],
+    ["issue publisher", "scripts/verify-issue-publish.mjs", "export {};\n"],
+    [
+      "issue publisher library",
+      "scripts/lib/issue-publish.mjs",
+      "export {};\n",
+    ],
+    [
+      "board portability contract",
+      "scripts/lib/board-portability.test.mjs",
+      "export {};\n",
+    ],
+    ["Claude Git guard", ".claude/hooks/block-unsafe-git.mjs", "export {};\n"],
+    [
+      "Claude output hook",
+      ".claude/hooks/filter-test-output.mjs",
+      "export {};\n",
+    ],
+    [
+      "Claude output runner",
+      ".claude/hooks/test-output-filter-run.mjs",
+      "export {};\n",
+    ],
+    ["Claude green wrapper", ".claude/hooks/verify-green.sh", "exit 0\n"],
+    ["Codex Git guard", ".codex/hooks/block-unsafe-git.mjs", "export {};\n"],
+    ["Codex green wrapper", ".codex/hooks/verify-green.sh", "exit 0\n"],
+    [
+      "Codex browser rule",
+      ".codex/rules/playwright.rules",
+      'prefix_rule(pattern=["npx"]);\n',
+    ],
+    ["native hook manual", ".githooks/README.md", "# Hooks\n"],
   ])(
     "keeps reviewed workflow-only %s on baseline evidence",
     (_label, path, contents) => {
@@ -598,6 +722,51 @@ describe("repository verification command", () => {
       requiredBaselineSteps,
     );
   });
+
+  it.each([
+    [
+      "vendored skill prose",
+      ".agents/upstream/mattpocock-skills/example/SKILL.md",
+    ],
+    [
+      "vendored skill metadata",
+      ".agents/upstream/mattpocock-skills/example/agents/openai.yaml",
+    ],
+    ["vendored licence", ".agents/upstream/mattpocock-skills/LICENSE"],
+  ])("keeps %s on baseline evidence", (_label, path) => {
+    const repository = createRepository();
+    commit(repository, path, "vendored fixture\n");
+
+    expect(
+      runVerification(repository).calls.map(([command, args]) => [
+        command,
+        args,
+      ]),
+    ).toEqual(requiredBaselineSteps);
+  });
+
+  it.each([
+    ".githooks/pre-commit",
+    ".githooks/pre-merge-commit",
+    ".githooks/pre-push",
+    "scripts/board.mjs",
+  ])(
+    "keeps the named executable workflow entry %s on baseline evidence",
+    (path) => {
+      const repository = createRepository();
+      write(repository, path, "#!/bin/sh\nexit 0\n");
+      chmodSync(join(repository, path), 0o755);
+      git(repository, ["add", path]);
+      git(repository, ["commit", "-m", "workflow entry"]);
+
+      expect(
+        runVerification(repository).calls.map(([command, args]) => [
+          command,
+          args,
+        ]),
+      ).toEqual(requiredBaselineSteps);
+    },
+  );
 
   it.each([
     ["research prose", "docs/research/future-study.md"],
@@ -671,6 +840,9 @@ describe("repository verification command", () => {
     ["runtime code", "src/runtime.ts", "export const value = 'changed';\n"],
     ["a test", "src/runtime.test.ts", "throw new Error('fixture');\n"],
     ["a dependency file", "package.json", "{}\n"],
+    ["root git ignore", ".gitignore", "node_modules/\n.demo/\n"],
+    ["root Prettier ignore", ".prettierignore", "node_modules\n"],
+    ["root Prettier config", ".prettierrc.json", "{}\n"],
     [
       "the selector itself",
       "scripts/verify.mjs",
@@ -707,14 +879,14 @@ describe("repository verification command", () => {
 
   it("stops without running anything when a changed path is unclassified", () => {
     const repository = createRepository();
-    commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+    commit(repository, "unknown-policy.fixture", "unclassified\n");
 
     const result = runVerification(repository);
 
     expect(result.status).toBe(3);
     expect(result.run).not.toHaveBeenCalled();
     expect(result.stderr).toHaveBeenCalledWith(
-      expect.stringContaining(".prettierrc.json"),
+      expect.stringContaining("unknown-policy.fixture"),
     );
     expect(result.stderr).toHaveBeenCalledWith(
       expect.stringMatching(/1 changed path is not listed/),
@@ -741,7 +913,7 @@ describe("repository verification command", () => {
 
   it("names only the unclassified path when a classified path also changed", () => {
     const repository = createRepository();
-    commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+    commit(repository, "unknown-policy.fixture", "unclassified\n");
     commit(repository, "src/runtime.ts", "export const value = 'changed';\n");
 
     const result = runVerification(repository);
@@ -749,14 +921,14 @@ describe("repository verification command", () => {
     expect(result.status).toBe(3);
     expect(result.run).not.toHaveBeenCalled();
     const report = result.stderr.mock.calls.map(([line]) => line).join("\n");
-    expect(report).toContain(".prettierrc.json");
+    expect(report).toContain("unknown-policy.fixture");
     expect(report).not.toContain("src/runtime.ts");
     expect(report).toMatch(/1 changed path is not listed/);
   });
 
   it("counts every unclassified path in one report", () => {
     const repository = createRepository();
-    commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+    commit(repository, "unknown-policy.fixture", "unclassified\n");
     commit(repository, "unknown-runtime.fixture", "runtime\n");
 
     const result = runVerification(repository);
@@ -764,21 +936,21 @@ describe("repository verification command", () => {
     expect(result.status).toBe(3);
     const report = result.stderr.mock.calls.map(([line]) => line).join("\n");
     expect(report).toMatch(/2 changed paths are not listed/);
-    expect(report).toContain(".prettierrc.json\nunknown-runtime.fixture");
+    expect(report).toContain("unknown-policy.fixture\nunknown-runtime.fixture");
   });
 
   it.each(["--database", "--browser", "--plan"])(
     "stops %s on an unclassified path because each one still selects a route",
     (mode) => {
       const repository = createRepository();
-      commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+      commit(repository, "unknown-policy.fixture", "unclassified\n");
 
       const result = runVerification(repository, { args: [mode] });
 
       expect(result.status).toBe(3);
       expect(result.run).not.toHaveBeenCalled();
       expect(result.stderr).toHaveBeenCalledWith(
-        expect.stringContaining(".prettierrc.json"),
+        expect.stringContaining("unknown-policy.fixture"),
       );
     },
   );
@@ -787,7 +959,7 @@ describe("repository verification command", () => {
     "lets %s confirm the route while an unclassified path is present",
     (mode) => {
       const repository = createRepository();
-      commit(repository, ".prettierrc.json", '{ "semi": true }\n');
+      commit(repository, "unknown-policy.fixture", "unclassified\n");
 
       const result = runVerification(repository, { args: [mode] });
 
@@ -809,6 +981,11 @@ describe("repository verification command", () => {
       "an agent TypeScript file",
       ".agents/skills/tool/runtime.ts",
       "export {};\n",
+    ],
+    [
+      "nested native skill metadata",
+      ".agents/skills/future-publisher/fixtures/worker/agents/openai.yaml",
+      "interface:\n  display_name: Nested Fixture\n",
     ],
     ["a docs script", "docs/research/runtime.js", "export {};\n"],
     ["a category lookalike", ".agents-copy/roles/reviewer.md", "# Lookalike\n"],

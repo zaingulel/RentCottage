@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// board-move.mjs — move a GitHub Projects card (or a batch of cards) to a Status column.
+// board-move.mjs — move a GitHub Projects card (or a batch of cards) to a Status column,
+// or park cards in (and release them from) the parked lane board-config.mjs names.
 //
 //   node scripts/board-move.mjs <issue#> <Status>
 //   node scripts/board-move.mjs 272 Done
 //   node scripts/board-move.mjs 274 "In review"
 //   node scripts/board-move.mjs --batch 453:Done 454:"In review"
+//   node scripts/board-move.mjs --lane 12:"To Sebastiano" 13:none
 //
 // Closing an issue does NOT move its board card (the Project Status field is a
 // separate operation), so #272 sat closed in Backlog after a /handoff closed it
@@ -23,7 +25,8 @@
 
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { moveCards, parseBatchArgs } from './lib/board-move.mjs';
+import { moveCards, moveLanes, parseBatchArgs } from './lib/board-move.mjs';
+import { PARKED_LANE } from './lib/board-config.mjs';
 import { ghExec } from './lib/gh-exec.mjs';
 
 // Move a single card. Thin wrapper over `moveCards` — exported because CLAUDE.md
@@ -35,18 +38,34 @@ export function moveCard(issueNumber, statusName) {
 function usageError() {
   console.error(
     'usage: node scripts/board-move.mjs <issue#> <Status>   e.g. board-move.mjs 272 Done\n' +
-    '       node scripts/board-move.mjs --batch <issue#>:<Status> [...]   e.g. board-move.mjs --batch 453:Done 454:"In review"',
+    '       node scripts/board-move.mjs --batch <issue#>:<Status> [...]   e.g. board-move.mjs --batch 453:Done 454:"In review"\n' +
+    '       node scripts/board-move.mjs --lane <issue#>:<option|none> [...]   e.g. board-move.mjs --lane 12:none',
   );
   process.exit(2);
 }
 
+// The written / already-there report for one completed pair. A lane line names the
+// field, since the option alone does not say which field moved.
+function reportLine({ issueNumber, statusName, skipped, cleared }, laneField) {
+  if (!laneField) {
+    return skipped ? `board-move: #${issueNumber} already at ${statusName} — no-op` : `board-move: #${issueNumber} → ${statusName}`;
+  }
+  if (cleared) {
+    return skipped ? `board-move: #${issueNumber} ${laneField} already clear — no-op` : `board-move: #${issueNumber} → ${laneField} cleared`;
+  }
+  return skipped
+    ? `board-move: #${issueNumber} already at ${laneField}: ${statusName} — no-op`
+    : `board-move: #${issueNumber} → ${laneField}: ${statusName}`;
+}
+
 function main() {
   const argv = process.argv.slice(2);
+  const lane = argv[0] === '--lane';
   let pairs;
-  if (argv[0] === '--batch') {
+  if (argv[0] === '--batch' || lane) {
     if (argv.length < 2) return usageError();
     try {
-      pairs = parseBatchArgs(argv.slice(1));
+      pairs = parseBatchArgs(argv.slice(1), lane ? PARKED_LANE?.field ?? 'Lane' : 'Status');
     } catch (err) {
       console.error(`board-move: ${err.message}`);
       process.exit(1);
@@ -61,19 +80,13 @@ function main() {
   }
   let completed;
   try {
-    completed = moveCards(pairs, ghExec);
+    completed = lane ? moveLanes(pairs, ghExec) : moveCards(pairs, ghExec);
   } catch (err) {
     console.error(`board-move: ${err.message}`);
     process.exit(1);
     return;
   }
-  for (const { issueNumber, statusName, skipped } of completed) {
-    console.log(
-      skipped
-        ? `board-move: #${issueNumber} already at ${statusName} — no-op`
-        : `board-move: #${issueNumber} → ${statusName}`,
-    );
-  }
+  for (const pair of completed) console.log(reportLine(pair, lane && PARKED_LANE.field));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

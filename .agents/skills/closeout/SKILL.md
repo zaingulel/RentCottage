@@ -6,24 +6,42 @@ description: "Reconcile a merged RentCottage pull request: board, issues, branch
 # closeout
 
 Runs in the same session the moment the merge lands, under the push authorisation that covered the merge;
-no further ask. Everything here is observable from git and GitHub; nothing is inferred from chat.
+no further ask. Everything here is observable from git, GitHub and the machine's process list; nothing is
+inferred from chat.
 
 1. **Confirm the merge.** `gh pr view <pr> --json state,mergedAt,mergeCommit` shows `MERGED`. If not, stop.
+   Then check the body's review line against
+   [the workflow manual's specification](../../../docs/AI-WORKFLOW.md#the-review-line): a missing line, or one
+   that does not meet it, is a workflow failure named in the report, never filled in from memory.
 2. **Issues.** `Closes #` in the body closed them at merge; confirm with `gh issue view <n> --json state`. An
    issue the pull request resolved but did not name is reported to the owner, never closed unasked: only the
    issues the approved body names are within this run's authorisation.
 3. **Main.** Run [Update local main](#update-local-main). A session inside the job worktree is retained until its
-   runtime can leave it; on the Claude desktop app, the directory tool moves the session to the root checkout, so
-   step 5 finishes in the same run. This does not require switching the root checkout. Stop closeout if no current
-   verifier checkout is available.
+   runtime can leave it; on Claude Code, `ExitWorktree` with `action: "keep"` returns the session to the directory
+   it started in and removes nothing, so step 5 finishes in the same run. `keep` matches what the tool can do:
+   `ExitWorktree` removes only a worktree this session's own `EnterWorktree` created, so for a worktree that
+   `git worktree add` made and the session entered by path, it returns the session and leaves the directory in
+   place, and step 5's `git worktree remove` stays the thing that deletes it. This does not require switching
+   the root checkout. Stop closeout if no current verifier checkout is available.
 4. **Board.** From the current verifier checkout selected by Update local main, run
    `node scripts/board-move.mjs --batch <issue>:Done ...` for every closed issue. Done is the board's only
    terminal column, so a card closed as superseded or not planned also moves there. Then run
    `node scripts/board.mjs --closeout` (strict: it fails on an unreadable card or a non-advisory drift row) and
    reconcile anything it reports.
-5. **Branch and worktree.** Delete the local branch (`git branch -d job/<issue>`; the remote branch is deleted
-   by the merge setting or `git push origin --delete <branch>`) and the worktree (`git worktree remove <path>`).
-   `git worktree prune`.
+5. **Branch and worktree.** First stop only a confirmed-owned local server the job left serving its worktree,
+   such as `resume`'s visual-verification server: stop it as the session's own background task when the session
+   holds one, otherwise find listening processes with `lsof -nP -iTCP -sTCP:LISTEN` and confirm a candidate's
+   working directory is the exact job worktree with `lsof -a -p <pid> -d cwd`. Leave every other process alone.
+   Leave the job worktree through the runtime before removing it; on Claude Code use `ExitWorktree` with
+   `action: "keep"`. If the runtime cannot leave, process ownership is uncertain, or the session cannot operate
+   from outside the exact target, retain the worktree, report the reason, and stop before worktree removal or
+   branch deletion. From outside the exact target run `git worktree remove <path>`, then confirm
+   `git worktree list --porcelain` no longer registers that path. A refused worktree removal stops branch
+   deletion. Only after deregistration run `git branch -d job/<issue>`. An ordinary branch-deletion refusal is
+   reported and never auto-forced. Confirm the merge setting removed the remote branch; if it did not, use the
+   already-approved `git push origin --delete <branch>`, then run `git worktree prune`. Retain any verifier-only
+   worktree created by this closeout through all of this step; remove that verifier in the same run only after the
+   job worktree and branch handling finishes.
 6. **Rulings.** Anything the owner settled this session that should outlive it goes where it belongs: a comment
    on the issue, or the manual or rule that owns the topic. Never as a new document.
 
@@ -60,6 +78,8 @@ independent cleanup or work selection.
    checkout at the recorded target: use a usable existing isolated checkout first, otherwise create a fresh
    verifier-only worktree without duplicating a job. If none is available, report board freshness unavailable and
    do not execute stale board operations. Reread the refreshed files from disk before board checks or decisions.
-   A verifier-only worktree this run created is removed at the end of the same run, after board operations, with
-   `git worktree remove <path>`; a reused existing checkout is left alone. Report the old and new commits, or the
-   precise preserved path, branch and reason. Leave conflicts or refusals untouched.
+   A verifier-only worktree this run created is retained through board operations and closeout step 5's job cleanup,
+   then removed at the end of the same run with `git worktree remove <path>`; a reused existing checkout is left
+   alone. During resume, which has no job cleanup step, remove a verifier it created after board operations in that
+   same run. Report the old and new commits, or the precise preserved path, branch and reason. Leave conflicts or
+   refusals untouched.

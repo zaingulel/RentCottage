@@ -1,24 +1,26 @@
 ---
 name: handoff
-description: Park unfinished RentCottage work in a local green commit and draft pull request for a later session.
+description: Park genuinely unfinished RentCottage work so the next session can pick it up from git.
 disable-model-invocation: true
 ---
 
-# Handoff
+# handoff
 
-Use this only for genuinely unfinished work. Finished work proceeds to delivery and `closeout`.
+Owner-invoked to park unfinished work. Completed work uses `closeout`.
 
-1. Run the focused checks that describe the current slice. Commit the coherent green state locally on the exact
-   `job/<issue>` branch with a work-in-progress message. Broken or ambiguous state is reported, not called green.
-2. Run process reconciliation under `docs/agents/process-reconciliation.md`. Carry its retained or uncertain
-   process results into `Not done`.
-3. Fill `.github/pull_request_template.md`. In `Not done`, name what is finished, what remains, the next concrete
-   step, known failing or unavailable evidence, retained or uncertain processes, and any owner decision still needed.
-4. If outward delivery is already authorised, push the exact branch and create or update its draft pull request.
-   Otherwise present the filled body and request delivery approval; a local commit is not a substitute for a
-   draft pull request.
-5. Move the card with `node scripts/board-move.mjs <issue> <Status>`: to `Ready` once the draft pull request
-   exists, so the next session can pick it; to `Awaiting push` while the filled body waits for delivery approval.
-6. Leave the worktree registered and untouched.
+1. **Commit what exists** on the job branch with a message that says it is work in progress. Run the slice's
+   focused evidence and any applicable generated-type or declared-schema checks first; incomplete required
+   evidence is named in the draft rather than presented as green.
+2. **Prepare the draft pull-request body.** Fill
+   `.github/pull_request_template.md`. Write the **Not done** section for a reader with no memory of this
+   session: what is finished, what is not, the next concrete step, and any decision the owner still owes.
+3. **Get publication authorization.** Show the prepared body to the owner and name the proposed push and draft
+   pull-request creation or update. A bare `handoff` or `park` request authorizes only local preparation and the
+   commit. Do not push the branch or create or update a draft pull request until the owner explicitly authorizes
+   those outward actions. An invocation that explicitly names both push and draft pull-request publication
+   satisfies this gate.
+4. **Push the branch** and open or update the draft pull request (`gh pr create --draft`) with the prepared body.
+5. **Board.** `node scripts/board-move.mjs <issue> Ready`, so the card is startable by the next session.
+6. **Leave the worktree in place.** The next session finds the branch in `resume` step 1.
 
-Report the branch, commit, worktree, draft pull request when created, and one-line next step.
+Report the branch, the pull request number, and the one-line next step.

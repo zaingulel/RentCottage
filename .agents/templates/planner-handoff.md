@@ -3,7 +3,7 @@ Planner handoff template. Everything below the ---8<--- line is the shared promp
 architect dispatches. Fill every {{SLOT}} before dispatch; the prompt-side handoff
 checker rejects an incomplete contract.
 
-After one bounded non-delivery, the coordinator narrows once or finishes inline.
+After one bounded non-delivery, the orchestrator narrows once or finishes inline.
 Never escalate to oracle merely because the architect did not deliver.
 -->
 

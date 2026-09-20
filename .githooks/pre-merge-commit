@@ -1,0 +1,5 @@
+#!/bin/sh
+# pre-merge-commit — a `git merge` that auto-commits never runs pre-commit, so run
+# the same staged-content gates here. Git skips this hook when a merge stops on
+# conflicts; the commit that resolves those conflicts runs pre-commit instead.
+exec sh "$(git rev-parse --show-toplevel)/.githooks/pre-commit"

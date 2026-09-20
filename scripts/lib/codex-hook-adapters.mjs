@@ -1,4 +1,17 @@
-// Codex hook transport adapter — keeps provider payload shapes out of handoff policy.
+// Codex hook transport adapter — keeps provider payload shapes out of unsafe-git policy.
+
+export function codexCommandForGuard(toolInput) {
+  if (typeof toolInput?.cmd === 'string') return toolInput.cmd;
+  if (typeof toolInput?.command === 'string') return toolInput.command;
+  return '';
+}
+
+// The command's own working directory when the tool input names one, else the session's.
+export function codexCwdForGuard(payload) {
+  if (typeof payload?.tool_input?.workdir === 'string') return payload.tool_input.workdir;
+  if (typeof payload?.cwd === 'string') return payload.cwd;
+  return '';
+}
 
 export function codexHandoffForGuard(toolInput) {
   return {
@@ -15,10 +28,6 @@ export function codexHandoffForGuard(toolInput) {
 const FERNET_FRAME_BYTES = 57;
 
 export function isOpaqueDispatchMessage(message) {
-  if (
-    typeof message !== "string" ||
-    !/^gAAAAA[A-Za-z0-9_-]+={0,2}$/.test(message)
-  )
-    return false;
-  return Buffer.from(message, "base64url").length >= FERNET_FRAME_BYTES;
+  if (typeof message !== 'string' || !/^gAAAAA[A-Za-z0-9_-]+={0,2}$/.test(message)) return false;
+  return Buffer.from(message, 'base64url').length >= FERNET_FRAME_BYTES;
 }

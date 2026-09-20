@@ -1,0 +1,82 @@
+#!/bin/sh
+# pre-push — run the gates that must not leave the machine unchecked.
+#
+#   * eslint (~1s, no browser) — undefined reference, typo'd name, duplicate key.
+#   * the scripts/lib node:test suite — the guard scripts, board scripts, build identity,
+#     and the pre-commit hook. Runs unconditionally: editing .claude/agents/ or AGENTS.md alone
+#     trips no staged-path trigger, and a fleet retune once sailed past every local gate.
+#
+# The two gates fail differently ON PURPOSE. Lint is skipped with a warning when npm or
+# the eslint binary is missing, because a fresh or partial clone must not be hard-blocked
+# and CI still lints. The script suite is invoked through `node --test` directly, NOT
+# `npm run test:scripts`, so a missing npm cannot bypass it, and it fails CLOSED on a
+# missing node: every gate this repo has is a node program, so no-node is a broken
+# checkout, not a contributor to wave through.
+#
+# The full Playwright suite (~12 min) is NOT forced on every push. Opt in with RUN_TESTS=1:
+#     RUN_TESTS=1 git push
+#
+# Escape hatch: `git push --no-verify` bypasses entirely.
+set -e
+
+# Git EXPORTS its plumbing env into every hook, and this hook runs the script suite, whose
+# test files `git init` throwaway fixture repos. An inherited GIT_DIR points that init at the
+# REAL repository and writes `core.bare = true` into the shared config, breaking every
+# checkout that shares it. `--local-env-vars` is git's own authoritative list of the
+# repository-scoped variables. GIT_NAMESPACE is not in that set, and NODE_TEST_CONTEXT is not
+# git's at all but carries the same hazard: an inner `node --test` that inherits it exits 0
+# EVEN ON RED. The trace family is scrubbed by prefix because its sub-keys are open-ended.
+git_trace_vars=$(
+  LC_ALL=C
+  set -f
+  IFS='
+'
+  for assignment in $(set); do
+    case $assignment in
+      (GIT_TRACE*=*)
+        name=${assignment%%=*}
+        case $name in
+          (*[!A-Za-z0-9_]*) ;;
+          (*) printf '%s\n' "$name" ;;
+        esac
+        ;;
+    esac
+  done
+)
+unset $(git rev-parse --local-env-vars) $git_trace_vars GIT_NAMESPACE NODE_TEST_CONTEXT \
+  GIT_CURL_VERBOSE GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "pre-push: npm not found — skipping lint gate." >&2
+else
+  # Walk the ANCESTOR directories exactly as npm resolves bins: a git worktree under
+  # .claude/worktrees/ has no node_modules of its own, but `npm run lint` works there via the
+  # main checkout's.
+  eslint_bin=""
+  dir=$repo_root
+  while :; do
+    if [ -x "$dir/node_modules/.bin/eslint" ]; then eslint_bin="$dir/node_modules/.bin/eslint"; break; fi
+    parent=$(dirname "$dir")
+    [ "$parent" = "$dir" ] && break
+    dir=$parent
+  done
+  if [ -z "$eslint_bin" ]; then
+    echo "pre-push: eslint not installed (run npm install) — skipping lint gate; CI will still lint." >&2
+  else
+    echo "pre-push: npm run lint…"
+    npm run lint --silent
+  fi
+fi
+
+echo "pre-push: node --test scripts/lib/…"
+node --test "scripts/lib/*.test.mjs"
+
+if [ "${RUN_TESTS:-0}" = "1" ]; then
+  echo "pre-push: RUN_TESTS=1 → npm test…"
+  npm test
+fi
+
+exit 0

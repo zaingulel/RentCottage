@@ -1,5 +1,5 @@
 // board-move.mjs — pure id-resolution + orchestration for moving GitHub Projects
-// cards' Status.
+// cards' Status, and for parking them in (or releasing them from) the parked lane.
 //
 // Guards the failure mode that stranded #272: a /handoff CLOSED the issue but never
 // moved its board card out of Backlog, because closing an issue does NOT touch its
@@ -16,26 +16,29 @@
 // query that reads off the issue side instead of paging the whole board. `moveCards`
 // batches N pairs behind one status-field resolve, dropping a move to ~3 points.
 
-import { BOARD_OWNER, BOARD_PROJECT_NUMBER, BOARD_REPOSITORY } from './board-config.mjs';
+import {
+  BOARD_OWNER, BOARD_OWNER_TYPE, BOARD_PROJECT_NUMBER, BOARD_REPOSITORY, PARKED_LANE, ROUTING_FIELD,
+} from './board-config.mjs';
+
+// The value that clears a non-Status field (`--lane 12:none` releases a parked card).
+// Status is never cleared: an unfielded card is drift the board scan reports.
+const CLEAR_VALUE = 'none';
 
 // GraphQL for a single-select field (id + options) on project #2. Also carries the
 // project id, so one read resolves both.
 export function singleSelectFieldQuery(fieldName) {
-  return `{ user(login:"${BOARD_OWNER}") { projectV2(number:${BOARD_PROJECT_NUMBER}) { id field(name:"${fieldName}") ` +
+  return `{ ${BOARD_OWNER_TYPE}(login:"${BOARD_OWNER}") { projectV2(number:${BOARD_PROJECT_NUMBER}) { id field(name:"${fieldName}") ` +
     '{ ... on ProjectV2SingleSelectField { id options { id name } } } } } }';
 }
 
-// GraphQL for the Status single-select field (id + options) on project #2.
-export const STATUS_FIELD_QUERY = singleSelectFieldQuery('Status');
-
 // GraphQL for the project-item nodes backing issue #issueNumber, read off the issue
-// side (no board paging). Carries the item's current Status alongside its id so
-// moveCards can skip a redundant write (see parseIssueItemStatus) in the same round
+// side (no board paging). Carries the item's current value of `fieldName` alongside its
+// id so moveCards can skip a redundant write (see parseIssueItemValue) in the same round
 // trip, never a second one.
-export function issueItemQuery(issueNumber) {
+export function issueItemQuery(issueNumber, fieldName = 'Status') {
   return `{ repository(owner:"${BOARD_OWNER}", name:"${BOARD_REPOSITORY}") { issue(number:${issueNumber}) ` +
     '{ projectItems(first:10) { nodes { id project { number } '
-    + 'status: fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } '
+    + `value: fieldValueByName(name: "${fieldName}") { ... on ProjectV2ItemFieldSingleSelectValue { name } } `
     + '} } } } }';
 }
 
@@ -44,7 +47,7 @@ export function issueItemQuery(issueNumber) {
 // names the field in those two messages (defaults to Status, this module's caller).
 export function parseSingleSelectField(json, fieldName = 'Status') {
   const d = typeof json === 'string' ? JSON.parse(json) : json;
-  const projectV2 = d?.data?.user?.projectV2;
+  const projectV2 = d?.data?.[BOARD_OWNER_TYPE]?.projectV2;
   if (!projectV2 || typeof projectV2.id !== 'string' || !projectV2.id) {
     throw new Error(`${fieldName.toLowerCase()}-field JSON has no project id`);
   }
@@ -73,20 +76,20 @@ export function optionIdFor(options, statusName, fieldName = 'Status') {
 // The issueItemQuery response's project-item node for THIS project (number 2) among
 // the issue's projectItems. Throws (fail-loud) if the issue isn't on the board — a
 // move against a nonexistent card must fail, not no-op. Shared by parseIssueItemId
-// and parseIssueItemStatus so the "not on the board" diagnosis is worded once.
+// and parseIssueItemValue so the "not on the board" diagnosis is worded once.
 function findProjectItemNode(json, issueNumber) {
   const d = typeof json === 'string' ? JSON.parse(json) : json;
   const nodes = d?.data?.repository?.issue?.projectItems?.nodes;
   if (!Array.isArray(nodes)) throw new Error('issue projectItems JSON has no nodes[] array');
   const node = nodes.find((n) => n?.project?.number === BOARD_PROJECT_NUMBER);
   // Name the way forward: refusing without one is what pushed callers to a bare
-  // `gh project item-add`, which drops a card with no Status and no Workstream — the
-  // #357-#361 drift the board scan catches only after the fact.
+  // `gh project item-add`, which drops a card with its fields empty — the #357-#361
+  // drift the board scan catches only after the fact.
   if (!node) {
-    throw new Error(
-      `issue #${issueNumber} is not on the board — add it with Status and Workstream: `
-      + `node scripts/board-add.mjs ${issueNumber} <Status> <Workstream>`,
-    );
+    throw new Error(ROUTING_FIELD
+      ? `issue #${issueNumber} is not on the board — add it with Status and ${ROUTING_FIELD}: `
+        + `node scripts/board-add.mjs ${issueNumber} <Status> <${ROUTING_FIELD}>`
+      : `issue #${issueNumber} is not on the board — add it with a Status: node scripts/board-add.mjs ${issueNumber} <Status>`);
   }
   return node;
 }
@@ -98,44 +101,50 @@ export function parseIssueItemId(json, issueNumber) {
   return node.id;
 }
 
-// From the same issueItemQuery response, the item's current Status option name, or
-// null when the field carries no value (a card added without one, #357-#361). Read
-// off the same response parseIssueItemId already has — never a second query — so
+// From the same issueItemQuery response, the item's current option name for the queried
+// field, or null when the field carries no value (a card added without one, #357-#361).
+// Read off the same response parseIssueItemId already has — never a second query — so
 // moveCards can tell a redundant write from a real one.
-export function parseIssueItemStatus(json, issueNumber) {
-  return findProjectItemNode(json, issueNumber).status?.name ?? null;
+export function parseIssueItemValue(json, issueNumber) {
+  return findProjectItemNode(json, issueNumber).value?.name ?? null;
 }
 
-// Parse `--batch <issue#>:<Status> [...]` CLI args into { issueNumber, statusName }
-// pairs. Splits on the FIRST colon so a status name is never truncated. Fail-loud on
-// a malformed pair — missing colon, non-numeric issue, or empty status.
-export function parseBatchArgs(args) {
+// Parse `--batch <issue#>:<Status> [...]` (or `--lane <issue#>:<Lane>`) CLI args into
+// { issueNumber, statusName } pairs. Splits on the FIRST colon so a value is never
+// truncated. Fail-loud on a malformed pair — missing colon, non-numeric issue, or empty
+// value. `valueLabel` only names the value in those messages.
+export function parseBatchArgs(args, valueLabel = 'Status') {
   return args.map((arg) => {
     const idx = arg.indexOf(':');
-    if (idx <= 0) throw new Error(`malformed batch pair "${arg}" — expected "<issue#>:<Status>"`);
+    if (idx <= 0) throw new Error(`malformed batch pair "${arg}" — expected "<issue#>:<${valueLabel}>"`);
     const issueNumber = Number(arg.slice(0, idx));
     const statusName = arg.slice(idx + 1).trim();
     if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
       throw new Error(`malformed batch pair "${arg}" — issue number must be a positive integer`);
     }
-    if (!statusName) throw new Error(`malformed batch pair "${arg}" — status must not be empty`);
+    if (!statusName) throw new Error(`malformed batch pair "${arg}" — ${valueLabel.toLowerCase()} must not be empty`);
     return { issueNumber, statusName };
   });
 }
 
-// Move each `{ issueNumber, statusName }` pair's card, resolving the Status field
-// ONCE regardless of pair count. `exec(args) → stdout` is injectable so this is
-// testable without `gh`. Fail-loud: a per-pair failure throws immediately — no
-// silent continuation past a failed move — naming which moves already completed.
-// A card already at the target Status (closeout's Done, when the item-closed
-// workflow already moved it) is a no-op: no item-edit runs, so no redundant
-// Status-change event lands in the card's history. Returns the completed
-// `{ issueNumber, statusName, skipped }` pairs, written (`skipped: false`) or
-// already-there (`skipped: true`) alike, so a caller can report which happened.
-export function moveCards(pairs, exec) {
+// Set the single-select field `fieldName` (default Status) on each `{ issueNumber,
+// statusName }` pair's card, resolving the field ONCE regardless of pair count. For a
+// non-Status field, a value of CLEAR_VALUE clears the field instead; for Status it is
+// just an unknown option. `exec(args) → stdout` is injectable so this is testable
+// without `gh`. Fail-loud: a per-pair failure throws immediately — no silent
+// continuation past a failed move — naming which moves already completed. A card
+// already at the target value (closeout's Done, when the item-closed workflow already
+// moved it), or already clear for a clear, is a no-op: no item-edit runs, so no
+// redundant change event lands in the card's history. Returns the completed
+// `{ issueNumber, statusName, skipped, cleared }` pairs, written (`skipped: false`) or
+// already-there (`skipped: true`) alike, so a caller can report which happened. `cleared`
+// is true when the pair cleared the field, whether this call wrote the clear or the field
+// was already clear — computed once here so callers never re-derive it.
+export function moveCards(pairs, exec, fieldName = 'Status') {
   if (!Array.isArray(pairs) || pairs.length === 0) throw new Error('moveCards requires at least one pair');
   const { projectId, fieldId, options } = parseSingleSelectField(
-    exec(['api', 'graphql', '-f', `query=${STATUS_FIELD_QUERY}`]),
+    exec(['api', 'graphql', '-f', `query=${singleSelectFieldQuery(fieldName)}`]),
+    fieldName,
   );
   const completed = [];
   for (const { issueNumber, statusName } of pairs) {
@@ -149,22 +158,24 @@ export function moveCards(pairs, exec) {
       if (typeof statusName !== 'string' || !statusName.trim()) {
         throw new Error(`invalid status name: ${JSON.stringify(statusName)}`);
       }
-      const optionId = optionIdFor(options, statusName);
-      const itemJson = exec(['api', 'graphql', '-f', `query=${issueItemQuery(issueNumber)}`]);
+      const clear = fieldName !== 'Status' && statusName.trim().toLowerCase() === CLEAR_VALUE;
+      const optionId = clear ? null : optionIdFor(options, statusName, fieldName);
+      const itemJson = exec(['api', 'graphql', '-f', `query=${issueItemQuery(issueNumber, fieldName)}`]);
       const itemId = parseIssueItemId(itemJson, issueNumber);
-      const currentStatus = parseIssueItemStatus(itemJson, issueNumber);
-      const alreadyThere = currentStatus != null
-        && currentStatus.trim().toLowerCase() === statusName.trim().toLowerCase();
+      const current = parseIssueItemValue(itemJson, issueNumber);
+      const alreadyThere = clear
+        ? current == null
+        : current != null && current.trim().toLowerCase() === statusName.trim().toLowerCase();
       if (!alreadyThere) {
         exec([
           'project', 'item-edit',
           '--id', itemId,
           '--project-id', projectId,
           '--field-id', fieldId,
-          '--single-select-option-id', optionId,
+          ...(clear ? ['--clear'] : ['--single-select-option-id', optionId]),
         ]);
       }
-      completed.push({ issueNumber, statusName, skipped: alreadyThere });
+      completed.push({ issueNumber, statusName, skipped: alreadyThere, cleared: clear });
     } catch (err) {
       const done = completed.map((c) => `#${c.issueNumber} → ${c.statusName}`).join(', ') || 'none';
       throw new Error(
@@ -174,4 +185,14 @@ export function moveCards(pairs, exec) {
     }
   }
   return completed;
+}
+
+// Park each `{ issueNumber, statusName }` pair's card in the parked lane's field, or
+// release it with CLEAR_VALUE. With no parked lane configured this refuses before any
+// `gh` call rather than writing a field the board does not use.
+export function moveLanes(pairs, exec) {
+  if (!PARKED_LANE) {
+    throw new Error('--lane needs a parked lane, but scripts/lib/board-config.mjs sets PARKED_LANE = null');
+  }
+  return moveCards(pairs, exec, PARKED_LANE.field);
 }

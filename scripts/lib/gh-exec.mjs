@@ -12,11 +12,33 @@
 
 import { execFileSync } from 'node:child_process';
 
+// Every `gh` invocation goes through one argv prefix, overridable by `BOARD_TOOLKIT_GH` (a JSON
+// array). That seam exists for the tooling tests: on Windows `execFile("gh")` resolves only
+// `gh.exe` through CreateProcess, so an extensionless stand-in dropped on PATH is never run and
+// the test reaches LIVE GitHub instead. A malformed value throws rather than falling back to the
+// real CLI, so a typo in the override can never spend a test run against real GitHub. The name
+// sits outside gh's own `GH_` environment namespace on purpose, so it cannot collide with a
+// variable gh itself reads.
+export function ghArgvPrefix(raw = process.env.BOARD_TOOLKIT_GH) {
+  if (!raw) return ['gh'];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`BOARD_TOOLKIT_GH is not valid JSON: ${raw}`);
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.some((a) => typeof a !== 'string')) {
+    throw new Error(`BOARD_TOOLKIT_GH must be a non-empty JSON array of strings: ${raw}`);
+  }
+  return parsed;
+}
+
 function defaultExec(args) {
   // Bounded timeout so a hung gh process (network stall, stray auth prompt) fails
   // loud instead of blocking a ritual forever; 60s covers the slowest --paginate
   // reads with wide margin. Applies to the rate-limit probe too (same exec).
-  return execFileSync('gh', args, { encoding: 'utf8', timeout: 60_000 });
+  const [command, ...prefix] = ghArgvPrefix();
+  return execFileSync(command, [...prefix, ...args], { encoding: 'utf8', timeout: 60_000 });
 }
 
 function pad2(n) {
@@ -46,9 +68,10 @@ export function classifyGhFailure(originalError, rateLimitJson) {
 }
 
 // The wrapper CLIs call instead of invoking `gh` directly. `execImpl(args) → stdout`
-// is injectable (defaults to a real `execFileSync('gh', ...)` call) so this is
-// testable without `gh`. On failure, probes `rate_limit` in its OWN try/catch — a
-// probe failure rethrows the original error, never the probe's.
+// is injectable (defaults to `execFileSync` over the `ghArgvPrefix()` argv, which is
+// the real `gh` unless `BOARD_TOOLKIT_GH` redirects it) so this is testable without `gh`.
+// On failure, probes `rate_limit` in its OWN try/catch — a probe failure rethrows the
+// original error, never the probe's.
 export function ghExec(args, execImpl = defaultExec) {
   try {
     return execImpl(args);

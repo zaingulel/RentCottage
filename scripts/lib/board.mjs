@@ -20,8 +20,10 @@
 
 import {
   BOARD_OWNER,
+  BOARD_OWNER_TYPE,
   BOARD_PROJECT_NUMBER,
   BOARD_REPOSITORY,
+  PARKED_LANE,
   PICKABLE_STATUSES,
   ROUTING_FIELD,
   ROUTING_OPTIONS,
@@ -106,7 +108,7 @@ const STATUS_FIELD = 'Status';
 // resolve on this read. Without it both arrive as `number: null` and a just-added card
 // reads as never added (#572).
 export function boardQuery() {
-  return `query($endCursor: String) { user(login:"${BOARD_OWNER}") { login projectV2(number:${BOARD_PROJECT_NUMBER}) { id number closed fields(first:50) { totalCount nodes { ... on ProjectV2FieldCommon { name dataType } ... on ProjectV2SingleSelectField { options { name } } } } items(first:100, after:$endCursor) { totalCount pageInfo { hasNextPage endCursor } nodes { id content { __typename ... on Issue { number title state repository { nameWithOwner } subIssuesSummary { total completed } labels(first:20) { totalCount nodes { name } } assignees(first:20) { totalCount nodes { login } } blockedBy(first:20) { totalCount nodes { number state } } closedByPullRequestsReferences(first:20) { totalCount nodes { number merged } } } } fieldValues(first:20) { totalCount nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } } ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2FieldCommon { name } } } } } } } } } }`;
+  return `query($endCursor: String) { ${BOARD_OWNER_TYPE}(login:"${BOARD_OWNER}") { login projectV2(number:${BOARD_PROJECT_NUMBER}) { id number closed fields(first:50) { totalCount nodes { ... on ProjectV2FieldCommon { name dataType } ... on ProjectV2SingleSelectField { options { name } } } } items(first:100, after:$endCursor) { totalCount pageInfo { hasNextPage endCursor } nodes { id content { __typename ... on Issue { number title state repository { nameWithOwner } subIssuesSummary { total completed } labels(first:20) { totalCount nodes { name } } assignees(first:20) { totalCount nodes { login } } blockedBy(first:20) { totalCount nodes { number state } } closedByPullRequestsReferences(first:20) { totalCount nodes { number } } } } fieldValues(first:20) { totalCount nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } } ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2FieldCommon { name } } } } } } } } } }`;
 }
 
 const RERUN = 'rerun the board read, and if it repeats inspect the GitHub Projects API response';
@@ -114,21 +116,21 @@ const RERUN = 'rerun the board read, and if it repeats inspect the GitHub Projec
 // The one repository this board's cards may belong to, spelled the way GitHub does.
 const BOARD_NAME_WITH_OWNER = `${BOARD_OWNER}/${BOARD_REPOSITORY}`;
 
-// The two single-select fields the reader has a vocabulary for, and the option list
-// board-config.mjs configures for each. A live board that no longer matches is judged
+// The single-select fields the reader has a vocabulary for (Status, and the routing
+// field when one is configured), and the option list board-config.mjs configures for each. A live board that no longer matches is judged
 // against names it does not have, so the read stops instead (the 2026-07-28 incident:
 // one field mutation replaced a whole option list and cleared 218 cards).
 const CONFIGURED_OPTIONS = new Map([
   [STATUS_FIELD, STATUS_OPTIONS],
-  [ROUTING_FIELD, ROUTING_OPTIONS],
+  ...(ROUTING_FIELD ? [[ROUTING_FIELD, ROUTING_OPTIONS]] : []),
 ]);
 
 // Every connection in the response either came back whole or the read stops here:
 // `totalCount` is the ONLY evidence of that, so a missing or non-integer one is a
 // broken read rather than a quiet pass, and a card narrowed to its `first:` cap
 // (#464 review) would be the exact silent truncation this file's fail-loud
-// philosophy forbids — a dropped closing reference can hide the one merged pull
-// request a shipped verdict turns on.
+// philosophy forbids — a dropped closing reference would make an in-flight claim read
+// as stalled.
 function assertConnectionShape(connection, what, where) {
   if (!Number.isInteger(connection?.totalCount) || connection.totalCount < 0 || !Array.isArray(connection.nodes)) {
     throw new Error(
@@ -139,9 +141,10 @@ function assertConnectionShape(connection, what, where) {
 
 // The capped sub-lists are fetched WHOLE, so the count and the nodes must agree in both
 // directions. Fewer nodes than the count is the truncation above; a count SMALLER than
-// the nodes is an under-reporting response, and it is not harmless either — one merged
-// closing reference arriving under `totalCount: 0` is what would manufacture a false
-// "shipped but open" verdict against a card that is correctly parked.
+// the nodes is an under-reporting response, and it is not harmless either — a closing
+// reference arriving under `totalCount: 0` comes from a response that contradicts
+// itself, and closing references are what decide whether an in-flight claim reads as
+// stalled.
 function assertWholeConnection(connection, what, where) {
   assertConnectionShape(connection, what, where);
   if (connection.totalCount > connection.nodes.length) {
@@ -187,12 +190,13 @@ function parseNode(node) {
     id: node.id ?? null,
     status: fieldValue(fieldValues, STATUS_FIELD, node.id),
     title: content.title ?? fieldValue(fieldValues, 'Title', node.id) ?? '',
-    routing: fieldValue(fieldValues, ROUTING_FIELD, node.id),
+    routing: ROUTING_FIELD ? fieldValue(fieldValues, ROUTING_FIELD, node.id) : null,
+    ...(PARKED_LANE ? { lane: fieldValue(fieldValues, PARKED_LANE.field, node.id) } : {}),
     labels: connectionNodes(issue?.labels).map((l) => l.name),
     assignees: connectionNodes(issue?.assignees).map((a) => a.login),
     blockers: connectionNodes(issue?.blockedBy).map((b) => ({ number: b.number, state: b.state })),
     closingPullRequests: connectionNodes(issue?.closedByPullRequestsReferences)
-      .map((pr) => ({ number: pr.number, merged: pr.merged })),
+      .map((pr) => ({ number: pr.number })),
     content: {
       ...(content.__typename != null ? { __typename: content.__typename } : {}),
       ...(content.number != null ? { number: content.number } : {}),
@@ -205,8 +209,8 @@ function parseNode(node) {
 // A numbered Issue card is the shape every board rule judges, so a field that came
 // back malformed stops the read rather than being defaulted: a missing state would
 // silence the epic passes, an unusable summary would forge an undecomposed-epic row,
-// and a closing reference read as unmerged would hide the one merged pull request a
-// shipped verdict turns on.
+// and a closing reference without a number would make an in-flight claim read as
+// stalled.
 function assertIssueContent(issue, cardId) {
   const where = `board item ${cardId}`;
   assertWholeConnection(issue.labels, 'labels', where);
@@ -230,8 +234,8 @@ function assertIssueContent(issue, cardId) {
   }
   const numbered = (node) => Number.isInteger(node?.number) && node.number > 0;
   for (const reference of issue.closedByPullRequestsReferences.nodes) {
-    if (!numbered(reference) || typeof reference.merged !== 'boolean') {
-      throw new Error(`${card} carried a closing pull-request reference without a number and a boolean merged flag; ${RERUN}`);
+    if (!numbered(reference)) {
+      throw new Error(`${card} carried a closing pull-request reference without a number; ${RERUN}`);
     }
   }
   for (const blocker of issue.blockedBy.nodes) {
@@ -245,14 +249,14 @@ function assertIssueContent(issue, cardId) {
 // asked a different project than the board read it was confirming). Returns the
 // project node plus the identity string fetchBoard compares the next page against.
 function assertProject(data) {
-  const user = data?.data?.user;
-  const project = user?.projectV2;
+  const owner = data?.data?.[BOARD_OWNER_TYPE];
+  const project = owner?.projectV2;
   if (!project) {
-    throw new Error(`board page carried no user data; ${RERUN}`);
+    throw new Error(`board page carried no ${BOARD_OWNER_TYPE} data; ${RERUN}`);
   }
-  if (user.login !== BOARD_OWNER) {
+  if (owner.login !== BOARD_OWNER) {
     throw new Error(
-      `board page answered for user "${user.login}" but BOARD_OWNER is "${BOARD_OWNER}" — point the read at the configured owner in scripts/lib/board-config.mjs`,
+      `board page answered for ${BOARD_OWNER_TYPE} "${owner.login}" but BOARD_OWNER is "${BOARD_OWNER}" — point the read at the configured owner in scripts/lib/board-config.mjs`,
     );
   }
   if (project.number !== BOARD_PROJECT_NUMBER) {
@@ -271,13 +275,14 @@ function assertProject(data) {
       `board project ${BOARD_PROJECT_NUMBER} is closed — reopen it, or point BOARD_PROJECT_NUMBER at the live board in scripts/lib/board-config.mjs`,
     );
   }
-  return { project, identity: `${user.login} project ${project.number} (${project.id})` };
+  return { project, identity: `${owner.login} project ${project.number} (${project.id})` };
 }
 
 // The live Status and routing fields must be single-selects offering exactly the
 // options board-config.mjs configures. Compared as sets: ROUTING_OPTIONS is a display
-// order, not the board's own. Returns the schema signature fetchBoard compares the
-// next page against.
+// order, not the board's own. A configured parked lane's field must be a single-select
+// offering its option, among any others. Returns the schema signature fetchBoard
+// compares the next page against.
 function assertFieldSchema(fields) {
   assertWholeConnection(fields, 'project fields', 'board page');
   for (const [name, configured] of CONFIGURED_OPTIONS) {
@@ -296,6 +301,24 @@ function assertFieldSchema(fields) {
     if (seen.length !== wanted.length || seen.some((option, i) => option !== wanted[i])) {
       throw new Error(
         `the board's "${name}" field offers ${live.join(', ')} but scripts/lib/board-config.mjs configures ${configured.join(', ')} — reconcile the board field with board-config.mjs`,
+      );
+    }
+  }
+  if (PARKED_LANE) {
+    const { field: name, option } = PARKED_LANE;
+    const field = fields.nodes.find((f) => f?.name === name);
+    if (!field) {
+      throw new Error(`the board has no "${name}" field for PARKED_LANE — add it to the project, or correct PARKED_LANE in scripts/lib/board-config.mjs`);
+    }
+    if (field.dataType !== 'SINGLE_SELECT') {
+      throw new Error(
+        `the board's "${name}" is a ${field.dataType} field, not SINGLE_SELECT — restore the single-select field, or correct PARKED_LANE in scripts/lib/board-config.mjs`,
+      );
+    }
+    const live = (field.options ?? []).map((o) => o?.name);
+    if (!live.includes(option)) {
+      throw new Error(
+        `the board's "${name}" field offers ${live.join(', ')} but PARKED_LANE in scripts/lib/board-config.mjs parks "${option}" — add the option to the board field, or correct board-config.mjs`,
       );
     }
   }
@@ -474,9 +497,29 @@ export function fetchBoard(exec) {
   return items;
 }
 
-// The PICKABLE_STATUSES columns only — never an in-flight or terminal one.
+const isParked = (i) => PARKED_LANE != null && i.lane === PARKED_LANE.option;
+
+// The PICKABLE_STATUSES columns only — never an in-flight or terminal one, and never a
+// card parked in the configured PARKED_LANE.
 export function pickable(items) {
-  return items.filter((i) => PICKABLE_STATUSES.includes(i.status));
+  return items.filter((i) => PICKABLE_STATUSES.includes(i.status) && !isParked(i));
+}
+
+// The pickable-column cards the parked lane holds back, so the pick view can name them
+// rather than let them vanish. Empty when no parked lane is configured.
+export function parked(items) {
+  return items.filter((i) => PICKABLE_STATUSES.includes(i.status) && isParked(i));
+}
+
+// The line naming the parked cards, or null. Only the pick view hides parked cards, so
+// only it names them; a column or --all listing still shows them where they sit.
+export function parkedLine(items, args) {
+  const held = args.all || args.status ? [] : parked(items);
+  if (held.length === 0) return null;
+  const numbers = held.map((i) => i.content?.number ?? null)
+    .sort((a, b) => (a ?? Infinity) - (b ?? Infinity))
+    .map((n) => (n == null ? '#?' : `#${n}`));
+  return `Parked (${PARKED_LANE.field}: ${PARKED_LANE.option}), not pickable: ${numbers.join(', ')}`;
 }
 
 // `ProjectV2ItemContent` is a closed union of DraftIssue | Issue | PullRequest, and
@@ -501,6 +544,7 @@ export function normalizeItem(i) {
     status: i.status ?? null,
     title: i.title ?? '',
     routing: i.routing ?? null,
+    parked: isParked(i),
     labels: list(i.labels),
     state: i.content?.state ?? null,
     assignees: list(i.assignees),
@@ -583,8 +627,10 @@ export function groupByRouting(items) {
 
 // Grouped pretty block: a labelled heading per routing value, then that group's
 // rows via the EXISTING formatList (keeps per-group sorting + render logic
-// single-sourced — no duplicated row rendering).
+// single-sourced — no duplicated row rendering). A board with no routing field has
+// nothing to group by, so it gets the plain formatList block.
 export function formatGrouped(items) {
+  if (!ROUTING_FIELD) return formatList(items);
   const groups = groupByRouting(items);
   const body = groups
     .map((g) => `── ${g.routing} (${g.items.length}) ──\n${formatList(g.items)}`)
@@ -599,5 +645,5 @@ export function formatGrouped(items) {
   // Keep the repository-owned priority and low-cost read; newly seen values must fail loud.
   const values = unknown.join(', ');
   const label = unknown.length === 1 ? 'value' : 'values';
-  return `${body}\n\nWARNING: unrecognised ${ROUTING_FIELD} ${label}: ${values}; add ${values} to ROUTING_OPTIONS and update .agents/skills/to-issues/SKILL.md.`;
+  return `${body}\n\nWARNING: unrecognised ${ROUTING_FIELD} ${label}: ${values}; add ${values} to ROUTING_OPTIONS in scripts/lib/board-config.mjs.`;
 }

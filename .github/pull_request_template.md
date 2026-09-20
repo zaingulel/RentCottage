@@ -1,47 +1,31 @@
+<!-- The owner reads this, not the diff. Write it for someone who checks wording and screenshots. -->
+
 ## What changed
 
-<!-- Explain the problem, cause, and outcome in plain language. -->
+<!-- One paragraph in plain language: the problem, the cause, the fix. -->
 
 Closes #
 
-## Acceptance criteria
+## What the owner can see
 
-<!-- Copy the linked issue's acceptance criteria and record the evidence for each one. -->
-
-- [ ] Every acceptance criterion is delivered or an explicit gap is reported.
+<!-- Screenshot of every changed interaction, driven in the built artifact over local HTTP. Say "no visual change" when true. -->
 
 ## Evidence
 
-- [ ] Relevant formatting, lint, type, test and build checks pass.
-- [ ] A reviewer independently checked repository standards and the linked issue.
-- [ ] Visible changes were inspected in the running application and current evidence is attached, or this is not applicable.
+<!-- Paste the lines `node scripts/run-log.mjs` wrote for this branch: focused tests, the executed mutation (red then green), lint, and applicable convergence. Each line carries the real exit code. -->
 
-Commands and results:
+| Claim | Construction mode | Focused test | Mutation    | Result |
+| ----- | ----------------- | ------------ | ----------- | ------ |
+|       |                   |              | red → green |        |
 
-<!-- List exact commands and outcomes. -->
+## Review
 
-Small adjacent repairs included in this outcome:
+<!-- The review line comes first, in the format docs/AI-WORKFLOW.md specifies under "The review line", for example `Review: tier=code rounds=2 raised=6 fixed=4 dismissed=1 deferred=1` -->
 
-<!-- List and justify each bounded repair, or say "None". -->
+Review: tier= rounds= raised= fixed= dismissed= deferred=
 
-## Review and delivery
-
-- Security and privacy impact:
-- Migration and rollback:
-- Known gaps:
-
-## Proposed outward actions
-
-<!-- Name the exact targets. Approval covers only the actions completed here; delete anything that is not proposed. -->
-
-- Push branch/ref:
-- Create or update pull request:
-- Merge method and pull request:
-- Reconcile issue and Project items:
-- Change hosted repository settings:
-- Deploy environment:
-- Close out branch and worktree:
+<!-- The fresh reviewer's verdict and every finding with its disposition (fixed, dismissed with reason, or deferred as docs/AI-WORKFLOW.md defines it). Greptile threads are resolved on the pull request itself. -->
 
 ## Not done
 
-<!-- For finished work, say "Nothing" only when true. For a parked draft, name what remains, the next concrete step, failing or unavailable evidence, and any owner decision still needed. -->
+<!-- Anything skipped, deferred, or uncertain. "Nothing" is a valid answer only when it is true. -->

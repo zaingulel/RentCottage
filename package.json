@@ -12,6 +12,7 @@
     "audit:production": "npm audit --omit=dev --audit-level=moderate",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "lint:docs": "node scripts/doc-lint.mjs",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run && npm run test:scripts",
     "test:scripts": "node --test \"scripts/lib/*.test.mjs\"",
