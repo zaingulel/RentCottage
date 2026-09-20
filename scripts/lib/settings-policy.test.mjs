@@ -14,6 +14,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const settings = JSON.parse(
   readFileSync(resolve(ROOT, ".claude/settings.json"), "utf8"),
 );
+const codexRules = readFileSync(
+  resolve(ROOT, ".codex/rules/playwright.rules"),
+  "utf8",
+);
 
 test("only the board scripts are auto-approved, and nothing is denied by omission", () => {
   assert.deepEqual(settings.permissions.allow, [
@@ -42,4 +46,22 @@ test("the hook set is exactly the documented guards", () => {
     'sh "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-green.sh"',
   ]);
   assert.deepEqual(Object.keys(settings.hooks).sort(), ["PreToolUse", "Stop"]);
+});
+
+test("Codex browser permissions cover only the real aggregate and Playwright command prefixes", () => {
+  for (const pattern of [
+    '["npm", "run", "verify"]',
+    '["npm", "run", "verify:access"]',
+    '["npx", "--yes", "playwright"]',
+  ]) {
+    assert.equal(
+      codexRules.split(`pattern = ${pattern}`).length - 1,
+      1,
+      `${pattern} permission count`,
+    );
+  }
+  assert.doesNotMatch(
+    codexRules,
+    /pattern = \["npm", "run", "verify:preview"\]/,
+  );
 });

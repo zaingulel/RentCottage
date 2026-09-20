@@ -7,14 +7,18 @@
 # request it judges. The pull request's commits are read as git objects and nothing from that tree is
 # executed, which is why no dependency install appears here.
 name: sweep-scope
+
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
+
 permissions:
   contents: read
+
 concurrency:
   group: sweep-scope-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+
 jobs:
   sweep-scope:
     runs-on: ubuntu-latest

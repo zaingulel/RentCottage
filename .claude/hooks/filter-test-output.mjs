@@ -25,8 +25,8 @@ process.stdin.on("end", () => {
   const rewritten = rewriteTestCommand(toolInput.command ?? "");
   if (!rewritten) process.exit(0);
   process.stdout.write(JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
       // updatedInput REPLACES the whole tool input, so every other field must be carried over
       // or a long run silently loses its timeout, run_in_background, and description.
       updatedInput: { ...toolInput, command: rewritten },

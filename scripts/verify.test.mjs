@@ -121,7 +121,7 @@ it("keeps explicit Node workflow entry points non-executable for baseline eligib
     const trackedMode = git(ROOT, ["ls-files", "--stage", "--", path]).split(
       /\s/,
     )[0];
-    expect(trackedMode, `${path} must be tracked`).toMatch(/^100(?:644|755)$/);
+    expect(trackedMode, `${path} must be tracked`).toBe("100644");
     expect(
       lstatSync(join(ROOT, path)).mode & 0o111,
       `${path} on-disk mode`,
@@ -140,24 +140,6 @@ it("keeps explicit Node workflow entry points non-executable for baseline eligib
       expect.stringContaining(`${path} is executable`),
     );
   }
-});
-
-it("keeps browser permission rules on the real aggregate and Playwright command prefixes", () => {
-  const rules = readFileSync(
-    join(ROOT, ".codex/rules/playwright.rules"),
-    "utf8",
-  );
-  for (const pattern of [
-    '["npm", "run", "verify"]',
-    '["npm", "run", "verify:access"]',
-    '["npx", "--yes", "playwright"]',
-  ]) {
-    expect(
-      rules.split(`pattern = ${pattern}`).length - 1,
-      `${pattern} permission count`,
-    ).toBe(1);
-  }
-  expect(rules).not.toContain('pattern = ["npm", "run", "verify:preview"]');
 });
 
 function write(repository, path, contents) {
@@ -999,6 +981,11 @@ describe("repository verification command", () => {
       "an agent TypeScript file",
       ".agents/skills/tool/runtime.ts",
       "export {};\n",
+    ],
+    [
+      "nested native skill metadata",
+      ".agents/skills/future-publisher/fixtures/worker/agents/openai.yaml",
+      "interface:\n  display_name: Nested Fixture\n",
     ],
     ["a docs script", "docs/research/runtime.js", "export {};\n"],
     ["a category lookalike", ".agents-copy/roles/reviewer.md", "# Lookalike\n"],
