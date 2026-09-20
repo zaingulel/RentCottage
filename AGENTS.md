@@ -91,6 +91,9 @@ inspect the migration, and land both together. Preserve the product preparation 
    instruction to push is that yes. It covers the whole deliver sequence in the `resume` skill, push to
    auto-squash merge, with no fresh yes inside it. `closeout` follows the merge unasked.
 
+Preview deployment under `.github/workflows/preview.yml` remains a separate owner-approved operation and is not
+included in ordinary push-to-merge delivery authority.
+
 A material change to the approved outcome, product meaning, or a trade-off goes back to the owner as a
 plain-language decision before it is built; a parser, state machine, or framework the outcome did not name is
 such a change. Anything short of that which the job surfaces and can sensibly finish in the same job, in the

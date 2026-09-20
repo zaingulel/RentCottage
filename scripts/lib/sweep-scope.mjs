@@ -8,11 +8,9 @@
 // own scope. I/O lives in scripts/sweep-scope-check.mjs; this file is pure.
 
 // The scope table is the one whose header row is exactly `| May edit | Never edit |`; the may-edit
-// paths are every backtick-quoted or bold entry in its left column, in table order. Bold marks an
-// approved target that does not exist yet and therefore remains ineligible until separate work creates
-// it; the checker still refuses additions. A manual without that table, or with an empty left column,
-// is an error: an empty allowlist would fail every diff and read as a broken sweep rather than a broken
-// parse.
+// paths are every backtick-quoted entry in its left column, in table order. A manual without that table,
+// or with an empty left column, is an error: an empty allowlist would fail every diff and read as a
+// broken sweep rather than a broken parse.
 export function parseMayEdit(manualText) {
   const lines = manualText.split('\n');
   const header = lines.findIndex((line) => line.trim() === '| May edit | Never edit |');
@@ -20,7 +18,7 @@ export function parseMayEdit(manualText) {
   const paths = [];
   for (let i = header + 2; i < lines.length && lines[i].startsWith('|'); i += 1) {
     const left = lines[i].split('|')[1] ?? '';
-    for (const m of left.matchAll(/`([^`]+)`|\*\*([^*]+)\*\*/g)) paths.push(m[1] ?? m[2]);
+    for (const m of left.matchAll(/`([^`]+)`/g)) paths.push(m[1]);
   }
   if (paths.length === 0) throw new Error('the scope table\'s may-edit column is empty');
   return paths;

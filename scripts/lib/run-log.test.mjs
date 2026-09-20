@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,40 @@ test('a command that cannot be started is logged as a spawn failure, never as a 
     const [line] = logLines(repo);
     assert.match(line, /\| typo \| `definitely-not-a-command-xyz --flag` \| spawn failed \(ENOENT\)$/);
     assert.doesNotMatch(line, /exit 1/);
+  });
+});
+
+test('a child signal is logged and re-raised with shell status 137', () => {
+  withRepo((repo) => {
+    const result = spawnSync('/bin/sh', [
+      '-c',
+      '"$1" "$2" signal -- "$1" -e \'process.kill(process.pid, "SIGKILL")\'; exit $?',
+      'run-log-test',
+      process.execPath,
+      SCRIPT,
+    ], { cwd: repo, encoding: 'utf8' });
+    assert.equal(result.status, 137, result.stderr);
+    const [line] = logLines(repo);
+    assert.match(line, /\| signal \| .* \| killed by SIGKILL$/);
+  });
+});
+
+test('a receipt-write failure cannot replace the child exit or signal result', () => {
+  withRepo((repo) => {
+    writeFileSync(join(repo, '.claude'), 'blocks the receipt directory');
+    const red = run(repo, ['red without receipt', '--', process.execPath, '-e', 'process.exit(3)']);
+    assert.equal(red.status, 3, red.stderr);
+    assert.match(red.stderr, /run-log: could not write receipt/);
+
+    const signalled = spawnSync('/bin/sh', [
+      '-c',
+      '"$1" "$2" signal-without-receipt -- "$1" -e \'process.kill(process.pid, "SIGKILL")\'; exit $?',
+      'run-log-test',
+      process.execPath,
+      SCRIPT,
+    ], { cwd: repo, encoding: 'utf8' });
+    assert.equal(signalled.status, 137, signalled.stderr);
+    assert.match(signalled.stderr, /run-log: could not write receipt/);
   });
 });
 

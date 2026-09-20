@@ -29,6 +29,7 @@ const RUNNERS = [
   /^npm\s+test(\s|$)/,
   /^npm\s+run\s+test:\S+(\s|$)/,
 ];
+const RUN_LOG = /^npm\s+run\s+run-log\s+--\s+(.+?)\s+--\s+(.+)$/;
 
 // One optional `cd <path> && ` prefix is preserved verbatim; the path may be quoted or bare.
 const CD_PREFIX = /^cd\s+("[^"]*"|'[^']*'|[^\s'"|;&<>$`()]+)\s+&&\s+/;
@@ -47,10 +48,12 @@ function shellQuote(value) {
 export function rewriteTestCommand(command) {
   const raw = (command ?? '').trim();
   const cd = raw.match(CD_PREFIX);
-  if (cd && SUSPICIOUS_CD_PREFIX.test(cd[1])) return null;
+  if (cd && SUSPICIOUS_CD_PREFIX.test(cd[0])) return null;
   const runner = cd ? raw.slice(cd[0].length) : raw;
   if (COMPOUND.test(runner)) return null;
-  if (!RUNNERS.some((pattern) => pattern.test(runner))) return null;
+  const logged = runner.match(RUN_LOG);
+  const executable = logged ? logged[2] : runner;
+  if (!RUNNERS.some((pattern) => pattern.test(executable))) return null;
   // `exit $__fg_status` is unconditional and last, so nothing the filter does — including
   // crashing — can mask what the runner decided.
   return `${cd ? cd[0] : ''}__fg_out=$(mktemp); ${runner} >"$__fg_out" 2>&1; __fg_status=$?; `

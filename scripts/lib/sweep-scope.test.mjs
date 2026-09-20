@@ -21,7 +21,6 @@ const SCRIPT = join(ROOT, 'scripts/sweep-scope-check.mjs');
 
 test('parseMayEdit reads exactly the may-edit column of the live manual', () => {
   assert.deepEqual(parseMayEdit(MANUAL), [
-    'README.md',
     'CONTEXT.md',
     'docs/AI-WORKFLOW.md',
   ]);
@@ -31,14 +30,14 @@ test('parseMayEdit takes only the left column and fails loud on a missing or emp
   const table = [
     '| May edit | Never edit |',
     '|---|---|',
-    '| **planned.md**, `a.md`, `b/c.md` | `d.md` |',
+    '| plain prose, **planned.md**, **important**, `a.md`, `b/c.md` | `d.md` |',
     '| | `e.md`, `f/` |',
     '',
     '| Area | Owning document |',
     '|---|---|',
     '| x | `z.md` |',
   ].join('\n');
-  assert.deepEqual(parseMayEdit(table), ['planned.md', 'a.md', 'b/c.md']);
+  assert.deepEqual(parseMayEdit(table), ['a.md', 'b/c.md']);
   assert.throws(() => parseMayEdit('# no table here'), /scope table/);
   assert.throws(() => parseMayEdit('| May edit | Never edit |\n|---|---|\n| | `d.md` |\n'), /empty/);
 });

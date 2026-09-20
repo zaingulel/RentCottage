@@ -14,6 +14,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const settings = JSON.parse(
   readFileSync(resolve(ROOT, ".claude/settings.json"), "utf8"),
 );
+const codexHooks = JSON.parse(
+  readFileSync(resolve(ROOT, ".codex/hooks.json"), "utf8"),
+);
+const packageJson = JSON.parse(
+  readFileSync(resolve(ROOT, "package.json"), "utf8"),
+);
 const codexRules = readFileSync(
   resolve(ROOT, ".codex/rules/playwright.rules"),
   "utf8",
@@ -26,6 +32,10 @@ test("only the board scripts are auto-approved, and nothing is denied by omissio
     "Bash(node scripts/board-add.mjs *)",
   ]);
   assert.equal(settings.permissions.deny, undefined);
+});
+
+test("dependency installation does not activate Git hooks", () => {
+  assert.equal(packageJson.scripts.prepare, undefined);
 });
 
 test("the hook set is exactly the documented guards", () => {
@@ -46,6 +56,46 @@ test("the hook set is exactly the documented guards", () => {
     'sh "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-green.sh"',
   ]);
   assert.deepEqual(Object.keys(settings.hooks).sort(), ["PreToolUse", "Stop"]);
+});
+
+test("the Codex hook set is exactly the registered command and handoff guards", () => {
+  assert.deepEqual(codexHooks, {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "Bash",
+          hooks: [
+            {
+              type: "command",
+              command:
+                'node "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.codex/hooks/block-unsafe-git.mjs"',
+            },
+          ],
+        },
+        {
+          matcher: "collaborationspawn_agent",
+          hooks: [
+            {
+              type: "command",
+              command:
+                'node "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.codex/hooks/check-builder-handoff.mjs"',
+            },
+          ],
+        },
+      ],
+      Stop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command:
+                'sh "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.codex/hooks/verify-green.sh"',
+            },
+          ],
+        },
+      ],
+    },
+  });
 });
 
 test("Codex browser permissions cover only the real aggregate and Playwright command prefixes", () => {

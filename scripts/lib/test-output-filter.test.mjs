@@ -82,6 +82,10 @@ test('test output filtering condenses green runs, keeps red runs loud, and never
     for (const command of [
       'node --test failing.test.mjs\ntrue',
       'node --test failing.test.mjs\r\ntrue',
+      'cd /repo &&\nnpm test',
+      'cd\n/repo && npm test',
+      'cd /repo\n&& npm test',
+      'cd /repo &&\r\nnpm test',
     ]) {
       assert.equal(rewriteTestCommand(command), null, `expected no rewrite for: ${JSON.stringify(command)}`);
     }
@@ -91,15 +95,44 @@ test('test output filtering condenses green runs, keeps red runs loud, and never
     for (const command of [
       'node --test scripts/lib/board.test.mjs',
       'cd "/repo lane/741" && node --test --test-name-pattern="^x$" scripts/lib/board.test.mjs',
-      'npx playwright test tests/kpis.spec.ts',
+      'npx playwright test tests/marketplace-shell.spec.ts',
       'npm test',
       'npm run test:scripts',
+      'npm run run-log -- focused script tests -- node --test scripts/lib/board.test.mjs',
+      'npm run run-log -- browser evidence -- npx playwright test tests/marketplace-shell.spec.ts',
     ]) {
       const rewritten = rewriteTestCommand(command);
       assert.ok(rewritten, `expected a rewrite for: ${command}`);
       assert.ok(rewritten.endsWith('exit $__fg_status'), `rewrite must end by exiting the runner's status: ${rewritten}`);
     }
     assert.ok(rewriteTestCommand('cd "/repo lane/741" && npm test').startsWith('cd "/repo lane/741" && '));
+  });
+
+  await t.test('run-log is rewritten only when it wraps a known runner', () => {
+    const wrapped = 'npm run run-log -- focused scripts -- node --test scripts/lib/board.test.mjs';
+    const rewritten = rewriteTestCommand(wrapped);
+    assert.ok(rewritten);
+    assert.match(rewritten, /npm run run-log -- focused scripts -- node --test scripts\/lib\/board\.test\.mjs/);
+    assert.ok(rewritten.endsWith('exit $__fg_status'));
+    for (const command of [
+      'npm run run-log -- git state -- git status',
+      'npm run run-log -- missing command separator',
+      'npm run run-log -- label -- echo node --test scripts/lib/board.test.mjs',
+    ]) {
+      assert.equal(rewriteTestCommand(command), null, `expected no rewrite for: ${command}`);
+    }
+  });
+
+  await t.test('a green runner wrapped by run-log executes and condenses as one command', () => {
+    const file = fixture('logged-green.test.mjs',
+      "import { test } from 'node:test';\ntest('logged detail that should be dropped', () => {});\n");
+    const wrapped = `npm run run-log -- output filter green -- node --test ${file}`;
+    const rewritten = rewriteTestCommand(wrapped);
+    assert.ok(rewritten?.includes(`${wrapped} >"$__fg_out" 2>&1`));
+    const { status, surfaced } = runRewritten(wrapped);
+    assert.equal(status, 0, surfaced);
+    assert.match(surfaced, /green run condensed to summary/);
+    assert.doesNotMatch(surfaced, /logged detail that should be dropped/);
   });
 
   await t.test('a TAP-format green run condenses to its TAP summary', () => {
@@ -211,6 +244,10 @@ test('test output filtering condenses green runs, keeps red runs loud, and never
       'cd "$(printf /tmp)" && npm test',
       'cd "`printf /tmp`" && npm test',
       'cd "/tmp\nrepo" && npm test',
+      'cd /tmp &&\nnpm test',
+      'cd\n/tmp && npm test',
+      'cd /tmp\n&& npm test',
+      'cd /tmp &&\r\nnpm test',
     ]) {
       const run = spawnSync('node', [hook], {
         input: JSON.stringify({ tool_input: { command } }),

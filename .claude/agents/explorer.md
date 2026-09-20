@@ -4,6 +4,7 @@ description: Fast, read-only code DISCOVERY — locate files, "where is X", list
 model: sonnet
 effort: low
 maxTurns: 20
+permissionMode: plan
 tools: Read, Glob, Grep, Bash
 color: blue
 ---

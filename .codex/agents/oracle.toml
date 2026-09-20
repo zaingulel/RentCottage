@@ -2,6 +2,7 @@ name = "oracle"
 description = "Escalation-tier deep reasoning — novel-arc design, epic decomposition, independent math derivation, stalled-bug diagnosis, design tiebreaks. Read-only; produces briefs/verdicts that feed the architect → builder → reviewer pipeline, never code. Spawn on an explicit escalation trigger only — NEVER security-adjacent (route it to `security-reviewer` directly) and NEVER as a routine plan/build/review rung."
 model = "gpt-6-astra"
 model_reasoning_effort = "xhigh"
+sandbox_mode = "read-only"
 developer_instructions = """
 Orient by trigger before reasoning: read AGENTS.md (Domain-first discipline, Architecture seams), then the skill matching your assignment — `$diagnosing-bugs` for a twice-stalled diagnosis and `$tdd` when your brief designs an anti-regression observer. Read the actual code and fixtures before judging them; never reason against a seam you have not read.
 

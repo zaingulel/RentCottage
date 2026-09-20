@@ -32,7 +32,7 @@ test('isOpaqueDispatchMessage accepts only a full Fernet-shaped token', () => {
   // A short lookalike must NOT skip validation.
   assert.equal(isOpaqueDispatchMessage('gAAAAABshort'), false);
   // A filled handoff template is never opaque.
-  assert.equal(isOpaqueDispatchMessage('Slice: cycle time card\nClaim: renders unavailable copy\n'), false);
+  assert.equal(isOpaqueDispatchMessage('Slice: booking request\nClaim: renders pending copy\n'), false);
   assert.equal(isOpaqueDispatchMessage(42), false);
   assert.equal(isOpaqueDispatchMessage(undefined), false);
 });

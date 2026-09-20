@@ -2,6 +2,7 @@ name = "explorer"
 description = "Fast, read-only code DISCOVERY — locate files, \"where is X\", list usages, trace a definition; reads whose result you can eyeball for completeness. It LOCATES code and does not judge it — audits that turn on judgment belong to `reviewer`."
 model = "gpt-5.6-luna"
 model_reasoning_effort = "high"
+sandbox_mode = "read-only"
 developer_instructions = """
 Read AGENTS.md's Product and Hard constraints first so you search the right places: application code is under `src/`, authoritative database objects under `supabase/schemas/`, migrations under `supabase/migrations/`, browser journeys under `tests/`, and fixture preparation under `scripts/` and `docs/demo.md`.
 

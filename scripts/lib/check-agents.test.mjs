@@ -3,7 +3,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -31,6 +37,7 @@ const GOOD_TOML = `name = "reviewer"
 description = "Adversarial pre-merge review"
 model = "gpt-5.6-sol"
 model_reasoning_effort = "xhigh"
+sandbox_mode = "read-only"
 developer_instructions = """
 You review the diff.
 """
@@ -160,6 +167,23 @@ test("Codex format failures are named: unclosed block, missing field, bad name, 
     ).join("\n"),
     /unknown model_reasoning_effort/,
   );
+  assert.match(
+    checkCodexAgentSource(
+      "reviewer.toml",
+      GOOD_TOML.replace(
+        'sandbox_mode = "read-only"',
+        'sandbox_mode = "all-powerful"',
+      ),
+    ).join("\n"),
+    /unknown sandbox_mode/,
+  );
+  assert.match(
+    checkCodexAgentSource(
+      "reviewer.toml",
+      GOOD_TOML.replace('sandbox_mode = "read-only"\n', ""),
+    ).join("\n"),
+    /missing required TOML field `sandbox_mode`/,
+  );
 });
 
 test("checkAgentsDir picks the checker by extension and refuses an unchecked directory", () => {
@@ -192,6 +216,52 @@ test("checkAgentsDir picks the checker by extension and refuses an unchecked dir
 test("the live registries in this repository are clean", () => {
   assert.deepEqual(checkAgentsDir(".claude/agents"), []);
   assert.deepEqual(checkAgentsDir(".codex/agents"), []);
+});
+
+test("the live Codex seats pin read-only reviewers and workspace-write builders", () => {
+  const readOnly = [
+    "architect",
+    "explorer",
+    "plan-reviewer",
+    "oracle",
+    "reviewer",
+    "security-reviewer",
+  ];
+  const writers = ["builder-lite", "builder", "builder-max"];
+  for (const seat of readOnly) {
+    const source = readFileSync(`.codex/agents/${seat}.toml`, "utf8");
+    assert.match(source, /^sandbox_mode = "read-only"$/m, `${seat} sandbox`);
+  }
+  for (const seat of writers) {
+    const source = readFileSync(`.codex/agents/${seat}.toml`, "utf8");
+    assert.match(
+      source,
+      /^sandbox_mode = "workspace-write"$/m,
+      `${seat} sandbox`,
+    );
+  }
+});
+
+test("Claude planning seats use plan mode while evidence reviewers do not", () => {
+  for (const seat of ["architect", "explorer", "plan-reviewer", "oracle"]) {
+    const source = readFileSync(`.claude/agents/${seat}.md`, "utf8");
+    assert.match(source, /^permissionMode: plan$/m, `${seat} permission mode`);
+  }
+  for (const seat of ["reviewer", "security-reviewer"]) {
+    const source = readFileSync(`.claude/agents/${seat}.md`, "utf8");
+    assert.doesNotMatch(
+      source,
+      /^permissionMode:/m,
+      `${seat} must retain evidence execution`,
+    );
+  }
+});
+
+test("oracle and security-reviewer retain the owner's 90-turn cap", () => {
+  for (const seat of ["oracle", "security-reviewer"]) {
+    const source = readFileSync(`.claude/agents/${seat}.md`, "utf8");
+    assert.match(source, /^maxTurns: 90$/m, `${seat} turn cap`);
+  }
 });
 
 // The three builder seats share one body from `Workflow:` down. Mutation: drop the parity call from

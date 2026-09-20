@@ -25,11 +25,10 @@ moves a file. Anything not named in the left column is out of scope.
 
 | May edit | Never edit |
 |---|---|
-| **README.md** (not yet present; eligible only after separately approved work creates it), `CONTEXT.md`, `docs/AI-WORKFLOW.md` | `docs/DOC-SWEEP.md`, `docs/SWEEP-TRIAGE.md`; `AGENTS.md`, `CLAUDE.md`; `.agents/`, `.claude/`, `.codex/`; engineering and agent authorities; specifications, architecture decisions, research, evidence, deployment and demo documents; all code, tests, migrations, fixtures, generated output, configuration, private data, and `.github/` |
+| `CONTEXT.md`, `docs/AI-WORKFLOW.md` | `docs/DOC-SWEEP.md`, `docs/SWEEP-TRIAGE.md`; `AGENTS.md`, `CLAUDE.md`; `.agents/`, `.claude/`, `.codex/`; engineering and agent authorities; specifications, architecture decisions, research, evidence, deployment and demo documents; all code, tests, migrations, fixtures, generated output, configuration, private data, and `.github/` |
 
-The three permitted documents have distinct ownership:
+The two permitted documents have distinct ownership:
 
-- The root product overview, when separately created, explains the product and ordinary local use.
 - `CONTEXT.md` records canonical domain terms. The sweep may align wording only when meaning is unchanged.
 - `docs/AI-WORKFLOW.md` explains how the already-implemented agent workflow fits together. The sweep may repair a
   factual description of mechanics, never a requirement, gate, threshold, permission, role duty, or routing rule.
@@ -85,13 +84,13 @@ covers links; this sentence remains the guard for commands and credential-shaped
 2. Run `npm ci` in that worktree. A dependency or network mismatch is a stop, never a reason to widen access.
 3. Refuse duplication: if the routine's own open pull request has a `docs-sweep/` head or a title beginning
    `Weekly documentation sweep`, report it and stop.
-4. Record untouched-baseline results for `npm run lint` and `npm run test:scripts`. A red baseline is reported and
+4. Record untouched-baseline results for `npm run lint`, `npm run lint:docs`, and `npm run test:scripts`. A red baseline is reported and
    stops the run; it is never repaired as part of documentation maintenance.
 5. Read the code and accepted decisions changed since the previous successful sweep, plus the pull requests that
    explain those commits. Treat prose as leads and derive every fact from the tree.
-6. Modify only the three exact may-edit files. Keep current explanations, remove stale narrative, preserve product
+6. Modify only the two exact may-edit files. Keep current explanations, remove stale narrative, preserve product
    meaning, and record every out-of-scope finding without changing its target.
-7. Run `node scripts/doc-lint.mjs` and `npm run test:scripts`; inspect `git status --porcelain`; commit only when
+7. Run `npm run lint:docs` and `npm run test:scripts`; inspect `git status --porcelain`; commit only when
    every changed path is allowed; then run `node scripts/sweep-scope-check.mjs origin/main HEAD`.
 8. Under the separately approved publication authority, push only the routine's branch and open one ready pull
    request. Never push to `main`, force-push, bypass hooks, change settings, merge another pull request, or widen the
@@ -109,5 +108,5 @@ The body states that this inactive-by-default routine produced the branch and re
 - each repaired claim, file, and repository source from which it was derived;
 - implemented behaviour still undocumented and every repair deliberately not made;
 - any terminology disagreement left for owner direction;
-- `npm run lint`, `npm run test:scripts`, `node scripts/doc-lint.mjs`, and the scope-check result; and
+- `npm run lint`, `npm run lint:docs`, `npm run test:scripts`, and the scope-check result; and
 - the exact head on which hosted checks completed, or why publication stopped.

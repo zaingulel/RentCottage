@@ -33,27 +33,27 @@ const EXPECTED_ARCHITECT_FIELDS = [
 ];
 
 const GOOD_BUILDER = [
-  "Slice: Cycle-time card shows the unavailable state",
-  "Claim: with under 30 percent commitment coverage the card renders the unavailable copy",
+  "Slice: Booking-request card shows the pending state",
+  "Claim: a pending booking request renders the expected status copy",
   "Construction mode: evidence-required",
   "Plan:",
-  "- edit the card renderer and its Playwright spec",
+  "- edit the status component and its focused test",
   "Files to edit:",
-  "- src/script/19-cycle-time-card.js",
+  "- src/components/customer-booking-request-status.tsx",
   "Evidence that lands with this slice:",
-  "- tests/cycle-time-card.spec.ts: 'cycle time card explains unavailable data'",
-  'Focused verification command: npm test -- --grep "cycle time card explains unavailable data$"',
-  "Stop condition: the spec passes and lint is clean",
-  "Working directory: /tmp/jobs/123",
+  "- src/components/customer-booking-request-status.test.tsx",
+  "Focused verification command: npx vitest run src/components/customer-booking-request-status.test.tsx",
+  "Stop condition: the focused test passes and lint is clean",
+  "Working directory: /tmp/jobs/310",
   "",
   "Standing contract: report what you verified; end with the literal line final on-disk state = fixed",
 ].join("\n");
 
 const GOOD_ARCHITECT = [
-  "Decision: where the unavailable-state copy lives",
-  "Scope: the cycle-time card only",
-  "Discovery: read 19-cycle-time-card.js and its spec",
-  "Judgment: copy placement, not metric meaning",
+  "Decision: where the pending-state copy lives",
+  "Scope: the booking-request status component only",
+  "Discovery: read the component and its focused test",
+  "Judgment: copy placement, not booking lifecycle meaning",
   "Deliverable: a file-level plan with one claim",
   "Stop condition: plan delivered in full",
 ].join("\n");
@@ -111,18 +111,18 @@ test("builder-lite is guarded exactly like builder: a missing required line bloc
 
 test("the real builder template, filled, passes the guard and carries every required line", () => {
   const prompt = filledTemplate(".claude/templates/builder-handoff.md", {
-    SLICE_TITLE: "Cycle-time card unavailable state",
-    CLAIM: "the card renders the unavailable copy under 30 percent coverage",
+    SLICE_TITLE: "Booking-request pending state",
+    CLAIM: "the card renders pending copy for a pending booking request",
     CONSTRUCTION_MODE: "evidence-required",
-    WORKTREE_ROOT: "/tmp/jobs/123",
-    PLAN: "Edit the renderer; add the spec.",
-    FILES: "- src/script/19-cycle-time-card.js",
-    TEST: "- tests/cycle-time-card.spec.ts",
-    OBSERVER: "the rendered card text",
+    WORKTREE_ROOT: "/tmp/jobs/310",
+    PLAN: "Edit the status component; add the focused test.",
+    FILES: "- src/components/customer-booking-request-status.tsx",
+    TEST: "- src/components/customer-booking-request-status.test.tsx",
+    OBSERVER: "the rendered status text",
     INDEPENDENT_ORACLE: "the acceptance criterion's exact copy",
     FOCUSED_TEST_COMMAND:
-      'npm test -- --grep "cycle time card explains unavailable data$"',
-    STOP_CONDITION: "spec green, lint clean",
+      "npx vitest run src/components/customer-booking-request-status.test.tsx",
+    STOP_CONDITION: "focused test green, lint clean",
   });
   assert.deepEqual(checkHandoff({ subagent_type: "builder", prompt }), {
     ok: true,

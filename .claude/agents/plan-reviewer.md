@@ -4,6 +4,7 @@ description: "Independent read-only review of an architect's fixed plan before a
 model: opus
 effort: high
 maxTurns: 90
+permissionMode: plan
 tools: Read, Glob, Grep, Write
 color: pink
 ---

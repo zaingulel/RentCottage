@@ -27,8 +27,9 @@ import { pathToFileURL } from 'node:url';
 
 const KNOWN_MODELS = ['opus', 'sonnet', 'haiku', 'fable', 'inherit'];
 const KNOWN_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const KNOWN_SANDBOX_MODES = ['read-only', 'workspace-write'];
 const REQUIRED_KEYS = ['name', 'description'];
-const CODEX_REQUIRED_FIELDS = ['name', 'description', 'model', 'model_reasoning_effort'];
+const CODEX_REQUIRED_FIELDS = ['name', 'description', 'model', 'model_reasoning_effort', 'sandbox_mode'];
 
 /** Check one Claude agent file's source. Returns [] when clean, else problem strings. */
 export function checkAgentSource(filename, source) {
@@ -157,6 +158,9 @@ export function checkCodexAgentSource(filename, source) {
   }
   if (fields.model_reasoning_effort && !KNOWN_EFFORTS.includes(fields.model_reasoning_effort)) {
     problems.push(`${filename}: unknown model_reasoning_effort \`${fields.model_reasoning_effort}\` (known: ${KNOWN_EFFORTS.join(', ')})`);
+  }
+  if (fields.sandbox_mode && !KNOWN_SANDBOX_MODES.includes(fields.sandbox_mode)) {
+    problems.push(`${filename}: unknown sandbox_mode \`${fields.sandbox_mode}\` (known: ${KNOWN_SANDBOX_MODES.join(', ')})`);
   }
   return problems;
 }

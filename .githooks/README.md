@@ -10,14 +10,15 @@ These hooks catch repeated workflow mistakes before they reach hosted Continuous
 
 ## Activation
 
-The hooks travel with the repository but are not activated merely by being tracked. The package `prepare` command
-sets `core.hooksPath` to `.githooks` during a future dependency install; this change does not run that command or
-alter the current checkout's configuration. Before an intentional activation or verification, read and retain the
-prior value so it can be restored:
+The hooks travel with the repository but are not activated merely by being tracked or by installing dependencies.
+Activation is a manual, intentional repository operation. Before activating them, read and retain the prior value
+so it can be restored; then set and read back the exact configured path. A failed set or read-back is a failure and
+must not be swallowed:
 
 ```bash
 git config --get core.hooksPath
 git config core.hooksPath .githooks
+test "$(git config --get core.hooksPath)" = .githooks
 ```
 
 Hosted CI calls the repository verification interface independently and does not trust local hooks as proof.

@@ -228,6 +228,25 @@ test("Stop gate: a missing lint script makes lint explicitly unavailable", () =>
   });
 });
 
+test("Stop gate: malformed package.json blocks and surfaces the parse failure", () => {
+  withRepository((root) => {
+    makePending(root);
+    writeFileSync(join(root, "package.json"), '{"scripts":');
+    for (const hook of HOOKS) {
+      const result = run(hook, root, root);
+      assert.equal(result.status, 2, result.stderr);
+      assert.match(
+        result.stderr,
+        /package\.json could not be read.*lint cannot be trusted/,
+      );
+      assert.match(
+        result.stderr,
+        /Invalid package config|Unexpected end of JSON input/,
+      );
+    }
+  });
+});
+
 test("Stop gate: a missing installed ESLint executable makes lint explicitly unavailable", () => {
   withRepository((root) => {
     makePending(root);
@@ -260,23 +279,20 @@ test("Stop gate: completed lint findings block with the actual ESLint output", (
   });
 });
 
-test("Stop gate: lint evaluation or configuration failure is explicit unavailable evidence", () => {
+test("Stop gate: lint evaluation or configuration failure blocks with the actual output", () => {
   withRepository((root) => {
     makePending(root);
     for (const hook of HOOKS) {
       const result = run(hook, root, root, {
         env: { FAKE_ESLINT_STATUS: "2" },
       });
-      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.status, 2, result.stderr);
       assert.match(
         result.stderr,
-        /lint observation is unavailable because npm run lint exited 2/,
+        /lint failed with exit 2.*Fix the lint configuration or runtime failure/,
       );
       assert.match(result.stderr, /eslint-status-2-sentinel/);
-      assert.doesNotMatch(
-        result.stderr,
-        /verified|lint completed with findings/,
-      );
+      assert.doesNotMatch(result.stderr, /verified|observation is unavailable/);
     }
   });
 });

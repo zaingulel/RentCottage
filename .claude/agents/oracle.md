@@ -4,6 +4,7 @@ description: "Escalation-tier deep reasoning on Fable — novel-arc design, epic
 model: fable
 effort: xhigh
 maxTurns: 90
+permissionMode: plan
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 color: green
 ---

@@ -4,6 +4,7 @@ description: Plan a substantial change before any code is written — approach, 
 model: fable
 effort: high
 maxTurns: 90
+permissionMode: plan
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 color: red
 ---

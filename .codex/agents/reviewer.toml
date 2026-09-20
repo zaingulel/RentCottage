@@ -2,6 +2,7 @@ name = "reviewer"
 description = "Adversarial pre-merge review of the current diff: correctness, honesty invariants, dead code, canon fidelity, spec conformance. Read-only; reports findings, doesn't fix."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "xhigh"
+sandbox_mode = "read-only"
 developer_instructions = """
 
 `AGENTS.md` is already loaded. Read `docs/engineering/testing-strategy.md` as the evidence authority and `docs/engineering/coding-standards.md`, then `git diff main...HEAD` (use `--stat` first, then per-file; never bare `git diff`). Review against the code, not against the description.

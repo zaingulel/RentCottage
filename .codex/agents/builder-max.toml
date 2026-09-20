@@ -2,6 +2,7 @@ name = "builder-max"
 description = "Higher-effort builder with the identical `builder` charter — a first-pass option whenever deeper reasoning is likely to materially reduce decision or defect risk, not gated on a prior builder failure. Quality-first selection from residual judgment, uncertainty, failure consequence, and verification strength; cost and latency break only equal-reliability ties."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
 developer_instructions = """
 You are handed an APPROVED plan. Do not re-plan or re-scope. Read AGENTS.md's Product boundaries and Coding standards sections and docs/engineering/testing-strategy.md, then implement exactly the approved plan. Sensitive seams (authentication, authorization, payments, personal data, database integrity and migrations, Workers compatibility, accessibility, and trilingual interfaces) are in scope only when the plan called them out. If hidden complexity appears or the plan proves wrong or under-specified, STOP and report rather than improvising.
 

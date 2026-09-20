@@ -30,10 +30,10 @@ overstates what was verified. The workflow is built around three answers to that
 
 The factory runs on Claude Code and on Codex, and switches between them when one runs out of budget. Both read
 the same manual: `AGENTS.md` is the contract, `CLAUDE.md` imports it and adds its own Claude-only notes. Skills
-live once under `.agents/skills/`, with `.claude/skills/` holding symlinks into them. The agent seats are
-written for Claude under `.claude/agents/` and generated for Codex under `.codex/agents/`, so one charter
-serves both. The safety hooks exist as twins: `.claude/settings.json` wires the Claude set, `.codex/hooks.json`
-the Codex set.
+live once under `.agents/skills/`, with `.claude/skills/` holding symlinks into them. The agent seats under
+`.claude/agents/` and `.codex/agents/` are maintained counterparts, so the two runtimes carry the same charters
+with their runtime-specific configuration. The safety hooks exist as twins: `.claude/settings.json` wires the
+Claude set, `.codex/hooks.json` the Codex set.
 
 ## The seats
 
@@ -268,6 +268,9 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 | Lint and the script suite pass | `.githooks/pre-push` | A push with a red script suite |
 | Only green code merges | Branch protection on `main` requiring the source-bound `test` check, current-base strictness, conversation resolution, and auto-merge | A merge before the current merge result is green and its conversations are resolved |
 | Metered suites run on purpose | `.codex/rules/playwright.rules` | A browser run on Codex without a prompt |
+
+Committed hook code and registered configuration prove the repository contract, not that an already-running
+runtime loaded or trusted that configuration. When activation cannot be observed, report that limit explicitly.
 
 Everything else, including which reviewer runs, when to stop and replan, and what the pull request body must
 say, is a sentence in `AGENTS.md` or a skill. The bar for adding a new mechanism is stated in `AGENTS.md`

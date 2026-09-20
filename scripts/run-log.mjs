@@ -27,24 +27,30 @@ const command = args.slice(separator + 1);
 const branch = spawnSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).stdout.trim() || 'detached';
 const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim() || process.cwd();
 const dir = join(root, '.claude', 'worklog');
-mkdirSync(dir, { recursive: true });
 const logFile = join(dir, `${branch.replace(/[^A-Za-z0-9._-]+/g, '_')}.md`);
 
 const started = new Date().toISOString();
 const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', shell: false });
 let outcome;
 let exitCode;
+let signal;
 if (result.error) {
   outcome = `spawn failed (${result.error.code ?? result.error.message})`;
   exitCode = 127;
 } else if (result.status === null) {
   outcome = `killed by ${result.signal}`;
-  exitCode = 128;
+  signal = result.signal;
 } else {
   outcome = `exit ${result.status}`;
   exitCode = result.status;
 }
 const line = `- ${started} | ${label} | \`${command.join(' ')}\` | ${outcome}`;
-appendFileSync(logFile, `${line}\n`);
-console.log(line);
+try {
+  mkdirSync(dir, { recursive: true });
+  appendFileSync(logFile, `${line}\n`);
+  console.log(line);
+} catch (error) {
+  console.error(`run-log: could not write receipt (${error?.code ?? error?.message ?? error})`);
+}
+if (signal) process.kill(process.pid, signal);
 process.exit(exitCode);

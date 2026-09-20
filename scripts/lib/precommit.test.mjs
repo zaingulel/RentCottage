@@ -46,7 +46,7 @@ function withRepo(fn) {
     );
     writeFileSync(
       join(repo, ".codex", "agents", "reviewer.toml"),
-      'name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\ndeveloper_instructions = """\nReview.\n"""\n',
+      'name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nReview.\n"""\n',
     );
     git(repo, "init", "-q", "-b", "main");
     git(repo, "add", "-A");
@@ -79,7 +79,7 @@ test("pre-commit: the agent guard validates the STAGED charters, not the working
     const claude =
       '---\nname: reviewer\ndescription: "Fixture reviewer"\nmodel: opus\n---\nReview harder.\n';
     const codex = (body) =>
-      `name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\ndeveloper_instructions = """\n${body}\n"""\n`;
+      `name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\n${body}\n"""\n`;
     writeFileSync(join(repo, ".claude", "agents", "reviewer.md"), claude);
     git(repo, "add", ".claude/agents/reviewer.md");
     writeFileSync(
@@ -108,7 +108,7 @@ test("pre-merge-commit delegates to pre-commit and accepts a clean staged agent 
     );
     writeFileSync(
       join(repo, ".codex", "agents", "reviewer.toml"),
-      'name = "reviewer"\ndescription = "Updated fixture"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\ndeveloper_instructions = """\nReview.\n"""\n',
+      'name = "reviewer"\ndescription = "Updated fixture"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nReview.\n"""\n',
     );
     git(
       repo,
