@@ -138,6 +138,44 @@ test("closeout removes the linked job worktree before deleting its branch", () =
   assert.match(cleanup, /never auto-force/i);
 });
 
+test("handoff requires explicit owner authorization before remote publication", () => {
+  // This assertion comes from the owner-gate rule in AGENTS.md: pushing and pull-request
+  // mutations are outward actions, so a request merely to park unfinished work cannot imply them.
+  const source = readFileSync(
+    resolve(ROOT, ".agents/skills/handoff/SKILL.md"),
+    "utf8",
+  );
+  const publication = source.indexOf("**Push the branch**");
+  assert.notEqual(
+    publication,
+    -1,
+    "handoff must retain its branch publication step",
+  );
+
+  const authorization = source.search(
+    /(?:explicit owner authori[sz]ation|owner explicitly authori[sz]es)[\s\S]{0,240}push[\s\S]{0,240}draft[ -]pull request[\s\S]{0,240}(?:create|update)/i,
+  );
+  assert.notEqual(
+    authorization,
+    -1,
+    "handoff must require explicit owner authorization for pushing and creating or updating a draft pull request",
+  );
+  assert.ok(
+    authorization < publication,
+    "handoff must require publication authorization before pushing the branch",
+  );
+  assert.match(
+    source,
+    /bare[\s\S]{0,120}(?:handoff|park)[\s\S]{0,160}only[\s\S]{0,160}(?:local preparation|commit)/i,
+    "a bare handoff or park request must be limited to local preparation and commit",
+  );
+  assert.match(
+    source,
+    /(?:invocation|request)[\s\S]{0,120}explicitly nam(?:es|ing)[\s\S]{0,160}push[\s\S]{0,160}draft[\s\S]{0,160}satisf(?:ies|y)/i,
+    "an invocation that explicitly names push and draft publication must satisfy the authorization gate",
+  );
+});
+
 test("Git permits job branch deletion only after its linked worktree is removed", () => {
   const root = mkdtempSync(join(tmpdir(), "closeout-order-"));
   const worktree = join(root, "job-worktree");

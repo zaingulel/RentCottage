@@ -5,7 +5,7 @@
 // The label is plain unquoted words; the first bare `--` ends it.
 //
 // The log lives at .claude/worklog/<branch>.md (gitignored, machine-local). Each line records
-// the time, the label, the exact command, and the exit code the command actually returned, so
+// the time, the label, the exact argument vector, and the exit code the command actually returned, so
 // the evidence section of a pull request can quote lines a script wrote rather than lines a
 // model asserted. A command that could not be started at all is
 // logged as `spawn failed (<code>)` and exits 127, so it can never read as a red run.
@@ -44,7 +44,8 @@ if (result.error) {
   outcome = `exit ${result.status}`;
   exitCode = result.status;
 }
-const line = `- ${started} | ${label} | \`${command.join(' ')}\` | ${outcome}`;
+const recordedCommand = JSON.stringify(command).replaceAll('`', '\\u0060');
+const line = `- ${started} | ${label} | \`${recordedCommand}\` | ${outcome}`;
 try {
   mkdirSync(dir, { recursive: true });
   appendFileSync(logFile, `${line}\n`);
