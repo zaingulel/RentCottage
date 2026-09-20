@@ -24,6 +24,23 @@ projects selected through its own `SUPABASE_LOCAL_PROJECT`; never set that verif
 destroy its retained accounts, administrator Multi-Factor Authentication (MFA) enrollment, cottage, and Booking
 History.
 
+## Upgrade-proof retirement environments
+
+The sole environment included in upgrade-proof retirement is the preserved Docker demo project:
+
+| Environment | Identity | Retirement status |
+|---|---|---|
+| Local demo | `rentcottage-demo` at `/Users/zain/Developer/Codex/RentCottage/.demo` | Included; this retained database is the only laggable environment |
+
+The isolated `rentcottage-verification` database and continuous integration are excluded because each run rebuilds
+the full migration chain. The hosted preview project named by `SUPABASE_PROJECT_REF` is also excluded by the
+[owner decision](https://github.com/zaingulel/RentCottage/issues/301#issuecomment-5711754084), which confirms no
+other non-local database is on the migration chain. The preview workflow validates the configured secret and passes
+the project reference to the Worker, but does not apply migrations. This list records the decision and does not
+claim independently inspected hosted state. Update it before any new persistent database starts receiving
+migrations. The [testing strategy's retirement rule](engineering/testing-strategy.md) points here for the
+authoritative inventory and weekly check.
+
 ## Refresh to completed merged work
 
 Before the weekly rehearsal, update a clean checkout to the completed merged commit selected for the sprint
@@ -63,15 +80,37 @@ Inspect the target paths before the first copy. Do not overwrite an existing
 `$SUPABASE_LOCAL_WORKDIR/supabase/config.toml` or
 `$SUPABASE_LOCAL_WORKDIR/.env.demo-administrator.local.json`.
 
-Start the dedicated project and apply only missing migrations through Supabase's supported local upgrade path:
+Before starting or migrating the dedicated project, verify that its stable workdir still identifies the demo:
+
+```sh
+rg -n '^project_id' "$SUPABASE_LOCAL_WORKDIR/supabase/config.toml"
+```
+
+Require the identity check to show the stable demo value `rentcottage-demo`; a different value stops the run for
+inspection. Then start the dedicated project and apply only missing migrations through Supabase's supported local
+upgrade path:
 
 ```sh
 SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase start --workdir "$SUPABASE_LOCAL_WORKDIR"
 SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase migration up --local --workdir "$SUPABASE_LOCAL_WORKDIR"
 ```
 
-After that upgrade, retire every upgrade proof that
-[`docs/engineering/testing-strategy.md`](engineering/testing-strategy.md) now calls expired.
+After that upgrade, use the stable identity exports above to check the selected merged checkout's target migration
+against the retained demo's applied history:
+
+```sh
+SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase migration list --local --workdir "$SUPABASE_LOCAL_WORKDIR"
+```
+
+Match the target migration timestamp from the selected checkout's `supabase/migrations` filename to the history.
+The `Local` column is the migration files; the `Remote` column is the selected local database under `--local`.
+The target and every earlier selected-checkout migration must be present and applied with no missing rows; a later
+maximum timestamp alone is insufficient. Retire the upgrade proof only after the identity check, upgrade, and list
+succeed. Record the selected commit, demo identity, migration versions, and successful output in the retirement
+change evidence. If history is missing, failed, or ambiguous,
+keep the proof and investigate; never mark history applied or reset the retained demo to force the condition. See
+the [Supabase migration list reference](https://supabase.com/docs/reference/cli/supabase-migration-list) for the
+command's column semantics.
 
 For a confirmed brand-new, empty database only, map its environment, create the synthetic desktop fixture once,
 and validate it:
