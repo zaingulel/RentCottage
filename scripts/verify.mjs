@@ -96,6 +96,7 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/precommit.test.mjs",
   "scripts/lib/prepush.test.mjs",
   "scripts/lib/settings-policy.test.mjs",
+  "scripts/lib/sweep-scope-corpus.mjs",
   "scripts/lib/sweep-scope.mjs",
   "scripts/lib/sweep-scope.test.mjs",
   "scripts/lib/sweep-scope-workflow.test.mjs",
