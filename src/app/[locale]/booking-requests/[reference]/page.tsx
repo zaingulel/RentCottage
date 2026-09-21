@@ -12,6 +12,9 @@ import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-
 import { CustomerBookingRequestStatus } from "@/components/customer-booking-request-status";
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { MessagingBookingLink } from "@/components/messaging-booking-link";
+import { CustomerReviewForm } from "@/components/customer-review-form";
+import { createRequestCustomerReview } from "@/customer-review/request-customer-review";
+import type { OwnCustomerReviewResult } from "@/customer-review/customer-review";
 import { isLocale } from "@/i18n/routing";
 
 const unavailableCopy = {
@@ -95,13 +98,28 @@ export default async function CustomerBookingRequestPage({
         {notices}
       </main>
     );
-  if (confirmed)
+  if (confirmed) {
+    let review: OwnCustomerReviewResult = { status: "unavailable" };
+    try {
+      const customerReview = await createRequestCustomerReview();
+      if (customerReview) review = await customerReview.getOwn(reference);
+    } catch (error) {
+      unstable_rethrow(error);
+      console.error("Customer review load failed", {
+        code: "customer_review_load_unavailable",
+      });
+    }
     return (
       <main className="results-page">
         <ConfirmedBookingDetails
           locale={locale}
           {...confirmed}
           lifecycleStatus={financial?.lifecycle.status}
+        />
+        <CustomerReviewForm
+          locale={locale}
+          bookingRequestReference={reference}
+          initialResult={review}
         />
         {messaging}
         {financial ? (
@@ -110,6 +128,7 @@ export default async function CustomerBookingRequestPage({
         {notices}
       </main>
     );
+  }
   let request;
   try {
     request = await loadCustomerBookingRequest(reference);

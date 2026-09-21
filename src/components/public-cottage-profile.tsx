@@ -6,6 +6,7 @@ import { formatIqd, formatServiceDay } from "@/i18n/format";
 import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
 import { messagingMessages } from "@/i18n/messaging-messages";
+import { customerReviewMessages } from "@/i18n/customer-review-messages";
 
 const copy = {
   ar: {
@@ -141,6 +142,11 @@ export function PublicCottageProfileView({
           <section className="profile-section">
             <h2>{messages.rules}</h2>
             <p>{cottage.houseRules}</p>
+          </section>
+          <section className="profile-section">
+            <Link href={`/${locale}/cottages/${cottage.slug}/reviews`}>
+              {customerReviewMessages[locale].publicLink}
+            </Link>
           </section>
         </div>
         <aside className="booking-summary">

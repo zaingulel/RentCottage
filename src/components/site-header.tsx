@@ -9,6 +9,7 @@ import { accessMessages } from "@/i18n/access-messages";
 import { messages } from "@/i18n/messages";
 import { isLocale, type Locale } from "@/i18n/routing";
 import { messagingMessages } from "@/i18n/messaging-messages";
+import { customerReviewMessages } from "@/i18n/customer-review-messages";
 import { LocaleLinks } from "./locale-links";
 
 export type NavigationAccount =
@@ -103,6 +104,9 @@ export function SiteHeader({
                       </Link>
                       <Link href={`/${locale}/administrator/messages`}>
                         {messagingMessages[locale].moderation}
+                      </Link>
+                      <Link href={`/${locale}/administrator/reviews`}>
+                        {customerReviewMessages[locale].administratorLink}
                       </Link>
                     </>
                   ) : (

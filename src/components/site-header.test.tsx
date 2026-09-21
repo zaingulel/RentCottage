@@ -1,12 +1,28 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, it, expect, vi } from "vitest";
-const location = vi.hoisted(() => ({ pathname: "/en", query: "" }));
+const { location, hideReview, listAdministrator, requireAccount, router } = vi.hoisted(() => ({
+  location: { pathname: "/en", query: "" },
+  hideReview: vi.fn(),
+  listAdministrator: vi.fn(),
+  requireAccount: vi.fn(),
+  router: { refresh: vi.fn() },
+}));
 vi.mock("next/navigation", () => ({
   usePathname: () => location.pathname,
   useSearchParams: () => new URLSearchParams(location.query),
+  useRouter: () => router,
+  notFound: vi.fn(),
+  unstable_rethrow: vi.fn(),
 }));
 vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
+vi.mock("@/access/request-account-context", () => ({ requireRequestAccount: requireAccount }));
+vi.mock("@/customer-review/actions", () => ({ hideCustomerReview: hideReview }));
+vi.mock("@/customer-review/request-customer-review", () => ({
+  createRequestCustomerReview: vi.fn().mockResolvedValue({ listAdministrator }),
+}));
 import { SiteHeader } from "./site-header";
+import { CustomerReviewModeration } from "./customer-review-moderation";
+import AdministratorCustomerReviewsPage from "../app/[locale]/administrator/reviews/page";
 
 function scrollTo(y: number) {
   Object.defineProperty(window, "scrollY", { configurable: true, value: y });
@@ -17,6 +33,7 @@ function scrollTo(y: number) {
 
 describe("shared site header", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     location.pathname = "/en";
     location.query = "";
     scrollTo(0);
@@ -177,7 +194,87 @@ describe("shared site header", () => {
       screen.getByRole("link", { name: "Platform Administrator access" }),
     ).toBeVisible();
     expect(
+      screen.getByRole("link", { name: "Review moderation" }),
+    ).toHaveAttribute("href", "/en/administrator/reviews");
+    expect(
       screen.queryByRole("link", { name: "My bookings" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("CustomerReviewModeration", () => {
+  it("requires a reason, hides through the action, and retains committed attribution", async () => {
+    hideReview.mockResolvedValue({
+      status: "hidden",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      administratorUserId: "22222222-2222-4222-8222-222222222222",
+      reason: "Contains a prohibited contact detail",
+      hiddenAt: "2026-09-21T13:00:00.000Z",
+    });
+    render(
+      <CustomerReviewModeration
+        locale="en"
+        result={{
+          status: "success",
+          items: [
+            {
+              reviewId: "11111111-1111-4111-8111-111111111111",
+              bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
+              profileId: "33333333-3333-4333-8333-333333333333",
+              authorUserId: "44444444-4444-4444-8444-444444444444",
+              rating: 4,
+              originalLanguage: "ar",
+              originalBody: "نص التقييم الأصلي",
+              submittedAt: "2026-09-21T12:00:00.000Z",
+              moderationState: "unhidden",
+              hide: null,
+            },
+          ],
+          nextCursor: null,
+        }}
+      />,
+    );
+    const review = screen.getByRole("article");
+    fireEvent.click(within(review).getByRole("button", { name: "Hide review" }));
+    expect(within(review).getByRole("alert")).toHaveTextContent(
+      "Enter a reason before hiding this review.",
+    );
+    fireEvent.change(within(review).getByLabelText("Reason for hiding"), {
+      target: { value: "Contains a prohibited contact detail" },
+    });
+    fireEvent.click(within(review).getByRole("button", { name: "Hide review" }));
+    await waitFor(() =>
+      expect(hideReview).toHaveBeenCalledWith({
+        locale: "en",
+        reviewId: "11111111-1111-4111-8111-111111111111",
+        reason: "Contains a prohibited contact detail",
+      }),
+    );
+    expect(within(review).getByRole("status")).toHaveTextContent(
+      "The review was hidden.",
+    );
+    expect(review).toHaveTextContent("Contains a prohibited contact detail");
+    expect(review).toHaveTextContent("22222222-2222-4222-8222-222222222222");
+  });
+});
+
+describe("AdministratorCustomerReviewsPage", () => {
+  it("keeps SQL assurance decisive and links insufficient access to MFA recovery", async () => {
+    requireAccount.mockResolvedValue({
+      status: "authenticated",
+      context: { role: "platform_administrator" },
+    });
+    listAdministrator.mockResolvedValue({ status: "access-required" });
+    render(
+      await AdministratorCustomerReviewsPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+    expect(screen.getByText("Authenticator-verified administrator access is required.")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Complete administrator access" })).toHaveAttribute(
+      "href",
+      "/en/administrator/access",
+    );
   });
 });
