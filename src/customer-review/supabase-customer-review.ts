@@ -99,9 +99,7 @@ function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
   };
 }
 
-function parsePublicListResult(
-  value: unknown,
-): PublicCustomerReviewListResult {
+function parsePublicListResult(value: unknown): PublicCustomerReviewListResult {
   if (!isRecord(value) || typeof value.status !== "string") {
     return { status: "unavailable" };
   }
@@ -201,8 +199,7 @@ function parseOwnReviewResult(value: unknown): OwnCustomerReviewResult {
     isLanguage(value.originalLanguage) &&
     (value.originalBody === null || typeof value.originalBody === "string") &&
     isTimestamp(value.submittedAt) &&
-    (value.moderationState === "hidden" ||
-      value.moderationState === "unhidden")
+    (value.moderationState === "hidden" || value.moderationState === "unhidden")
   ) {
     return {
       status: "submitted",
@@ -285,8 +282,7 @@ function parseAdministratorReview(
       (typeof value.originalBody !== "string" ||
         value.originalBody.length > 2000)) ||
     !isTimestamp(value.submittedAt) ||
-    (value.moderationState !== "hidden" &&
-      value.moderationState !== "unhidden")
+    (value.moderationState !== "hidden" && value.moderationState !== "unhidden")
   ) {
     return undefined;
   }
@@ -473,7 +469,9 @@ export class SupabaseCustomerReviewRepository {
     return parsePublicListResult(data);
   }
 
-  async getOwn(bookingRequestReference: string): Promise<OwnCustomerReviewResult> {
+  async getOwn(
+    bookingRequestReference: string,
+  ): Promise<OwnCustomerReviewResult> {
     if (!isBookingRequestReference(bookingRequestReference)) {
       return { status: "invalid" };
     }
@@ -524,7 +522,9 @@ export class SupabaseCustomerReviewRepository {
     return parseAdministratorListResult(data);
   }
 
-  async hide(input: HideCustomerReviewInput): Promise<HideCustomerReviewResult> {
+  async hide(
+    input: HideCustomerReviewInput,
+  ): Promise<HideCustomerReviewResult> {
     if (!isHideCustomerReviewInput(input)) {
       return { status: "invalid" };
     }

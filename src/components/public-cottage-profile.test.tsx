@@ -152,8 +152,12 @@ describe("PublicCustomerReviews", () => {
     expect(original).toHaveAttribute("lang", "ckb");
     expect(original).toHaveAttribute("dir", "auto");
     expect(screen.getByText("عميل RentCottage")).toBeVisible();
-    expect(screen.queryByText(/author|booking|moderation|11111111/i)).toBeNull();
-    expect(screen.getByRole("link", { name: "التقييمات التالية" })).toHaveAttribute(
+    expect(
+      screen.queryByText(/author|booking|moderation|11111111/i),
+    ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "التقييمات التالية" }),
+    ).toHaveAttribute(
       "href",
       "/ar/cottages/cottage-11111111111111111111111111111111/reviews?beforeAt=2026-09-21T12%3A00%3A00.000Z&beforeId=11111111-1111-4111-8111-111111111111",
     );
@@ -186,7 +190,11 @@ describe("PublicCustomerReviews", () => {
 
 describe("PublicCustomerReviewsPage", () => {
   it("accepts an anonymous validated cursor and calls the fixed public reader", async () => {
-    listPublic.mockResolvedValue({ status: "success", items: [], nextCursor: null });
+    listPublic.mockResolvedValue({
+      status: "success",
+      items: [],
+      nextCursor: null,
+    });
     render(
       await PublicCustomerReviewsPage({
         params: Promise.resolve({

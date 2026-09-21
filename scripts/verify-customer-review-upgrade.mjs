@@ -252,7 +252,9 @@ commit;`),
     'review',(select to_jsonb(value) from public.customer_reviews value where value.id='${first.reviewId}'),
     'hide',(select to_jsonb(value) from public.customer_review_hides value where value.review_id='${first.reviewId}')
   )::text);`;
-  const retainedReviewAuditBefore = harness.runSql(retainedReviewAuditDigestSql);
+  const retainedReviewAuditBefore = harness.runSql(
+    retainedReviewAuditDigestSql,
+  );
 
   harness.runSql(
     readFileSync(join(sourceMigrations, mutationTargetMigration), "utf8"),
@@ -273,7 +275,9 @@ commit;`),
     "submission replay remains target-free after the forward migration",
   );
   check(
-    Object.keys(hide(firstEligible, first.reviewId, "Replacement ignored")).sort(),
+    Object.keys(
+      hide(firstEligible, first.reviewId, "Replacement ignored"),
+    ).sort(),
     ["administratorUserId", "hiddenAt", "reason", "reviewId", "status"],
     "hide replay remains target-free after the forward migration",
   );
@@ -350,10 +354,7 @@ reset role;`),
     "a new hide has the exact target-bearing shape",
   );
   check(
-    [
-      secondHide.affectedPublicSlug,
-      secondHide.affectedBookingRequestReference,
-    ],
+    [secondHide.affectedPublicSlug, secondHide.affectedBookingRequestReference],
     [secondPublicSlug, secondEligible.ids.bookingReference],
     "a new hide resolves its stored listing and booking reference",
   );

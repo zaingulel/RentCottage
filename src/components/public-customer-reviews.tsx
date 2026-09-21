@@ -7,7 +7,11 @@ import type { Locale } from "@/i18n/routing";
 
 import styles from "./customer-reviews.module.css";
 
-export function PublicCustomerReviews({ locale, publicSlug, result }: {
+export function PublicCustomerReviews({
+  locale,
+  publicSlug,
+  result,
+}: {
   locale: Locale;
   publicSlug: string;
   result: PublicCustomerReviewListResult;
@@ -16,7 +20,9 @@ export function PublicCustomerReviews({ locale, publicSlug, result }: {
   return (
     <main className={styles.page}>
       <header className={styles.header}>
-        <Link href={`/${locale}/cottages/${publicSlug}`}>{copy.backToCottage}</Link>
+        <Link href={`/${locale}/cottages/${publicSlug}`}>
+          {copy.backToCottage}
+        </Link>
         <h1>{copy.publicTitle}</h1>
       </header>
       {result.status !== "success" ? (
@@ -29,7 +35,9 @@ export function PublicCustomerReviews({ locale, publicSlug, result }: {
             <article className={styles.card} key={review.reviewId}>
               <header className={styles.cardHeader}>
                 <strong>{copy.customer}</strong>
-                <span aria-label={copy.rating}>{review.rating} / 5 {copy.ratingValue}</span>
+                <span aria-label={copy.rating}>
+                  {review.rating} / 5 {copy.ratingValue}
+                </span>
               </header>
               <p lang={review.originalLanguage} dir="auto">
                 {review.originalBody ?? copy.ratingOnly}
@@ -44,10 +52,12 @@ export function PublicCustomerReviews({ locale, publicSlug, result }: {
           {result.nextCursor ? (
             <Link
               className={styles.next}
-              href={`/${locale}/cottages/${publicSlug}/reviews?${new URLSearchParams({
-                beforeAt: result.nextCursor.submittedAt,
-                beforeId: result.nextCursor.reviewId,
-              })}`}
+              href={`/${locale}/cottages/${publicSlug}/reviews?${new URLSearchParams(
+                {
+                  beforeAt: result.nextCursor.submittedAt,
+                  beforeId: result.nextCursor.reviewId,
+                },
+              )}`}
             >
               {copy.next}
             </Link>

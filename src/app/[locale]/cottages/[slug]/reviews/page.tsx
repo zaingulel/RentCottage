@@ -47,5 +47,7 @@ export default async function PublicCustomerReviewsPage({
   }
   if (result.status === "not-found") notFound();
   if (result.status === "invalid") result = { status: "unavailable" };
-  return <PublicCustomerReviews locale={locale} publicSlug={slug} result={result} />;
+  return (
+    <PublicCustomerReviews locale={locale} publicSlug={slug} result={result} />
+  );
 }

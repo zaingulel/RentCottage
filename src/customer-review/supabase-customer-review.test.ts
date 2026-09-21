@@ -194,9 +194,9 @@ describe("Supabase Customer review repository", () => {
     const client = clientWith(submitted);
     const repository = new SupabaseCustomerReviewRepository(client as never);
 
-    await expect(
-      repository.getOwn("RC-REQ-0123456789ABCDEF"),
-    ).resolves.toEqual(submitted);
+    await expect(repository.getOwn("RC-REQ-0123456789ABCDEF")).resolves.toEqual(
+      submitted,
+    );
     expect(client.rpc).toHaveBeenCalledWith("get_customer_review", {
       target_reference: "RC-REQ-0123456789ABCDEF",
     });
@@ -369,7 +369,11 @@ describe("Supabase Customer review repository", () => {
       denied.listAdministrator({ beforeAt: null, beforeId: null, limit: 50 }),
     ).resolves.toEqual({ status: "access-required" });
 
-    for (const status of ["invalid", "ineligible", "prohibited-content"] as const) {
+    for (const status of [
+      "invalid",
+      "ineligible",
+      "prohibited-content",
+    ] as const) {
       const repository = new SupabaseCustomerReviewRepository(
         clientWith({ status }) as never,
       );
@@ -413,7 +417,9 @@ describe("Supabase Customer review repository", () => {
   });
 
   it("maps a lost response to unavailable for every RPC operation", async () => {
-    const client = { rpc: vi.fn().mockRejectedValue(new Error("network lost")) };
+    const client = {
+      rpc: vi.fn().mockRejectedValue(new Error("network lost")),
+    };
     const repository = new SupabaseCustomerReviewRepository(client as never);
 
     await expect(
@@ -432,11 +438,15 @@ describe("Supabase Customer review repository", () => {
         limit: 20,
       }),
     ).resolves.toEqual({ status: "unavailable" });
+    await expect(repository.getOwn("RC-REQ-0123456789ABCDEF")).resolves.toEqual(
+      { status: "unavailable" },
+    );
     await expect(
-      repository.getOwn("RC-REQ-0123456789ABCDEF"),
-    ).resolves.toEqual({ status: "unavailable" });
-    await expect(
-      repository.listAdministrator({ beforeAt: null, beforeId: null, limit: 50 }),
+      repository.listAdministrator({
+        beforeAt: null,
+        beforeId: null,
+        limit: 50,
+      }),
     ).resolves.toEqual({ status: "unavailable" });
     await expect(
       repository.hide({ reviewId, reason: "Moderation reason" }),

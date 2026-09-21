@@ -40,7 +40,9 @@ export function isCustomerReviewTimestamp(value: unknown): value is string {
 }
 
 export function isBookingRequestReference(value: unknown): value is string {
-  return typeof value === "string" && bookingRequestReferencePattern.test(value);
+  return (
+    typeof value === "string" && bookingRequestReferencePattern.test(value)
+  );
 }
 
 export function isCustomerReviewPublicSlug(value: unknown): value is string {
@@ -110,11 +112,10 @@ export type SubmitCustomerReviewActionResult =
         | "ineligible"
         | "prohibited-content";
     }>
-  |
-  Readonly<{
-    status: "unavailable";
-    recovery: "refresh-own-review";
-  }>;
+  | Readonly<{
+      status: "unavailable";
+      recovery: "refresh-own-review";
+    }>;
 
 export type SubmitCustomerReviewActionInput = SubmitCustomerReviewInput &
   Readonly<{
@@ -316,8 +317,7 @@ export type HideCustomerReviewActionResult =
         reviewId: string;
       }>)
   | Readonly<{ status: "access-required" | "invalid" }>
-  |
-  Readonly<{
-    status: "unavailable";
-    recovery: "reload-administrator-reviews";
-  }>;
+  | Readonly<{
+      status: "unavailable";
+      recovery: "reload-administrator-reviews";
+    }>;

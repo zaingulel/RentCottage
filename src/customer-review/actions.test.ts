@@ -201,7 +201,10 @@ describe("Customer review Server Actions", () => {
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Later reason",
       }),
-    ).resolves.toMatchObject({ status: "already-hidden", reason: "Original reason" });
+    ).resolves.toMatchObject({
+      status: "already-hidden",
+      reason: "Original reason",
+    });
     expect(revalidatePath).not.toHaveBeenCalled();
 
     authenticatedUserId.mockResolvedValueOnce(undefined);
@@ -217,8 +220,12 @@ describe("Customer review Server Actions", () => {
       status: "unavailable",
       recovery: "refresh-own-review",
     });
-    expect(diagnostic).toHaveBeenCalledWith("customer-review-submit-unavailable");
-    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("secret review text");
+    expect(diagnostic).toHaveBeenCalledWith(
+      "customer-review-submit-unavailable",
+    );
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(
+      "secret review text",
+    );
 
     hide.mockResolvedValueOnce({ status: "unavailable" });
     await expect(

@@ -5,7 +5,8 @@ export const customerReviewMessages = {
     rating: "Rating",
     ratingValue: "stars",
     body: "Review text (optional)",
-    bodyHelp: "Up to 2,000 characters. Do not include contact details or links.",
+    bodyHelp:
+      "Up to 2,000 characters. Do not include contact details or links.",
     language: "Original language",
     submit: "Publish review",
     submitting: "Publishing…",
@@ -13,7 +14,8 @@ export const customerReviewMessages = {
     invalid: "Check the review fields and try again.",
     accessRequired: "Sign in with the Customer account for this booking.",
     ineligible: "A review is not available for this booking.",
-    prohibited: "Remove contact details, links, or social handles before publishing.",
+    prohibited:
+      "Remove contact details, links, or social handles before publishing.",
     unavailable: "Reviews are unavailable. Refresh and try again.",
     published: "Your review was published.",
     duplicate: "This booking already has a review. Refresh to see it.",
@@ -110,7 +112,8 @@ export const customerReviewMessages = {
     invalid: "خانەکانی هەڵسەنگاندن بپشکنە و دووبارە هەوڵ بدەوە.",
     accessRequired: "بە هەژماری کڕیاری ئەم حجزە بچۆ ژوورەوە.",
     ineligible: "هەڵسەنگاندن بۆ ئەم حجزە بەردەست نییە.",
-    prohibited: "زانیاری پەیوەندی، بەستەر یان ناسنامەی تۆڕە کۆمەڵایەتییەکان بسڕەوە.",
+    prohibited:
+      "زانیاری پەیوەندی، بەستەر یان ناسنامەی تۆڕە کۆمەڵایەتییەکان بسڕەوە.",
     unavailable: "هەڵسەنگاندنەکان بەردەست نین. پەڕەکە نوێ بکەرەوە.",
     published: "هەڵسەنگاندنەکەت بڵاوکرایەوە.",
     duplicate: "ئەم حجزە پێشتر هەڵسەنگاندنی هەیە. پەڕەکە نوێ بکەرەوە.",
@@ -129,7 +132,8 @@ export const customerReviewMessages = {
     customer: "کڕیاری RentCottage",
     administratorTitle: "بەڕێوەبردنی هەڵسەنگاندنی کڕیاران",
     administratorLink: "بەڕێوەبردنی هەڵسەنگاندن",
-    administratorAccessRequired: "چوونەژوورەوەی بەڕێوەبەر بە دڵنیایی ئەپ پێویستە.",
+    administratorAccessRequired:
+      "چوونەژوورەوەی بەڕێوەبەر بە دڵنیایی ئەپ پێویستە.",
     administratorAccessAction: "چوونەژوورەوەی بەڕێوەبەر تەواو بکە",
     bookingReference: "داواکاری حجز",
     author: "UUIDی کڕیار",

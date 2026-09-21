@@ -15,13 +15,19 @@ import type { Locale } from "@/i18n/routing";
 
 import styles from "./customer-reviews.module.css";
 
-function ModerationCard({ locale, review }: {
+function ModerationCard({
+  locale,
+  review,
+}: {
   locale: Locale;
   review: AdministratorCustomerReview;
 }) {
   const copy = customerReviewMessages[locale];
   const [hide, setHide] = useState<CustomerReviewHide | null>(review.hide);
-  const [notice, setNotice] = useState<{ kind: "error" | "success"; text: string }>();
+  const [notice, setNotice] = useState<{
+    kind: "error" | "success";
+    text: string;
+  }>();
   const [pending, startTransition] = useTransition();
   const noticeRef = useRef<HTMLParagraphElement>(null);
 
@@ -38,7 +44,11 @@ function ModerationCard({ locale, review }: {
     }
     setNotice(undefined);
     startTransition(async () => {
-      const result = await hideCustomerReview({ locale, reviewId: review.reviewId, reason });
+      const result = await hideCustomerReview({
+        locale,
+        reviewId: review.reviewId,
+        reason,
+      });
       if (result.status === "hidden" || result.status === "already-hidden") {
         setHide({
           administratorUserId: result.administratorUserId,
@@ -50,9 +60,12 @@ function ModerationCard({ locale, review }: {
       }
       setNotice({
         kind: "error",
-        text: result.status === "access-required"
-          ? copy.administratorAccessRequired
-          : result.status === "invalid" ? copy.invalid : copy.unavailable,
+        text:
+          result.status === "access-required"
+            ? copy.administratorAccessRequired
+            : result.status === "invalid"
+              ? copy.invalid
+              : copy.unavailable,
       });
     });
   }
@@ -60,10 +73,16 @@ function ModerationCard({ locale, review }: {
   return (
     <article className={styles.card}>
       <div className={styles.identifiers}>
-        <span>{copy.bookingReference}: <bdi>{review.bookingRequestReference}</bdi></span>
-        <span>{copy.author}: <bdi>{review.authorUserId}</bdi></span>
+        <span>
+          {copy.bookingReference}: <bdi>{review.bookingRequestReference}</bdi>
+        </span>
+        <span>
+          {copy.author}: <bdi>{review.authorUserId}</bdi>
+        </span>
       </div>
-      <p aria-label={copy.rating}>{review.rating} / 5 {copy.ratingValue}</p>
+      <p aria-label={copy.rating}>
+        {review.rating} / 5 {copy.ratingValue}
+      </p>
       <p lang={review.originalLanguage} dir="auto">
         {review.originalBody ?? copy.ratingOnly}
       </p>
@@ -72,13 +91,26 @@ function ModerationCard({ locale, review }: {
       </time>
       {hide ? (
         <dl className={styles.audit}>
-          <div><dt>{copy.reason}</dt><dd>{hide.reason}</dd></div>
-          <div><dt>{copy.hiddenAt}</dt><dd>{formatIraqDateTime(hide.hiddenAt, locale)}</dd></div>
-          <div><dt>{copy.hiddenBy}</dt><dd><bdi>{hide.administratorUserId}</bdi></dd></div>
+          <div>
+            <dt>{copy.reason}</dt>
+            <dd>{hide.reason}</dd>
+          </div>
+          <div>
+            <dt>{copy.hiddenAt}</dt>
+            <dd>{formatIraqDateTime(hide.hiddenAt, locale)}</dd>
+          </div>
+          <div>
+            <dt>{copy.hiddenBy}</dt>
+            <dd>
+              <bdi>{hide.administratorUserId}</bdi>
+            </dd>
+          </div>
         </dl>
       ) : (
         <form action={submit} className={styles.form}>
-          <label htmlFor={`hide-reason-${review.reviewId}`}>{copy.hideReason}</label>
+          <label htmlFor={`hide-reason-${review.reviewId}`}>
+            {copy.hideReason}
+          </label>
           <textarea
             id={`hide-reason-${review.reviewId}`}
             name="reason"
@@ -87,7 +119,9 @@ function ModerationCard({ locale, review }: {
             disabled={pending}
           />
           <small id={`hide-help-${review.reviewId}`}>{copy.hideHelp}</small>
-          <button type="submit" disabled={pending}>{pending ? copy.hiding : copy.hide}</button>
+          <button type="submit" disabled={pending}>
+            {pending ? copy.hiding : copy.hide}
+          </button>
         </form>
       )}
       {notice ? (
@@ -103,7 +137,10 @@ function ModerationCard({ locale, review }: {
   );
 }
 
-export function CustomerReviewModeration({ locale, result }: {
+export function CustomerReviewModeration({
+  locale,
+  result,
+}: {
   locale: Locale;
   result: AdministratorCustomerReviewListResult;
 }) {
@@ -113,10 +150,14 @@ export function CustomerReviewModeration({ locale, result }: {
       <main className={styles.page}>
         <h1>{copy.administratorTitle}</h1>
         <p role={result.status === "unavailable" ? "alert" : undefined}>
-          {result.status === "access-required" ? copy.administratorAccessRequired : copy.unavailable}
+          {result.status === "access-required"
+            ? copy.administratorAccessRequired
+            : copy.unavailable}
         </p>
         {result.status === "access-required" ? (
-          <Link href={`/${locale}/administrator/access`}>{copy.administratorAccessAction}</Link>
+          <Link href={`/${locale}/administrator/access`}>
+            {copy.administratorAccessAction}
+          </Link>
         ) : null}
       </main>
     );
@@ -126,7 +167,11 @@ export function CustomerReviewModeration({ locale, result }: {
       {result.items.length === 0 ? <p>{copy.empty}</p> : null}
       <div className={styles.list}>
         {result.items.map((review) => (
-          <ModerationCard key={review.reviewId} locale={locale} review={review} />
+          <ModerationCard
+            key={review.reviewId}
+            locale={locale}
+            review={review}
+          />
         ))}
       </div>
       {result.nextCursor ? (

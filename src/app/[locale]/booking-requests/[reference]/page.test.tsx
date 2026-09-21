@@ -3,19 +3,32 @@ vi.mock("@/notification/request-notification-status", () => ({
     .fn()
     .mockResolvedValue({ status: "unavailable" }),
 }));
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadRequest, loadConfirmed, loadFinancial, loadReview, submitReview, notFound, router } =
-  vi.hoisted(() => ({
-    loadRequest: vi.fn(),
-    loadConfirmed: vi.fn(),
-    loadFinancial: vi.fn(),
-    loadReview: vi.fn(),
-    submitReview: vi.fn(),
-    notFound: vi.fn(),
-    router: { refresh: vi.fn() },
-  }));
+const {
+  loadRequest,
+  loadConfirmed,
+  loadFinancial,
+  loadReview,
+  submitReview,
+  notFound,
+  router,
+} = vi.hoisted(() => ({
+  loadRequest: vi.fn(),
+  loadConfirmed: vi.fn(),
+  loadFinancial: vi.fn(),
+  loadReview: vi.fn(),
+  submitReview: vi.fn(),
+  notFound: vi.fn(),
+  router: { refresh: vi.fn() },
+}));
 
 vi.mock("@/access/request-account-context", () => ({
   requireRequestAccount: vi.fn().mockResolvedValue({
@@ -280,12 +293,10 @@ it("requires a rating and publishes the entered original through the review acti
     }),
   );
   expect(
-    within(screen.getByRole("region", { name: "Review this cottage" })).getByRole(
-      "status",
-    ),
-  ).toHaveTextContent(
-    "Your review was published.",
-  );
+    within(
+      screen.getByRole("region", { name: "Review this cottage" }),
+    ).getByRole("status"),
+  ).toHaveTextContent("Your review was published.");
 });
 
 it("routes retained cancellation to safe history without reopening private access or pending status", async () => {

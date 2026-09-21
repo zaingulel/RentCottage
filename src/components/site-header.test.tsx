@@ -1,12 +1,20 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, it, expect, vi } from "vitest";
-const { location, hideReview, listAdministrator, requireAccount, router } = vi.hoisted(() => ({
-  location: { pathname: "/en", query: "" },
-  hideReview: vi.fn(),
-  listAdministrator: vi.fn(),
-  requireAccount: vi.fn(),
-  router: { refresh: vi.fn() },
-}));
+const { location, hideReview, listAdministrator, requireAccount, router } =
+  vi.hoisted(() => ({
+    location: { pathname: "/en", query: "" },
+    hideReview: vi.fn(),
+    listAdministrator: vi.fn(),
+    requireAccount: vi.fn(),
+    router: { refresh: vi.fn() },
+  }));
 vi.mock("next/navigation", () => ({
   usePathname: () => location.pathname,
   useSearchParams: () => new URLSearchParams(location.query),
@@ -15,8 +23,12 @@ vi.mock("next/navigation", () => ({
   unstable_rethrow: vi.fn(),
 }));
 vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
-vi.mock("@/access/request-account-context", () => ({ requireRequestAccount: requireAccount }));
-vi.mock("@/customer-review/actions", () => ({ hideCustomerReview: hideReview }));
+vi.mock("@/access/request-account-context", () => ({
+  requireRequestAccount: requireAccount,
+}));
+vi.mock("@/customer-review/actions", () => ({
+  hideCustomerReview: hideReview,
+}));
 vi.mock("@/customer-review/request-customer-review", () => ({
   createRequestCustomerReview: vi.fn().mockResolvedValue({ listAdministrator }),
 }));
@@ -235,14 +247,18 @@ describe("CustomerReviewModeration", () => {
       />,
     );
     const review = screen.getByRole("article");
-    fireEvent.click(within(review).getByRole("button", { name: "Hide review" }));
+    fireEvent.click(
+      within(review).getByRole("button", { name: "Hide review" }),
+    );
     expect(within(review).getByRole("alert")).toHaveTextContent(
       "Enter a reason before hiding this review.",
     );
     fireEvent.change(within(review).getByLabelText("Reason for hiding"), {
       target: { value: "Contains a prohibited contact detail" },
     });
-    fireEvent.click(within(review).getByRole("button", { name: "Hide review" }));
+    fireEvent.click(
+      within(review).getByRole("button", { name: "Hide review" }),
+    );
     await waitFor(() =>
       expect(hideReview).toHaveBeenCalledWith({
         locale: "en",
@@ -271,10 +287,13 @@ describe("AdministratorCustomerReviewsPage", () => {
         searchParams: Promise.resolve({}),
       }),
     );
-    expect(screen.getByText("Authenticator-verified administrator access is required.")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Complete administrator access" })).toHaveAttribute(
-      "href",
-      "/en/administrator/access",
-    );
+    expect(
+      screen.getByText(
+        "Authenticator-verified administrator access is required.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Complete administrator access" }),
+    ).toHaveAttribute("href", "/en/administrator/access");
   });
 });

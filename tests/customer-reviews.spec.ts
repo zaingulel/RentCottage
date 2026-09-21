@@ -25,13 +25,14 @@ type CustomerReviewFixtureModule = {
     publish: boolean;
   }): ReviewFixture;
 };
-const customerReviewFixtureModule: Promise<CustomerReviewFixtureModule> = import(
-  // @ts-expect-error The repository fixture is an ESM JavaScript module without declarations.
-  "../scripts/lib/customer-review-fixture.mjs"
-);
-const { createLocalSupabaseConcurrencyHarness } = createRequire(import.meta.url)(
-  "../scripts/local-supabase-concurrency-harness.mjs",
-) as {
+const customerReviewFixtureModule: Promise<CustomerReviewFixtureModule> =
+  import(
+    // @ts-expect-error The repository fixture is an ESM JavaScript module without declarations.
+    "../scripts/lib/customer-review-fixture.mjs"
+  );
+const { createLocalSupabaseConcurrencyHarness } = createRequire(
+  import.meta.url,
+)("../scripts/local-supabase-concurrency-harness.mjs") as {
   createLocalSupabaseConcurrencyHarness(): {
     guardDisposableLocalDatabase(): void;
     runSql(sql: string): string;
@@ -56,7 +57,9 @@ function requireLocalDatabase() {
     target.protocol !== "http:" ||
     target.hostname !== "127.0.0.1"
   ) {
-    throw new Error("Customer review journey requires the guarded local database");
+    throw new Error(
+      "Customer review journey requires the guarded local database",
+    );
   }
 }
 
@@ -71,7 +74,8 @@ async function seedFixture(
   const { customerReviewFixture } = await customerReviewFixtureModule;
   const url = process.env.SUPABASE_URL;
   const secret = process.env.SUPABASE_SECRET_KEY;
-  if (!url || !secret) throw new Error("Customer review fixture credentials are missing");
+  if (!url || !secret)
+    throw new Error("Customer review fixture credentials are missing");
   const privileged = createClient(url, secret, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -111,7 +115,8 @@ async function seedFixture(
     customer: await ensurePhoneUser(phones.customer),
     other: await ensurePhoneUser(phones.other),
   };
-  const authBlock = /insert into auth\.users \(id, aud, role, phone, phone_confirmed_at\) values[\s\S]*?;\ninsert into public\.account_contexts/;
+  const authBlock =
+    /insert into auth\.users \(id, aud, role, phone, phone_confirmed_at\) values[\s\S]*?;\ninsert into public\.account_contexts/;
   const legacyItems =
     '"items":[{"serviceDay":"2101-01-01","kind":"shift","position":1,"startsAt":"2101-01-01T08:00:00+03:00"},{"serviceDay":"2101-01-01","kind":"shift","position":3},{"serviceDay":"2101-01-02","kind":"full_day_bundle"}]';
   const renderedItems =
@@ -123,12 +128,14 @@ async function seedFixture(
       '"cottageName":"Preserved Cottage","houseRules":"Fictional house rules","bookingPriceIqd"',
     )
     .replaceAll(legacyItems, renderedItems);
-  if (sql === fixture.sql) throw new Error("Customer review auth fixture block changed");
+  if (sql === fixture.sql)
+    throw new Error("Customer review auth fixture block changed");
   if (!sql.includes(renderedItems) || sql.includes(legacyItems)) {
     throw new Error("Customer review booking presentation fixture changed");
   }
   if (sharedCottage) {
-    const cottageSetup = /insert into public\.owner_application_cottage_profiles[\s\S]*?select set_config\('rentcottage\.shift_schedule_write_revision_id','',true\);\n/;
+    const cottageSetup =
+      /insert into public\.owner_application_cottage_profiles[\s\S]*?select set_config\('rentcottage\.shift_schedule_write_revision_id','',true\);\n/;
     const withoutCottageSetup = sql.replace(cottageSetup, "");
     if (withoutCottageSetup === sql) {
       throw new Error("Customer review shared-cottage fixture changed");
@@ -240,13 +247,25 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await expect(
     page.getByRole("heading", { name: "Sign in or create an account" }),
   ).toBeVisible();
-  await expectIdentityDenied(primary.phones.other, primary.ids.bookingReference);
-  await expectIdentityDenied(primary.phones.owner, primary.ids.bookingReference);
+  await expectIdentityDenied(
+    primary.phones.other,
+    primary.ids.bookingReference,
+  );
+  await expectIdentityDenied(
+    primary.phones.owner,
+    primary.ids.bookingReference,
+  );
 
   await signInPhone(page, primary.phones.customer, bookingPath);
-  const customerReview = page.getByRole("region", { name: "Review this cottage" });
-  await expect(customerReview.getByRole("heading", { name: "Review this cottage" })).toBeVisible();
-  await expect(customerReview.getByText("Review window open until", { exact: false })).toBeVisible();
+  const customerReview = page.getByRole("region", {
+    name: "Review this cottage",
+  });
+  await expect(
+    customerReview.getByRole("heading", { name: "Review this cottage" }),
+  ).toBeVisible();
+  await expect(
+    customerReview.getByText("Review window open until", { exact: false }),
+  ).toBeVisible();
 
   const publicPath = `/en/cottages/${primary.publicSlug}/reviews`;
   const visitorContext = await browser.newContext({
@@ -274,7 +293,9 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     page.getByRole("status").filter({ hasText: "Your review was published." }),
   ).toBeVisible();
 
-  const ratingContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  const ratingContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+  });
   const ratingPage = await ratingContext.newPage();
   await signInPhone(
     ratingPage,
@@ -291,9 +312,16 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await ratingContext.close();
 
   for (const locale of ["en", "ar", "ckb"] as const) {
-    const response = await visitor.goto(`/${locale}/cottages/${primary.publicSlug}/reviews`);
+    const response = await visitor.goto(
+      `/${locale}/cottages/${primary.publicSlug}/reviews`,
+    );
     expect(response?.ok()).toBe(true);
-    if (!(await visitor.getByText(original).isVisible().catch(() => false))) {
+    if (
+      !(await visitor
+        .getByText(original)
+        .isVisible()
+        .catch(() => false))
+    ) {
       await visitor.locator('a[href*="beforeAt="]').click();
     }
     await expect(visitor.getByText(original)).toHaveAttribute("lang", "ar");
@@ -305,27 +333,40 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
       locale === "en" ? "ltr" : "rtl",
     );
   }
-  await page.screenshot({ path: testInfo.outputPath("customer-review-submitted.png"), fullPage: true });
+  await page.screenshot({
+    path: testInfo.outputPath("customer-review-submitted.png"),
+    fullPage: true,
+  });
 
   await page.goto("/en/administrator/access");
-  await page.getByLabel("Email").fill(
-    `platform-administrator-${testInfo.project.name}@rentcottage.test`,
-  );
+  await page
+    .getByLabel("Email")
+    .fill(`platform-administrator-${testInfo.project.name}@rentcottage.test`);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Continue" }).click();
   const secret = await page.getByTestId("mfa-secret").textContent();
-  if (!secret) throw new Error("Customer review administrator MFA returned no secret");
+  if (!secret)
+    throw new Error("Customer review administrator MFA returned no secret");
   const aal1 = await page.context().newPage();
   await aal1.goto("/en/administrator/reviews");
-  await expect(aal1.getByText("Authenticator-verified administrator access is required.")).toBeVisible();
+  await expect(
+    aal1.getByText("Authenticator-verified administrator access is required."),
+  ).toBeVisible();
   await aal1.close();
   await page.getByLabel("Authenticator app code").fill(
-    new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret) }).generate(),
+    new OTPAuth.TOTP({
+      secret: OTPAuth.Secret.fromBase32(secret),
+    }).generate(),
   );
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page.getByText("Administrator access is ready.")).toBeVisible();
   await page.goto("/en/administrator/reviews");
-  if (!(await page.getByText(original).isVisible().catch(() => false))) {
+  if (
+    !(await page
+      .getByText(original)
+      .isVisible()
+      .catch(() => false))
+  ) {
     await page.getByRole("link", { name: "Next reviews" }).click();
   }
   const review = page.getByRole("article").filter({ hasText: original });
@@ -336,12 +377,17 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   const reason = "Contact-safety moderation fixture";
   await review.getByLabel("Reason for hiding").fill(reason);
   await review.getByRole("button", { name: "Hide review" }).click();
-  await expect(review.getByRole("status")).toContainText("The review was hidden.");
+  await expect(review.getByRole("status")).toContainText(
+    "The review was hidden.",
+  );
   await expect(review).toContainText(reason);
   await page.reload();
   await expect(page.getByText(original)).toBeVisible();
   await expect(page.getByText(reason)).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("customer-review-hidden-audit.png"), fullPage: true });
+  await page.screenshot({
+    path: testInfo.outputPath("customer-review-hidden-audit.png"),
+    fullPage: true,
+  });
 
   for (const locale of ["en", "ar", "ckb"] as const) {
     const responseBodies: string[] = [];
@@ -358,7 +404,8 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
       primary.ids.bookingReference,
       primary.identities.customer,
       reason,
-    ]) expect(rendered).not.toContain(privateValue);
+    ])
+      expect(rendered).not.toContain(privateValue);
   }
 
   primary.harness.runSql(

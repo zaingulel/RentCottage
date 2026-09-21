@@ -32,7 +32,10 @@ export function CustomerReviewForm({
 
   if (initialResult.status === "submitted")
     return (
-      <section className={styles.section} aria-labelledby="customer-review-heading">
+      <section
+        className={styles.section}
+        aria-labelledby="customer-review-heading"
+      >
         <h2 id="customer-review-heading">{copy.submitted}</h2>
         <p role="status">{copy.published}</p>
         <p>
@@ -47,7 +50,8 @@ export function CustomerReviewForm({
           {initialResult.originalBody ?? copy.ratingOnly}
         </p>
         <p>
-          {copy.submittedAt}: {formatIraqDateTime(initialResult.submittedAt, locale)}
+          {copy.submittedAt}:{" "}
+          {formatIraqDateTime(initialResult.submittedAt, locale)}
         </p>
         <small>{copy.translationUnavailable}</small>
         <small>{copy.repliesUnavailable}</small>
@@ -56,7 +60,10 @@ export function CustomerReviewForm({
 
   if (initialResult.status !== "eligible")
     return (
-      <section className={styles.section} aria-labelledby="customer-review-heading">
+      <section
+        className={styles.section}
+        aria-labelledby="customer-review-heading"
+      >
         <h2 id="customer-review-heading">{copy.title}</h2>
         <p role={initialResult.status === "unavailable" ? "alert" : undefined}>
           {initialResult.status === "unavailable"
@@ -116,7 +123,10 @@ export function CustomerReviewForm({
   }
 
   return (
-    <section className={styles.section} aria-labelledby="customer-review-heading">
+    <section
+      className={styles.section}
+      aria-labelledby="customer-review-heading"
+    >
       <h2 id="customer-review-heading">{copy.title}</h2>
       <p>
         {copy.eligibleUntil}{" "}
@@ -131,7 +141,9 @@ export function CustomerReviewForm({
             {[1, 2, 3, 4, 5].map((rating) => (
               <label key={rating}>
                 <input type="radio" name="rating" value={rating} />
-                <span>{rating} {copy.ratingValue}</span>
+                <span>
+                  {rating} {copy.ratingValue}
+                </span>
               </label>
             ))}
           </div>
