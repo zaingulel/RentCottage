@@ -71,6 +71,22 @@ test('the only install is the base tree\'s production lock, run for a judged pul
   );
 });
 
+function lockedDependencyPath(lock, packagePath, dependency) {
+  let ancestor = packagePath;
+  while (true) {
+    const candidate = `${ancestor}/node_modules/${dependency}`;
+    if (lock.packages[candidate]) return candidate;
+
+    const boundary = ancestor.lastIndexOf('/node_modules/');
+    if (boundary === -1) break;
+    ancestor = ancestor.slice(0, boundary);
+  }
+
+  const rootCandidate = `node_modules/${dependency}`;
+  assert.ok(lock.packages[rootCandidate], `${packagePath} dependency ${dependency} must be locked`);
+  return rootCandidate;
+}
+
 function parserClosure(lock) {
   const pending = Object.keys(PARSER_PINS).map((name) => `node_modules/${name}`);
   const closure = new Set();
@@ -81,12 +97,21 @@ function parserClosure(lock) {
     assert.ok(metadata, `${packagePath} must be locked`);
     closure.add(packagePath);
     for (const dependency of Object.keys(metadata.dependencies ?? {})) {
-      const dependencyPath = `node_modules/${dependency}`;
-      assert.ok(lock.packages[dependencyPath], `${packagePath} dependency ${dependency} must be locked`);
-      pending.push(dependencyPath);
+      pending.push(lockedDependencyPath(lock, packagePath, dependency));
     }
   }
   return [...closure].sort();
+}
+
+function assertParserClosureIsTrusted(lock) {
+  for (const packagePath of parserClosure(lock)) {
+    const metadata = lock.packages[packagePath];
+    const resolved = new URL(metadata.resolved);
+    assert.equal(resolved.protocol, 'https:', `${packagePath} must use HTTPS`);
+    assert.equal(resolved.host, 'registry.npmjs.org', `${packagePath} must use the npm registry`);
+    assert.match(metadata.integrity, /^sha512-/, `${packagePath} must have SHA-512 integrity`);
+    assert.notEqual(metadata.hasInstallScript, true, `${packagePath} must not run a lifecycle script`);
+  }
 }
 
 test('the four exact parser pins are production dependencies backed by the locked registry closure', () => {
@@ -100,14 +125,29 @@ test('the four exact parser pins are production dependencies backed by the locke
     assert.equal(lock.packages[''].dependencies[name], version);
     assert.equal(lock.packages[`node_modules/${name}`].version, version);
   }
-  for (const packagePath of parserClosure(lock)) {
-    const metadata = lock.packages[packagePath];
-    const resolved = new URL(metadata.resolved);
-    assert.equal(resolved.protocol, 'https:', `${packagePath} must use HTTPS`);
-    assert.equal(resolved.host, 'registry.npmjs.org', `${packagePath} must use the npm registry`);
-    assert.match(metadata.integrity, /^sha512-/, `${packagePath} must have SHA-512 integrity`);
-    assert.notEqual(metadata.hasInstallScript, true, `${packagePath} must not run a lifecycle script`);
+  assertParserClosureIsTrusted(lock);
+});
+
+test('the parser closure rejects an untrusted nested dependency', () => {
+  const lock = JSON.parse(readFileSync(resolve(ROOT, 'package-lock.json'), 'utf8'));
+  const closure = parserClosure(lock);
+  for (const nestedPath of [
+    'node_modules/htmlparser2/node_modules/entities',
+    'node_modules/dom-serializer/node_modules/entities',
+    'node_modules/mdast-util-find-and-replace/node_modules/escape-string-regexp',
+  ]) {
+    assert.ok(closure.includes(nestedPath), `${nestedPath} must be validated`);
   }
+  assert.equal(closure.includes('node_modules/entities'), false);
+  assert.equal(closure.includes('node_modules/escape-string-regexp'), false);
+
+  const nestedPath = 'node_modules/htmlparser2/node_modules/entities';
+  lock.packages[nestedPath].resolved = 'https://example.invalid/entities.tgz';
+
+  assert.throws(
+    () => assertParserClosureIsTrusted(lock),
+    new RegExp(`${nestedPath} must use the npm registry`),
+  );
 });
 
 test('the parser closure adds no lifecycle scripts to RentCottage\'s existing script-bearing packages', () => {
