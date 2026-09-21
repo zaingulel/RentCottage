@@ -1,19 +1,27 @@
 #!/usr/bin/env node
-// sweep-scope-check.mjs — the future hosted check for the inactive documentation sweep's scope.
+// sweep-scope-check.mjs — the required check that owns the documentation sweep's scope.
 //
 //   node scripts/sweep-scope-check.mjs <base-commit> <head-commit>
 //
 // Fails (exit 1) when the branch's own changes, merge-base to head, do anything but modify files in
-// the may-edit column of the scope table in docs/DOC-SWEEP.md, add a URI or host name that the base
-// tree does not already carry anywhere, or add markup GitHub would render into a link the text does
-// not show. The table and the tree are read at the BASE commit (the tip of `main`, not the merge
-// base) so a diff cannot widen its own scope and a host `main` gained since the branch point still
-// counts as known. If the routine and hosted protection are separately activated, it runs from
-// `main`'s own copy in .github/workflows/sweep-scope.yml and before the routine pushes. Exit 2 is a
-// usage error; a git failure exits with git's own message, never as a clean result.
+// the may-edit column of the scope table in docs/DOC-SWEEP.md. Two halves then judge what it modifies.
+// The context-free half reads the added lines alone: it refuses a URI, e-mail or host name the base
+// tree does not already carry as a whole token, and the destination shapes that hide where they point
+// wherever they sit, so text planted inert cannot wait for a later edit to wake it. The semantic half
+// renders the whole before and after documents and compares them: a destination the head newly renders
+// is reported when the tree already vouches for it and refused when nothing does, and a destination
+// whose spelling no reader can resolve is refused whether it is new or not. The table and the tree are
+// read at the BASE commit (the tip of `main`, not the merge base) so a diff cannot widen its own scope
+// and a host `main` gained since the branch point still counts as known. Runs from `main`'s own copy
+// in .github/workflows/sweep-scope.yml, and by the sweep itself before it pushes; the rules it
+// enforces are the ones in docs/DOC-SWEEP.md that no reader checks any more. Exit 2 is a usage error;
+// a git failure exits with git's own message, never as a clean result.
 
 import { spawnSync } from 'node:child_process';
-import { addedNetworkTokens, outOfScope, parseMayEdit, renderedLinkMarkup } from './lib/sweep-scope.mjs';
+import {
+  addedNetworkTokens, hiddenDestinationShapes, outOfScope, parseMayEdit, renderedDestinations, tokenMatches,
+  treeGrepArgs, treeGrepCandidates,
+} from './lib/sweep-scope.mjs';
 
 const [base, head, ...extra] = process.argv.slice(2);
 if (!base || !head || extra.length > 0) {
@@ -48,23 +56,68 @@ for (const entry of git('diff', '--name-status', from, head).split('\n').filter(
   if (status === 'M') modified.push(paths[0]);
   else failures.push(`${paths.join(' -> ')} is ${status.startsWith('R') ? 'renamed' : status === 'A' ? 'added' : status === 'D' ? 'deleted' : `status ${status}`}; the sweep only modifies existing documents`);
 }
-for (const path of outOfScope(modified, mayEdit)) {
+const outside = new Set(outOfScope(modified, mayEdit));
+for (const path of outside) {
   failures.push(`${path} is not in the may-edit column of docs/DOC-SWEEP.md at ${at}`);
 }
 
-const diff = git('diff', from, head);
-const tokens = addedNetworkTokens(diff);
-for (const token of tokens) {
-  const found = spawnSync('git', ['grep', '--quiet', '--fixed-strings', '-e', token, base], { encoding: 'utf8' });
-  if (found.status === 0) continue;
-  if (found.status !== 1) {
-    console.error(`sweep-scope: git grep failed: ${found.stderr.trim()}`);
-    process.exit(found.status ?? 1);
+// Whether the base tree vouches for one destination or token. A fixed-string hit is only a candidate
+// line: `tokenMatches` settles whether the tree carries it whole or merely inside a longer one.
+// `--null` separates git's `<rev>:<path>` prefix from the line itself.
+function knownInTree(text) {
+  const treeLines = [];
+  for (const candidate of treeGrepCandidates(text)) {
+    const found = spawnSync('git', treeGrepArgs(candidate, base), { encoding: 'utf8' });
+    if (found.status !== 0 && found.status !== 1) {
+      console.error(`sweep-scope: git grep failed: ${found.stderr.trim()}`);
+      process.exit(found.status ?? 1);
+    }
+    for (const line of found.stdout.split('\n').filter(Boolean)) treeLines.push(line.slice(line.indexOf('\0') + 1));
   }
-  failures.push(`${token} is added by this diff and appears nowhere in the tree at ${at}`);
+  return tokenMatches(text, treeLines);
 }
-for (const fragment of renderedLinkMarkup(diff)) {
-  failures.push(`${fragment} is markup GitHub would render into a link the text does not show`);
+
+const tokens = addedNetworkTokens(git('diff', from, head));
+for (const token of tokens) {
+  if (!knownInTree(token)) {
+    failures.push(`${token} is added by this diff and is not a whole token anywhere in the tree at ${at}`);
+  }
+}
+
+// A refusal names the destination as the document spells it and as a browser would resolve it; one the
+// URL parser could not read has only the spelling.
+const shown = ({ text, href }) => (href === null ? text : `${text} (${href})`);
+
+// What is judged per document, so every refusal names the file to open. Only a modified path is
+// judged: every other status is refused whole above, whatever its content says.
+const newlyRendered = [];
+for (const path of modified) {
+  for (const { line, rule, fragment } of hiddenDestinationShapes(git('diff', from, head, '--', path))) {
+    failures.push(`${path}: ${rule} refuses ${fragment} on the added line: ${line}`);
+  }
+  if (outside.has(path)) continue;
+  // The semantic half needs a document to render. Every may-edit entry is Markdown today; one that is
+  // not cannot be judged by it, so it fails closed rather than passing half-judged.
+  if (!path.endsWith('.md')) {
+    failures.push(`${path} is in the may-edit column but is not Markdown, so the rendered half cannot judge it`);
+    continue;
+  }
+  // The set doubles as the record of what has been accounted for, so one destination rendered twice in
+  // the after document is one report.
+  const rendered = new Set(renderedDestinations(git('show', `${base}:${path}`)).map((record) => record.text));
+  for (const record of renderedDestinations(git('show', `${head}:${path}`))) {
+    // Nothing can vouch for a destination no reader can resolve, so it is refused however old it is.
+    if (record.problem) {
+      failures.push(`${path}: the rendered destination ${shown(record)} is refused (${record.problem})`);
+      continue;
+    }
+    if (rendered.has(record.text)) continue;
+    rendered.add(record.text);
+    newlyRendered.push(record);
+    if (!knownInTree(record.text)) {
+      failures.push(`${path}: the newly rendered destination ${shown(record)} is not a whole token anywhere in the tree at ${at}`);
+    }
+  }
 }
 
 if (failures.length > 0) {
@@ -74,4 +127,5 @@ if (failures.length > 0) {
 }
 
 console.log(`sweep-scope: ${modified.length} modified path${modified.length === 1 ? '' : 's'}, all in the may-edit column; ` +
-  `${tokens.length} network token${tokens.length === 1 ? '' : 's'} added, all already in the tree`);
+  `${tokens.length} network token${tokens.length === 1 ? '' : 's'} added, all already in the tree; ` +
+  `${newlyRendered.length} newly rendered destination(s), all already in the tree`);
