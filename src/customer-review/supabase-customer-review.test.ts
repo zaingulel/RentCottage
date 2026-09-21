@@ -18,6 +18,7 @@ import { SupabaseCustomerReviewRepository } from "./supabase-customer-review";
 
 const reviewId = "11111111-1111-4111-8111-111111111111";
 const laterReviewId = "22222222-2222-4222-8222-222222222222";
+const affectedPublicSlug = "cottage-deadbeefdeadbeefdeadbeefdead0029";
 
 function clientWith(data: unknown, error: unknown = null) {
   return { rpc: vi.fn().mockResolvedValue({ data, error }) };
@@ -33,6 +34,7 @@ describe("Supabase Customer review repository", () => {
       status: "submitted",
       reviewId,
       submittedAt: "2026-09-21T12:00:00.000Z",
+      affectedPublicSlug,
     });
     const repository = new SupabaseCustomerReviewRepository(client as never);
 
@@ -47,6 +49,7 @@ describe("Supabase Customer review repository", () => {
       status: "submitted",
       reviewId,
       submittedAt: "2026-09-21T12:00:00.000Z",
+      affectedPublicSlug,
     });
     expect(client.rpc).toHaveBeenCalledWith("submit_customer_review", {
       target_reference: "RC-REQ-0123456789ABCDEF",
@@ -54,6 +57,73 @@ describe("Supabase Customer review repository", () => {
       target_original_language: "ar",
       target_original_body: "إقامة هادئة وجميلة",
     });
+  });
+
+  it("accepts only exact authoritative targets on newly committed mutations", async () => {
+    const submitted = {
+      status: "submitted",
+      reviewId,
+      submittedAt: "2026-09-21T12:00:00.000Z",
+      affectedPublicSlug,
+    };
+    const submitInput = {
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      rating: 5,
+      originalLanguage: "en",
+      originalBody: null,
+    } as const;
+    for (const malformed of [
+      { ...submitted, affectedPublicSlug: null },
+      { ...submitted, affectedPublicSlug: "not-a-slug" },
+      { ...submitted, extra: "private" },
+      {
+        status: "submitted",
+        reviewId,
+        submittedAt: submitted.submittedAt,
+      },
+    ]) {
+      await expect(
+        new SupabaseCustomerReviewRepository(
+          clientWith(malformed) as never,
+        ).submit(submitInput),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
+
+    const hidden = {
+      status: "hidden",
+      reviewId,
+      administratorUserId: "55555555-5555-4555-8555-555555555555",
+      reason: "Required reason",
+      hiddenAt: "2026-09-21T12:30:00.000Z",
+      affectedPublicSlug,
+      affectedBookingRequestReference: "RC-REQ-FEDCBA9876543210",
+    };
+    await expect(
+      new SupabaseCustomerReviewRepository(clientWith(hidden) as never).hide({
+        reviewId,
+        reason: "Required reason",
+      }),
+    ).resolves.toEqual(hidden);
+    for (const malformed of [
+      { ...hidden, affectedPublicSlug: null },
+      { ...hidden, affectedPublicSlug: "not-a-slug" },
+      { ...hidden, affectedBookingRequestReference: null },
+      { ...hidden, affectedBookingRequestReference: "not-a-reference" },
+      { ...hidden, extra: "private" },
+      {
+        status: "hidden",
+        reviewId,
+        administratorUserId: hidden.administratorUserId,
+        reason: hidden.reason,
+        hiddenAt: hidden.hiddenAt,
+      },
+    ]) {
+      await expect(
+        new SupabaseCustomerReviewRepository(
+          clientWith(malformed) as never,
+        ).hide({ reviewId, reason: "Required reason" }),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
   });
 
   it("lists only the fixed public projection and rejects private-field payloads", async () => {

@@ -382,6 +382,9 @@ update public.owner_application_cottage_profiles
 set current_shift_schedule_id='30000000-0000-4000-8000-000000001001',
   current_publication_id='47300000-0000-4000-8000-000000001001'
 where id='20000000-0000-4000-8000-000000001001';
+update public.cottage_marketplace_listings
+set public_slug='cottage-deadbeefdeadbeefdeadbeefdead1001'
+where profile_id='20000000-0000-4000-8000-000000001001';
 
 insert into auth.users(id,aud,role,phone) values
   ('10000000-0000-4000-8000-000000001004','authenticated','authenticated','+9647500001004');
@@ -519,13 +522,39 @@ select is(
   (select count(*)::integer from public.customer_reviews),0,
   'invalid and prohibited submissions publish no review'
 );
+
+delete from public.cottage_marketplace_listings
+where profile_id='20000000-0000-4000-8000-000000001001';
 set local role authenticated;
 select is(
   public.submit_customer_review(
-    'RC-REQ-0000000000001001',5,'en','A peaceful stay with a lovely garden.'
+    'RC-REQ-0000000000001001',5,'en','Missing-listing attempt'
   )->>'status',
-  'submitted',
-  'the eligible phone-confirmed Customer publishes one review through the request-authenticated command'
+  'unavailable',
+  'submission refuses to insert when its authoritative marketplace listing is missing'
+);
+reset role;
+select is(
+  (select count(*)::integer from public.customer_reviews),0,
+  'missing mutation targets leave no review behind'
+);
+insert into public.cottage_marketplace_listings(profile_id,public_slug,state)
+values(
+  '20000000-0000-4000-8000-000000001001',
+  'cottage-deadbeefdeadbeefdeadbeefdead1001','paused'
+);
+set local role authenticated;
+create temp table submitted_review_result as
+select public.submit_customer_review(
+    'RC-REQ-0000000000001001',5,'en','A peaceful stay with a lovely garden.'
+  ) value;
+select ok(
+  (select value->>'status'='submitted'
+    and value->>'affectedPublicSlug'='cottage-deadbeefdeadbeefdeadbeefdead1001'
+    and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+      =array['affectedPublicSlug','reviewId','status','submittedAt']
+  from submitted_review_result),
+  'new submission returns the exact stored mutation target even while the listing is paused'
 );
 select is(
   public.submit_customer_review(
@@ -534,14 +563,31 @@ select is(
   'duplicate',
   'a replay returns duplicate without changing the original review'
 );
+select ok(
+  (
+    with replay as (
+      select public.submit_customer_review(
+        'RC-REQ-0000000000001001',1,'ckb','Different replay body'
+      ) value
+    )
+    select (select array_agg(key order by key) from jsonb_object_keys(value) key)
+      =array['reviewId','status','submittedAt']
+    from replay
+  ),
+  'submission replay omits mutation target metadata'
+);
 reset role;
+
+update public.cottage_marketplace_listings
+set state='published'
+where profile_id='20000000-0000-4000-8000-000000001001';
 
 set local role anon;
 select ok(
   (
     with result as (
       select public.list_public_customer_reviews(
-        'cottage-20000000000040008000000000001001',null,null,20
+        'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
       ) value
     )
     select value->>'status'='success'
@@ -562,7 +608,7 @@ returns boolean language sql immutable set search_path='' as $$select false$$;
 set local role anon;
 select is(
   jsonb_array_length(public.list_public_customer_reviews(
-    'cottage-20000000000040008000000000001001',null,null,20
+    'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
   )->'items'),
   1,
   'later contact-filter changes do not silently alter public review visibility'
@@ -630,14 +676,45 @@ select set_config(
   '{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',
   true
 );
+reset role;
+delete from public.cottage_marketplace_listings
+where profile_id='20000000-0000-4000-8000-000000001001';
 set local role authenticated;
 select is(
   public.hide_customer_review(
     ((select value from own_review_expected)->>'reviewId')::uuid,
-    'Contains prohibited contact details'
+    'Missing-listing moderation attempt'
   )->>'status',
-  'hidden',
-  'an authenticator-verified Platform Administrator hides a review with immutable attribution'
+  'unavailable',
+  'hiding refuses to insert when authoritative mutation targets are missing'
+);
+reset role;
+select is(
+  (select count(*)::integer from public.customer_review_hides),0,
+  'missing moderation targets leave no hide behind'
+);
+insert into public.cottage_marketplace_listings(profile_id,public_slug,state)
+values(
+  '20000000-0000-4000-8000-000000001001',
+  'cottage-deadbeefdeadbeefdeadbeefdead1001','paused'
+);
+set local role authenticated;
+create temp table hidden_review_result as
+select public.hide_customer_review(
+    ((select value from own_review_expected)->>'reviewId')::uuid,
+    'Contains prohibited contact details'
+  ) value;
+select ok(
+  (select value->>'status'='hidden'
+    and value->>'affectedPublicSlug'='cottage-deadbeefdeadbeefdeadbeefdead1001'
+    and value->>'affectedBookingRequestReference'='RC-REQ-0000000000001001'
+    and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+      =array[
+        'administratorUserId','affectedBookingRequestReference',
+        'affectedPublicSlug','hiddenAt','reason','reviewId','status'
+      ]
+  from hidden_review_result),
+  'new hide returns exact stored targets and first attribution while the listing is paused'
 );
 
 select ok(
@@ -658,6 +735,10 @@ select ok(
   'the AAL2 administrator list retains the original and first hide attribution'
 );
 reset role;
+
+update public.cottage_marketplace_listings
+set state='published'
+where profile_id='20000000-0000-4000-8000-000000001001';
 
 set session_replication_role=replica;
 insert into public.booking_requests
@@ -742,12 +823,26 @@ select ok(
   )->>'reason'='Contains prohibited contact details',
   'hide replay retains the first administrator and reason'
 );
+select ok(
+  (
+    with replay as (
+      select public.hide_customer_review(
+        ((select value from own_review_expected)->>'reviewId')::uuid,
+        'Replacement reason'
+      ) value
+    )
+    select (select array_agg(key order by key) from jsonb_object_keys(value) key)
+      =array['administratorUserId','hiddenAt','reason','reviewId','status']
+    from replay
+  ),
+  'hide replay omits mutation target metadata'
+);
 reset role;
 
 set local role anon;
 select is(
   jsonb_array_length(public.list_public_customer_reviews(
-    'cottage-20000000000040008000000000001001',null,null,20
+    'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
   )->'items'),
   0,
   'an audited hide removes the review from every public RPC projection'

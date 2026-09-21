@@ -26,6 +26,7 @@ declare
   existing public.customer_reviews;
   submitted public.customer_reviews;
   admitted_body text;
+  affected_public_slug text;
 begin
   select * into actor_context
   from public.account_contexts
@@ -92,6 +93,15 @@ begin
     return jsonb_build_object('status','ineligible');
   end if;
 
+  select listings.public_slug into affected_public_slug
+  from public.cottage_marketplace_listings listings
+  where listings.profile_id=request.profile_id;
+  if affected_public_slug is null
+    or affected_public_slug !~ '^cottage-[0-9a-f]{32}$'
+  then
+    return jsonb_build_object('status','unavailable');
+  end if;
+
   insert into public.customer_reviews(
     booking_request_id,booking_confirmation_id,profile_id,author_user_id,
     rating,original_language,original_body
@@ -101,7 +111,10 @@ begin
   ) returning * into submitted;
 
   return jsonb_build_object(
-    'status','submitted','reviewId',submitted.id,'submittedAt',submitted.submitted_at
+    'status','submitted',
+    'reviewId',submitted.id,
+    'submittedAt',submitted.submitted_at,
+    'affectedPublicSlug',affected_public_slug
   );
 exception
   when unique_violation then
@@ -199,6 +212,8 @@ declare
   review public.customer_reviews;
   existing public.customer_review_hides;
   hidden public.customer_review_hides;
+  affected_public_slug text;
+  affected_booking_request_reference text;
 begin
   if actor is null or public.is_platform_administrator('aal2') is not true then
     raise exception 'Customer review moderation is unavailable' using errcode='42501';
@@ -231,6 +246,21 @@ begin
     );
   end if;
 
+  select listings.public_slug,requests.booking_request_reference
+  into affected_public_slug,affected_booking_request_reference
+  from public.booking_requests requests
+  join public.cottage_marketplace_listings listings
+    on listings.profile_id=review.profile_id
+  where requests.id=review.booking_request_id
+    and requests.profile_id=review.profile_id;
+  if affected_public_slug is null
+    or affected_public_slug !~ '^cottage-[0-9a-f]{32}$'
+    or affected_booking_request_reference is null
+    or affected_booking_request_reference !~ '^RC-REQ-[A-F0-9]{16}$'
+  then
+    return jsonb_build_object('status','unavailable');
+  end if;
+
   insert into public.customer_review_hides(
     review_id,administrator_user_id,reason
   ) values (review.id,actor,btrim(target_reason))
@@ -240,7 +270,9 @@ begin
     'reviewId',hidden.review_id,
     'administratorUserId',hidden.administrator_user_id,
     'reason',hidden.reason,
-    'hiddenAt',hidden.hidden_at
+    'hiddenAt',hidden.hidden_at,
+    'affectedPublicSlug',affected_public_slug,
+    'affectedBookingRequestReference',affected_booking_request_reference
   );
 exception
   when unique_violation then

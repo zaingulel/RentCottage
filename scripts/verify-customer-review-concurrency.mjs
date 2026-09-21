@@ -29,6 +29,10 @@ function namespaceSuffix(namespace, sequence) {
   return `00000000${namespace}${String(sequence).padStart(2, "0")}`;
 }
 
+function reviewPublicSlug(namespace) {
+  return `cottage-deadbeefdeadbeefdeadbeefdead00${namespace}`;
+}
+
 function cleanup(namespace) {
   const suffix = (sequence) => namespaceSuffix(namespace, sequence);
   const request = `60000000-0000-4000-8000-${suffix(1)}`;
@@ -79,6 +83,19 @@ delete from public.cottage_booking_period_occupancies where booking_period_commi
 delete from public.cottage_inventory_commitments where booking_period_commitment_id='${commitment}';
 delete from public.cottage_booking_period_commitments where id='${commitment}';
 delete from public.booking_snapshots where id='${snapshot}';
+delete from public.cottage_marketplace_listings where profile_id='${profile}';
+delete from public.cottage_publication_localizations where publication_id in (
+  select id from public.cottage_publication_snapshots where profile_id='${profile}'
+);
+delete from public.cottage_publication_snapshots where profile_id='${profile}';
+delete from public.cottage_profile_publication_decisions where review_cycle_id in (
+  select id from public.cottage_profile_review_cycles where profile_id='${profile}'
+);
+delete from public.cottage_profile_localized_revisions where review_cycle_id in (
+  select id from public.cottage_profile_review_cycles where profile_id='${profile}'
+);
+delete from public.cottage_profile_review_cycles where profile_id='${profile}';
+delete from public.cottage_profile_source_revisions where profile_id='${profile}';
 delete from public.cottage_shifts where schedule_revision_id='${schedule}';
 delete from public.cottage_shift_schedule_revisions where id='${schedule}';
 delete from public.owner_application_cottage_profiles where id='${profile}';
@@ -109,8 +126,13 @@ try {
     namespace: "47",
     startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date-3)",
     complete: true,
+    publish: true,
   });
   harness.runSql(duplicateFixture.sql);
+  const duplicatePublicSlug = reviewPublicSlug("47");
+  harness.runSql(`update public.cottage_marketplace_listings
+set public_slug='${duplicatePublicSlug}',state='paused'
+where profile_id='${duplicateFixture.ids.profileId}';`);
   const duplicateHolder = harness.startSession(`
 begin;
 set application_name='customer_review_duplicate_holder';
@@ -143,15 +165,28 @@ commit;`,
   assertions += 1;
   await harness.finishSession(duplicateHolder, { action: "commit" });
   await harness.finishSession(duplicateContender);
+  const submitted = jsonResults(duplicateHolder)[0];
+  check(submitted?.status, "submitted", "first submit wins");
   check(
-    jsonResults(duplicateHolder)[0]?.status,
-    "submitted",
-    "first submit wins",
+    Object.keys(submitted ?? {}).sort(),
+    ["affectedPublicSlug", "reviewId", "status", "submittedAt"],
+    "new submit returns the exact target-bearing result shape",
   );
   check(
-    jsonResults(duplicateContender)[0]?.status,
+    submitted?.affectedPublicSlug,
+    duplicatePublicSlug,
+    "new submit returns the stored non-derived public slug",
+  );
+  const duplicate = jsonResults(duplicateContender)[0];
+  check(
+    duplicate?.status,
     "duplicate",
     "contending submit observes the committed duplicate",
+  );
+  check(
+    Object.keys(duplicate ?? {}).sort(),
+    ["reviewId", "status", "submittedAt"],
+    "submit replay remains target-free",
   );
   check(
     harness.runSql(
@@ -163,15 +198,19 @@ commit;`,
 
   const deadlineFixture = customerReviewFixture({
     namespace: "48",
-    startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date-15)",
+    startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date-16)",
     accessRangesSql: `tstzmultirange(
-        tstzrange((((current_timestamp at time zone 'Asia/Baghdad')::date-15)::timestamp at time zone 'UTC')+interval '5 hours',(((current_timestamp at time zone 'Asia/Baghdad')::date-15)::timestamp at time zone 'UTC')+interval '9 hours','[)'),
-        tstzrange((((current_timestamp at time zone 'Asia/Baghdad')::date-15)::timestamp at time zone 'UTC')+interval '17 hours',(((current_timestamp at time zone 'Asia/Baghdad')::date-15)::timestamp at time zone 'UTC')+interval '23 hours','[)'),
-        tstzrange((((current_timestamp at time zone 'Asia/Baghdad')::date-14)::timestamp at time zone 'UTC')+interval '5 hours',current_timestamp-interval '14 days'+interval '5 seconds','[)')
-      )`,
+        tstzrange((((current_timestamp at time zone 'Asia/Baghdad')::date-16)::timestamp at time zone 'UTC')+interval '5 hours',(((current_timestamp at time zone 'Asia/Baghdad')::date-16)::timestamp at time zone 'UTC')+interval '9 hours','[)'),
+        tstzrange((((current_timestamp at time zone 'Asia/Baghdad')::date-16)::timestamp at time zone 'UTC')+interval '17 hours',(((current_timestamp at time zone 'Asia/Baghdad')::date-16)::timestamp at time zone 'UTC')+interval '23 hours','[)'),
+        tstzrange(current_timestamp-interval '14 days 1 minute',current_timestamp-interval '14 days'+interval '5 seconds','[)')
+    )`,
     complete: true,
+    publish: true,
   });
   harness.runSql(deadlineFixture.sql);
+  harness.runSql(`update public.cottage_marketplace_listings
+set public_slug='${reviewPublicSlug("48")}',state='paused'
+where profile_id='${deadlineFixture.ids.profileId}';`);
   const deadlineHolder = harness.startSession(`
 begin;
 set application_name='customer_review_deadline_holder';
@@ -224,16 +263,27 @@ commit;`,
     namespace: "49",
     startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date-3)",
     complete: true,
+    publish: true,
   });
   harness.runSql(hideFixture.sql);
-  const reviewId = JSON.parse(
+  const hidePublicSlug = reviewPublicSlug("49");
+  harness.runSql(`update public.cottage_marketplace_listings
+set public_slug='${hidePublicSlug}',state='paused'
+where profile_id='${hideFixture.ids.profileId}';`);
+  const hideSubmission = JSON.parse(
     harness.runSql(`begin;
 ${actor(hideFixture.ids.customerUserId)}
 select public.submit_customer_review(
   '${hideFixture.ids.bookingReference}',5,'en','Review to moderate'
 );
 commit;`),
-  ).reviewId;
+  );
+  check(
+    hideSubmission.affectedPublicSlug,
+    hidePublicSlug,
+    "moderation fixture submission resolves its stored public slug",
+  );
+  const reviewId = hideSubmission.reviewId;
   const secondAdministrator = `10000000-0000-4000-8000-${namespaceSuffix("49", 82)}`;
   harness.runSql(`
 insert into auth.users(id,aud,role,email,email_confirmed_at)
@@ -263,9 +313,33 @@ commit;`,
   assertions += 1;
   await harness.finishSession(hideHolder, { action: "commit" });
   await harness.finishSession(hideContender);
-  check(jsonResults(hideHolder)[0]?.status, "hidden", "first hide wins");
+  const hidden = jsonResults(hideHolder)[0];
+  check(hidden?.status, "hidden", "first hide wins");
+  check(
+    Object.keys(hidden ?? {}).sort(),
+    [
+      "administratorUserId",
+      "affectedBookingRequestReference",
+      "affectedPublicSlug",
+      "hiddenAt",
+      "reason",
+      "reviewId",
+      "status",
+    ],
+    "new hide returns the exact target-bearing result shape",
+  );
+  check(
+    [hidden?.affectedPublicSlug, hidden?.affectedBookingRequestReference],
+    [hidePublicSlug, hideFixture.ids.bookingReference],
+    "new hide returns its stored public slug and booking reference",
+  );
   const replay = jsonResults(hideContender)[0];
   check(replay?.status, "already-hidden", "contending hide is a replay");
+  check(
+    Object.keys(replay ?? {}).sort(),
+    ["administratorUserId", "hiddenAt", "reason", "reviewId", "status"],
+    "hide replay remains target-free",
+  );
   check(
     replay?.administratorUserId,
     hideFixture.ids.administratorUserId,

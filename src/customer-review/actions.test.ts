@@ -13,9 +13,12 @@ vi.mock("./request-customer-review", () => ({
 
 import { hideCustomerReview, submitCustomerReview } from "./actions";
 
+const affectedPublicSlug = "cottage-deadbeefdeadbeefdeadbeefdead0029";
+const affectedBookingReference = "RC-REQ-FEDCBA9876543210";
+const distractorPublicSlug = "cottage-00000000000040008000000000000029";
+
 const validSubmission = {
   locale: "ckb",
-  publicSlug: "cottage-00000000000040008000000000000029",
   bookingRequestReference: "RC-REQ-0123456789ABCDEF",
   rating: 5,
   originalLanguage: "ckb",
@@ -38,13 +41,34 @@ describe("Customer review Server Actions", () => {
       }),
     ).resolves.toEqual({ status: "invalid" });
     await expect(
+      submitCustomerReview({
+        ...validSubmission,
+        publicSlug: distractorPublicSlug,
+      }),
+    ).resolves.toEqual({ status: "invalid" });
+    await expect(
+      submitCustomerReview({
+        ...validSubmission,
+        affectedPublicSlug,
+      }),
+    ).resolves.toEqual({ status: "invalid" });
+    await expect(
       hideCustomerReview({
         locale: "en",
-        publicSlug: "cottage-00000000000040008000000000000029",
-        bookingRequestReference: "RC-REQ-0123456789ABCDEF",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Reason",
         administratorUserId: "55555555-5555-4555-8555-555555555555",
+      }),
+    ).resolves.toEqual({ status: "invalid" });
+    await expect(
+      hideCustomerReview({
+        locale: "en",
+        reviewId: "11111111-1111-4111-8111-111111111111",
+        reason: "Reason",
+        publicSlug: distractorPublicSlug,
+        bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+        affectedPublicSlug,
+        affectedBookingRequestReference: affectedBookingReference,
       }),
     ).resolves.toEqual({ status: "invalid" });
     expect(createRequestReview).not.toHaveBeenCalled();
@@ -58,6 +82,7 @@ describe("Customer review Server Actions", () => {
       status: "submitted",
       reviewId: "11111111-1111-4111-8111-111111111111",
       submittedAt: "2026-09-21T12:00:00.000Z",
+      affectedPublicSlug,
     });
     createRequestReview.mockResolvedValue({ authenticatedUserId, submit });
 
@@ -78,11 +103,14 @@ describe("Customer review Server Actions", () => {
       "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
     ]);
     expect(revalidatePath.mock.calls).toContainEqual([
-      "/ckb/cottages/cottage-00000000000040008000000000000029/reviews",
+      `/ckb/cottages/${affectedPublicSlug}/reviews`,
     ]);
     expect(revalidatePath.mock.calls).toContainEqual([
       "/ckb/administrator/reviews",
     ]);
+    expect(revalidatePath.mock.calls.flat()).not.toContain(
+      `/ckb/cottages/${distractorPublicSlug}/reviews`,
+    );
   });
 
   it("rechecks administrator identity and revalidates only after a new hide", async () => {
@@ -95,32 +123,41 @@ describe("Customer review Server Actions", () => {
       administratorUserId: "55555555-5555-4555-8555-555555555555",
       reason: "Contains personal contact details",
       hiddenAt: "2026-09-21T12:30:00.000Z",
+      affectedPublicSlug,
+      affectedBookingRequestReference: affectedBookingReference,
     });
     createRequestReview.mockResolvedValue({ authenticatedUserId, hide });
 
     await expect(
       hideCustomerReview({
         locale: "en",
-        publicSlug: "cottage-00000000000040008000000000000029",
-        bookingRequestReference: "RC-REQ-0123456789ABCDEF",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Contains personal contact details",
       }),
-    ).resolves.toMatchObject({ status: "hidden" });
+    ).resolves.toEqual({
+      status: "hidden",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      administratorUserId: "55555555-5555-4555-8555-555555555555",
+      reason: "Contains personal contact details",
+      hiddenAt: "2026-09-21T12:30:00.000Z",
+    });
     expect(hide).toHaveBeenCalledWith({
       reviewId: "11111111-1111-4111-8111-111111111111",
       reason: "Contains personal contact details",
     });
     expect(revalidatePath).toHaveBeenCalledTimes(9);
     expect(revalidatePath.mock.calls).toContainEqual([
-      "/en/booking-requests/RC-REQ-0123456789ABCDEF",
+      `/en/booking-requests/${affectedBookingReference}`,
     ]);
     expect(revalidatePath.mock.calls).toContainEqual([
-      "/en/cottages/cottage-00000000000040008000000000000029/reviews",
+      `/en/cottages/${affectedPublicSlug}/reviews`,
     ]);
     expect(revalidatePath.mock.calls).toContainEqual([
       "/en/administrator/reviews",
     ]);
+    expect(revalidatePath.mock.calls.flat()).not.toContain(
+      `/en/cottages/${distractorPublicSlug}/reviews`,
+    );
   });
 
   it("preserves access, duplicate, prohibited, already-hidden, and unavailable recovery outcomes", async () => {
@@ -161,8 +198,6 @@ describe("Customer review Server Actions", () => {
     await expect(
       hideCustomerReview({
         locale: "en",
-        publicSlug: "cottage-00000000000040008000000000000029",
-        bookingRequestReference: "RC-REQ-0123456789ABCDEF",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Later reason",
       }),
@@ -189,8 +224,6 @@ describe("Customer review Server Actions", () => {
     await expect(
       hideCustomerReview({
         locale: "en",
-        publicSlug: "cottage-00000000000040008000000000000029",
-        bookingRequestReference: "RC-REQ-0123456789ABCDEF",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Later reason",
       }),
@@ -208,6 +241,7 @@ describe("Customer review Server Actions", () => {
         status: "submitted",
         reviewId: "11111111-1111-4111-8111-111111111111",
         submittedAt: "2026-09-21T12:00:00.000Z",
+        affectedPublicSlug,
       }),
     });
     revalidatePath.mockImplementationOnce(() => {
@@ -227,6 +261,7 @@ describe("Customer review Server Actions", () => {
       status: "submitted",
       reviewId: "11111111-1111-4111-8111-111111111111",
       submittedAt: "2026-09-21T12:00:00.000Z",
+      affectedPublicSlug,
     });
     const hide = vi.fn().mockResolvedValue({
       status: "hidden",
@@ -234,6 +269,8 @@ describe("Customer review Server Actions", () => {
       administratorUserId: "55555555-5555-4555-8555-555555555555",
       reason: "Required reason",
       hiddenAt: "2026-09-21T12:30:00.000Z",
+      affectedPublicSlug,
+      affectedBookingRequestReference: affectedBookingReference,
     });
     createRequestReview.mockResolvedValue({
       authenticatedUserId,
@@ -245,37 +282,41 @@ describe("Customer review Server Actions", () => {
     expect(new Set(revalidatePath.mock.calls.flat())).toEqual(
       new Set([
         "/en/booking-requests/RC-REQ-0123456789ABCDEF",
-        "/en/cottages/cottage-00000000000040008000000000000029/reviews",
+        `/en/cottages/${affectedPublicSlug}/reviews`,
         "/en/administrator/reviews",
         "/ar/booking-requests/RC-REQ-0123456789ABCDEF",
-        "/ar/cottages/cottage-00000000000040008000000000000029/reviews",
+        `/ar/cottages/${affectedPublicSlug}/reviews`,
         "/ar/administrator/reviews",
         "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
-        "/ckb/cottages/cottage-00000000000040008000000000000029/reviews",
+        `/ckb/cottages/${affectedPublicSlug}/reviews`,
         "/ckb/administrator/reviews",
       ]),
+    );
+    expect(revalidatePath.mock.calls.flat()).not.toContain(
+      `/en/cottages/${distractorPublicSlug}/reviews`,
     );
 
     revalidatePath.mockClear();
     await hideCustomerReview({
       locale: "en",
-      publicSlug: "cottage-00000000000040008000000000000029",
-      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
       reviewId: "11111111-1111-4111-8111-111111111111",
       reason: "Required reason",
     });
     expect(new Set(revalidatePath.mock.calls.flat())).toEqual(
       new Set([
-        "/en/booking-requests/RC-REQ-0123456789ABCDEF",
-        "/en/cottages/cottage-00000000000040008000000000000029/reviews",
+        `/en/booking-requests/${affectedBookingReference}`,
+        `/en/cottages/${affectedPublicSlug}/reviews`,
         "/en/administrator/reviews",
-        "/ar/booking-requests/RC-REQ-0123456789ABCDEF",
-        "/ar/cottages/cottage-00000000000040008000000000000029/reviews",
+        `/ar/booking-requests/${affectedBookingReference}`,
+        `/ar/cottages/${affectedPublicSlug}/reviews`,
         "/ar/administrator/reviews",
-        "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
-        "/ckb/cottages/cottage-00000000000040008000000000000029/reviews",
+        `/ckb/booking-requests/${affectedBookingReference}`,
+        `/ckb/cottages/${affectedPublicSlug}/reviews`,
         "/ckb/administrator/reviews",
       ]),
+    );
+    expect(revalidatePath.mock.calls.flat()).not.toContain(
+      "/en/booking-requests/RC-REQ-0123456789ABCDEF",
     );
   });
 });

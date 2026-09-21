@@ -78,7 +78,13 @@ export function isSubmitCustomerReviewInput(
 
 export type SubmitCustomerReviewResult =
   | Readonly<{
-      status: "submitted" | "duplicate";
+      status: "submitted";
+      reviewId: string;
+      submittedAt: string;
+      affectedPublicSlug: string;
+    }>
+  | Readonly<{
+      status: "duplicate";
       reviewId: string;
       submittedAt: string;
     }>
@@ -113,7 +119,6 @@ export type SubmitCustomerReviewActionResult =
 export type SubmitCustomerReviewActionInput = SubmitCustomerReviewInput &
   Readonly<{
     locale: CustomerReviewLocale;
-    publicSlug: string;
   }>;
 
 export function parseSubmitCustomerReviewActionInput(
@@ -123,14 +128,12 @@ export function parseSubmitCustomerReviewActionInput(
     !isRecord(value) ||
     !hasExactKeys(value, [
       "locale",
-      "publicSlug",
       "bookingRequestReference",
       "rating",
       "originalLanguage",
       "originalBody",
     ]) ||
     !isCustomerReviewLanguage(value.locale) ||
-    !isCustomerReviewPublicSlug(value.publicSlug) ||
     !isBookingRequestReference(value.bookingRequestReference) ||
     !Number.isInteger(value.rating) ||
     (value.rating as number) < 1 ||
@@ -272,8 +275,6 @@ export function isHideCustomerReviewInput(
 export type HideCustomerReviewActionInput = HideCustomerReviewInput &
   Readonly<{
     locale: CustomerReviewLocale;
-    publicSlug: string;
-    bookingRequestReference: string;
   }>;
 
 export function parseHideCustomerReviewActionInput(
@@ -281,16 +282,8 @@ export function parseHideCustomerReviewActionInput(
 ): HideCustomerReviewActionInput | undefined {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
-      "locale",
-      "publicSlug",
-      "bookingRequestReference",
-      "reviewId",
-      "reason",
-    ]) ||
+    !hasExactKeys(value, ["locale", "reviewId", "reason"]) ||
     !isCustomerReviewLanguage(value.locale) ||
-    !isCustomerReviewPublicSlug(value.publicSlug) ||
-    !isBookingRequestReference(value.bookingRequestReference) ||
     !isCustomerReviewUuid(value.reviewId) ||
     typeof value.reason !== "string" ||
     value.reason.trim().length < 1 ||
@@ -304,7 +297,14 @@ export function parseHideCustomerReviewActionInput(
 export type HideCustomerReviewResult =
   | (CustomerReviewHide &
       Readonly<{
-        status: "hidden" | "already-hidden";
+        status: "hidden";
+        reviewId: string;
+        affectedPublicSlug: string;
+        affectedBookingRequestReference: string;
+      }>)
+  | (CustomerReviewHide &
+      Readonly<{
+        status: "already-hidden";
         reviewId: string;
       }>)
   | Readonly<{ status: "access-required" | "invalid" | "unavailable" }>;

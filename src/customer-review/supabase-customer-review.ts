@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   isBookingRequestReference,
   isCustomerReviewPageInput,
+  isCustomerReviewPublicSlug,
   isCustomerReviewTimestamp,
   isCustomerReviewUuid,
   isHideCustomerReviewInput,
@@ -133,7 +134,28 @@ function parseSubmitResult(value: unknown): SubmitCustomerReviewResult {
   }
 
   if (
-    (value.status === "submitted" || value.status === "duplicate") &&
+    value.status === "submitted" &&
+    hasExactKeys(value, [
+      "status",
+      "reviewId",
+      "submittedAt",
+      "affectedPublicSlug",
+    ]) &&
+    typeof value.reviewId === "string" &&
+    isCustomerReviewUuid(value.reviewId) &&
+    isTimestamp(value.submittedAt) &&
+    isCustomerReviewPublicSlug(value.affectedPublicSlug)
+  ) {
+    return {
+      status: "submitted",
+      reviewId: value.reviewId,
+      submittedAt: value.submittedAt,
+      affectedPublicSlug: value.affectedPublicSlug,
+    };
+  }
+
+  if (
+    value.status === "duplicate" &&
     hasExactKeys(value, ["status", "reviewId", "submittedAt"]) &&
     typeof value.reviewId === "string" &&
     isCustomerReviewUuid(value.reviewId) &&
@@ -320,7 +342,7 @@ function parseHideResult(value: unknown): HideCustomerReviewResult {
     return { status: "invalid" };
   }
   if (
-    (value.status === "hidden" || value.status === "already-hidden") &&
+    value.status === "already-hidden" &&
     hasExactKeys(value, [
       "status",
       "reviewId",
@@ -338,6 +360,37 @@ function parseHideResult(value: unknown): HideCustomerReviewResult {
     });
     if (hide !== undefined && hide !== null) {
       return { status: value.status, reviewId: value.reviewId, ...hide };
+    }
+  }
+  if (
+    value.status === "hidden" &&
+    hasExactKeys(value, [
+      "status",
+      "reviewId",
+      "administratorUserId",
+      "reason",
+      "hiddenAt",
+      "affectedPublicSlug",
+      "affectedBookingRequestReference",
+    ]) &&
+    typeof value.reviewId === "string" &&
+    isCustomerReviewUuid(value.reviewId) &&
+    isCustomerReviewPublicSlug(value.affectedPublicSlug) &&
+    isBookingRequestReference(value.affectedBookingRequestReference)
+  ) {
+    const hide = parseHide({
+      administratorUserId: value.administratorUserId,
+      reason: value.reason,
+      hiddenAt: value.hiddenAt,
+    });
+    if (hide !== undefined && hide !== null) {
+      return {
+        status: "hidden",
+        reviewId: value.reviewId,
+        ...hide,
+        affectedPublicSlug: value.affectedPublicSlug,
+        affectedBookingRequestReference: value.affectedBookingRequestReference,
+      };
     }
   }
   return { status: "unavailable" };

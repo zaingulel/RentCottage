@@ -57,10 +57,30 @@ export async function submitCustomerReview(
   if (result.status === "submitted") {
     revalidateCustomerReviewPaths(
       input.bookingRequestReference,
-      input.publicSlug,
+      result.affectedPublicSlug,
     );
+    return {
+      status: result.status,
+      reviewId: result.reviewId,
+      submittedAt: result.submittedAt,
+    };
   }
-  return result;
+  if (result.status === "duplicate") {
+    return {
+      status: result.status,
+      reviewId: result.reviewId,
+      submittedAt: result.submittedAt,
+    };
+  }
+  if (
+    result.status === "access-required" ||
+    result.status === "invalid" ||
+    result.status === "ineligible" ||
+    result.status === "prohibited-content"
+  ) {
+    return { status: result.status };
+  }
+  return { status: "unavailable", recovery: "refresh-own-review" };
 }
 
 export async function hideCustomerReview(
@@ -103,9 +123,31 @@ export async function hideCustomerReview(
   }
   if (result.status === "hidden") {
     revalidateCustomerReviewPaths(
-      input.bookingRequestReference,
-      input.publicSlug,
+      result.affectedBookingRequestReference,
+      result.affectedPublicSlug,
     );
+    return {
+      status: result.status,
+      reviewId: result.reviewId,
+      administratorUserId: result.administratorUserId,
+      reason: result.reason,
+      hiddenAt: result.hiddenAt,
+    };
   }
-  return result;
+  if (result.status === "already-hidden") {
+    return {
+      status: result.status,
+      reviewId: result.reviewId,
+      administratorUserId: result.administratorUserId,
+      reason: result.reason,
+      hiddenAt: result.hiddenAt,
+    };
+  }
+  if (result.status === "access-required" || result.status === "invalid") {
+    return { status: result.status };
+  }
+  return {
+    status: "unavailable",
+    recovery: "reload-administrator-reviews",
+  };
 }
