@@ -45,12 +45,37 @@ It refuses:
 - added, deleted, renamed, copied, or type-changed files, even when their names resemble an allowed file;
 - a Uniform Resource Identifier or common-top-level-domain host added by the diff when that token did not already
   occur in the base tree; and
-- markup GitHub would render as a link while hiding the destination from the source text.
+- a concealed destination on an added line, or a destination newly rendered by a complete-document before/after
+  GitHub Flavoured Markdown parse, when the base tree cannot vouch for it as a whole token.
+
+Those last two checks are complementary. The context-free half examines added lines and refuses destination shapes
+that conceal where they point, even when planted inside text that does not yet render. The semantic half parses the
+complete base and head documents and compares their rendered destinations, so it also sees a destination awakened by
+a container-only edit elsewhere in the document. A newly rendered destination is permitted only when the same token
+extractor finds its visible spelling as a whole token in the base tree; the check reports that permitted destination
+rather than refusing a legitimate edit around text the repository already carries.
 
 `.github/workflows/sweep-scope.yml` runs on pull-request events, no-ops branches outside the sweep and triage
-prefixes, executes the tracked checker from the base branch, and never runs code from the pull-request tree. That
-YAML is not enforcement proof. Before publication is authorized, the owner must separately configure a
+prefixes, executes the tracked checker from the base branch, and never runs code from the pull-request tree. Its
+parser packages are exact production pins in the base branch's `package.json` and `package-lock.json`:
+`htmlparser2@10.1.0`, `mdast-util-from-markdown@2.0.3`, `mdast-util-gfm@3.1.0`, and
+`micromark-extension-gfm@3.0.0`. Only a judged branch installs them, with
+`npm ci --omit=dev --ignore-scripts --no-audit --no-fund`, from that base-owned lock. The workflow has read-only
+repository permission, disables persisted checkout credentials, and reads the pull request's commits only as Git
+objects. An unavailable npm registry therefore leaves the check failed and unavailable rather than bypassed; rerun
+it after the registry service is restored. That YAML is not enforcement proof. Before publication is authorized,
+the owner must separately configure a
 source-bound hosted `sweep-scope` protection with no administrator bypass and verify the setting live.
+
+The guard has five accepted gaps. GitHub keeps an anchor live after escaping a `<textarea>`, `<script>`, `<style>`,
+or `<title>` wrapper, while the parser treats the wrapper as a raw-text context. GitHub also closes a comment on
+`--!>`, while the parser misses an anchor after that spelling when the anchor opens its own block. The base tree can
+vouch for a hostile-looking host that appears only in an unrelated negative fixture; RentCottage currently carries
+`https://evil.test/en/bookings` in `src/access/return-destination.test.ts`. A permitted-destination report is written
+to the check output but currently reaches nobody. Finally, the added-line half deliberately refuses any character
+reference glued directly to an e-mail literal or host, whatever the reference decodes to, so some harmless prose is
+also refused. These gaps remain accepted rather than silently implied or repaired here; the normative follow-up is
+[Flowgauge issue #1362](https://github.com/zaingulel/flow-metrics-dashboard/issues/1362).
 
 ## Activation prerequisites
 

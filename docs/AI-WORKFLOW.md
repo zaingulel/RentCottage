@@ -299,9 +299,18 @@ evidence, or a dependency preflight mismatch.
 
 The tracked `sweep-scope` workflow is a pull-request guard: it runs on pull-request events, no-ops branches outside
 the sweep and triage prefixes, and reads the scope table from the base commit so a branch cannot widen its own
-authority. Its presence does not activate the documentation maintenance routine or configure its schedule,
-external environment, publication authority, provider, or hosted required-check setting. Those need the external
-setup listed in `docs/DOC-SWEEP.md` and owner authority.
+authority. Its context-free half refuses concealed destinations on added lines; its semantic half parses each
+complete document before and after as GitHub Flavoured Markdown and refuses a newly rendered destination that the
+base tree cannot vouch for as a whole token. On judged branches only, the workflow installs the four exact parser
+pins from the base branch's own lock with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; it keeps
+repository permission read-only, disables persisted checkout credentials, and executes no pull-request code. A
+registry outage therefore fails the check closed until the service is restored and the check is rerun. The five
+accepted parser, repository-fixture, reporting, and deliberately blunt refusal gaps are named in
+`docs/DOC-SWEEP.md` and tracked by [Flowgauge issue
+#1362](https://github.com/zaingulel/flow-metrics-dashboard/issues/1362). The guard's presence does not activate the
+documentation maintenance routine or configure its schedule, external environment, publication authority,
+provider, or hosted required-check setting. Those need the external setup listed in `docs/DOC-SWEEP.md` and owner
+authority.
 
 ## Sources of truth
 
