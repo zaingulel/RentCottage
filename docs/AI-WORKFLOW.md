@@ -301,8 +301,9 @@ The tracked `sweep-scope` workflow is a pull-request guard: it runs on pull-requ
 the sweep and triage prefixes, and reads the scope table from the base commit so a branch cannot widen its own
 authority. Its context-free half refuses concealed destinations on added lines; its semantic half parses each
 complete document before and after as GitHub Flavoured Markdown and refuses a newly rendered destination that the
-base tree cannot vouch for as a whole token. On judged branches only, the workflow installs the four exact parser
-pins from the base branch's own lock with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; it keeps
+base tree cannot vouch for as a whole token. On judged branches only, the workflow installs the base branch's entire
+locked production dependency tree, including the four exact parser pins, with
+`npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; it keeps
 repository permission read-only, disables persisted checkout credentials, and executes no pull-request code. A
 registry outage therefore fails the check closed until the service is restored and the check is rerun. The five
 accepted parser, repository-fixture, reporting, and deliberately blunt refusal gaps are named in

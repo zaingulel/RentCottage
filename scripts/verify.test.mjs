@@ -643,6 +643,11 @@ describe("repository verification command", () => {
       "export {};\n",
     ],
     ["sweep scope entry", "scripts/sweep-scope-check.mjs", "export {};\n"],
+    [
+      "sweep scope corpus",
+      "scripts/lib/sweep-scope-corpus.mjs",
+      "export const PASS_ROWS = [];\n",
+    ],
     ["sweep scope library", "scripts/lib/sweep-scope.mjs", "export {};\n"],
     ["sweep scope tests", "scripts/lib/sweep-scope.test.mjs", "export {};\n"],
     [

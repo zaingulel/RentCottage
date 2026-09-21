@@ -46,7 +46,7 @@ test('parseMayEdit takes only the left column and fails loud on a missing or emp
   const table = [
     '| May edit | Never edit |',
     '|---|---|',
-    '| **planned.md**, **important**, `a.md`, `b/c.md` | `d.md` |',
+    '| plain prose, **planned.md**, **important**, `a.md`, `b/c.md` | `d.md` |',
     '| | `e.md`, `f/` |',
     '',
     '| Area | Owning document |',
@@ -271,6 +271,20 @@ test('the check fails a diff that touches a path outside the may-edit column, na
   const result = r.check(r.commit('code edit'));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /src\/code\.js/);
+});
+
+test('the check refuses a non-Markdown path even when the may-edit column names it', () => {
+  const r = repo({
+    documents: { 'docs/NOTES.txt': 'Original notes.\n' },
+    mayEdit: ['docs/NOTES.txt'],
+  });
+  r.write('docs/NOTES.txt', 'Updated notes.\n');
+  const result = r.check(r.commit('edit non-Markdown notes'));
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stderr,
+    /docs\/NOTES\.txt is in the may-edit column but is not Markdown, so the rendered half cannot judge it/,
+  );
 });
 
 test('the check fails a diff that introduces a URI the base tree does not carry, naming it', () => {
