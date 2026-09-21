@@ -90,6 +90,7 @@ const emptyDeclaredSchemaDiff = JSON.stringify({
 });
 const databasePreflightCommands = [
   declaredSchemaDiffCommand,
+  ["node", ["scripts/verify-customer-review-upgrade.mjs"]],
   ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
 ];
 const databaseCheckCommands = [
@@ -115,6 +116,7 @@ const databaseCheckCommands = [
   ["node", ["scripts/verify-booking-cancellation-concurrency.mjs"]],
   ["node", ["scripts/verify-messaging-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-completion-concurrency.mjs"]],
+  ["node", ["scripts/verify-customer-review-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-refund-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-payout-concurrency.mjs"]],
   [

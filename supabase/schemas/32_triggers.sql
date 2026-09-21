@@ -246,3 +246,6 @@ CREATE TRIGGER messaging_send_attempts_immutable BEFORE UPDATE OR DELETE ON publ
 CREATE TRIGGER messaging_messages_immutable BEFORE UPDATE OR DELETE ON public.messaging_messages FOR EACH ROW EXECUTE FUNCTION public.reject_messaging_history_change();
 CREATE TRIGGER messaging_translations_immutable BEFORE UPDATE OR DELETE ON public.messaging_translations FOR EACH ROW EXECUTE FUNCTION public.reject_messaging_history_change();
 CREATE TRIGGER messaging_translation_reports_immutable BEFORE UPDATE OR DELETE ON public.messaging_translation_reports FOR EACH ROW EXECUTE FUNCTION public.reject_messaging_history_change();
+
+CREATE TRIGGER customer_reviews_immutable BEFORE UPDATE OR DELETE ON public.customer_reviews FOR EACH ROW EXECUTE FUNCTION public.reject_customer_review_fact_change();
+CREATE TRIGGER customer_review_hides_immutable BEFORE UPDATE OR DELETE ON public.customer_review_hides FOR EACH ROW EXECUTE FUNCTION public.reject_customer_review_fact_change();
