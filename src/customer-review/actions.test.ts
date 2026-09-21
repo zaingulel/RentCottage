@@ -50,7 +50,7 @@ describe("Customer review Server Actions", () => {
     expect(createRequestReview).not.toHaveBeenCalled();
   });
 
-  it("rechecks session identity and revalidates only affected locale paths after submission", async () => {
+  it("rechecks session identity and revalidates affected review paths after submission", async () => {
     const authenticatedUserId = vi
       .fn()
       .mockResolvedValue("77777777-7777-4777-8777-777777777777");
@@ -73,10 +73,15 @@ describe("Customer review Server Actions", () => {
       originalLanguage: "ckb",
       originalBody: null,
     });
-    expect(revalidatePath.mock.calls).toEqual([
-      ["/ckb/booking-requests/RC-REQ-0123456789ABCDEF"],
-      ["/ckb/cottages/cottage-00000000000040008000000000000029/reviews"],
-      ["/ckb/administrator/reviews"],
+    expect(revalidatePath).toHaveBeenCalledTimes(9);
+    expect(revalidatePath.mock.calls).toContainEqual([
+      "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
+    ]);
+    expect(revalidatePath.mock.calls).toContainEqual([
+      "/ckb/cottages/cottage-00000000000040008000000000000029/reviews",
+    ]);
+    expect(revalidatePath.mock.calls).toContainEqual([
+      "/ckb/administrator/reviews",
     ]);
   });
 
@@ -106,10 +111,15 @@ describe("Customer review Server Actions", () => {
       reviewId: "11111111-1111-4111-8111-111111111111",
       reason: "Contains personal contact details",
     });
-    expect(revalidatePath.mock.calls).toEqual([
-      ["/en/booking-requests/RC-REQ-0123456789ABCDEF"],
-      ["/en/cottages/cottage-00000000000040008000000000000029/reviews"],
-      ["/en/administrator/reviews"],
+    expect(revalidatePath).toHaveBeenCalledTimes(9);
+    expect(revalidatePath.mock.calls).toContainEqual([
+      "/en/booking-requests/RC-REQ-0123456789ABCDEF",
+    ]);
+    expect(revalidatePath.mock.calls).toContainEqual([
+      "/en/cottages/cottage-00000000000040008000000000000029/reviews",
+    ]);
+    expect(revalidatePath.mock.calls).toContainEqual([
+      "/en/administrator/reviews",
     ]);
   });
 
@@ -206,6 +216,66 @@ describe("Customer review Server Actions", () => {
 
     await expect(submitCustomerReview(validSubmission)).rejects.toThrow(
       "framework-interruption",
+    );
+  });
+
+  it("revalidates the exact affected paths in every launch locale after each new mutation", async () => {
+    const authenticatedUserId = vi
+      .fn()
+      .mockResolvedValue("77777777-7777-4777-8777-777777777777");
+    const submit = vi.fn().mockResolvedValue({
+      status: "submitted",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      submittedAt: "2026-09-21T12:00:00.000Z",
+    });
+    const hide = vi.fn().mockResolvedValue({
+      status: "hidden",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      administratorUserId: "55555555-5555-4555-8555-555555555555",
+      reason: "Required reason",
+      hiddenAt: "2026-09-21T12:30:00.000Z",
+    });
+    createRequestReview.mockResolvedValue({
+      authenticatedUserId,
+      submit,
+      hide,
+    });
+
+    await submitCustomerReview(validSubmission);
+    expect(new Set(revalidatePath.mock.calls.flat())).toEqual(
+      new Set([
+        "/en/booking-requests/RC-REQ-0123456789ABCDEF",
+        "/en/cottages/cottage-00000000000040008000000000000029/reviews",
+        "/en/administrator/reviews",
+        "/ar/booking-requests/RC-REQ-0123456789ABCDEF",
+        "/ar/cottages/cottage-00000000000040008000000000000029/reviews",
+        "/ar/administrator/reviews",
+        "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
+        "/ckb/cottages/cottage-00000000000040008000000000000029/reviews",
+        "/ckb/administrator/reviews",
+      ]),
+    );
+
+    revalidatePath.mockClear();
+    await hideCustomerReview({
+      locale: "en",
+      publicSlug: "cottage-00000000000040008000000000000029",
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      reason: "Required reason",
+    });
+    expect(new Set(revalidatePath.mock.calls.flat())).toEqual(
+      new Set([
+        "/en/booking-requests/RC-REQ-0123456789ABCDEF",
+        "/en/cottages/cottage-00000000000040008000000000000029/reviews",
+        "/en/administrator/reviews",
+        "/ar/booking-requests/RC-REQ-0123456789ABCDEF",
+        "/ar/cottages/cottage-00000000000040008000000000000029/reviews",
+        "/ar/administrator/reviews",
+        "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
+        "/ckb/cottages/cottage-00000000000040008000000000000029/reviews",
+        "/ckb/administrator/reviews",
+      ]),
     );
   });
 });

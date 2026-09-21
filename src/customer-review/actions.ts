@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
+import { locales } from "@/i18n/routing";
+
 import {
   parseHideCustomerReviewActionInput,
   parseSubmitCustomerReviewActionInput,
@@ -9,6 +11,17 @@ import {
   type SubmitCustomerReviewActionResult,
 } from "./customer-review";
 import { createRequestCustomerReview } from "./request-customer-review";
+
+function revalidateCustomerReviewPaths(
+  bookingRequestReference: string,
+  publicSlug: string,
+) {
+  for (const locale of locales) {
+    revalidatePath(`/${locale}/booking-requests/${bookingRequestReference}`);
+    revalidatePath(`/${locale}/cottages/${publicSlug}/reviews`);
+    revalidatePath(`/${locale}/administrator/reviews`);
+  }
+}
 
 export async function submitCustomerReview(
   value: unknown,
@@ -42,11 +55,10 @@ export async function submitCustomerReview(
     return { status: "unavailable", recovery: "refresh-own-review" };
   }
   if (result.status === "submitted") {
-    revalidatePath(
-      `/${input.locale}/booking-requests/${input.bookingRequestReference}`,
+    revalidateCustomerReviewPaths(
+      input.bookingRequestReference,
+      input.publicSlug,
     );
-    revalidatePath(`/${input.locale}/cottages/${input.publicSlug}/reviews`);
-    revalidatePath(`/${input.locale}/administrator/reviews`);
   }
   return result;
 }
@@ -90,11 +102,10 @@ export async function hideCustomerReview(
     };
   }
   if (result.status === "hidden") {
-    revalidatePath(
-      `/${input.locale}/booking-requests/${input.bookingRequestReference}`,
+    revalidateCustomerReviewPaths(
+      input.bookingRequestReference,
+      input.publicSlug,
     );
-    revalidatePath(`/${input.locale}/cottages/${input.publicSlug}/reviews`);
-    revalidatePath(`/${input.locale}/administrator/reviews`);
   }
   return result;
 }
