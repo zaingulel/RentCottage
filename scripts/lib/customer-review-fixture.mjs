@@ -40,11 +40,30 @@ export function customerReviewFixture({
   startDaySql,
   accessRangesSql,
   complete = true,
+  confirm = complete,
   publish = false,
+  sharedCottage,
 }) {
   assert.match(namespace, /^[0-9]{2}$/);
   assert.equal(typeof startDaySql, "string");
   assert.ok(startDaySql.length > 0);
+  assert.equal(typeof complete, "boolean");
+  assert.equal(typeof confirm, "boolean");
+  assert.ok(!complete || confirm, "Completion requires confirmation");
+  if (sharedCottage) {
+    assert.equal(publish, false, "A shared cottage is already published");
+    assert.match(sharedCottage.namespace, /^[0-9]{2}$/);
+    assert.notEqual(sharedCottage.namespace, namespace);
+    assert.match(
+      sharedCottage.ownerUserId,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    assert.match(
+      sharedCottage.profileId,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    assert.match(sharedCottage.publicSlug, /^cottage-[0-9a-f]{32}$/);
+  }
 
   const suffix = (sequence) =>
     `00000000${namespace}${String(sequence).padStart(2, "0")}`;
@@ -89,10 +108,15 @@ export function customerReviewFixture({
   const requestId = `60000000-0000-4000-8000-${suffix(1)}`;
   const customerUserId = `10000000-0000-4000-8000-${suffix(2)}`;
   const otherCustomerUserId = `10000000-0000-4000-8000-${suffix(3)}`;
-  const ownerUserId = `10000000-0000-4000-8000-${suffix(1)}`;
+  const fixtureOwnerUserId = `10000000-0000-4000-8000-${suffix(1)}`;
   const administratorUserId = `10000000-0000-4000-8000-${suffix(81)}`;
-  const profileId = `20000000-0000-4000-8000-${suffix(1)}`;
-  const scheduleId = `30000000-0000-4000-8000-${suffix(1)}`;
+  const fixtureProfileId = `20000000-0000-4000-8000-${suffix(1)}`;
+  const fixtureScheduleId = `30000000-0000-4000-8000-${suffix(1)}`;
+  const ownerUserId = sharedCottage?.ownerUserId ?? fixtureOwnerUserId;
+  const profileId = sharedCottage?.profileId ?? fixtureProfileId;
+  const scheduleId = sharedCottage
+    ? `30000000-0000-4000-8000-00000000${sharedCottage.namespace}01`
+    : fixtureScheduleId;
   const bookingReference = `RC-REQ-000000000000${namespace}01`;
   const paymentLifecycleId = `73000000-0000-4000-8000-${suffix(1)}`;
   const captureFingerprint = createHash("sha256")
@@ -105,10 +129,48 @@ export function customerReviewFixture({
     "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
     captureFingerprint,
   );
+  if (sharedCottage) {
+    const ownerAuthRow = `('${fixtureOwnerUserId}','authenticated','authenticated','+964750000${namespace}01',now()),\n`;
+    const ownerContextRow = `('${fixtureOwnerUserId}','cottage_owner','approved'),\n`;
+    const cottageSetup =
+      /insert into public\.owner_application_cottage_profiles[\s\S]*?select set_config\('rentcottage\.shift_schedule_write_revision_id','',true\);\n/;
+    const withoutOwnerAuth = sql.replace(ownerAuthRow, "");
+    assert.notEqual(
+      withoutOwnerAuth,
+      sql,
+      "Customer review owner identity fixture changed",
+    );
+    const withoutOwnerContext = withoutOwnerAuth.replace(ownerContextRow, "");
+    assert.notEqual(
+      withoutOwnerContext,
+      withoutOwnerAuth,
+      "Customer review owner context fixture changed",
+    );
+    const withoutCottageSetup = withoutOwnerContext.replace(cottageSetup, "");
+    assert.notEqual(
+      withoutCottageSetup,
+      withoutOwnerContext,
+      "Customer review shared-cottage fixture changed",
+    );
+    sql = withoutCottageSetup
+      .replaceAll(fixtureOwnerUserId, ownerUserId)
+      .replaceAll(fixtureProfileId, profileId)
+      .replaceAll(fixtureScheduleId, scheduleId)
+      .replaceAll(
+        `31000000-0000-4000-8000-${suffix(1)}`,
+        `31000000-0000-4000-8000-00000000${sharedCottage.namespace}01`,
+      );
+    for (const sequence of [1, 2, 3]) {
+      sql = sql.replaceAll(
+        `32000000-0000-4000-8000-${suffix(sequence)}`,
+        `32000000-0000-4000-8000-00000000${sharedCottage.namespace}${String(sequence).padStart(2, "0")}`,
+      );
+    }
+  }
 
   sql += `
 select pg_temp.seed_customer_review_booking_${namespace}(
-  ${startDaySql},${complete ? "true" : "false"}
+  ${startDaySql},${confirm ? "true" : "false"}
 );
 `;
   if (complete) {
@@ -183,6 +245,7 @@ where id='${profileId}';
       profileId,
       requestId,
     },
-    publicSlug: `cottage-${profileId.replaceAll("-", "")}`,
+    publicSlug:
+      sharedCottage?.publicSlug ?? `cottage-${profileId.replaceAll("-", "")}`,
   };
 }

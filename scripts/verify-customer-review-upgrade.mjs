@@ -21,6 +21,8 @@ const shippedMigration = "20260914085524_issue36_messaging_complete.sql";
 const reviewMigration = "20260921191404_customer_reviews.sql";
 const mutationTargetMigration =
   "20260921211138_customer_review_mutation_targets.sql";
+const readAccessRepairMigration =
+  "20260922021110_customer_review_read_access_repair.sql";
 const project = "rentcottage-review-upgrade";
 const stateRoot = mkdtempSync(join(tmpdir(), "rentcottage-review-upgrade-"));
 const dockerConfig = join(stateRoot, "docker");
@@ -107,6 +109,7 @@ const harness = createLocalSupabaseConcurrencyHarness({
 });
 const supabaseArguments = (args) => [...args, "--workdir", localWorkdir];
 
+const firstPublicSlug = reviewPublicSlug("57");
 const firstEligible = customerReviewFixture({
   namespace: "57",
   startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date-3)",
@@ -115,13 +118,20 @@ const firstEligible = customerReviewFixture({
 });
 const secondEligible = customerReviewFixture({
   namespace: "58",
-  startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date-3)",
+  startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date-6)",
   complete: true,
-  publish: true,
+  publish: false,
+  sharedCottage: {
+    namespace: "57",
+    ownerUserId: firstEligible.ids.ownerUserId,
+    profileId: firstEligible.ids.profileId,
+    publicSlug: firstPublicSlug,
+  },
 });
 const ineligible = customerReviewFixture({
   namespace: "59",
-  startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date-3)",
+  startDaySql: "((clock_timestamp() at time zone 'Asia/Baghdad')::date+1)",
+  confirm: true,
   complete: false,
 });
 const retainedIds = [
@@ -166,18 +176,39 @@ try {
     "t",
     "review storage is absent before the upgrade",
   );
+  check(
+    [
+      secondEligible.ids.ownerUserId,
+      secondEligible.ids.profileId,
+      secondEligible.publicSlug,
+    ],
+    [
+      firstEligible.ids.ownerUserId,
+      firstEligible.ids.profileId,
+      firstPublicSlug,
+    ],
+    "the helper returns the actual shared cottage identity",
+  );
+  assert.throws(
+    () =>
+      customerReviewFixture({
+        namespace: "60",
+        startDaySql:
+          "((clock_timestamp() at time zone 'Asia/Baghdad')::date-3)",
+        confirm: false,
+        complete: true,
+      }),
+    /Completion requires confirmation/,
+    "the helper rejects completion without confirmation",
+  );
+  assertions += 1;
 
   harness.runSql(firstEligible.sql);
   harness.runSql(secondEligible.sql);
   harness.runSql(ineligible.sql);
-  const firstPublicSlug = reviewPublicSlug("57");
-  const secondPublicSlug = reviewPublicSlug("58");
   harness.runSql(`update public.cottage_marketplace_listings
-set public_slug=case profile_id
-  when '${firstEligible.ids.profileId}' then '${firstPublicSlug}'
-  when '${secondEligible.ids.profileId}' then '${secondPublicSlug}'
-end
-where profile_id in ('${firstEligible.ids.profileId}','${secondEligible.ids.profileId}');`);
+set public_slug='${firstPublicSlug}'
+where profile_id='${firstEligible.ids.profileId}';`);
   check(
     harness.runSql(`select count(*)::integer from public.booking_requests
       where id in (${retainedIdsSql});`),
@@ -191,6 +222,21 @@ where profile_id in ('${firstEligible.ids.profileId}','${secondEligible.ids.prof
         and public.booking_completion_eligibility_at(requests.id,clock_timestamp())->>'status'='completed';`),
     "2",
     "eligible retained sources are authoritatively paid and completed",
+  );
+  check(
+    harness.runSql(`select count(*)::integer from public.booking_requests requests
+      where requests.id='${ineligible.ids.requestId}'
+        and public.booking_request_payment_status(requests)='paid-confirmed'
+        and exists(
+          select 1 from public.booking_confirmations confirmations
+          where confirmations.booking_request_id=requests.id
+        )
+        and not exists(
+          select 1 from public.booking_completion_maturity maturity
+          where maturity.booking_request_id=requests.id
+        );`),
+    "1",
+    "the future ineligible source is confirmed but not completed",
   );
   const retainedBefore = harness.runSql(retainedSourceDigestSql);
 
@@ -219,6 +265,11 @@ where profile_id in ('${firstEligible.ids.profileId}','${secondEligible.ids.prof
     "t",
     "the upgrade creates the declared keys and cursor indexes",
   );
+  check(
+    harness.runSql(retainedSourceDigestSql),
+    retainedBefore,
+    "the original review migration preserves retained source facts",
+  );
 
   const submit = (fixture, rating, body) =>
     JSON.parse(
@@ -234,6 +285,13 @@ commit;`),
       harness.runSql(`begin;
 ${actor(fixture.ids.administratorUserId, "aal2")}
 select public.hide_customer_review('${reviewId}','${reason}');
+commit;`),
+    );
+  const readOwn = (fixture) =>
+    JSON.parse(
+      harness.runSql(`begin;
+${actor(fixture.ids.customerUserId)}
+select public.get_customer_review('${fixture.ids.bookingReference}');
 commit;`),
     );
   const first = submit(firstEligible, 5, "First retained booking review");
@@ -282,6 +340,25 @@ commit;`),
     "hide replay remains target-free after the forward migration",
   );
 
+  harness.runSql(
+    readFileSync(join(sourceMigrations, readAccessRepairMigration), "utf8"),
+  );
+  check(
+    harness.runSql(retainedReviewAuditDigestSql),
+    retainedReviewAuditBefore,
+    "the read-access repair preserves the original review and hide audit",
+  );
+  check(
+    harness.runSql(retainedSourceDigestSql),
+    retainedBefore,
+    "the read-access repair preserves retained source facts",
+  );
+  check(
+    readOwn(ineligible),
+    { status: "ineligible" },
+    `the ${readAccessRepairMigration} upgrade reports normal pre-completion as ineligible`,
+  );
+
   const second = submit(secondEligible, 4, null);
   check(
     Object.keys(second).sort(),
@@ -290,7 +367,7 @@ commit;`),
   );
   check(
     second.affectedPublicSlug,
-    secondPublicSlug,
+    firstPublicSlug,
     "a new submission resolves its deliberately non-derived stored slug",
   );
   check(
@@ -299,10 +376,11 @@ commit;`),
     "the retained unfinished booking is denied",
   );
 
-  harness.runSql(`set session_replication_role=replica;
-update public.customer_reviews set submitted_at='2026-09-21 12:00+00'
-where id in ('${first.reviewId}','${second.reviewId}');
-set session_replication_role=origin;`);
+  check(
+    Date.parse(second.submittedAt) > Date.parse(first.submittedAt),
+    true,
+    "the ordinary cursor fixture retains its genuine submission order",
+  );
   const firstPage = JSON.parse(
     harness.runSql(`begin;
 ${actor(firstEligible.ids.administratorUserId, "aal2")}
@@ -319,16 +397,21 @@ select public.list_administrator_customer_reviews(
 commit;`),
   );
   check(
-    [firstPage.items[0].reviewId, secondPage.items[0].reviewId].sort(),
-    [first.reviewId, second.reviewId].sort(),
-    "equal-timestamp cursor pages neither skip nor duplicate reviews",
+    [firstPage.items[0].reviewId, secondPage.items[0].reviewId],
+    [second.reviewId, first.reviewId],
+    "ordinary administrator cursor pages follow genuine submission timestamps without skips",
+  );
+  check(
+    [firstPage.nextCursor?.reviewId, secondPage.nextCursor],
+    [second.reviewId, null],
+    "ordinary administrator cursor traversal ends after the second retained review",
   );
 
   check(
     JSON.parse(
       harness.runSql(`set role anon;
 select public.list_public_customer_reviews(
-  '${secondPublicSlug}',null,null,20
+  '${firstPublicSlug}',null,null,20
 );
 reset role;`),
     ).items.map((item) => Object.keys(item).sort()),
@@ -355,7 +438,7 @@ reset role;`),
   );
   check(
     [secondHide.affectedPublicSlug, secondHide.affectedBookingRequestReference],
-    [secondPublicSlug, secondEligible.ids.bookingReference],
+    [firstPublicSlug, secondEligible.ids.bookingReference],
     "a new hide resolves its stored listing and booking reference",
   );
   check(
@@ -364,6 +447,11 @@ reset role;`),
     ).sort(),
     ["administratorUserId", "hiddenAt", "reason", "reviewId", "status"],
     "new hide replay remains target-free",
+  );
+  check(
+    harness.runSql(retainedReviewAuditDigestSql),
+    retainedReviewAuditBefore,
+    "all upgrade assertions preserve the original review and hide audit",
   );
   check(
     harness.runSql(retainedSourceDigestSql),

@@ -202,7 +202,7 @@ commit;`,
     accessRangesSql: `tstzmultirange(
         tstzrange((((current_timestamp at time zone 'Asia/Baghdad')::date-16)::timestamp at time zone 'UTC')+interval '5 hours',(((current_timestamp at time zone 'Asia/Baghdad')::date-16)::timestamp at time zone 'UTC')+interval '9 hours','[)'),
         tstzrange((((current_timestamp at time zone 'Asia/Baghdad')::date-16)::timestamp at time zone 'UTC')+interval '17 hours',(((current_timestamp at time zone 'Asia/Baghdad')::date-16)::timestamp at time zone 'UTC')+interval '23 hours','[)'),
-        tstzrange(current_timestamp-interval '14 days 1 minute',current_timestamp-interval '14 days'+interval '5 seconds','[)')
+        tstzrange(current_timestamp-interval '14 days 1 minute',current_timestamp-interval '14 days'+interval '15 seconds','[)')
     )`,
     complete: true,
     publish: true,
@@ -223,6 +223,15 @@ select 'CUSTOMER_REVIEW_DEADLINE_HELD';
   const deadlineContender = harness.startSession(
     `begin;
 set application_name='customer_review_deadline_contender';
+select jsonb_build_object(
+  'transactionStartedAt',transaction_timestamp(),
+  'reviewExpiresAt',(
+    select review_expires_at
+    from public.booking_completion_maturity
+    where booking_request_id='${deadlineFixture.ids.requestId}'
+  ),
+  'observedBeforeCallAt',clock_timestamp()
+);
 ${actor(deadlineFixture.ids.customerUserId)}
 select public.submit_customer_review(
   '${deadlineFixture.ids.bookingReference}',5,'en','Arrived before the lock released'
@@ -236,18 +245,68 @@ commit;`,
     deadlineContender,
   );
   assertions += 1;
+  const [deadlinePreCall] = jsonResults(deadlineContender);
+  check(
+    Object.keys(deadlinePreCall ?? {}).sort(),
+    ["observedBeforeCallAt", "reviewExpiresAt", "transactionStartedAt"],
+    "the deadline contender records its transaction and pre-call database clocks",
+  );
+  check(
+    Date.parse(deadlinePreCall.transactionStartedAt) <=
+      Date.parse(deadlinePreCall.observedBeforeCallAt) &&
+      Date.parse(deadlinePreCall.observedBeforeCallAt) <
+        Date.parse(deadlinePreCall.reviewExpiresAt),
+    true,
+    "the contender transaction starts and reaches the locked call before expiry",
+  );
+  const observeDeadlineWait = () =>
+    JSON.parse(
+      harness.runSql(`select jsonb_build_object(
+        'observedAt',clock_timestamp(),
+        'reviewExpiresAt',(
+          select review_expires_at
+          from public.booking_completion_maturity
+          where booking_request_id='${deadlineFixture.ids.requestId}'
+        ),
+        'waiterCount',(
+          select count(*)::integer
+          from pg_catalog.pg_stat_activity
+          where application_name='customer_review_deadline_contender'
+            and wait_event_type='Lock'
+        )
+      );`),
+    );
+  let deadlineWait = observeDeadlineWait();
+  check(
+    deadlineWait.waiterCount === 1 &&
+      deadlineWait.reviewExpiresAt === deadlinePreCall.reviewExpiresAt &&
+      Date.parse(deadlineWait.observedAt) <
+        Date.parse(deadlineWait.reviewExpiresAt),
+    true,
+    "deadline fixture preparation leaves the same contender waiting before expiry",
+  );
   while (
-    harness.runSql(
-      `select clock_timestamp()>=(select review_expires_at from public.booking_completion_maturity where booking_request_id='${deadlineFixture.ids.requestId}');`,
-    ) !== "t"
+    Date.parse(deadlineWait.observedAt) <
+    Date.parse(deadlineWait.reviewExpiresAt)
   ) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    deadlineWait = observeDeadlineWait();
+    if (deadlineWait.waiterCount !== 1) {
+      throw new Error("Deadline contender stopped waiting before expiry");
+    }
   }
-  assertions += 1;
+  check(
+    deadlineWait.waiterCount === 1 &&
+      Date.parse(deadlineWait.observedAt) >=
+        Date.parse(deadlineWait.reviewExpiresAt),
+    true,
+    "the same lock wait remains observable when the database deadline expires",
+  );
   await harness.finishSession(deadlineHolder, { action: "commit" });
   await harness.finishSession(deadlineContender);
+  const [, deadlineResult] = jsonResults(deadlineContender);
   check(
-    jsonResults(deadlineContender)[0]?.status,
+    deadlineResult?.status,
     "ineligible",
     "admission revalidates database time after the booking lock wait",
   );

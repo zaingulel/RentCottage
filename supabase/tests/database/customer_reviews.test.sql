@@ -52,7 +52,8 @@ $$;
 create function pg_temp.seed_completion_booking(
   start_day date,
   confirm_booking boolean default true,
-  target_namespace text default '10'
+  target_namespace text default '10',
+  target_shared_cottage_namespace text default null
 ) returns void language plpgsql as $seed_function$
 declare fixture text := $fixture$
 -- BEGIN CONFIRMATION FIXTURE
@@ -141,14 +142,26 @@ insert into public.account_contexts(user_id,role) values('10000000-0000-4000-800
 
 $fixture$;
 declare suffix text;
+declare shared_suffix text;
 declare lifecycle_id text;
 declare capture_fingerprint text;
+declare target_owner_id text;
+declare target_profile_id text;
+declare target_schedule_id text;
+declare shared_owner_id text;
+declare shared_profile_id text;
+declare shared_schedule_id text;
+declare shared_bundle_id text;
+declare setup_start integer;
+declare setup_end integer;
+declare setup_end_marker text:=
+  'select set_config(''rentcottage.shift_schedule_write_revision_id'','''',true);';
 begin
   if target_namespace !~ '^[0-9]{2}$' then
     raise exception 'Review fixture namespace is invalid';
   end if;
+  suffix:='00000000'||target_namespace;
   if target_namespace <> '10' then
-    suffix:='00000000'||target_namespace;
     fixture:=replace(fixture,'000000001001',suffix||'01');
     fixture:=replace(fixture,'000000001002',suffix||'02');
     fixture:=replace(fixture,'000000001003',suffix||'03');
@@ -178,6 +191,81 @@ begin
       '6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d',
       capture_fingerprint
     );
+  end if;
+  if target_shared_cottage_namespace is not null then
+    if target_shared_cottage_namespace !~ '^[0-9]{2}$'
+      or target_shared_cottage_namespace=target_namespace
+    then
+      raise exception 'Shared review fixture namespace is invalid';
+    end if;
+    shared_suffix:='00000000'||target_shared_cottage_namespace;
+    target_owner_id:='10000000-0000-4000-8000-'||suffix||'01';
+    target_profile_id:='20000000-0000-4000-8000-'||suffix||'01';
+    target_schedule_id:='30000000-0000-4000-8000-'||suffix||'01';
+    shared_owner_id:='10000000-0000-4000-8000-'||shared_suffix||'01';
+    shared_profile_id:='20000000-0000-4000-8000-'||shared_suffix||'01';
+    shared_schedule_id:='30000000-0000-4000-8000-'||shared_suffix||'01';
+    shared_bundle_id:='31000000-0000-4000-8000-'||shared_suffix||'01';
+    if not exists(
+      select 1
+      from public.owner_application_cottage_profiles profiles
+      join public.cottage_shift_schedule_revisions schedules
+        on schedules.id=shared_schedule_id::uuid
+        and schedules.profile_id=profiles.id
+        and schedules.full_day_bundle_id=shared_bundle_id::uuid
+      where profiles.id=shared_profile_id::uuid
+        and profiles.owner_user_id=shared_owner_id::uuid
+        and (
+          select count(*)
+          from public.cottage_shifts shifts
+          where shifts.schedule_revision_id=schedules.id
+        )=3
+    ) then
+      raise exception 'Shared review cottage fixture is unavailable';
+    end if;
+    fixture:=replace(
+      fixture,
+      format(
+        '(%L,%L,%L,%L,now()),%s',
+        target_owner_id,'authenticated','authenticated',
+        '+964750000'||target_namespace||'01',chr(10)
+      ),
+      ''
+    );
+    fixture:=replace(
+      fixture,
+      format(
+        '(%L,%L,%L),%s',
+        target_owner_id,'cottage_owner','approved',chr(10)
+      ),
+      ''
+    );
+    setup_start:=strpos(
+      fixture,'insert into public.owner_application_cottage_profiles'
+    );
+    setup_end:=strpos(fixture,setup_end_marker);
+    if setup_start=0 or setup_end<setup_start then
+      raise exception 'Shared review cottage fixture setup changed';
+    end if;
+    fixture:=overlay(
+      fixture placing '' from setup_start
+      for setup_end-setup_start+char_length(setup_end_marker)+1
+    );
+    fixture:=replace(fixture,target_owner_id,shared_owner_id);
+    fixture:=replace(fixture,target_profile_id,shared_profile_id);
+    fixture:=replace(fixture,target_schedule_id,shared_schedule_id);
+    fixture:=replace(
+      fixture,
+      '31000000-0000-4000-8000-'||suffix||'01',
+      shared_bundle_id
+    );
+    for shift_position in 1..3 loop
+      fixture:=replace(
+        fixture,
+        '32000000-0000-4000-8000-'||suffix||lpad(shift_position::text,2,'0'),
+        '32000000-0000-4000-8000-'||shared_suffix||lpad(shift_position::text,2,'0')
+      );
+    end loop;
   end if;
   fixture:=replace(fixture,'2101-01-02',(start_day+1)::text);
   fixture:=replace(fixture,'2101-01-01',start_day::text);
@@ -1003,34 +1091,140 @@ update public.cottage_marketplace_listings
 set state='published'
 where profile_id='20000000-0000-4000-8000-000000001001';
 
-set session_replication_role=replica;
-insert into public.booking_requests
-select (jsonb_populate_record(
-  null::public.booking_requests,
-  to_jsonb(requests)||jsonb_build_object(
-    'id','86000000-0000-4000-8000-000000001002',
-    'booking_request_reference','RC-REQ-0000000000001002',
-    'booking_snapshot_id','84000000-0000-4000-8000-000000001002',
-    'booking_period_commitment_id','85000000-0000-4000-8000-000000001002',
-    'payment_lifecycle_id','83000000-0000-4000-8000-000000001002'
+savepoint customer_review_guarded_pagination;
+select pg_temp.seed_completion_booking(
+  ((clock_timestamp() at time zone 'Asia/Baghdad')::date - 6),true,'18','10'
+);
+select pg_temp.seed_completion_booking(
+  ((clock_timestamp() at time zone 'Asia/Baghdad')::date - 9),true,'19','10'
+);
+set local role service_role;
+select public.commit_booking_completion(
+  '60000000-0000-4000-8000-000000001801',
+  (
+    select value->>'revision'
+    from public.list_due_booking_completions(50) value
+    where value->>'bookingRequestId'='60000000-0000-4000-8000-000000001801'
   )
-)).*
-from public.booking_requests requests
-where requests.id='60000000-0000-4000-8000-000000001001';
+);
+select public.commit_booking_completion(
+  '60000000-0000-4000-8000-000000001901',
+  (
+    select value->>'revision'
+    from public.list_due_booking_completions(50) value
+    where value->>'bookingRequestId'='60000000-0000-4000-8000-000000001901'
+  )
+);
+reset role;
+
+create temp table guarded_pagination_timestamp as
+select clock_timestamp() value;
+select ok(
+  (
+    with sources as (
+      select requests.id,requests.profile_id,commitments.access_ranges,
+        maturity.effective_period_end,maturity.review_expires_at,
+        public.booking_request_payment_status(requests) payment_status,
+        public.booking_completion_eligibility_at(
+          requests.id,(select value from guarded_pagination_timestamp)
+        ) eligibility
+      from public.booking_requests requests
+      join public.cottage_booking_period_commitments commitments
+        on commitments.id=requests.booking_period_commitment_id
+      join public.booking_completion_maturity maturity
+        on maturity.booking_request_id=requests.id
+      where requests.id in (
+        '60000000-0000-4000-8000-000000001801',
+        '60000000-0000-4000-8000-000000001901'
+      )
+    )
+    select count(*)=2
+      and count(distinct profile_id)=1
+      and bool_and(payment_status='paid-confirmed')
+      and bool_and(eligibility->>'status'='completed')
+      and bool_and((eligibility->>'reviewAvailable')::boolean)
+      and bool_and((select value from guarded_pagination_timestamp)>=effective_period_end)
+      and bool_and((select value from guarded_pagination_timestamp)<review_expires_at)
+      and not (
+        (select access_ranges from sources where id='60000000-0000-4000-8000-000000001801')
+        &&
+        (select access_ranges from sources where id='60000000-0000-4000-8000-000000001901')
+      )
+    from sources
+  ),
+  'pagination fixtures are distinct guarded periods for one paid completed cottage with a shared eligible timestamp'
+);
+
 insert into public.customer_reviews(
   id,booking_request_id,booking_confirmation_id,profile_id,author_user_id,
   rating,original_language,original_body,submitted_at
 )
 select
-  '88000000-0000-4000-8000-000000001002',
-  '86000000-0000-4000-8000-000000001002',
-  '87000000-0000-4000-8000-000000001002',
-  reviews.profile_id,reviews.author_user_id,4,'ar','مراجعة ثانية آمنة',
-  reviews.submitted_at
-from public.customer_reviews reviews
-where reviews.booking_request_id='60000000-0000-4000-8000-000000001001';
-set session_replication_role=origin;
+  case requests.id
+    when '60000000-0000-4000-8000-000000001801'
+      then '88000000-0000-4000-8000-000000001801'::uuid
+    else '88000000-0000-4000-8000-000000001901'::uuid
+  end,
+  requests.id,confirmations.id,requests.profile_id,requests.customer_user_id,
+  case when requests.id='60000000-0000-4000-8000-000000001801' then 4 else 3 end,
+  case when requests.id='60000000-0000-4000-8000-000000001801'
+    then 'ar'::public.cottage_profile_source_language
+    else 'ckb'::public.cottage_profile_source_language
+  end,
+  case when requests.id='60000000-0000-4000-8000-000000001801'
+    then 'مراجعة عربية آمنة'
+    else 'پێداچوونەوەیەکی پارێزراو'
+  end,
+  (select value from guarded_pagination_timestamp)
+from public.booking_requests requests
+join public.booking_confirmations confirmations
+  on confirmations.booking_request_id=requests.id
+where requests.id in (
+  '60000000-0000-4000-8000-000000001801',
+  '60000000-0000-4000-8000-000000001901'
+);
 
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+set local role anon;
+select ok(
+  (
+    with first_page as (
+      select public.list_public_customer_reviews(
+        'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,1
+      ) value
+    ), second_page as (
+      select public.list_public_customer_reviews(
+        'cottage-deadbeefdeadbeefdeadbeefdead1001',
+        (value#>>'{nextCursor,submittedAt}')::timestamptz,
+        (value#>>'{nextCursor,reviewId}')::uuid,
+        1
+      ) value
+      from first_page
+    ), observed as (
+      select 1 ordinal,value#>>'{items,0,reviewId}' review_id from first_page
+      union all
+      select 2,value#>>'{items,0,reviewId}' from second_page
+    )
+    select count(*)=2
+      and count(distinct review_id)=2
+      and array_agg(review_id order by ordinal)=array[
+        '88000000-0000-4000-8000-000000001901',
+        '88000000-0000-4000-8000-000000001801'
+      ]
+      and (select value->'nextCursor' from second_page)='null'::jsonb
+    from observed
+  ),
+  'equal-timestamp public cursor pages use the id tie-break without skips and end with a null cursor'
+);
+reset role;
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',
+  true
+);
 set local role authenticated;
 select ok(
   (
@@ -1039,30 +1233,36 @@ select ok(
     ), second_page as (
       select public.list_administrator_customer_reviews(
         (value#>>'{nextCursor,submittedAt}')::timestamptz,
-        (value#>>'{nextCursor,reviewId}')::uuid,
-        1
+        (value#>>'{nextCursor,reviewId}')::uuid,1
       ) value
       from first_page
+    ), third_page as (
+      select public.list_administrator_customer_reviews(
+        (value#>>'{nextCursor,submittedAt}')::timestamptz,
+        (value#>>'{nextCursor,reviewId}')::uuid,1
+      ) value
+      from second_page
     ), observed as (
-      select value#>>'{items,0,reviewId}' review_id from first_page
+      select 1 ordinal,value#>>'{items,0,reviewId}' review_id from first_page
       union all
-      select value#>>'{items,0,reviewId}' from second_page
+      select 2,value#>>'{items,0,reviewId}' from second_page
+      union all
+      select 3,value#>>'{items,0,reviewId}' from third_page
     )
-    select count(*)=2
-      and count(distinct review_id)=2
-      and array_agg(review_id order by review_id)=array(
-        select value
-        from unnest(array[
-          (select value->>'reviewId' from own_review_expected),
-          '88000000-0000-4000-8000-000000001002'
-        ]::text[]) value
-        order by value
-      )
+    select count(*)=3
+      and count(distinct review_id)=3
+      and array_agg(review_id order by ordinal)=array[
+        '88000000-0000-4000-8000-000000001901',
+        '88000000-0000-4000-8000-000000001801',
+        (select value->>'reviewId' from own_review_expected)
+      ]
+      and (select value->'nextCursor' from third_page)='null'::jsonb
     from observed
   ),
-  'equal-timestamp administrator cursor pages neither skip nor duplicate reviews'
+  'equal-timestamp administrator cursor pages use the id tie-break without skips and end with a null cursor'
 );
 reset role;
+rollback to savepoint customer_review_guarded_pagination;
 
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003802',true);
 select set_config(
