@@ -48,16 +48,25 @@ bounded builder handoff; an open-ended "build the whole feature" splits further.
 start constraints, not a preferred order. Parallel candidacy additionally requires independent files, product
 seams, tests, migrations/providers, and verification capacity.
 
+Size signals, judged once by the owner at Step 4, apply to a single captured idea as much as to a breakdown: the
+outcome fits one sentence a reviewer could demonstrate, and more than five distinct outcome or invariant
+statements, checkbox or bullet, is a signal to make the work a `type:epic` parent with native child slices. No
+later seat stops, replans or refuses work on these signals; after work-pick the only size gate is the plan's, in
+the `resume` skill's Plan section.
+
 ### 4. Quiz the owner
 
 Present the proposed issue or numbered breakdown showing per slice: **Title**, **Outcome**, **Blocked by**,
-**Workstream**, and **Required capabilities**. Ask whether the granularity and dependencies are correct and whether
+**Workstream**, and **Required capabilities**, and flag any slice with more than five outcome or invariant
+statements. An instruction to file an issue approves the idea, not a proposal the owner has not seen, so a single
+captured idea is presented here too. Ask whether the granularity and dependencies are correct and whether
 anything should merge or split. Iterate until the owner approves; create nothing until they do.
 
 ### 5. Route each slice
 
-- **Required capabilities:** the planning, build, review, or specialist capability the slice needs (`builder-lite`,
-  `builder`, or `builder-max`, per the routing rule in `AGENTS.md`). Do not record model names or reasoning settings.
+- **Required capabilities:** the planning, review, or specialist capability the slice needs. Never name a builder
+  seat: the plan chooses one per slice under the routing rule in `AGENTS.md`. Do not record model names or
+  reasoning settings.
 - Use the sensitive-surface classification in `AGENTS.md` to name any required Security review.
 - Choose one Project 4 Workstream from `scripts/lib/board-config.mjs` and only configured labels that describe the
   issue's real tracker role. A parent wrapper with native sub-issues gets `type:epic`.
@@ -136,7 +145,7 @@ and name only the permitted repository-specific adaptations.
 
 ## Required capabilities
 
-The planning, build, review, or specialist capabilities required, provider-neutral.
+The planning, review, or specialist capabilities required, provider-neutral; never a builder seat.
 
 ## Preservation and out of scope
 
