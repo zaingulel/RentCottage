@@ -35,8 +35,8 @@ export function PublicCustomerReviews({
             <article className={styles.card} key={review.reviewId}>
               <header className={styles.cardHeader}>
                 <strong>{copy.customer}</strong>
-                <span aria-label={copy.rating}>
-                  {review.rating} / 5 {copy.ratingValue}
+                <span>
+                  {copy.rating}: {review.rating} / 5 {copy.ratingValue}
                 </span>
               </header>
               <p lang={review.originalLanguage} dir="auto">

@@ -1,16 +1,18 @@
 export type CustomerReviewLanguage = "ar" | "ckb" | "en";
-export type CustomerReviewLocale = CustomerReviewLanguage;
 
 const bookingRequestReferencePattern = /^RC-REQ-[A-F0-9]{16}$/;
 const publicSlugPattern = /^cottage-[0-9a-f]{32}$/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]) {
+export function hasExactKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+) {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return (
@@ -116,38 +118,6 @@ export type SubmitCustomerReviewActionResult =
       status: "unavailable";
       recovery: "refresh-own-review";
     }>;
-
-export type SubmitCustomerReviewActionInput = SubmitCustomerReviewInput &
-  Readonly<{
-    locale: CustomerReviewLocale;
-  }>;
-
-export function parseSubmitCustomerReviewActionInput(
-  value: unknown,
-): SubmitCustomerReviewActionInput | undefined {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      "locale",
-      "bookingRequestReference",
-      "rating",
-      "originalLanguage",
-      "originalBody",
-    ]) ||
-    !isCustomerReviewLanguage(value.locale) ||
-    !isBookingRequestReference(value.bookingRequestReference) ||
-    !Number.isInteger(value.rating) ||
-    (value.rating as number) < 1 ||
-    (value.rating as number) > 5 ||
-    !isCustomerReviewLanguage(value.originalLanguage) ||
-    (value.originalBody !== null &&
-      (typeof value.originalBody !== "string" ||
-        value.originalBody.length > 2000))
-  ) {
-    return undefined;
-  }
-  return value as SubmitCustomerReviewActionInput;
-}
 
 export type CustomerReviewCursor = Readonly<{
   submittedAt: string;
@@ -271,28 +241,6 @@ export function isHideCustomerReviewInput(
     value.reason.trim().length >= 1 &&
     value.reason.trim().length <= 2000
   );
-}
-
-export type HideCustomerReviewActionInput = HideCustomerReviewInput &
-  Readonly<{
-    locale: CustomerReviewLocale;
-  }>;
-
-export function parseHideCustomerReviewActionInput(
-  value: unknown,
-): HideCustomerReviewActionInput | undefined {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["locale", "reviewId", "reason"]) ||
-    !isCustomerReviewLanguage(value.locale) ||
-    !isCustomerReviewUuid(value.reviewId) ||
-    typeof value.reason !== "string" ||
-    value.reason.trim().length < 1 ||
-    value.reason.trim().length > 2000
-  ) {
-    return undefined;
-  }
-  return value as HideCustomerReviewActionInput;
 }
 
 export type HideCustomerReviewResult =

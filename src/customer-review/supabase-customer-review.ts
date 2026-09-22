@@ -1,13 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
+  hasExactKeys,
   isBookingRequestReference,
+  isCustomerReviewLanguage,
   isCustomerReviewPageInput,
   isCustomerReviewPublicSlug,
   isCustomerReviewTimestamp,
   isCustomerReviewUuid,
   isHideCustomerReviewInput,
   isPublicCustomerReviewListInput,
+  isRecord,
   isSubmitCustomerReviewInput,
 } from "./customer-review";
 import type {
@@ -15,7 +18,6 @@ import type {
   AdministratorCustomerReviewListResult,
   CustomerReviewCursor,
   CustomerReviewHide,
-  CustomerReviewLanguage,
   CustomerReviewPageInput,
   HideCustomerReviewInput,
   HideCustomerReviewResult,
@@ -27,27 +29,6 @@ import type {
   SubmitCustomerReviewResult,
 } from "./customer-review";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]) {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return (
-    actual.length === expected.length &&
-    actual.every((key, index) => key === expected[index])
-  );
-}
-
-function isTimestamp(value: unknown): value is string {
-  return isCustomerReviewTimestamp(value);
-}
-
-function isLanguage(value: unknown): value is CustomerReviewLanguage {
-  return value === "ar" || value === "ckb" || value === "en";
-}
-
 function parseCursor(value: unknown): CustomerReviewCursor | null | undefined {
   if (value === null) {
     return null;
@@ -55,7 +36,7 @@ function parseCursor(value: unknown): CustomerReviewCursor | null | undefined {
   if (
     isRecord(value) &&
     hasExactKeys(value, ["submittedAt", "reviewId"]) &&
-    isTimestamp(value.submittedAt) &&
+    isCustomerReviewTimestamp(value.submittedAt) &&
     typeof value.reviewId === "string" &&
     isCustomerReviewUuid(value.reviewId)
   ) {
@@ -82,11 +63,11 @@ function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
     !Number.isInteger(value.rating) ||
     (value.rating as number) < 1 ||
     (value.rating as number) > 5 ||
-    !isLanguage(value.originalLanguage) ||
+    !isCustomerReviewLanguage(value.originalLanguage) ||
     (value.originalBody !== null &&
       (typeof value.originalBody !== "string" ||
         value.originalBody.length > 2000)) ||
-    !isTimestamp(value.submittedAt)
+    !isCustomerReviewTimestamp(value.submittedAt)
   ) {
     return undefined;
   }
@@ -141,7 +122,7 @@ function parseSubmitResult(value: unknown): SubmitCustomerReviewResult {
     ]) &&
     typeof value.reviewId === "string" &&
     isCustomerReviewUuid(value.reviewId) &&
-    isTimestamp(value.submittedAt) &&
+    isCustomerReviewTimestamp(value.submittedAt) &&
     isCustomerReviewPublicSlug(value.affectedPublicSlug)
   ) {
     return {
@@ -157,7 +138,7 @@ function parseSubmitResult(value: unknown): SubmitCustomerReviewResult {
     hasExactKeys(value, ["status", "reviewId", "submittedAt"]) &&
     typeof value.reviewId === "string" &&
     isCustomerReviewUuid(value.reviewId) &&
-    isTimestamp(value.submittedAt)
+    isCustomerReviewTimestamp(value.submittedAt)
   ) {
     return {
       status: value.status,
@@ -196,9 +177,9 @@ function parseOwnReviewResult(value: unknown): OwnCustomerReviewResult {
     Number.isInteger(value.rating) &&
     (value.rating as number) >= 1 &&
     (value.rating as number) <= 5 &&
-    isLanguage(value.originalLanguage) &&
+    isCustomerReviewLanguage(value.originalLanguage) &&
     (value.originalBody === null || typeof value.originalBody === "string") &&
-    isTimestamp(value.submittedAt) &&
+    isCustomerReviewTimestamp(value.submittedAt) &&
     (value.moderationState === "hidden" || value.moderationState === "unhidden")
   ) {
     return {
@@ -214,7 +195,7 @@ function parseOwnReviewResult(value: unknown): OwnCustomerReviewResult {
   if (
     value.status === "eligible" &&
     hasExactKeys(value, ["status", "reviewExpiresAt"]) &&
-    isTimestamp(value.reviewExpiresAt)
+    isCustomerReviewTimestamp(value.reviewExpiresAt)
   ) {
     return { status: "eligible", reviewExpiresAt: value.reviewExpiresAt };
   }
@@ -239,7 +220,7 @@ function parseHide(value: unknown): CustomerReviewHide | null | undefined {
     typeof value.reason !== "string" ||
     value.reason.length < 1 ||
     value.reason.length > 2000 ||
-    !isTimestamp(value.hiddenAt)
+    !isCustomerReviewTimestamp(value.hiddenAt)
   ) {
     return undefined;
   }
@@ -277,11 +258,11 @@ function parseAdministratorReview(
     !Number.isInteger(value.rating) ||
     (value.rating as number) < 1 ||
     (value.rating as number) > 5 ||
-    !isLanguage(value.originalLanguage) ||
+    !isCustomerReviewLanguage(value.originalLanguage) ||
     (value.originalBody !== null &&
       (typeof value.originalBody !== "string" ||
         value.originalBody.length > 2000)) ||
-    !isTimestamp(value.submittedAt) ||
+    !isCustomerReviewTimestamp(value.submittedAt) ||
     (value.moderationState !== "hidden" && value.moderationState !== "unhidden")
   ) {
     return undefined;

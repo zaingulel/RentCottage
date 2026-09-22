@@ -18,7 +18,6 @@ const affectedBookingReference = "RC-REQ-FEDCBA9876543210";
 const distractorPublicSlug = "cottage-00000000000040008000000000000029";
 
 const validSubmission = {
-  locale: "ckb",
   bookingRequestReference: "RC-REQ-0123456789ABCDEF",
   rating: 5,
   originalLanguage: "ckb",
@@ -32,7 +31,7 @@ describe("Customer review Server Actions", () => {
 
   it("rejects invalid, unknown, and supplied-actor input before request work", async () => {
     await expect(
-      submitCustomerReview({ ...validSubmission, locale: "ku" }),
+      submitCustomerReview({ ...validSubmission, locale: "en" }),
     ).resolves.toEqual({ status: "invalid" });
     await expect(
       submitCustomerReview({
@@ -54,15 +53,14 @@ describe("Customer review Server Actions", () => {
     ).resolves.toEqual({ status: "invalid" });
     await expect(
       hideCustomerReview({
-        locale: "en",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Reason",
+        locale: "en",
         administratorUserId: "55555555-5555-4555-8555-555555555555",
       }),
     ).resolves.toEqual({ status: "invalid" });
     await expect(
       hideCustomerReview({
-        locale: "en",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Reason",
         publicSlug: distractorPublicSlug,
@@ -130,7 +128,6 @@ describe("Customer review Server Actions", () => {
 
     await expect(
       hideCustomerReview({
-        locale: "en",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Contains personal contact details",
       }),
@@ -197,7 +194,6 @@ describe("Customer review Server Actions", () => {
     });
     await expect(
       hideCustomerReview({
-        locale: "en",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Later reason",
       }),
@@ -230,7 +226,6 @@ describe("Customer review Server Actions", () => {
     hide.mockResolvedValueOnce({ status: "unavailable" });
     await expect(
       hideCustomerReview({
-        locale: "en",
         reviewId: "11111111-1111-4111-8111-111111111111",
         reason: "Later reason",
       }),
@@ -305,7 +300,6 @@ describe("Customer review Server Actions", () => {
 
     revalidatePath.mockClear();
     await hideCustomerReview({
-      locale: "en",
       reviewId: "11111111-1111-4111-8111-111111111111",
       reason: "Required reason",
     });

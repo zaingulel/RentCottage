@@ -3,13 +3,7 @@ vi.mock("@/notification/request-notification-status", () => ({
     .fn()
     .mockResolvedValue({ status: "unavailable" }),
 }));
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -244,59 +238,6 @@ it("keeps confirmed booking details visible and shows authoritative review eligi
     screen.getByRole("heading", { name: "Review this cottage" }),
   ).toBeVisible();
   expect(screen.getByText(/Oct 5, 2026/)).toBeVisible();
-});
-
-it("requires a rating and publishes the entered original through the review action", async () => {
-  loadConfirmed.mockResolvedValue({ access: { actorRole: "customer" } });
-  loadFinancial.mockResolvedValue({ lifecycle: { status: "completed" } });
-  loadReview.mockResolvedValue({
-    status: "eligible",
-    reviewExpiresAt: "2026-10-05T10:00:00.000Z",
-  });
-  submitReview.mockResolvedValue({
-    status: "submitted",
-    reviewId: "11111111-1111-4111-8111-111111111111",
-    submittedAt: "2026-09-21T12:00:00.000Z",
-  });
-
-  render(
-    await CustomerBookingRequestPage({
-      params: Promise.resolve({
-        locale: "en",
-        reference: request.bookingRequestReference,
-      }),
-    }),
-  );
-
-  fireEvent.click(screen.getByRole("button", { name: "Publish review" }));
-  expect(screen.getByRole("alert")).toHaveTextContent(
-    "Choose a rating from 1 to 5.",
-  );
-  expect(submitReview).not.toHaveBeenCalled();
-
-  fireEvent.click(screen.getByRole("radio", { name: "5 stars" }));
-  fireEvent.change(screen.getByLabelText("Review text (optional)"), {
-    target: { value: "إقامة هادئة وجميلة" },
-  });
-  fireEvent.change(screen.getByLabelText("Original language"), {
-    target: { value: "ar" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Publish review" }));
-
-  await waitFor(() =>
-    expect(submitReview).toHaveBeenCalledWith({
-      locale: "en",
-      bookingRequestReference: request.bookingRequestReference,
-      rating: 5,
-      originalLanguage: "ar",
-      originalBody: "إقامة هادئة وجميلة",
-    }),
-  );
-  expect(
-    within(
-      screen.getByRole("region", { name: "Review this cottage" }),
-    ).getByRole("status"),
-  ).toHaveTextContent("Your review was published.");
 });
 
 it("routes retained cancellation to safe history without reopening private access or pending status", async () => {

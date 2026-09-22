@@ -5,8 +5,8 @@ import { revalidatePath } from "next/cache";
 import { locales } from "@/i18n/routing";
 
 import {
-  parseHideCustomerReviewActionInput,
-  parseSubmitCustomerReviewActionInput,
+  isHideCustomerReviewInput,
+  isSubmitCustomerReviewInput,
   type HideCustomerReviewActionResult,
   type SubmitCustomerReviewActionResult,
 } from "./customer-review";
@@ -26,10 +26,10 @@ function revalidateCustomerReviewPaths(
 export async function submitCustomerReview(
   value: unknown,
 ): Promise<SubmitCustomerReviewActionResult> {
-  const input = parseSubmitCustomerReviewActionInput(value);
-  if (!input) {
+  if (!isSubmitCustomerReviewInput(value)) {
     return { status: "invalid" };
   }
+  const input = value;
 
   let result;
   try {
@@ -72,24 +72,16 @@ export async function submitCustomerReview(
       submittedAt: result.submittedAt,
     };
   }
-  if (
-    result.status === "access-required" ||
-    result.status === "invalid" ||
-    result.status === "ineligible" ||
-    result.status === "prohibited-content"
-  ) {
-    return { status: result.status };
-  }
-  return { status: "unavailable", recovery: "refresh-own-review" };
+  return { status: result.status };
 }
 
 export async function hideCustomerReview(
   value: unknown,
 ): Promise<HideCustomerReviewActionResult> {
-  const input = parseHideCustomerReviewActionInput(value);
-  if (!input) {
+  if (!isHideCustomerReviewInput(value)) {
     return { status: "invalid" };
   }
+  const input = value;
 
   let result;
   try {
@@ -143,11 +135,5 @@ export async function hideCustomerReview(
       hiddenAt: result.hiddenAt,
     };
   }
-  if (result.status === "access-required" || result.status === "invalid") {
-    return { status: result.status };
-  }
-  return {
-    status: "unavailable",
-    recovery: "reload-administrator-reviews",
-  };
+  return { status: result.status };
 }

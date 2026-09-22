@@ -37,14 +37,16 @@ export function CustomerReviewForm({
         aria-labelledby="customer-review-heading"
       >
         <h2 id="customer-review-heading">{copy.submitted}</h2>
-        <p role="status">{copy.published}</p>
-        <p>
+        <p role="status">
           {initialResult.moderationState === "hidden"
             ? copy.hidden
-            : copy.visible}
+            : copy.published}
         </p>
-        <p aria-label={copy.rating}>
-          {initialResult.rating} / 5 {copy.ratingValue}
+        {initialResult.moderationState === "unhidden" ? (
+          <p>{copy.visible}</p>
+        ) : null}
+        <p>
+          {copy.rating}: {initialResult.rating} / 5 {copy.ratingValue}
         </p>
         <p lang={initialResult.originalLanguage} dir="auto">
           {initialResult.originalBody ?? copy.ratingOnly}
@@ -95,7 +97,6 @@ export function CustomerReviewForm({
     setNotice(undefined);
     startTransition(async () => {
       const result = await submitCustomerReview({
-        locale,
         bookingRequestReference,
         rating,
         originalLanguage: language,

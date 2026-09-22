@@ -45,7 +45,6 @@ function ModerationCard({
     setNotice(undefined);
     startTransition(async () => {
       const result = await hideCustomerReview({
-        locale,
         reviewId: review.reviewId,
         reason,
       });
@@ -80,8 +79,8 @@ function ModerationCard({
           {copy.author}: <bdi>{review.authorUserId}</bdi>
         </span>
       </div>
-      <p aria-label={copy.rating}>
-        {review.rating} / 5 {copy.ratingValue}
+      <p>
+        {copy.rating}: {review.rating} / 5 {copy.ratingValue}
       </p>
       <p lang={review.originalLanguage} dir="auto">
         {review.originalBody ?? copy.ratingOnly}

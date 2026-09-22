@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Response } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -23,7 +23,14 @@ type CustomerReviewFixtureModule = {
     namespace: string;
     startDaySql: string;
     complete: boolean;
+    confirm?: boolean;
     publish: boolean;
+    sharedCottage?: {
+      namespace: string;
+      ownerUserId: string;
+      profileId: string;
+      publicSlug: string;
+    };
   }): ReviewFixture;
 };
 const customerReviewFixtureModule: Promise<CustomerReviewFixtureModule> =
@@ -45,11 +52,23 @@ const namespaces = {
   desktop: ["62", "65"],
   worker: ["63", "66"],
 } as const;
+const paginationNamespaces = {
+  mobile: Array.from({ length: 19 }, (_, index) =>
+    String(index + 1).padStart(2, "0"),
+  ),
+  desktop: Array.from({ length: 19 }, (_, index) =>
+    index < 17 ? String(index + 21).padStart(2, "0") : String(index + 50),
+  ),
+  worker: Array.from({ length: 19 }, (_, index) =>
+    String(index + 41).padStart(2, "0"),
+  ),
+} as const;
+const upcomingNamespaces = {
+  mobile: "20",
+  desktop: "40",
+  worker: "60",
+} as const;
 const password = "Local-test-password-2026";
-
-function fixtureId(prefix: string, namespace: string, sequence: number) {
-  return `${prefix}-0000-4000-8000-00000000${namespace}${String(sequence).padStart(2, "0")}`;
-}
 
 function requireLocalDatabase() {
   const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
@@ -66,11 +85,17 @@ function requireLocalDatabase() {
 
 async function seedFixture(
   namespace: string,
-  sharedCottage?: {
-    namespace: string;
-    ownerUserId: string;
-    profileId: string;
-  },
+  options: {
+    complete?: boolean;
+    confirm?: boolean;
+    sharedCottage?: {
+      namespace: string;
+      ownerUserId: string;
+      profileId: string;
+      publicSlug: string;
+    };
+    startDaySql?: string;
+  } = {},
 ) {
   const { customerReviewFixture } = await customerReviewFixtureModule;
   const url = process.env.SUPABASE_URL;
@@ -102,9 +127,13 @@ async function seedFixture(
   };
   const fixture = customerReviewFixture({
     namespace,
-    startDaySql: `((clock_timestamp() at time zone 'Asia/Baghdad')::date-${sharedCottage ? 5 : 3})`,
-    complete: true,
-    publish: !sharedCottage,
+    startDaySql:
+      options.startDaySql ??
+      `((clock_timestamp() at time zone 'Asia/Baghdad')::date-${options.sharedCottage ? 5 : 3})`,
+    complete: options.complete ?? true,
+    confirm: options.confirm,
+    publish: !options.sharedCottage,
+    sharedCottage: options.sharedCottage,
   });
   const phones = {
     owner: `+964750000${namespace}01`,
@@ -112,7 +141,9 @@ async function seedFixture(
     other: `+964750000${namespace}03`,
   };
   const identities = {
-    owner: await ensurePhoneUser(phones.owner),
+    owner:
+      options.sharedCottage?.ownerUserId ??
+      (await ensurePhoneUser(phones.owner)),
     customer: await ensurePhoneUser(phones.customer),
     other: await ensurePhoneUser(phones.other),
   };
@@ -134,39 +165,10 @@ async function seedFixture(
   if (!sql.includes(renderedItems) || sql.includes(legacyItems)) {
     throw new Error("Customer review booking presentation fixture changed");
   }
-  if (sharedCottage) {
-    const cottageSetup =
-      /insert into public\.owner_application_cottage_profiles[\s\S]*?select set_config\('rentcottage\.shift_schedule_write_revision_id','',true\);\n/;
-    const withoutCottageSetup = sql.replace(cottageSetup, "");
-    if (withoutCottageSetup === sql) {
-      throw new Error("Customer review shared-cottage fixture changed");
-    }
-    sql = withoutCottageSetup
-      .replace(
-        `('${fixture.ids.ownerUserId}','cottage_owner','approved'),\n`,
-        "",
-      )
-      .replaceAll(fixture.ids.ownerUserId, sharedCottage.ownerUserId)
-      .replaceAll(fixture.ids.profileId, sharedCottage.profileId)
-      .replaceAll(
-        fixtureId("30000000", namespace, 1),
-        fixtureId("30000000", sharedCottage.namespace, 1),
-      )
-      .replaceAll(
-        fixtureId("31000000", namespace, 1),
-        fixtureId("31000000", sharedCottage.namespace, 1),
-      );
-    for (const sequence of [1, 2, 3]) {
-      sql = sql.replaceAll(
-        fixtureId("32000000", namespace, sequence),
-        fixtureId("32000000", sharedCottage.namespace, sequence),
-      );
-    }
-  }
   sql = sql
     .replaceAll(
       fixture.ids.ownerUserId,
-      sharedCottage?.ownerUserId ?? identities.owner,
+      options.sharedCottage?.ownerUserId ?? identities.owner,
     )
     .replaceAll(fixture.ids.customerUserId, identities.customer)
     .replaceAll(fixture.ids.otherCustomerUserId, identities.other);
@@ -181,7 +183,7 @@ async function seedFixture(
   where requests.booking_request_reference='${fixture.ids.bookingReference}';`);
   expect(JSON.parse(sourceProof)).toEqual({
     payment: "paid-confirmed",
-    completion: "completed",
+    completion: options.complete === false ? "unavailable" : "completed",
     discoverable: true,
   });
   return { ...fixture, identities, phones, harness };
@@ -228,19 +230,39 @@ async function expectIdentityDenied(phone: string, bookingReference: string) {
   expect(response.error?.code).toBe("42501");
 }
 
+function anchoredServiceDay(anchor: string, offset: number) {
+  expect(anchor).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  const operator = offset < 0 ? "-" : "+";
+  return `'${anchor}'::date${operator}${Math.abs(offset)}`;
+}
+
 test("Customer review publishes, paginates, survives moderation audit, and disappears publicly", async ({
   page,
   browser,
 }, testInfo) => {
   test.setTimeout(testInfo.project.name === "worker" ? 480_000 : 180_000);
   requireLocalDatabase();
-  const pair = namespaces[testInfo.project.name as keyof typeof namespaces];
+  const projectName = testInfo.project.name as keyof typeof namespaces;
+  const pair = namespaces[projectName];
   if (!pair) throw new Error("Customer review browser project is unmapped");
-  const primary = await seedFixture(pair[0]);
-  const ratingOnly = await seedFixture(pair[1], {
+  const fixtureHarness = createLocalSupabaseConcurrencyHarness();
+  fixtureHarness.guardDisposableLocalDatabase();
+  const serviceDateAnchor = fixtureHarness.runSql(
+    "select (clock_timestamp() at time zone 'Asia/Baghdad')::date;",
+  );
+  expect(serviceDateAnchor).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  const primary = await seedFixture(pair[0], {
+    startDaySql: anchoredServiceDay(serviceDateAnchor, -3),
+  });
+  const sharedCottage = {
     namespace: pair[0],
     ownerUserId: primary.identities.owner,
     profileId: primary.ids.profileId,
+    publicSlug: primary.publicSlug,
+  };
+  const ratingOnly = await seedFixture(pair[1], {
+    sharedCottage,
+    startDaySql: anchoredServiceDay(serviceDateAnchor, -5),
   });
 
   const bookingPath = `/en/booking-requests/${primary.ids.bookingReference}`;
@@ -285,14 +307,26 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await visitor.reload();
   await expect(visitor.getByText("No reviews yet.")).toBeVisible();
 
-  const original = "إقامة هادئة وجميلة بلا تغيير";
-  await page.getByRole("radio", { name: "5 stars" }).check();
+  const original =
+    "Literal <dialog open data-review-probe>unsafe dialog</dialog> & <em>literal emphasis</em> remains unchanged through a long customer review.";
+  const primaryRating = page.getByRole("radio", { name: "5 stars" });
+  await primaryRating.focus();
+  await primaryRating.press("Space");
+  await expect(primaryRating).toBeChecked();
   await page.getByLabel("Review text (optional)").fill(original);
-  await page.getByLabel("Original language").selectOption("ar");
+  await page.getByLabel("Original language").selectOption("en");
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "Your review was published." }),
   ).toBeVisible();
+  await page.reload();
+  const authorReview = page.getByRole("region", { name: "Your review" });
+  await expect(authorReview.getByText(original)).toHaveAttribute("lang", "en");
+  await expect(authorReview.getByText(original)).toHaveAttribute("dir", "auto");
+  await expect(authorReview.locator("dialog")).toHaveCount(0);
+  await expect(authorReview.locator("em")).toHaveCount(0);
+  await expect(authorReview.locator("[data-review-probe]")).toHaveCount(0);
+  await expect(authorReview.getByText("Rating: 5 / 5 stars")).toBeVisible();
 
   const ratingContext = await browser.newContext({
     baseURL: new URL(page.url()).origin,
@@ -312,23 +346,325 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   ).toBeVisible();
   await ratingContext.close();
 
+  const interactiveReviews = JSON.parse(
+    primary.harness.runSql(`select jsonb_agg(jsonb_build_object(
+      'reviewId',reviews.id,
+      'bookingRequestId',reviews.booking_request_id,
+      'originalBody',reviews.original_body
+    ) order by reviews.submitted_at desc,reviews.id desc)
+    from public.customer_reviews reviews
+    where reviews.booking_request_id in (
+      '${primary.ids.requestId}','${ratingOnly.ids.requestId}'
+    );`),
+  ) as Array<{
+    reviewId: string;
+    bookingRequestId: string;
+    originalBody: string | null;
+  }>;
+  expect(interactiveReviews).toHaveLength(2);
+  const primaryInteractiveReview = interactiveReviews.find(
+    (review) => review.bookingRequestId === primary.ids.requestId,
+  );
+  expect(primaryInteractiveReview).toMatchObject({ originalBody: original });
+  expect(
+    interactiveReviews.find(
+      (review) => review.bookingRequestId === ratingOnly.ids.requestId,
+    ),
+  ).toMatchObject({ originalBody: null });
+
+  const historicalBodies: string[] = [];
+  const historicalReviewIds: string[] = [];
+  const sharedScheduleRevisionId = `30000000-0000-4000-8000-00000000${pair[0]}01`;
+  for (const [index, namespace] of paginationNamespaces[
+    projectName
+  ].entries()) {
+    const serviceDayOffset = -7 - 2 * index;
+    const startDaySql = anchoredServiceDay(serviceDateAnchor, serviceDayOffset);
+    const reservedOccupancies = primary.harness.runSql(`select count(*)
+      from public.cottage_booking_period_occupancies occupancies
+      where occupancies.schedule_revision_id='${sharedScheduleRevisionId}'
+        and occupancies.service_day in (${startDaySql},${startDaySql}+1);`);
+    expect(reservedOccupancies).toBe("0");
+
+    const fixture = await seedFixture(namespace, {
+      sharedCottage,
+      startDaySql,
+    });
+    const reviewId = `91000000-0000-4000-8000-00000000${namespace}01`;
+    const originalBody = `Guarded historical review ${index + 1}`;
+    const sourceFacts = JSON.parse(
+      primary.harness.runSql(`select jsonb_build_object(
+        'namespaceRequestCount',(
+          select count(*) from public.booking_requests namespace_requests
+          where namespace_requests.id='${fixture.ids.requestId}'
+            and namespace_requests.booking_request_reference='${fixture.ids.bookingReference}'
+        ),
+        'occupancyCount',(
+          select count(*) from public.cottage_booking_period_occupancies own
+          join public.booking_requests source_request
+            on source_request.booking_period_commitment_id=own.booking_period_commitment_id
+          where source_request.id='${fixture.ids.requestId}'
+        ),
+        'foreignOccupancyKeyCount',(
+          select count(*) from public.cottage_booking_period_occupancies own
+          join public.booking_requests source_request
+            on source_request.booking_period_commitment_id=own.booking_period_commitment_id
+          join public.cottage_booking_period_occupancies other
+            on other.schedule_revision_id=own.schedule_revision_id
+            and other.shift_id=own.shift_id
+            and other.service_day=own.service_day
+            and other.booking_period_commitment_id<>own.booking_period_commitment_id
+          where source_request.id='${fixture.ids.requestId}'
+        ),
+        'payment',public.booking_request_payment_status(requests),
+        'commitmentConfirmed',exists(
+          select 1 from public.cottage_booking_period_commitments commitments
+          where commitments.id=requests.booking_period_commitment_id
+            and commitments.status='confirmed_booking'
+        ),
+        'confirmationBound',exists(
+          select 1 from public.booking_confirmations confirmations
+          where confirmations.booking_request_id=requests.id
+        ),
+        'completionBound',exists(
+          select 1 from public.booking_completion_maturity maturity
+          join public.booking_lifecycle_outcomes outcomes
+            on outcomes.id=maturity.lifecycle_outcome_id
+            and outcomes.booking_request_id=requests.id
+            and outcomes.outcome='completed'
+          where maturity.booking_request_id=requests.id
+            and maturity.outcome='completed'
+        ),
+        'bodySafe',public.contact_protection_text_is_safe('${originalBody}'),
+        'submittedAt',maturity.effective_period_end+interval '1 day',
+        'reviewExpiresAt',maturity.review_expires_at,
+        'insideReviewWindow',
+          maturity.effective_period_end+interval '1 day'>=maturity.effective_period_end
+          and maturity.effective_period_end+interval '1 day'<maturity.review_expires_at
+      )
+      from public.booking_requests requests
+      join public.booking_completion_maturity maturity
+        on maturity.booking_request_id=requests.id
+      where requests.id='${fixture.ids.requestId}';`),
+    ) as {
+      namespaceRequestCount: number;
+      occupancyCount: number;
+      foreignOccupancyKeyCount: number;
+      payment: string;
+      commitmentConfirmed: boolean;
+      confirmationBound: boolean;
+      completionBound: boolean;
+      bodySafe: boolean;
+      submittedAt: string;
+      reviewExpiresAt: string;
+      insideReviewWindow: boolean;
+    };
+    expect(sourceFacts).toMatchObject({
+      namespaceRequestCount: 1,
+      occupancyCount: 5,
+      foreignOccupancyKeyCount: 0,
+      payment: "paid-confirmed",
+      commitmentConfirmed: true,
+      confirmationBound: true,
+      completionBound: true,
+      bodySafe: true,
+      insideReviewWindow: true,
+    });
+    expect(Date.parse(sourceFacts.submittedAt)).toBeLessThan(
+      Date.parse(sourceFacts.reviewExpiresAt),
+    );
+
+    const inserted = JSON.parse(
+      primary.harness.runSql(`with inserted as (
+        insert into public.customer_reviews(
+          id,booking_request_id,booking_confirmation_id,profile_id,
+          author_user_id,rating,original_language,original_body,submitted_at
+        )
+        select '${reviewId}',requests.id,confirmations.id,requests.profile_id,
+          requests.customer_user_id,${(index % 5) + 1},'en','${originalBody}',
+          maturity.effective_period_end+interval '1 day'
+        from public.booking_requests requests
+        join public.booking_confirmations confirmations
+          on confirmations.booking_request_id=requests.id
+        join public.booking_completion_maturity maturity
+          on maturity.booking_request_id=requests.id
+          and maturity.outcome='completed'
+        where requests.id='${fixture.ids.requestId}'
+        returning id,original_body,submitted_at
+      ) select jsonb_build_object(
+        'reviewId',inserted.id,
+        'originalBody',inserted.original_body,
+        'submittedAt',inserted.submitted_at
+      ) from inserted;`),
+    );
+    expect(inserted).toEqual({
+      reviewId,
+      originalBody,
+      submittedAt: sourceFacts.submittedAt,
+    });
+    historicalBodies.push(originalBody);
+    historicalReviewIds.push(reviewId);
+  }
+  expect(historicalBodies).toHaveLength(19);
+  expect(historicalReviewIds).toHaveLength(19);
+
+  const upcoming = await seedFixture(upcomingNamespaces[projectName], {
+    sharedCottage,
+    startDaySql: anchoredServiceDay(serviceDateAnchor, 1),
+    complete: false,
+    confirm: true,
+  });
+  const upcomingContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+  });
+  const upcomingPage = await upcomingContext.newPage();
+  await signInPhone(
+    upcomingPage,
+    upcoming.phones.customer,
+    `/en/booking-requests/${upcoming.ids.bookingReference}`,
+  );
+  const upcomingReview = upcomingPage.getByRole("region", {
+    name: "Review this cottage",
+  });
+  await expect(upcomingReview).toContainText(
+    "A review is not available for this booking.",
+  );
+  await expect(
+    upcomingReview.getByRole("button", { name: "Publish review" }),
+  ).toHaveCount(0);
+  await expect(upcomingReview.getByRole("alert")).toHaveCount(0);
+  await upcomingContext.close();
+
+  const ratingText = {
+    en: "Rating: 5 / 5 stars",
+    ar: "التقييم: 5 / 5 نجوم",
+    ckb: "هەڵسەنگاندن: 5 / 5 ئەستێرە",
+  } as const;
+  const ratingOnlyText = {
+    en: "Rating only",
+    ar: "تقييم رقمي فقط",
+    ckb: "تەنها هەڵسەنگاندن",
+  } as const;
+  const nextReviewText = {
+    en: "Next reviews",
+    ar: "التقييمات التالية",
+    ckb: "هەڵسەنگاندنەکانی دواتر",
+  } as const;
+  const expectedReviewIds = [
+    ...interactiveReviews.map((review) => review.reviewId),
+    ...historicalReviewIds,
+  ];
+  expect(new Set(expectedReviewIds).size).toBe(21);
+
+  const publicClient = createClient(
+    process.env.SUPABASE_URL ?? "",
+    process.env.SUPABASE_PUBLISHABLE_KEY ?? "",
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+  const firstPublicResult = await publicClient.rpc(
+    "list_public_customer_reviews",
+    {
+      target_slug: primary.publicSlug,
+      target_before_at: null,
+      target_before_id: null,
+      target_limit: 20,
+    },
+  );
+  expect(firstPublicResult.error).toBeNull();
+  const firstPublicData = firstPublicResult.data as {
+    status: string;
+    items: Array<{ reviewId: string; originalBody: string | null }>;
+    nextCursor: { submittedAt: string; reviewId: string } | null;
+  };
+  expect(firstPublicData.status).toBe("success");
+  expect(firstPublicData.items).toHaveLength(20);
+  expect(firstPublicData.nextCursor).not.toBeNull();
+  const secondPublicResult = await publicClient.rpc(
+    "list_public_customer_reviews",
+    {
+      target_slug: primary.publicSlug,
+      target_before_at: firstPublicData.nextCursor!.submittedAt,
+      target_before_id: firstPublicData.nextCursor!.reviewId,
+      target_limit: 20,
+    },
+  );
+  expect(secondPublicResult.error).toBeNull();
+  const secondPublicData = secondPublicResult.data as {
+    status: string;
+    items: Array<{ reviewId: string; originalBody: string | null }>;
+    nextCursor: null;
+  };
+  expect(secondPublicData).toMatchObject({
+    status: "success",
+    nextCursor: null,
+  });
+  expect(secondPublicData.items).toHaveLength(1);
+  expect(
+    new Set(
+      [...firstPublicData.items, ...secondPublicData.items].map(
+        (review) => review.reviewId,
+      ),
+    ),
+  ).toEqual(new Set(expectedReviewIds));
+  expect(secondPublicData.items[0]).toMatchObject({
+    reviewId: historicalReviewIds.at(-1),
+    originalBody: historicalBodies.at(-1),
+  });
+
   for (const locale of ["en", "ar", "ckb"] as const) {
     const response = await visitor.goto(
       `/${locale}/cottages/${primary.publicSlug}/reviews`,
     );
     expect(response?.ok()).toBe(true);
-    if (
-      !(await visitor
-        .getByText(original)
-        .isVisible()
-        .catch(() => false))
-    ) {
-      await visitor.locator('a[href*="beforeAt="]').click();
-    }
-    await expect(visitor.getByText(original)).toHaveAttribute("lang", "ar");
-    await expect(visitor.getByText(original)).toHaveAttribute("dir", "auto");
-    expect(await response!.text()).not.toContain(primary.identities.customer);
-    expect(await response!.text()).not.toContain(primary.ids.bookingReference);
+    const firstResponseBody = await response!.text();
+    await expect(visitor.getByRole("article")).toHaveCount(20);
+    const primaryPublicReview = visitor
+      .getByRole("article")
+      .filter({ hasText: original });
+    await expect(primaryPublicReview).toHaveCount(1);
+    await expect(primaryPublicReview.getByText(original)).toHaveAttribute(
+      "lang",
+      "en",
+    );
+    await expect(primaryPublicReview.getByText(original)).toHaveAttribute(
+      "dir",
+      "auto",
+    );
+    await expect(
+      primaryPublicReview.getByText(ratingText[locale]),
+    ).toBeVisible();
+    await expect(primaryPublicReview.locator("dialog")).toHaveCount(0);
+    await expect(primaryPublicReview.locator("em")).toHaveCount(0);
+    await expect(
+      primaryPublicReview.locator("[data-review-probe]"),
+    ).toHaveCount(0);
+    const firstPageBodies = await visitor
+      .getByRole("article")
+      .locator("p[dir=auto]")
+      .allTextContents();
+    await visitor.getByRole("link", { name: nextReviewText[locale] }).click();
+    await expect(visitor.getByRole("article")).toHaveCount(1);
+    const secondPageResponse = await visitor.goto(visitor.url());
+    expect(secondPageResponse?.ok()).toBe(true);
+    const secondResponseBody = await secondPageResponse!.text();
+    await expect(visitor.getByRole("article")).toHaveCount(1);
+    const secondPageBodies = await visitor
+      .getByRole("article")
+      .locator("p[dir=auto]")
+      .allTextContents();
+    expect(secondPageBodies).toEqual([historicalBodies.at(-1)]);
+    await expect(
+      visitor.getByRole("link", { name: nextReviewText[locale] }),
+    ).toHaveCount(0);
+    const renderedBodies = [...firstPageBodies, ...secondPageBodies];
+    expect(renderedBodies).toHaveLength(21);
+    expect(new Set(renderedBodies)).toEqual(
+      new Set([original, ratingOnlyText[locale], ...historicalBodies]),
+    );
+    expect(firstResponseBody).not.toContain(primary.identities.customer);
+    expect(firstResponseBody).not.toContain(primary.ids.bookingReference);
+    expect(secondResponseBody).not.toContain(primary.identities.customer);
+    expect(secondResponseBody).not.toContain(primary.ids.bookingReference);
     await expect(visitor.locator("html")).toHaveAttribute(
       "dir",
       locale === "en" ? "ltr" : "rtl",
@@ -387,17 +723,41 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page.getByText("Administrator access is ready.")).toBeVisible();
   await page.goto("/en/administrator/reviews");
-  if (
-    !(await page
-      .getByText(original)
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await page.getByRole("link", { name: "Next reviews" }).click();
+  const visitedAdministratorPages = new Set<string>();
+  let targetAdministratorPage: string | undefined;
+  while (true) {
+    expect(visitedAdministratorPages.has(page.url())).toBe(false);
+    visitedAdministratorPages.add(page.url());
+    if (
+      (await page
+        .getByRole("article")
+        .filter({ hasText: primary.ids.bookingReference })
+        .count()) === 1
+    ) {
+      targetAdministratorPage = page.url();
+    }
+    const next = page.getByRole("link", { name: "Next reviews" });
+    if ((await next.count()) === 0) break;
+    const nextHref = await next.getAttribute("href");
+    if (!nextHref)
+      throw new Error("Administrator review pagination returned no href");
+    const nextUrl = new URL(nextHref, page.url()).href;
+    await next.click();
+    await expect(page).toHaveURL(nextUrl);
   }
-  const review = page.getByRole("article").filter({ hasText: original });
+  expect(targetAdministratorPage).toBeDefined();
+  await page.goto(targetAdministratorPage!);
+  const review = page
+    .getByRole("article")
+    .filter({ hasText: primary.ids.bookingReference });
   await expect(review).toContainText(primary.ids.bookingReference);
   await expect(review).toContainText(primary.identities.customer);
+  await expect(review.getByText("Rating: 5 / 5 stars")).toBeVisible();
+  await expect(review.getByText(original)).toHaveAttribute("lang", "en");
+  await expect(review.getByText(original)).toHaveAttribute("dir", "auto");
+  await expect(review.locator("dialog")).toHaveCount(0);
+  await expect(review.locator("em")).toHaveCount(0);
+  await expect(review.locator("[data-review-probe]")).toHaveCount(0);
   await review.getByRole("button", { name: "Hide review" }).click();
   await expect(review.getByRole("alert")).toContainText("Enter a reason");
   const reason = "Contact-safety moderation fixture";
@@ -408,30 +768,70 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   );
   await expect(review).toContainText(reason);
   await page.reload();
-  await expect(page.getByText(original)).toBeVisible();
-  await expect(page.getByText(reason)).toBeVisible();
+  await expect(review.getByText(original)).toBeVisible();
+  await expect(review.getByText(reason)).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("customer-review-hidden-audit.png"),
     fullPage: true,
   });
 
+  const hiddenAuthorContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+  });
+  const hiddenAuthor = await hiddenAuthorContext.newPage();
+  await signInPhone(
+    hiddenAuthor,
+    primary.phones.customer,
+    `/en/booking-requests/${primary.ids.bookingReference}`,
+  );
+  const hiddenAuthorReview = hiddenAuthor.getByRole("region", {
+    name: "Your review",
+  });
+  await expect(hiddenAuthorReview.getByRole("status")).toHaveText(
+    "Hidden by RentCottage",
+  );
+  await expect(hiddenAuthorReview).not.toContainText(
+    "Your review was published.",
+  );
+  await expect(hiddenAuthorReview).not.toContainText("Visible to visitors");
+  await expect(hiddenAuthorReview.getByText(original)).toBeVisible();
+  await expect(hiddenAuthorReview.locator("dialog")).toHaveCount(0);
+  await expect(hiddenAuthorReview.locator("em")).toHaveCount(0);
+  await expect(hiddenAuthorReview.locator("[data-review-probe]")).toHaveCount(
+    0,
+  );
+  await hiddenAuthorContext.close();
+
   for (const locale of ["en", "ar", "ckb"] as const) {
     const responseBodies: string[] = [];
-    visitor.on("response", async (response) => {
+    const recordReviewResponse = async (response: Response) => {
       if (response.url().includes(`/cottages/${primary.publicSlug}/reviews`)) {
         responseBodies.push(await response.text().catch(() => ""));
       }
-    });
+    };
+    visitor.on("response", recordReviewResponse);
     await visitor.goto(`/${locale}/cottages/${primary.publicSlug}/reviews`);
+    await expect(visitor.getByRole("article")).toHaveCount(20);
     await expect(visitor.getByText(original)).toHaveCount(0);
+    await expect(visitor.locator('a[href*="beforeAt="]')).toHaveCount(0);
+    const visibleBodies = await visitor
+      .getByRole("article")
+      .locator("p[dir=auto]")
+      .allTextContents();
+    expect(new Set(visibleBodies)).toEqual(
+      new Set([ratingOnlyText[locale], ...historicalBodies]),
+    );
     const rendered = [await visitor.content(), ...responseBodies].join("\n");
     for (const privateValue of [
       original,
+      primaryInteractiveReview!.reviewId,
       primary.ids.bookingReference,
       primary.identities.customer,
+      administrator.user.id,
       reason,
     ])
       expect(rendered).not.toContain(privateValue);
+    visitor.off("response", recordReviewResponse);
   }
 
   primary.harness.runSql(

@@ -38,7 +38,7 @@ export default async function PublicCustomerReviewsPage({
         publicSlug: slug,
         beforeAt: completeCursor ? (query.beforeAt as string) : null,
         beforeId: completeCursor ? (query.beforeId as string) : null,
-        limit: 1,
+        limit: 20,
       });
     }
   } catch (error) {

@@ -1,20 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-
-const { listPublic, notFound } = vi.hoisted(() => ({
-  listPublic: vi.fn(),
-  notFound: vi.fn(() => {
-    throw new Error("not-found");
-  }),
-}));
-vi.mock("next/navigation", () => ({ notFound, unstable_rethrow: vi.fn() }));
-vi.mock("@/customer-review/request-customer-review", () => ({
-  createRequestCustomerReview: vi.fn().mockResolvedValue({ listPublic }),
-}));
+import { describe, expect, it } from "vitest";
 
 import { PublicCottageProfileView } from "./public-cottage-profile";
-import { PublicCustomerReviews } from "./public-customer-reviews";
-import PublicCustomerReviewsPage from "../app/[locale]/cottages/[slug]/reviews/page";
 
 const cottage = {
   slug: "garden-house",
@@ -120,113 +107,5 @@ describe("PublicCottageProfileView", () => {
       screen.getByRole("link", { name: "گەڕانەوە بۆ ئەنجامەکان" }),
     ).toHaveAttribute("href", "/ckb/results?");
     expect(screen.queryByRole("navigation")).toBeNull();
-  });
-});
-
-describe("PublicCustomerReviews", () => {
-  it("renders only the unchanged public projection and deterministic continuation", () => {
-    render(
-      <PublicCustomerReviews
-        locale="ar"
-        publicSlug="cottage-11111111111111111111111111111111"
-        result={{
-          status: "success",
-          items: [
-            {
-              reviewId: "11111111-1111-4111-8111-111111111111",
-              rating: 5,
-              originalLanguage: "ckb",
-              originalBody: "شوێنێکی ئارام و جوانە",
-              submittedAt: "2026-09-21T12:00:00.000Z",
-            },
-          ],
-          nextCursor: {
-            submittedAt: "2026-09-21T12:00:00.000Z",
-            reviewId: "11111111-1111-4111-8111-111111111111",
-          },
-        }}
-      />,
-    );
-
-    const original = screen.getByText("شوێنێکی ئارام و جوانە");
-    expect(original).toHaveAttribute("lang", "ckb");
-    expect(original).toHaveAttribute("dir", "auto");
-    expect(screen.getByText("عميل RentCottage")).toBeVisible();
-    expect(
-      screen.queryByText(/author|booking|moderation|11111111/i),
-    ).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "التقييمات التالية" }),
-    ).toHaveAttribute(
-      "href",
-      "/ar/cottages/cottage-11111111111111111111111111111111/reviews?beforeAt=2026-09-21T12%3A00%3A00.000Z&beforeId=11111111-1111-4111-8111-111111111111",
-    );
-  });
-
-  it("keeps unavailable distinct from an empty successful page", () => {
-    const { rerender } = render(
-      <PublicCustomerReviews
-        locale="en"
-        publicSlug="cottage-11111111111111111111111111111111"
-        result={{ status: "unavailable" }}
-      />,
-    );
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Reviews are unavailable. Refresh and try again.",
-    );
-    expect(screen.queryByText("No reviews yet.")).toBeNull();
-
-    rerender(
-      <PublicCustomerReviews
-        locale="en"
-        publicSlug="cottage-11111111111111111111111111111111"
-        result={{ status: "success", items: [], nextCursor: null }}
-      />,
-    );
-    expect(screen.getByText("No reviews yet.")).toBeVisible();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-});
-
-describe("PublicCustomerReviewsPage", () => {
-  it("accepts an anonymous validated cursor and calls the fixed public reader", async () => {
-    listPublic.mockResolvedValue({
-      status: "success",
-      items: [],
-      nextCursor: null,
-    });
-    render(
-      await PublicCustomerReviewsPage({
-        params: Promise.resolve({
-          locale: "en",
-          slug: "cottage-11111111111111111111111111111111",
-        }),
-        searchParams: Promise.resolve({
-          beforeAt: "2026-09-21T12:00:00.000Z",
-          beforeId: "11111111-1111-4111-8111-111111111111",
-        }),
-      }),
-    );
-    expect(listPublic).toHaveBeenCalledWith({
-      publicSlug: "cottage-11111111111111111111111111111111",
-      beforeAt: "2026-09-21T12:00:00.000Z",
-      beforeId: "11111111-1111-4111-8111-111111111111",
-      limit: 1,
-    });
-    expect(screen.getByText("No reviews yet.")).toBeVisible();
-  });
-
-  it("rejects a partial or extra pagination query", async () => {
-    listPublic.mockClear();
-    await expect(
-      PublicCustomerReviewsPage({
-        params: Promise.resolve({
-          locale: "en",
-          slug: "cottage-11111111111111111111111111111111",
-        }),
-        searchParams: Promise.resolve({ beforeAt: "2026-09-21T12:00:00.000Z" }),
-      }),
-    ).rejects.toThrow("not-found");
-    expect(listPublic).not.toHaveBeenCalled();
   });
 });
