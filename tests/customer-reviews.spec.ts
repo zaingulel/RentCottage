@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
 
@@ -338,10 +339,35 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     fullPage: true,
   });
 
+  const administratorClient = createClient(
+    process.env.SUPABASE_URL ?? "",
+    process.env.SUPABASE_SECRET_KEY ?? "",
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+  const administratorEmail = `customer-reviews-${testInfo.project.name}-${randomUUID()}@rentcottage.test`;
+  const { data: administrator, error: administratorCreateError } =
+    await administratorClient.auth.admin.createUser({
+      email: administratorEmail,
+      password,
+      email_confirm: true,
+    });
+  if (administratorCreateError || !administrator.user) {
+    throw new Error("Customer review administrator fixture creation failed", {
+      cause: administratorCreateError,
+    });
+  }
+  const { error: administratorProvisionError } = await administratorClient.rpc(
+    "provision_platform_administrator",
+    { target_user_id: administrator.user.id },
+  );
+  if (administratorProvisionError) {
+    throw new Error(
+      "Customer review administrator fixture provisioning failed",
+      { cause: administratorProvisionError },
+    );
+  }
   await page.goto("/en/administrator/access");
-  await page
-    .getByLabel("Email")
-    .fill(`platform-administrator-${testInfo.project.name}@rentcottage.test`);
+  await page.getByLabel("Email").fill(administratorEmail);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Continue" }).click();
   const secret = await page.getByTestId("mfa-secret").textContent();
