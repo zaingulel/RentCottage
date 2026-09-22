@@ -46,6 +46,16 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
+type AccessFixtureUser = { id: string; phone?: string | null };
+const { findAccessFixtureUser, listAllAccessFixtureUsers } = createRequire(
+  import.meta.url,
+)("../scripts/lib/access-fixture-users.mjs") as {
+  findAccessFixtureUser(
+    users: AccessFixtureUser[],
+    phone: string,
+  ): AccessFixtureUser | undefined;
+  listAllAccessFixtureUsers(admin: unknown): Promise<AccessFixtureUser[]>;
+};
 
 const namespaces = {
   mobile: ["61", "64"],
@@ -53,15 +63,26 @@ const namespaces = {
   worker: ["63", "66"],
 } as const;
 const paginationNamespaces = {
-  mobile: Array.from({ length: 19 }, (_, index) =>
-    String(index + 1).padStart(2, "0"),
-  ),
-  desktop: Array.from({ length: 19 }, (_, index) =>
-    index < 17 ? String(index + 21).padStart(2, "0") : String(index + 50),
-  ),
-  worker: Array.from({ length: 19 }, (_, index) =>
-    String(index + 41).padStart(2, "0"),
-  ),
+  mobile: [
+    ...Array.from({ length: 9 }, (_, index) =>
+      String(index + 1).padStart(2, "0"),
+    ),
+    "69",
+    "70",
+    ...Array.from({ length: 8 }, (_, index) => String(index + 12)),
+  ],
+  desktop: [
+    ...Array.from({ length: 14 }, (_, index) => String(index + 21)),
+    "71",
+    "36",
+    "37",
+    "67",
+    "68",
+  ],
+  worker: [
+    "72",
+    ...Array.from({ length: 18 }, (_, index) => String(index + 42)),
+  ],
 } as const;
 const upcomingNamespaces = {
   mobile: "20",
@@ -106,9 +127,8 @@ async function seedFixture(
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const ensurePhoneUser = async (phone: string) => {
-    const listed = await privileged.auth.admin.listUsers({ perPage: 1000 });
-    if (listed.error) throw listed.error;
-    const existing = listed.data.users.find((user) => user.phone === phone);
+    const users = await listAllAccessFixtureUsers(privileged.auth.admin);
+    const existing = findAccessFixtureUser(users, phone);
     if (existing) {
       const updated = await privileged.auth.admin.updateUserById(existing.id, {
         password,
@@ -136,9 +156,9 @@ async function seedFixture(
     sharedCottage: options.sharedCottage,
   });
   const phones = {
-    owner: `+964750000${namespace}01`,
-    customer: `+964750000${namespace}02`,
-    other: `+964750000${namespace}03`,
+    owner: `+964757000${namespace}01`,
+    customer: `+964757000${namespace}02`,
+    other: `+964757000${namespace}03`,
   };
   const identities = {
     owner:
@@ -242,6 +262,19 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
 }, testInfo) => {
   test.setTimeout(testInfo.project.name === "worker" ? 480_000 : 180_000);
   requireLocalDatabase();
+  const allocatedNamespaces = [
+    ...Object.values(namespaces).flat(),
+    ...Object.values(paginationNamespaces).flat(),
+    ...Object.values(upcomingNamespaces),
+  ];
+  expect(allocatedNamespaces).toHaveLength(66);
+  expect(new Set(allocatedNamespaces).size).toBe(66);
+  const reservedNamespaces = new Set(["00", "10", "11", "35", "38", "41"]);
+  expect(
+    allocatedNamespaces.filter((namespace) =>
+      reservedNamespaces.has(namespace),
+    ),
+  ).toEqual([]);
   const projectName = testInfo.project.name as keyof typeof namespaces;
   const pair = namespaces[projectName];
   if (!pair) throw new Error("Customer review browser project is unmapped");
