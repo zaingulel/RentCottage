@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { administratorAccessHref } from "@/access/return-destination";
 import { hideCustomerReview } from "@/customer-review/actions";
 import type {
   AdministratorCustomerReview,
@@ -154,7 +155,12 @@ export function CustomerReviewModeration({
             : copy.unavailable}
         </p>
         {result.status === "access-required" ? (
-          <Link href={`/${locale}/administrator/access`}>
+          <Link
+            href={administratorAccessHref(
+              locale,
+              `/${locale}/administrator/reviews`,
+            )}
+          >
             {copy.administratorAccessAction}
           </Link>
         ) : null}

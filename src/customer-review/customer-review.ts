@@ -52,7 +52,15 @@ export function isCustomerReviewPublicSlug(value: unknown): value is string {
 }
 
 export function isCustomerReviewBodyWithinLimit(value: string) {
-  return Array.from(value).length <= 2000;
+  let codePointCount = 0;
+  const codePoints = value[Symbol.iterator]();
+
+  while (!codePoints.next().done) {
+    codePointCount += 1;
+    if (codePointCount > 2000) return false;
+  }
+
+  return true;
 }
 
 export type SubmitCustomerReviewInput = Readonly<{

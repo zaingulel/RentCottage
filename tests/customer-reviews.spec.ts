@@ -89,7 +89,60 @@ const upcomingNamespaces = {
   desktop: "40",
   worker: "60",
 } as const;
+const administratorReturnNamespaces = {
+  mobile: "73",
+  desktop: "74",
+  worker: "75",
+} as const;
 const password = "Local-test-password-2026";
+
+const administratorReturnLocales = [
+  {
+    locale: "en",
+    direction: "ltr",
+    accessTitle: "Platform Administrator access",
+    email: "Email",
+    password: "Password",
+    continue: "Continue",
+    phone: "Iraqi phone number",
+    mfaCode: "Authenticator app code",
+    verify: "Verify",
+    invalidCode: "The verification code could not be confirmed.",
+    queueTitle: "Customer review moderation",
+    accessRequired: "Authenticator-verified administrator access is required.",
+    accessAction: "Complete administrator access",
+  },
+  {
+    locale: "ar",
+    direction: "rtl",
+    accessTitle: "دخول مسؤول المنصة",
+    email: "البريد الإلكتروني",
+    password: "كلمة المرور",
+    continue: "متابعة",
+    phone: "رقم الهاتف العراقي",
+    mfaCode: "رمز تطبيق المصادقة",
+    verify: "تحقق",
+    invalidCode: "تعذر التحقق من الرمز.",
+    queueTitle: "إدارة تقييمات العملاء",
+    accessRequired: "يلزم دخول مسؤول موثّق بتطبيق المصادقة.",
+    accessAction: "إكمال دخول المسؤول",
+  },
+  {
+    locale: "ckb",
+    direction: "rtl",
+    accessTitle: "چوونەژوورەوەی بەڕێوەبەری پلاتفۆرم",
+    email: "ئیمەیڵ",
+    password: "وشەی نهێنی",
+    continue: "بەردەوام بە",
+    phone: "ژمارە تەلەفۆنی عێراقی",
+    mfaCode: "کۆدی ئەپی پشتڕاستکەرەوە",
+    verify: "پشتڕاست بکەرەوە",
+    invalidCode: "کۆدەکە پشتڕاست نەکرایەوە.",
+    queueTitle: "بەڕێوەبردنی هەڵسەنگاندنی کڕیاران",
+    accessRequired: "چوونەژوورەوەی بەڕێوەبەر بە دڵنیایی ئەپ پێویستە.",
+    accessAction: "چوونەژوورەوەی بەڕێوەبەر تەواو بکە",
+  },
+] as const;
 
 function requireLocalDatabase() {
   const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
@@ -234,6 +287,66 @@ async function signInPhone(page: Page, phone: string, returnTo: string) {
   ]);
   await page.goto(returnTo);
   await expect(page).toHaveURL(returnTo);
+}
+
+async function provisionAdministrator(purpose: string) {
+  requireLocalDatabase();
+  const url = process.env.SUPABASE_URL;
+  const secret = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !secret)
+    throw new Error("Customer review administrator credentials are missing");
+  const administratorClient = createClient(url, secret, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const email = `${purpose}-${randomUUID()}@rentcottage.test`;
+  const { data, error: createError } =
+    await administratorClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+  if (createError || !data.user) {
+    throw new Error("Customer review administrator fixture creation failed", {
+      cause: createError,
+    });
+  }
+  const { error: provisionError } = await administratorClient.rpc(
+    "provision_platform_administrator",
+    { target_user_id: data.user.id },
+  );
+  if (provisionError) {
+    throw new Error(
+      "Customer review administrator fixture provisioning failed",
+      { cause: provisionError },
+    );
+  }
+  return { email, userId: data.user.id };
+}
+
+async function beginAdministratorMfa(
+  page: Page,
+  email: string,
+  copy: (typeof administratorReturnLocales)[number],
+) {
+  await page.getByLabel(copy.email).fill(email);
+  await page.getByLabel(copy.password).fill(password);
+  await page.getByRole("button", { name: copy.continue }).press("Enter");
+  const secret = await page.getByTestId("mfa-secret").textContent();
+  if (!secret)
+    throw new Error("Customer review administrator MFA returned no secret");
+  return secret;
+}
+
+async function expectAdministratorEmailAccess(
+  page: Page,
+  copy: (typeof administratorReturnLocales)[number],
+) {
+  await expect(
+    page.getByRole("heading", { name: copy.accessTitle }),
+  ).toBeVisible();
+  await expect(page.getByLabel(copy.email)).toBeVisible();
+  await expect(page.getByLabel(copy.phone)).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("dir", copy.direction);
 }
 
 async function expectIdentityDenied(phone: string, bookingReference: string) {
@@ -708,45 +821,28 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     fullPage: true,
   });
 
-  const administratorClient = createClient(
-    process.env.SUPABASE_URL ?? "",
-    process.env.SUPABASE_SECRET_KEY ?? "",
-    { auth: { autoRefreshToken: false, persistSession: false } },
+  const administrator = await provisionAdministrator(
+    `customer-reviews-${testInfo.project.name}`,
   );
-  const administratorEmail = `customer-reviews-${testInfo.project.name}-${randomUUID()}@rentcottage.test`;
-  const { data: administrator, error: administratorCreateError } =
-    await administratorClient.auth.admin.createUser({
-      email: administratorEmail,
-      password,
-      email_confirm: true,
-    });
-  if (administratorCreateError || !administrator.user) {
-    throw new Error("Customer review administrator fixture creation failed", {
-      cause: administratorCreateError,
-    });
-  }
-  const { error: administratorProvisionError } = await administratorClient.rpc(
-    "provision_platform_administrator",
-    { target_user_id: administrator.user.id },
+  await page.context().clearCookies();
+  await page.goto("/en/administrator/reviews");
+  await expect(page).toHaveURL(
+    "/en/administrator/access?returnTo=%2Fen%2Fadministrator%2Freviews",
   );
-  if (administratorProvisionError) {
-    throw new Error(
-      "Customer review administrator fixture provisioning failed",
-      { cause: administratorProvisionError },
-    );
-  }
-  await page.goto("/en/administrator/access");
-  await page.getByLabel("Email").fill(administratorEmail);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Continue" }).click();
-  const secret = await page.getByTestId("mfa-secret").textContent();
-  if (!secret)
-    throw new Error("Customer review administrator MFA returned no secret");
+  await expectAdministratorEmailAccess(page, administratorReturnLocales[0]);
+  await expect(page.getByText(primary.ids.bookingReference)).toHaveCount(0);
+  const secret = await beginAdministratorMfa(
+    page,
+    administrator.email,
+    administratorReturnLocales[0],
+  );
   const aal1 = await page.context().newPage();
   await aal1.goto("/en/administrator/reviews");
   await expect(
     aal1.getByText("Authenticator-verified administrator access is required."),
   ).toBeVisible();
+  await expect(aal1.getByText(primary.ids.bookingReference)).toHaveCount(0);
+  await expect(aal1.getByRole("article")).toHaveCount(0);
   await aal1.close();
   await page.getByLabel("Authenticator app code").fill(
     new OTPAuth.TOTP({
@@ -754,8 +850,10 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     }).generate(),
   );
   await page.getByRole("button", { name: "Verify" }).click();
-  await expect(page.getByText("Administrator access is ready.")).toBeVisible();
-  await page.goto("/en/administrator/reviews");
+  await expect(page).toHaveURL("/en/administrator/reviews");
+  await expect(
+    page.getByRole("heading", { name: "Customer review moderation" }),
+  ).toBeVisible();
   const visitedAdministratorPages = new Set<string>();
   let targetAdministratorPage: string | undefined;
   while (true) {
@@ -860,7 +958,7 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
       primaryInteractiveReview!.reviewId,
       primary.ids.bookingReference,
       primary.identities.customer,
-      administrator.user.id,
+      administrator.userId,
       reason,
     ])
       expect(rendered).not.toContain(privateValue);
@@ -883,4 +981,152 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     );
   }
   await visitorContext.close();
+});
+
+test.describe("administrator review return", () => {
+  let protectedReview: Awaited<ReturnType<typeof seedFixture>>;
+  let protectedReviewBody: string;
+
+  test.beforeAll(async ({}, testInfo) => {
+    const projectName = testInfo.project
+      .name as keyof typeof administratorReturnNamespaces;
+    const namespace = administratorReturnNamespaces[projectName];
+    if (!namespace)
+      throw new Error("Administrator return browser project is unmapped");
+    protectedReview = await seedFixture(namespace);
+    protectedReviewBody = `Administrator return protected review ${namespace}`;
+    const reviewId = `92000000-0000-4000-8000-00000000${namespace}01`;
+    const inserted = JSON.parse(
+      protectedReview.harness.runSql(`with inserted as (
+        insert into public.customer_reviews(
+          id,booking_request_id,booking_confirmation_id,profile_id,
+          author_user_id,rating,original_language,original_body,submitted_at
+        )
+        select '${reviewId}',requests.id,confirmations.id,requests.profile_id,
+          requests.customer_user_id,5,'en','${protectedReviewBody}',clock_timestamp()
+        from public.booking_requests requests
+        join public.booking_confirmations confirmations
+          on confirmations.booking_request_id=requests.id
+        where requests.id='${protectedReview.ids.requestId}'
+        returning id,original_body
+      ) select jsonb_build_object(
+        'reviewId',inserted.id,
+        'originalBody',inserted.original_body
+      ) from inserted;`),
+    );
+    expect(inserted).toEqual({
+      reviewId,
+      originalBody: protectedReviewBody,
+    });
+  });
+
+  for (const copy of administratorReturnLocales) {
+    for (const entry of ["signed-out", "aal1"] as const) {
+      test(`${copy.locale} ${entry} administrator review return preserves locale and MFA`, async ({
+        page,
+      }, testInfo) => {
+        test.setTimeout(testInfo.project.name === "worker" ? 240_000 : 120_000);
+        const queuePath = `/${copy.locale}/administrator/reviews`;
+        const accessPath = `/${copy.locale}/administrator/access?returnTo=${encodeURIComponent(queuePath)}`;
+        const administrator = await provisionAdministrator(
+          `customer-review-return-${copy.locale}-${entry}-${testInfo.project.name}`,
+        );
+        await page.context().clearCookies();
+
+        if (entry === "signed-out") {
+          await page.goto(queuePath);
+          await expect(page).toHaveURL(accessPath);
+          await expectAdministratorEmailAccess(page, copy);
+        } else {
+          await page.goto(`/${copy.locale}/administrator/access`);
+          await expectAdministratorEmailAccess(page, copy);
+          await beginAdministratorMfa(page, administrator.email, copy);
+
+          await page.goto(queuePath);
+          await expect(page).toHaveURL(queuePath);
+          await expect(
+            page.getByRole("heading", { name: copy.queueTitle }),
+          ).toBeVisible();
+          await expect(page.getByText(copy.accessRequired)).toBeVisible();
+          await expect(page.getByRole("article")).toHaveCount(0);
+          await expect(
+            page.getByText(protectedReview.ids.bookingReference),
+          ).toHaveCount(0);
+          await expect(page.getByText(protectedReviewBody)).toHaveCount(0);
+          await expect(page.locator("html")).toHaveAttribute(
+            "dir",
+            copy.direction,
+          );
+          await page.screenshot({
+            path: testInfo.outputPath(
+              `${copy.locale}-aal1-administrator-review-return-denied.png`,
+            ),
+            fullPage: true,
+          });
+
+          const recovery = page.getByRole("link", {
+            name: copy.accessAction,
+          });
+          await expect(recovery).toHaveAttribute("href", accessPath);
+          await recovery.press("Enter");
+          await expect(page).toHaveURL(accessPath);
+          await expectAdministratorEmailAccess(page, copy);
+        }
+
+        await expect(page.getByRole("article")).toHaveCount(0);
+        await expect(
+          page.getByText(protectedReview.ids.bookingReference),
+        ).toHaveCount(0);
+        await expect(page.getByText(protectedReviewBody)).toHaveCount(0);
+        const secret = await beginAdministratorMfa(
+          page,
+          administrator.email,
+          copy,
+        );
+
+        await page.getByLabel(copy.mfaCode).fill("12");
+        await page.getByRole("button", { name: copy.verify }).press("Enter");
+        await expect(page.getByText(copy.invalidCode)).toBeVisible();
+        await expect(page).toHaveURL(accessPath);
+        await expect(page.getByLabel(copy.phone)).toHaveCount(0);
+        await expect(
+          page.getByText(protectedReview.ids.bookingReference),
+        ).toHaveCount(0);
+        await expect(page.getByText(protectedReviewBody)).toHaveCount(0);
+        await page.screenshot({
+          path: testInfo.outputPath(
+            `${copy.locale}-${entry}-administrator-review-return-invalid-code.png`,
+          ),
+          fullPage: true,
+        });
+
+        await page.getByLabel(copy.mfaCode).fill(
+          new OTPAuth.TOTP({
+            secret: OTPAuth.Secret.fromBase32(secret),
+          }).generate(),
+        );
+        await page.getByRole("button", { name: copy.verify }).press("Enter");
+
+        await expect(page).toHaveURL(queuePath);
+        await expect(
+          page.getByRole("heading", { name: copy.queueTitle }),
+        ).toBeVisible();
+        await expect(page.locator("html")).toHaveAttribute(
+          "dir",
+          copy.direction,
+        );
+        const protectedRow = page
+          .getByRole("article")
+          .filter({ hasText: protectedReview.ids.bookingReference });
+        await expect(protectedRow).toHaveCount(1);
+        await expect(protectedRow).toContainText(protectedReviewBody);
+        await page.screenshot({
+          path: testInfo.outputPath(
+            `${copy.locale}-${entry}-administrator-review-return-queue.png`,
+          ),
+          fullPage: true,
+        });
+      });
+    }
+  }
 });

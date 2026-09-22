@@ -6,7 +6,7 @@ const uuid =
 const publicRoute =
   /^(?:|\/results|\/(?:cottages|quote|request)\/[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const privateRoute = new RegExp(
-  `^(?:/bookings|/messages(?:/${uuid})?|/(?:owner/)?booking-requests/RC-REQ-[A-F0-9]{16}|/owner/application|/owner/cottages(?:/${uuid})?|/administrator/reviews)$`,
+  `^(?:/bookings|/messages(?:/${uuid})?|/(?:owner/)?booking-requests/RC-REQ-[A-F0-9]{16}|/owner/application|/owner/cottages(?:/${uuid})?)$`,
 );
 const uuidPattern = new RegExp(`^${uuid}$`, "i");
 
@@ -85,4 +85,19 @@ export function safeReturnDestination(locale: Locale, value: unknown): string {
 
 export function accountAccessHref(locale: Locale, returnTo: unknown) {
   return `/${locale}/access?returnTo=${encodeURIComponent(safeReturnDestination(locale, returnTo))}`;
+}
+
+export function safeAdministratorReturnDestination(
+  locale: Locale,
+  value: unknown,
+): string | undefined {
+  const destination = `/${locale}/administrator/reviews`;
+  return value === destination ? destination : undefined;
+}
+
+export function administratorAccessHref(locale: Locale, returnTo: unknown) {
+  const destination = safeAdministratorReturnDestination(locale, returnTo);
+  return destination
+    ? `/${locale}/administrator/access?returnTo=${encodeURIComponent(destination)}`
+    : `/${locale}/administrator/access`;
 }

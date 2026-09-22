@@ -33,6 +33,27 @@ const review = {
 describe("CustomerReviewModeration", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it.each(["en", "ar", "ckb"] as const)(
+    "carries the exact %s moderation queue into access recovery",
+    (locale) => {
+      render(
+        <CustomerReviewModeration
+          locale={locale}
+          result={{ status: "access-required" }}
+        />,
+      );
+
+      expect(
+        screen.getByRole("link", {
+          name: customerReviewMessages[locale].administratorAccessAction,
+        }),
+      ).toHaveAttribute(
+        "href",
+        `/${locale}/administrator/access?returnTo=${encodeURIComponent(`/${locale}/administrator/reviews`)}`,
+      );
+    },
+  );
+
   it("requires a reason, sends only mutation facts, and retains committed attribution", async () => {
     hideReview.mockResolvedValue({
       status: "hidden",

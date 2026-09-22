@@ -1,6 +1,7 @@
-import { notFound, unstable_rethrow } from "next/navigation";
+import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
-import { requireRequestAccount } from "@/access/request-account-context";
+import { resolveRequestAccount } from "@/access/request-account-context";
+import { administratorAccessHref } from "@/access/return-destination";
 import { CustomerReviewModeration } from "@/components/customer-review-moderation";
 import {
   isCustomerReviewTimestamp,
@@ -30,16 +31,18 @@ export default async function AdministratorCustomerReviewsPage({
     isCustomerReviewUuid(query.beforeId);
   if (!emptyCursor && !completeCursor) notFound();
 
-  let result: AdministratorCustomerReviewListResult = { status: "unavailable" };
-  try {
-    const account = await requireRequestAccount(
-      locale,
-      `/${locale}/administrator/reviews`,
+  const account = await resolveRequestAccount();
+  if (account.status === "signed_out")
+    redirect(
+      administratorAccessHref(locale, `/${locale}/administrator/reviews`),
     );
-    if (account.status !== "unavailable") {
-      if (account.context?.role !== "platform_administrator") {
-        result = { status: "access-required" };
-      } else {
+
+  let result: AdministratorCustomerReviewListResult = { status: "unavailable" };
+  if (account.status === "authenticated") {
+    if (account.context?.role !== "platform_administrator") {
+      result = { status: "access-required" };
+    } else {
+      try {
         const reviews = await createRequestCustomerReview();
         if (reviews) {
           result = await reviews.listAdministrator({
@@ -48,11 +51,11 @@ export default async function AdministratorCustomerReviewsPage({
             limit: 20,
           });
         }
+      } catch (error) {
+        unstable_rethrow(error);
+        console.error("customer-review-administrator-list-unavailable");
       }
     }
-  } catch (error) {
-    unstable_rethrow(error);
-    console.error("customer-review-administrator-list-unavailable");
   }
   if (result.status === "invalid") result = { status: "unavailable" };
   return <CustomerReviewModeration locale={locale} result={result} />;
