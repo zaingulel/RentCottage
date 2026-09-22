@@ -111,6 +111,34 @@ describe("Customer review Server Actions", () => {
     );
   });
 
+  it("accepts a review body whose supplementary characters fit the database limit", async () => {
+    const originalBody = "🏡".repeat(1001);
+    const submit = vi.fn().mockResolvedValue({ status: "ineligible" });
+    createRequestReview.mockResolvedValue({
+      authenticatedUserId: vi.fn().mockResolvedValue("user-id"),
+      submit,
+    });
+
+    await expect(
+      submitCustomerReview({ ...validSubmission, originalBody }),
+    ).resolves.toEqual({ status: "ineligible" });
+    expect(originalBody).toHaveLength(2002);
+    expect(submit).toHaveBeenCalledWith({
+      ...validSubmission,
+      originalBody,
+    });
+  });
+
+  it("rejects a review body above the database character limit", async () => {
+    await expect(
+      submitCustomerReview({
+        ...validSubmission,
+        originalBody: "🏡".repeat(2001),
+      }),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(createRequestReview).not.toHaveBeenCalled();
+  });
+
   it("rechecks administrator identity and revalidates only after a new hide", async () => {
     const authenticatedUserId = vi
       .fn()

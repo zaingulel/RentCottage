@@ -256,6 +256,90 @@ describe("Supabase Customer review repository", () => {
     );
   });
 
+  it("validates database review bodies by Unicode code point across every response parser", async () => {
+    const acceptedBody = "🏡".repeat(2000);
+    const rejectedBody = "🏡".repeat(2001);
+    const publicResponse = (originalBody: string) => ({
+      status: "success",
+      items: [
+        {
+          reviewId,
+          rating: 4,
+          originalLanguage: "en",
+          originalBody,
+          submittedAt: "2026-09-21T11:00:00.000Z",
+        },
+      ],
+      nextCursor: null,
+    });
+    const ownResponse = (originalBody: string) => ({
+      status: "submitted",
+      reviewId,
+      rating: 4,
+      originalLanguage: "en",
+      originalBody,
+      submittedAt: "2026-09-21T11:00:00.000Z",
+      moderationState: "unhidden",
+    });
+    const administratorResponse = (originalBody: string) => ({
+      status: "success",
+      items: [
+        {
+          reviewId,
+          bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+          profileId: "33333333-3333-4333-8333-333333333333",
+          authorUserId: "44444444-4444-4444-8444-444444444444",
+          rating: 4,
+          originalLanguage: "en",
+          originalBody,
+          submittedAt: "2026-09-21T11:00:00.000Z",
+          moderationState: "unhidden",
+          hide: null,
+        },
+      ],
+      nextCursor: null,
+    });
+    const listPublic = (originalBody: string) =>
+      new SupabaseCustomerReviewRepository(
+        clientWith(publicResponse(originalBody)) as never,
+      ).listPublic({
+        publicSlug: "cottage-00000000000040008000000000000029",
+        beforeAt: null,
+        beforeId: null,
+        limit: 20,
+      });
+    const getOwn = (originalBody: string) =>
+      new SupabaseCustomerReviewRepository(
+        clientWith(ownResponse(originalBody)) as never,
+      ).getOwn("RC-REQ-0123456789ABCDEF");
+    const listAdministrator = (originalBody: string) =>
+      new SupabaseCustomerReviewRepository(
+        clientWith(administratorResponse(originalBody)) as never,
+      ).listAdministrator({ beforeAt: null, beforeId: null, limit: 50 });
+
+    expect(Array.from(acceptedBody)).toHaveLength(2000);
+    await expect(listPublic(acceptedBody)).resolves.toEqual(
+      publicResponse(acceptedBody),
+    );
+    await expect(getOwn(acceptedBody)).resolves.toEqual(
+      ownResponse(acceptedBody),
+    );
+    await expect(listAdministrator(acceptedBody)).resolves.toEqual(
+      administratorResponse(acceptedBody),
+    );
+
+    expect(Array.from(rejectedBody)).toHaveLength(2001);
+    await expect(listPublic(rejectedBody)).resolves.toEqual({
+      status: "unavailable",
+    });
+    await expect(getOwn(rejectedBody)).resolves.toEqual({
+      status: "unavailable",
+    });
+    await expect(listAdministrator(rejectedBody)).resolves.toEqual({
+      status: "unavailable",
+    });
+  });
+
   it("hides through the administrator RPC and retains database attribution", async () => {
     const hidden = {
       status: "already-hidden",

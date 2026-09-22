@@ -20,6 +20,7 @@ describe("account return destinations", () => {
     "/en/owner/application",
     "/en/owner/cottages",
     "/en/owner/cottages/10000000-0000-4000-8000-000000000001",
+    "/en/administrator/reviews",
   ])("preserves permitted context %s", (destination) => {
     expect(safeReturnDestination("en", destination)).toBe(destination);
   });
@@ -42,6 +43,8 @@ describe("account return destinations", () => {
     "/en/request/river-house?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1&conversation=invalid",
     "/en/request/river-house?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1&conversation=10000000-0000-4000-8000-000000000001&conversation=10000000-0000-4000-8000-000000000001",
     "/en/administrator/access",
+    "/en/administrator/users",
+    "/en/administrator/reviews?beforeAt=2026-09-21T12:00:00.000Z",
     "/api/anything",
     "/en/access",
     "/en/search",

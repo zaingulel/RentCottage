@@ -67,6 +67,36 @@ describe("CustomerReviewForm", () => {
     );
   });
 
+  it("submits database-valid supplementary characters without a native UTF-16 limit", async () => {
+    const originalBody = "🏡".repeat(1001);
+    submitReview.mockResolvedValue({ status: "ineligible" });
+    render(
+      <CustomerReviewForm
+        locale="en"
+        bookingRequestReference={bookingRequestReference}
+        initialResult={{
+          status: "eligible",
+          reviewExpiresAt: "2026-10-05T10:00:00.000Z",
+        }}
+      />,
+    );
+
+    const textarea = screen.getByLabelText("Review text (optional)");
+    expect(textarea).not.toHaveAttribute("maxlength");
+    fireEvent.click(screen.getByRole("radio", { name: "5 stars" }));
+    fireEvent.change(textarea, { target: { value: originalBody } });
+    fireEvent.click(screen.getByRole("button", { name: "Publish review" }));
+
+    await waitFor(() =>
+      expect(submitReview).toHaveBeenCalledWith({
+        bookingRequestReference,
+        rating: 5,
+        originalLanguage: "en",
+        originalBody,
+      }),
+    );
+  });
+
   it.each(["en", "ar", "ckb"] as const)(
     "renders a visible localized rating and the original literally in %s",
     (locale) => {

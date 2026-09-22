@@ -34,7 +34,7 @@ export default async function AdministratorCustomerReviewsPage({
   try {
     const account = await requireRequestAccount(
       locale,
-      `/${locale}/administrator/access`,
+      `/${locale}/administrator/reviews`,
     );
     if (account.status !== "unavailable") {
       if (account.context?.role !== "platform_administrator") {

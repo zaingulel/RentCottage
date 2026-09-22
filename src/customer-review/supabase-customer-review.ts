@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   hasExactKeys,
   isBookingRequestReference,
+  isCustomerReviewBodyWithinLimit,
   isCustomerReviewLanguage,
   isCustomerReviewPageInput,
   isCustomerReviewPublicSlug,
@@ -66,7 +67,7 @@ function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
     !isCustomerReviewLanguage(value.originalLanguage) ||
     (value.originalBody !== null &&
       (typeof value.originalBody !== "string" ||
-        value.originalBody.length > 2000)) ||
+        !isCustomerReviewBodyWithinLimit(value.originalBody))) ||
     !isCustomerReviewTimestamp(value.submittedAt)
   ) {
     return undefined;
@@ -178,7 +179,9 @@ function parseOwnReviewResult(value: unknown): OwnCustomerReviewResult {
     (value.rating as number) >= 1 &&
     (value.rating as number) <= 5 &&
     isCustomerReviewLanguage(value.originalLanguage) &&
-    (value.originalBody === null || typeof value.originalBody === "string") &&
+    (value.originalBody === null ||
+      (typeof value.originalBody === "string" &&
+        isCustomerReviewBodyWithinLimit(value.originalBody))) &&
     isCustomerReviewTimestamp(value.submittedAt) &&
     (value.moderationState === "hidden" || value.moderationState === "unhidden")
   ) {
@@ -261,7 +264,7 @@ function parseAdministratorReview(
     !isCustomerReviewLanguage(value.originalLanguage) ||
     (value.originalBody !== null &&
       (typeof value.originalBody !== "string" ||
-        value.originalBody.length > 2000)) ||
+        !isCustomerReviewBodyWithinLimit(value.originalBody))) ||
     !isCustomerReviewTimestamp(value.submittedAt) ||
     (value.moderationState !== "hidden" && value.moderationState !== "unhidden")
   ) {

@@ -22,6 +22,22 @@ import AdministratorCustomerReviewsPage from "./page";
 describe("AdministratorCustomerReviewsPage", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("requests authentication with the moderation queue destination", async () => {
+    requireAccount.mockResolvedValue({ status: "unavailable" });
+
+    render(
+      await AdministratorCustomerReviewsPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(requireAccount).toHaveBeenCalledWith(
+      "en",
+      "/en/administrator/reviews",
+    );
+  });
+
   it("requests a 20-review page and keeps SQL assurance decisive", async () => {
     requireAccount.mockResolvedValue({
       status: "authenticated",
@@ -42,6 +58,10 @@ describe("AdministratorCustomerReviewsPage", () => {
       beforeId: "11111111-1111-4111-8111-111111111111",
       limit: 20,
     });
+    expect(requireAccount).toHaveBeenCalledWith(
+      "en",
+      "/en/administrator/reviews",
+    );
     expect(
       screen.getByText(
         "Authenticator-verified administrator access is required.",

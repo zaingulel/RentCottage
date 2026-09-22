@@ -51,6 +51,10 @@ export function isCustomerReviewPublicSlug(value: unknown): value is string {
   return typeof value === "string" && publicSlugPattern.test(value);
 }
 
+export function isCustomerReviewBodyWithinLimit(value: string) {
+  return Array.from(value).length <= 2000;
+}
+
 export type SubmitCustomerReviewInput = Readonly<{
   bookingRequestReference: string;
   rating: number;
@@ -76,7 +80,7 @@ export function isSubmitCustomerReviewInput(
     isCustomerReviewLanguage(value.originalLanguage) &&
     (value.originalBody === null ||
       (typeof value.originalBody === "string" &&
-        value.originalBody.length <= 2000))
+        isCustomerReviewBodyWithinLimit(value.originalBody)))
   );
 }
 

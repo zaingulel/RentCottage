@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { submitCustomerReview } from "@/customer-review/actions";
-import type { OwnCustomerReviewResult } from "@/customer-review/customer-review";
+import {
+  isCustomerReviewBodyWithinLimit,
+  type OwnCustomerReviewResult,
+} from "@/customer-review/customer-review";
 import { customerReviewMessages } from "@/i18n/customer-review-messages";
 import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
@@ -88,7 +91,7 @@ export function CustomerReviewForm({
     const language = formData.get("originalLanguage");
     if (
       typeof bodyValue !== "string" ||
-      bodyValue.length > 2000 ||
+      !isCustomerReviewBodyWithinLimit(bodyValue) ||
       (language !== "en" && language !== "ar" && language !== "ckb")
     ) {
       setNotice({ kind: "error", text: copy.invalid });
@@ -153,7 +156,6 @@ export function CustomerReviewForm({
         <textarea
           id="customer-review-body"
           name="originalBody"
-          maxLength={2000}
           aria-describedby="customer-review-body-help"
           disabled={pending}
         />
