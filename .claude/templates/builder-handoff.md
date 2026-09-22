@@ -16,6 +16,8 @@ Why each line is load-bearing:
   checks and its report against every handoff item, goes to a fresh builder as a smaller slice; the session
   never finishes a capped slice or declares it done.
 - A builder that hits consequential judgment mid-build STOPS AND ASKS instead of guessing.
+- The stop condition never carries a numeric line cap: the builder charter's "roughly doubles the envelope" is the
+  only size stop.
 
 Each labelled value sits on its label's line. `Construction mode:` holds exactly one of `strict-tdd`,
 `evidence-required` or `preservation` and nothing else: the reasoning belongs in the plan, and a slice that needs

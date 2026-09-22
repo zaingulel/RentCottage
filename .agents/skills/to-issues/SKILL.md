@@ -52,15 +52,16 @@ Size signals, judged once by the owner at Step 4, apply to a single captured ide
 outcome fits one sentence a reviewer could demonstrate, and more than five distinct outcome or invariant
 statements, checkbox or bullet, is a signal to make the work a `type:epic` parent with native child slices. No
 later seat stops, replans or refuses work on these signals; after work-pick the only size gate is the plan's, in
-the `resume` skill's Plan section.
+the `resume` skill's Plan section. A `type:epic` parent holds no acceptance criteria of its own; any whole-journey
+or end-to-end check becomes its last child, blocked by the others, so the parent closes when its children do.
 
 ### 4. Quiz the owner
 
 Present the proposed issue or numbered breakdown showing per slice: **Title**, **Outcome**, **Blocked by**,
-**Workstream**, and **Required capabilities**, and flag any slice with more than five outcome or invariant
-statements. An instruction to file an issue approves the idea, not a proposal the owner has not seen, so a single
-captured idea is presented here too. Ask whether the granularity and dependencies are correct and whether
-anything should merge or split. Iterate until the owner approves; create nothing until they do.
+**Workstream**, and **Required capabilities**, plus its one-sentence outcome and its count of outcome or invariant
+statements, flagging any count above five. An instruction to file an issue approves the idea, not a proposal the
+owner has not seen, so a single captured idea is presented here too. Ask whether the granularity and dependencies
+are correct and whether anything should merge or split. Iterate until the owner approves; create nothing until they do.
 
 ### 5. Route each slice
 

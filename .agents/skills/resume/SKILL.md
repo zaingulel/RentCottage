@@ -46,7 +46,7 @@ Read the candidate cards' bodies and comments in one call, one alias per issue, 
 per card.
 
 ```sh
-gh api graphql -f query='{ repository(owner:"zaingulel", name:"RentCottage") { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
+gh api graphql -f query='{ repository(owner:"zaingulel", name:"RentCottage") { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body parent { number } blockedBy(first:20) { nodes { number state } } comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\nparent: \(if .parent then "#\(.parent.number)" else "none" end); open blockers: \([.blockedBy.nodes[] | select(.state == "OPEN") | "#\(.number)"] | join(" ") | if . == "" then "none" else . end)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
 ```
 
 State the session's own model in one line, then always present this table, even for one candidate:
@@ -54,9 +54,9 @@ State the session's own model in one line, then always present this table, even 
 | #   | Card | Outcome for the user | Why now, and the risk | Gates it triggers | Route and why | Startable now? |
 | --- | ---- | -------------------- | --------------------- | ----------------- | ------------- | -------------- |
 
-An open `type:epic` parent is never a candidate row; its next unblocked child is. Gates are read off AGENTS.md,
-Owner gates and Review: owner direction, sign-off, architect plan, screenshot,
-database/provider/browser evidence, security review, Greptile. Route names the build seat (`builder-max`, `builder`, or
+An open `type:epic` parent is never a candidate row; its next unblocked child is, and a child with an open blocker
+is not offered. Gates are read off AGENTS.md, Owner gates and Review: owner direction, sign-off, architect plan,
+screenshot, database/provider/browser evidence, security review, Greptile. Route names the build seat (`builder-max`, `builder`, or
 `builder-lite`), whether the architect runs, and the reason from residual judgment, uncertainty,
 failure consequence, and verification strength. Close with one line recommending a row number, then stop; no
 acceptance-criteria list is presented. The owner's pick of any row is the work-pick approval of that card's
