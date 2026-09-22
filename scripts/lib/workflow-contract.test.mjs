@@ -270,8 +270,13 @@ test("card size is judged by the owner and epics are never picked", () => {
   );
   assert.match(
     resume,
-    /fragment Card on Issue \{[^}]*parent \{ number \} blockedBy\(first:\d+\) \{ nodes \{ number state \} \}/,
-    "the work-pick Card fragment must read each card's parent and blockers",
+    /fragment Card on Issue \{[^}]*parent \{ number \} blockedBy\(first:50\) \{ nodes \{ number state \} \}/,
+    "the work-pick Card fragment must read all 50 of GitHub's per-relationship blockers",
+  );
+  assert.match(
+    resume,
+    /select\(\.state == "OPEN"\)/,
+    "the work-pick blocker filter must keep only open blockers",
   );
   assert.match(
     resume,

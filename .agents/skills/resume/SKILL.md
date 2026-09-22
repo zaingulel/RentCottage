@@ -46,7 +46,7 @@ Read the candidate cards' bodies and comments in one call, one alias per issue, 
 per card.
 
 ```sh
-gh api graphql -f query='{ repository(owner:"zaingulel", name:"RentCottage") { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body parent { number } blockedBy(first:20) { nodes { number state } } comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\nparent: \(if .parent then "#\(.parent.number)" else "none" end); open blockers: \([.blockedBy.nodes[] | select(.state == "OPEN") | "#\(.number)"] | join(" ") | if . == "" then "none" else . end)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
+gh api graphql -f query='{ repository(owner:"zaingulel", name:"RentCottage") { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body parent { number } blockedBy(first:50) { nodes { number state } } comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\nparent: \(if .parent then "#\(.parent.number)" else "none" end); open blockers: \([.blockedBy.nodes[] | select(.state == "OPEN") | "#\(.number)"] | join(" ") | if . == "" then "none" else . end)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
 ```
 
 State the session's own model in one line, then always present this table, even for one candidate:
