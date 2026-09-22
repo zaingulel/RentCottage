@@ -157,6 +157,9 @@ it.
    `.greptile/config.json` disables automatic reviews; labels are metadata. `COMPLETE` requires Greptile's
    completed review for that exact head, its summary, and disposition of every finding. Read its check status,
    the summary's last-reviewed commit, pull-request reviews and inline threads: a summary can precede findings.
+   Greptile's summary is a `greptile-apps[bot]` comment whose footer names the exact requested head as
+   `Last reviewed commit`, and the `Greptile Review` check turning green is a second signal; its heading
+   is an image, so a watcher keys on that footer, never on heading text.
    Fix true findings, complete focused tests and the applicable scoped local repair review before pushing,
    reply with the fix commit, resolve the thread, and dismiss false findings with evidence. Update the review line
    after each Greptile review. For the new head, request
