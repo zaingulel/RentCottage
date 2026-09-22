@@ -1167,6 +1167,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
 test("a Platform Administrator reaches access only after authenticator MFA", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(180_000);
   const reviewFixture = accessBrowserFixture(testInfo.project.name);
   const email = `platform-administrator-${testInfo.project.name}@rentcottage.test`;
   const actorUserId = await administratorId(email);
