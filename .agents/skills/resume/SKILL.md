@@ -46,7 +46,7 @@ Read the candidate cards' bodies and comments in one call, one alias per issue, 
 per card.
 
 ```sh
-gh api graphql -f query='{ repository(owner:"zaingulel", name:"RentCottage") { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
+gh api graphql -f query='{ repository(owner:"zaingulel", name:"RentCottage") { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body parent { number } blockedBy(first:50) { nodes { number state } } comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\nparent: \(if .parent then "#\(.parent.number)" else "none" end); open blockers: \([.blockedBy.nodes[] | select(.state == "OPEN") | "#\(.number)"] | join(" ") | if . == "" then "none" else . end)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
 ```
 
 State the session's own model in one line, then always present this table, even for one candidate:
@@ -54,8 +54,9 @@ State the session's own model in one line, then always present this table, even 
 | #   | Card | Outcome for the user | Why now, and the risk | Gates it triggers | Route and why | Startable now? |
 | --- | ---- | -------------------- | --------------------- | ----------------- | ------------- | -------------- |
 
-Gates are read off AGENTS.md, Owner gates and Review: owner direction, sign-off, architect plan, screenshot,
-database/provider/browser evidence, security review, Greptile. Route names the build seat (`builder-max`, `builder`, or
+An open `type:epic` parent is never a candidate row; its next unblocked child is, and a child with an open blocker
+is not offered. Gates are read off AGENTS.md, Owner gates and Review: owner direction, sign-off, architect plan,
+screenshot, database/provider/browser evidence, security review, Greptile. Route names the build seat (`builder-max`, `builder`, or
 `builder-lite`), whether the architect runs, and the reason from residual judgment, uncertainty,
 failure consequence, and verification strength. Close with one line recommending a row number, then stop; no
 acceptance-criteria list is presented. The owner's pick of any row is the work-pick approval of that card's
@@ -86,8 +87,12 @@ disjoint.
   design choices still open after work-pick gets an `architect` plan. Everything else gets a short plan in the
   pull request body.
 - Every `architect` dispatch is a filled copy of `.agents/templates/planner-handoff.md`.
-- A plan states its size envelope. A parser, state machine, or general framework the outcome did not name is a
-  scope change and goes back to the owner before it is built.
+- A plan states its size envelope. A plan needing more than three builder slices, or an envelope above about
+  1,500 changed lines, goes to the owner once as a split proposal under the owner gates in `AGENTS.md`, as does
+  an architect's finding that the card is too big; the session never narrows such a plan inline or merges slices
+  to fit. A builder handoff's stop condition carries no numeric line cap: the builder charter's "roughly doubles
+  the envelope" is the only size stop. A parser, state machine, or general framework the outcome did not name is
+  a scope change and goes back to the owner before it is built.
 - Discovery wider than a couple of files, while planning or building, goes to the `explorer` seat, so its
   conclusion reaches the main thread and its file dumps do not.
 - Every coherent claim gets one construction mode from `docs/engineering/testing-strategy.md`.

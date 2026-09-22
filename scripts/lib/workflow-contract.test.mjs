@@ -235,3 +235,80 @@ test("Git permits job branch deletion only after its linked worktree is removed"
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("card size is judged by the owner and epics are never picked", () => {
+  // These assertions come from card #328's acceptance criteria.
+  const read = (path) => readFileSync(resolve(ROOT, path), "utf8");
+  const toIssues = read(".agents/skills/to-issues/SKILL.md");
+  const resume = read(".agents/skills/resume/SKILL.md");
+
+  assert.match(
+    toIssues,
+    /one-sentence outcome and its count of outcome or invariant[\s\S]{0,20}statements, flagging any count above five/,
+    "every to-issues proposal must show its outcome and statement count",
+  );
+  assert.match(
+    toIssues,
+    /single[\s\S]{0,20}captured idea is presented here too/,
+    "a single captured idea must be presented to the owner too",
+  );
+  assert.match(
+    toIssues,
+    /`type:epic` parent holds no acceptance criteria of its own;[\s\S]{0,40}whole-journey[\s\S]{0,40}end-to-end check becomes its last child,[\s\S]{0,20}blocked by the others/,
+    "an epic must hold no criteria and put its whole-journey check in its last child",
+  );
+  assert.match(
+    toIssues,
+    /Never name a builder[\s\S]{0,20}seat: the plan chooses one per slice/,
+    "to-issues must never name a builder seat",
+  );
+
+  assert.match(
+    resume,
+    /open `type:epic` parent is never a candidate row; its next unblocked child is,\s+and\s+a\s+child\s+with\s+an\s+open\s+blocker\s+is\s+not\s+offered/,
+    "work-pick must offer an epic's next unblocked child, never the parent",
+  );
+  assert.match(
+    resume,
+    /fragment Card on Issue \{[^}]*parent \{ number \} blockedBy\(first:50\) \{ nodes \{ number state \} \}/,
+    "the work-pick Card fragment must read all 50 of GitHub's per-relationship blockers",
+  );
+  assert.match(
+    resume,
+    /select\(\.state == "OPEN"\)/,
+    "the work-pick blocker filter must keep only open blockers",
+  );
+  assert.match(
+    resume,
+    /more than three builder slices,[\s\S]{0,20}envelope above about[\s\S]{0,20}1,500 changed lines, goes to the owner[\s\S]{0,20}as a split proposal/,
+    "resume must send a plan past the split threshold to the owner",
+  );
+  assert.match(
+    resume,
+    /builder handoff's stop condition carries no numeric line cap/,
+    "resume must forbid a numeric line cap in builder handoffs",
+  );
+
+  assert.match(
+    read(".agents/templates/planner-handoff.md"),
+    /architect judges too big,[\s\S]{0,20}plan past the split threshold[\s\S]{0,120}goes to the[\s\S]{0,20}owner as a split proposal and is never narrowed or finished inline/,
+    "the planner handoff must route an oversized card to the owner",
+  );
+
+  for (const path of [
+    ".claude/agents/architect.md",
+    ".codex/agents/architect.toml",
+  ]) {
+    assert.match(
+      read(path),
+      /\*\*build seat\*\*, chosen per builder handoff and stated once when all handoffs share it/,
+      `${path} must choose the build seat per builder handoff`,
+    );
+  }
+
+  assert.match(
+    read(".claude/templates/builder-handoff.md"),
+    /stop condition never carries a numeric line cap: the builder charter's "roughly doubles the envelope" is[\s\S]{0,20}only size stop/,
+    "the builder handoff template must forbid a numeric line cap",
+  );
+});
