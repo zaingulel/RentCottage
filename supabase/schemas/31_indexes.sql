@@ -125,3 +125,6 @@ CREATE INDEX booking_payout_commands_request_history ON public.booking_payout_co
 CREATE UNIQUE INDEX booking_notification_events_owner_source_idx ON public.booking_notification_events(owner_request_notification_id) WHERE owner_request_notification_id IS NOT NULL;
 CREATE UNIQUE INDEX booking_notification_events_status_source_idx ON public.booking_notification_events(request_status_notification_id) WHERE request_status_notification_id IS NOT NULL;
 CREATE UNIQUE INDEX booking_notification_events_recovery_source_idx ON public.booking_notification_events(booking_request_id,recovery_generation,event_kind,recipient_role) WHERE payment_history_id IS NOT NULL;
+
+CREATE INDEX customer_reviews_profile_cursor_idx ON public.customer_reviews (profile_id, submitted_at DESC, id DESC);
+CREATE INDEX customer_reviews_administrator_cursor_idx ON public.customer_reviews (submitted_at DESC, id DESC);

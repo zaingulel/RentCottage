@@ -1,0 +1,114 @@
+.section {
+  display: grid;
+  gap: 0.875rem;
+  min-inline-size: 0;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+  overflow-wrap: anywhere;
+}
+
+.page {
+  display: grid;
+  gap: 1.25rem;
+  inline-size: min(100% - 2rem, 72rem);
+  margin-inline: auto;
+  padding-block: clamp(2rem, 6vw, 5rem);
+  overflow-wrap: anywhere;
+}
+
+.header,
+.list,
+.card,
+.identifiers,
+.audit {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+}
+
+.card {
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+}
+
+.cardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.card small {
+  display: block;
+}
+
+.audit {
+  margin: 0;
+}
+
+.audit dd {
+  margin-inline-start: 0;
+  overflow-wrap: anywhere;
+}
+
+.next {
+  justify-self: start;
+}
+
+.form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.form fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.rating {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+}
+
+.rating label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+}
+
+.form textarea {
+  min-block-size: 7rem;
+  resize: vertical;
+}
+
+.form textarea,
+.form select,
+.form button {
+  max-inline-size: 100%;
+}
+
+@media (max-width: 40rem) {
+  .page {
+    inline-size: min(100% - 1rem, 72rem);
+  }
+
+  .cardHeader {
+    display: grid;
+  }
+
+  .form button,
+  .form select {
+    inline-size: 100%;
+  }
+}

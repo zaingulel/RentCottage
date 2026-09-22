@@ -90,6 +90,7 @@ const emptyDeclaredSchemaDiff = JSON.stringify({
 });
 const databasePreflightCommands = [
   declaredSchemaDiffCommand,
+  ["node", ["scripts/verify-customer-review-upgrade.mjs"]],
   ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
 ];
 const databaseCheckCommands = [
@@ -115,6 +116,7 @@ const databaseCheckCommands = [
   ["node", ["scripts/verify-booking-cancellation-concurrency.mjs"]],
   ["node", ["scripts/verify-messaging-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-completion-concurrency.mjs"]],
+  ["node", ["scripts/verify-customer-review-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-refund-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-payout-concurrency.mjs"]],
   [
@@ -139,6 +141,7 @@ const browserCommands = [
       "tests/booking-history.spec.ts",
       "tests/request-notification-details.spec.ts",
       "tests/messaging.spec.ts",
+      "tests/customer-reviews.spec.ts",
       "--project=mobile",
       "--project=desktop",
       "--workers=1",
@@ -158,6 +161,7 @@ const browserCommands = [
       "tests/administrator-payment-history.spec.ts",
       "tests/booking-cancellation-refund.spec.ts",
       "tests/messaging.spec.ts",
+      "tests/customer-reviews.spec.ts",
       "--project=worker",
       "--config=playwright.worker-prebuilt.config.ts",
       "--workers=1",

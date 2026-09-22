@@ -1,9 +1,15 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, it, expect, vi } from "vitest";
-const location = vi.hoisted(() => ({ pathname: "/en", query: "" }));
+const { location, router } = vi.hoisted(() => ({
+  location: { pathname: "/en", query: "" },
+  router: { refresh: vi.fn() },
+}));
 vi.mock("next/navigation", () => ({
   usePathname: () => location.pathname,
   useSearchParams: () => new URLSearchParams(location.query),
+  useRouter: () => router,
+  notFound: vi.fn(),
+  unstable_rethrow: vi.fn(),
 }));
 vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
 import { SiteHeader } from "./site-header";
@@ -17,6 +23,7 @@ function scrollTo(y: number) {
 
 describe("shared site header", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     location.pathname = "/en";
     location.query = "";
     scrollTo(0);
@@ -176,6 +183,9 @@ describe("shared site header", () => {
     expect(
       screen.getByRole("link", { name: "Platform Administrator access" }),
     ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Review moderation" }),
+    ).toHaveAttribute("href", "/en/administrator/reviews");
     expect(
       screen.queryByRole("link", { name: "My bookings" }),
     ).not.toBeInTheDocument();

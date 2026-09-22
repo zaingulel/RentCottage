@@ -46,7 +46,7 @@ export const bookingLifecycleMessages = {
     cancelled: "حجز ملغى",
     incident_pending: "واقعة قيد المتابعة",
     periodEnd: "انتهت فترة الحجز الأصلية",
-    reviewOpen: "يمكن إضافة تقييم حتى",
+    reviewOpen: "نافذة التقييم مفتوحة حتى",
     reviewClosed: "التقييم غير متاح لهذا الحجز.",
     payoutReady: "تم استيفاء شرط فترة الحجز لتسوية المالك.",
     payoutPending: "لم يتم استيفاء شرط فترة الحجز لتسوية المالك.",

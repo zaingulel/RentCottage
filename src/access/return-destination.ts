@@ -86,3 +86,18 @@ export function safeReturnDestination(locale: Locale, value: unknown): string {
 export function accountAccessHref(locale: Locale, returnTo: unknown) {
   return `/${locale}/access?returnTo=${encodeURIComponent(safeReturnDestination(locale, returnTo))}`;
 }
+
+export function safeAdministratorReturnDestination(
+  locale: Locale,
+  value: unknown,
+): string | undefined {
+  const destination = `/${locale}/administrator/reviews`;
+  return value === destination ? destination : undefined;
+}
+
+export function administratorAccessHref(locale: Locale, returnTo: unknown) {
+  const destination = safeAdministratorReturnDestination(locale, returnTo);
+  return destination
+    ? `/${locale}/administrator/access?returnTo=${encodeURIComponent(destination)}`
+    : `/${locale}/administrator/access`;
+}

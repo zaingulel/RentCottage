@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { safeReturnDestination } from "./return-destination";
+import {
+  administratorAccessHref,
+  safeAdministratorReturnDestination,
+  safeReturnDestination,
+} from "./return-destination";
 
 describe("account return destinations", () => {
   it.each([
@@ -42,6 +46,9 @@ describe("account return destinations", () => {
     "/en/request/river-house?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1&conversation=invalid",
     "/en/request/river-house?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1&conversation=10000000-0000-4000-8000-000000000001&conversation=10000000-0000-4000-8000-000000000001",
     "/en/administrator/access",
+    "/en/administrator/reviews",
+    "/en/administrator/users",
+    "/en/administrator/reviews?beforeAt=2026-09-21T12:00:00.000Z",
     "/api/anything",
     "/en/access",
     "/en/search",
@@ -66,4 +73,40 @@ describe("account return destinations", () => {
       );
     },
   );
+});
+
+describe("administrator return destinations", () => {
+  it.each(["en", "ar", "ckb"] as const)(
+    "accepts only the exact %s moderation queue",
+    (locale) => {
+      const destination = `/${locale}/administrator/reviews`;
+      expect(safeAdministratorReturnDestination(locale, destination)).toBe(
+        destination,
+      );
+      expect(administratorAccessHref(locale, destination)).toBe(
+        `/${locale}/administrator/access?returnTo=${encodeURIComponent(destination)}`,
+      );
+    },
+  );
+
+  it.each([
+    undefined,
+    ["/en/administrator/reviews"],
+    "https://evil.test/en/administrator/reviews",
+    "//evil.test/en/administrator/reviews",
+    "/ar/administrator/reviews",
+    "/en/administrator/reviews%3FbeforeAt=private",
+    "/en/administrator/reviews?beforeAt=private",
+    "/en/administrator/reviews#private",
+    "/en/administrator/reviews\n",
+    "/en/administrator\\reviews",
+    "/en/administrator",
+  ])("rejects an untrusted administrator destination %#", (destination) => {
+    expect(
+      safeAdministratorReturnDestination("en", destination),
+    ).toBeUndefined();
+    expect(administratorAccessHref("en", destination)).toBe(
+      "/en/administrator/access",
+    );
+  });
 });

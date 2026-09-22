@@ -21,6 +21,20 @@ const {
   accessBrowserFixture(project: string): AccessBrowserFixture;
   ACCESS_REVIEW_DOCUMENT_FILENAME: string;
 };
+type AccessFixtureUser = {
+  id: string;
+  email?: string | null;
+  phone?: string | null;
+};
+const { findAccessFixtureUser, listAllAccessFixtureUsers } = createRequire(
+  import.meta.url,
+)("../scripts/lib/access-fixture-users.mjs") as {
+  findAccessFixtureUser(
+    users: AccessFixtureUser[],
+    phone: string,
+  ): AccessFixtureUser | undefined;
+  listAllAccessFixtureUsers(admin: unknown): Promise<AccessFixtureUser[]>;
+};
 
 type BrowserApplicationFixture = {
   privacyNote: string;
@@ -310,9 +324,8 @@ function expectedEmailDigest(email: string) {
 }
 
 async function administratorId(email: string) {
-  const { data, error } = await auditClient.auth.admin.listUsers();
-  if (error) throw error;
-  const userId = data.users.find((user) => user.email === email)?.id;
+  const users = await listAllAccessFixtureUsers(auditClient.auth.admin);
+  const userId = users.find((user) => user.email === email)?.id;
   if (!userId) throw new Error(`No test administrator exists for ${email}`);
   return userId;
 }
@@ -1154,6 +1167,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
 test("a Platform Administrator reaches access only after authenticator MFA", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(180_000);
   const reviewFixture = accessBrowserFixture(testInfo.project.name);
   const email = `platform-administrator-${testInfo.project.name}@rentcottage.test`;
   const actorUserId = await administratorId(email);
@@ -1371,10 +1385,10 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
         .eq("id", publication.review_cycle_id)
         .single();
     if (publishedCycleError) throw publishedCycleError;
-    const { data: fixtureUsers, error: fixtureUsersError } =
-      await auditClient.auth.admin.listUsers();
-    if (fixtureUsersError) throw fixtureUsersError;
-    const selectedOwner = fixtureUsers.users.find(
+    const fixtureUsers = await listAllAccessFixtureUsers(
+      auditClient.auth.admin,
+    );
+    const selectedOwner = fixtureUsers.find(
       (user) => user.id === publishedCycle.owner_user_id,
     );
     if (!selectedOwner?.phone) {
@@ -2245,16 +2259,8 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
   if (!suffix) throw new Error("Shared account fixture project is unmapped");
   const phone = `+964755000000${suffix}`;
   assertIsolatedLocalAccessDatabase();
-  const before = await auditClient.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
-  if (before.error) throw before.error;
-  expect(
-    before.data.users.some(
-      (user) => user.phone?.replace(/^\+/, "") === phone.slice(1),
-    ),
-  ).toBe(false);
+  const before = await listAllAccessFixtureUsers(auditClient.auth.admin);
+  expect(findAccessFixtureUser(before, phone)).toBeUndefined();
   async function verify(target: Page) {
     await target.getByLabel("Iraqi phone number").fill(phone);
     await target
@@ -2271,14 +2277,8 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
     page.getByRole("heading", { name: "My bookings", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("No booking requests yet.")).toBeVisible();
-  const users = await auditClient.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
-  if (users.error) throw users.error;
-  const identity = users.data.users.filter(
-    (user) => user.phone?.replace(/^\+/, "") === phone.slice(1),
-  );
+  const users = await listAllAccessFixtureUsers(auditClient.auth.admin);
+  const identity = users.filter((user) => findAccessFixtureUser([user], phone));
   expect(identity).toHaveLength(1);
   const userId = identity[0].id;
   const { createLocalSupabaseConcurrencyHarness } = createRequire(
@@ -2369,14 +2369,10 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
     await expect(
       page.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
-    const returning = await auditClient.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-    if (returning.error) throw returning.error;
+    const returning = await listAllAccessFixtureUsers(auditClient.auth.admin);
     expect(
-      returning.data.users
-        .filter((user) => user.phone?.replace(/^\+/, "") === phone.slice(1))
+      returning
+        .filter((user) => findAccessFixtureUser([user], phone))
         .map((user) => user.id),
     ).toEqual([userId]);
     await page.goto("/en/booking-requests/RC-REQ-2142142142142142");

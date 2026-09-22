@@ -67,9 +67,29 @@ describe("PublicCottageProfileView", () => {
       within(sidebar).getByRole("link", { name: "Message this cottage" }),
     ).toHaveAttribute("href", "/en/messages?cottage=garden-house&guests=4");
     expect(
+      screen.getByRole("link", { name: "Read customer reviews" }),
+    ).toHaveAttribute("href", "/en/cottages/garden-house/reviews");
+    expect(
       screen.getByRole("link", { name: "Back to results" }),
     ).toHaveAttribute("href", "/en/results?guests=4");
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it.each([
+    ["ar", "قراءة تقييمات العملاء"],
+    ["ckb", "هەڵسەنگاندنی کڕیاران بخوێنەوە"],
+  ] as const)("links to the dedicated reviews page in %s", (locale, label) => {
+    render(
+      <PublicCottageProfileView
+        locale={locale}
+        result={{ status: "loaded", cottage }}
+        queryString=""
+      />,
+    );
+    expect(screen.getByRole("link", { name: label })).toHaveAttribute(
+      "href",
+      `/${locale}/cottages/garden-house/reviews`,
+    );
   });
 
   it("keeps the back link and alert when the cottage is unavailable", () => {

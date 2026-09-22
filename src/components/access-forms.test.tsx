@@ -2,13 +2,25 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requestPhone, signInAdministrator, verifyAdministrator, verifyPhone } =
-  vi.hoisted(() => ({
-    requestPhone: vi.fn(),
-    signInAdministrator: vi.fn(),
-    verifyAdministrator: vi.fn(),
-    verifyPhone: vi.fn(),
-  }));
+const {
+  refresh,
+  replace,
+  requestPhone,
+  signInAdministrator,
+  verifyAdministrator,
+  verifyPhone,
+} = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  replace: vi.fn(),
+  requestPhone: vi.fn(),
+  signInAdministrator: vi.fn(),
+  verifyAdministrator: vi.fn(),
+  verifyPhone: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh, replace }),
+}));
 
 vi.mock("@/access/actions", () => ({
   requestPhoneAccess: requestPhone,
@@ -222,6 +234,8 @@ describe("access forms", () => {
     );
     expect(screen.getByLabelText("Authenticator app code")).toBeVisible();
     expect(verify).toBeEnabled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("returns to administrator credentials after an unavailable MFA result", async () => {
@@ -244,6 +258,8 @@ describe("access forms", () => {
     expect(
       screen.getByText("Verification is unavailable. Try again."),
     ).toBeVisible();
+    expect(replace).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("returns to administrator credentials after an expired MFA challenge", async () => {
@@ -296,6 +312,68 @@ describe("access forms", () => {
     expect(
       screen.getByRole("link", { name: "Manage Cottage Profiles" }),
     ).toHaveAttribute("href", "/en/administrator/cottages");
+    expect(replace).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("replaces the route with the exact queue only after authenticated MFA", async () => {
+    signInAdministrator.mockResolvedValue({
+      status: "challenge_required",
+      factorId: "factor-1",
+      challengeId: "challenge-1",
+    });
+    verifyAdministrator.mockResolvedValue({ status: "authenticated" });
+    const user = userEvent.setup();
+    render(
+      <AdministratorAccessForm
+        locale="en"
+        returnTo="/en/administrator/reviews"
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(replace).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText("Authenticator app code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(replace).toHaveBeenCalledWith("/en/administrator/reviews");
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(replace.mock.invocationCallOrder[0]).toBeLessThan(
+      refresh.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("defensively rejects an unsafe administrator return after authenticated MFA", async () => {
+    signInAdministrator.mockResolvedValue({
+      status: "challenge_required",
+      factorId: "factor-1",
+      challengeId: "challenge-1",
+    });
+    verifyAdministrator.mockResolvedValue({ status: "authenticated" });
+    const user = userEvent.setup();
+    render(
+      <AdministratorAccessForm
+        locale="en"
+        returnTo="/ar/administrator/reviews"
+        reviewHref="/en/administrator/owner-applications"
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.type(screen.getByLabelText("Authenticator app code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(replace).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("link", {
+        name: "Review submitted Owner Applications",
+      }),
+    ).toHaveAttribute("href", "/en/administrator/owner-applications");
   });
 
   it("reports an identity mismatch as unavailable after phone verification", async () => {

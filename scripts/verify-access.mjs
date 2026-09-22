@@ -619,6 +619,14 @@ export async function main(
     const verifyDatabasePreflight = async () => {
       const declaredSchemaStatus = await verifyDeclaredSchema();
       if (declaredSchemaStatus !== 0) return declaredSchemaStatus;
+      const customerReviewUpgrade = await execute(
+        "node",
+        ["scripts/verify-customer-review-upgrade.mjs"],
+        { stdio: "inherit" },
+      );
+      if (customerReviewUpgrade.status !== 0) {
+        return customerReviewUpgrade.status;
+      }
       result = await execute(
         "npx",
         supabaseArguments(["supabase", "test", "db"]),
@@ -825,6 +833,14 @@ export async function main(
       );
       if (completionConcurrency.status !== 0)
         return completionConcurrency.status;
+      const customerReviewConcurrency = await execute(
+        "node",
+        ["scripts/verify-customer-review-concurrency.mjs"],
+        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
+      );
+      if (customerReviewConcurrency.status !== 0) {
+        return customerReviewConcurrency.status;
+      }
       const refundConcurrency = await execute(
         "node",
         ["scripts/verify-booking-refund-concurrency.mjs"],
@@ -892,6 +908,7 @@ export async function main(
           "tests/booking-history.spec.ts",
           "tests/request-notification-details.spec.ts",
           "tests/messaging.spec.ts",
+          "tests/customer-reviews.spec.ts",
           "--project=mobile",
           "--project=desktop",
           "--workers=1",
@@ -939,6 +956,7 @@ export async function main(
           "tests/administrator-payment-history.spec.ts",
           "tests/booking-cancellation-refund.spec.ts",
           "tests/messaging.spec.ts",
+          "tests/customer-reviews.spec.ts",
           "--project=worker",
           "--config=playwright.worker-prebuilt.config.ts",
           "--workers=1",

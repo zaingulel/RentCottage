@@ -748,34 +748,55 @@ test("a verified Customer double-submit creates one Pending request and one mini
         `update public.owner_application_cottage_profiles set private_directions=${restoredPrivateDirections} where id='${profile.id}';`,
       );
     }
-    const paidIdentity = () =>
-      JSON.parse(
+    type PaidIdentity = {
+      bookingRequestId: string;
+      bookingRequestReference: string;
+      bookingReference: string;
+      receiptId: string;
+      recipientUserId: string;
+      recipientRole: "customer";
+      locale: "en" | "ar" | "ckb";
+    };
+    const paidIdentity = () => {
+      const identities = JSON.parse(
         harness.runSql(
-          `select jsonb_build_object(
+          `select coalesce(jsonb_agg(jsonb_build_object(
             'bookingRequestId',requests.id,
+            'bookingRequestReference',requests.booking_request_reference,
             'bookingReference',commitments.commitment_reference,
-            'receiptId',receipts.id
-          )
+            'receiptId',receipts.id,
+            'recipientUserId',receipts.recipient_user_id,
+            'recipientRole',receipts.recipient_role,
+            'locale',snapshots.acceptance_locale
+          )), '[]'::jsonb)
           from public.booking_requests requests
           join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
-          join public.booking_receipts receipts on receipts.booking_confirmation_id=confirmations.id and receipts.recipient_role='customer'
-          join public.cottage_booking_period_commitments commitments on commitments.id=confirmations.booking_period_commitment_id
+          join public.booking_receipts receipts on receipts.booking_confirmation_id=confirmations.id and receipts.recipient_role='customer' and receipts.recipient_user_id=requests.customer_user_id
+          join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id and snapshots.id=confirmations.booking_snapshot_id and snapshots.id=receipts.booking_snapshot_id and snapshots.customer_user_id=requests.customer_user_id
+          join public.cottage_booking_period_commitments commitments on commitments.id=confirmations.booking_period_commitment_id and commitments.id=requests.booking_period_commitment_id and commitments.customer_user_id=requests.customer_user_id
           where requests.booking_request_reference='${requestReference}';`,
         ),
-      );
+      ) as PaidIdentity[];
+      expect(identities).toHaveLength(1);
+      expect(identities[0]).toBeTruthy();
+      return identities[0];
+    };
     const identityBeforeRetry = paidIdentity();
-    const noticeCandidate = JSON.parse(
-      harness.runSql(`set role service_role;
-        select candidate from public.list_due_booking_confirmation_notifications(10) candidate
-        where candidate->>'receiptId'='${identityBeforeRetry.receiptId}';`),
+    const authenticatedCustomerId = harness.runSql(
+      `select id from auth.users where phone='${customerPhone.slice(1)}';`,
     );
+    expect(identityBeforeRetry).toMatchObject({
+      bookingRequestReference: requestReference,
+      recipientUserId: authenticatedCustomerId,
+      recipientRole: "customer",
+    });
     const noticePayload = JSON.stringify(
-      paidConfirmationNotice(noticeCandidate),
+      paidConfirmationNotice(identityBeforeRetry),
     ).replaceAll("'", "''");
     const failedNotice = JSON.parse(
       harness.runSql(`set role service_role;
         select public.ensure_booking_confirmation_notification_work(
-          '${identityBeforeRetry.receiptId}','${noticeCandidate.locale}',
+          '${identityBeforeRetry.receiptId}','${identityBeforeRetry.locale}',
           'paid-confirmation-v1','${noticePayload}'::jsonb
         );
         with leased as (
@@ -804,12 +825,48 @@ test("a verified Customer double-submit creates one Pending request and one mini
       paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
     ).toHaveCount(0);
     expect(paidIdentity()).toEqual(identityBeforeRetry);
-    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+    const notificationSourceCount = Number(
+      harness.runSql(`select
+        (select count(*) from public.booking_receipts) +
+        (select count(*) from public.booking_notification_events);`),
+    );
+    expect(Number.isSafeInteger(notificationSourceCount)).toBe(true);
+    const tickBudget = Math.ceil(notificationSourceCount / 50) + 1;
+    let attemptedTicks = 0;
+    let targetState: string | null = null;
+    while (attemptedTicks < tickBudget && targetState !== "delivered") {
+      attemptedTicks += 1;
+      const scheduled = await triggerScheduled(baseURL, "/__scheduled");
+      if (!scheduled.ok) {
+        throw new Error(
+          `Booking confirmation scheduler tick ${attemptedTicks}/${tickBudget} failed with target ${targetState ?? "pending"}`,
+        );
+      }
+      const exactWork = JSON.parse(
+        harness.runSql(`select coalesce((select jsonb_build_object(
+          'state',work.state
+        ) from public.booking_confirmation_notification_work work
+        where work.notification_id='${identityBeforeRetry.receiptId}'
+          and work.event_id is null), 'null'::jsonb);`),
+      ) as { state: string } | null;
+      if (!exactWork) {
+        throw new Error(
+          `Booking confirmation work is missing after ${attemptedTicks}/${tickBudget} ticks`,
+        );
+      }
+      targetState = exactWork.state;
+    }
+    if (targetState !== "delivered") {
+      throw new Error(
+        `Booking confirmation remained ${targetState ?? "missing"} after ${attemptedTicks}/${tickBudget} ticks`,
+      );
+    }
     await page.goto(`/en/booking-requests/${requestReference}`);
     await expect(
       page.getByRole("heading", { name: "Confirmed booking" }),
     ).toBeVisible();
     await expect(page.getByRole("status")).toContainText("Delivered");
+    expect(paidIdentity()).toEqual(identityBeforeRetry);
     await page.getByRole("link", { name: "My bookings" }).click();
     await expect(
       page.getByRole("heading", { name: "My bookings" }),

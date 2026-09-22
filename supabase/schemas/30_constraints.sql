@@ -212,6 +212,15 @@ ALTER TABLE ONLY "public"."booking_request_submission_attempts"
 ALTER TABLE ONLY "public"."booking_request_submission_attempts"
     ADD CONSTRAINT "booking_request_submission_attempts_booking_request_id_key" UNIQUE ("booking_request_id");
 
+ALTER TABLE ONLY public.customer_reviews
+    ADD CONSTRAINT customer_reviews_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.customer_reviews
+    ADD CONSTRAINT customer_reviews_booking_request_id_key UNIQUE (booking_request_id);
+
+ALTER TABLE ONLY public.customer_review_hides
+    ADD CONSTRAINT customer_review_hides_pkey PRIMARY KEY (review_id);
+
 ALTER TABLE ONLY "public"."booking_request_submission_attempts"
     ADD CONSTRAINT "booking_request_submission_attempts_payment_lifecycle_id_key" UNIQUE ("payment_lifecycle_id");
 
@@ -1088,3 +1097,10 @@ ALTER TABLE public.booking_settlement_receipts ADD CONSTRAINT booking_settlement
 ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_owner_source_fkey FOREIGN KEY(owner_request_notification_id) REFERENCES public.owner_request_notifications(id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_status_source_fkey FOREIGN KEY(request_status_notification_id) REFERENCES public.booking_request_status_notifications(id) ON DELETE RESTRICT;
 ALTER TABLE public.booking_notification_events ADD CONSTRAINT booking_notification_events_history_source_fkey FOREIGN KEY(payment_history_id) REFERENCES public.booking_request_payment_history(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.customer_reviews ADD CONSTRAINT customer_reviews_booking_request_id_fkey FOREIGN KEY (booking_request_id) REFERENCES public.booking_requests(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_reviews ADD CONSTRAINT customer_reviews_booking_confirmation_id_fkey FOREIGN KEY (booking_confirmation_id) REFERENCES public.booking_confirmations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_reviews ADD CONSTRAINT customer_reviews_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.owner_application_cottage_profiles(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_reviews ADD CONSTRAINT customer_reviews_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_review_hides ADD CONSTRAINT customer_review_hides_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.customer_reviews(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_review_hides ADD CONSTRAINT customer_review_hides_administrator_user_id_fkey FOREIGN KEY (administrator_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;

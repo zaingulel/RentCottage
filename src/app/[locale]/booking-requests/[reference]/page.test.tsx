@@ -6,14 +6,23 @@ vi.mock("@/notification/request-notification-status", () => ({
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadRequest, loadConfirmed, loadFinancial, notFound, router } =
-  vi.hoisted(() => ({
-    loadRequest: vi.fn(),
-    loadConfirmed: vi.fn(),
-    loadFinancial: vi.fn(),
-    notFound: vi.fn(),
-    router: { refresh: vi.fn() },
-  }));
+const {
+  loadRequest,
+  loadConfirmed,
+  loadFinancial,
+  loadReview,
+  submitReview,
+  notFound,
+  router,
+} = vi.hoisted(() => ({
+  loadRequest: vi.fn(),
+  loadConfirmed: vi.fn(),
+  loadFinancial: vi.fn(),
+  loadReview: vi.fn(),
+  submitReview: vi.fn(),
+  notFound: vi.fn(),
+  router: { refresh: vi.fn() },
+}));
 
 vi.mock("@/access/request-account-context", () => ({
   requireRequestAccount: vi.fn().mockResolvedValue({
@@ -41,12 +50,23 @@ vi.mock("@/booking-request/request-confirmed-booking-access", () => ({
 vi.mock("@/booking-request/request-booking-financial-view", () => ({
   loadBookingFinancialView: loadFinancial,
 }));
+vi.mock("@/customer-review/request-customer-review", () => ({
+  createRequestCustomerReview: vi.fn().mockResolvedValue({
+    getOwn: loadReview,
+  }),
+}));
+vi.mock("@/customer-review/actions", () => ({
+  submitCustomerReview: submitReview,
+}));
 vi.mock("@/booking-request/lifecycle-actions", () => ({
   actOnBookingRequest: vi.fn(),
 }));
 
 vi.mock("@/components/booking-financial-details", () => ({
   BookingFinancialDetails: () => <div>Retained cancellation</div>,
+}));
+vi.mock("@/components/confirmed-booking-details", () => ({
+  ConfirmedBookingDetails: () => <section>Confirmed booking details</section>,
 }));
 import CustomerBookingRequestPage from "./page";
 
@@ -82,6 +102,7 @@ describe("authenticated Customer Booking Request page", () => {
     vi.clearAllMocks();
     loadConfirmed.mockResolvedValue(null);
     loadFinancial.mockResolvedValue(null);
+    loadReview.mockResolvedValue({ status: "unavailable" });
   });
 
   it("renders a single contact-safe request and withdrawal control in right-to-left Arabic", async () => {
@@ -193,6 +214,30 @@ describe("authenticated Customer Booking Request page", () => {
       screen.queryByText("cannot_accommodate_request", { exact: true }),
     ).not.toBeInTheDocument();
   });
+});
+
+it("keeps confirmed booking details visible and shows authoritative review eligibility", async () => {
+  loadConfirmed.mockResolvedValue({ access: { actorRole: "customer" } });
+  loadFinancial.mockResolvedValue({ lifecycle: { status: "completed" } });
+  loadReview.mockResolvedValue({
+    status: "eligible",
+    reviewExpiresAt: "2026-10-05T10:00:00.000Z",
+  });
+
+  render(
+    await CustomerBookingRequestPage({
+      params: Promise.resolve({
+        locale: "en",
+        reference: request.bookingRequestReference,
+      }),
+    }),
+  );
+
+  expect(screen.getByText("Confirmed booking details")).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "Review this cottage" }),
+  ).toBeVisible();
+  expect(screen.getByText(/Oct 5, 2026/)).toBeVisible();
 });
 
 it("routes retained cancellation to safe history without reopening private access or pending status", async () => {

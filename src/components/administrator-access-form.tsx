@@ -1,12 +1,14 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import {
   signInPlatformAdministrator,
   verifyPlatformAdministratorMfa,
 } from "@/access/actions";
+import { safeAdministratorReturnDestination } from "@/access/return-destination";
 import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 
@@ -27,13 +29,16 @@ type MfaState = {
 
 export function AdministratorAccessForm({
   locale,
+  returnTo,
   reviewHref,
   cottageProfilesHref,
 }: {
   locale: Locale;
+  returnTo?: string;
   reviewHref?: string;
   cottageProfilesHref?: string;
 }) {
+  const router = useRouter();
   const copy = accessMessages[locale];
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -78,6 +83,11 @@ export function AdministratorAccessForm({
     if (result.status === "authenticated") {
       setComplete(true);
       setMessage(copy.administratorReady);
+      const destination = safeAdministratorReturnDestination(locale, returnTo);
+      if (destination) {
+        router.replace(destination);
+        router.refresh();
+      }
     } else {
       if (result.status !== "invalid_code") {
         setMfa(undefined);

@@ -277,3 +277,6 @@ ALTER TABLE public.booking_payout_commands ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_settlement_intents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_settlement_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.booking_settlement_receipts ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.customer_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_review_hides ENABLE ROW LEVEL SECURITY;

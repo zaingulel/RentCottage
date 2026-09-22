@@ -376,7 +376,9 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
       page.getByRole("form", { name: messages.en.cancel }),
     ).toHaveCount(0);
     await expect(
-      page.getByText(lifecycle.en.reviewOpen, { exact: false }),
+      page
+        .getByLabel("Booking lifecycle")
+        .getByText(lifecycle.en.reviewOpen, { exact: false }),
     ).toBeVisible();
     await page.goto("/en/bookings");
     await expect(
