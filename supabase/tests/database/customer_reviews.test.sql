@@ -306,6 +306,80 @@ select is(
   )->>'status',
   'ineligible','a booking without paid confirmation cannot publish a review'
 );
+select is(
+  public.get_customer_review('RC-REQ-0000000000001401'),
+  '{"status":"ineligible"}'::jsonb,
+  'the own-review reader reports a booking without paid confirmation as ineligible'
+);
+reset role;
+
+select pg_temp.seed_completion_booking(
+  ((clock_timestamp() at time zone 'Asia/Baghdad')::date + 1),true,'16'
+);
+select ok(
+  (select public.booking_request_payment_status(requests)='paid-confirmed'
+    from public.booking_requests requests
+    where requests.id='60000000-0000-4000-8000-000000001601')
+  and not exists(
+    select 1 from public.booking_lifecycle_outcomes
+    where booking_request_id='60000000-0000-4000-8000-000000001601'
+  )
+  and not exists(
+    select 1 from public.booking_completion_maturity
+    where booking_request_id='60000000-0000-4000-8000-000000001601'
+  ),
+  'the upcoming fixture is paid-confirmed without completed lifecycle or maturity evidence'
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001602',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001602","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select is(
+  public.get_customer_review('RC-REQ-0000000000001601'),
+  '{"status":"ineligible"}'::jsonb,
+  'a normal paid-confirmed upcoming booking is ineligible without a recovery state'
+);
+reset role;
+
+select pg_temp.seed_completion_booking(
+  ((clock_timestamp() at time zone 'Asia/Baghdad')::date - 3),true,'17'
+);
+insert into public.booking_lifecycle_outcomes(
+  id,booking_request_id,booking_confirmation_id,booking_period_commitment_id,
+  outcome,effective_period_end,recorded_at
+)
+select
+  '89000000-0000-4000-8000-000000001701',requests.id,
+  confirmations.id,commitments.id,'completed',
+  upper(range_merge(commitments.access_ranges)),clock_timestamp()
+from public.booking_requests requests
+join public.booking_confirmations confirmations
+  on confirmations.booking_request_id=requests.id
+join public.cottage_booking_period_commitments commitments
+  on commitments.id=requests.booking_period_commitment_id
+where requests.id='60000000-0000-4000-8000-000000001701';
+select ok(
+  (select public.booking_request_payment_status(requests)='paid-confirmed'
+    from public.booking_requests requests
+    where requests.id='60000000-0000-4000-8000-000000001701')
+  and exists(
+    select 1 from public.booking_lifecycle_outcomes
+    where booking_request_id='60000000-0000-4000-8000-000000001701'
+      and outcome='completed'
+  )
+  and not exists(
+    select 1 from public.booking_completion_maturity
+    where booking_request_id='60000000-0000-4000-8000-000000001701'
+  ),
+  'the recovery fixture has durable completed lifecycle evidence but no maturity row'
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001702',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001702","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select is(
+  public.get_customer_review('RC-REQ-0000000000001701'),
+  '{"status":"unavailable"}'::jsonb,
+  'completed lifecycle evidence with missing maturity remains an unavailable recovery state'
+);
 reset role;
 
 select pg_temp.seed_completion_booking(
@@ -323,12 +397,29 @@ select public.commit_booking_completion(
 reset role;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001502',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001502","role":"authenticated","aal":"aal1"}',true);
+select ok(
+  (
+    select maturity.review_expires_at=outcomes.effective_period_end+interval '14 days'
+      and maturity.review_expires_at<=clock_timestamp()
+    from public.booking_lifecycle_outcomes outcomes
+    join public.booking_completion_maturity maturity
+      on maturity.booking_request_id=outcomes.booking_request_id
+    where outcomes.booking_request_id='60000000-0000-4000-8000-000000001501'
+      and outcomes.outcome='completed'
+  ),
+  'the expired fixture deadline is independently the completed period end plus fourteen days'
+);
 set local role authenticated;
 select is(
   public.submit_customer_review(
     'RC-REQ-0000000000001501',5,'en','Expired review'
   )->>'status',
   'ineligible','late completion assessment never extends the authoritative review deadline'
+);
+select is(
+  public.get_customer_review('RC-REQ-0000000000001501'),
+  '{"status":"ineligible"}'::jsonb,
+  'the own-review reader reports a completed booking after its deadline as ineligible'
 );
 reset role;
 
@@ -386,10 +477,6 @@ update public.cottage_marketplace_listings
 set public_slug='cottage-deadbeefdeadbeefdeadbeefdead1001'
 where profile_id='20000000-0000-4000-8000-000000001001';
 
-insert into auth.users(id,aud,role,phone) values
-  ('10000000-0000-4000-8000-000000001004','authenticated','authenticated','+9647500001004');
-insert into public.account_contexts(user_id,role) values
-  ('10000000-0000-4000-8000-000000001004','customer');
 insert into auth.users(id,aud,role,email,email_confirmed_at) values
   ('10000000-0000-4000-8000-000000003802','authenticated','authenticated','second-review-admin@example.test',clock_timestamp());
 insert into public.account_contexts(user_id,role) values
@@ -404,6 +491,20 @@ select ok(
   )->>'status'='completed'
   and public.is_cottage_publicly_discoverable('20000000-0000-4000-8000-000000001001'),
   'the fixture is authoritatively paid, completed and publicly discoverable before reviews are observed'
+);
+
+select ok(
+  (
+    select maturity.review_expires_at=outcomes.effective_period_end+interval '14 days'
+      and clock_timestamp()>=outcomes.effective_period_end
+      and clock_timestamp()<maturity.review_expires_at
+    from public.booking_lifecycle_outcomes outcomes
+    join public.booking_completion_maturity maturity
+      on maturity.booking_request_id=outcomes.booking_request_id
+    where outcomes.booking_request_id='60000000-0000-4000-8000-000000001001'
+      and outcomes.outcome='completed'
+  ),
+  'the open fixture deadline is independently the completed period end plus fourteen days'
 );
 
 select ok(
@@ -476,6 +577,92 @@ select throws_ok(
 );
 reset role;
 
+create temp table open_review_eligibility_expected as
+select jsonb_build_object(
+  'status','eligible',
+  'reviewExpiresAt',outcomes.effective_period_end+interval '14 days'
+) value
+from public.booking_lifecycle_outcomes outcomes
+where outcomes.booking_request_id='60000000-0000-4000-8000-000000001001'
+  and outcomes.outcome='completed';
+grant select on open_review_eligibility_expected to authenticated;
+
+savepoint customer_review_submit_context_control;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select is(
+  public.get_customer_review('RC-REQ-0000000000001001'),
+  (select value from open_review_eligibility_expected),
+  'the same Customer reads the independently derived open deadline while its account context is present'
+);
+select is(
+  public.submit_customer_review(
+    'RC-REQ-0000000000001001',5,'en','Guarded context control'
+  )->>'status',
+  'submitted','the same Customer can submit while its account context is present'
+);
+reset role;
+rollback to savepoint customer_review_submit_context_control;
+
+savepoint customer_review_submit_missing_context;
+set session_replication_role=replica;
+delete from public.account_contexts
+where user_id='10000000-0000-4000-8000-000000001002';
+set session_replication_role=origin;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.submit_customer_review(
+    'RC-REQ-0000000000001001',5,'en','Missing context attempt'
+  )$$,
+  '42501',null,'review submission denies the same Customer when its account context is missing'
+);
+select throws_ok(
+  $$select public.get_customer_review('RC-REQ-0000000000001001')$$,
+  '42501',null,'the own-review reader denies the same Customer when its account context is missing'
+);
+reset role;
+rollback to savepoint customer_review_submit_missing_context;
+
+savepoint customer_review_phone_confirmation;
+update auth.users
+set phone_confirmed_at=null
+where id='10000000-0000-4000-8000-000000001002';
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.submit_customer_review(
+    'RC-REQ-0000000000001001',5,'en','Unconfirmed phone attempt'
+  )$$,
+  '42501',null,'review submission denies the same Customer when phone confirmation is absent'
+);
+select throws_ok(
+  $$select public.get_customer_review('RC-REQ-0000000000001001')$$,
+  '42501',null,'the own-review reader denies the same Customer when phone confirmation is absent'
+);
+reset role;
+rollback to savepoint customer_review_phone_confirmation;
+
+savepoint customer_review_phone_confirmation_control;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select is(
+  public.get_customer_review('RC-REQ-0000000000001001')->>'status',
+  'eligible','the same Customer can read its eligibility after phone confirmation is restored'
+);
+select is(
+  public.submit_customer_review(
+    'RC-REQ-0000000000001001',5,'en','Restored phone control'
+  )->>'status',
+  'submitted','the same Customer can submit after phone confirmation is restored'
+);
+reset role;
+rollback to savepoint customer_review_phone_confirmation_control;
+
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001003',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001003","role":"authenticated","aal":"aal1"}',true);
 set local role authenticated;
@@ -486,15 +673,6 @@ select throws_ok(
 select throws_ok(
   $$select public.get_customer_review('RC-REQ-0000000000001001')$$,
   '42501',null,'another Customer cannot read an unrelated review state'
-);
-reset role;
-
-select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001004',true);
-select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001004","role":"authenticated","aal":"aal1"}',true);
-set local role authenticated;
-select throws_ok(
-  $$select public.submit_customer_review('RC-REQ-0000000000001001',5,'en','Safe')$$,
-  '42501',null,'review submission requires a phone-confirmed identity'
 );
 reset role;
 
@@ -582,6 +760,8 @@ update public.cottage_marketplace_listings
 set state='published'
 where profile_id='20000000-0000-4000-8000-000000001001';
 
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
 set local role anon;
 select ok(
   (
@@ -599,6 +779,40 @@ select ok(
     from result
   ),
   'anonymous public review reading returns only the admitted public projection'
+);
+reset role;
+
+update public.cottage_marketplace_listings
+set state='paused'
+where profile_id='20000000-0000-4000-8000-000000001001';
+set local role anon;
+select is(
+  public.list_public_customer_reviews(
+    'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
+  ),
+  '{"status":"not-found"}'::jsonb,
+  'a paused known listing is not found and exposes no public review payload'
+);
+reset role;
+
+update public.cottage_marketplace_listings
+set state='published'
+where profile_id='20000000-0000-4000-8000-000000001001';
+set local role anon;
+select ok(
+  (
+    with result as (
+      select public.list_public_customer_reviews(
+        'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
+      ) value
+    )
+    select value->>'status'='success'
+      and jsonb_array_length(value->'items')=1
+      and (select array_agg(key order by key) from jsonb_object_keys(value#>'{items,0}') key)
+        =array['originalBody','originalLanguage','rating','reviewId','submittedAt']
+    from result
+  ),
+  'restoring the listing returns the unchanged minimal public review projection'
 );
 reset role;
 
@@ -629,6 +843,12 @@ from public.customer_reviews reviews
 where reviews.booking_request_id='60000000-0000-4000-8000-000000001001';
 grant select on own_review_expected to authenticated;
 
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',
+  true
+);
 set local role authenticated;
 select is(
   public.get_customer_review('RC-REQ-0000000000001001'),
@@ -637,9 +857,33 @@ select is(
 );
 reset role;
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal2"}',
+  true
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.list_administrator_customer_reviews(null,null,50)$$,
+  '42501',null,'Customer AAL2 cannot list private administrator review facts'
+);
+select throws_ok(
+  format(
+    'select public.hide_customer_review(%L,%L)',
+    (select value->>'reviewId' from own_review_expected),'Customer AAL2 attempt'
+  ),
+  '42501',null,'Customer AAL2 cannot hide a real review'
+);
+reset role;
+
 update public.account_contexts
 set role='cottage_owner',owner_approval_state='approved'
 where user_id='10000000-0000-4000-8000-000000001002';
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',
+  true
+);
 set local role authenticated;
 select ok(
   public.submit_customer_review(
@@ -647,6 +891,25 @@ select ok(
   )->>'status'='duplicate'
   and public.get_customer_review('RC-REQ-0000000000001001')->>'status'='submitted',
   'an Owner Account retains Customer capability for another Cottage Owners booking'
+);
+reset role;
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal2"}',
+  true
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.list_administrator_customer_reviews(null,null,50)$$,
+  '42501',null,'Cottage Owner AAL2 cannot list private administrator review facts'
+);
+select throws_ok(
+  format(
+    'select public.hide_customer_review(%L,%L)',
+    (select value->>'reviewId' from own_review_expected),'Cottage Owner AAL2 attempt'
+  ),
+  '42501',null,'Cottage Owner AAL2 cannot hide a real review'
 );
 reset role;
 

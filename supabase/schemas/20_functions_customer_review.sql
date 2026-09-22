@@ -33,7 +33,7 @@ begin
   where user_id=actor;
 
   if actor is null
-    or actor_context.role not in ('customer','cottage_owner')
+    or (actor_context.role in ('customer','cottage_owner')) is not true
     or not exists(
       select 1 from auth.users users
       where users.id=actor and users.phone_confirmed_at is not null
@@ -143,7 +143,7 @@ begin
   from public.account_contexts
   where user_id=actor;
   if actor is null
-    or actor_context.role not in ('customer','cottage_owner')
+    or (actor_context.role in ('customer','cottage_owner')) is not true
     or not exists(
       select 1 from auth.users users
       where users.id=actor and users.phone_confirmed_at is not null
@@ -194,6 +194,13 @@ begin
     );
   end if;
   if eligibility->>'status'='unavailable' then
+    if not exists(
+      select 1 from public.booking_lifecycle_outcomes outcomes
+      where outcomes.booking_request_id=request.id
+        and outcomes.outcome='completed'
+    ) then
+      return jsonb_build_object('status','ineligible');
+    end if;
     return jsonb_build_object('status','unavailable');
   end if;
   return jsonb_build_object('status','ineligible');
