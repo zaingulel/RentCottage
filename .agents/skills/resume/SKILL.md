@@ -96,7 +96,7 @@ disjoint.
   framework the outcome did not name is a scope change and goes back to the owner before it is built.
 - Discovery wider than a couple of files, while planning or building, goes to the `explorer` seat, so its
   conclusion reaches the main thread and its file dumps do not.
-- Every coherent claim gets one construction mode from `docs/engineering/testing-strategy.md`.
+- Every coherent claim gets one construction mode from `docs/TESTING-STRATEGY.md`.
 
 ## 5. Build
 

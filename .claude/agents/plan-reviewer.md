@@ -23,7 +23,7 @@ the code. You are not the diff reviewer: nothing has been built yet.
    and any parser, state machine, or general framework the outcome did not name.
 3. **Coherence**: internally consistent and consistent with the contracts it touches — each claim's observer
    discriminates it, its plausible mutation rejects the credible wrong behaviour, and nothing contradicts an
-   `AGENTS.md` hard constraint, a scoped rule, or the mode admissions in `docs/engineering/testing-strategy.md`.
+   `AGENTS.md` hard constraint, a scoped rule, or the mode admissions in `docs/TESTING-STRATEGY.md`.
 4. **Security-privacy**: does the plan widen authentication, authorization, payment, personal-data, Row Level Security, provider-webhook, credential custody, public/private exposure
    guarantees, or an injection boundary; read persisted or external data without hostile-input handling in the
    same slice; or need a `security-reviewer` pass it never names?

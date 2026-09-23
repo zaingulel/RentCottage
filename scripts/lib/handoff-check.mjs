@@ -5,7 +5,7 @@
 // and pins that it passes. The guard checks the lines that make a handoff bounded and
 // verifiable, not the prose around them:
 //   1. exactly one non-empty line for each required field;
-//   2. a construction mode from docs/engineering/testing-strategy.md;
+//   2. a construction mode from docs/TESTING-STRATEGY.md;
 //   3. a real focused verification command, never a placeholder;
 //   4. no unfilled `{{SLOT}}` anywhere;
 //   5. no instruction to self-verify mutation-sensitivity by revert (that cycle is the

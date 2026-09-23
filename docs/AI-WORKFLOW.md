@@ -135,7 +135,7 @@ The diagram is the whole path from a card to a merged commit. In words:
   remembers. Every green slice is committed on the job branch, so a crash costs at most the slice in progress.
 - **Verification before review.** Visual work is driven live against the correct Next.js or Worker runtime and a
   current screenshot is shown in chat. Database, browser, payment, and provider work uses the preparation and
-  observer rules in `docs/engineering/testing-strategy.md`.
+  observer rules in `docs/TESTING-STRATEGY.md`.
 - **Review in two layers.** One fresh review of the final tree before the pull request opens, by tier. Documents
   (product and engineering documentation plus `CONTEXT.md`) are reviewed by the session itself; the owner is their reader. Code and agent
   instruction, the manual, the rules, the skills and the seat files included, get the `reviewer` charter run by the
@@ -280,7 +280,7 @@ custom code, a hook beats a script, a sentence beats a hook.
 
 ## The evidence bar
 
-`docs/engineering/testing-strategy.md` owns this. Every coherent claim in a change gets one construction mode:
+`docs/TESTING-STRATEGY.md` owns this. Every coherent claim in a change gets one construction mode:
 
 | Mode | When | What it requires |
 |---|---|---|
@@ -320,7 +320,7 @@ authority.
 | What is planned, and in what state | The GitHub Project board |
 | What has shipped | `git log` and passing checks, never a prose claim |
 | What is in flight | A branch and its draft pull request; its body's "Not done" section is the handoff |
-| What the rules are | `AGENTS.md`, the scoped rules, `CONTEXT.md`, `docs/engineering/testing-strategy.md`, `docs/engineering/coding-standards.md` |
+| What the rules are | `AGENTS.md`, the scoped rules, `CONTEXT.md`, `docs/TESTING-STRATEGY.md`, `docs/CODING-STANDARDS.md` |
 | What happened | Git history |
 | What the code means, in prose | `CONTEXT.md`, accepted architecture decisions, `docs/agents/domain.md`, and the applicable product and engineering authorities |
 

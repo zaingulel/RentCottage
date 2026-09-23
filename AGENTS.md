@@ -11,7 +11,7 @@ before a browser run (`.codex/rules/playwright.rules`). Skills are shared in `.a
 mattpocock/skills at commit 5b15a47f2d7150f545fbcacbfe381787fc0230dc in `.agents/upstream/mattpocock-skills/`, with
 its licence; they are never edited in place, an update replaces them whole, and Codex invokes any skill as
 `$<name>`. The tracker and triage vocabulary those copies expect to have been provided is
-[docs/agents/issue-tracker.md](docs/agents/issue-tracker.md). The root checkout is the integration checkout: it stays on `main`,
+[docs/ISSUE-TRACKER.md](docs/ISSUE-TRACKER.md). The root checkout is the integration checkout: it stays on `main`,
 and nothing is edited, branched, or committed there; the git guard refuses the branching and committing half. Resume
 fetches before intake, reads the fetched manual and `resume`/`closeout` instructions, and uses closeout's safe
 procedure to advance the actual clean idle `main` checkout before board evidence or decisions. A topic, dirty,
@@ -79,7 +79,7 @@ Read [CONTEXT.md](CONTEXT.md), [docs/agents/domain.md](docs/agents/domain.md), a
 before changing a domain seam. Follow [ADR 0002](docs/adr/0002-database-integrity-application-orchestration.md)
 for the database/application boundary. Change declared database objects under `supabase/schemas/`, generate and
 inspect the migration, and land both together. Preserve the product preparation and cleanup rules in
-[docs/engineering/testing-strategy.md](docs/engineering/testing-strategy.md).
+[docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md).
 
 ## Owner gates
 
@@ -120,8 +120,8 @@ semantics. Competitors are interface prior art only and never override RentCotta
 
 ## Coding standards and the executed test bar
 
-[docs/engineering/coding-standards.md](docs/engineering/coding-standards.md) owns how first-party code is written.
-[docs/engineering/testing-strategy.md](docs/engineering/testing-strategy.md) owns the evidence every claim needs, run through
+[docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) owns how first-party code is written.
+[docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) owns the evidence every claim needs, run through
 `node scripts/run-log.mjs` so the pull request body quotes exit codes a script wrote.
 
 ## Review and visual verification

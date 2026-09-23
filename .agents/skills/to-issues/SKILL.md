@@ -15,7 +15,7 @@ for work an approved job surfaces and genuinely cannot finish under the "Owner g
 card the inactive documentation triage routine may create only after its external authority is configured. An
 exception skips the Step 4 approval gate, not the native-link, board-field, or verification rules.
 
-Read [`docs/agents/issue-tracker.md`](../../../docs/agents/issue-tracker.md) before drafting or publishing. It owns
+Read [`docs/ISSUE-TRACKER.md`](../../../docs/ISSUE-TRACKER.md) before drafting or publishing. It owns
 the tracker commands, native dependency rules, Project 4 fields, special Booking and Payment acceptance shape, and
 authoritative read-back checks.
 
@@ -162,7 +162,7 @@ Choose exactly one honest outcome:
 </issue-template>
 
 For a new or substantially rewritten Booking or Payment story, use the acceptance structure required by
-`docs/agents/issue-tracker.md`. Testing mode, observers, commands, and mutations belong to the architect's later
+`docs/ISSUE-TRACKER.md`. Testing mode, observers, commands, and mutations belong to the architect's later
 plan unless the owner or normative reference already fixed them.
 
 Do not close or edit a source or parent Epic unless the owner approved that exact mutation.

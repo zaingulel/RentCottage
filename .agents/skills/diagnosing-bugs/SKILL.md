@@ -87,7 +87,7 @@ second; record redacted evidence on the active board issue.
 ## Phase 5: Fix + regression test
 
 Write the regression test before the fix, per `/tdd`, but only at a **correct seam**: one exercising the real bug
-pattern at the real interface and at the `docs/engineering/testing-strategy.md` bar). A security, privacy or
+pattern at the real interface and at the `docs/TESTING-STRATEGY.md` bar). A security, privacy or
 honesty-invariant fix needs a named anti-regression observer in the same change.
 
 With a correct seam: turn the minimised repro into a failing test, watch it fail, fix, watch it pass, re-run the

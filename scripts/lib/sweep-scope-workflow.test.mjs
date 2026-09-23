@@ -7,7 +7,7 @@
 // pull request's tree, and passes at once off a sweep or triage branch, which is why the lock's own
 // shape is pinned here too. Tracked bytes do not prove a maintenance routine, schedule, required
 // check, or publication environment is active. Each assertion goes red if the corresponding line is
-// removed (`docs/engineering/testing-strategy.md`, a deterministic guard over the committed bytes).
+// removed (`docs/TESTING-STRATEGY.md`, a deterministic guard over the committed bytes).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

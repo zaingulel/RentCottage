@@ -3,7 +3,7 @@ name: tdd
 description: The test-first method for building a feature or fixing a bug at our bar: red-green in vertical slices, deterministic where possible, mutation-proven, non-tautological, tested at the real interface. The builder reads this before writing tests; invoke "/tdd" to apply it directly.
 ---
 
-This is the METHOD; the acceptance BAR lives in `docs/engineering/testing-strategy.md`, which owns WHICH evidence a claim
+This is the METHOD; the acceptance BAR lives in `docs/TESTING-STRATEGY.md`, which owns WHICH evidence a claim
 needs. In PLANNING it is a design lens: pick the seam, name the failing test and where its expected value comes
 from independently, and treat hard-to-test as a design smell. In BUILDING it is the loop below. In REVIEW it is an
 adversarial audit: attack each new test against the anti-patterns and confirm it is mutation-proven.

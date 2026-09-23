@@ -38,7 +38,7 @@ the full migration chain. The hosted preview project named by `SUPABASE_PROJECT_
 other non-local database is on the migration chain. The preview workflow validates the configured secret and passes
 the project reference to the Worker, but does not apply migrations. This list records the decision and does not
 claim independently inspected hosted state. Update it before any new persistent database starts receiving
-migrations. The [testing strategy's retirement rule](engineering/testing-strategy.md) points here for the
+migrations. The [testing strategy's retirement rule](TESTING-STRATEGY.md) points here for the
 authoritative inventory and weekly check.
 
 ## Refresh to completed merged work
