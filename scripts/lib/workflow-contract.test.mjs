@@ -280,19 +280,24 @@ test("card size is judged by the owner and epics are never picked", () => {
   );
   assert.match(
     resume,
-    /more than three builder slices,[\s\S]{0,20}envelope above about[\s\S]{0,20}1,500 changed lines, goes to the owner[\s\S]{0,20}as a split proposal/,
-    "resume must send a plan past the split threshold to the owner",
+    /never\s+split\s+again\s+on\s+a\s+session's\s+own\s+judgment/,
+    "resume must never re-split a split card on a session's own judgment",
   );
   assert.match(
     resume,
-    /builder handoff's stop condition carries no numeric line cap/,
-    "resume must forbid a numeric line cap in builder handoffs",
+    /only\s+the\s+owner\s+starts\s+another\s+split/,
+    "resume must leave any further split to the owner",
+  );
+  assert.match(
+    toIssues,
+    /on\s+a\s+line\s+count;\s+after\s+work-pick\s+the\s+only\s+split\s+is\s+the\s+plan-time\s+finding/,
+    "to-issues must forbid any later size gate but the plan-time finding",
   );
 
   assert.match(
     read(".agents/templates/planner-handoff.md"),
-    /architect judges too big,[\s\S]{0,20}plan past the split threshold[\s\S]{0,120}goes to the[\s\S]{0,20}owner as a split proposal and is never narrowed or finished inline/,
-    "the planner handoff must route an oversized card to the owner",
+    /more\s+than\s+one\s+independently\s+demonstrable\s+outcome\s+goes\s+to\s+the\s+owner\s+as\s+a\s+split\s+proposal\s+under/,
+    "the planner handoff must route a multi-outcome card to the owner",
   );
 
   for (const path of [
@@ -308,7 +313,102 @@ test("card size is judged by the owner and epics are never picked", () => {
 
   assert.match(
     read(".claude/templates/builder-handoff.md"),
-    /stop condition never carries a numeric line cap: the builder charter's "roughly doubles the envelope" is[\s\S]{0,20}only size stop/,
-    "the builder handoff template must forbid a numeric line cap",
+    /a\s+builder\s+stops\s+for\s+a\s+file\s+or\s+step\s+the\s+plan\s+did\s+not\s+name,\s+never/,
+    "the builder handoff template must stop only for an unnamed file or step",
   );
+});
+
+test("the factory never gates on line counts, ends review loops in one more round, and binds approvals to their question", () => {
+  // These assertions come from card #365's acceptance criteria.
+  const read = (path) => readFileSync(resolve(ROOT, path), "utf8");
+  const phrase = (text) => new RegExp(text.split(" ").join("\\s+"));
+  const builders = [
+    ".claude/agents/builder.md",
+    ".claude/agents/builder-lite.md",
+    ".claude/agents/builder-max.md",
+    ".codex/agents/builder.toml",
+    ".codex/agents/builder-lite.toml",
+    ".codex/agents/builder-max.toml",
+  ];
+  const architects = [
+    ".claude/agents/architect.md",
+    ".codex/agents/architect.toml",
+  ];
+
+  for (const path of [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".agents/skills/resume/SKILL.md",
+    ".agents/skills/to-issues/SKILL.md",
+    ".agents/templates/planner-handoff.md",
+    ".claude/templates/builder-handoff.md",
+    ...architects,
+    ...builders,
+  ]) {
+    assert.doesNotMatch(
+      read(path),
+      /size envelope|rough line count|roughly doubles|1,500 changed lines/,
+      `${path} must not gate work on a line count`,
+    );
+  }
+
+  const resume = read(".agents/skills/resume/SKILL.md");
+  for (const text of [
+    "Commit green work before any stop, handoff, replan or split proposal",
+    "or when that round still does not converge",
+    "still produce true findings, new or repeated, judge them",
+    "If each is bounded and verifiable, run one more round that fixes all of them",
+    "Bring the owner the choice, with a recommendation, only when a finding needs an unsettled design, owner judgment or evidence that cannot be bounded",
+  ]) {
+    assert.match(resume, phrase(text), `resume must carry "${text}"`);
+  }
+  assert.doesNotMatch(
+    resume,
+    /still produce new\s+true findings/,
+    "resume must not gate the review loop on new findings only, dropping repeated ones",
+  );
+
+  const agents = read("AGENTS.md");
+  for (const text of [
+    "An approval covers only the question it answered",
+    "never grants approval",
+    "reread the owner's latest messages before acting on one",
+    "an approval whose question is no longer in view is asked again",
+    "dispatched by its seat name; a generic, default or unnamed role is never dispatched",
+  ]) {
+    assert.match(agents, phrase(text), `AGENTS.md must carry "${text}"`);
+  }
+  const compact = agents.split(/^## Compact instructions$/m)[1];
+  assert.ok(compact, "AGENTS.md must carry a Compact instructions section");
+  assert.match(
+    compact.split(/^## /m)[0],
+    phrase("quoted word for word with the question it answered"),
+    "compaction must keep each owner approval with its question",
+  );
+  assert.doesNotMatch(
+    read("CLAUDE.md"),
+    /Compact instructions/,
+    "CLAUDE.md must leave compact instructions to AGENTS.md",
+  );
+
+  for (const path of builders) {
+    for (const text of [
+      "its line count never stops it",
+      "No hook sees a Codex handoff, so this check is yours on both runtimes",
+      "Before any edit, check that the handoff carries every labelled line of",
+      "from `Slice` to `Stop condition`, each with a value and no `{{SLOT}}` left",
+      "stop and report which without editing anything",
+      "A build that needs a file or step the plan did not name stops and reports",
+    ]) {
+      assert.match(read(path), phrase(text), `${path} must carry "${text}"`);
+    }
+  }
+  for (const path of architects) {
+    for (const text of [
+      "never a line estimate",
+      "Never propose a split for size",
+    ]) {
+      assert.match(read(path), phrase(text), `${path} must carry "${text}"`);
+    }
+  }
 });

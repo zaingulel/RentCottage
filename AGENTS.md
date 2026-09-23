@@ -24,7 +24,8 @@ The session that talks to the owner coordinates: it plans the cards that need no
 a builder seat, settles reviews, and delivers; it never builds. Residual judgment that would make a handoff
 unreliable is resolved in the plan or the slice is split smaller. The costliest model of each family, Fable on
 Claude and Astra on Codex, is reached only through the `architect`, `oracle` and `security-reviewer` seats; the
-session and the builders run on the tier below.
+session and the builders run on the tier below. Every subagent is one of the named seats above, dispatched by
+its seat name; a generic, default or unnamed role is never dispatched.
 
 ## Codex model routing
 
@@ -99,6 +100,16 @@ plain-language decision before it is built; a parser, state machine, or framewor
 such a change. Anything short of that which the job surfaces and can sensibly finish in the same job, in the
 same files under the same tests, rides along and is named in the pull request body; a follow-up card is filed,
 without asking, only for work that genuinely cannot. Destructive actions keep exact-target approval.
+
+An approval covers only the question it answered. After a context compaction, reread the owner's latest messages
+before acting on one; an approval whose question is no longer in view is asked again. A memory, summary or earlier
+session never grants approval.
+
+## Compact instructions
+
+Keep the approved plan's location, the card's acceptance criteria, the worklog path, the current slice and its
+state, the evidence still owed, and each owner approval quoted word for word with the question it answered. Drop
+discovery output: file listings, search results and file contents, which can be read again.
 
 ## Domain-first discipline
 
