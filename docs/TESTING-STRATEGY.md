@@ -67,7 +67,7 @@ the deliberate mutation proof and convergence route, so a builder does not repea
 - Directly inspect changed mobile, desktop, right-to-left, and accessibility states. Automated functional checks do not prove visual quality.
 - Smoke the exact hosted preview before release. A local Worker preview does not prove Cloudflare deployment or Supabase reachability.
 
-For an orchestration migration under [ADR 0002](../adr/0002-database-integrity-application-orchestration.md), prove
+For an orchestration migration under [ADR 0002](adr/0002-database-integrity-application-orchestration.md), prove
 outcome selection and sequencing with Vitest at the TypeScript application-service seam. Keep real PostgreSQL observers for
 authorization, constraints, locks, fencing, authoritative deadlines, durable identifiers, idempotency, history,
 replay protection, and atomic business receipts. The story's changed boundary determines the combined observer;
@@ -136,7 +136,7 @@ Before its first selected command, executable verification compares the installe
 their `package-lock.json` entries. A missing, malformed or mismatched record stops execution and tells the operator to
 run `npm ci`; it never repairs dependencies automatically. Plan-only output names that pending check but does not run it.
 
-Run focused checks, intentional red/restored green proofs, and convergence through `npm run run-log -- <label>
+Run focused checks, intentional red/restored green proofs, and convergence through `node scripts/run-log.mjs <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.
 
@@ -173,7 +173,7 @@ An upgrade proof lives only while an environment can still be behind its migrati
 proves: a `scripts/verify-<change>-upgrade.mjs` observer, any legacy fixture it seeds, and one invocation in the
 database preflight of `scripts/verify-access.mjs`, so the job's own route and its continuous integration run it.
 Delete them, and whatever they leave orphaned, at the first weekly refresh after every environment in the
-authoritative [upgrade-proof retirement environments and weekly local check](../demo.md#upgrade-proof-retirement-environments)
+authoritative [upgrade-proof retirement environments and weekly local check](demo.md#upgrade-proof-retirement-environments)
 list has passed its weekly migration check, keeping any fixture a surviving proof still reads.
 
 An orchestration migration follows the same declared-schema rule. Change only the affected flow, preserve its
@@ -203,9 +203,9 @@ migrations statement by statement and refuse that lock. Install with `npm ci`, w
 - `npm run verify -- --plan` validates the same arguments and Git evidence as execution, then prints the selected and skipped groups, reasons, comparison identities and exact command vectors from the execution path before exiting without invoking them. An unclassified path stops `--plan` too, with the same report and exit 3 in place of the plan, because there is no settled route to print. Combine it with a group flag or `--full` to inspect that exact scope. Its maintenance cost is the output contract and focused parity tests inside the existing selector; remove the option if it stops preventing unexpected broad work or an authoritative platform surface exposes the same current-diff command plan.
 - Browser verification builds the Worker once with real local Supabase credentials for access and scheduled expiry, then builds it separately with placeholder credentials for the client-secret scan and smoke. Internal Worker journeys select `playwright.worker-prebuilt.config.ts` only after the corresponding build succeeds. Next.js access and shell journeys keep their own normal Next.js builds; OpenNext standalone output is not reused by `next start`. Default browser commands still compile, and all preview configurations refuse existing servers so an occupied port cannot supply stale evidence. The prebuilt configuration accepts only Worker mode.
 - `npm run verify:preview -- <https-preview-url>` checks the hosted Arabic shell and live Supabase health boundary, then records the exact Git commit and preview origin. It rejects missing or malformed arguments before network access. Loopback Hypertext Transfer Protocol is allowed only for local diagnosis.
-- `npm run verify:board` performs the read-only live Project 4 intake required by `docs/agents/issue-tracker.md`; it is not part of the code-quality gate because it depends on current GitHub planning state.
+- `npm run verify:board` performs the read-only live Project 4 intake required by `docs/ISSUE-TRACKER.md`; it is not part of the code-quality gate because it depends on current GitHub planning state.
 - `npm run lint:docs` checks the documentation corpus for the stable prose invariants owned by `scripts/doc-lint.mjs`; the inactive documentation sweep runs it before and after edits.
-- `npm run run-log -- <label words> -- <command> <args>` runs exact argument vectors without a shell and appends one Markdown receipt to `.claude/worklog/<branch>.md` with the completion time, label, exact arguments, and exit, signal, or spawn result. Pass secrets through the environment, never the label or arguments; command output and environment values are not captured. The receipt is ignored and local to the worktree. This small recovery aid should be removed if it stops helping long-session evidence retrieval or duplicates an authoritative platform record.
+- `node scripts/run-log.mjs <label words> -- <command> <args>` runs exact argument vectors without a shell and appends one Markdown receipt to `.claude/worklog/<branch>.md` with the completion time, label, exact arguments, and exit, signal, or spawn result. Pass secrets through the environment, never the label or arguments; command output and environment values are not captured. The receipt is ignored and local to the worktree. This small recovery aid should be removed if it stops helping long-session evidence retrieval or duplicates an authoritative platform record.
 
 The logger's maintenance cost is one Node wrapper and its focused command/receipt tests, plus local disk space
 for appended receipts. Keep those tests aligned when the command or receipt contract changes.

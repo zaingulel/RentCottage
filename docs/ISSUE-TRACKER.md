@@ -53,14 +53,14 @@ Use this compact structure for each new or substantially rewritten Booking or Pa
 ```
 
 The architect selects the construction mode and observers under
-[`docs/engineering/testing-strategy.md`](../engineering/testing-strategy.md). Select evidence from the story's actual
+[`docs/TESTING-STRATEGY.md`](TESTING-STRATEGY.md). Select evidence from the story's actual
 claims. For new or rewritten Booking or Payment stories, this replaces the all-evidence-class template used for
 [#34](https://github.com/zaingulel/RentCottage/issues/34) children; existing issue-specific acceptance remains
 binding.
 
 ## Project status contract
 
-The board is GitHub Project 4. [`scripts/lib/board-config.mjs`](../../scripts/lib/board-config.mjs) is the single
+The board is GitHub Project 4. [`scripts/lib/board-config.mjs`](../scripts/lib/board-config.mjs) is the single
 home for its strings: the project identity, the Status columns, the columns work is picked from, the terminal
 column, and the `Workstream` routing field with its approved options. A rename or a new option is one edit
 there, except that renaming `Backlog` or `Done` also means editing the two Project automations below that

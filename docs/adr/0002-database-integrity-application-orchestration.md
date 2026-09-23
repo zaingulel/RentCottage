@@ -51,7 +51,7 @@ move its multi-step outcome selection to an application service while retaining 
 validations, and mutations in the Integrity Core.
 
 Future database changes continue to follow the declared-schema and migration procedure in the
-[testing strategy](../engineering/testing-strategy.md#declared-schema).
+[testing strategy](../TESTING-STRATEGY.md#declared-schema).
 
 ## Consequences
 

@@ -40,7 +40,7 @@ routine control becomes a card rather than a repair.
 
 Cards use the `to-issues` skill's current body shape, the configured Project 4 Workstream, native dependency and
 parent links, and `Backlog` status. Booking or Payment work uses the acceptance structure in
-`docs/agents/issue-tracker.md`. The routine may create a card only when its activation authority explicitly allows
+`docs/ISSUE-TRACKER.md`. The routine may create a card only when its activation authority explicitly allows
 tracker writes and the available provider supports authoritative issue and Project read-back. Otherwise it reports
 the proposed card for a local owner session to publish.
 

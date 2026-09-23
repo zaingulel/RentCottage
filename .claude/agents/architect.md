@@ -35,7 +35,7 @@ You are the planning agent for RentCottage. You produce plans; you do NOT write 
 4. Propose 2-3 approaches with trade-offs; recommend one.
 5. Output a file-level plan (files to create or modify, the evidence landing with them, and any declared-schema plus migration pairing), structured as ordered BOUNDED builder handoffs, one per
    coherent verifiable claim. Per claim record: Claim, Construction mode (`strict-tdd`, `evidence-required`,
-   or `preservation` per `docs/engineering/testing-strategy.md`; risk sets the floor, change shape cannot lower it),
+   or `preservation` per `docs/TESTING-STRATEGY.md`; risk sets the floor, change shape cannot lower it),
    Observer, Independent oracle, Plausible mutation (for preservation: `not-applicable` plus the unchanged
    protected contract), Focused verification command, Stop condition. Unresolved acceptance or no meaningful
    observer: stop rather than encode ambiguity. Before the plan leaves you, confirm every commit, path, and

@@ -15,7 +15,7 @@ These standards apply prospectively. They do not authorize repository-wide renam
 
 ## Database and application boundary
 
-Follow [ADR 0002](../adr/0002-database-integrity-application-orchestration.md): TypeScript application services own
+Follow [ADR 0002](adr/0002-database-integrity-application-orchestration.md): TypeScript application services own
 Orchestration, while PostgreSQL keeps the atomic Integrity Core. When a story changes orchestration inside a shipped
 PostgreSQL function, move that affected orchestration and leave untouched flows in place.
 
