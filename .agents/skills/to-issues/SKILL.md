@@ -51,8 +51,8 @@ seams, tests, migrations/providers, and verification capacity.
 Size signals, judged once by the owner at Step 4, apply to a single captured idea as much as to a breakdown: the
 outcome fits one sentence a reviewer could demonstrate, and more than five distinct outcome or invariant
 statements, checkbox or bullet, is a signal to make the work a `type:epic` parent with native child slices. No
-later seat stops, replans or refuses work on these signals; after work-pick the only size gate is the plan's, in
-the `resume` skill's Plan section. A `type:epic` parent holds no acceptance criteria of its own; any whole-journey
+later seat stops, replans, splits or refuses work on these signals or on a line count; after work-pick the only
+split is the plan-time finding in the `resume` skill's Plan section. A `type:epic` parent holds no acceptance criteria of its own; any whole-journey
 or end-to-end check becomes its last child, blocked by the others, so the parent closes when its children do.
 
 ### 4. Quiz the owner

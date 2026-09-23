@@ -87,12 +87,13 @@ disjoint.
   design choices still open after work-pick gets an `architect` plan. Everything else gets a short plan in the
   pull request body.
 - Every `architect` dispatch is a filled copy of `.agents/templates/planner-handoff.md`.
-- A plan states its size envelope. A plan needing more than three builder slices, or an envelope above about
-  1,500 changed lines, goes to the owner once as a split proposal under the owner gates in `AGENTS.md`, as does
-  an architect's finding that the card is too big; the session never narrows such a plan inline or merges slices
-  to fit. A builder handoff's stop condition carries no numeric line cap: the builder charter's "roughly doubles
-  the envelope" is the only size stop. A parser, state machine, or general framework the outcome did not name is
-  a scope change and goes back to the owner before it is built.
+- A plan names its scope: the files each slice changes and the claim each slice proves, never a line estimate.
+  Size is the owner's judgment before work-pick, through the `to-issues` size signals; after work-pick no seat
+  splits, stops or replans work for its estimated or actual size. An architect's finding that the card holds more
+  than one independently demonstrable outcome goes to the owner as a split proposal before any build, and the
+  session never narrows such a plan inline or merges slices to fit. A card that came out of a split is never split
+  again on a session's own judgment; only the owner starts another split. A parser, state machine, or general
+  framework the outcome did not name is a scope change and goes back to the owner before it is built.
 - Discovery wider than a couple of files, while planning or building, goes to the `explorer` seat, so its
   conclusion reaches the main thread and its file dumps do not.
 - Every coherent claim gets one construction mode from `docs/engineering/testing-strategy.md`.
@@ -103,12 +104,15 @@ disjoint.
   the session never builds (AGENTS.md, Runtime notes). Builders never run the full suite, never commit.
 - Commit on the job branch after every green slice. Uncommitted files survive a crash but not a stray checkout,
   and the next session reads the branch, not the worktree, to see what was already green. A local commit needs
-  no authorisation; only the push does.
+  no authorisation; only the push does. Commit green work before any stop, handoff, replan or split proposal as
+  well, so nothing green waits uncommitted in the worktree.
 - Wrap every executed check in `node scripts/run-log.mjs <label words> -- <command>` (plain unquoted label,
   then a bare `--`) so the exit code is recorded by a script, not asserted: focused tests, the one executed mutation per claim (red, restore, green), lint,
   the focused checks and applicable convergence commands. The log lives at `.claude/worklog/<branch>.md`.
-- After two repair-and-re-review cycles that still produce new true findings, stop and replan or split. Findings
-  are never ignored; the work is restructured.
+- When two repair-and-re-review cycles still produce new true findings, judge them. If each is bounded and
+  verifiable, run one more round that fixes all of them. Bring the owner the choice, with a recommendation, only
+  when a finding needs an unsettled design, owner judgment or evidence that cannot be bounded, or when that round
+  still does not converge. Findings are never ignored.
 - When a declared database object changes, edit `supabase/schemas/`, generate and inspect the matching migration,
   and commit them together. When Next.js behaviour changes, read the installed version guide first.
 
@@ -197,8 +201,7 @@ either repository spends from it, and once it is exhausted both record `UNAVAILA
 the shape of the rule is one policy stated in both manuals, and a change to it lands in both: risk and
 uncertainty override category and line count, a skip is neither `UNAVAILABLE` nor a clean review, the allowance
 is read before a request, reviews are requested by hand, and the sequence is draft → Greptile → ready → CI. What
-each repository sends to Greptile is its own list: RentCottage's section 6 tiers here and Flowgauge's own
-selection rules. CI enforces draft versus ready, not the earlier review; the session verifies that
+each repository sends to Greptile is its own list, in section 6 of its own `resume` skill. CI enforces draft versus ready, not the earlier review; the session verifies that
 evidence before marking ready. Provider references: [manual-only configuration](https://www.greptile.com/docs/code-review/greptile-json-reference)
 and [draft requests](https://www.greptile.com/docs/code-review/tips-recipes).
 

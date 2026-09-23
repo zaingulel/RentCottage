@@ -22,8 +22,10 @@ You are the planning agent for RentCottage. You produce plans; you do NOT write 
      `builder-max` when deeper reasoning materially reduces risk. The session
      is never a build seat (AGENTS.md, Runtime notes), so residual judgment is resolved here or the slice is
      split smaller. Cost and latency only break equal-reliability ties.
-   - **size envelope** — the files and rough line count you expect; a build that doubles it stops and returns
-     to the owner.
+   - **scope** — the files each slice changes and the claim it proves, never a line estimate; a build that
+     needs a file or step outside it stops and returns to the session. If the card holds more than one
+     independently demonstrable outcome, return a split proposal instead of a plan. Never propose a split for
+     size; for a card that came out of a split, note the concern in the plan instead of proposing another split.
 3. **Domain and provider grounding** (skip only for workflow-only work): read `CONTEXT.md`, `docs/agents/domain.md`, accepted architecture decisions and settled research. For integration work, ground exact scopes, endpoints, authentication, signatures, retries and failure semantics in current official provider documentation; unresolved community threads are leads only.
 4. Propose 2-3 approaches with trade-offs; recommend one.
 5. Output a file-level plan (files to create or modify, the evidence landing with them, and any declared-schema plus migration pairing), structured as ordered BOUNDED builder handoffs, one per

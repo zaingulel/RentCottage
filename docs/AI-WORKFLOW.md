@@ -152,8 +152,8 @@ The diagram is the whole path from a card to a merged commit. In words:
   The `resume` skill owns the tiers, the allowance lookup, the request, current-commit completion evidence, finding
   disposition, that cross-family substitution route and Greptile's own documented best-effort provider-unavailability
   exception. Repairs and rebases stay in draft and receive the applicable local evidence and, when required, a new
-  Greptile attempt before CI. After two repair rounds that still produce true findings, the work is replanned or split
-  rather than patched again.
+  Greptile attempt before CI. When two repair rounds still produce true findings, the `resume` skill's Build
+  section decides between one more round and an owner decision.
 - **Delivery by GitHub.** Marking the pull request ready after any required review attempt settles starts continuous
   integration. An unchanged-commit CI retry needs no further Greptile review. The merge is always queued as a GitHub auto-merge, which GitHub completes
   only when the required source-bound `test` check is green and conversations are resolved; no agent merges
