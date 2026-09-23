@@ -109,7 +109,7 @@ disjoint.
 - Wrap every executed check in `node scripts/run-log.mjs <label words> -- <command>` (plain unquoted label,
   then a bare `--`) so the exit code is recorded by a script, not asserted: focused tests, the one executed mutation per claim (red, restore, green), lint,
   the focused checks and applicable convergence commands. The log lives at `.claude/worklog/<branch>.md`.
-- When two repair-and-re-review cycles still produce new true findings, judge them. If each is bounded and
+- When two repair-and-re-review cycles still produce true findings, new or repeated, judge them. If each is bounded and
   verifiable, run one more round that fixes all of them. Bring the owner the choice, with a recommendation, only
   when a finding needs an unsettled design, owner judgment or evidence that cannot be bounded, or when that round
   still does not converge. Findings are never ignored.

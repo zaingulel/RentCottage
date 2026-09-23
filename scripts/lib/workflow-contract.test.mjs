@@ -355,17 +355,26 @@ test("the factory never gates on line counts, ends review loops in one more roun
   const resume = read(".agents/skills/resume/SKILL.md");
   for (const text of [
     "Commit green work before any stop, handoff, replan or split proposal",
-    "run one more round that fixes all of them",
     "or when that round still does not converge",
+    "still produce true findings, new or repeated, judge them",
+    "If each is bounded and verifiable, run one more round that fixes all of them",
+    "Bring the owner the choice, with a recommendation, only when a finding needs an unsettled design, owner judgment or evidence that cannot be bounded",
   ]) {
     assert.match(resume, phrase(text), `resume must carry "${text}"`);
   }
+  assert.doesNotMatch(
+    resume,
+    /still produce new\s+true findings/,
+    "resume must not gate the review loop on new findings only, dropping repeated ones",
+  );
 
   const agents = read("AGENTS.md");
   for (const text of [
     "An approval covers only the question it answered",
     "never grants approval",
-    "a generic, default or unnamed role is never dispatched",
+    "reread the owner's latest messages before acting on one",
+    "an approval whose question is no longer in view is asked again",
+    "dispatched by its seat name; a generic, default or unnamed role is never dispatched",
   ]) {
     assert.match(agents, phrase(text), `AGENTS.md must carry "${text}"`);
   }
@@ -386,6 +395,10 @@ test("the factory never gates on line counts, ends review loops in one more roun
     for (const text of [
       "its line count never stops it",
       "No hook sees a Codex handoff, so this check is yours on both runtimes",
+      "Before any edit, check that the handoff carries every labelled line of",
+      "from `Slice` to `Stop condition`, each with a value and no `{{SLOT}}` left",
+      "stop and report which without editing anything",
+      "A build that needs a file or step the plan did not name stops and reports",
     ]) {
       assert.match(read(path), phrase(text), `${path} must carry "${text}"`);
     }
