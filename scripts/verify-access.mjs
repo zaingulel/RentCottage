@@ -14,6 +14,7 @@ import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { addAccessJourneyTestOtps } from "./lib/access-journey-fixtures.mjs";
 
 const FIXTURE_CONTRACT_MODE = "--fixture-contract";
 const DATABASE_MODE = "--database";
@@ -360,6 +361,7 @@ export function prepareIsolatedSupabaseWorkdir({
     }
     config = config.replace(current, replacement);
   }
+  config = addAccessJourneyTestOtps(config);
   writeFileSync(join(target, "config.toml"), config);
   symlinkSync(join(source, "migrations"), join(target, "migrations"), "dir");
   symlinkSync(join(source, "schemas"), join(target, "schemas"), "dir");
@@ -886,7 +888,24 @@ export async function main(
           stdio: "inherit",
         },
       );
-      return fixtureContract.status;
+      if (fixtureContract.status !== 0) return fixtureContract.status;
+      const journeyReadiness = await execute(
+        "npx",
+        [
+          "playwright",
+          "test",
+          "--config=scripts/access-journey-fixture.config.ts",
+          "--workers=1",
+          "--retries=0",
+          "--grep",
+          "owned access readiness uses production account and application readers",
+        ],
+        {
+          env: { ...accessEnvironment, ...databaseConcurrencyEnvironment },
+          stdio: "inherit",
+        },
+      );
+      return journeyReadiness.status;
     };
     if (focusedFixtureContract) {
       group = "fixture";

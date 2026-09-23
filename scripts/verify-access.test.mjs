@@ -96,6 +96,18 @@ const databasePreflightCommands = [
 ];
 const databaseCheckCommands = [
   ["node", ["scripts/verify-access-fixture-contract.mjs"]],
+  [
+    "npx",
+    [
+      "playwright",
+      "test",
+      "--config=scripts/access-journey-fixture.config.ts",
+      "--workers=1",
+      "--retries=0",
+      "--grep",
+      "owned access readiness uses production account and application readers",
+    ],
+  ],
   ["node", ["scripts/verify-account-access-concurrency.mjs"]],
   ["node", ["scripts/prepare-access-test.mjs", "create", "mobile"]],
   ["node", ["scripts/verify-cottage-profile-draft-concurrency.mjs"]],
@@ -2319,6 +2331,17 @@ describe("access verification command", () => {
       ]) {
         expect(generatedConfig).toContain(value);
       }
+      const generatedOtpSection = generatedConfig.match(
+        /\[auth\.sms\.test_otp\]\n([\s\S]*?)(?=\n\[|$)/,
+      );
+      expect(generatedOtpSection).not.toBeNull();
+      const generatedJourneyPhones = [...generatedOtpSection[1].matchAll(
+        /^(96477\d+) = "123456"$/gm,
+      )].map((match) => match[1]);
+      expect(generatedJourneyPhones).toHaveLength(108);
+      expect(new Set(generatedJourneyPhones)).toHaveLength(108);
+      expect(generatedJourneyPhones).toContain("9647700000000");
+      expect(generatedJourneyPhones).toContain("9647700124160");
       expect(readlinkSync(join(workdir, "supabase", "migrations"))).toBe(
         join(workingDirectory, "supabase", "migrations"),
       );
@@ -2673,9 +2696,12 @@ setInterval(() => {}, 1000);
         }),
       ).toBe(7);
       expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
-      expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
-        false,
-      );
+      expect(
+        run.mock.calls.some(
+          ([, args]) =>
+            args[0] === "playwright" && args.includes("--project=mobile"),
+        ),
+      ).toBe(false);
     },
   );
 
@@ -2773,11 +2799,17 @@ setInterval(() => {}, 1000);
       ownershipCommand,
       resetCommand,
       statusCommand,
-      databaseCheckCommands[0],
+      ...databaseCheckCommands.slice(0, 2),
       ownershipCommand,
       stopCommand,
     ]);
     expect(run.mock.calls[4][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+    });
+    expect(run.mock.calls[5][2].env).toMatchObject({
       APP_ENVIRONMENT: "test",
       SUPABASE_URL: "http://127.0.0.1:54331",
       SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
@@ -3220,9 +3252,12 @@ setInterval(() => {}, 1000);
           args.slice(0, 3).join(" ") === "supabase stop --no-backup",
       ),
     ).toHaveLength(1);
-    expect(run.mock.calls.some(([, args]) => args[0] === "playwright")).toBe(
-      false,
-    );
+    expect(
+      run.mock.calls.some(
+        ([, args]) =>
+          args[0] === "playwright" && args.includes("--project=mobile"),
+      ),
+    ).toBe(false);
     expect(removeTemp).not.toHaveBeenCalled();
   });
 
