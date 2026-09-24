@@ -13,14 +13,33 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SHARED_END = "<!-- factory-shared:end -->";
 const manual = readFileSync(resolve(ROOT, "AGENTS.md"), "utf8");
-const normalise = (text) => text.replace(/\s+/g, " ");
-const productRegion = normalise(
-  manual.slice(manual.indexOf(SHARED_END) + SHARED_END.length),
-);
+const productLines = manual
+  .slice(manual.indexOf(SHARED_END) + SHARED_END.length)
+  .split("\n");
 
-function assertProductRegionContains(text) {
+// The one product-region line starting with `prefix` must equal `expected` exactly, so an
+// appended exception or a deletion both fail.
+function assertProductLine(prefix, expected) {
   assert.ok(manual.includes(SHARED_END), `${SHARED_END} marker`);
-  assert.ok(productRegion.includes(normalise(text)), text);
+  assert.deepEqual(
+    productLines.filter((line) => line.startsWith(prefix)),
+    [expected],
+  );
+}
+
+// The paragraph from the line starting `prefix` to the next blank line, whitespace-normalised,
+// must equal `expected` exactly.
+function assertProductParagraph(prefix, expected) {
+  assert.ok(manual.includes(SHARED_END), `${SHARED_END} marker`);
+  const start = productLines.findIndex((line) => line.startsWith(prefix));
+  assert.notEqual(start, -1, prefix);
+  const end = productLines.findIndex(
+    (line, index) => index > start && line.trim() === "",
+  );
+  assert.equal(
+    productLines.slice(start, end).join(" ").replace(/\s+/g, " "),
+    expected,
+  );
 }
 
 for (const guarantee of [
@@ -31,30 +50,37 @@ for (const guarantee of [
   "5. **Anti-regression evidence**: each widened security/privacy claim has a named mutation-proven observer at the real boundary; mocks do not substitute for database policy, concurrency, signature or Worker evidence.",
 ]) {
   test(`product region keeps standing security guarantee ${guarantee.slice(0, 1)}`, () => {
-    assertProductRegionContains(guarantee);
+    assertProductLine(
+      guarantee.slice(0, guarantee.indexOf("**:") + 3),
+      guarantee,
+    );
   });
 }
 
 test("product region keeps preview deployment outside push-to-merge authority", () => {
-  assertProductRegionContains(
+  assertProductParagraph(
+    "Preview deployment under",
     "Preview deployment under `.github/workflows/preview.yml` remains a separate owner-approved operation and is not included in ordinary push-to-merge delivery authority.",
   );
 });
 
 test("product region keeps the visual verification surfaces", () => {
-  assertProductRegionContains(
+  assertProductLine(
+    "| visual verification |",
     "| visual verification | The applicable Next.js or Worker surface across desktop, mobile, right-to-left and accessibility states. |",
   );
 });
 
 test("product region keeps the sign-off trust-boundary catch-all", () => {
-  assertProductRegionContains(
-    "the public/private data perimeter, and any other trust-boundary change; each needs explicit sign-off and a named anti-regression test",
+  assertProductLine(
+    "| sign-off |",
+    "| sign-off | Authentication, authorization, payments, personal data, schema/migrations, Row Level Security, provider/Worker trust, the public/private data perimeter, and any other trust-boundary change; each needs explicit sign-off and a named anti-regression test |",
   );
 });
 
 test("product region keeps the shared-workflow sync security-review trigger", () => {
-  assertProductRegionContains(
-    "an injection boundary, or a shared-workflow sync that changes agent permissions, hook registrations or hook scripts; privacy:",
+  assertProductLine(
+    "| security review |",
+    "| security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, an injection boundary, or a shared-workflow sync that changes agent permissions, hook registrations or hook scripts; privacy: [docs/product/rentcottage-mvp-prd.md](docs/product/rentcottage-mvp-prd.md#6-privacy-safety-and-moderation) |",
   );
 });
