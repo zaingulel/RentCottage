@@ -49,6 +49,11 @@ feature/booking/payment/engineering → **Product**; GTM/launch/legal/promo, inc
 
 Every issue body carries this section after the `to-issues` template's own.
 
+A named reference implementation is normative: preserve its structure and behaviour and adapt only the
+repository-specific names, paths, fixtures, provider payloads, and configuration the approved work allows. When a
+named reference applies, the "What to build" section identifies it as the normative design and names only the
+permitted repository-specific adaptations.
+
 ### Preservation and out of scope
 
 The existing contracts that remain unchanged and adjacent work excluded from this issue.
