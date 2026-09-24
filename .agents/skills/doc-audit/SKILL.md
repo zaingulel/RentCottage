@@ -14,7 +14,7 @@ EVERY invocation. This is periodic maintenance — say so if invoked too soon af
 
 List every tracked `.md` (`git ls-files "*.md"`) with size and last-touched (`git log -1 --format=%cd -- <f>`).
 The sweep is repo-wide and provider-neutral: the shared skills (`.agents/skills/`, reached from
-`.claude/skills/` by symlink), the Claude surfaces (`CLAUDE.md`, `.claude/rules/` when present, `.claude/agents/`,
+`.claude/skills/` by symlink), the Claude surfaces (`CLAUDE.md`, `.claude/rules/*` when present, `.claude/agents/`,
 `.claude/templates/`) and the Codex surfaces (`AGENTS.md`, `.agents/templates/`, `.codex/agents/` TOMLs — add the TOMLs explicitly; their
 `developer_instructions` are agent-consumed prose `git ls-files` cannot find). Weight the two always-loaded
 contracts first.

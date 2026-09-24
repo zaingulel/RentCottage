@@ -1,13 +1,23 @@
-// sweep-scope-corpus.mjs — the rows scripts/lib/sweep-scope.test.mjs judges the sweep-scope guard by.
+// sweep-scope-corpus.mjs — the rows scripts/lib/sweep-scope.test.mjs judges the sweep-scope guard by, and
+// the throwaway repository its end-to-end tests judge them in.
 //
-// Data only, no assertions: the expectations are the contract, written before the implementation and
-// shared byte for byte with every adopter. A row that turns out to be wrong is corrected in every
-// adopter as its own decision, never edited to make an implementation pass.
+// Rows and fixtures only, no assertions: the expectations are the contract, written before the
+// implementation and shared byte for byte with every adopter. A row that turns out to be wrong is
+// corrected in every adopter as its own decision, never edited to make an implementation pass.
 // `evil.icu` and `example.icu` hosts are deliberate: `icu` is not on the extractor's top-level domain
 // list, so only the rule under test can catch them.
 //
 // A rule of the design that carries several lines becomes one row per line (H2a, H2b), because each
 // line is judged alone; the letters are the design's own row names.
+
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { treeGrepArgs, treeGrepCandidates } from './sweep-scope.mjs';
+
+const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), '../sweep-scope-check.mjs');
 
 // Added lines `hiddenDestinationShapes` must refuse, each with the one rule that must name it.
 export const HIDDEN_ROWS = [
@@ -88,7 +98,7 @@ export const TOKEN_ROWS = [
 ];
 
 // Destinations judged against the base tree of the throwaway repository the end-to-end tests build:
-// `workers/README.md` carries `https://www.example.app`, `smoketest@example.com` and
+// `docs/HOSTED.md` carries `https://www.example.app`, `smoketest@example.com` and
 // `https://app.example.app/?c=3&d=4`; `docs/ALLOWED.md` carries `https://support.example.com/help`,
 // `https://app.example.app` and `<a href="https://app.example.app/?a=1&amp;b=2">`; `docs/LEGACY.md`
 // carries, inside one fence, the verbatim lines `[c]://evil.icu`, `[x](&#47;&#47;evil.icu/in)` and
@@ -613,3 +623,72 @@ export const MARKUP_ROWS = [
   { id: 'M36', before: '<p>a</p >b<b>c</b>\n', after: '<p>a</p =">b<b>c</b>\n', expect: 'refused' },
   { id: 'M37', before: '<p>a</p >b\n', after: '<p>a</p  >bb\n', expect: 'refused' },
 ];
+
+// The base tree the K rows and the end-to-end tests are judged against. `docs/LEGACY.md` stands for
+// what a sweep landed under the weaker rules: destination shapes the guard now refuses, inert inside a
+// fence, which a fixed-string grep still finds.
+export const ALLOWED = [
+  'The app lives at https://app.example.app and nowhere else.',
+  'Tracker help: https://support.example.com/help',
+  '<a href="https://app.example.app/?a=1&amp;b=2">tracked</a>',
+  '',
+].join('\n');
+const HOSTED = 'The hosted build is https://www.example.app and smoke failures go to smoketest@example.com. ' +
+  'A tracked link looks like https://app.example.app/?c=3&d=4.\n';
+export const LEGACY = ['Historic plants, fenced so nothing renders:', '', '```', '[c]://evil.icu',
+  '[x](&#47;&#47;evil.icu/in)', 'a@sub_domain.evil.icu', '```', '', 'The label above is [click][c].', ''].join('\n');
+
+// A throwaway repository whose base commit carries a two-row scope table and one allowed document.
+// `documents` replaces a base document by fiat and `mayEdit` names the paths the table admits, so a
+// row can start from the tree it needs without a second helper.
+export function repo({ documents = {}, mayEdit = ['docs/ALLOWED.md'] } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'sweep-scope-'));
+  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '-q', '-b', 'main');
+  git('config', 'user.email', 'test@example.com');
+  git('config', 'user.name', 'test');
+  git('config', 'commit.gpgsign', 'false');
+  const write = (rel, text) => {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), text);
+  };
+  const column = mayEdit.map((path) => `\`${path}\``).join(', ');
+  write('docs/DOC-SWEEP.md', `# manual\n\n| May edit | Never edit |\n|---|---|\n| ${column} | \`docs/DOC-SWEEP.md\`, \`src/\` |\n`);
+  const tree = {
+    'docs/ALLOWED.md': ALLOWED,
+    'docs/LEGACY.md': LEGACY,
+    'docs/HOSTED.md': HOSTED,
+    'src/code.js': 'export const x = 1;\n',
+    ...documents,
+  };
+  for (const [rel, text] of Object.entries(tree)) write(rel, text);
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  const base = git('rev-parse', 'HEAD');
+  const commit = (label) => {
+    git('add', '-A');
+    git('commit', '-q', '-m', label);
+    return git('rev-parse', 'HEAD');
+  };
+  const check = (head, at = base) => spawnSync('node', [SCRIPT, at, head], { cwd: dir, encoding: 'utf8' });
+  // The check script's own grep stage, called through the same builder, so the tree rows are judged on
+  // the lines the real base returns: every spelling of the destination, case-insensitively, with git's
+  // `<rev>:<path>` prefix cut at the NUL `--null` writes after it.
+  const grep = (text) => {
+    const lines = [];
+    for (const candidate of treeGrepCandidates(text)) {
+      const found = spawnSync('git', treeGrepArgs(candidate, base), { cwd: dir, encoding: 'utf8' });
+      for (const match of found.stdout.split('\n').filter(Boolean)) lines.push(match.slice(match.indexOf('\0') + 1));
+    }
+    return lines;
+  };
+  return { git, write, commit, check, grep, base, dir };
+}
+
+// One end-to-end run: `path` is the only may-edit entry, it starts as `before` in the base commit, and
+// the head commit replaces it with `after`.
+export function judge(path, before, after) {
+  const r = repo({ documents: { [path]: before }, mayEdit: [path] });
+  r.write(path, after);
+  return r.check(r.commit('sweep edit'));
+}

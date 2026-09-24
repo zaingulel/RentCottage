@@ -143,7 +143,7 @@ disjoint.
 - Drive visual work as the Conventions table's `visual verification` row says, and display the screenshot inline
   in chat. No push authorisation is requested without it.
 - Run every check the Surfaces table's rows name for a surface the diff touches.
-- One fresh review of the final tree, by tier. **Documents** (`docs/`, `README.md`, `CONTEXT.md`): the session
+- One fresh review of the final tree, by tier. **Documents** (`docs/`, the root readme, `CONTEXT.md`): the session
   itself. **Code and agent instruction**, everything else, the manual, `CLAUDE.md`, the rules, skills and seat
   files included: the `reviewer` charter run by the model family that did not write the diff, through
   `cross-review`; an instruction that misreads a gate has cost more than most code. When the other family's seat

@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "059cd0103aeb89fce0d722c895fa3e78e0383319",
+  "syncedFrom": "0c59f2e83ea82586a7da99d642604081f7d65e6e",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -19,11 +19,11 @@
     },
     {
       "path": ".agents/skills/diagnosing-bugs/SKILL.md",
-      "sha256": "68d132695117c6803d3f97561e83f55f6e5565fecd08e79e4d494e706d42e370"
+      "sha256": "b867041b3c7a8624499e3d52fe12091dea571128f6fea06dfac7b38865dd2267"
     },
     {
       "path": ".agents/skills/doc-audit/SKILL.md",
-      "sha256": "18983fdf111ac7d26347884a072aac1c74e3cf9378eebd186a4a45c2b9c761f0"
+      "sha256": "961e8777a3f579c60eb3dab5709ee12415df6f500207b728d07794b8f2aadba2"
     },
     {
       "path": ".agents/skills/domain-modeling",
@@ -59,7 +59,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "2ffef65410916f4a1f233c59c33093f387483b225f048eed0dd47bfad63cadbe"
+      "sha256": "dd6d4f85c79ce091cee8d7bacb497e47f2df3a784cab5899bda92622e24c7572"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -431,7 +431,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "a8a8a3828ee4c8bd8a676ae5125da04fe71442265e6a985e51349c3bd006ed58"
+      "sha256": "96965103f43a0a56f0347211f87634745f9c6900d53bb3c4d42e1f20cb9d28b8"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -532,15 +532,15 @@
     },
     {
       "path": "scripts/lib/doc-lint-citations.test.mjs",
-      "sha256": "34bf67c3656b78164356cd8dd875e2b9e4cfee5d25e361538aa4ab171357fa97"
+      "sha256": "137692b46cf0238b027e6f530978fce21adc4e03cb51723b7840ac4543eb6ecc"
     },
     {
       "path": "scripts/lib/doc-lint-links.mjs",
-      "sha256": "6a3129644e72d3c94be0e85c0cc0c713900508f9a9fb3a4b10b882751ade9548"
+      "sha256": "a3502bf34a7d78b3da890d8ea1990c7e0e75dbac67ec3f3fed97b5eb32e72dd0"
     },
     {
       "path": "scripts/lib/doc-lint-links.test.mjs",
-      "sha256": "f07e111b5db04dec07c8a5237642454066879a0a684c5e81d9d6006bab5002b7"
+      "sha256": "8ec752f4315585c7e7b932fc32d09fa5b27759e7206b8b8370a6966c43e06794"
     },
     {
       "path": "scripts/lib/factory-sync.mjs",
@@ -568,7 +568,7 @@
     },
     {
       "path": "scripts/lib/handoff-check.test.mjs",
-      "sha256": "9366e03fc11f4051ca3297671318c0984cf4c118bda481869dd80922ce935dee"
+      "sha256": "3fc75f4275c3286765108ef0aa8952904d2767a334bb339542dd7f928811b077"
     },
     {
       "path": "scripts/lib/issue-publish.mjs",
@@ -596,7 +596,7 @@
     },
     {
       "path": "scripts/lib/sweep-scope-corpus.mjs",
-      "sha256": "b745546f7143f0dc5fa525254be96fed3bd19a4a086246153077556fda9279ad"
+      "sha256": "1ea881adcbca7f75ae590a488c19e45d245cdc86ea6b87a88e715da22a92d55f"
     },
     {
       "path": "scripts/lib/sweep-scope.mjs",
@@ -604,7 +604,7 @@
     },
     {
       "path": "scripts/lib/sweep-scope.test.mjs",
-      "sha256": "082889eb687786947ff6848c330c7b3b5a90c2fc8c1810b03f0227c10197b20f"
+      "sha256": "1272fe0b112c57241c8104fa5b5bbf01758562b8a25978a89f9e41f842a189c9"
     },
     {
       "path": "scripts/lib/test-output-filter.mjs",
@@ -620,7 +620,7 @@
     },
     {
       "path": "scripts/lib/unsafe-git.test.mjs",
-      "sha256": "dbe7a5e8ee50d47741c51b1234aed9b98f2158c0db3f2d2999adfc831ee6894e"
+      "sha256": "efc53691569ac64aeeb7833158321a830374333dce7367a84edc50ef6e7e246e"
     },
     {
       "path": "scripts/lib/verify-green.test.mjs",
@@ -628,7 +628,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "7622ea73c5120055c621e9f07f02eba6fea659f0068b25c8c3f146465c99a61f"
+      "sha256": "96e49ee34a5e9c3a38f7004e6cdf397ea06b445783a33079b42fb095599b52ae"
     },
     {
       "path": "scripts/run-log.mjs",

@@ -184,11 +184,10 @@ test('repo-pass: the real repo has zero phantom manual citations', () => {
     }
   }
 
-  // Vacuity guard: a scan that matched nothing would pass silently. Named
-  // known-citing surfaces only — a numeric floor would drift with repo growth.
-  // docs/ARCHITECTURE.md cites with the backticked manual name, so it also
-  // proves the widened citation shape is exercised by the real repo.
-  for (const rel of ['.agents/skills/tdd/SKILL.md', 'docs/TOUR-1-architecture.md', 'docs/ARCHITECTURE.md']) {
+  // Vacuity guard: a scan that matched nothing would pass silently. A named
+  // known-citing shared surface only — a numeric floor would drift with repo
+  // growth; the product's own citing documents are named in a product-owned test.
+  for (const rel of ['.agents/skills/tdd/SKILL.md']) {
     assert.ok(citingFilesSeen.has(rel), `the citation scan must have seen citations in ${rel}`);
   }
   assert.ok(citationsSeen > 0, 'the citation scan must have found citations');

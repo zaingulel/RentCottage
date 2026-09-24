@@ -45,9 +45,9 @@ test('extractMarkdownLinks: anchor-only and external targets are never extracted
     'Read the [CommonMark spec](https://spec.commonmark.org/).',
     'Insecure [mirror](http://example.com/x.md).',
     'Mail [the owner](mailto:owner@example.com).',
-    'But [this one](docs/ARCHITECTURE.md) is a real ref.',
+    'But [this one](docs/DESIGN.md) is a real ref.',
   ].join('\n');
-  assert.deepEqual(extractMarkdownLinks(md), [{ target: 'docs/ARCHITECTURE.md', line: 5 }]);
+  assert.deepEqual(extractMarkdownLinks(md), [{ target: 'docs/DESIGN.md', line: 5 }]);
 });
 
 test('extractMarkdownLinks: a trailing #anchor fragment and a trailing :NNN suffix are stripped', () => {
@@ -66,7 +66,7 @@ test('extractMarkdownLinks: a trailing #anchor fragment and a trailing :NNN suff
 test('extractMarkdownLinks: a reference-definition target is extracted and a dead one is reported', () => {
   const md = [
     'The [workflow][workflow] reference is defined below.',
-    'See [architecture](docs/GONE.md) and [readme](README.md:42).',
+    'See [architecture](docs/GONE.md) and [guide](GUIDE.md:42).',
     '',
     '[workflow]: references/missing.md',
     '[phone]: tel:+441234567890',
@@ -74,17 +74,17 @@ test('extractMarkdownLinks: a reference-definition target is extracted and a dea
     '[bug]: docs/X.md:42',
   ].join('\n');
 
-  // README.md:42 is the KEY guard on the dot-free scheme charset: allowing a
-  // dot in the scheme would make `README.md:` read as a URI scheme and the
+  // GUIDE.md:42 is the KEY guard on the dot-free scheme charset: allowing a
+  // dot in the scheme would make `GUIDE.md:` read as a URI scheme and the
   // target silently vanish from the scan.
   assert.deepEqual(extractMarkdownLinks(md), [
     { target: 'docs/GONE.md', line: 2 },
-    { target: 'README.md', line: 2 },
+    { target: 'GUIDE.md', line: 2 },
     { target: 'references/missing.md', line: 4 },
     { target: 'docs/X.md', line: 7 },
   ]);
 
-  const dead = checkMarkdownLinks('CLAUDE.md', md, (p) => p === 'docs/X.md' || p === 'README.md');
+  const dead = checkMarkdownLinks('CLAUDE.md', md, (p) => p === 'docs/X.md' || p === 'GUIDE.md');
   assert.deepEqual(dead, [
     { target: 'docs/GONE.md', resolved: 'docs/GONE.md', line: 2 },
     { target: 'references/missing.md', resolved: 'references/missing.md', line: 4 },
@@ -115,9 +115,9 @@ test('extractMarkdownLinks: a protocol-relative target is never extracted', () =
   const md = [
     'A [mirror](//cdn.example.com/guide.md) is not a repo path.',
     '[cdn]: //cdn.example.com/other.md',
-    'But [this one](docs/ARCHITECTURE.md) is a real ref.',
+    'But [this one](docs/DESIGN.md) is a real ref.',
   ].join('\n');
-  assert.deepEqual(extractMarkdownLinks(md), [{ target: 'docs/ARCHITECTURE.md', line: 3 }]);
+  assert.deepEqual(extractMarkdownLinks(md), [{ target: 'docs/DESIGN.md', line: 3 }]);
 });
 
 test('extractMarkdownLinks: a target that is only a stripped fragment is skipped', () => {
@@ -126,26 +126,26 @@ test('extractMarkdownLinks: a target that is only a stripped fragment is skipped
 
 test('resolveLinkTarget: a ../ target resolves against the containing file directory, not the repo root', () => {
   assert.equal(
-    resolveLinkTarget('.claude/skills/resume/SKILL.md', '../../../docs/ARCHITECTURE.md'),
-    'docs/ARCHITECTURE.md',
+    resolveLinkTarget('.claude/skills/resume/SKILL.md', '../../../docs/DESIGN.md'),
+    'docs/DESIGN.md',
   );
-  assert.equal(resolveLinkTarget('CLAUDE.md', 'docs/ARCHITECTURE.md'), 'docs/ARCHITECTURE.md');
-  assert.equal(resolveLinkTarget('docs/TOUR-1-architecture.md', './ARCHITECTURE.md'), 'docs/ARCHITECTURE.md');
+  assert.equal(resolveLinkTarget('CLAUDE.md', 'docs/DESIGN.md'), 'docs/DESIGN.md');
+  assert.equal(resolveLinkTarget('docs/TOUR-A.md', './DESIGN.md'), 'docs/DESIGN.md');
 });
 
 test('checkMarkdownLinks: KEY mutation guard — a link whose resolved target exists is never flagged', () => {
-  const md = 'See [architecture](../ARCHITECTURE.md) and [self](TOUR.md).';
+  const md = 'See [architecture](../DESIGN.md) and [self](TOUR.md).';
   const dead = checkMarkdownLinks(
     'docs/archive/NOTE.md',
     md,
-    (p) => p === 'docs/ARCHITECTURE.md' || p === 'docs/archive/TOUR.md',
+    (p) => p === 'docs/DESIGN.md' || p === 'docs/archive/TOUR.md',
   );
   assert.deepEqual(dead, []);
 });
 
 test('checkMarkdownLinks: a target that escapes the repo root is dead', () => {
   const md = 'See [outside](../../elsewhere/notes.md).';
-  const dead = checkMarkdownLinks('docs/ARCHITECTURE.md', md, () => true);
+  const dead = checkMarkdownLinks('docs/DESIGN.md', md, () => true);
   assert.deepEqual(dead, [{ target: '../../elsewhere/notes.md', resolved: null, line: 1 }]);
 });
 
@@ -157,9 +157,10 @@ test('repo-pass: the real repo classified prose files have zero dead Markdown li
   const scanFiles = tracked.filter((rel) => classifyDocLintPath(rel).pathRefs);
 
   // Vacuity guard: a classifier that stopped matching would make the scan
-  // below pass over nothing. Named mandatory surfaces only — a numeric floor
-  // would drift with ordinary repo growth.
-  for (const rel of ['CLAUDE.md', 'AGENTS.md', 'docs/ARCHITECTURE.md']) {
+  // below pass over nothing. Named mandatory shared surfaces only — a numeric
+  // floor would drift with ordinary repo growth; the product's own documents
+  // are named in a product-owned test.
+  for (const rel of ['CLAUDE.md', 'AGENTS.md']) {
     assert.ok(scanFiles.includes(rel), `Markdown-link scan set must include ${rel}`);
   }
 

@@ -147,7 +147,7 @@ test('git push --force-with-lease is allowed', () => {
 test('a quoted span that only mentions a flag is still data', () => {
   assert.equal(blockReason('git commit -m "--force is not for us"'), '');
   assert.equal(blockReason('echo git push --no-verify'), '');
-  assert.equal(blockReason('grep -n "git push --no-verify" docs/ARCHITECTURE.md'), '');
+  assert.equal(blockReason('grep -n "git push --no-verify" docs/GUIDE.md'), '');
   assert.equal(blockReason('git commit -m "docs: explain why git push --no-verify is blocked"'), '');
   assert.equal(blockReason('echo "git -C . push --no-verify origin HEAD"'), '');
   assert.equal(blockReason('git commit -m "document git -C . push --no-verify"'), '');
@@ -375,7 +375,7 @@ test('ANTI-REGRESSION: branch work in the root checkout is refused; the same cal
     'Git commit -m "wip"': 'commit',
     'git checkout -b job/1170': 'checkout',
     'git checkout feature': 'checkout',
-    'git checkout -- README.md': 'checkout',
+    'git checkout -- docs/GUIDE.md': 'checkout',
     'git switch -c job/1170': 'switch',
     'git switch feature': 'switch',
     'git branch job/1170': 'branch',
@@ -387,7 +387,7 @@ test('ANTI-REGRESSION: branch work in the root checkout is refused; the same cal
     'cd src && git commit -m "wip"': 'commit',
     'git switch --detach main': 'switch',
     'git checkout -B main origin/main': 'checkout',
-    'git checkout main -- README.md': 'checkout',
+    'git checkout main -- docs/GUIDE.md': 'checkout',
     'git merge job/1170': 'merge',
     'git cherry-pick abc123': 'cherry-pick',
     'git revert HEAD': 'revert',

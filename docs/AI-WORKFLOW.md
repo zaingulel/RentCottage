@@ -140,7 +140,7 @@ The diagram is the whole path from a card to a merged commit. In words:
 - **Verification before review.** Visual work is driven as the Conventions table's `visual verification` row says
   and a current screenshot is shown in chat; any further gate the Surfaces table names runs here.
 - **Review in two layers.** One fresh review of the final tree before the pull request opens, by tier. Documents
-  (`docs/`, `README.md`, `CONTEXT.md`) are reviewed by the session itself; the owner is their reader. Code and agent
+  (`docs/`, the root readme, `CONTEXT.md`) are reviewed by the session itself; the owner is their reader. Code and agent
   instruction, the manual, the rules, the skills and the seat files included, get the `reviewer` charter run by the
   model family that did not write the diff, dispatched through the `cross-review` skill: the Codex seat from a Claude
   session, the Claude seat from a Codex session, because a writer's own family shares its blind spots. When that
@@ -265,9 +265,9 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 | No unsafe git or GitHub command | `.claude/hooks/block-unsafe-git.mjs` before every shell command (Codex twin under `.codex/hooks/`) | `--no-verify`, force pushes, history rewrites, a non-draft pull request, a merge that is not a GitHub auto-merge, and branch work in the root checkout; a quoted mention or a heredoc body is data, and a wrapped or disguised invocation is not modelled |
 | A builder receives a bounded handoff | `.claude/hooks/check-builder-handoff.mjs` before every agent spawn | A handoff missing a required field, with an unfilled slot, or telling the builder to prove its own mutation |
 | Green before a turn ends | `.claude/hooks/verify-green.sh` at turn end, in the checkout the session is working in (Codex twin under `.codex/hooks/`) | Finishing with a lint error; a check it could not run, because no project root resolved or a tool is absent, is stated as unverified rather than passed silently |
-| The product's own checks pass | `scripts/gates/stop`, run by both Stop hooks on every turn end, and `scripts/gates/pre-commit`, run by `.githooks/pre-commit` on every commit | A turn end or commit whose product gate, when present, exits non-zero or is not executable; an absent gate changes nothing |
+| The product's own checks pass | The product gates `scripts/gates/{stop,pre-commit}`: `stop` run by both Stop hooks on every turn end, and `pre-commit` run by `.githooks/pre-commit` on every commit | A turn end or commit whose product gate, when present, exits non-zero or is not executable; an absent gate changes nothing |
 | Runner output stays readable | `.claude/hooks/filter-test-output.mjs` | Condenses a green run, passes a red run through in full |
-| The artifact matches its source | The product gates `scripts/gates/stop` and `scripts/gates/pre-commit` (run on a merge that auto-commits through `.githooks/pre-merge-commit`), and CI | A turn end, commit or merge whose generated artifact, as the Conventions table names it, is not the byte-identical build of its source |
+| The artifact matches its source | The product gates `scripts/gates/{stop,pre-commit}` (run on a merge that auto-commits through `.githooks/pre-merge-commit`), and CI | A turn end, commit or merge whose generated artifact, as the Conventions table names it, is not the byte-identical build of its source |
 | Agent definitions parse and the reviewer charter matches | `.githooks/pre-commit` | A staged seat file the runtime would drop silently, and Claude and Codex reviewer charters that differ beyond the skill-invocation sigil |
 | Lint and the script suite pass | `.githooks/pre-push` | A push with a red script suite |
 | Shared workflow files match the manifest | `scripts/lib/workflow-contract.test.mjs`, run by `.githooks/pre-push` and CI | A push or merge where any file `.agents/factory-manifest.json` lists differs from its recorded hash; the failure names both fix routes, `--write` in the canonical repository and a sync in an adopter |

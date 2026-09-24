@@ -8,20 +8,20 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   addedNetworkTokens, hiddenDestinationShapes, markupDifference, outOfScope, parseMayEdit, renderedDestinations,
   tokenMatches, treeGrepArgs, treeGrepCandidates,
 } from './sweep-scope.mjs';
-import { HIDDEN_ROWS, MARKUP_ROWS, PASS_ROWS, RENDERED_ROWS, TOKEN_ROWS, TREE_ROWS } from './sweep-scope-corpus.mjs';
+import {
+  ALLOWED, HIDDEN_ROWS, LEGACY, MARKUP_ROWS, PASS_ROWS, RENDERED_ROWS, TOKEN_ROWS, TREE_ROWS, judge, repo,
+} from './sweep-scope-corpus.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const MANUAL = readFileSync(join(ROOT, 'docs/DOC-SWEEP.md'), 'utf8');
-const DIAGRAM = readFileSync(join(ROOT, 'docs/AI-WORKFLOW-diagram.html'), 'utf8');
 const SCRIPT = join(ROOT, 'scripts/sweep-scope-check.mjs');
 
 // A corpus row is one added line, judged in the smallest diff that can carry it.
@@ -35,16 +35,6 @@ function addedDiff(line) {
     `+${line}`,
   ].join('\n');
 }
-
-test('parseMayEdit reads exactly the may-edit column of the live manual', () => {
-  assert.deepEqual(parseMayEdit(MANUAL), [
-    'docs/ARCHITECTURE.md', 'docs/TOUR-1-architecture.md', 'docs/TOUR-2-metrics.md', 'docs/TOUR-3-ingest.md',
-    'docs/TOUR-4-ui.md',
-    'docs/AI-WORKFLOW.md', 'docs/AI-WORKFLOW-diagram.html',
-    'CONTEXT.md', 'README.md', 'docs/README.md',
-    'docs/FIXTURES.md', 'workers/README.md',
-  ]);
-});
 
 test('parseMayEdit takes only the left column and fails loud on a missing or empty table', () => {
   const table = [
@@ -63,11 +53,11 @@ test('parseMayEdit takes only the left column and fails loud on a missing or emp
 });
 
 test('outOfScope is an exact-path match, so a shared prefix never admits a never-edit path', () => {
-  const mayEdit = ['workers/README.md', 'docs/ARCHITECTURE.md'];
-  assert.deepEqual(outOfScope(['workers/README.md', 'docs/ARCHITECTURE.md'], mayEdit), []);
+  const mayEdit = ['site/README.md', 'docs/DESIGN.md'];
+  assert.deepEqual(outOfScope(['site/README.md', 'docs/DESIGN.md'], mayEdit), []);
   assert.deepEqual(
-    outOfScope(['workers/events-relay.js', 'docs/ARCHITECTURE.md.bak', 'docs/DOC-SWEEP.md'], mayEdit),
-    ['workers/events-relay.js', 'docs/ARCHITECTURE.md.bak', 'docs/DOC-SWEEP.md'],
+    outOfScope(['site/relay.js', 'docs/DESIGN.md.bak', 'docs/DOC-SWEEP.md'], mayEdit),
+    ['site/relay.js', 'docs/DESIGN.md.bak', 'docs/DOC-SWEEP.md'],
   );
 });
 
@@ -181,67 +171,6 @@ test('no live may-edit document trips a rule', () => {
   }
   assert.deepEqual(refusals, []);
 });
-
-// The base tree the K rows and the end-to-end tests are judged against. `docs/LEGACY.md` stands for
-// what a sweep landed under the weaker rules: destination shapes the guard now refuses, inert inside a
-// fence, which a fixed-string grep still finds.
-const ALLOWED = [
-  'The app lives at https://app.example.app and nowhere else.',
-  'Tracker help: https://support.example.com/help',
-  '<a href="https://app.example.app/?a=1&amp;b=2">tracked</a>',
-  '',
-].join('\n');
-const WORKERS = 'The hosted build is https://www.example.app and smoke failures go to smoketest@example.com. ' +
-  'A tracked link looks like https://app.example.app/?c=3&d=4.\n';
-const LEGACY = ['Historic plants, fenced so nothing renders:', '', '```', '[c]://evil.icu',
-  '[x](&#47;&#47;evil.icu/in)', 'a@sub_domain.evil.icu', '```', '', 'The label above is [click][c].', ''].join('\n');
-
-// A throwaway repository whose base commit carries a two-row scope table and one allowed document.
-// `documents` replaces a base document by fiat and `mayEdit` names the paths the table admits, so a
-// row can start from the tree it needs without a second helper.
-function repo({ documents = {}, mayEdit = ['docs/ALLOWED.md'] } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-scope-'));
-  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git('init', '-q', '-b', 'main');
-  git('config', 'user.email', 'test@example.com');
-  git('config', 'user.name', 'test');
-  git('config', 'commit.gpgsign', 'false');
-  const write = (rel, text) => {
-    mkdirSync(dirname(join(dir, rel)), { recursive: true });
-    writeFileSync(join(dir, rel), text);
-  };
-  const column = mayEdit.map((path) => `\`${path}\``).join(', ');
-  write('docs/DOC-SWEEP.md', `# manual\n\n| May edit | Never edit |\n|---|---|\n| ${column} | \`docs/DOC-SWEEP.md\`, \`src/\` |\n`);
-  const tree = {
-    'docs/ALLOWED.md': ALLOWED,
-    'docs/LEGACY.md': LEGACY,
-    'workers/README.md': WORKERS,
-    'src/code.js': 'export const x = 1;\n',
-    ...documents,
-  };
-  for (const [rel, text] of Object.entries(tree)) write(rel, text);
-  git('add', '-A');
-  git('commit', '-q', '-m', 'base');
-  const base = git('rev-parse', 'HEAD');
-  const commit = (label) => {
-    git('add', '-A');
-    git('commit', '-q', '-m', label);
-    return git('rev-parse', 'HEAD');
-  };
-  const check = (head, at = base) => spawnSync('node', [SCRIPT, at, head], { cwd: dir, encoding: 'utf8' });
-  // The check script's own grep stage, called through the same builder, so the tree rows are judged on
-  // the lines the real base returns: every spelling of the destination, case-insensitively, with git's
-  // `<rev>:<path>` prefix cut at the NUL `--null` writes after it.
-  const grep = (text) => {
-    const lines = [];
-    for (const candidate of treeGrepCandidates(text)) {
-      const found = spawnSync('git', treeGrepArgs(candidate, base), { cwd: dir, encoding: 'utf8' });
-      for (const match of found.stdout.split('\n').filter(Boolean)) lines.push(match.slice(match.indexOf('\0') + 1));
-    }
-    return lines;
-  };
-  return { git, write, commit, check, grep, base, dir };
-}
 
 // The invariant the design rests on: a fixed-string hit vouches for nothing on its own, so each row is
 // judged on the lines the base actually returns for it. K1, K3a and K3b are destinations a past sweep
@@ -386,14 +315,6 @@ const CONTROL = ['Tracker help: https://support.example.com/help', '', '```',
 // Removing the fence lines and nothing else leaves a deletion-only diff: the context-free half sees no
 // added line at all, so only the semantic half can speak.
 const unfenced = (document) => document.split('\n').filter((line) => line !== '```').join('\n');
-
-// One end-to-end run: `path` is the only may-edit entry, it starts as `before` in the base commit, and
-// the head commit replaces it with `after`.
-function judge(path, before, after) {
-  const r = repo({ documents: { [path]: before }, mayEdit: [path] });
-  r.write(path, after);
-  return r.check(r.commit('sweep edit'));
-}
 
 // Week one of the plant-then-reactivate attack. Inert text is still added text, so every spelling of
 // the plant is refused the week it is written and the week that would wake it never comes.
@@ -573,82 +494,10 @@ test('the tree does not vouch for a destination only test code carries (E12b)', 
   }
 });
 
-// The workflow diagram is a page a browser loads raw, so only its free text may change. The anchors are
-// the live file's own: a station label, the first tab button, the font preconnect, the page title and
-// the gate swatch in the legend.
-const DIAGRAM_PATH = 'docs/AI-WORKFLOW-diagram.html';
-const MARKUP_LINE = /docs\/AI-WORKFLOW-diagram\.html: the edit changes the page's markup, not only its text; at offset \d+ of its markup, /;
-const TEXT_EDIT = DIAGRAM.replace('>Bring an idea<', '>Bring a hunch<');
-const MARKUP_EDIT = DIAGRAM.replace('<button role="tab" id="tab-overview"', '<button onclick="x()" role="tab" id="tab-overview"');
-
-test('the check passes a text-only edit to the workflow diagram (E15a)', () => {
-  const result = judge(DIAGRAM_PATH, DIAGRAM, TEXT_EDIT);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /1 modified path/);
-});
-
-test('the check passes a label deleted outright from the workflow diagram (E15f)', () => {
-  const result = judge(DIAGRAM_PATH, DIAGRAM, DIAGRAM.replace('>Bring an idea<', '><'));
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /1 modified path/);
-});
-
-test('the check refuses an event-handler attribute added to the workflow diagram (E15b)', () => {
-  const result = judge(DIAGRAM_PATH, DIAGRAM, MARKUP_EDIT);
-  assert.equal(result.status, 1, result.stdout);
-  assert.match(result.stderr, MARKUP_LINE);
-});
-
-test('the check refuses a changed destination attribute in the workflow diagram (E15c)', () => {
-  const result = judge(DIAGRAM_PATH, DIAGRAM, DIAGRAM.replace('href="https://fonts.googleapis.com">', 'href="https://evil.icu">'));
-  assert.equal(result.status, 1, result.stdout);
-  assert.match(result.stderr, MARKUP_LINE);
-});
-
-// The parser ends a title's raw text only at `</title` plus `>` or whitespace; a browser ends it at the
-// `/` too, so the script is live there and only the markup rule can see it.
-test('the check refuses markup hidden in the text of the diagram\'s title (E15d)', () => {
-  const title = DIAGRAM.match(/<title>[^<]*<\/title>/)[0];
-  const tampered = DIAGRAM.replace(title, title.replace('</title>', '</title/><script>x()</script>') + title);
-  assert.notEqual(tampered, DIAGRAM);
-  const result = judge(DIAGRAM_PATH, DIAGRAM, tampered);
-  assert.equal(result.status, 1, result.stdout);
-  assert.match(result.stderr, MARKUP_LINE);
-  assert.doesNotMatch(result.stderr, /is added by this diff|refuses/);
-});
-
-// A browser ignores `/>` on an HTML element, so the swatch stays open and wraps what follows it.
-test('the check refuses a self-closing rewrite of an HTML element in the diagram (E15e)', () => {
-  const result = judge(DIAGRAM_PATH, DIAGRAM, DIAGRAM.replace('<i class="sw gate"></i>', '<i class="sw gate"/>'));
-  assert.equal(result.status, 1, result.stdout);
-  assert.match(result.stderr, MARKUP_LINE);
-});
-
 test('the check fails closed on a may-edit entry that is neither Markdown nor HTML (E16)', () => {
   const result = judge('docs/NOTES.txt', 'notes\n', 'notes, revised\n');
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stderr, /docs\/NOTES\.txt is in the may-edit column but is not Markdown, so the rendered half cannot judge it/);
-});
-
-// The diagram is judged against the tip of main, not the merge base, so a squash cannot bring back
-// markup main changed after the branch point. The cost is a refusal until the branch is rebased.
-test('the check judges the diagram against the tip of main and passes once the branch is rebased (E17)', () => {
-  const r = repo({ documents: { [DIAGRAM_PATH]: DIAGRAM }, mayEdit: [DIAGRAM_PATH] });
-  r.git('checkout', '-q', '-b', 'sweep');
-  r.write(DIAGRAM_PATH, TEXT_EDIT);
-  const sweepHead = r.commit('sweep text edit');
-  r.git('checkout', '-q', 'main');
-  r.write(DIAGRAM_PATH, MARKUP_EDIT);
-  const mainHead = r.commit('main markup edit');
-  const stale = r.check(sweepHead, mainHead);
-  assert.equal(stale.status, 1, stale.stdout);
-  assert.match(stale.stderr, MARKUP_LINE);
-  assert.match(stale.stderr, /; if main changed the page's markup since this branch was cut, rebase onto main first/);
-  r.git('checkout', '-q', 'sweep');
-  r.git('rebase', '-q', mainHead);
-  const rebased = r.check(r.git('rev-parse', 'HEAD'), mainHead);
-  assert.equal(rebased.status, 0, rebased.stderr);
-  assert.match(rebased.stdout, /1 modified path/);
 });
 
 // A form feed makes the anchor live on GitHub and plain text to the parser, so only the control

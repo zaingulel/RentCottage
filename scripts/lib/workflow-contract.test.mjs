@@ -1,11 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { gitEnvironment, readManifest, regionText, verifyManifest } from './factory-sync.mjs';
+import { gitEnvironment, MANIFEST_PATH, readManifest, regionText, verifyManifest } from './factory-sync.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const CLOSEOUT = readFileSync(resolve(ROOT, '.agents/skills/closeout/SKILL.md'), 'utf8');
@@ -429,17 +429,18 @@ test('the manual carries one shared workflow region followed by the product head
   assert.ok(Buffer.byteLength(manual) < 32768, 'AGENTS.md must stay under the 32 KiB Codex read cap');
 });
 
+const FIXED_PRODUCT_DOCUMENTS = [
+  'CONTEXT.md',
+  'docs/README.md',
+  'docs/CODING-STANDARDS.md',
+  'docs/TESTING-STRATEGY.md',
+  'docs/ISSUE-TRACKER.md',
+  'docs/DOC-SWEEP.md',
+  'docs/SWEEP-TRIAGE.md',
+];
+
 test('the seven fixed product documents exist', () => {
-  const documents = [
-    'CONTEXT.md',
-    'docs/README.md',
-    'docs/CODING-STANDARDS.md',
-    'docs/TESTING-STRATEGY.md',
-    'docs/ISSUE-TRACKER.md',
-    'docs/DOC-SWEEP.md',
-    'docs/SWEEP-TRIAGE.md',
-  ];
-  const missing = documents.filter((path) => !existsSync(resolve(ROOT, path)));
+  const missing = FIXED_PRODUCT_DOCUMENTS.filter((path) => !existsSync(resolve(ROOT, path)));
   assert.deepEqual(missing, [], `the shared workflow points at these fixed product documents, which are missing: ${missing.join(', ')}`);
 });
 
@@ -575,4 +576,84 @@ test('shared workflow files name no product of any adopter', () => {
     });
   }
   assert.deepEqual(hits, [], 'shared workflow files must point at the product tables and documents instead');
+});
+
+// Paths outside the manifest that shared code or prose names in every adopter, each with the reason it may.
+const ADOPTER_PATHS = {
+  [MANIFEST_PATH]: 'the manifest itself, which lists every shared file but not its own path',
+  'package.json': 'the npm scripts every adopter defines and the shared hooks and tests run',
+  'src/': 'the product source root every adopter keeps',
+  'scripts/lib/board-config.mjs': 'the product board configuration the shared board scripts load',
+  'scripts/doc-lint.mjs': 'the doc lint command every adopter runs',
+  'scripts/lib/doc-lint.mjs': 'the doc lint core the shared citation and link scans run beside',
+  'scripts/lib/doc-lint.test.mjs': 'the doc lint core\'s own test, which every adopter carries with the doc lint',
+  '.codex/rules/playwright.rules': 'the Codex rule that prompts before a browser run, which every adopter carries',
+  'scripts/gates/': 'optional product hook point, checked for presence',
+  'scripts/gates/stop': 'optional product hook point, checked for presence',
+  'scripts/gates/pre-commit': 'optional product hook point, checked for presence',
+};
+const PATH_TOKEN = /[A-Za-z0-9_.@/*<>{}|$-]+/g;
+const PLACEHOLDER = /[*<>{}|$]/;
+const FILE_EXTENSION = /\.(?:md|mjs|js|ts|json|jsonc|ya?ml|toml|sh|html|css|txt|csv)$/;
+// A `join(` or `resolve(` call's run of string literals after its leading identifier arguments: one path in pieces.
+const JOINED_LITERALS =
+  /\b(?:join|resolve)\(\s*(?:[A-Za-z_$][\w$.]*\s*,\s*)*((?:'[^'\n]*'|"[^"\n]*")(?:\s*,\s*(?:'[^'\n]*'|"[^"\n]*"))*)/g;
+const STRING_LITERAL = /'([^'\n]*)'|"([^"\n]*)"/g;
+const RELATIVE_SEGMENT = /(?:^|\/)\.\.?(?:\/|$)/;
+
+// Each path with every ancestor directory, a directory written with a trailing slash.
+const withAncestors = (paths) =>
+  new Set(paths.flatMap((path) => {
+    const parts = path.split('/');
+    return [path, ...parts.slice(1).map((_, index) => `${parts.slice(0, index + 1).join('/')}/`)];
+  }));
+
+// A shared file reaches every adopter byte for byte, so a path it names must exist there too. A token that is
+// no path of this repository is a fixture or a placeholder; one that is, and is neither shared nor a declared
+// adopter path, exists only here.
+test('no shared file names a path only this repository has', () => {
+  const listed = spawnSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(listed.status, 0, listed.stderr);
+  const tracked = withAncestors(listed.stdout.split('\n').filter(Boolean));
+  const { entries } = readManifest(ROOT);
+  const allowed = withAncestors([
+    ...entries.map(({ path }) => path),
+    ...FIXED_PRODUCT_DOCUMENTS,
+    'AGENTS.md',
+    ...Object.keys(ADOPTER_PATHS),
+  ]);
+
+  const hits = [];
+  for (const entry of entries) {
+    const { path } = entry;
+    // Vendored upstream copies are replaced whole and never edited, so the product-name test skips them too.
+    if ('symlink' in entry || path.startsWith('.agents/upstream/')) continue;
+    let text = readFileSync(resolve(ROOT, path), 'utf8');
+    if ('region' in entry) text = regionText(text, path);
+    // This file's forbidden-word lists, each opening with the product name, must spell a file name they forbid.
+    if (path === 'scripts/lib/workflow-contract.test.mjs') text = text.replace(/\[\s*'Flowgauge',[^\]]*\]/g, '');
+    const joined = [...text.matchAll(JOINED_LITERALS)].map(([, run]) =>
+      [...run.matchAll(STRING_LITERAL)].map(([, single, double]) => single ?? double).join('/'));
+    const named = new Set();
+    for (const raw of [...(text.match(PATH_TOKEN) ?? []), ...joined]) {
+      if (PLACEHOLDER.test(raw)) continue;
+      // Trailing dots are sentence punctuation, except in a token that ends at a parent-directory segment.
+      const token = /(?:^|\/)\.\.$/.test(raw) ? raw : raw.replace(/\.+$/, '');
+      if (!token.includes('/') && !FILE_EXTENSION.test(token)) continue;
+      // A relative token is read both from the repository root and from the shared file's own directory; one that
+      // escapes the root, or names the root itself, names nothing here.
+      const fromFile = RELATIVE_SEGMENT.test(token) ? posix.normalize(posix.join(posix.dirname(path), token)) : null;
+      for (const candidate of [posix.normalize(token), fromFile]) {
+        if (candidate === null || candidate === '.' || candidate === '..' || candidate.startsWith('../')) continue;
+        const found = tracked.has(candidate) ? candidate : tracked.has(`${candidate}/`) ? `${candidate}/` : null;
+        if (found && !allowed.has(found)) named.add(found);
+      }
+    }
+    for (const token of named) hits.push(`${path}: ${token}`);
+  }
+  assert.deepEqual(
+    hits,
+    [],
+    'shared files name paths only this repository has; move each such check into a product-owned test the manifest does not list, or name the path neutrally (a placeholder, a glob, or a path no adopter has)',
+  );
 });
