@@ -94,6 +94,7 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/codex-hook-adapters.mjs",
   "scripts/lib/codex-hook-adapters.test.mjs",
   "scripts/lib/codex-browser-policy.test.mjs",
+  "scripts/lib/product-manual.test.mjs",
   "scripts/lib/factory-sync.mjs",
   "scripts/lib/factory-sync.test.mjs",
   "scripts/lib/handoff-check.mjs",

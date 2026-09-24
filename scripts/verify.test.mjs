@@ -708,6 +708,11 @@ describe("repository verification command", () => {
       "scripts/lib/codex-browser-policy.test.mjs",
       "export {};\n",
     ],
+    [
+      "product manual contract test",
+      "scripts/lib/product-manual.test.mjs",
+      "export {};\n",
+    ],
   ])(
     "keeps reviewed workflow-only %s on baseline evidence",
     (_label, path, contents) => {
