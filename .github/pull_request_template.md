@@ -12,16 +12,15 @@ Closes #
 
 ## Evidence
 
-<!-- Paste the lines `node scripts/run-log.mjs` wrote for this branch: focused tests, the executed mutation (red then green), lint, and applicable convergence. Each line carries the real exit code. -->
+<!-- Paste the lines `node scripts/run-log.mjs` wrote for this branch: focused tests, the executed mutation (red then green), lint, and the convergence checks the testing strategy names. Each line carries the real exit code. -->
 
-| Claim | Construction mode | Focused test | Mutation    | Result |
-| ----- | ----------------- | ------------ | ----------- | ------ |
-|       |                   |              | red → green |        |
+| Claim | Construction mode | Focused test | Mutation | Result |
+|---|---|---|---|---|
+| | | | red → green | |
 
 ## Review
 
 <!-- The review line comes first, in the format docs/AI-WORKFLOW.md specifies under "The review line", for example `Review: tier=code rounds=2 raised=6 fixed=4 dismissed=1 deferred=1` -->
-
 Review: tier= rounds= raised= fixed= dismissed= deferred=
 
 <!-- The fresh reviewer's verdict and every finding with its disposition (fixed, dismissed with reason, or deferred as docs/AI-WORKFLOW.md defines it). Greptile threads are resolved on the pull request itself. -->

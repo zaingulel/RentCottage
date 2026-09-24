@@ -14,13 +14,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addedNetworkTokens, hiddenDestinationShapes, outOfScope, parseMayEdit, renderedDestinations, tokenMatches,
-  treeGrepArgs, treeGrepCandidates,
+  addedNetworkTokens, hiddenDestinationShapes, markupDifference, outOfScope, parseMayEdit, renderedDestinations,
+  tokenMatches, treeGrepArgs, treeGrepCandidates,
 } from './sweep-scope.mjs';
-import { HIDDEN_ROWS, PASS_ROWS, RENDERED_ROWS, TOKEN_ROWS, TREE_ROWS } from './sweep-scope-corpus.mjs';
+import { HIDDEN_ROWS, MARKUP_ROWS, PASS_ROWS, RENDERED_ROWS, TOKEN_ROWS, TREE_ROWS } from './sweep-scope-corpus.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const MANUAL = readFileSync(join(ROOT, 'docs/DOC-SWEEP.md'), 'utf8');
+const DIAGRAM = readFileSync(join(ROOT, 'docs/AI-WORKFLOW-diagram.html'), 'utf8');
 const SCRIPT = join(ROOT, 'scripts/sweep-scope-check.mjs');
 
 // A corpus row is one added line, judged in the smallest diff that can carry it.
@@ -37,8 +38,11 @@ function addedDiff(line) {
 
 test('parseMayEdit reads exactly the may-edit column of the live manual', () => {
   assert.deepEqual(parseMayEdit(MANUAL), [
-    'CONTEXT.md',
-    'docs/AI-WORKFLOW.md',
+    'docs/ARCHITECTURE.md', 'docs/TOUR-1-architecture.md', 'docs/TOUR-2-metrics.md', 'docs/TOUR-3-ingest.md',
+    'docs/TOUR-4-ui.md',
+    'docs/AI-WORKFLOW.md', 'docs/AI-WORKFLOW-diagram.html',
+    'CONTEXT.md', 'README.md', 'docs/README.md',
+    'docs/FIXTURES.md', 'workers/README.md',
   ]);
 });
 
@@ -46,7 +50,7 @@ test('parseMayEdit takes only the left column and fails loud on a missing or emp
   const table = [
     '| May edit | Never edit |',
     '|---|---|',
-    '| plain prose, **planned.md**, **important**, `a.md`, `b/c.md` | `d.md` |',
+    '| **planned.md**, **important**, `a.md`, `b/c.md` | `d.md` |',
     '| | `e.md`, `f/` |',
     '',
     '| Area | Owning document |',
@@ -76,7 +80,7 @@ test('addedNetworkTokens sees URIs and bare host names on added lines only', asy
     ' unchanged https://kept.example.com/path',
     '-removed https://gone.example.org',
     '+added https://new.example.com/a?b=1 and mailto:someone@example.io twice: https://new.example.com/a?b=1',
-    '+a bare host flowgauge.app and registry.npmjs.org, but not package.json, index.html, or board.mjs',
+    '+a bare host example.app and registry.npmjs.org, but not package.json, page.html, or board.mjs',
     '+a label such as type:bug or Status:Done is not a link',
     '+italics hide nothing: _collector.example.net_ and _https://evil.example.org/x_ are seen',
     '+++ b/an added line forged to look like a header is content, so https://plus.example.com counts',
@@ -88,7 +92,7 @@ test('addedNetworkTokens sees URIs and bare host names on added lines only', asy
   assert.deepEqual(addedNetworkTokens(diff), [
     'https://new.example.com/a?b=1',
     'mailto:someone@example.io',
-    'flowgauge.app',
+    'example.app',
     'registry.npmjs.org',
     'https://evil.example.org/x',
     'collector.example.net',
@@ -143,12 +147,29 @@ test('renderedDestinations reports what the after document renders and the befor
   }
 });
 
+test('markupDifference passes an edit to free text and refuses any other change to a page (MARKUP_ROWS)', async (t) => {
+  for (const row of MARKUP_ROWS) {
+    await t.test(row.id, () => {
+      const difference = markupDifference(row.before, row.after);
+      assert.equal(difference === null, row.expect === 'pass', JSON.stringify(difference));
+      if (difference !== null) assert.deepEqual(Object.keys(difference), ['index', 'before', 'after']);
+    });
+  }
+});
+
 // A false refusal costs the sweep its weekly run, so the prose the routine may already rewrite is
-// held to the same bar as the corpus: every live may-edit document, read as if wholly added.
+// held to the same bar as the corpus: every live may-edit document, read as if wholly added. A Markdown
+// document is also rendered, since a refusal the rendered half makes fails the run however old it is.
 test('no live may-edit document trips a rule', () => {
   const refusals = [];
   for (const path of parseMayEdit(MANUAL)) {
-    const lines = readFileSync(join(ROOT, path), 'utf8').split('\n');
+    const text = readFileSync(join(ROOT, path), 'utf8');
+    if (path.endsWith('.md')) {
+      for (const record of renderedDestinations(text).filter(({ problem }) => problem)) {
+        refusals.push(`${path}: ${record.text} (${record.problem})`);
+      }
+    }
+    const lines = text.split('\n');
     const diff = [
       `diff --git a/${path} b/${path}`,
       `--- a/${path}`,
@@ -165,13 +186,13 @@ test('no live may-edit document trips a rule', () => {
 // what a sweep landed under the weaker rules: destination shapes the guard now refuses, inert inside a
 // fence, which a fixed-string grep still finds.
 const ALLOWED = [
-  'The app lives at https://app.flowgauge.app and nowhere else.',
-  'Jira help: https://support.atlassian.com/jira',
-  '<a href="https://app.flowgauge.app/?a=1&amp;b=2">tracked</a>',
+  'The app lives at https://app.example.app and nowhere else.',
+  'Tracker help: https://support.example.com/help',
+  '<a href="https://app.example.app/?a=1&amp;b=2">tracked</a>',
   '',
 ].join('\n');
-const WORKERS = 'The hosted build is https://www.flowgauge.app and smoke failures go to smoketest@example.com. ' +
-  'A tracked link looks like https://app.flowgauge.app/?c=3&d=4.\n';
+const WORKERS = 'The hosted build is https://www.example.app and smoke failures go to smoketest@example.com. ' +
+  'A tracked link looks like https://app.example.app/?c=3&d=4.\n';
 const LEGACY = ['Historic plants, fenced so nothing renders:', '', '```', '[c]://evil.icu',
   '[x](&#47;&#47;evil.icu/in)', 'a@sub_domain.evil.icu', '```', '', 'The label above is [click][c].', ''].join('\n');
 
@@ -207,7 +228,7 @@ function repo({ documents = {}, mayEdit = ['docs/ALLOWED.md'] } = {}) {
     git('commit', '-q', '-m', label);
     return git('rev-parse', 'HEAD');
   };
-  const check = (head) => spawnSync('node', [SCRIPT, base, head], { cwd: dir, encoding: 'utf8' });
+  const check = (head, at = base) => spawnSync('node', [SCRIPT, at, head], { cwd: dir, encoding: 'utf8' });
   // The check script's own grep stage, called through the same builder, so the tree rows are judged on
   // the lines the real base returns: every spelling of the destination, case-insensitively, with git's
   // `<rev>:<path>` prefix cut at the NUL `--null` writes after it.
@@ -235,10 +256,10 @@ test('tokenMatches vouches for a destination only as a whole token of the base t
 });
 
 // The trust anchor, asked of the live repository rather than a throwaway one. This file and its corpus
-// spell out destinations that must NOT be trusted, as whole extractor tokens; were the tree searched
-// with them in it, the guard would vouch for every hostile example it owns and a sweep could write one
-// into a document unrefused.
-test('the live tree vouches for no destination only the guard\'s own sources carry', () => {
+// spell out destinations that must NOT be trusted, as whole extractor tokens, and so do the negative
+// fixtures of the Rust crate and the browser specs; were the tree searched with them in it, the guard
+// would vouch for every hostile example they own and a sweep could write one into a document unrefused.
+test('the live tree vouches for no destination only the guard\'s own sources or test code carry', () => {
   const knownAtHead = (text) => {
     const lines = [];
     for (const candidate of treeGrepCandidates(text)) {
@@ -247,19 +268,21 @@ test('the live tree vouches for no destination only the guard\'s own sources car
     }
     return tokenMatches(text, lines);
   };
-  for (const text of ['https://github.com@evil.icu', 'https://evil.icu/in', 'https://support.atlassian.co',
-    'other@evil.icu', 'https://nested.example.icu/u']) {
+  for (const text of ['https://github.com@evil.icu', 'https://evil.icu/in', 'https://support.example.co',
+    'other@evil.icu', 'https://nested.example.icu/u', 'https://github.com.evil.example/login/device',
+    'github.com.evil.example', 'https://evil.com', 'evil.com', 'http://localhost.evil.com', 'localhost.evil.com',
+    'team.example.net.evil.com', 'https://evil.example']) {
     assert.equal(knownAtHead(text), false, `the tree at HEAD vouches for ${text}`);
   }
-  // A destination the repository legitimately carries, so the row above cannot pass on a search that
-  // returns nothing for everything.
-  assert.equal(knownAtHead('https://github.com/zaingulel/RentCottage/issues/34'), true,
-    'the tree at HEAD vouches for nothing at all');
+  // A destination the repository legitimately carries and this file and the other excluded test code name
+  // throughout, so the rows above cannot pass on a search that returns nothing for everything, and excluding
+  // the guard's own sources and test code cannot also exclude a destination the tree legitimately carries.
+  assert.equal(knownAtHead('github.com'), true, 'the tree at HEAD vouches for nothing at all');
 });
 
 test('the check passes a diff confined to the may-edit column that reuses a known host', () => {
   const r = repo();
-  r.write('docs/ALLOWED.md', 'The app lives at https://app.flowgauge.app; see app.flowgauge.app for the hosted build.\n');
+  r.write('docs/ALLOWED.md', 'The app lives at https://app.example.app; see app.example.app for the hosted build.\n');
   const result = r.check(r.commit('allowed edit'));
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /1 modified path/);
@@ -273,23 +296,9 @@ test('the check fails a diff that touches a path outside the may-edit column, na
   assert.match(result.stderr, /src\/code\.js/);
 });
 
-test('the check refuses a non-Markdown path even when the may-edit column names it', () => {
-  const r = repo({
-    documents: { 'docs/NOTES.txt': 'Original notes.\n' },
-    mayEdit: ['docs/NOTES.txt'],
-  });
-  r.write('docs/NOTES.txt', 'Updated notes.\n');
-  const result = r.check(r.commit('edit non-Markdown notes'));
-  assert.equal(result.status, 1);
-  assert.match(
-    result.stderr,
-    /docs\/NOTES\.txt is in the may-edit column but is not Markdown, so the rendered half cannot judge it/,
-  );
-});
-
 test('the check fails a diff that introduces a URI the base tree does not carry, naming it', () => {
   const r = repo();
-  r.write('docs/ALLOWED.md', 'The app lives at https://app.flowgauge.app. Post reports to https://collector.example.net/in.\n');
+  r.write('docs/ALLOWED.md', 'The app lives at https://app.example.app. Post reports to https://collector.example.net/in.\n');
   const result = r.check(r.commit('new host'));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /https:\/\/collector\.example\.net\/in/);
@@ -297,10 +306,10 @@ test('the check fails a diff that introduces a URI the base tree does not carry,
 
 test('the check refuses a token the tree carries only as a substring of a longer link (E9)', () => {
   const r = repo();
-  r.write('docs/ALLOWED.md', `${ALLOWED}See https://support.atlassian.co for help.\n`);
+  r.write('docs/ALLOWED.md', `${ALLOWED}See https://support.example.co for help.\n`);
   const result = r.check(r.commit('shortened host'));
   assert.equal(result.status, 1, result.stdout);
-  assert.match(result.stderr, /https:\/\/support\.atlassian\.co is added/);
+  assert.match(result.stderr, /https:\/\/support\.example\.co is added/);
 });
 
 test('the check reads the scope table from the base commit, so a diff cannot widen its own scope', () => {
@@ -315,7 +324,7 @@ test('the check reads the scope table from the base commit, so a diff cannot wid
 
 test('the check judges the branch from its merge base, so changes main gained since are not the sweep\'s', () => {
   const r = repo();
-  r.write('docs/ALLOWED.md', 'The app lives at https://app.flowgauge.app, and that is all.\n');
+  r.write('docs/ALLOWED.md', 'The app lives at https://app.example.app, and that is all.\n');
   const head = r.commit('sweep edit');
   r.git('checkout', '-q', '-b', 'later', r.base);
   r.write('src/code.js', 'export const x = 3; // https://later.example.com\n');
@@ -345,7 +354,7 @@ test('the check refuses a deleted, added, or renamed file even inside the may-ed
 
 test('the check refuses rendered-link markup outright, naming the fragment', () => {
   const r = repo();
-  r.write('docs/ALLOWED.md', 'The app lives at https://app.flowgauge.app; see [the collector](https:&#47;&#47;collector&#46;example&#46;com).\n');
+  r.write('docs/ALLOWED.md', 'The app lives at https://app.example.app; see [the collector](https:&#47;&#47;collector&#46;example&#46;com).\n');
   const result = r.check(r.commit('encoded link'));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /REFERENCE_IN_DESTINATION/);
@@ -364,15 +373,15 @@ test('the check rejects missing or unresolvable commits instead of reporting a c
 // the routine's life per row, run against the throwaway repository above.
 //
 // The documents a row starts from when the standard tree will not do. `FENCED` renders nothing but the
-// Jira link, so a fence removed from around the app link is genuinely newly rendered; `AMPERSAND`
+// tracker help link, so a fence removed from around the app link is genuinely newly rendered; `AMPERSAND`
 // carries the tracked link in its bare-`&` spelling; `CONTROL` carries a destination with a tab in it,
 // which renders as a host the line never spells.
-const FENCED = ['Jira help: https://support.atlassian.com/jira', '', '```',
-  '[x](https://app.flowgauge.app)', '```', ''].join('\n');
-const AMPERSAND = ['The app lives at https://app.flowgauge.app and nowhere else.',
-  'A tracked link: https://app.flowgauge.app/?a=1&b=2', ''].join('\n');
-const CONTROL = ['Jira help: https://support.atlassian.com/jira', '', '```',
-  '[x](<https://www.flowgauge.app\t.evil.icu>)', '```', ''].join('\n');
+const FENCED = ['Tracker help: https://support.example.com/help', '', '```',
+  '[x](https://app.example.app)', '```', ''].join('\n');
+const AMPERSAND = ['The app lives at https://app.example.app and nowhere else.',
+  'A tracked link: https://app.example.app/?a=1&b=2', ''].join('\n');
+const CONTROL = ['Tracker help: https://support.example.com/help', '', '```',
+  '[x](<https://www.example.app\t.evil.icu>)', '```', ''].join('\n');
 
 // Removing the fence lines and nothing else leaves a deletion-only diff: the context-free half sees no
 // added line at all, so only the semantic half can speak.
@@ -412,14 +421,14 @@ test('the check reports, and does not refuse, a reactivated destination the tree
 });
 
 test('the check reports an autolink literal the tree vouches for as newly rendered (E3)', () => {
-  const result = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\nVisit www.flowgauge.app today.\n`);
+  const result = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\nVisit www.example.app today.\n`);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /1 newly rendered destination\(s\)/);
 });
 
 // The observable difference the parser makes: one line, two containers, two verdicts.
 test('the check counts a link in a paragraph as newly rendered and the same line in a fence as inert (E5)', () => {
-  const link = '[x](https://app.flowgauge.app)';
+  const link = '[x](https://app.example.app)';
   const live = judge('docs/ALLOWED.md', FENCED, `${FENCED}\n${link}\n`);
   assert.equal(live.status, 0, live.stderr);
   assert.match(live.stdout, /1 newly rendered destination\(s\)/);
@@ -457,10 +466,10 @@ test('the check reports a woken e-mail literal the extractor already tokenises i
 // `&amp;` and a bare `&` are one destination, so the three ways the tree and the diff can spell the
 // same tracked link all agree.
 test('the check reads an entity-escaped ampersand and a bare one as the same destination (E8)', () => {
-  const html = '<a href="https://app.flowgauge.app/?a=1&amp;b=2">x</a>';
+  const html = '<a href="https://app.example.app/?a=1&amp;b=2">x</a>';
   const a = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\n${html}\n`);
   assert.equal(a.status, 0, a.stderr);
-  const b = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\n[q](https://app.flowgauge.app/?a=1&b=2)\n`);
+  const b = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\n[q](https://app.example.app/?a=1&b=2)\n`);
   assert.equal(b.status, 0, b.stderr);
   const c = judge('docs/ALLOWED.md', AMPERSAND, `${AMPERSAND}\n${html}\n`);
   assert.equal(c.status, 0, c.stderr);
@@ -492,6 +501,33 @@ test('the check refuses a control character in a destination whatever the diff s
   const result = judge('docs/ALLOWED.md', CONTROL, unfenced(CONTROL));
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stderr, /the rendered destination .* is refused \(control character\)/);
+  // The refusal line quotes the destination escaped, never with the control character raw.
+  const unprintable = CONTROL.replace('\t.evil.icu', '/a\u0001b');
+  const escaped = judge('docs/ALLOWED.md', unprintable, unfenced(unprintable));
+  assert.equal(escaped.status, 1, escaped.stdout);
+  assert.match(escaped.stderr, /the rendered destination .* is refused \(control character\)/);
+  assert.ok(!escaped.stderr.includes('\u0001'), 'the log carries no raw U+0001');
+});
+
+// Where the parser and GitHub disagree on raw HTML. GitHub escapes a filtered tag and renders the
+// anchor inside it; a browser closes a comment at `--!>`; the parser reads `tmp` as raw text a browser
+// renders as markup. The lax scheme keeps the token half silent, so only the rendered half speaks.
+test('the check reports an anchor inside a tag GitHub filters under the destination GitHub reaches (E13)', () => {
+  const result = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\n<textarea><a href="http:evil.icu/x">x</a></textarea>\n`);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /the newly rendered destination http:evil\.icu\/x \(http:\/\/evil\.icu\/x\)/);
+});
+
+test('the check refuses an incorrectly closed comment in raw HTML (E14)', () => {
+  const result = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\n<!-- c --!> <a href="http:evil.icu/x">x</a>\n`);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /the rendered destination --!> is refused \(incorrectly closed comment\)/);
+});
+
+test('the check refuses raw text the parser swallows that hides markup (E14b)', () => {
+  const result = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\n<div><tmp><a href="http:evil.icu/x">x</a></tmp></div>\n`);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /the rendered destination <tmp> is refused \(raw text hides markup/);
 });
 
 // The guard's own sources list destinations that must not be trusted, so they are excluded from the
@@ -518,4 +554,147 @@ test('the tree does not vouch for a destination only a guard source carries (E12
   ordinary.write('docs/ALLOWED.md', EDIT);
   const passed = ordinary.check(ordinary.commit('edit vouched by an ordinary path'));
   assert.equal(passed.status, 0, passed.stderr);
+});
+
+// Test code names hosts precisely so they can be refused, so it vouches for nothing either. The
+// root-level plant pins that `**/` matches the root; the nested plant pins that the glob crosses
+// directories. E12's `docs/NOTES.md` run is the pass that keeps these from passing on an empty search.
+test('the tree does not vouch for a destination only test code carries (E12b)', async (t) => {
+  const PLANT = 'export const ROWS = [{ id: \'X\', line: \'[x](https://evil.icu/in)\' }];\n';
+  const EDIT = 'See [docs](https://evil.icu/in).\n';
+  for (const path of ['src-tauri/src/x.rs', 'tests/x.spec.ts', 'scripts/lib/x.test.mjs', 'x.test.mjs']) {
+    await t.test(path, () => {
+      const r = repo({ documents: { 'docs/ALLOWED.md': '', [path]: PLANT }, mayEdit: ['docs/ALLOWED.md'] });
+      r.write('docs/ALLOWED.md', EDIT);
+      const refused = r.check(r.commit('edit vouched only by test code'));
+      assert.equal(refused.status, 1, refused.stdout);
+      assert.match(refused.stderr, /https:\/\/evil\.icu\/in/);
+    });
+  }
+});
+
+// The workflow diagram is a page a browser loads raw, so only its free text may change. The anchors are
+// the live file's own: a station label, the first tab button, the font preconnect, the page title and
+// the gate swatch in the legend.
+const DIAGRAM_PATH = 'docs/AI-WORKFLOW-diagram.html';
+const MARKUP_LINE = /docs\/AI-WORKFLOW-diagram\.html: the edit changes the page's markup, not only its text; at offset \d+ of its markup, /;
+const TEXT_EDIT = DIAGRAM.replace('>Bring an idea<', '>Bring a hunch<');
+const MARKUP_EDIT = DIAGRAM.replace('<button role="tab" id="tab-overview"', '<button onclick="x()" role="tab" id="tab-overview"');
+
+test('the check passes a text-only edit to the workflow diagram (E15a)', () => {
+  const result = judge(DIAGRAM_PATH, DIAGRAM, TEXT_EDIT);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /1 modified path/);
+});
+
+test('the check passes a label deleted outright from the workflow diagram (E15f)', () => {
+  const result = judge(DIAGRAM_PATH, DIAGRAM, DIAGRAM.replace('>Bring an idea<', '><'));
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /1 modified path/);
+});
+
+test('the check refuses an event-handler attribute added to the workflow diagram (E15b)', () => {
+  const result = judge(DIAGRAM_PATH, DIAGRAM, MARKUP_EDIT);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, MARKUP_LINE);
+});
+
+test('the check refuses a changed destination attribute in the workflow diagram (E15c)', () => {
+  const result = judge(DIAGRAM_PATH, DIAGRAM, DIAGRAM.replace('href="https://fonts.googleapis.com">', 'href="https://evil.icu">'));
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, MARKUP_LINE);
+});
+
+// The parser ends a title's raw text only at `</title` plus `>` or whitespace; a browser ends it at the
+// `/` too, so the script is live there and only the markup rule can see it.
+test('the check refuses markup hidden in the text of the diagram\'s title (E15d)', () => {
+  const title = DIAGRAM.match(/<title>[^<]*<\/title>/)[0];
+  const tampered = DIAGRAM.replace(title, title.replace('</title>', '</title/><script>x()</script>') + title);
+  assert.notEqual(tampered, DIAGRAM);
+  const result = judge(DIAGRAM_PATH, DIAGRAM, tampered);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, MARKUP_LINE);
+  assert.doesNotMatch(result.stderr, /is added by this diff|refuses/);
+});
+
+// A browser ignores `/>` on an HTML element, so the swatch stays open and wraps what follows it.
+test('the check refuses a self-closing rewrite of an HTML element in the diagram (E15e)', () => {
+  const result = judge(DIAGRAM_PATH, DIAGRAM, DIAGRAM.replace('<i class="sw gate"></i>', '<i class="sw gate"/>'));
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, MARKUP_LINE);
+});
+
+test('the check fails closed on a may-edit entry that is neither Markdown nor HTML (E16)', () => {
+  const result = judge('docs/NOTES.txt', 'notes\n', 'notes, revised\n');
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /docs\/NOTES\.txt is in the may-edit column but is not Markdown, so the rendered half cannot judge it/);
+});
+
+// The diagram is judged against the tip of main, not the merge base, so a squash cannot bring back
+// markup main changed after the branch point. The cost is a refusal until the branch is rebased.
+test('the check judges the diagram against the tip of main and passes once the branch is rebased (E17)', () => {
+  const r = repo({ documents: { [DIAGRAM_PATH]: DIAGRAM }, mayEdit: [DIAGRAM_PATH] });
+  r.git('checkout', '-q', '-b', 'sweep');
+  r.write(DIAGRAM_PATH, TEXT_EDIT);
+  const sweepHead = r.commit('sweep text edit');
+  r.git('checkout', '-q', 'main');
+  r.write(DIAGRAM_PATH, MARKUP_EDIT);
+  const mainHead = r.commit('main markup edit');
+  const stale = r.check(sweepHead, mainHead);
+  assert.equal(stale.status, 1, stale.stdout);
+  assert.match(stale.stderr, MARKUP_LINE);
+  assert.match(stale.stderr, /; if main changed the page's markup since this branch was cut, rebase onto main first/);
+  r.git('checkout', '-q', 'sweep');
+  r.git('rebase', '-q', mainHead);
+  const rebased = r.check(r.git('rev-parse', 'HEAD'), mainHead);
+  assert.equal(rebased.status, 0, rebased.stderr);
+  assert.match(rebased.stdout, /1 modified path/);
+});
+
+// A form feed makes the anchor live on GitHub and plain text to the parser, so only the control
+// character rule can see it; the refusal line escapes it rather than writing it raw to the log.
+test('the check refuses a control character on an added line (E18)', () => {
+  const result = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\n<a\fhref="http:evil.icu/x">x</a>\n`);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /docs\/ALLOWED\.md: CONTROL_CHARACTER refuses U\+000C on the added line: /);
+  assert.ok(!result.stderr.includes('\f'), 'the log carries no raw form feed');
+});
+
+// An unterminated attribute and a token both carry the escape sequence into their refusal lines, so
+// each line escapes what it quotes and no terminal control sequence reaches the log.
+test('the check writes no raw control character in any refusal line (E18b)', () => {
+  const result = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\n<a href="https://evil.icu/\x1b[31m\na\u0085b\n`);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /docs\/ALLOWED\.md: OPEN_ATTRIBUTE refuses /);
+  assert.ok(!result.stderr.includes('\x1b'), 'the log carries no raw escape character');
+  // JSON quoting leaves a C1 control raw, so the quoted added line needs the output step too.
+  assert.ok(!result.stderr.includes('\u0085'), 'the log carries no raw U+0085');
+});
+
+// A file name is pull-request bytes too, and git prints bytes at or above 0x80 as they are.
+test('the check writes no raw control character from an added file\'s name (E18c)', () => {
+  const r = repo();
+  r.write('docs/a\u0085b.md', 'x\n');
+  const result = r.check(r.commit('add a file'));
+  assert.equal(result.status, 1, result.stdout);
+  assert.ok(!result.stderr.includes('\u0085'), 'the log carries no raw U+0085');
+});
+
+// A name git reads as pathspec magic fails the diff git runs on it, so the git failure line quotes it.
+test('the check writes no raw control character in a git failure line (E18d)', () => {
+  const name = ':(x\u0085';
+  const r = repo({ documents: { [name]: 'a\n' } });
+  r.write(name, 'b\n');
+  const result = r.check(r.commit('modify a crafted name'));
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.ok(!result.stderr.includes('\u0085'), 'the log carries no raw U+0085');
+});
+
+// A NUL makes git guess the document is binary and print no lines at all, so both halves that read added
+// lines would see nothing, the new destination beside the NUL included.
+test('the check reads added lines as text even when a NUL makes git guess binary (E19)', () => {
+  const result = judge('docs/ALLOWED.md', ALLOWED, `${ALLOWED}\nsee https://evil-nul.icu/x \u0000 here\n`);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /docs\/ALLOWED\.md: CONTROL_CHARACTER refuses U\+0000 on the added line: /);
+  assert.match(result.stderr, /https:\/\/evil-nul\.icu\/x is added by this diff and is not a whole token anywhere in the tree/);
 });

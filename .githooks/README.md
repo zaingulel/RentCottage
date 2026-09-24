@@ -1,24 +1,30 @@
 # Git hooks (committed, deterministic gates)
 
-These hooks catch repeated workflow mistakes before they reach hosted Continuous Integration (CI).
+These hooks move the repository's most-repeated discipline rules off agent and human memory
+and onto committed local gates, so a mistake is caught before it reaches a metered CI run.
 
-| Hook               | What it enforces                                                                                                                                      | Bypass                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `pre-commit`       | Advises on documentation rot and blocks malformed or divergent staged Claude/Codex agent definitions using the staged validator and raw staged blobs. | `git commit --no-verify` |
-| `pre-merge-commit` | Runs `pre-commit` for a merge that would auto-commit.                                                                                                 | `git merge --no-verify`  |
-| `pre-push`         | Runs lint when installed and the complete `scripts/lib` Node test suite; `RUN_TESTS=1 git push` also runs the repository test command.                | `git push --no-verify`   |
+| Hook | What it enforces | Bypass |
+|---|---|---|
+| `pre-commit` | One guard, scoped to what is staged: Claude Markdown and Codex TOML agent definitions must parse (blocks silently-dropped agents). One advisory, never blocking: `scripts/doc-lint.mjs --staged` reports prose rot in staged documents and skills. Then the product gate: an executable `scripts/gates/pre-commit`, when present, runs on every commit, and its non-zero exit, or a gate file that is not executable, blocks the commit. | `git commit --no-verify` |
+| `pre-merge-commit` | Runs `pre-commit` on a merge that would auto-commit. A merge that auto-commits never runs `pre-commit`, so a merge driver that keeps one side of a generated artifact could otherwise commit it stale; this hook gives the product gate that case. | `git merge --no-verify` |
+| `pre-push` | `npm run lint` (~1 s, skipped with a warning when eslint is missing) and the `scripts/lib` node:test suite (invoked as `node --test` directly so a missing npm cannot bypass it; fails closed on a missing node). Opt into the full Playwright suite with `RUN_TESTS=1 git push`. | `git push --no-verify` |
 
 ## Activation
 
-The hooks travel with the repository but are not activated merely by being tracked or by installing dependencies.
-Activation is a manual, intentional repository operation. Before activating them, read and retain the prior value
-so it can be restored; then set and read back the exact configured path. A failed set or read-back is a failure and
-must not be swallowed:
+Hooks live here (not in `.git/hooks/`) so they travel with the repository. They are wired via
+`core.hooksPath`, set by the `prepare` npm script, which also registers any merge driver the
+product declares in `.gitattributes`:
 
 ```bash
-git config --get core.hooksPath
-git config core.hooksPath .githooks
-test "$(git config --get core.hooksPath)" = .githooks
+npm install        # runs `prepare`
 ```
 
-Hosted CI calls the repository verification interface independently and does not trust local hooks as proof.
+To activate manually (or verify):
+
+```bash
+git config core.hooksPath .githooks
+git config --get core.hooksPath        # → .githooks
+```
+
+CI does not rely on these hooks: it runs the same checks as explicit steps. The product's own
+checks live in `scripts/gates/`.

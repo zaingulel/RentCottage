@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// board.mjs — the one Flowgauge board command: it lists the board and judges it from
+// board.mjs — the one board command: it lists the board and judges it from
 // the SAME single read, so a session never pays twice for one answer and the listing
 // can never disagree with the drift verdict printed under it.
 //

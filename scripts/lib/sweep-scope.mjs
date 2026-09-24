@@ -112,11 +112,18 @@ export function treeGrepCandidates(text) {
 // The whole `git grep` argument vector, after `git`, that searches one tree for one candidate
 // spelling. One builder, so the check and its tests cannot search different trees. The guard's own
 // sources are excluded: they are a list of destinations that must not be trusted, spelled out as whole
-// extractor tokens, so they are not evidence that the repository points anywhere. A pathspec that
-// excludes nothing is not an error, so this is safe in any tree.
+// extractor tokens, so they are not evidence that the repository points anywhere. Test code is excluded
+// for the same reason, because a negative fixture names hosts precisely so they can be refused; Rust
+// keeps its tests inline, so the whole crate is excluded and a real host named only in Rust fails
+// closed. `**/` matches the root directory as well as every subdirectory. Every pathspec spells its
+// magic out, so `GIT_GLOB_PATHSPECS` and `GIT_NOGLOB_PATHSPECS` cannot change what is excluded, while
+// `GIT_LITERAL_PATHSPECS` would make every pathspec literal, so the search would match nothing and the
+// check would refuse: it fails closed. The search runs at the base commit, so a pull request cannot
+// widen or narrow it. A pathspec that excludes nothing is not an error, so this is safe in any tree.
 export function treeGrepArgs(candidate, ref) {
   return ['grep', '--ignore-case', '--fixed-strings', '--null', '-e', candidate, ref,
-    '--', ':!scripts/lib/sweep-scope*', ':!scripts/sweep-scope-check.mjs'];
+    '--', ':(exclude,glob)scripts/lib/sweep-scope*', ':(exclude,literal)scripts/sweep-scope-check.mjs',
+    ':(exclude,glob)src-tauri/**', ':(exclude,glob)tests/**', ':(exclude,glob)**/*.test.*'];
 }
 
 // The host of an extractor token: the authority after any scheme, before any path, query or fragment,
@@ -128,8 +135,8 @@ function tokenHost(token) {
 }
 
 // Whether the base tree vouches for `text`, given the tree lines a fixed-string search for it
-// returned. A hit alone is substring semantics, which would let `https://support.atlassian.com/jira`
-// vouch for `https://support.atlassian.co` and `https://app.flowgauge.app` for `https://app`. The tree
+// returned. A hit alone is substring semantics, which would let `https://support.example.com/help`
+// vouch for `https://support.example.co` and `https://app.example.app` for `https://app`. The tree
 // vouches only when `text` is exactly a token the extractor produces from one of those lines, or, when
 // `text` is a bare host by shape, a label-boundary suffix of such a token's host.
 export function tokenMatches(text, treeLines) {
@@ -157,7 +164,7 @@ const DESTINATION_VALUE = '(?:<([^>\\n]*)>|([^\\s)]*))';
 const LINK_DESTINATION = new RegExp(`\\]\\(\\s*${DESTINATION_VALUE}`, 'g');
 const DEFINITION_DESTINATION = new RegExp(`^ {0,3}\\[[^\\]\\n]+\\]:[ \\t]*${DESTINATION_VALUE}`);
 // A quoted value the line never closes is its own shape: the URL parser joins it to the next line,
-// so `href="https://www.flowgauge.app` plus `.evil.icu"` renders as a host the added line never
+// so `href="https://www.example.app` plus `.evil.icu"` renders as a host the added line never
 // spells. The unterminated alternative sits before the unquoted one, which would swallow the quote.
 // The attributes GitHub's sanitizer keeps (`href`, `src`, `srcset`, `cite`, `longdesc`) and the five
 // kept beside them fail-closed. One list: the shape rule below and the semantic half further down both
@@ -259,6 +266,10 @@ const REFERENCE_AT = new RegExp(CONCEALING_REFERENCE.source, 'iy');
 // sits: `[x](//h)`, `href=//h`, `cite='//h'` and an orphan continuation line `//h"` all do it. A
 // comment marker (`// note`) and a doubled path separator (`path//file`) are neither.
 const PROTOCOL_RELATIVE_WORD = /(?:^|[\s(<="'])(\/\/(?=\S)[^\s)>"'\n]*)/g;
+// GitHub's parser reads `\v` and `\f` as whitespace inside a tag where micromark reads text, so a line
+// can render a link neither half sees. No document needs a C0 or C1 control but tab, or DEL, so all are refused.
+// eslint-disable-next-line no-control-regex -- matching control characters is the rule's whole purpose
+const CONTROL_CHARACTER = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
 
 // Every destination shape on an added line that hides where it points: the rule that refuses it, the
 // fragment refused, and the line it sits on. In order of first appearance; a rule and fragment
@@ -273,6 +284,9 @@ export function hiddenDestinationShapes(unifiedDiff) {
     shapes.push({ line, rule, fragment });
   };
   for (const line of addedLines(unifiedDiff)) {
+    for (const [character] of line.matchAll(CONTROL_CHARACTER)) {
+      refuse(line, 'CONTROL_CHARACTER', `U+${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+    }
     for (const m of line.matchAll(PROTOCOL_RELATIVE_WORD)) refuse(line, 'PROTOCOL_RELATIVE', m[1]);
     // P5. A reference glued to an e-mail literal or a bare host extends the host GitHub links to and
     // leaves the token the extractor reads, and the parser's own positioned node, ending where the
@@ -313,10 +327,12 @@ export function hiddenDestinationShapes(unifiedDiff) {
 const RESOLUTION_BASE = 'https://sweep-scope.invalid/';
 const RESOLUTION_ORIGIN = 'https://sweep-scope.invalid';
 
-// A C0 control or DEL inside a destination is never legible: the URL parser drops tab, newline and
-// carriage return before resolving, so `https://www.flowgauge.app<TAB>.evil.icu` reads as one host and
-// renders as another. The shape rules no longer refuse one, so this is the live refusal for it.
-const hasControlCharacter = (text) => [...text].some((character) => character < ' ' || character === '\x7f');
+// A C0 or C1 control or DEL inside a destination is never legible: the URL parser drops tab, newline and
+// carriage return before resolving, so `https://www.example.app<TAB>.evil.icu` reads as one host and
+// renders as another. The shape rules refuse every control but tab on an added line; this refuses one
+// in any destination the head newly renders, whichever line it came from.
+const hasControlCharacter = (text) => [...text].some((character) =>
+  character < ' ' || (character >= '\x7f' && character <= '\x9f'));
 
 // An autolink literal is the one link whose node covers exactly its own visible text: `<xmpp:a@evil.icu>`
 // carries angle brackets and `[x](...)` a label, so in both the text child starts after the node does.
@@ -337,6 +353,59 @@ function visibleAutolinkText(node) {
   return covers ? child.value : null;
 }
 
+// GitHub's disallowed-raw-HTML filter (GFM 6.11, cmark-gfm `extensions/tagfilter.c`): `<`, an optional
+// `/` and one of nine names, case-insensitively, followed by whitespace, `>` or `/>`, has its `<`
+// escaped. The parser would read the content of those tags as raw text; GitHub renders it as markup, so
+// raw HTML is filtered the same way before the parser reads it.
+const DISALLOWED_RAW_HTML = /<(?=\/?(?:title|textarea|style|xmp|iframe|noembed|noframes|script|plaintext)(?:[\t\n\v\f\r >]|\/>))/gi;
+const filterDisallowedRawHtml = (html) => html.replace(DISALLOWED_RAW_HTML, '&lt;');
+
+// The HTML standard's tag open state: a browser turns `<` into markup only when `!`, `/`, `?` or an
+// ASCII letter follows it. Text carrying that shape hides markup from whatever reads it as text.
+const HIDDEN_MARKUP = /<[A-Za-z/!?]/;
+
+// A browser closes a comment at `--!>` and the parser does not, and a CommonMark HTML block opened by
+// `<!--` runs to the next line carrying `-->`, so everything after the spelling is invisible to the
+// parser and live in a browser.
+const INCORRECTLY_CLOSED_COMMENT = '--!>';
+
+// A second pass over one raw HTML node, entities left undecoded so `&lt;a` in prose is not a hit. After
+// the filter above, the parser's only raw-text entries are its own misreads (`tmp`, `xitle` and
+// `xextarea` enter raw text under their own names) and slash-suffixed wrappers such as `<textarea/x>`,
+// which escape the filter; a CDATA section reaches it as a comment read to `]]>`, where a browser ends
+// it at the first `>`. Each is refused when it could hide markup, named by the innermost open element,
+// or by the tag-shaped fragment itself outside any element, once per name per node. The rule
+// deliberately over-refuses in the fail-closed direction: `</>`, a slash-suffixed wrapper GitHub renders
+// inert, and a `<!--[CDATA[ ... -->` comment are refused too.
+function hiddenRawText(html) {
+  const found = [];
+  const open = [];
+  const labels = new Set();
+  const parser = new Parser({
+    onopentag(name) {
+      open.push(name);
+    },
+    onclosetag() {
+      open.pop();
+    },
+    ontext(text) {
+      if (!HIDDEN_MARKUP.test(text)) return;
+      const label = open.length > 0 ? `<${open.at(-1)}>` : text.match(/<[A-Za-z/!?][^\s<>]{0,30}>?/)[0];
+      if (labels.has(label)) return;
+      labels.add(label);
+      found.push({ text: label, href: null, problem: 'raw text hides markup a browser renders' });
+    },
+    oncomment(data) {
+      if (data.startsWith('[CDATA[')) {
+        found.push({ text: '<![CDATA[', href: null, problem: 'CDATA section a browser ends at the first >' });
+      }
+    },
+  }, { decodeEntities: false });
+  parser.write(filterDisallowedRawHtml(html));
+  parser.end();
+  return found;
+}
+
 // The destination-carrying attributes of one raw HTML node, decoded, in document order. The parser owns
 // the decoding, so `&amp;` arrives as `&` and matches the same link written as Markdown.
 function htmlDestinations(html) {
@@ -350,7 +419,7 @@ function htmlDestinations(html) {
       }
     },
   }, { decodeEntities: true });
-  parser.write(html);
+  parser.write(filterDisallowedRawHtml(html));
   parser.end();
   return found;
 }
@@ -412,6 +481,12 @@ export function renderedDestinations(markdownText) {
   const definitions = definitionUrls(tree);
   const records = [];
   const visit = (node) => {
+    if (node.type === 'html') {
+      if (node.value.includes(INCORRECTLY_CLOSED_COMMENT)) {
+        records.push({ text: INCORRECTLY_CLOSED_COMMENT, href: null, problem: 'incorrectly closed comment' });
+      }
+      records.push(...hiddenRawText(node.value));
+    }
     for (const [text, destination] of nodeDestinations(node, definitions)) {
       const record = externalDestination(text, destination);
       if (record) records.push(record);
@@ -420,4 +495,64 @@ export function renderedDestinations(markdownText) {
   };
   visit(tree);
   return records;
+}
+
+// An HTML page in the may-edit column is judged by a third rule. A browser loads it raw, with no
+// sanitizer between the file and the reader, so everything but free text is live and only free text
+// may change. The page's skeleton is its own source with every free text chunk deleted; every other
+// byte stays verbatim, so a tag, an attribute, a comment, a close tag the parser drops because nothing
+// it names is open, and a self-closing rewrite all change it, while text edited, deleted, written into
+// an empty element or moved across a tag does not. Inside `ontext`, `endIndex` is the chunk's last
+// source offset, inclusive, and with entities left undecoded the chunk is the verbatim source, so its
+// length locates its start. `startIndex` does not: after an end tag carrying anything before its `>`
+// (`</p >`), it points at those bytes. Text the document ends on arrives in `ontext` too, before
+// `onend`. In ordinary text a `<` always starts a new chunk, and raw text arrives whole, so every
+// tag-open shape sits inside one chunk. A chunk is free unless a
+// `script` or `style` is open anywhere above it (a browser ignores `/>` on either, so a `<script/>`
+// makes everything after it code until `</script>`), or its bytes carry the tag-open shape, which is
+// text only to the parser (a title's raw text ending at `</title/`, markup inside an SVG title), or it
+// comes after a `<!--` inside a script, or after a `script` or `style` the parser closed by implication.
+// Those two cases fail closed where the parser ends code before a browser does. From `<!--` a browser
+// does not end the script at the first `</script>` after a nested `<script>`. A browser also keeps a
+// `<script/>` or `<style/>` open until its own end tag, where the parser lets another element's end tag
+// or the end of the page close it. The parser also closes an SVG `<script/>` by implication, which a
+// browser leaves empty, so text after one is refused too: a deliberate over-refusal that fails safe.
+// Entities stay undecoded, so `&lt;` is text and `<` is not.
+function markupSkeleton(html) {
+  const open = [];
+  let codeMayContinue = false;
+  let skeleton = '';
+  let at = 0;
+  const parser = new Parser({
+    onopentag(name) {
+      open.push(name);
+    },
+    onclosetag(name, isImplied) {
+      open.pop();
+      if (isImplied && (name === 'script' || name === 'style')) codeMayContinue = true;
+    },
+    ontext(text) {
+      const inScript = open.includes('script');
+      if (inScript && text.includes('<!--')) codeMayContinue = true;
+      if (codeMayContinue || inScript || open.includes('style') || HIDDEN_MARKUP.test(text)) return;
+      const end = parser.endIndex + 1;
+      skeleton += html.slice(at, end - text.length);
+      at = end;
+    },
+  }, { decodeEntities: false });
+  parser.write(html);
+  parser.end();
+  return skeleton + html.slice(at);
+}
+
+// Null when the edit changed only free text, else the first offset at which the two skeletons differ
+// and up to 60 characters of each from there. The offset counts skeleton characters, so it is a
+// position in the page's markup with its free text deleted, not in the page itself.
+export function markupDifference(beforeHtml, afterHtml) {
+  const before = markupSkeleton(beforeHtml);
+  const after = markupSkeleton(afterHtml);
+  if (before === after) return null;
+  let index = 0;
+  while (before[index] === after[index]) index += 1;
+  return { index, before: before.slice(index, index + 60), after: after.slice(index, index + 60) };
 }

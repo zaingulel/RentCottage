@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Park genuinely unfinished RentCottage work so the next session can pick it up from git.
+description: Park genuinely unfinished work in this repository so the next session can pick it up from git.
 disable-model-invocation: true
 ---
 
@@ -8,9 +8,9 @@ disable-model-invocation: true
 
 Owner-invoked to park unfinished work. Completed work uses `closeout`.
 
-1. **Commit what exists** on the job branch with a message that says it is work in progress. Run the slice's
-   focused evidence and any applicable generated-type or declared-schema checks first; incomplete required
-   evidence is named in the draft rather than presented as green.
+1. **Commit what exists** on the job branch with a message that says it is work in progress. Regenerate any
+   artifact the `generated artifacts` row of the Conventions table in `AGENTS.md` names and commit it with its
+   source; the Stop and pre-commit hooks enforce it.
 2. **Prepare the draft pull-request body.** Fill
    `.github/pull_request_template.md`. Write the **Not done** section for a reader with no memory of this
    session: what is finished, what is not, the next concrete step, and any decision the owner still owes.

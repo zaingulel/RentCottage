@@ -21,12 +21,12 @@ an executed mutation proof with expected values from an independent oracle.
 
 ## What a good test is
 
-- **Tests behaviour through the real public interface**: the application/service seam for marketplace outcomes,
-  real PostgreSQL for Integrity Core, policy and concurrency claims, the Cloudflare Worker runtime for Worker
-  contracts, and driven Playwright for visible journeys. A test survives an internal rename.
-- **Deterministic wherever possible.** Pin Marketplace Time, identifiers, provider responses and fixtures; never
-  assert wall-clock duration. Preserve production authorization and lifecycle guards while preparing fixtures,
-  and read `docs/demo.md` before relying on synthetic demonstration state.
+- **Tests behaviour through the real public interface**: at the evidence route `docs/TESTING-STRATEGY.md` names
+  for this claim (the driven UI, or the function that owns the rule), never a private detail; it survives an
+  internal rename.
+- **Deterministic wherever possible.** Seed randomness (keep draw-order parity), pin dates and fixtures, no
+  wall-clock or network. Validate REAL behaviour against the real fixtures the `fixtures` row of the
+  Conventions table in `AGENTS.md` names, never a synthetic one.
 - **Asserts the actual promise, not a structural proxy.** For visual promises — order, placement, visibility —
   assert the RENDERED result (computed style, bounding box, `toBeVisible`), never DOM order or an attribute.
 - **Mutation-proven.** Break the thing on purpose, confirm RED, restore.
@@ -41,9 +41,8 @@ an executed mutation proof with expected values from an independent oracle.
 
 ## Mocking
 
-Mock only at real supplier boundaries when the claim is below that boundary; never mock the PostgreSQL rule,
-Row Level Security policy, Worker runtime, signed-provider contract or browser behaviour the test claims to prove,
-and never mock your own domain code or internal collaborators.
+Mock only at real system boundaries (external APIs, the clock, randomness); never your own code or internal
+collaborators.
 
 ## Acceptance
 

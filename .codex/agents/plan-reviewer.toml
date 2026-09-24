@@ -19,8 +19,8 @@ the code. You are not the diff reviewer: nothing has been built yet.
 3. **Coherence**: internally consistent and consistent with the contracts it touches — each claim's observer
    discriminates it, its plausible mutation rejects the credible wrong behaviour, and nothing contradicts an
    `AGENTS.md` hard constraint, a scoped rule, or the mode admissions in `docs/TESTING-STRATEGY.md`.
-4. **Security-privacy**: does the plan widen authentication, authorization, payment, personal-data, Row Level Security, provider-webhook, credential custody, public/private exposure
-   guarantees, or an injection boundary; read persisted or external data without hostile-input handling in the
+4. **Security-privacy**: does the plan widen a surface in the `security review` row of the Surfaces
+   table in `AGENTS.md`; read persisted or external data without hostile-input handling in the
    same slice; or need a `security-reviewer` pass it never names?
 
 Every finding names the exact file and line range read and the supporting observation; a finding you could not

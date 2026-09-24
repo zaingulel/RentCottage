@@ -28,7 +28,6 @@ two modes is two handoffs.
 The focused verification command runs one named test by its full title: a command matching ZERO tests is a
 failure to report loudly, never a pass.
 -->
-
 ---8<---
 Slice: {{SLICE_TITLE}}
 Claim: {{CLAIM}}
@@ -50,7 +49,6 @@ Focused verification command: {{FOCUSED_TEST_COMMAND}}
 Stop condition: {{STOP_CONDITION}}
 
 Standing contract:
-
 - Work only in the working directory above. Verify ONLY this claim with the focused verification command; NEVER
   run the full suite, that is the orchestrator's job after the claim converges.
 - Run the focused evidence by its actual full title and report each count separately. A command matching ZERO

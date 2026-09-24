@@ -14,8 +14,8 @@ EVERY invocation. This is periodic maintenance — say so if invoked too soon af
 
 List every tracked `.md` (`git ls-files "*.md"`) with size and last-touched (`git log -1 --format=%cd -- <f>`).
 The sweep is repo-wide and provider-neutral: the shared skills (`.agents/skills/`, reached from
-`.claude/skills/` by symlink), the Claude surfaces (`CLAUDE.md`, `.claude/hooks/`, `.claude/settings.json`,
-`.claude/agents/`, `.claude/templates/`) and the Codex surfaces (`AGENTS.md`, `.agents/templates/`, `.codex/agents/` TOMLs — add the TOMLs explicitly; their
+`.claude/skills/` by symlink), the Claude surfaces (`CLAUDE.md`, `.claude/rules/` when present, `.claude/agents/`,
+`.claude/templates/`) and the Codex surfaces (`AGENTS.md`, `.agents/templates/`, `.codex/agents/` TOMLs — add the TOMLs explicitly; their
 `developer_instructions` are agent-consumed prose `git ls-files` cannot find). Weight the two always-loaded
 contracts first.
 
@@ -30,8 +30,8 @@ factual claims and references.
 ## 2. Fan out readers per cluster (Workflow)
 
 Use the **Workflow** tool, one reader per cluster: always-loaded contracts · architecture and scoped rules ·
-record docs (SPEC/PLAN/RESEARCH/REVIEW) · remaining docs (the AI-WORKFLOW doc, README, ADMIN, PRIVACY, tours,
-desktop-shell, every other tracked `.md`) · a determinism reader · a skills reader (the Claude and Codex surfaces
+record documents (those `docs/README.md` marks as records) · remaining docs (every other tracked `.md`, including
+the documents `docs/README.md` indexes) · a determinism reader · a skills reader (the Claude and Codex surfaces
 from §1). Readers run on **Opus at `medium`**; the §3 verify pass runs on **Opus at `high`**, earning its keep
 through independence. Re-run a reader that returns a stub summary.
 
@@ -44,8 +44,8 @@ its files:
 - Strip backstory rationale; keep boundary rationale, compressed to the shortest phrasing. Test: does the reason
   change what the agent does at an edge? No → cut.
 - Strip issue/PR IDs except where the ID is the sole pointer to why a counterintuitive rule exists.
-- None of the three strip rules applies to a record file — in SPEC, PLAN, RESEARCH, and REVIEW files the dates,
-  IDs, and lineage ARE the content.
+- None of the three strip rules applies to a record file — in a document `docs/README.md` marks as a record the
+  dates, IDs, and lineage ARE the content.
 - For the two always-loaded contracts, apply the keep-or-cut test line by line: could new work that passes every
   existing test and hook still break this rule? If not, the line restates something the repo enforces, so cut it or
   shrink it to a pointer naming the guard. A line that binds work no check can see stays.

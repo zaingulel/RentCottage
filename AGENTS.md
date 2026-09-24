@@ -18,16 +18,15 @@ and nothing is edited, branched, or committed there; the git guard refuses the b
 fetches before intake, reads the fetched manual and `resume`/`closeout` instructions, and uses closeout's safe
 procedure to advance the actual clean idle `main` checkout before board evidence or decisions. A topic, dirty,
 active, divergent or uncertain checkout is preserved.
-Each job gets one native worktree beside the repository and the session starts inside it, never a worktree inside
-another job worktree. Codex-managed worktrees are acceptable when Codex owns their lifecycle. The root checkout is
-never switched, stashed, cleaned, or used as the prerequisite for a job.
+Each job gets one worktree and the session starts inside it, never a worktree inside another job worktree; the
+`resume` skill says where it lives on each runtime.
 
 The session that talks to the owner coordinates: it plans the cards that need no architect, hands every edit to
 a builder seat, settles reviews, and delivers; it never builds. Residual judgment that would make a handoff
 unreliable is resolved in the plan or the slice is split smaller. The costliest model of each family, Fable on
 Claude and Astra on Codex, is reached only through the `architect`, `oracle` and `security-reviewer` seats; the
-session and the builders run on the tier below. Every subagent is one of the named seats above, dispatched by
-its seat name; a generic, default or unnamed role is never dispatched.
+session and the builders run on the tier below. Every subagent is one of the named seats above, dispatched by its
+seat name; a generic, default or unnamed role is never dispatched.
 
 ## Codex model routing
 
@@ -45,8 +44,8 @@ out of the tracker.
 
 Planned work: the board card and its acceptance criteria (`node scripts/board.mjs`). Shipped work: `git log`
 and passing checks, never a prose status claim. In-flight work: a branch and its draft pull request. Durable
-constraints: this manual, [CONTEXT.md](CONTEXT.md), accepted architecture decisions, and the engineering and
-tracker authorities linked below. History: git.
+constraints: this manual, the scoped rules, and the standards and record documents indexed in
+[docs/README.md](docs/README.md). History: git.
 
 Start every owner-facing decision in plain language before any workflow vocabulary: what happened, what the owner
 must decide, the options. The owner reads pull request descriptions and screenshots, not diffs; write for that
@@ -57,7 +56,7 @@ reader. `resume` starts or continues a session, `handoff` parks unfinished work,
 1. **Work-pick** is the owner's pick of one row of the `resume` candidate table, which approves that card's
    outcome and acceptance criteria as written and starts the job; no criteria list is shown and no second yes is
    asked. Owner-directed surfaces are the Surfaces table's `owner-directed` row and need owner direction plus
-   domain grounding; sign-off surfaces are its `sign-off` row and need explicit sign-off and a named
+   canon or domain validation; sign-off surfaces are its `sign-off` row and need explicit sign-off and a named
    anti-regression test.
 2. **Push authorisation** is one yes to the filled pull request body and its screenshot, and any owner
    instruction to push is that yes. It covers the whole deliver sequence in the `resume` skill, push to
@@ -91,8 +90,9 @@ One fresh review of the final tree before the pull request opens, by the tier th
 itself for documents; for code and agent instruction, the `reviewer` charter run by the model family that did not
 write the diff (`cross-review`), with the skill's route when that family's seat is unavailable; `security-reviewer`
 only when a change widens a surface in the Surfaces table's `security review` row. Greptile is metered from one
-pool shared by every adopter the Conventions section names and reviews a draft only for the sign-off tier, every thread fixed or dismissed with a reason before the draft is marked ready. The `resume` skill
-owns the tiers, the allowance lookup, the cross-family substitution route when the other family's seat cannot be
+pool shared by the canonical repository and every adopter the manifest lists; each repository sends only its own Surfaces `sign-off` row. It
+reviews a draft only for the sign-off tier, every thread fixed or dismissed with a reason before the draft is
+marked ready. The `resume` skill owns the tiers, the allowance lookup, the cross-family substitution route when the other family's seat cannot be
 reached, and Greptile's own best-effort provider-unavailability exception; `.greptile/config.json` disables automatic
 reviews so marking ready starts CI without requesting another Greptile review.
 
@@ -103,7 +103,8 @@ verification` row says.
 ## Publication and machinery
 
 Push only with owner authorisation, through a draft pull request. The documentation sweep and its day-after triage
-follow the Conventions table's `documentation routines` row. New executable machinery in the workflow itself
+follow [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) when the
+Conventions table marks them active. New executable machinery in the workflow itself
 (a script, hook, gate, or workflow job; never product code or its tests) needs one of: a control failure a
 sentence here or in a skill could not prevent twice, the same measurable friction across three independent jobs,
 a required new runtime or provider integration, or externally imposed security or platform drift. Prefer a native
@@ -111,9 +112,15 @@ feature over custom code, a hook over a script, and a sentence over a hook.
 
 ## Shared workflow adoption
 
-Shared workflow changes name every adopter the Conventions section lists and link every required adopter
-update in delivery and tracker evidence. The shared change remains partial until all required adopter updates land.
-An intentional repository-specific exception requires owner agreement and is recorded where the workflow rule lives.
+The files `.agents/factory-manifest.json` lists are shared workflow bytes. The manifest's `canonical` repository
+owns them, every repository in its `adopters` list carries identical copies, and `AGENTS.md` shares only the text
+between its `factory-shared` markers. A shared change is a card in the canonical repository plus one sync card per
+adopter; the sync card runs `node scripts/factory-sync.mjs --from <canonical checkout>` from the adopter's job
+worktree against a clean canonical checkout at its fetched `main`. The change stays partial until every adopter's
+sync lands. A shared file edited without its manifest hash following fails the contract test;
+`node scripts/factory-sync.mjs --write` refreshes the hashes, and only in the canonical repository. An intentional
+adopter exception needs owner agreement and lives outside the shared files. `resume` reports at intake whether this
+repository lags the canonical copy.
 
 <!-- factory-shared:end -->
 

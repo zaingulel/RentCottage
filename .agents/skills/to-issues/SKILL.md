@@ -9,15 +9,14 @@ Two shapes, one publish pipeline: **decompose** a plan/spec/Epic into ordered, b
 (tracer bullets), or **capture** a single bug, feature idea, or suggestion as one issue (slicing collapses to one;
 routing, body shape, publish, and verify are identical).
 
-Codex or Claude may invoke this skill, but Step 4 (owner approval) is a HARD gate on every ordinary model-invoked
-proposal: create NOTHING on the board until the owner approves. The exceptions are a follow-up card, in `Backlog`,
-for work an approved job surfaces and genuinely cannot finish under the "Owner gates" rule in `AGENTS.md`, and a
-card the inactive documentation triage routine may create only after its external authority is configured. An
-exception skips the Step 4 approval gate, not the native-link, board-field, or verification rules.
-
-Read [`docs/ISSUE-TRACKER.md`](../../../docs/ISSUE-TRACKER.md) before drafting or publishing. It owns
-the tracker commands, native dependency rules, Project 4 fields, special Booking and Payment acceptance shape, and
-authoritative read-back checks.
+Claude may invoke this skill, but Step 4 (owner approval) is a HARD gate on every ordinary model-invoked
+proposal: create NOTHING on the board until the owner approves. Exceptions, none owned or gated by
+`/to-issues`: a follow-up card, in `Backlog`, for work an approved job surfaces and genuinely cannot finish,
+filed under the "Owner gates" rule in `AGENTS.md`; an issue the day-after sweep triage filed under its own manual
+(`docs/SWEEP-TRIAGE.md`), which the `resume` intake cards in `Backlog`; and any further exception
+`docs/ISSUE-TRACKER.md` records. An exception skips the step 4 approval gate, not the links rule: an
+issue created with gh still records blockers and parents as built-in links (step 6), never as body text. The sweep
+triage, which has no gh, carries its manual's `Blocked by:` line instead.
 
 ## Process
 
@@ -26,51 +25,49 @@ authoritative read-back checks.
 Work from the plan/spec/Epic in the conversation. If the owner passes an issue number, fetch it first:
 
 ```bash
-gh issue view 310 --repo zaingulel/RentCottage --json title,body,comments --jq '.title, .body, (.comments[] | "--- comment by \(.author.login) (\(.authorAssociation)) ---", .body)'
+gh issue view <N> --json title,body,comments --jq '.title, .body, (.comments[] | "--- comment by \(.author.login) (\(.authorAssociation)) ---", .body)'
 ```
 
-Never rely on a comments-only read: an issue with no comments can otherwise hide the body while exiting zero.
-Preserve attributed owner decisions and distinguish them from other comments.
+Never `--comments` alone: it replaces the body with a comments-only view and prints nothing, at exit 0, on an
+issue with none.
 
 ### 2. Explore the codebase (optional)
 
-Read enough relevant code, `CONTEXT.md`, accepted architecture decisions, and engineering authorities to ground the
-breakdown in real seams and project vocabulary. If a slice needs groundwork first, that prefactor is its own slice,
-ordered first. A named reference implementation is normative: preserve its structure and behaviour and adapt only
-the repository-specific names, paths, fixtures, provider payloads, and configuration the approved work allows.
+Read enough of the code and documents the manual's Architecture seams name to ground the breakdown in real seams.
+Use `CONTEXT.md` vocabulary and respect the applicable scoped rules. If a slice needs groundwork first, that
+prefactor is its own slice, ordered first.
 
 ### 3. Draft vertical slices
 
 Single bug/idea → one issue in the Step-7 shape, route it (Step 5), then Step 4. Otherwise break the plan into
-tracer-bullet issues: each a thin vertical slice cutting through every required layer end-to-end, never a
-horizontal database/API/interface/test layer. Each slice is demonstrable or verifiable on its own and sized to a
-bounded builder handoff; an open-ended "build the whole feature" splits further. Native blockers represent genuine
-start constraints, not a preferred order. Parallel candidacy additionally requires independent files, product
-seams, tests, migrations/providers, and verification capacity.
+tracer-bullet issues: each a thin vertical slice cutting through ALL layers end-to-end (input, rule, presentation,
+test), never a horizontal layer slice. Each slice is demoable or verifiable on its own and sized to a bounded
+`builder` handoff; an open-ended "build the whole feature" splits further. Slices that own disjoint paths are
+worth cutting as separate issues precisely because separate issues are the unit of lane parallelism: co-selected
+disjoint-path issues can build as concurrent lanes.
 
 Size signals, judged once by the owner at Step 4, apply to a single captured idea as much as to a breakdown: the
 outcome fits one sentence a reviewer could demonstrate, and more than five distinct outcome or invariant
-statements, checkbox or bullet, is a signal to make the work a `type:epic` parent with native child slices. No
-later seat stops, replans, splits or refuses work on these signals or on a line count; after work-pick the only
-split is the plan-time finding in the `resume` skill's Plan section. A `type:epic` parent holds no acceptance criteria of its own; any whole-journey
-or end-to-end check becomes its last child, blocked by the others, so the parent closes when its children do.
+statements, checkbox or bullet, is a signal to make the work a `type:epic` parent with native child slices. A
+`type:epic` parent holds no acceptance criteria of its own; any whole-journey or end-to-end check becomes its last
+child, blocked by the others, so the parent closes when its children do. No later seat stops, replans, splits
+or refuses work on these signals or on a line count; after work-pick the only split is the plan-time finding in
+the `resume` skill's Plan section.
 
 ### 4. Quiz the owner
 
-Present the proposed issue or numbered breakdown showing per slice: **Title**, **Outcome**, **Blocked by**,
-**Workstream**, and **Required capabilities**, plus its one-sentence outcome and its count of outcome or invariant
-statements, flagging any count above five. An instruction to file an issue approves the idea, not a proposal the
-owner has not seen, so a single captured idea is presented here too. Ask whether the granularity and dependencies
-are correct and whether anything should merge or split. Iterate until the owner approves; create nothing until they do.
+Present the breakdown as a numbered list showing per slice: **Title**, **Blocked by**, **Required
+capabilities**, plus its one-sentence outcome and its count of outcome or invariant statements, flagging any count
+above five. An instruction to file an issue approves the idea, not a proposal the owner has not seen, so a single
+captured idea is presented here too. Ask: granularity right? dependencies correct? merge or split anything? Iterate
+until the owner approves; create nothing until they do.
 
 ### 5. Route each slice
 
 - **Required capabilities:** the planning, review, or specialist capability the slice needs. Never name a builder
-  seat: the plan chooses one per slice under the routing rule in `AGENTS.md`. Do not record model names or
-  reasoning settings.
-- Use the sensitive-surface classification in `AGENTS.md` to name any required Security review.
-- Choose one Project 4 Workstream from `scripts/lib/board-config.mjs` and only configured labels that describe the
-  issue's real tracker role. A parent wrapper with native sub-issues gets `type:epic`.
+  seat: the plan chooses one per slice under the build-seat rule in `.claude/agents/architect.md`.
+- Plan-first surfaces are the `plan-first` row of the Surfaces table in `AGENTS.md`. A slice touching one is
+  marked plan-first in the body regardless of how mechanical it looks.
 
 ### 6. Publish to the board, in dependency order
 
@@ -81,9 +78,9 @@ a Workstream.
 **a. Create:**
 
 ```bash
-gh issue create --repo zaingulel/RentCottage \
+gh issue create \
   --title "..." \
-  --label "<approved configured labels>" \
+  --label "type:<epic|feature|task|bug>,area:<...>" \
   --blocked-by <N>[,<N>...] \
   --body "..."
 ```
@@ -93,13 +90,13 @@ blocker and a parent live only in GitHub's built-in links, never in the body. Th
 creation, so step 8 reads it back. A blocker added after creation uses `gh issue edit <N> --add-blocked-by <M>`.
 Because gh creates the issue before it adds the links, a failed create carrying `--blocked-by` may already have
 made the issue without printing its number: find it by exact title before retrying,
-`gh issue list --repo zaingulel/RentCottage --state all --author @me --limit 20 --json number,title --jq '.[] | select(.title == "<title>") | .number'`,
+`gh issue list --state all --author @me --limit 20 --json number,title --jq '.[] | select(.title == "<title>") | .number'`,
 and add the missing link with `gh issue edit <N> --add-blocked-by <M>` instead of creating again.
 
 **b. Board, with Status and Workstream, in one idempotent step (once per issue):**
 
 ```bash
-node scripts/board-add.mjs <ISSUE_N> Backlog <Workstream>
+node scripts/board-add.mjs <ISSUE_N> <Status> <Workstream>
 ```
 
 Use `board-move.mjs` only to move an existing card, never to create one.
@@ -107,8 +104,8 @@ Use `board-move.mjs` only to move an existing card, never to create one.
 **c. Link each child to its parent Epic as a native sub-issue** (a markdown checklist is NOT a sub-issue):
 
 ```bash
-PARENT=$(gh issue view <EPIC_N> --repo zaingulel/RentCottage --json id --jq .id)
-CHILD=$(gh issue view <CHILD_N> --repo zaingulel/RentCottage --json id --jq .id)
+PARENT=$(gh issue view <EPIC_N> --json id --jq .id)
+CHILD=$(gh issue view <CHILD_N> --json id --jq .id)
 gh api graphql \
   -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c}){subIssue{number}}}' \
   -f p="$PARENT" -f c="$CHILD"
@@ -116,13 +113,7 @@ gh api graphql \
 
 New backlog items go to **Backlog** until the owner promotes them.
 
-<workstream-convention>
-
-The Workstream options are the `ROUTING_OPTIONS` in `scripts/lib/board-config.mjs`. Product
-feature/booking/payment/engineering → **Product**; GTM/launch/legal/promo, including the owner's own content →
-**Go-to-market**; tooling/infra/dev-experience/process machinery → **Platform**.
-
-</workstream-convention>
+Choose the Workstream by the convention in [`docs/ISSUE-TRACKER.md`](../../../docs/ISSUE-TRACKER.md#workstream-convention).
 
 ### 7. Issue body shape
 
@@ -136,8 +127,7 @@ What's missing or broken, in one or two sentences.
 
 ## What to build
 
-The complete observable outcome of this slice. When a named reference applies, identify it as the normative design
-and name only the permitted repository-specific adaptations.
+The end-to-end behaviour of this slice; name the seam it runs through without pinning a file path.
 
 ## Acceptance criteria
 
@@ -148,10 +138,6 @@ and name only the permitted repository-specific adaptations.
 
 The planning, review, or specialist capabilities required, provider-neutral; never a builder seat.
 
-## Preservation and out of scope
-
-The existing contracts that remain unchanged and adjacent work excluded from this issue.
-
 ## Documentation impact
 
 Choose exactly one honest outcome:
@@ -159,13 +145,10 @@ Choose exactly one honest outcome:
 - `No documentation change: <reason>.`
 - `Update <authoritative doc>: <what changes>.`
 
+Plus any further section [`docs/ISSUE-TRACKER.md`](../../../docs/ISSUE-TRACKER.md#issue-body-sections) requires.
 </issue-template>
 
-For a new or substantially rewritten Booking or Payment story, use the acceptance structure required by
-`docs/ISSUE-TRACKER.md`. Testing mode, observers, commands, and mutations belong to the architect's later
-plan unless the owner or normative reference already fixed them.
-
-Do not close or edit a source or parent Epic unless the owner approved that exact mutation.
+Do NOT close or edit the parent Epic issue.
 
 ### 8. Verify the publish (fail loud, do not skip)
 
@@ -185,14 +168,10 @@ Then read every published issue's blockers back from GitHub and report them agai
 missing or extra link is a failure to fix before reporting ready:
 
 ```bash
-gh api repos/zaingulel/RentCottage/issues/<N>/dependencies/blocked_by --jq '.[].number'
+gh api "repos/{owner}/{repo}/issues/<N>/dependencies/blocked_by" --jq '.[].number'
 ```
-
-Re-read each issue body and its native parent relationship, compare every surface with the approved proposal,
-then run `npm run verify:board`. Missing, extra, unavailable, truncated, or failing read-back evidence is incomplete
-publication; fix only the approved target and never create a duplicate as a retry.
 
 ## Example
 
-Decomposing a booking Epic: first slice any genuine authorization or persistence prefactor, then one vertical issue
-per demonstrable journey, never "the database", "the API", "the interface", and "the tests" as separate issues.
+Decomposing an Epic into cards: first slice the prefactor the others need, then one slice per vertical capability,
+never "the API client" / "the UI" as separate issues.

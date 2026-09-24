@@ -205,7 +205,7 @@ test('rule 5 — a claim with no closing pull request at all is an advisory; an 
   assert.equal(closeoutExit(drifted), 0);
 });
 
-// Flowgauge configures no parked lane, so no card this file's board read produces is
+// This repository's own config parks no lane, so no card this file's board read produces is
 // parked: these call the rules on the normalized card with `parked` set, and the
 // copied-toolkit read that really parks one is board-portability.test.mjs's.
 const normalizedCard = (facts) => normalizeItem(parsedLeanItems([issueNode(facts)])[0]);

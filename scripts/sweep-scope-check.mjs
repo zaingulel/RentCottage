@@ -10,17 +10,18 @@
 // wherever they sit, so text planted inert cannot wait for a later edit to wake it. The semantic half
 // renders the whole before and after documents and compares them: a destination the head newly renders
 // is reported when the tree already vouches for it and refused when nothing does, and a destination
-// whose spelling no reader can resolve is refused whether it is new or not. The table and the tree are
-// read at the BASE commit (the tip of `main`, not the merge base) so a diff cannot widen its own scope
-// and a host `main` gained since the branch point still counts as known. Runs from `main`'s own copy
-// in .github/workflows/sweep-scope.yml, and by the sweep itself before it pushes; the rules it
-// enforces are the ones in docs/DOC-SWEEP.md that no reader checks any more. Exit 2 is a usage error;
-// a git failure exits with git's own message, never as a clean result.
+// whose spelling no reader can resolve is refused whether it is new or not. An HTML page, which a
+// browser loads raw, is held to its markup instead: only its free text may change. The table and the
+// tree are read at the BASE commit (the tip of `main`, not the merge base) so a diff cannot widen its
+// own scope and a host `main` gained since the branch point still counts as known. Runs from `main`'s
+// own copy in .github/workflows/sweep-scope.yml, and by the sweep itself before it pushes; the rules
+// it enforces are the ones in docs/DOC-SWEEP.md that no reader checks any more. Exit 2 is a usage
+// error; a git failure exits with git's own message, never as a clean result.
 
 import { spawnSync } from 'node:child_process';
 import {
-  addedNetworkTokens, hiddenDestinationShapes, outOfScope, parseMayEdit, renderedDestinations, tokenMatches,
-  treeGrepArgs, treeGrepCandidates,
+  addedNetworkTokens, hiddenDestinationShapes, markupDifference, outOfScope, parseMayEdit, renderedDestinations,
+  tokenMatches, treeGrepArgs, treeGrepCandidates,
 } from './lib/sweep-scope.mjs';
 
 const [base, head, ...extra] = process.argv.slice(2);
@@ -29,10 +30,17 @@ if (!base || !head || extra.length > 0) {
   process.exit(2);
 }
 
+// Every refusal line and the git failure line are written through this, with each control character
+// spelled `\uXXXX`, so no pull-request byte reaches the log as a control character whichever message
+// quotes it, and ordinary text reads exactly as written.
+// eslint-disable-next-line no-control-regex -- matching control characters is the helper's whole purpose
+const printable = (text) => text.replace(/[\x00-\x1f\x7f-\x9f]/g,
+  (character) => `\\u${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+
 function git(...args) {
   const result = spawnSync('git', ['-c', 'core.quotePath=false', ...args], { encoding: 'utf8' });
   if (result.status !== 0) {
-    console.error(`sweep-scope: git ${args.join(' ')} failed: ${result.stderr.trim()}`);
+    console.error(printable(`sweep-scope: git ${args.join(' ')} failed: ${result.stderr.trim()}`));
     process.exit(result.status ?? 1);
   }
   return result.stdout;
@@ -77,7 +85,8 @@ function knownInTree(text) {
   return tokenMatches(text, treeLines);
 }
 
-const tokens = addedNetworkTokens(git('diff', from, head));
+// `--text`: a NUL, or any byte that makes git guess binary, would otherwise hide every added line from both halves.
+const tokens = addedNetworkTokens(git('diff', '--text', from, head));
 for (const token of tokens) {
   if (!knownInTree(token)) {
     failures.push(`${token} is added by this diff and is not a whole token anywhere in the tree at ${at}`);
@@ -87,17 +96,35 @@ for (const token of tokens) {
 // A refusal names the destination as the document spells it and as a browser would resolve it; one the
 // URL parser could not read has only the spelling.
 const shown = ({ text, href }) => (href === null ? text : `${text} (${href})`);
+// A slice of a page as one bounded, quoted log fragment; any control character JSON leaves raw is
+// escaped by the output step.
+const clipped = (slice) => {
+  const text = JSON.stringify(slice);
+  return text.length > 120 ? `${text.slice(0, 120)}…[truncated]` : text;
+};
 
 // What is judged per document, so every refusal names the file to open. Only a modified path is
 // judged: every other status is refused whole above, whatever its content says.
 const newlyRendered = [];
 for (const path of modified) {
-  for (const { line, rule, fragment } of hiddenDestinationShapes(git('diff', from, head, '--', path))) {
-    failures.push(`${path}: ${rule} refuses ${fragment} on the added line: ${line}`);
+  for (const { line, rule, fragment } of hiddenDestinationShapes(git('diff', '--text', from, head, '--', path))) {
+    failures.push(`${path}: ${rule} refuses ${fragment} on the added line: ${clipped(line)}`);
   }
   if (outside.has(path)) continue;
-  // The semantic half needs a document to render. Every may-edit entry is Markdown today; one that is
-  // not cannot be judged by it, so it fails closed rather than passing half-judged.
+  // A page a browser loads raw may change only in its free text. It is compared against the tip of
+  // `main`, not the merge base, so a squash cannot bring back markup `main` changed after the branch
+  // point; the cost is a refusal until the branch is rebased, which the line says.
+  if (path.endsWith('.html')) {
+    const difference = markupDifference(git('show', `${base}:${path}`), git('show', `${head}:${path}`));
+    if (difference) {
+      failures.push(`${path}: the edit changes the page's markup, not only its text; at offset ${difference.index} of its markup, ` +
+        `${clipped(difference.before)} became ${clipped(difference.after)}; ` +
+        'if main changed the page\'s markup since this branch was cut, rebase onto main first');
+    }
+    continue;
+  }
+  // The semantic half needs a document to render; one that is neither Markdown nor HTML cannot be
+  // judged by it, so it fails closed rather than passing half-judged.
   if (!path.endsWith('.md')) {
     failures.push(`${path} is in the may-edit column but is not Markdown, so the rendered half cannot judge it`);
     continue;
@@ -122,7 +149,7 @@ for (const path of modified) {
 
 if (failures.length > 0) {
   console.error('sweep-scope: the sweep left its scope; nothing lands until the diff is confined to it:');
-  for (const failure of failures) console.error(`  ${failure}`);
+  for (const failure of failures) console.error(`  ${printable(failure)}`);
   process.exit(1);
 }
 
