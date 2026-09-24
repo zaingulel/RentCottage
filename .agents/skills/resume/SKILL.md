@@ -211,9 +211,42 @@ it.
    Never any other merge form; the hook refuses it. If CI needs a repair, use `gh pr ready <pr> --undo` before
    pushing, complete local repair evidence, and reassess the full pull-request diff against the section 6 tiers;
    repeat step 2 only when Greptile is required. An unchanged-head CI retry needs no new review.
-4. Watch it land: every 30 seconds read `gh pr checks <pr>` and `gh pr view <pr> --json state`, and stop the
-   moment a check fails, the merge is blocked, or the state is `MERGED`. Merged: run `closeout` in the same
-   session; the owner's yes already covers it. Failed or blocked: report it and repair per step 3.
+4. Watch it land with one waiting command, run the way the manual's runtime notes say a command that runs for
+   minutes is run on each runtime. Every pass reads the pull request and its required checks together, so it
+   stops the moment a check fails, the merge is blocked, or the state is `MERGED`, whichever comes first, and it
+   exits non-zero the moment `gh` itself fails. It first reads the full required set from the base branch's
+   classic protection and every page of its rules, because `gh pr checks --required` lists a check only once GitHub
+   has created its run; only a required check still pending or not yet reported keeps it waiting, `BLOCKED` means
+   nothing until every one has finished, and a branch that requires no checks stops on `BLOCKED` at once; a ruleset
+   that requires workflows or code-scanning results names no checks, so the command stops and says so.
+
+   ```sh
+   base=$(gh pr view <pr> --json baseRefName --jq .baseRefName) || exit 1
+   classic=$(gh api "repos/{owner}/{repo}/branches/$base" --jq '.protection.required_status_checks.contexts // []') || exit 1
+   rules=$(gh api --paginate "repos/{owner}/{repo}/rules/branches/$base" --jq '.[] | select(.type == "required_status_checks" or .type == "workflows" or .type == "code_scanning") | if .type == "required_status_checks" then .parameters.required_status_checks[].context else {unnamed: .type} end | @json') || exit 1
+   ruled="[$(printf '%s\n' "$rules" | paste -sd, -)]"
+   case "$ruled" in *'{"unnamed":'*) echo "a ruleset requires checks it does not name, so the full required set is unknown: $ruled"; exit 1 ;; esac
+   while :; do
+     view=$(gh pr view <pr> --json state,mergeStateStatus --jq '.state + " " + .mergeStateStatus') || exit 1
+     if ! checks=$(gh pr checks <pr> --required --json name,bucket --jq "(($classic + $ruled) - [.[].name] | map(\"unreported\")) + [.[].bucket] | join(\" \")" 2>&1); then
+       case "$checks" in
+         *"checks reported on the"*) case "$classic$ruled" in "[][]") checks= ;; *) checks=unreported ;; esac ;;
+         *) echo "$checks"; exit 1 ;;
+       esac
+     fi
+     case " $view $checks " in
+       " MERGED "*) echo "merged"; exit 0 ;;
+       " CLOSED "*) echo "closed without merging"; exit 1 ;;
+       *" fail"*) echo "a required check failed: $checks"; exit 1 ;;
+       *" DIRTY "*|*" BEHIND "*) echo "merge blocked: $view"; exit 1 ;;
+       *" BLOCKED "*) case " $checks " in *" pending "*|*" unreported "*) ;; *) echo "merge blocked with every required check finished: $view $checks"; exit 1 ;; esac ;;
+     esac
+     sleep 30
+   done
+   ```
+
+   Merged: run `closeout` in the same session; the owner's yes already covers it. Failed, blocked or closed:
+   report the printed reason and repair per step 3.
 
 Greptile is metered from one pool shared by every adopter: one organisation, one developer seat, the included
 credits per billing period plus the owner's overage. There is no per-repository split; the tiers ration the pool,

@@ -1,6 +1,6 @@
 name = "explorer"
 description = "Fast, read-only code DISCOVERY — locate files, \"where is X\", list usages, trace a definition; reads whose result you can eyeball for completeness. It LOCATES code and does not judge it — audits that turn on judgment belong to `reviewer`."
-model = "gpt-5.6-luna"
+model = "gpt-6-luna"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """

@@ -28,6 +28,15 @@ Claude and Astra on Codex, is reached only through the `architect`, `oracle` and
 session and the builders run on the tier below. Every subagent is one of the named seats above, dispatched by its
 seat name; a generic, default or unnamed role is never dispatched.
 
+A Codex session waiting on a helper calls `wait_agent` with `timeout_ms: 3600000`, the maximum: the call returns
+the moment a helper finishes, so a shorter timeout only adds wake-ups, and the session never sleeps and checks in a
+loop. A command that runs for minutes on Codex runs in one `exec` cell whose first line is
+`// @exec: {"yield_time_ms": 3600000}`; inside it `tools.exec_command` yields after at most 30 seconds, so the cell
+polls the returned `session_id` with `tools.write_stdin({ session_id, chars: "", yield_time_ms: 300000 })` until
+`exit_code` is set and returns once, and if the cell yields early the session calls `wait` on its cell ID with the
+same `yield_time_ms`. On Claude Code the same command runs through `Bash` with `run_in_background: true`, which
+re-invokes the session when it exits.
+
 ## Codex model routing
 
 For this project, `.codex/agents/*.toml` owns model and reasoning settings and supersedes machine-wide model

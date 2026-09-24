@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "0c59f2e83ea82586a7da99d642604081f7d65e6e",
+  "syncedFrom": "419a522e1cf50f799fef2e9d10f21bf837b2e25f",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -59,7 +59,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "dd6d4f85c79ce091cee8d7bacb497e47f2df3a784cab5899bda92622e24c7572"
+      "sha256": "e2690a073807a71d1d454374fa9c0e26798fab672d7bec73f877a1158ae0244e"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -343,19 +343,19 @@
     },
     {
       "path": ".codex/agents/builder-lite.toml",
-      "sha256": "4d6afee85437fb0e88fa3767b83c6440f0b648326cd27ea8623a484e593a82ff"
+      "sha256": "aedb813cf7b888ee13b425c6dbbcf0fae7bc49d2f5279085dd64dc2753acbea3"
     },
     {
       "path": ".codex/agents/builder-max.toml",
-      "sha256": "a709d56c4baf06c6018be9734337c107a9b354eefdb53c19cb023fe75f5db87c"
+      "sha256": "32fd013f76e2d587ab58dec67a25d2cb5e755b2e242b49192fc83cea775ca237"
     },
     {
       "path": ".codex/agents/builder.toml",
-      "sha256": "b58f3836857a5646745b5b28936e802e6f89013c46f00a193938f9979cd06c7a"
+      "sha256": "5861374eae00ab72764b2cfe573b968628a5e889afb5718e6b1f59ce6873fabb"
     },
     {
       "path": ".codex/agents/explorer.toml",
-      "sha256": "a7e85dfcfa0aa6ae621dce4388afc810ccb91208ca984d560a8c323244f8dc8d"
+      "sha256": "e75c8ea177307095354d77bfbc2758c3f2a588af03db29c01529d6fd74dd11b4"
     },
     {
       "path": ".codex/agents/oracle.toml",
@@ -363,11 +363,11 @@
     },
     {
       "path": ".codex/agents/plan-reviewer.toml",
-      "sha256": "de1c4e222673834f9df91ad36150526c9ad98a62049dbf2a82acfc1c30d215c7"
+      "sha256": "72621e87b9a86f4917e20931d6ef19b63557ecb08a406e3fed386409e00583d6"
     },
     {
       "path": ".codex/agents/reviewer.toml",
-      "sha256": "8c856853cea8cc59cbb961ca49334bcf120c0b2140a09ba3de213c8bbd5a7d85"
+      "sha256": "c55ba973bc6fa5359c4530a7ac9f6daa755f94b5a5f8b0c1418f7970d24e6cbc"
     },
     {
       "path": ".codex/agents/security-reviewer.toml",
@@ -423,7 +423,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "60c86a1370ebc017305c390a37b51b5c46b0ee18b48888c9cd18be08223482fd"
+      "sha256": "7b6b5e4f1990d3fa71f380601b8cce8c9cfe82cb0e9f8d78b382466881c76296"
     },
     {
       "path": "CLAUDE.md",
@@ -628,7 +628,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "96e49ee34a5e9c3a38f7004e6cdf397ea06b445783a33079b42fb095599b52ae"
+      "sha256": "bbe111f3df12b258be412a30daa9a5e529740513aab2bcf0b1cab2afdd077574"
     },
     {
       "path": "scripts/run-log.mjs",

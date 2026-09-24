@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -373,6 +373,245 @@ test('the factory never gates on line counts, ends review loops in one more roun
     assert.match(seat, /never a line estimate/, `${path} must scope without a line estimate`);
     assert.match(seat, /[Nn]ever propose a split for size/, `${path} must never propose a split for size`);
   }
+});
+
+test('a Codex session waits on helpers with one long timeout and the deliver step watches checks with one waiting command', () => {
+  const agents = readFileSync(resolve(ROOT, 'AGENTS.md'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(agents, /calls `wait_agent` with `timeout_ms: 3600000`, the maximum/, 'AGENTS.md must give a Codex session the one-hour helper wait');
+  assert.match(agents, /never sleeps and checks in a loop/, 'AGENTS.md must forbid the sleep-then-check loop');
+  assert.match(agents, /`\/\/ @exec: \{"yield_time_ms": 3600000\}`/, 'AGENTS.md must run a long Codex command in one exec cell');
+  assert.match(agents, /chars: "", yield_time_ms: 300000/, 'AGENTS.md must poll the process inside the cell at the empty-write cap');
+  assert.match(agents, /`Bash` with `run_in_background: true`/, 'AGENTS.md must background the same command on Claude Code');
+  const resume = RESUME.replace(/\s+/g, ' ');
+  const step = resume.match(/4\. Watch it land(.*?)(?= Greptile is metered)/);
+  assert.ok(step, 'deliver step 4 must exist');
+  assert.doesNotMatch(step[1], /every 30 seconds/, 'step 4 must not read the checks on a timer');
+  assert.match(
+    step[1],
+    /stops the moment a check fails, the merge is blocked, or the state is `MERGED`, whichever comes first/,
+    'step 4 must keep its stop conditions',
+  );
+  assert.match(step[1], /Merged: run `closeout` in the same session/, 'step 4 must still run closeout on merge');
+  assert.match(watchCommand('7'), /^\s*sleep 30$/m, 'step 4 must wait between reads with sleep');
+});
+
+// The gh stub answers the loop's `pr view` and `pr checks` from numbered files, one pair per read, and repeats the
+// last pair; it answers the base-branch read and the two required-set `api` reads from the `base`, `branch` and
+// `rules` files without counting a read. Each file holds the exit code on line 1 and the body after it. A zero-code
+// body is the JSON gh exports, piped through the call's own `--jq` expression with real jq as gh does, or printed raw
+// without `--jq`; a non-zero-code body is gh's error message, printed to stderr. The `rules` body holds one JSON page
+// per line: a call with `--paginate` gets every page, each a separate jq input as gh applies `--jq` per page, and a
+// call without it gets page one only, as the real API answers. It refuses any call missing the flags the command
+// relies on, the substituted pull request number, gh's own `{owner}/{repo}` placeholders, or the substituted base
+// branch `trunk`.
+//
+// Price tag: recurring cost is one `sh` per watch scenario, running the skill's own step-4 block against this fake
+// gh and real jq in a temporary directory, with no network. Removal condition: retire the harness together with the
+// watch command in the resume skill's deliver step 4.
+const GH_STUB = `#!/bin/sh
+n=$(cat "$GH_STUB_DIR/n")
+case "$1 $2" in
+  "pr view")
+    case " $* " in
+      *" --json baseRefName "*) kind=base; want='--json baseRefName' ;;
+      *) n=$((n + 1)); echo "$n" > "$GH_STUB_DIR/n"; kind=view; want='--json state,mergeStateStatus' ;;
+    esac ;;
+  "pr checks") kind=checks; want='--required --json name,bucket' ;;
+  "api "*)
+    path=; for arg do case "$arg" in repos/*) path=$arg; break ;; esac; done
+    case "$path" in *'repos/{owner}/{repo}/'*) ;; *) echo "gh stub: api path without repos/{owner}/{repo}/: $*" >&2; exit 99 ;; esac
+    case "$path" in
+      */rules/branches/trunk) kind=rules ;;
+      */branches/trunk) kind=branch ;;
+      *) echo "gh stub: the base branch was not substituted: $*" >&2; exit 99 ;;
+    esac ;;
+  *) echo "gh stub: unexpected gh $*" >&2; exit 99 ;;
+esac
+case "$kind" in
+  view|checks|base)
+    case " $* " in *" $want "*) ;; *) echo "gh stub: $kind called without $want: $*" >&2; exit 99 ;; esac
+    case " $* " in *" 7 "*) ;; *) echo "gh stub: <pr> was not substituted: $*" >&2; exit 99 ;; esac ;;
+esac
+expr=; jq=no; paginate=no; prev=
+for arg do [ "$prev" = --jq ] && { expr=$arg; jq=yes; }; [ "$arg" = --paginate ] && paginate=yes; prev=$arg; done
+case "$kind" in
+  view|checks) f="$GH_STUB_DIR/$kind.$n"; [ -f "$f" ] || f="$GH_STUB_DIR/$kind.last" ;;
+  *) f="$GH_STUB_DIR/$kind" ;;
+esac
+body() { if [ "$kind" = rules ] && [ "$paginate" = no ]; then sed -n 2p "$f"; else tail -n +2 "$f"; fi; }
+code=$(head -n 1 "$f")
+if [ "$code" -ne 0 ]; then body >&2
+elif [ "$jq" = yes ]; then body | jq -r "$expr" || exit 1
+else body; fi
+exit "$code"
+`;
+const SLEEP_STUB = '#!/bin/sh\necho 1 >> "$GH_STUB_DIR/sleeps"\nexit 0\n';
+
+function watchCommand(pr) {
+  const block = RESUME.match(/^4\. Watch it land[\s\S]*?\n[ \t]*```sh\n([\s\S]*?)\n[ \t]*```/m);
+  assert.ok(block, 'deliver step 4 must carry one fenced sh block');
+  assert.ok(block[1].includes('<pr>'), 'the block must take the pull request number as <pr>');
+  return block[1].replaceAll('<pr>', pr);
+}
+
+// The JSON gh exports before `--jq`: `pr view --json` an object of the named fields, `pr checks --json` an array of
+// the checks GitHub has created, each with its `name` and `bucket`.
+const view = (state, mergeStateStatus) => JSON.stringify({ state, mergeStateStatus });
+const checks = (byName) => JSON.stringify(Object.entries(byName).map(([name, bucket]) => ({ name, bucket })));
+
+const OPEN_BLOCKED = [0, view('OPEN', 'BLOCKED')];
+const MERGED = { view: [0, view('MERGED', 'CLEAN')], checks: [0, checks({ test: 'pass', 'sweep-scope': 'pass' })] };
+
+// steps: one { view: [code, body], checks: [code, body] } per read; the last step repeats until the command exits.
+// The base branch requires `classic` through classic protection and `ruled` through a ruleset; the default union is
+// split across the two sources so dropping either read shows. The rules come as two pages, the ruleset's checks on
+// page two so reading page one alone shows; `extraRules` joins page two. `branch` or `rules` replaces that read's
+// [code, body].
+function runWatchCommand(steps, { classic = ['test'], ruled = ['sweep-scope'], extraRules = [], branch, rules } = {}) {
+  assert.equal(
+    spawnSync('sh', ['-c', 'command -v jq']).status,
+    0,
+    "jq must be on PATH: the gh stub applies the command's --jq expressions with real jq",
+  );
+  const dir = mkdtempSync(join(tmpdir(), 'flowgauge-watch-'));
+  const write = (name, [code, body]) => writeFileSync(join(dir, name), `${code}\n${body}\n`);
+  steps.forEach((s, i) => { write(`view.${i + 1}`, s.view); write(`checks.${i + 1}`, s.checks); });
+  write('view.last', steps.at(-1).view);
+  write('checks.last', steps.at(-1).checks);
+  write('base', [0, JSON.stringify({ baseRefName: 'trunk' })]);
+  write('branch', branch ?? [0, JSON.stringify({ protection: { required_status_checks: { contexts: classic } } })]);
+  write('rules', rules ?? [0, [
+    JSON.stringify([{ type: 'pull_request', parameters: {} }]),
+    JSON.stringify([
+      { type: 'required_status_checks', parameters: { required_status_checks: ruled.map((context) => ({ context })) } },
+      ...extraRules,
+    ]),
+  ].join('\n')]);
+  writeFileSync(join(dir, 'n'), '0');
+  writeFileSync(join(dir, 'gh'), GH_STUB, { mode: 0o755 });
+  writeFileSync(join(dir, 'sleep'), SLEEP_STUB, { mode: 0o755 });
+  const result = spawnSync('sh', ['-c', watchCommand('7')], {
+    encoding: 'utf8',
+    timeout: 5000,
+    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GH_STUB_DIR: dir },
+  });
+  const reads = Number(readFileSync(join(dir, 'n'), 'utf8'));
+  const sleeps = existsSync(join(dir, 'sleeps')) ? readFileSync(join(dir, 'sleeps'), 'utf8').split('\n').length - 1 : 0;
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.signal, null, `the watch command must exit on its own; stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  return { ...result, reads, sleeps };
+}
+
+test('the watch command exits non-zero the moment gh itself fails', () => {
+  const auth = runWatchCommand([{ view: [4, 'To get started with GitHub CLI, please run: gh auth login'], checks: [0, checks({ test: 'pass', 'sweep-scope': 'pass' })] }]);
+  assert.notEqual(auth.status, 0, 'an authentication failure must stop the wait');
+  assert.equal(auth.reads, 1, 'an authentication failure must stop on the first read');
+  assert.match(auth.stderr, /gh auth login/, 'the gh error must reach the session');
+
+  const network = runWatchCommand([
+    { view: OPEN_BLOCKED, checks: [0, checks({ test: 'pending', 'sweep-scope': 'pending' })] },
+    { view: OPEN_BLOCKED, checks: [1, 'error connecting to api.github.com'] },
+  ]);
+  assert.equal(network.status, 1, 'a network failure while reading checks must stop the wait');
+  assert.equal(network.reads, 2);
+  assert.match(network.stdout, /error connecting to api\.github\.com/, 'the gh error must be printed as the reason');
+});
+
+test('the watch command stops on a failed required check, a dirty or behind merge, or a closed pull request, even while checks are pending', () => {
+  const failed = runWatchCommand([{ view: OPEN_BLOCKED, checks: [0, checks({ test: 'fail', 'sweep-scope': 'pending' })] }, MERGED]);
+  assert.equal(failed.status, 1);
+  assert.equal(failed.reads, 1, 'a failed check must stop before the next read');
+  assert.match(failed.stdout, /a required check failed/);
+
+  for (const status of ['DIRTY', 'BEHIND']) {
+    const blocked = runWatchCommand([{ view: [0, view('OPEN', status)], checks: [0, checks({ test: 'pending', 'sweep-scope': 'pending' })] }, MERGED]);
+    assert.equal(blocked.status, 1, `${status} must stop the wait`);
+    assert.equal(blocked.reads, 1, `${status} must stop before the next read`);
+    assert.match(blocked.stdout, new RegExp(`merge blocked: OPEN ${status}`));
+  }
+
+  const closed = runWatchCommand([{ view: [0, view('CLOSED', 'CLEAN')], checks: [0, checks({ test: 'pass', 'sweep-scope': 'pass' })] }]);
+  assert.equal(closed.status, 1, 'a closed pull request must stop the wait');
+  assert.match(closed.stdout, /closed without merging/);
+});
+
+test('the watch command keeps waiting through BLOCKED while required checks are pending or unreported, and stops on BLOCKED once they have all finished', () => {
+  const pending = runWatchCommand([
+    { view: OPEN_BLOCKED, checks: [0, checks({ test: 'pending', 'sweep-scope': 'pass' })] },
+    { view: OPEN_BLOCKED, checks: [0, checks({ test: 'pending', 'sweep-scope': 'pass' })] },
+    MERGED,
+  ]);
+  assert.equal(pending.status, 0, 'BLOCKED with a pending required check must not stop the wait');
+  assert.equal(pending.reads, 3, 'the wait must read again after each pending pass');
+  assert.equal(pending.sleeps, 2, 'the wait must sleep between reads');
+
+  const unreported = runWatchCommand([
+    { view: OPEN_BLOCKED, checks: [1, "no required checks reported on the 'job/7' branch"] },
+    { view: OPEN_BLOCKED, checks: [1, "no checks reported on the 'job/7' branch"] },
+    MERGED,
+  ]);
+  assert.equal(unreported.status, 0, 'a required check not yet reported must not stop the wait');
+  assert.equal(unreported.reads, 3);
+
+  const finished = runWatchCommand([{ view: OPEN_BLOCKED, checks: [0, checks({ test: 'pass', 'sweep-scope': 'skipping' })] }, MERGED]);
+  assert.equal(finished.status, 1, 'BLOCKED with every required check finished must stop the wait');
+  assert.equal(finished.reads, 1);
+  assert.match(finished.stdout, /merge blocked with every required check finished/);
+});
+
+test('the watch command keeps waiting through BLOCKED while a required check from either source has not yet appeared', () => {
+  for (const partial of [{ 'sweep-scope': 'pass' }, { test: 'pass' }]) {
+    const waiting = runWatchCommand([
+      { view: OPEN_BLOCKED, checks: [0, checks(partial)] },
+      { view: OPEN_BLOCKED, checks: [0, checks({ 'sweep-scope': 'pass', test: 'pending' })] },
+      MERGED,
+    ]);
+    assert.equal(waiting.status, 0, `BLOCKED with only ${Object.keys(partial)} reported must not stop the wait`);
+    assert.equal(waiting.reads, 3);
+    assert.equal(waiting.sleeps, 2);
+    assert.match(waiting.stdout, /^merged$/m);
+  }
+});
+
+test('the watch command exits non-zero when the required set cannot be read', () => {
+  const unreadable = runWatchCommand([MERGED], { branch: [1, 'gh: Resource not accessible by integration (HTTP 403)'] });
+  assert.notEqual(unreadable.status, 0, 'an unreadable required set must stop the wait');
+  assert.equal(unreadable.reads, 0, 'an unreadable required set must stop before the first read');
+  assert.match(`${unreadable.stdout}${unreadable.stderr}`, /HTTP 403/, 'the gh error must reach the session');
+});
+
+test('the watch command stops before its first read when a ruleset requires checks it does not name', () => {
+  for (const rule of [
+    { type: 'workflows', parameters: { workflows: [{ path: '.github/workflows/<workflow>.yml', repository_id: 1 }] } },
+    { type: 'code_scanning', parameters: { code_scanning_tools: [{ tool: 'CodeQL', security_alerts_threshold: 'high_or_higher', alerts_threshold: 'errors' }] } },
+  ]) {
+    const unnamed = runWatchCommand([MERGED], { extraRules: [rule] });
+    assert.equal(unnamed.status, 1, `a ${rule.type} rule must stop the wait`);
+    assert.equal(unnamed.reads, 0, `a ${rule.type} rule must stop before the first read`);
+    assert.match(unnamed.stdout, /a ruleset requires checks it does not name/);
+  }
+});
+
+test('the watch command stops on BLOCKED at once when the base branch requires no checks', () => {
+  const none = runWatchCommand(
+    [{ view: OPEN_BLOCKED, checks: [1, "no required checks reported on the 'job/7' branch"] }],
+    { classic: [], ruled: [] },
+  );
+  assert.equal(none.status, 1);
+  assert.equal(none.reads, 1);
+  assert.match(none.stdout, /merge blocked with every required check finished/);
+});
+
+test('the watch command exits 0 only on MERGED', () => {
+  const merged = runWatchCommand([{ view: OPEN_BLOCKED, checks: [0, checks({ test: 'pending', 'sweep-scope': 'pending' })] }, MERGED]);
+  assert.equal(merged.status, 0);
+  assert.equal(merged.reads, 2);
+  assert.match(merged.stdout, /^merged$/m);
+
+  const pending = runWatchCommand([{ view: [0, view('MERGED', 'UNKNOWN')], checks: [0, checks({ test: 'pending', 'sweep-scope': 'pending' })] }]);
+  assert.equal(pending.status, 0, 'MERGED must end the wait even while a required check is pending');
+  assert.equal(pending.reads, 1);
+  assert.match(pending.stdout, /^merged$/m);
 });
 
 test('the manual carries one shared workflow region followed by the product headings and tables', () => {
