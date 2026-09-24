@@ -12,17 +12,31 @@ AGENTS.md
 CONTEXT.md
 *.docx
 
-# Ported verbatim from Flowgauge (zaingulel/flow-metrics-dashboard) so a fix lands in
-# both repositories as the same change. Flowgauge formats with single quotes and this
-# repository with double, so formatting them here would break that byte-identity and
-# turn every future sync into a manual merge. scripts/lib/board-config.mjs is the one
-# file that is RentCottage's own, and it keeps the toolkit's style for the same reason.
-.claude/hooks/block-unsafe-git.mjs
+# The files .agents/factory-manifest.json lists are shared bytes from the canonical repository;
+# formatting them here would break that byte identity. scripts/lib/board-config.mjs and
+# scripts/lib/sweep-scope-workflow.test.mjs are RentCottage's own and keep the shared style.
+.agents/factory-manifest.json
+.agents/skills/
+.agents/templates/
+.agents/upstream/mattpocock-skills
+.claude/agents/
+.claude/hooks/
+.claude/settings.json
+.claude/templates/
+.codex/agents/
+.codex/hooks/
 .codex/hooks.json
-.codex/hooks/block-unsafe-git.mjs
+.githooks/
+.github/pull_request_template.md
+.github/workflows/sweep-scope.yml
+.greptile/config.json
+CLAUDE.md
 scripts/board.mjs
 scripts/board-add.mjs
 scripts/board-move.mjs
+scripts/factory-sync.mjs
+scripts/run-log.mjs
+scripts/sweep-scope-check.mjs
 scripts/verify-issue-publish.mjs
 scripts/lib/board.mjs
 scripts/lib/board.test.mjs
@@ -36,35 +50,38 @@ scripts/lib/board-move.test.mjs
 scripts/lib/board-portability.test.mjs
 scripts/lib/board-rules.mjs
 scripts/lib/board-rules.test.mjs
+scripts/lib/check-agents.mjs
+scripts/lib/check-agents.test.mjs
 scripts/lib/checkout-context.mjs
 scripts/lib/checkout-context.test.mjs
 scripts/lib/cli-flags.mjs
 scripts/lib/cli-flags.test.mjs
+scripts/lib/codex-hook-adapters.mjs
+scripts/lib/codex-hook-adapters.test.mjs
+scripts/lib/doc-lint-citations.mjs
+scripts/lib/doc-lint-citations.test.mjs
+scripts/lib/doc-lint-links.mjs
+scripts/lib/doc-lint-links.test.mjs
+scripts/lib/factory-sync.mjs
+scripts/lib/factory-sync.test.mjs
 scripts/lib/fake-gh.mjs
 scripts/lib/gh-exec.mjs
 scripts/lib/gh-exec.test.mjs
+scripts/lib/handoff-check.mjs
+scripts/lib/handoff-check.test.mjs
 scripts/lib/issue-publish.mjs
 scripts/lib/issue-publish.test.mjs
-scripts/lib/codex-hook-adapters.mjs
-scripts/lib/unsafe-git.mjs
-scripts/lib/unsafe-git.test.mjs
-scripts/run-log.mjs
-scripts/lib/run-log.test.mjs
-.agents/upstream/mattpocock-skills
-
-# Shared workflow-control sources keep Flowgauge-compatible bytes. The test files
-# with RentCottage fixtures stay excluded so formatting does not rewrite their shared sections.
-.claude/hooks/filter-test-output.mjs
-.claude/hooks/test-output-filter-run.mjs
-scripts/lib/check-agents.mjs
-scripts/lib/codex-hook-adapters.test.mjs
-scripts/lib/doc-lint-citations.mjs
-scripts/lib/doc-lint-links.mjs
+scripts/lib/precommit.test.mjs
 scripts/lib/prepush.test.mjs
+scripts/lib/run-log.test.mjs
+scripts/lib/settings-policy.test.mjs
 scripts/lib/sweep-scope.mjs
 scripts/lib/sweep-scope-corpus.mjs
-scripts/sweep-scope-check.mjs
 scripts/lib/sweep-scope-workflow.test.mjs
 scripts/lib/sweep-scope.test.mjs
 scripts/lib/test-output-filter.mjs
 scripts/lib/test-output-filter.test.mjs
+scripts/lib/unsafe-git.mjs
+scripts/lib/unsafe-git.test.mjs
+scripts/lib/verify-green.test.mjs
+scripts/lib/workflow-contract.test.mjs

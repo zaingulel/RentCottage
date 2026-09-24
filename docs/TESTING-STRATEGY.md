@@ -1,6 +1,6 @@
 # Testing strategy
 
-This is RentCottage's evidence-selection authority. The selected issue defines the required outcome, `CONTEXT.md` defines domain invariants, accepted architecture decision records define technical boundaries, and this document defines how to prove them. A more specific product, domain, architecture, or issue decision wins on a direct conflict.
+This is RentCottage's evidence-selection authority. The selected issue defines the required outcome, `CONTEXT.md` defines domain invariants, accepted architecture decision records define technical boundaries, and this document defines how to prove them. A more specific product, domain, or architecture decision wins on a direct conflict.
 
 ## Evidence decision path
 
@@ -45,13 +45,15 @@ wait.
 
 - **`strict-tdd`:** start with a failing public-seam proof for a reproducible defect. Also use
   this floor for a changed security or domain invariant whose failure would be high consequence.
+  Subject matter sets the minimum mode; change shape cannot lower that floor.
 - **`evidence-required`:** other changed behaviour may be built in the clearest order, but lands with an executed
   regression proof that fails when the behaviour is broken and passes when restored.
 - **`preservation`:** documentation, mechanical changes, and refactors with no changed behaviour protect the named
   unchanged contract using existing evidence, without new test or mutation ceremony.
 
-The architect names the mode and observer. The builder runs focused construction evidence. The coordinator owns
-the deliberate mutation proof and convergence route, so a builder does not repeatedly pay for broad suites.
+The architect names the mode and observer. The builder follows the handed-off mode and cannot reinterpret or downgrade it.
+The builder runs focused construction evidence. The coordinator owns the deliberate mutation proof and convergence
+route, so a builder does not repeatedly pay for broad suites. An asserted-but-unexecuted mutation is a review finding.
 
 ## Evidence layers
 

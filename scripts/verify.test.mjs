@@ -691,6 +691,23 @@ describe("repository verification command", () => {
       'prefix_rule(pattern=["npx"]);\n',
     ],
     ["native hook manual", ".githooks/README.md", "# Hooks\n"],
+    ["shared workflow manifest", ".agents/factory-manifest.json", "{}\n"],
+    ["shared workflow sync entry", "scripts/factory-sync.mjs", "export {};\n"],
+    [
+      "shared workflow sync library",
+      "scripts/lib/factory-sync.mjs",
+      "export {};\n",
+    ],
+    [
+      "shared workflow sync tests",
+      "scripts/lib/factory-sync.test.mjs",
+      "export {};\n",
+    ],
+    [
+      "Codex browser rule test",
+      "scripts/lib/codex-browser-policy.test.mjs",
+      "export {};\n",
+    ],
   ])(
     "keeps reviewed workflow-only %s on baseline evidence",
     (_label, path, contents) => {

@@ -34,10 +34,29 @@ Publication is complete only when all applicable tracker surfaces agree:
 1. Create each GitHub issue with its approved title, detailed acceptance criteria, and configured labels.
 2. Add its approved native GitHub dependency edges.
 3. Add the issue to Project 4 and set its approved `Workstream` and dependency-safe `Status`.
-4. Re-read issues, native dependencies, Project membership, and Project fields from GitHub after the writes. Never verify from the request payload or cached local mapping.
+4. Re-read each issue body, its native dependencies and parent relationship, Project membership, and Project fields from GitHub after the writes, and compare every surface with the approved proposal. Never verify from the request payload or cached local mapping.
 5. Run `npm run verify:board` and require exit status zero.
 
-Do not describe work as "published and verified" if any step is missing, unavailable, truncated, unclassified, or failing. A partial write is an incomplete publication, not success.
+Do not describe work as "published and verified" if any step is missing, unavailable, truncated, unclassified, or failing. A partial write is an incomplete publication, not success. Fix only the approved target and never create a duplicate as a retry.
+
+## Workstream convention
+
+The Workstream options are the `ROUTING_OPTIONS` in `scripts/lib/board-config.mjs`. Product
+feature/booking/payment/engineering → **Product**; GTM/launch/legal/promo, including the owner's own content →
+**Go-to-market**; tooling/infra/dev-experience/process machinery → **Platform**.
+
+## Issue body sections
+
+Every issue body carries this section after the `to-issues` template's own.
+
+### Preservation and out of scope
+
+The existing contracts that remain unchanged and adjacent work excluded from this issue.
+
+A new or substantially rewritten Booking or Payment story also shapes its acceptance criteria as
+[Booking and payment story acceptance criteria](#booking-and-payment-story-acceptance-criteria) sets out. Testing
+mode, observers, commands, and mutations belong to the architect's later plan unless the owner or normative
+reference already fixed them.
 
 ## Booking and payment story acceptance criteria
 
