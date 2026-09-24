@@ -1,6 +1,6 @@
-# The RentCottage software factory
+# The software factory
 
-RentCottage is built by AI agents under a workflow the owner steers from two decisions: what to build, and
+This repository is built by AI agents under a workflow the owner steers from two decisions: what to build, and
 whether a finished change may ship. Everything between those two decisions is done by agents, checked by
 tests and reviews the agents cannot skip, and recorded where the owner can read it without reading code.
 
@@ -11,7 +11,7 @@ parts transfer to another product. `AGENTS.md` is the contract every agent loads
 
 ## Why it is shaped this way
 
-An AI agent's characteristic failure is a plausible mistake, not a visible one: a metric that is
+An AI agent's characteristic failure is a plausible mistake, not a visible one: a result that is
 self-consistent and wrong, a test that passes whatever the code does, a pull request description that
 overstates what was verified. The workflow is built around three answers to that.
 
@@ -30,10 +30,13 @@ overstates what was verified. The workflow is built around three answers to that
 
 The factory runs on Claude Code and on Codex, and switches between them when one runs out of budget. Both read
 the same manual: `AGENTS.md` is the contract, `CLAUDE.md` imports it and adds its own Claude-only notes. Skills
-live once under `.agents/skills/`, with `.claude/skills/` holding symlinks into them. The agent seats under
-`.claude/agents/` and `.codex/agents/` are maintained counterparts, so the two runtimes carry the same charters
-with their runtime-specific configuration. The safety hooks exist as twins: `.claude/settings.json` wires the
-Claude set, `.codex/hooks.json` the Codex set.
+live once under `.agents/skills/`, with `.claude/skills/` holding symlinks into them; Codex reads that one
+directory directly. Ten of those entries are themselves symlinks into `.agents/upstream/mattpocock-skills/`, a
+verbatim vendored copy of an upstream skill set kept with its own licence, so a vendored skill is invoked by
+the same name and reached by the same path as a first-party one. `AGENTS.md` owns which upstream commit that
+copy pins and how it is refreshed. The agent seats under `.claude/agents/` and `.codex/agents/` are
+maintained counterparts, with shared charters kept aligned across the two runtime formats. The safety hooks
+exist as twins: `.claude/settings.json` wires the Claude set, `.codex/hooks.json` the Codex set.
 
 ## The seats
 
@@ -44,13 +47,13 @@ in the `architect`, `oracle` and `security-reviewer` seats; the session and the 
 
 | Seat | Job | Writes code? |
 |---|---|---|
-| `architect` | Plans a substantial change: approach, canon check, tripwire assessment, file-level plan cut into bounded builder handoffs | No |
+| `architect` | Plans a substantial change: approach, grounding, surface assessment, file-level plan cut into bounded builder handoffs | No |
 | `plan-reviewer` | Reads the fixed plan before any builder starts, for feasibility, scope, coherence, and security | No |
 | `builder-lite` | Executes a mechanical slice on a cheaper model when verification is strong and no judgment remains | Yes |
 | `builder` | Executes one approved, bounded slice end to end when the plan leaves no consequential judgment | Yes |
 | `builder-max` | The same charter at higher capability, chosen first whenever that materially reduces risk | Yes |
-| `reviewer` | Adversarial review of the final diff: correctness, honesty, dead code, canon, spec conformance | No |
-| `security-reviewer` | Sensitive-surface review for authentication, authorization, payments, personal data, database security, credentials, or injection boundaries | No |
+| `reviewer` | Adversarial review of the final diff: correctness, honesty, dead code, grounding, spec conformance | No |
+| `security-reviewer` | Trust-perimeter review, only when a change widens a surface in the `security review` row of the Surfaces table in `AGENTS.md` | No |
 | `explorer` | Fast read-only discovery on a cheaper model: where is X, who calls Y | No |
 | `oracle` | Escalation-tier reasoning for novel design, independent derivation, or a stalled diagnosis; never a routine rung | No |
 
@@ -64,7 +67,7 @@ flowchart LR
     B -->|diff + focused evidence| O
     O -->|final tree| R[reviewer]
     R -->|findings| O
-    O -.->|sensitive surface changed| S[security-reviewer]
+    O -.->|trust perimeter widened| S[security-reviewer]
     O -.->|locate only| E[explorer]
     O -.->|explicit escalation| X[oracle]
 ```
@@ -92,9 +95,8 @@ flowchart LR
 
 1. **Work-pick** is the owner's pick of one row of the candidate table, which approves that card's outcome and
    acceptance criteria as written and starts the job; no criteria list is shown and no second yes is asked.
-   Surfaces that carry product meaning (booking lifecycle, payment state, authorization, customer-visible copy,
-   Arabic or Sorani layout, and accessibility) also need owner direction and an authority check here. A surface
-   where a plausible wrong answer would expose money, access, or personal data needs explicit sign-off and a named
+   Owner-directed surfaces are the Surfaces table's `owner-directed` row and also need owner direction and
+   grounding here; sign-off surfaces are its `sign-off` row and need explicit sign-off and a named
    anti-regression test.
 2. **Push authorisation** is one yes to the filled pull request body and its screenshot, and any instruction
    to push counts as that yes. It covers the whole delivery: the push, the draft pull request, the comments
@@ -112,54 +114,54 @@ flowchart TD
     WP --> WT[Worktree on its own branch, card to In progress]
     WT --> PL[Plan: architect or the session, plan-reviewer reads it]
     PL --> BD[Build in bounded slices, evidence through scripts/run-log.mjs]
-    BD --> VR[Verify: screenshot driven live, math validated if touched]
+    BD --> VR[Verify: screenshot driven live, plus any gate the Surfaces table names]
     VR --> RV[Fresh review of the final tree, repair, one pass scoped to the repair]
     RV --> PA[Push authorisation: card to Awaiting push, owner reads the PR body and screenshot]
     PA --> DR[Draft pull request, card to In review]
     DR -->|documents, code, agent instruction: no Greptile| RD[Marked ready: CI runs on the merge result]
     DR -->|sign-off tier: explicit Greptile request| GR[Review attempt settled, findings resolved]
     GR --> RD
-    RD -->|required test check green| MG[GitHub auto-merge, squash, branch deleted]
+    RD -->|required test and sweep-scope checks green| MG[GitHub auto-merge, squash, branch deleted]
     MG --> CO[Closeout: issue closed, card to Done, worktree removed]
 ```
 
 The diagram is the whole path from a card to a merged commit. In words:
 
 - **Isolation.** Every issue gets its own git worktree on its own branch, with the session started inside it. On plain
-  Claude Code and Codex both use a native sibling worktree beside the integration checkout, created from freshly
-  fetched `origin/main`. A runtime's temporary subagent checkout is not the job worktree. One writer owns the job
-  worktree at a time, and separate issues run only when their files, product seams, tests, and shared resources are
-  demonstrably independent.
+  Claude Code (`git worktree add`) and on Herdr it lives in the repository's gitignored `.claude/worktrees/`; on Codex
+  it is the Codex-managed worktree or a sibling worktree beside the repository. A runtime's own subagent worktree is
+  not that worktree: it branches from `main` rather than from the job branch, so builders never run in one. Two issues
+  in two terminals never share a working file; two slices of one issue with disjoint files can run in two worktrees
+  cut from the job branch and merge back with git. A generated artifact the `generated artifacts` row of the
+  Conventions table in `AGENTS.md` names is never hand-merged, and the hooks keep it from landing stale.
 - **Evidence during the build.** Every executed check runs through `scripts/run-log.mjs`, which appends the
   real exit code to a per-branch log so the pull request body quotes what a script wrote, not what an agent
   remembers. Every green slice is committed on the job branch, so a crash costs at most the slice in progress.
-- **Verification before review.** Visual work is driven live against the correct Next.js or Worker runtime and a
-  current screenshot is shown in chat. Database, browser, payment, and provider work uses the preparation and
-  observer rules in `docs/TESTING-STRATEGY.md`.
+- **Verification before review.** Visual work is driven as the Conventions table's `visual verification` row says
+  and a current screenshot is shown in chat; any further gate the Surfaces table names runs here.
 - **Review in two layers.** One fresh review of the final tree before the pull request opens, by tier. Documents
-  (product and engineering documentation plus `CONTEXT.md`) are reviewed by the session itself; the owner is their reader. Code and agent
+  (`docs/`, the root readme, `CONTEXT.md`) are reviewed by the session itself; the owner is their reader. Code and agent
   instruction, the manual, the rules, the skills and the seat files included, get the `reviewer` charter run by the
   model family that did not write the diff, dispatched through the `cross-review` skill: the Codex seat from a Claude
   session, the Claude seat from a Codex session, because a writer's own family shares its blind spots. When that
   family's seat cannot be reached, the pass runs on the writing family's own seat instead and the pull request body
   declares the substitution and how the unavailability was established; an undeclared substitution is a skip. Sign-off
-  surfaces (authentication, authorization, payments, personal data, database security, credentials, and injection
-  boundaries), and any diff where material
+  surfaces (the Surfaces table's `sign-off` row), and any diff where material
   uncertainty remains after that pass, get the same cross-family pass and then an explicit Greptile request on the
   finished draft, every thread fixed or dismissed with a reason before the draft is marked ready. `security-reviewer`
-  runs only when a classified sensitive surface changes. `.greptile/config.json` disables automatic reviews;
-  labels are metadata.
+  runs only when a change widens a surface in the Surfaces table's `security review` row. `.greptile/config.json` disables automatic reviews; labels are metadata.
   The `resume` skill owns the tiers, the allowance lookup, the request, current-commit completion evidence, finding
   disposition, that cross-family substitution route and Greptile's own documented best-effort provider-unavailability
   exception. Repairs and rebases stay in draft and receive the applicable local evidence and, when required, a new
-  Greptile attempt before CI. When two repair rounds still produce true findings, the `resume` skill's Build
-  section decides between one more round and an owner decision.
+  Greptile attempt before CI. When two repair rounds still produce true findings, the `resume` skill's Build section
+  decides between one more round and an owner decision.
 - **Delivery by GitHub.** Marking the pull request ready after any required review attempt settles starts continuous
   integration. An unchanged-commit CI retry needs no further Greptile review. The merge is always queued as a GitHub auto-merge, which GitHub completes
-  only when the required source-bound `test` check is green and conversations are resolved; no agent merges
-  directly. The checked-in `sweep-scope` guard runs on pull-request events and immediately no-ops ordinary branches.
-  It does not activate the documentation maintenance routine: its schedule, external environment, publication
-  authority, provider, and required-check setting remain unconfigured.
+  only when the required `test` and `sweep-scope` checks are green; no agent merges directly. The two documentation
+  routines, when the Conventions table marks them active, are the one exception their manuals state: the sweep and
+  its day-after triage each squash-merge
+  their own pull request through the GitHub API tooling, and only once both required checks have succeeded on its
+  exact head.
 - **Closeout.** The moment the merge lands, the same session confirms it, moves the card, pulls main, and
   removes the branch and worktree. Rulings the owner made during the session go to the issue or the manual
   that owns the topic, never to a new document.
@@ -180,13 +182,14 @@ judged by its open state and its column like any other open issue, never reporte
 The toolkit (`scripts/board.mjs`, `board-add.mjs`, `board-move.mjs`, `verify-issue-publish.mjs` and
 `scripts/lib/board.mjs`, `board-rules.mjs`, `board-config.mjs`, `board-add.mjs`, `board-move.mjs`,
 `issue-publish.mjs`, `gh-exec.mjs`, `cli-flags.mjs`) copies unchanged into another repository; only
-`scripts/lib/board-config.mjs` differs. It carries three settings that let the copy serve another board:
+`scripts/lib/board-config.mjs` differs. It holds this repository's own values for three settings that let the copy
+serve another board:
 
-| Setting | This board | Effect |
-|---|---|---|
-| `BOARD_OWNER_TYPE` | `'user'` | `'organization'` makes every board read and write query the organisation that owns the project instead of a user. |
-| `ROUTING_FIELD` with `ROUTING_OPTIONS` | `Workstream` with Go-to-market, Product, Platform | `null` with `[]` makes the board Status-only: the scan stops reporting a missing routing value, and `board-add.mjs` takes `<issue#> <Status>` alone. |
-| `PARKED_LANE` | `null` | `{ field, option }` names a single-select field and one of its options; a card carrying that option keeps its column but is left out of the pick view, which lists it on its own `Parked (<field>: <option>), not pickable:` line instead. `board-move.mjs --lane` writes the lane. A parked card in an in-flight column is not reported as a claim with no closing pull request, since it waits on an answer from outside the session, while the blocked, unassigned and epic checks still judge it. `board.mjs --json` carries `parked` on every card, `false` on a board with no parked lane. |
+| Setting | Effect |
+|---|---|
+| `BOARD_OWNER_TYPE` | `'organization'` makes every board read and write query the organisation that owns the project instead of a user. |
+| `ROUTING_FIELD` with `ROUTING_OPTIONS` | `null` with `[]` makes the board Status-only: the scan stops reporting a missing routing value, and `board-add.mjs` takes `<issue#> <Status>` alone. |
+| `PARKED_LANE` | `{ field, option }` names a single-select field and one of its options; a card carrying that option keeps its column but is left out of the pick view, which lists it on its own `Parked (<field>: <option>), not pickable:` line instead. `board-move.mjs --lane` writes the lane. A parked card in an in-flight column is not reported as a claim with no closing pull request, since it waits on an answer from outside the session, while the blocked, unassigned and epic checks still judge it. `board.mjs --json` carries `parked` on every card, `false` on a board with no parked lane. |
 
 Every `gh` call the toolkit makes runs through the argv prefix in the `BOARD_TOOLKIT_GH` environment variable, a
 JSON array of strings that defaults to `["gh"]`; a malformed value throws rather than reaching the real CLI. The
@@ -221,16 +224,16 @@ board's own automation, so no agent moves a card for these cases:
 | Code review approved | Off | | The same evidence bar as Code changes requested |
 | Auto-close issue | Off | | Closing an issue follows the pull request's `Closes #` line, never inferred from a card's column |
 
-A card that automation adds has no Workstream; `scripts/board.mjs` reports it until
-`node scripts/board-add.mjs <issue> Backlog <Workstream>` fills the field on the existing card.
+On a board with a routing field, a card that automation adds has no routing value; `scripts/board.mjs` reports it
+until `node scripts/board-add.mjs <issue> Backlog <value>` fills the field on the existing card, choosing the value
+by the convention in `docs/ISSUE-TRACKER.md`.
 
 ## The review line
 
 Every pull request the `resume` skill delivers carries exactly one review line, so the review run before the pull
 request opened is readable on GitHub. This section is the specification: any tool that writes or parses the line,
-in this repository or another, follows it, and a tool that disagrees with it is the defect. The weekly
-inactive documentation sweep and triage routines carry no line because they run no review before their pull
-requests open.
+in this repository or another, follows it, and a tool that disagrees with it is the defect. The
+documentation sweep and its day-after triage run no review before their pull requests open and carry no line.
 
 ```
 Review: tier=code rounds=2 raised=6 fixed=4 dismissed=1 deferred=1
@@ -261,16 +264,19 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 |---|---|---|
 | No unsafe git or GitHub command | `.claude/hooks/block-unsafe-git.mjs` before every shell command (Codex twin under `.codex/hooks/`) | `--no-verify`, force pushes, history rewrites, a non-draft pull request, a merge that is not a GitHub auto-merge, and branch work in the root checkout; a quoted mention or a heredoc body is data, and a wrapped or disguised invocation is not modelled |
 | A builder receives a bounded handoff | `.claude/hooks/check-builder-handoff.mjs` before every agent spawn | A handoff missing a required field, with an unfilled slot, or telling the builder to prove its own mutation |
-| Green before a turn ends | `.claude/hooks/verify-green.sh` at turn end | Finishing after a pending `src/` edit without running lint, or with a lint error |
+| Green before a turn ends | `.claude/hooks/verify-green.sh` at turn end, in the checkout the session is working in (Codex twin under `.codex/hooks/`) | Finishing with a lint error; a check it could not run, because no project root resolved or a tool is absent, is stated as unverified rather than passed silently |
+| The product's own checks pass | The product gates `scripts/gates/{stop,pre-commit}`: `stop` run by both Stop hooks on every turn end, and `pre-commit` run by `.githooks/pre-commit` on every commit | A turn end or commit whose product gate, when present, exits non-zero or is not executable; an absent gate changes nothing |
 | Runner output stays readable | `.claude/hooks/filter-test-output.mjs` | Condenses a green run, passes a red run through in full |
-| Staged agent instructions stay valid | `.githooks/pre-commit` and `.githooks/pre-merge-commit` | A commit whose staged seat definitions fail validation, including deletion of the staged validator |
+| The artifact matches its source | The product gates `scripts/gates/{stop,pre-commit}` (run on a merge that auto-commits through `.githooks/pre-merge-commit`), and CI | A turn end, commit or merge whose generated artifact, as the Conventions table names it, is not the byte-identical build of its source |
 | Agent definitions parse and the reviewer charter matches | `.githooks/pre-commit` | A staged seat file the runtime would drop silently, and Claude and Codex reviewer charters that differ beyond the skill-invocation sigil |
 | Lint and the script suite pass | `.githooks/pre-push` | A push with a red script suite |
-| Only green code merges | Branch protection on `main` requiring the source-bound `test` check, current-base strictness, conversation resolution, and auto-merge | A merge before the current merge result is green and its conversations are resolved |
+| Shared workflow files match the manifest | `scripts/lib/workflow-contract.test.mjs`, run by `.githooks/pre-push` and CI | A push or merge where any file `.agents/factory-manifest.json` lists differs from its recorded hash; the failure names both fix routes, `--write` in the canonical repository and a sync in an adopter |
+| Only green code merges | Branch protection on `main` requiring the `test` and `sweep-scope` checks, and auto-merge | A merge before both checks are green; on a draft the `test` gate reports under a different name so it can never satisfy the rule |
 | Metered suites run on purpose | `.codex/rules/playwright.rules` | A browser run on Codex without a prompt |
 
-Committed hook code and registered configuration prove the repository contract, not that an already-running
-runtime loaded or trusted that configuration. When activation cannot be observed, report that limit explicitly.
+Committed and registered hook configuration proves this repository contract; it does not prove that an
+already-running runtime loaded or trusted that configuration. When the active runtime cannot be observed,
+the delivery report still names that limit.
 
 Everything else, including which reviewer runs, when to stop and replan, and what the pull request body must
 say, is a sentence in `AGENTS.md` or a skill. The bar for adding a new mechanism is stated in `AGENTS.md`
@@ -284,7 +290,7 @@ custom code, a hook beats a script, a sentence beats a hook.
 
 | Mode | When | What it requires |
 |---|---|---|
-| `strict-tdd` | A reproducible defect with a meaningful observer, or an executable security, control, or closeout invariant | The test first, red, then the fix, green |
+| `strict-tdd` | A reproducible defect with a meaningful observer, or a subject rule `docs/TESTING-STRATEGY.md` names that demands it | The test first, red, then the fix, green |
 | `evidence-required` | The default for new or changed behaviour or policy | New or strengthened evidence in the same change, order flexible |
 | `preservation` | No observable behaviour changed and the protected contract is untouched | The existing regression net named, nothing new |
 
@@ -292,26 +298,18 @@ Unless the mode is `preservation`, each claim also gets one executed mutation: t
 guard removed, the focused test goes red, the change is restored, the test goes green, and all four exit
 codes land in the run log. A test that stays green when the feature breaks is not evidence.
 
-Continuous integration, defined in `.github/workflows/ci.yml`, uses `scripts/verify.mjs` to classify the complete
-diff and run the applicable baseline, database, and browser evidence. CI runs from the merge result rather than
-only the branch head, so it tests what would land. The selector fails loud on an unclassified path, malformed Git
-evidence, or a dependency preflight mismatch.
+CI runs the suites `docs/TESTING-STRATEGY.md` names. CI runs from the merge result, not the branch head, so it
+tests what would land.
 
-The tracked `sweep-scope` workflow is a pull-request guard: it runs on pull-request events, no-ops branches outside
-the sweep and triage prefixes, and reads the scope table from the base commit so a branch cannot widen its own
-authority. Its context-free half refuses concealed destinations on added lines; its semantic half parses each
-complete document before and after as GitHub Flavoured Markdown and refuses a newly rendered destination that the
-base tree cannot vouch for as a whole token. On judged branches only, the workflow installs the base branch's entire
-locked production dependency tree, including the four exact parser pins, with
-`npm ci --omit=dev --ignore-scripts --no-audit --no-fund`; it keeps
-repository permission read-only, disables persisted checkout credentials, and executes no pull-request code. A
-registry outage therefore fails the check closed until the service is restored and the check is rerun. The five
-accepted parser, repository-fixture, reporting, and deliberately blunt refusal gaps are named in
-`docs/DOC-SWEEP.md` and tracked by [Flowgauge issue
-#1362](https://github.com/zaingulel/flow-metrics-dashboard/issues/1362). The guard's presence does not activate the
-documentation maintenance routine or configure its schedule, external environment, publication authority,
-provider, or hosted required-check setting. Those need the external setup listed in `docs/DOC-SWEEP.md` and owner
-authority.
+A second required check, `sweep-scope` in `.github/workflows/sweep-scope.yml`, exists because the
+documentation sweep and its day-after triage, when active, land their own pull requests and no one reads them first. It runs
+from `main` on every pull request rather than from the pull request it judges, passes at once off a
+`docs-sweep/` or `docs-triage/` branch, and on one runs `scripts/sweep-scope-check.mjs`, which reads the
+sweep's scope table from the base commit, the one allowlist both routines answer to, and fails the branch's
+own changes on anything but a modification of a may-edit file, on any URI, or host name on a common top-level
+domain, that the tree did not already carry, and on any destination shape that hides where it points; a second half
+then renders each document before and after with GitHub Flavoured Markdown's own parser and refuses a newly
+rendered destination the tree cannot vouch for, within the limits `docs/DOC-SWEEP.md` names.
 
 ## Sources of truth
 
@@ -320,9 +318,9 @@ authority.
 | What is planned, and in what state | The GitHub Project board |
 | What has shipped | `git log` and passing checks, never a prose claim |
 | What is in flight | A branch and its draft pull request; its body's "Not done" section is the handoff |
-| What the rules are | `AGENTS.md`, the scoped rules, `CONTEXT.md`, `docs/TESTING-STRATEGY.md`, `docs/CODING-STANDARDS.md` |
+| What the rules are | `AGENTS.md`, the scoped rules, and the documents `docs/README.md` indexes |
 | What happened | Git history |
-| What the code means, in prose | `CONTEXT.md`, accepted architecture decisions, `docs/agents/domain.md`, and the applicable product and engineering authorities |
+| What the code means, in prose | This guide and the documents `docs/README.md` indexes, kept true, when the Conventions table marks the documentation routines active, by the sweep in `docs/DOC-SWEEP.md`, whose reported findings the day-after triage in `docs/SWEEP-TRIAGE.md` resolves |
 
 A chat claim never overrides these. A claim that work shipped is checked against the commit and the checks;
 a claim that work is next is checked against the board.
@@ -337,7 +335,7 @@ despite the sentence, or immediately when the bad state is silent, misleading, s
 reverse. Every new guard names its non-destructive recovery route in the same change. New controls replace
 stale guidance rather than adding a second authority.
 
-## What transfers beyond RentCottage
+## What transfers beyond this repository
 
 The transferable core is compact:
 
@@ -351,6 +349,5 @@ The transferable core is compact:
 7. A board, git, and documentation as three distinct stores, reconciled rather than assumed consistent.
 8. Evidence limits as visible as evidence successes.
 
-RentCottage-specific protections, such as PostgreSQL-authoritative booking and payment state, Row Level Security,
-authentication, trilingual interfaces, accessibility, migration safety, and Worker compatibility, are replaced by
-the highest-consequence invariants of whatever product adopts the workflow.
+Product-specific protections are the surfaces the Surfaces table names; each product that adopts the workflow
+fills that table with its own highest-consequence invariants.

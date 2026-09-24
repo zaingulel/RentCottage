@@ -55,7 +55,7 @@ test('pickable keeps ONLY Backlog + Ready — excludes Done / In review', () => 
   assert.equal(pickable(BOARD.items).some((i) => i.status === 'Done'), false);
 });
 
-test("parkedLine prints nothing under Flowgauge's own config, which parks no lane", () => {
+test("parkedLine prints nothing under this repository's own config, which parks no lane", () => {
   const laned = { status: 'Ready', lane: 'To Sebastiano', content: { number: 12 } };
   assert.equal(parkedLine([...BOARD.items, laned], parseBoardArgs([])), null);
 });

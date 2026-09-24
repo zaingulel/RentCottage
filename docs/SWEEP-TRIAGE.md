@@ -70,8 +70,9 @@ The triage never widens its own scope table or edits either routine manual.
 
 ## Procedure after activation
 
-1. Fetch `origin/main`, verify a clean base, and create `docs-triage/<YYYY-MM-DD>` in one native sibling worktree.
-   Never edit the integration checkout.
+1. Fetch `origin/main`, verify a clean base, and create `docs-triage/<YYYY-MM-DD>` in one job worktree: on Claude
+   Code and Herdr in the root checkout's gitignored `.claude/worktrees/`, on Codex the Codex-managed worktree or a
+   sibling worktree beside the repository. Never edit the integration checkout.
 2. Run `npm ci`; a dependency or network mismatch stops the run.
 3. Select the explicitly named sweep pull request, or the oldest untriaged routine-authored `docs-sweep/` pull
    request in the approved window. Validate author, branch prefix, title, state, and readable body. Reject ambiguity.

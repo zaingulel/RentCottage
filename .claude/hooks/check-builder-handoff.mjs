@@ -8,11 +8,7 @@ let raw = "";
 process.stdin.on("data", (d) => (raw += d));
 process.stdin.on("end", () => {
   let input;
-  try {
-    input = JSON.parse(raw)?.tool_input;
-  } catch {
-    process.exit(0);
-  }
+  try { input = JSON.parse(raw)?.tool_input; } catch { process.exit(0); }
   const res = checkHandoff(input);
   if (!res.ok) {
     console.error(`Blocked: ${res.reason}.`);

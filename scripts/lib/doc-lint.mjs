@@ -52,6 +52,7 @@ const GIT_HISTORY_MARKER = "(git history)";
 export const KNOWN_UNTRACKED = [
   ".agent-evidence/", // local run receipts
   ".claude/worklog/", // branch-local human-readable run receipts
+  ".claude/worktrees/", // job worktrees on Claude Code
   ".demo/", // private local demonstration state
   ".next/", // Next.js build output
   ".open-next/", // OpenNext Worker build output

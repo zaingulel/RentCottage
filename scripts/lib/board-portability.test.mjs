@@ -64,10 +64,10 @@ export const BOARD_PROJECT_NUMBER = 7;
 export const BOARD_REPOSITORY = 'widgets';
 ${CONFIG_TAIL}`;
 
-const FLOWGAUGE_CONFIG = `export const BOARD_OWNER = 'zaingulel';
+const USER_CONFIG = `export const BOARD_OWNER = 'example-owner';
 export const BOARD_OWNER_TYPE = 'user';
 export const BOARD_PROJECT_NUMBER = 2;
-export const BOARD_REPOSITORY = 'flow-metrics-dashboard';
+export const BOARD_REPOSITORY = 'example-repo';
 ${CONFIG_TAIL}`;
 
 function adoptToolkit(t, configSource) {
@@ -208,9 +208,9 @@ test('every board read and write an organisation-configured toolkit sends is roo
   assertProjectRoot(await driveEveryPath(root, 'organization'), 'organization(login:"acme-org")', 'user(');
 });
 
-test("Flowgauge's own user-owned config still roots every board query at user(login:\"zaingulel\")", async (t) => {
-  const root = adoptToolkit(t, FLOWGAUGE_CONFIG);
-  assertProjectRoot(await driveEveryPath(root, 'user'), 'user(login:"zaingulel")', 'organization(');
+test('a user-owned config still roots every board query at user(login:"example-owner")', async (t) => {
+  const root = adoptToolkit(t, USER_CONFIG);
+  assertProjectRoot(await driveEveryPath(root, 'user'), 'user(login:"example-owner")', 'organization(');
 });
 
 function recordingOutput() {
@@ -355,8 +355,8 @@ test('with no routing field, an unreadable card with a Status is reported as unr
   assert.equal(outcome(leanNode({ id: 'PVTI_11', content: null })).exitCode, 1);
 });
 
-test("with Flowgauge's Workstream configured, a card missing it is still reported and board-add still requires it", async (t) => {
-  const root = adoptToolkit(t, FLOWGAUGE_CONFIG);
+test('with a Workstream configured, a card missing it is still reported and board-add still requires it', async (t) => {
+  const root = adoptToolkit(t, USER_CONFIG);
   const { leanNode } = await load(root, 'lib/board-fixtures.mjs');
 
   const rows = await scanRows(root, 'user', [leanNode({ id: 'PVTI_11', content: issue(11), status: 'Ready' })]);
@@ -534,7 +534,7 @@ test('a parked claim with no closing pull request is not reported as stalled; th
 });
 
 test('with no parked lane configured, a card carrying a Lane value is still pickable, not parked, and the CLI prints no parked line', async (t) => {
-  const root = adoptToolkit(t, FLOWGAUGE_CONFIG);
+  const root = adoptToolkit(t, USER_CONFIG);
   const { fetchBoard, normalizeItem, parked, pickable } = await load(root, 'lib/board.mjs');
   const { leanBoardPage, leanNode } = await load(root, 'lib/board-fixtures.mjs');
   assert.throws(() => leanNode({ status: 'Ready', lane: 'To Sebastiano' }), /configures no PARKED_LANE/);

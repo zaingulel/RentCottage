@@ -8,7 +8,6 @@ architect's finding that the card holds more than one independently demonstrable
 split proposal under the `resume` skill's Plan section and is never narrowed or finished inline.
 Never escalate to oracle merely because the architect did not deliver.
 -->
-
 ---8<---
 Decision: {{DECISION}}
 Scope: {{SCOPE}}
@@ -18,6 +17,5 @@ Deliverable: {{DELIVERABLE}}
 Stop condition: {{STOP_CONDITION}}
 
 Standing instructions:
-
 - Answer only this decision. Do not broaden the scope or propose adjacent work.
 - If the evidence is insufficient, stop with the specific caveat instead of broadening the investigation.

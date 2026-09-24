@@ -10,8 +10,8 @@ import { blockReason } from './unsafe-git.mjs';
 
 const REASON_CREATE = "gh pr create without --draft skips the draft review: open it as a draft (--draft/-d) so Greptile reviews it before CI runs";
 const REASON_MERGE = 'gh pr merge without --auto merges whatever the checks say (an admin token is not bound by branch protection); use `gh pr merge --auto --squash <pr>` so GitHub merges only once the required test check is green';
-const REASON_COMMIT_NO_VERIFY = 'git commit --no-verify skips the staged agent-definition pre-commit gate';
-const REASON_PUSH_NO_VERIFY = 'git push --no-verify skips the lint and script-suite pre-push gate';
+const REASON_COMMIT_NO_VERIFY = 'git commit --no-verify skips the pre-commit gates';
+const REASON_PUSH_NO_VERIFY = 'git push --no-verify skips the lint pre-push gate';
 const REASON_PUSH_FORCE = 'git push --force is unsafe (use --force-with-lease for a rebase)';
 const REASON_FILTER_BRANCH = 'git filter-branch rewrites history';
 
@@ -36,8 +36,8 @@ test('echo "gh pr create" (a quoted mention, not a real invocation) is allowed',
 });
 
 // A `--draft` merely QUOTED inside --title/--body satisfied the flag check with no real flag, so the
-// PR slipped through un-drafted and burned CI (PR #406). Quoted spans are blanked before the rules
-// look, so a quoted flag is never a real one.
+// PR slipped through un-drafted and burned CI. Quoted spans are blanked before the rules look, so a
+// quoted flag is never a real one.
 test('a --draft quoted inside --title is NOT a real flag — still blocked', () => {
   assert.equal(blockReason('gh pr create --title "block it without --draft " --body x'), REASON_CREATE);
 });
@@ -83,8 +83,8 @@ test('gh pr merge without --auto is blocked, bare, path-qualified, assignment-le
     'Gh pr merge 493 --squash',
     'gh pr merge 406',
     'GH_TOKEN=x gh pr merge 493',
-    'gh --repo flowgauge/flowgauge pr merge 493',
-    'gh pr -R flowgauge/flowgauge merge 493',
+    'gh --repo someone/example-repository pr merge 493',
+    'gh pr -R someone/example-repository merge 493',
     'gh pr view 493 && gh pr merge 493',
     '/Users/zain/.local/bin/gh pr merge 493 --squash',
     './bin/gh pr merge 493 --squash',
@@ -98,7 +98,7 @@ test('gh pr merge without --auto is blocked, bare, path-qualified, assignment-le
   // Auto-merge is the supported form: GitHub merges only when the required check is green.
   assert.equal(blockReason('gh pr merge --auto --squash 493'), '');
   assert.equal(blockReason('gh pr merge 493 --auto --squash --delete-branch'), '');
-  assert.equal(blockReason('gh --repo flowgauge/flowgauge pr merge --auto 493'), '');
+  assert.equal(blockReason('gh --repo someone/example-repository pr merge --auto 493'), '');
 });
 
 // ── git commit / push --no-verify ───────────────────────────────────────────
@@ -147,7 +147,7 @@ test('git push --force-with-lease is allowed', () => {
 test('a quoted span that only mentions a flag is still data', () => {
   assert.equal(blockReason('git commit -m "--force is not for us"'), '');
   assert.equal(blockReason('echo git push --no-verify'), '');
-  assert.equal(blockReason('grep -n "git push --no-verify" docs/ARCHITECTURE.md'), '');
+  assert.equal(blockReason('grep -n "git push --no-verify" docs/GUIDE.md'), '');
   assert.equal(blockReason('git commit -m "docs: explain why git push --no-verify is blocked"'), '');
   assert.equal(blockReason('echo "git -C . push --no-verify origin HEAD"'), '');
   assert.equal(blockReason('git commit -m "document git -C . push --no-verify"'), '');
@@ -179,7 +179,7 @@ test('ordinary git and gh commands pass', () => {
     'git -C . push origin HEAD',
     'git push origin HEAD',
     'git -c color.ui=false push origin HEAD',
-    'GIT_AUTHOR_NAME=Flowgauge git push origin HEAD',
+    'GIT_AUTHOR_NAME=Someone git push origin HEAD',
     'gh pr list',
     'gh pr view 493 --json state',
   ]) assert.equal(blockReason(command), '', command);
@@ -205,11 +205,11 @@ test('a path-qualified git or gh anchors every rule', () => {
 });
 
 // The guard reads only plainly written commands: a gh api call whose jq filter carries an escaped
-// quote is ordinary work and passes. This is the command the guard refused in the #1198 job, which
-// retired the escaped-quote layer (#1203); the fixture uses String.raw because a cooked '\"'
-// contains no backslash and asserts nothing.
-test('ANTI-REGRESSION 1203: the gh api command the escaped-quote layer refused in the #1198 job passes', () => {
-  const command = String.raw`cd "/Users/zain/Developer/Claude Code/flow-metrics-dashboard/.claude/worktrees/1198" && git branch -m worktree-1198 job/1198 && git log --oneline -1 && (ls node_modules >/dev/null 2>&1 && echo "node_modules present" || echo "need npm ci") && echo "--- board add" && PROJECT_ID=$(gh api graphql -f query='{ user(login:"zaingulel") { projectsV2(first:10) { nodes { id title number } } } }' --jq '.data.user.projectsV2.nodes[] | select(.title | test("Flowgauge")) | .id') && echo "project $PROJECT_ID" && ISSUE_ID=$(gh api graphql -f query='{ repository(owner:"zaingulel", name:"flow-metrics-dashboard") { issue(number:1198) { id } } }' --jq '.data.repository.issue.id') && gh api graphql -f query="mutation { addProjectV2ItemById(input:{projectId:\"$PROJECT_ID\", contentId:\"$ISSUE_ID\"}) { item { id } } }" --jq '.data.addProjectV2ItemById.item.id' && node scripts/board-move.mjs 1198 Building`;
+// quote is ordinary work and passes. This is a command the guard once refused, its names made neutral, and
+// refusing it retired the escaped-quote layer; the fixture uses String.raw because a cooked '\"' contains no
+// backslash and asserts nothing.
+test('ANTI-REGRESSION: the gh api command the escaped-quote layer once refused passes', () => {
+  const command = String.raw`cd "/Users/someone/Developer/Claude Code/example-repository/.claude/worktrees/1198" && git branch -m worktree-1198 job/1198 && git log --oneline -1 && (ls node_modules >/dev/null 2>&1 && echo "node_modules present" || echo "need npm ci") && echo "--- board add" && PROJECT_ID=$(gh api graphql -f query='{ user(login:"someone") { projectsV2(first:10) { nodes { id title number } } } }' --jq '.data.user.projectsV2.nodes[] | select(.title | test("Example")) | .id') && echo "project $PROJECT_ID" && ISSUE_ID=$(gh api graphql -f query='{ repository(owner:"someone", name:"example-repository") { issue(number:1198) { id } } }' --jq '.data.repository.issue.id') && gh api graphql -f query="mutation { addProjectV2ItemById(input:{projectId:\"$PROJECT_ID\", contentId:\"$ISSUE_ID\"}) { item { id } } }" --jq '.data.addProjectV2ItemById.item.id' && node scripts/board-move.mjs 1198 Building`;
   assert.equal(blockReason(command), '');
   assert.equal(blockReason(String.raw`gh api graphql -f query='{ viewer { login } }' --jq '.data.viewer.login | "\"" + . + "\""'`), '');
   assert.equal(blockReason(String.raw`git commit -m "quote a \"word\" in the message"`), '');
@@ -369,13 +369,13 @@ const inRoot = { cwd: ROOT, isRootCheckout };
 const inJob = { cwd: JOB, isRootCheckout };
 const rootReason = (subcommand) => `git ${subcommand} in the integration checkout: the root stays on main and nothing is branched, switched, or committed there — open a job checkout with git worktree add and run it from there`;
 
-test('ANTI-REGRESSION 1170: branch work in the root checkout is refused; the same call in a worktree passes', () => {
+test('ANTI-REGRESSION: branch work in the root checkout is refused; the same call in a worktree passes', () => {
   const branchWork = {
     'git commit -m "wip"': 'commit',
     'Git commit -m "wip"': 'commit',
     'git checkout -b job/1170': 'checkout',
     'git checkout feature': 'checkout',
-    'git checkout -- index.html': 'checkout',
+    'git checkout -- docs/GUIDE.md': 'checkout',
     'git switch -c job/1170': 'switch',
     'git switch feature': 'switch',
     'git branch job/1170': 'branch',
@@ -387,7 +387,7 @@ test('ANTI-REGRESSION 1170: branch work in the root checkout is refused; the sam
     'cd src && git commit -m "wip"': 'commit',
     'git switch --detach main': 'switch',
     'git checkout -B main origin/main': 'checkout',
-    'git checkout main -- index.html': 'checkout',
+    'git checkout main -- docs/GUIDE.md': 'checkout',
     'git merge job/1170': 'merge',
     'git cherry-pick abc123': 'cherry-pick',
     'git revert HEAD': 'revert',
@@ -402,7 +402,7 @@ test('ANTI-REGRESSION 1170: branch work in the root checkout is refused; the sam
   assert.equal(blockReason('git commit --no-verify', inJob), REASON_COMMIT_NO_VERIFY);
 });
 
-test('1170: pulling main forward, deleting branches, worktree upkeep, and reads pass in the root checkout', () => {
+test('pulling main forward, deleting branches, worktree upkeep, and reads pass in the root checkout', () => {
   for (const command of [
     'git pull',
     'git pull --ff-only',
@@ -451,7 +451,7 @@ test('1170: pulling main forward, deleting branches, worktree upkeep, and reads 
   }
 });
 
-test('1170: the walk follows cd and git -C, quoted paths with spaces included', () => {
+test('the walk follows cd and git -C, quoted paths with spaces included', () => {
   // From the root into a worktree: allowed.
   assert.equal(blockReason(`cd "${JOB}" && git commit -m "wip"`, inRoot), '');
   assert.equal(blockReason('cd .claude/worktrees/1170 && npm test && git commit -m "wip"', inRoot), '');
@@ -473,7 +473,7 @@ test('1170: the walk follows cd and git -C, quoted paths with spaces included', 
   assert.equal(blockReason("cat <<'EOF' > notes.txt\ncd /tmp\nEOF\ngit commit -m wip", inJob), '');
 });
 
-test('ANTI-REGRESSION 1170: a cd that could have failed keeps the old directory as a candidate', () => {
+test('ANTI-REGRESSION: a cd that could have failed keeps the old directory as a candidate', () => {
   // `;`, a newline, and `||` run on after a failed cd, so the root stays in the set and refuses.
   assert.equal(blockReason('cd .claude/worktrees/gone; git commit -m "wip"', inRoot), rootReason('commit'));
   assert.equal(blockReason('cd .claude/worktrees/gone\ngit commit -m "wip"', inRoot), rootReason('commit'));
@@ -490,7 +490,7 @@ test('ANTI-REGRESSION 1170: a cd that could have failed keeps the old directory 
   assert.equal(blockReason(`cd "${JOB}" && git commit -m "wip"`, inRoot), '');
 });
 
-test('1170: without a checkout context, or at a directory the guard cannot resolve, the rule is not judged', () => {
+test('without a checkout context, or at a directory the guard cannot resolve, the rule is not judged', () => {
   assert.equal(blockReason('git commit -m "wip"'), '');
   assert.equal(blockReason('git checkout -b x', undefined), '');
   for (const command of [
@@ -505,7 +505,7 @@ test('1170: without a checkout context, or at a directory the guard cannot resol
   }
 });
 
-test('1170: the path placeholder carries a real quoted path, spaces and all', () => {
+test('the path placeholder carries a real quoted path, spaces and all', () => {
   assert.equal(blockReason(`cd "${ROOT}" && git commit -m "wip"`, inJob), rootReason('commit'));
   assert.equal(blockReason(`git -C "${ROOT}" commit -m "wip"`, inJob), rootReason('commit'));
 });

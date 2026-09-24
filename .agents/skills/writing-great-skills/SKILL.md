@@ -5,13 +5,13 @@ disable-model-invocation: true
 ---
 
 Reference for writing any document an agent consumes — a skill, `CLAUDE.md`, a doc reached by a pointer. The root
-virtue is **predictability**: the agent taking the same _process_ every run. Design terms live in
+virtue is **predictability**: the agent taking the same *process* every run. Design terms live in
 `/codebase-design`; domain terms in root `CONTEXT.md`.
 
 ## Context pointers
 
 A **context pointer** names out-of-context material and encodes the condition for reaching it (a skill
-description, a `CLAUDE.md` line naming a doc). The pointer's _wording_ decides when the agent reaches the
+description, a `CLAUDE.md` line naming a doc). The pointer's *wording* decides when the agent reaches the
 material: sharpen a weak pointer before inlining its target. A pointer states what the material is and lists the
 **branches** that trigger reaching it (a branch is a distinct case the document handles). Always-loaded pointers
 earn the hardest pruning: front-load the leading word; one trigger per branch (collapse synonyms); cut identity
@@ -51,11 +51,11 @@ steps tempt the agent to rush the current one; **by invocation** (see Skill mech
 
 ## Leading words
 
-A **leading word** is a compact pretrained concept the agent thinks with (_lesson_, _tracer bullet_, _red_),
+A **leading word** is a compact pretrained concept the agent thinks with (*lesson*, *tracer bullet*, *red*),
 repeated as a token, anchoring behaviour in few tokens; a coined word recruits no priors, so prefer an existing
 one. It anchors execution in the body and invocation in a pointer (shared language across prompts, docs, and
 codebase fires the pointer reliably). Hunt for restatements a leading word collapses: "fast, deterministic,
-low-overhead" → _tight_; "a loop you believe in" → _red_.
+low-overhead" → *tight*; "a loop you believe in" → *red*.
 
 **Negation** is the failure mode beside this lever: prohibition drags the forbidden behaviour into context and
 makes it more available. Prompt the **positive** target; a prohibition earns its place only as a hard guardrail
@@ -72,7 +72,7 @@ you cannot phrase positively, paired with the positive target.
   because adding feels safe.
 - Hunt **no-ops**: an instruction the model already obeys by default. The test is model-relative — settle
   disagreement by running the document. Delete the whole failing sentence. A leading word too weak to beat the
-  default (_be thorough_) is a no-op; the fix is a stronger word (_relentless_).
+  default (*be thorough*) is a no-op; the fix is a stronger word (*relentless*).
 
 ## Skill mechanics
 
@@ -96,5 +96,5 @@ reference two user-invoked skills need lives in neither: push it to a plain file
 trigger it on its own, a trigger word you actually use in your prompts, or another skill must reach it; the new
 always-loaded description must be worth that reach. When user-invoked skills multiply past memory, cure the piled
 cognitive load with a **router skill**: one user-invoked skill shaped as a short decision table (symptom → skill)
-that hints, never fires. RentCottage has none yet; split one out when `.agents/skills/` grows past memory, not
-speculatively.
+that hints, never fires. This repository's product skills, if any, are listed in `docs/README.md`; split a router
+out when `.agents/skills/` grows past memory, not speculatively.

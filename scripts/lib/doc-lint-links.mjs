@@ -12,7 +12,7 @@ import path from 'node:path';
 // Targets that are not repo paths: any URI scheme (http, mailto, tel, ftp…) or
 // a pure in-page anchor. The scheme charset deliberately excludes the dot RFC
 // 3986 permits: no real scheme uses one, and allowing it would read
-// `README.md:42` as a scheme and silently skip that path-with-line target.
+// `GUIDE.md:42` as a scheme and silently skip that path-with-line target.
 const EXTERNAL_RE = /^[a-z][a-z0-9+-]*:/i;
 
 // Inline links and image links: [text](target) / ![alt](target). The target

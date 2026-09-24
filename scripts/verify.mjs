@@ -60,9 +60,11 @@ const baselineOnlyPaths = new Set([
   // helpers; their reach is GitHub, local Git or agent dispatch, never Supabase, the Worker or
   // a browser. Exact names, never directory wildcards: these directories also hold
   // Supabase, Worker and browser fixtures, which do need the expensive route.
+  ".agents/factory-manifest.json",
   "scripts/board.mjs",
   "scripts/board-add.mjs",
   "scripts/board-move.mjs",
+  "scripts/factory-sync.mjs",
   "scripts/verify-issue-publish.mjs",
   "scripts/doc-lint.mjs",
   "scripts/sweep-scope-check.mjs",
@@ -91,6 +93,10 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/check-agents.test.mjs",
   "scripts/lib/codex-hook-adapters.mjs",
   "scripts/lib/codex-hook-adapters.test.mjs",
+  "scripts/lib/codex-browser-policy.test.mjs",
+  "scripts/lib/product-manual.test.mjs",
+  "scripts/lib/factory-sync.mjs",
+  "scripts/lib/factory-sync.test.mjs",
   "scripts/lib/handoff-check.mjs",
   "scripts/lib/handoff-check.test.mjs",
   "scripts/lib/precommit.test.mjs",

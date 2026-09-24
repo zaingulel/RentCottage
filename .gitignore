@@ -10,6 +10,7 @@ coverage/
 .agent-evidence/
 .claude/worklog/
 .worktrees/
+.claude/worktrees/
 .demo/
 *.tsbuildinfo
 .env*
