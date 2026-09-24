@@ -17,27 +17,49 @@ const productLines = manual
   .slice(manual.indexOf(SHARED_END) + SHARED_END.length)
   .split("\n");
 
-// The one product-region line starting with `prefix` must equal `expected` exactly, so an
-// appended exception or a deletion both fail.
-function assertProductLine(prefix, expected) {
+const normalise = (text) => text.trim().replace(/\s+/g, " ");
+// A Markdown table row's cells, so spacing around the delimiters does not count.
+const cells = (row) => row.trim().split("|").slice(1, -1).map(normalise);
+const isRow = (line) => line.trim().startsWith("|");
+// A line that starts a new Markdown block the product region uses ends a paragraph.
+const isBlockStart = (line) =>
+  line.trim() === "" || /^(#|\||\d+\. |- )/.test(line.trimStart());
+
+// The one product-region unit keyed by `key` must equal `expected`, ignoring whitespace-only
+// formatting, so an appended exception or a deletion both fail. A table row is keyed by its first
+// cell and compared cell by cell; any other line is keyed by its leading text.
+function assertProductLine(key, expected) {
   assert.ok(manual.includes(SHARED_END), `${SHARED_END} marker`);
-  assert.deepEqual(
-    productLines.filter((line) => line.startsWith(prefix)),
-    [expected],
-  );
+  if (isRow(expected)) {
+    assert.deepEqual(
+      productLines
+        .filter((line) => isRow(line) && cells(line)[0] === key)
+        .map(cells),
+      [cells(expected)],
+    );
+  } else {
+    assert.deepEqual(
+      productLines.map(normalise).filter((line) => line.startsWith(key)),
+      [expected],
+    );
+  }
 }
 
-// The paragraph from the line starting `prefix` to the next blank line, whitespace-normalised,
-// must equal `expected` exactly.
+// The paragraph from the line starting `prefix` to the next blank line or Markdown block,
+// whitespace-normalised, must equal `expected` exactly.
 function assertProductParagraph(prefix, expected) {
   assert.ok(manual.includes(SHARED_END), `${SHARED_END} marker`);
   const start = productLines.findIndex((line) => line.startsWith(prefix));
   assert.notEqual(start, -1, prefix);
   const end = productLines.findIndex(
-    (line, index) => index > start && line.trim() === "",
+    (line, index) => index > start && isBlockStart(line),
   );
   assert.equal(
-    productLines.slice(start, end).join(" ").replace(/\s+/g, " "),
+    normalise(
+      productLines
+        .slice(start, end === -1 ? productLines.length : end)
+        .join(" "),
+    ),
     expected,
   );
 }
@@ -66,21 +88,21 @@ test("product region keeps preview deployment outside push-to-merge authority", 
 
 test("product region keeps the visual verification surfaces", () => {
   assertProductLine(
-    "| visual verification |",
+    "visual verification",
     "| visual verification | The applicable Next.js or Worker surface across desktop, mobile, right-to-left and accessibility states. |",
   );
 });
 
 test("product region keeps the sign-off trust-boundary catch-all", () => {
   assertProductLine(
-    "| sign-off |",
+    "sign-off",
     "| sign-off | Authentication, authorization, payments, personal data, schema/migrations, Row Level Security, provider/Worker trust, the public/private data perimeter, and any other trust-boundary change; each needs explicit sign-off and a named anti-regression test |",
   );
 });
 
 test("product region keeps the shared-workflow sync security-review trigger", () => {
   assertProductLine(
-    "| security review |",
+    "security review",
     "| security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, an injection boundary, or a shared-workflow sync that changes agent permissions, hook registrations or hook scripts; privacy: [docs/product/rentcottage-mvp-prd.md](docs/product/rentcottage-mvp-prd.md#6-privacy-safety-and-moderation) |",
   );
 });
