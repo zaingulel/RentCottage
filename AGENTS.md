@@ -1,5 +1,7 @@
 # RentCottage operating manual
 
+<!-- factory-shared:start -->
+
 The always-loaded contract for every agent runtime: skills own the steps, hooks own what must never happen, git
 owns all state. A rule a test or hook enforces is named here, not restated.
 
@@ -50,6 +52,71 @@ Start every owner-facing decision in plain language before any workflow vocabula
 must decide, the options. The owner reads pull request descriptions and screenshots, not diffs; write for that
 reader. `resume` starts or continues a session, `handoff` parks unfinished work, `closeout` follows a merge.
 
+## Owner gates
+
+1. **Work-pick** is the owner's pick of one row of the `resume` candidate table, which approves that card's
+   outcome and acceptance criteria as written and starts the job; no criteria list is shown and no second yes is
+   asked. Owner-directed surfaces are the Surfaces table's `owner-directed` row and need owner direction plus
+   domain grounding; sign-off surfaces are its `sign-off` row and need explicit sign-off and a named
+   anti-regression test.
+2. **Push authorisation** is one yes to the filled pull request body and its screenshot, and any owner
+   instruction to push is that yes. It covers the whole deliver sequence in the `resume` skill, push to
+   auto-squash merge, with no fresh yes inside it. `closeout` follows the merge unasked.
+
+A material change to the approved outcome, product meaning, or a trade-off goes back to the owner as a
+plain-language decision before it is built; a parser, state machine, or framework the outcome did not name is
+such a change. Anything short of that which the job surfaces and can sensibly finish in the same job, in the
+same files under the same tests, rides along and is named in the pull request body; a follow-up card is filed,
+without asking, only for work that genuinely cannot. Destructive actions keep exact-target approval.
+
+An approval covers only the question it answered. After a context compaction, reread the owner's latest messages
+before acting on one; an approval whose question is no longer in view is asked again. A memory, summary or earlier
+session never grants approval.
+
+## Compact instructions
+
+Keep the approved plan's location, the card's acceptance criteria, the worklog path, the current slice and its
+state, the evidence still owed, and each owner approval quoted word for word with the question it answered. Drop
+discovery output: file listings, search results and file contents, which can be read again.
+
+## Coding standards and the executed test bar
+
+[docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) owns how first-party code is written.
+[docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) owns the evidence every claim needs, run through
+`node scripts/run-log.mjs` so the pull request body quotes exit codes a script wrote.
+
+## Review and visual verification
+
+One fresh review of the final tree before the pull request opens, by the tier the `resume` skill defines: the session
+itself for documents; for code and agent instruction, the `reviewer` charter run by the model family that did not
+write the diff (`cross-review`), with the skill's route when that family's seat is unavailable; `security-reviewer`
+only when a change widens a surface in the Surfaces table's `security review` row. Greptile is metered from one
+pool shared by every adopter the Conventions section names and reviews a draft only for the sign-off tier, every thread fixed or dismissed with a reason before the draft is marked ready. The `resume` skill
+owns the tiers, the allowance lookup, the cross-family substitution route when the other family's seat cannot be
+reached, and Greptile's own best-effort provider-unavailability exception; `.greptile/config.json` disables automatic
+reviews so marking ready starts CI without requesting another Greptile review.
+
+Visual work is complete only after the changed interaction has been driven and a current screenshot displayed
+inline in chat; push authorisation waits for that image. Drive visual work as the Conventions table's `visual
+verification` row says.
+
+## Publication and machinery
+
+Push only with owner authorisation, through a draft pull request. The documentation sweep and its day-after triage
+follow the Conventions table's `documentation routines` row. New executable machinery in the workflow itself
+(a script, hook, gate, or workflow job; never product code or its tests) needs one of: a control failure a
+sentence here or in a skill could not prevent twice, the same measurable friction across three independent jobs,
+a required new runtime or provider integration, or externally imposed security or platform drift. Prefer a native
+feature over custom code, a hook over a script, and a sentence over a hook.
+
+## Shared workflow adoption
+
+Shared workflow changes name every adopter the Conventions section lists and link every required adopter
+update in delivery and tracker evidence. The shared change remains partial until all required adopter updates land.
+An intentional repository-specific exception requires owner agreement and is recorded where the workflow rule lives.
+
+<!-- factory-shared:end -->
+
 ## Product
 
 RentCottage is a trilingual cottage marketplace. `src/` contains the Next.js application and product logic;
@@ -81,82 +148,48 @@ for the database/application boundary. Change declared database objects under `s
 inspect the migration, and land both together. Preserve the product preparation and cleanup rules in
 [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md).
 
-## Owner gates
-
-1. **Work-pick** is the owner's pick of one row of the `resume` candidate table, which approves that card's
-   outcome and acceptance criteria as written and starts the job; no criteria list is shown and no second yes is
-   asked. New product meaning and unsettled user-facing design need owner direction plus domain grounding;
-   authentication, authorization, payments, personal data, schema/migrations and other trust-boundary changes
-   need explicit sign-off and a named anti-regression test.
-2. **Push authorisation** is one yes to the filled pull request body and its screenshot, and any owner
-   instruction to push is that yes. It covers the whole deliver sequence in the `resume` skill, push to
-   auto-squash merge, with no fresh yes inside it. `closeout` follows the merge unasked.
-
-Preview deployment under `.github/workflows/preview.yml` remains a separate owner-approved operation and is not
-included in ordinary push-to-merge delivery authority.
-
-A material change to the approved outcome, product meaning, or a trade-off goes back to the owner as a
-plain-language decision before it is built; a parser, state machine, or framework the outcome did not name is
-such a change. Anything short of that which the job surfaces and can sensibly finish in the same job, in the
-same files under the same tests, rides along and is named in the pull request body; a follow-up card is filed,
-without asking, only for work that genuinely cannot. Destructive actions keep exact-target approval.
-
-An approval covers only the question it answered. After a context compaction, reread the owner's latest messages
-before acting on one; an approval whose question is no longer in view is asked again. A memory, summary or earlier
-session never grants approval.
-
-## Compact instructions
-
-Keep the approved plan's location, the card's acceptance criteria, the worklog path, the current slice and its
-state, the evidence still owed, and each owner approval quoted word for word with the question it answered. Drop
-discovery output: file listings, search results and file contents, which can be read again.
-
-## Domain-first discipline
+## Grounding
 
 [CONTEXT.md](CONTEXT.md) holds canonical product terms and [docs/agents/domain.md](docs/agents/domain.md) explains
 their code boundaries. Accepted architecture decisions own technical boundaries. Ground a live provider or
 platform integration in current official documentation before planning exact permissions, payloads and failure
 semantics. Competitors are interface prior art only and never override RentCottage's agreed product meaning.
 
-## Coding standards and the executed test bar
+## Surfaces
 
-[docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) owns how first-party code is written.
-[docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) owns the evidence every claim needs, run through
-`node scripts/run-log.mjs` so the pull request body quotes exit codes a script wrote.
+| Surface | RentCottage |
+|---|---|
+| plan-first | Authentication, authorization, payments, personal data, private owner-verification files, database migrations, Row Level Security, provider/Worker trust, destructive data changes, new user-facing behaviour with no settled design |
+| owner-directed | New product meaning and unsettled user-facing design: owner direction plus domain grounding |
+| sign-off | Authentication, authorization, payments, personal data, schema/migrations, Row Level Security, provider/Worker trust, the public/private data perimeter; each needs explicit sign-off and a named anti-regression test |
+| security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, or an injection boundary |
 
-## Review and visual verification
+The standing security guarantees, in order of blast radius:
 
-One fresh review of the final tree before the pull request opens, by the tier the `resume` skill defines: the session
-itself for documents; for code and agent instruction, the `reviewer` charter run by the model family that did not
-write the diff (`cross-review`), with the skill's route when that family's seat is unavailable; `security-reviewer`
-only when a change widens authentication, authorization, payment or personal-data access, credential custody,
-provider-webhook trust, Row Level Security, public/private data exposure, or an injection boundary. Greptile is
-metered from one pool shared with Flowgauge and RentCottage and reviews a draft only for the
-sign-off tier, every thread fixed or dismissed with a reason before the draft is marked ready. The `resume` skill
-owns the tiers, the allowance lookup, the cross-family substitution route when the other family's seat cannot be
-reached, and Greptile's own best-effort provider-unavailability exception; `.greptile/config.json` disables automatic
-reviews so marking ready starts CI without requesting another Greptile review.
+1. **Authorization and Row Level Security**: every customer, Cottage Owner and Platform Administrator path has the minimum access, with real PostgreSQL policy evidence where the boundary changes.
+2. **Payment and provider trust**: signed events are authenticated before processing; money-changing commands are replay-safe and idempotent; authorization, capture, release, refund and payout facts remain authoritative through retries and partial failure.
+3. **Personal data and credential custody**: service-role and payment secrets remain server-side; private verification files, exact addresses, contacts, audit records and payment detail do not cross a public or pre-confirmation boundary; logs contain no secrets or unnecessary personal data.
+4. **Integrity and injection**: schema/migration changes preserve atomic constraints and concurrency guarantees; every HTTP, environment, database and provider input is validated before entering trusted code; rendered untrusted content cannot inject markup or script.
+5. **Anti-regression evidence**: each widened security/privacy claim has a named mutation-proven observer at the real boundary; mocks do not substitute for database policy, concurrency, signature or Worker evidence.
 
-Visual work is complete only after the changed interaction has been driven in the applicable Next.js or Worker
-surface across the required desktop, mobile, right-to-left and accessibility states, with a current screenshot
-displayed inline in chat; push authorisation waits for that image.
+Preview deployment under `.github/workflows/preview.yml` remains a separate owner-approved operation and is not
+included in ordinary push-to-merge delivery authority.
 
-## Publication and machinery
+## Conventions
 
-Push only with owner authorisation, through a draft pull request. The optional documentation sweep and day-after
-triage are inactive until their external environment, hosted protection and schedule are separately authorised;
-their bounded contracts are [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and
-[docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md). New executable machinery in the workflow itself
-(a script, hook, gate, or workflow job; never product code or its tests) needs one of: a control failure a
-sentence here or in a skill could not prevent twice, the same measurable friction across three independent jobs,
-a required new runtime or provider integration, or externally imposed security or platform drift. Prefer a native
-feature over custom code, a hook over a script, and a sentence over a hook.
+| Convention | RentCottage |
+|---|---|
+| generated artifacts | None |
+| visual verification | The applicable Next.js or Worker surface across desktop, mobile, right-to-left and accessibility states. |
+| fixtures | [docs/demo.md](docs/demo.md) |
+| documentation routines | Inactive: the documentation sweep and its day-after triage, [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md), stay inactive until their external environment, hosted protection and schedule are separately authorised |
 
-## Shared workflow adoption
+Codex prompts before a browser run under `.codex/rules/playwright.rules`, pinned by
+`scripts/lib/codex-browser-policy.test.mjs`.
 
-Shared workflow changes name every adopter, currently Flowgauge and RentCottage, and link every required adopter
-update in delivery and tracker evidence. The shared change remains partial until all required adopter updates land.
-An intentional repository-specific exception requires owner agreement and is recorded where the workflow rule lives.
+On Claude Code and Herdr a job worktree lives in the root checkout's gitignored `.claude/worktrees/`, created by `git
+worktree add` or `herdr worktree create`; on Codex it is the Codex-managed worktree or a sibling worktree beside the
+repository. The current adopters of the shared workflow are Flowgauge and RentCottage.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

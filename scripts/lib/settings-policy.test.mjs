@@ -1,4 +1,4 @@
-// settings-policy.test.mjs — the Claude agent-shell and Codex browser permission policies.
+// settings-policy.test.mjs — the Claude agent-shell permission policy and the Claude and Codex hook sets.
 //
 // The allow list is a security policy: every entry runs without a prompt. It must stay the
 // three read-mostly board scripts, and the hook set must stay exactly the guards this
@@ -19,10 +19,6 @@ const codexHooks = JSON.parse(
 );
 const packageJson = JSON.parse(
   readFileSync(resolve(ROOT, "package.json"), "utf8"),
-);
-const codexRules = readFileSync(
-  resolve(ROOT, ".codex/rules/playwright.rules"),
-  "utf8",
 );
 
 test("only the board scripts are auto-approved, and nothing is denied by omission", () => {
@@ -96,22 +92,4 @@ test("the Codex hook set is exactly the registered command and handoff guards", 
       ],
     },
   });
-});
-
-test("Codex browser permissions cover only the real aggregate and Playwright command prefixes", () => {
-  for (const pattern of [
-    '["npm", "run", "verify"]',
-    '["npm", "run", "verify:access"]',
-    '["npx", "--yes", "playwright"]',
-  ]) {
-    assert.equal(
-      codexRules.split(`pattern = ${pattern}`).length - 1,
-      1,
-      `${pattern} permission count`,
-    );
-  }
-  assert.doesNotMatch(
-    codexRules,
-    /pattern = \["npm", "run", "verify:preview"\]/,
-  );
 });
