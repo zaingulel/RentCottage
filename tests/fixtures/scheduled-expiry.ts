@@ -46,6 +46,7 @@ const recoverySignatures = [
   "admit_booking_request_payment_recovery(jsonb)",
   "persist_simulated_payment_effect(jsonb,jsonb)",
 ];
+// The historical fixture clock also owns admission, effect and receipt timestamps.
 const paymentColumns = [
   ["payment_provider_operations", "created_at"],
   ["payment_provider_operations", "updated_at"],
@@ -54,6 +55,7 @@ const paymentColumns = [
   ["payment_provider_observations", "received_at"],
 ] as const;
 
+// SQL arrangement mirrors admission, isolated effect, and explicit recording.
 export const paymentEvidenceSql =
   "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
@@ -84,6 +86,22 @@ export function readScheduledExpiryBaseline(
   );
   const captureDefinitions = readDefinitions(captureSignatures);
   const recoveryDefinitions = readDefinitions(recoverySignatures);
+  const finalizationSignature =
+    "finalize_booking_request_payment_required_expiry(uuid)";
+  if (
+    definitions[expirySignatures.indexOf(finalizationSignature)].includes(
+      "Injected finalization interruption",
+    )
+  ) {
+    throw new Error(
+      `Abandoned injected function public.${finalizationSignature}; restart the guarded disposable verification run.`,
+    );
+  }
+  if (ordinary.includes("Injected unrelated ordinary expiry failure")) {
+    throw new Error(
+      "Abandoned injected function public.claim_due_booking_request_releases(integer); restart the guarded disposable verification run.",
+    );
+  }
   const paymentDefaults = paymentColumns.map(([table, column]) => ({
     table,
     column,
@@ -138,7 +156,7 @@ export function readScheduledExpiryBaseline(
   };
 }
 
-const requestId = "60000000-0000-4000-8000-000000001001";
+export const requestId = "60000000-0000-4000-8000-000000001001";
 const cleanup = withPaymentRecoveryCleanup(
   readFileSync("scripts/verify-booking-request-capture-concurrency.mjs", "utf8")
     .split("const cleanup = `")[1]
@@ -146,6 +164,51 @@ const cleanup = withPaymentRecoveryCleanup(
     .replaceAll("${requestId}", requestId),
   requestId,
 );
+
+export function restoreScheduledExpiryDatabase(
+  harness: SqlHarness,
+  baseline: ScheduledExpiryBaseline,
+  seeded: boolean,
+): void {
+  const errors: unknown[] = [];
+  try {
+    harness.runSql(
+      paymentEvidenceSql +
+        "begin;\n" +
+        baseline.ordinary +
+        ";\n" +
+        [
+          ...baseline.definitions,
+          ...baseline.captureDefinitions,
+          ...baseline.recoveryDefinitions,
+        ].join(";\n") +
+        ";\n" +
+        baseline.paymentDefaults
+          .map(
+            ({ table, column, expression }) =>
+              `alter table public.${table} alter column ${column} set default ${expression};`,
+          )
+          .join("\n") +
+        "\ndrop function if exists public.scheduled_payment_expiry_now();\ncommit;",
+    );
+  } catch (error) {
+    errors.push(error);
+  }
+  if (seeded) {
+    try {
+      harness.runSql(paymentEvidenceSql + cleanup);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length === 2) {
+    throw new AggregateError(
+      errors,
+      "Scheduled expiry restoration and seeded cleanup failed.",
+    );
+  }
+  if (errors.length === 1) throw errors[0];
+}
 
 type ScheduledExpiry = ScheduledExpiryBaseline & {
   harness: SqlHarness;
@@ -213,26 +276,7 @@ export const test = base.extend<{ scheduledExpiry: ScheduledExpiry }>({
     } finally {
       closed = true;
       controller.abort();
-      harness.runSql(
-        paymentEvidenceSql +
-          "begin;\n" +
-          baseline.ordinary +
-          ";\n" +
-          [
-            ...baseline.definitions,
-            ...baseline.captureDefinitions,
-            ...baseline.recoveryDefinitions,
-          ].join(";\n") +
-          ";\n" +
-          baseline.paymentDefaults
-            .map(
-              ({ table, column, expression }) =>
-                `alter table public.${table} alter column ${column} set default ${expression};`,
-            )
-            .join("\n") +
-          "\ndrop function if exists public.scheduled_payment_expiry_now();\ncommit;",
-      );
-      if (scheduledExpiry.seeded) harness.runSql(paymentEvidenceSql + cleanup);
+      restoreScheduledExpiryDatabase(harness, baseline, scheduledExpiry.seeded);
     }
   },
 });

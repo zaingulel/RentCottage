@@ -9,6 +9,7 @@ import { triggerScheduled } from "./fixtures/trigger-scheduled";
 import {
   expirySignatures,
   paymentEvidenceSql,
+  requestId,
   test,
 } from "./fixtures/scheduled-expiry";
 
@@ -230,8 +231,6 @@ for (const { outcome, movement } of (
       clocked,
       setPaymentClock,
     } = scheduledExpiry;
-    const signatures = expirySignatures;
-    const id = "60000000-0000-4000-8000-000000001001";
     const source = readFileSync(
       "supabase/tests/database/booking_request_payment_recovery.test.sql",
       "utf8",
@@ -243,12 +242,12 @@ for (const { outcome, movement } of (
         harness.runSql(
           paymentEvidenceSql +
             `select jsonb_build_object(
-      'request',(select to_jsonb(r) from public.booking_requests r where id='${id}'),
-      'capture',(select to_jsonb(w) from public.booking_request_capture_work w where booking_request_id='${id}'),
-      'expiry',(select to_jsonb(w) from public.booking_request_payment_required_expiry_work w where booking_request_id='${id}'),
+      'request',(select to_jsonb(r) from public.booking_requests r where id='${requestId}'),
+      'capture',(select to_jsonb(w) from public.booking_request_capture_work w where booking_request_id='${requestId}'),
+      'expiry',(select to_jsonb(w) from public.booking_request_payment_required_expiry_work w where booking_request_id='${requestId}'),
       'ledger',(select jsonb_agg(pg_temp.payment_fixture_operation_json(o) order by id) from public.payment_provider_operations o where claim_id='72000000-0000-4000-8000-000000001001'),
-      'notices',(select coalesce(jsonb_agg(to_jsonb(n) order by id),'[]') from public.booking_request_status_notifications n where booking_request_id='${id}' and status='expired'),
-      'confirmed',(select count(*) from public.booking_confirmations where booking_request_id='${id}'),
+      'notices',(select coalesce(jsonb_agg(to_jsonb(n) order by id),'[]') from public.booking_request_status_notifications n where booking_request_id='${requestId}' and status='expired'),
+      'confirmed',(select count(*) from public.booking_confirmations where booking_request_id='${requestId}'),
       'hold',(select status from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001'),
       'active',(select count(*) from public.cottage_booking_period_occupancies where booking_period_commitment_id='50000000-0000-4000-8000-000000001001' and active));`,
         ),
@@ -264,12 +263,12 @@ for (const { outcome, movement } of (
           ),
       );
     harness.runSql(paymentEvidenceSql + `begin;${source}commit;`);
+    scheduledExpiry.seeded = true;
     for (const definition of captureDefinitions)
       harness.runSql(paymentEvidenceSql + definition);
-    scheduledExpiry.seeded = true;
     harness.runSql(
       paymentEvidenceSql +
-        "create function public.scheduled_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='60000000-0000-4000-8000-000000001001'$$;",
+        `create function public.scheduled_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${requestId}'$$;`,
     );
     setPaymentClock("public.scheduled_payment_expiry_now()");
     if (movement !== "release") {
@@ -288,7 +287,7 @@ for (const { outcome, movement } of (
         harness
           .runSql(
             paymentEvidenceSql +
-              `select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',false);set role authenticated;select public.claim_customer_booking_request_payment_recovery('${id}','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
+              `select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',false);set role authenticated;select public.claim_customer_booking_request_payment_recovery('${requestId}','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
           )
           .split("\n")
           .at(-1)!,
@@ -326,7 +325,7 @@ for (const { outcome, movement } of (
         setPaymentClock("public.scheduled_payment_expiry_now()");
         harness.runSql(
           paymentEvidenceSql +
-            `set role service_role;select pg_temp.correction_observe('${id}','${receipt.providerOperationId}','${JSON.stringify(receipt)}'::jsonb,'late_succeeded',null,'${receipt.providerOperationId}');`,
+            `set role service_role;select pg_temp.correction_observe('${requestId}','${receipt.providerOperationId}','${JSON.stringify(receipt)}'::jsonb,'late_succeeded',null,'${receipt.providerOperationId}');`,
         );
       }
       for (const definition of recoveryDefinitions)
@@ -342,7 +341,7 @@ for (const { outcome, movement } of (
     if (outcome !== "succeeded" && movement !== "recovery-release")
       harness.runSql(
         paymentEvidenceSql +
-          `set role service_role;select pg_temp.expiry_execute(pg_temp.expiry_prepare('${id}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}',${movement === "refund" ? "jsonb_build_object('action','refund','captureId',(select entry->>'captureId' from jsonb_array_elements(public.get_booking_request_payment_facts('" + id + "')->'expiryOperations') entry where entry->>'kind'='refund'))" : "jsonb_build_object('action','release','authorizationLifecycleId',public.get_booking_request_payment_facts('" + id + "')->>'originalLifecycleId','recoveryOperationId',null)"})->'permit','${outcome}','expiry-${movement}-${outcome}');`,
+          `set role service_role;select pg_temp.expiry_execute(pg_temp.expiry_prepare('${requestId}','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}',${movement === "refund" ? "jsonb_build_object('action','refund','captureId',(select entry->>'captureId' from jsonb_array_elements(public.get_booking_request_payment_facts('" + requestId + "')->'expiryOperations') entry where entry->>'kind'='refund'))" : "jsonb_build_object('action','release','authorizationLifecycleId',public.get_booking_request_payment_facts('" + requestId + "')->>'originalLifecycleId','recoveryOperationId',null)"})->'permit','${outcome}','expiry-${movement}-${outcome}');`,
       );
     if (outcome === "indeterminate") {
       const unresolvedQuery = clocked[3].replace(
@@ -396,7 +395,7 @@ for (const { outcome, movement } of (
     harness.runSql(
       paymentEvidenceSql +
         clocked[
-          signatures.indexOf(
+          expirySignatures.indexOf(
             "resolve_simulated_payment_effect(jsonb,text,jsonb)",
           )
         ],
@@ -404,7 +403,7 @@ for (const { outcome, movement } of (
     harness.runSql(
       paymentEvidenceSql +
         clocked[
-          signatures.indexOf(
+          expirySignatures.indexOf(
             "finalize_booking_request_payment_required_expiry(uuid)",
           )
         ],
