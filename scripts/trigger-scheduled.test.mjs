@@ -181,6 +181,56 @@ describe("local scheduled trigger transport", () => {
     );
   });
 
+  it("aborts a pending scheduled request without waiting for its deadline", async () => {
+    for (const stage of ["before headers", "incomplete response"]) {
+      let arrive;
+      const arrived = new Promise((resolve) => {
+        arrive = resolve;
+      });
+      let attempts = 0;
+      await localServer(
+        (request, response) => {
+          attempts += 1;
+          if (stage === "incomplete response") response.write("partial");
+          arrive(request.socket);
+        },
+        async (baseURL) => {
+          vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+          try {
+            const controller = new AbortController();
+            const pending = triggerScheduled(
+              baseURL,
+              "/__scheduled",
+              controller.signal,
+            );
+            const rejection = expect(pending).rejects.toMatchObject({
+              name: "AbortError",
+            });
+            const socket = await arrived;
+            const closed = new Promise((resolve) =>
+              socket.once("close", resolve),
+            );
+            controller.abort();
+            await rejection;
+            await closed;
+            expect(attempts).toBe(1);
+            expect(vi.getTimerCount()).toBe(0);
+
+            const alreadyAborted = new AbortController();
+            alreadyAborted.abort();
+            await expect(
+              triggerScheduled(baseURL, "/__scheduled", alreadyAborted.signal),
+            ).rejects.toMatchObject({ name: "AbortError" });
+            expect(attempts).toBe(1);
+            expect(vi.getTimerCount()).toBe(0);
+          } finally {
+            vi.useRealTimers();
+          }
+        },
+      );
+    }
+  });
+
   it.each([
     [undefined, "/__scheduled"],
     ["https://127.0.0.1:8788", "/__scheduled"],
