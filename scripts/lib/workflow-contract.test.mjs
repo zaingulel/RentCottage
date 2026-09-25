@@ -388,6 +388,17 @@ test('a Codex session waits on helpers with one long timeout and the deliver ste
   assert.doesNotMatch(step[1], /every 30 seconds/, 'step 4 must not read the checks on a timer');
   assert.match(
     step[1],
+    /one `exec` cell whose first line is `\/\/ @exec: \{"yield_time_ms": 3600000\}`/,
+    'step 4 must run the Codex watch in one exec cell opened by the one-hour pragma',
+  );
+  assert.match(
+    step[1],
+    /polls the returned `session_id` with `tools\.write_stdin\(\{ session_id, chars: "", yield_time_ms: 300000 \}\)` until `exit_code` is set/,
+    'step 4 must poll the Codex process inside the cell until it exits',
+  );
+  assert.match(step[1], /`Bash` with `run_in_background: true`/, 'step 4 must background the watch on Claude Code');
+  assert.match(
+    step[1],
     /stops the moment a check fails, the merge is blocked, or the state is `MERGED`, whichever comes first/,
     'step 4 must keep its stop conditions',
   );

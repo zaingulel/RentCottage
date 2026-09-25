@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "419a522e1cf50f799fef2e9d10f21bf837b2e25f",
+  "syncedFrom": "2c7c2b3314834b45aa38ea5ebd34ee0fd9ab05e6",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -59,7 +59,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "e2690a073807a71d1d454374fa9c0e26798fab672d7bec73f877a1158ae0244e"
+      "sha256": "6d9759700ecb910bb0c71a3aa1b793e128bb96f5dc0ee97fc5272fd074f7f392"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -628,7 +628,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "bbe111f3df12b258be412a30daa9a5e529740513aab2bcf0b1cab2afdd077574"
+      "sha256": "b5f42f6738ec96dd0755ea71823fb045f80cc32f31256d0006a9f245e0995217"
     },
     {
       "path": "scripts/run-log.mjs",
