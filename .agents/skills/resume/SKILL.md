@@ -95,9 +95,12 @@ disjoint.
   further confirmation is needed.
 - Before edits in any newly created runtime worktree, require `git rev-parse HEAD` to equal that newly recorded
   commit. Preserve and report a mismatch before edits.
-- Builders work inside the job worktree, one at a time. Two slices with disjoint files may run at once in a
-  second worktree cut from the job branch (`git worktree add <path> job/<issue>`), merged back with git; a
-  runtime's own subagent worktree branches from `main`, not the job branch, so it is not used for builders.
+- Builders work inside the job worktree, one at a time. Two slices with disjoint files may run at once: from the
+  job worktree, give the second its own branch and worktree with
+  `git worktree add -b slice/<issue>-<name> <path> job/<issue>`, since git refuses to check the job branch out in a
+  second worktree. Once that slice is green and committed there, run `git merge --no-edit slice/<issue>-<name>` in
+  the job worktree, then `git worktree remove <path>` and `git branch -d slice/<issue>-<name>`. A runtime's own
+  subagent worktree branches from `main`, not the job branch, so it is not used for builders.
 - Move the card to `In progress`: `node scripts/board-move.mjs <issue> "In progress"`, and claim it with
   `gh issue edit <issue> --add-assignee @me` — active work with no assignee is reported as drift. Run `npm ci`
   in a fresh checkout, then confirm `git config --get core.hooksPath` prints `.githooks`; when it does not, run
@@ -191,14 +194,16 @@ it.
    the exact requested head as `Last reviewed commit`, and the `Greptile Review` check turning green is a second
    signal; its heading is an image, so a watcher keys on that footer, never on heading text. Fix true findings,
    complete focused tests and the applicable scoped local repair review before pushing, reply with the fix commit,
-   resolve the thread, and dismiss false findings with evidence. Update the review line after each Greptile review.
-   For the new head, request `@greptileai review this draft again; <what changed> in <commit>`. A re-review can
-   edit the existing summary and raise its `Reviews (N)` footer; check the reviewed commit, not just the count or a
-   new comment. `UNAVAILABLE` requires, reported in the pull-request body, either the allowance observation above
-   showing exhaustion, with the head it would have covered, or the explicit request URL, head, observation time and
-   provider-failure evidence. This best-effort exception permits CI after all mandatory local evidence and finding
-   dispositions pass. A filtered skip, missing response, or queued/running review is unresolved: retain draft and
-   report it for owner direction rather than declaring unavailability.
+   resolve the thread, and dismiss false findings with evidence. Update the review line's Greptile fields after
+   each Greptile review; a pull request Greptile never reviewed, because its tier requests no Greptile review or
+   every attempt was `UNAVAILABLE`, records `greptile_rounds=0`. For the new head, request
+   `@greptileai review this draft again; <what changed> in <commit>`. A re-review can edit the existing summary and
+   raise its `Reviews (N)` footer; check the reviewed commit, not just the count or a new comment. `UNAVAILABLE`
+   requires, reported in the pull-request body, either the allowance observation above showing exhaustion, with the
+   head it would have covered, or the explicit request URL, head, observation time and provider-failure evidence.
+   This best-effort exception permits CI after all mandatory local evidence and finding dispositions pass. A
+   filtered skip, missing response, or queued/running review is unresolved: retain draft and report it for owner
+   direction rather than declaring unavailability.
 3. Re-read the open draft and require current local evidence, every finding/thread resolved, and a review line
    that matches the rounds actually run and the findings actually raised and settled. For the sign-off tier, also
    require the same reviewed head and a settled `COMPLETE` or `UNAVAILABLE` attempt. If a rebase is needed, do it

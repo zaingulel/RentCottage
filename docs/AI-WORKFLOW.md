@@ -236,7 +236,7 @@ in this repository or another, follows it, and a tool that disagrees with it is 
 documentation sweep and its day-after triage run no review before their pull requests open and carry no line.
 
 ```
-Review: tier=code rounds=2 raised=6 fixed=4 dismissed=1 deferred=1
+Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1 greptile_rounds=2 greptile_raised=1 greptile_true=1
 ```
 
 | Field | Value |
@@ -247,13 +247,21 @@ Review: tier=code rounds=2 raised=6 fixed=4 dismissed=1 deferred=1
 | `fixed` | Raised findings repaired in this pull request |
 | `dismissed` | Raised findings judged false and dismissed with a reason |
 | `deferred` | True findings not fixed here, each carried to a follow-up card or set aside by the owner, as the Review section names |
+| `greptile_rounds` | Greptile reviews of a commit, a share of `rounds` and already counted in it |
+| `greptile_raised` | Findings Greptile reported, a share of `raised` and already counted in it |
+| `greptile_true` | Greptile findings fixed or deferred rather than dismissed as false, a share of `greptile_raised` |
 
-The line is exactly the six fields in this order, beginning at the start of a line with `Review: ` and ending after
-the `deferred` value; trailing whitespace and a carriage return are ignored. Fields are separated by single spaces,
-each written as the lowercase name, `=`, and a value with no spaces. Counts are whole numbers with no leading
-zeros. Every finding is settled before merge, so `raised` equals `fixed` plus `dismissed` plus `deferred`. Lines
-inside fenced code blocks or HTML comments are not review lines, and a body carrying more than one valid line is
-invalid.
+The line is exactly the nine fields in this order, beginning at the start of a line with `Review: ` and ending
+after the `greptile_true` value; trailing whitespace and a carriage return are ignored. Fields are separated by
+single spaces, each written as the lowercase name, `=`, and a value with no spaces. Counts are whole numbers with
+no leading zeros. Every finding is settled before merge, so `raised` equals `fixed` plus `dismissed` plus
+`deferred`. `greptile_rounds` never exceeds `rounds`, `greptile_raised` never exceeds `raised`, `greptile_true`
+never exceeds `greptile_raised`, `greptile_true` never exceeds `fixed` plus `deferred`, and `greptile_raised` minus
+`greptile_true` never exceeds `dismissed`: Greptile's true findings are among the fixed or deferred ones and its
+false findings among the dismissed ones. A pull request Greptile never reviewed, because its tier requests no
+Greptile review or every attempt was `UNAVAILABLE`, carries `greptile_rounds=0` and therefore `greptile_raised=0`;
+that reads as Greptile did not look, never as a clean Greptile review. Lines inside fenced code blocks or HTML
+comments are not review lines, and a body carrying more than one valid line is invalid.
 
 ## Enforced or instructed
 
