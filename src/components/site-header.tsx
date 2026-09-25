@@ -10,6 +10,7 @@ import { messages } from "@/i18n/messages";
 import { isLocale, type Locale } from "@/i18n/routing";
 import { messagingMessages } from "@/i18n/messaging-messages";
 import { customerReviewMessages } from "@/i18n/customer-review-messages";
+import { supportMessages } from "@/i18n/support-messages";
 import { LocaleLinks } from "./locale-links";
 
 export type NavigationAccount =
@@ -134,6 +135,9 @@ export function SiteHeader({
                 </div>
               </details>
             )}
+            <Link href={`/${locale}/support`}>
+              {supportMessages[locale].title}
+            </Link>
           </nav>
         </div>
       </div>

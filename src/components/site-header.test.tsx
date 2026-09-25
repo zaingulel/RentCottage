@@ -118,6 +118,42 @@ describe("shared site header", () => {
       "Account access is unavailable. Please try again.",
     );
     expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Support" })).toHaveAttribute(
+      "href",
+      "/en/support",
+    );
+  });
+  it("support link discards private source context", () => {
+    location.pathname = "/en/booking-requests/RC-REQ-0123456789ABCDEF";
+    location.query = "token=private-support-sentinel";
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    expect(screen.getByRole("link", { name: "Support" })).toHaveAttribute(
+      "href",
+      "/en/support",
+    );
+  });
+  it.each(["en", "ar", "ckb"] as const)(
+    "shows localized support when signed out in %s",
+    (locale) => {
+      location.pathname = `/${locale}`;
+      render(<SiteHeader locale={locale} account={{ status: "signed_out" }} />);
+      expect(
+        screen.getByRole("link", {
+          name: { en: "Support", ar: "الدعم", ckb: "پشتیوانی" }[locale],
+        }),
+      ).toHaveAttribute("href", `/${locale}/support`);
+    },
+  );
+  it("shows support to a customer outside the account disclosure", () => {
+    render(
+      <SiteHeader
+        locale="en"
+        account={{ status: "authenticated", context: { role: "customer" } }}
+      />,
+    );
+    const support = screen.getByRole("link", { name: "Support" });
+    expect(support).toHaveAttribute("href", "/en/support");
+    expect(support.closest("details")).toBeNull();
   });
   it.each(["prospective", "approved", "expired", "suspended"] as const)(
     "keeps customer booking access for %s owners",
@@ -154,6 +190,10 @@ describe("shared site header", () => {
           : "/en/owner/cottages",
       );
       expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
+      expect(screen.getByRole("link", { name: "Support" })).toHaveAttribute(
+        "href",
+        "/en/support",
+      );
     },
   );
   it("closes the disclosure when choosing a destination", () => {
