@@ -211,8 +211,13 @@ it.
    Never any other merge form; the hook refuses it. If CI needs a repair, use `gh pr ready <pr> --undo` before
    pushing, complete local repair evidence, and reassess the full pull-request diff against the section 6 tiers;
    repeat step 2 only when Greptile is required. An unchanged-head CI retry needs no new review.
-4. Watch it land with one waiting command, run the way the manual's runtime notes say a command that runs for
-   minutes is run on each runtime. Every pass reads the pull request and its required checks together, so it
+4. Watch it land with one waiting command. On Codex the whole watch runs in one `exec` cell whose first line is
+   `// @exec: {"yield_time_ms": 3600000}`: the cell starts the command with `tools.exec_command`, which yields after
+   at most 30 seconds, polls the returned `session_id` with
+   `tools.write_stdin({ session_id, chars: "", yield_time_ms: 300000 })` until `exit_code` is set, and returns once;
+   if the cell yields early, the session calls `wait` on its cell ID with the same `yield_time_ms`, and never polls
+   by hand. On Claude Code it runs through `Bash` with `run_in_background: true`, which re-invokes the session
+   when it exits. Every pass reads the pull request and its required checks together, so it
    stops the moment a check fails, the merge is blocked, or the state is `MERGED`, whichever comes first, and it
    exits non-zero the moment `gh` itself fails. It first reads the full required set from the base branch's
    classic protection and every page of its rules, because `gh pr checks --required` lists a check only once GitHub
