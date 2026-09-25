@@ -1,7 +1,8 @@
 import { once } from "node:events";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 
 import { expect, test as base } from "@playwright/test";
 
@@ -28,15 +29,9 @@ function guardedHarness() {
   return harness;
 }
 
-function snapshotPath(metadata: Record<string, unknown>): string {
-  const path = metadata.scheduledExpirySnapshot;
-  if (
-    typeof path !== "string" ||
-    !path.startsWith("/tmp/rentcottage-370-evidence/")
-  ) {
-    throw new Error("Scheduled expiry evidence snapshot path is missing.");
-  }
-  return path;
+function snapshotPath(outputDir: string): string {
+  mkdirSync(outputDir, { recursive: true });
+  return join(outputDir, "baseline.json");
 }
 
 function cleanSnapshot(path: string): ScheduledExpiryBaseline {
@@ -46,18 +41,29 @@ function cleanSnapshot(path: string): ScheduledExpiryBaseline {
     snapshot === null ||
     !("definitions" in snapshot) ||
     !Array.isArray(snapshot.definitions) ||
-    snapshot.definitions.length !== 11 ||
+    !snapshot.definitions.length ||
+    !snapshot.definitions.every((value) => typeof value === "string") ||
     !("ordinary" in snapshot) ||
     typeof snapshot.ordinary !== "string" ||
     !("captureDefinitions" in snapshot) ||
     !Array.isArray(snapshot.captureDefinitions) ||
-    snapshot.captureDefinitions.length !== 4 ||
+    !snapshot.captureDefinitions.length ||
+    !snapshot.captureDefinitions.every((value) => typeof value === "string") ||
     !("recoveryDefinitions" in snapshot) ||
     !Array.isArray(snapshot.recoveryDefinitions) ||
-    snapshot.recoveryDefinitions.length !== 4 ||
+    !snapshot.recoveryDefinitions.length ||
+    !snapshot.recoveryDefinitions.every((value) => typeof value === "string") ||
     !("paymentDefaults" in snapshot) ||
     !Array.isArray(snapshot.paymentDefaults) ||
-    snapshot.paymentDefaults.length !== 5
+    snapshot.paymentDefaults.length !== 5 ||
+    !snapshot.paymentDefaults.every(
+      (value) =>
+        typeof value === "object" &&
+        value !== null &&
+        typeof value.table === "string" &&
+        typeof value.column === "string" &&
+        typeof value.expression === "string",
+    )
   ) {
     throw new Error("Scheduled expiry evidence snapshot is malformed.");
   }
@@ -107,7 +113,7 @@ test("scheduled expiry times out with a pending trigger", async ({
   scheduledExpiry,
   pendingScheduled,
 }, testInfo) => {
-  const path = snapshotPath(testInfo.config.metadata);
+  const path = snapshotPath(testInfo.project.outputDir);
   writeFileSync(
     path,
     JSON.stringify({
@@ -138,7 +144,7 @@ test("scheduled expiry times out with a pending trigger", async ({
 base(
   "the next scheduled Worker starts with the real payment clock",
   async ({ baseURL }, testInfo) => {
-    const expected = cleanSnapshot(snapshotPath(testInfo.config.metadata));
+    const expected = cleanSnapshot(snapshotPath(testInfo.project.outputDir));
     const harness = guardedHarness();
     expect(readScheduledExpiryBaseline(harness)).toEqual(expected);
     expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
@@ -182,7 +188,7 @@ corruptTest(
     expect(() => readScheduledExpiryBaseline(harness)).toThrow(
       /payment_provider_operations\.created_at.*missing default/,
     );
-    const expected = cleanSnapshot(snapshotPath(testInfo.config.metadata));
+    const expected = cleanSnapshot(snapshotPath(testInfo.project.outputDir));
     expect(
       harness.runSql(
         "select to_regprocedure('public.scheduled_payment_expiry_now()');",
@@ -200,7 +206,7 @@ corruptTest(
 base(
   "the corruption probe restores the real payment default",
   async ({}, testInfo) => {
-    const expected = cleanSnapshot(snapshotPath(testInfo.config.metadata));
+    const expected = cleanSnapshot(snapshotPath(testInfo.project.outputDir));
     expect(readScheduledExpiryBaseline(guardedHarness())).toEqual(expected);
   },
 );

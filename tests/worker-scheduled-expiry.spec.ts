@@ -1,11 +1,16 @@
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+import { expect } from "@playwright/test";
+
 import { triggerScheduled } from "./fixtures/trigger-scheduled";
 import {
   expirySignatures,
   paymentEvidenceSql,
   test,
 } from "./fixtures/scheduled-expiry";
-
-import { expect } from "@playwright/test";
 
 test("the test Worker expires due booking requests exactly once", async ({
   baseURL,
@@ -19,7 +24,188 @@ test("the test Worker expires due booking requests exactly once", async ({
   }
 });
 
-import { readFileSync } from "node:fs";
+type ChildExit = {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  error?: Error;
+};
+type ChildProbe = { directory: string; completion: Promise<ChildExit> };
+
+const outerTest = test.extend<{ childProbe: ChildProbe }>({
+  childProbe: async ({ baseURL }, use, testInfo) => {
+    testInfo.setTimeout(390_000);
+    if (!baseURL)
+      throw new Error(
+        "Scheduled expiry observer requires the existing Worker URL.",
+      );
+    const directory = testInfo.outputPath("interruption");
+    mkdirSync(directory, { recursive: true });
+    const playwrightPackage = createRequire(import.meta.url).resolve(
+      "playwright/package.json",
+    );
+    const child = spawn(
+      process.execPath,
+      [
+        join(dirname(playwrightPackage), "cli.js"),
+        "test",
+        "--config=tests/fixtures/scheduled-expiry-interruption.config.ts",
+        "--project=worker",
+        "--workers=1",
+        "--retries=0",
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          SCHEDULED_EXPIRY_PROBE_BASE_URL: baseURL,
+          SCHEDULED_EXPIRY_PROBE_OUTPUT_DIR: directory,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let output = "";
+    let error: Error | undefined;
+    let closed = false;
+    child.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    const completion = new Promise<ChildExit>((resolve) => {
+      child.once("error", (cause) => {
+        error = cause;
+      });
+      child.once("close", (code, signal) => {
+        closed = true;
+        writeFileSync(join(directory, "child-output.txt"), output);
+        resolve({ code, signal, error });
+      });
+    });
+    try {
+      // Playwright's use owns fixture lifetime; this is not a React Hook.
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      await use({ directory, completion });
+    } finally {
+      if (!closed) child.kill("SIGINT");
+      await completion;
+      for (const name of [
+        "report.json",
+        "output/baseline.json",
+        "child-output.txt",
+      ]) {
+        const path = join(directory, name);
+        if (existsSync(path)) await testInfo.attach(name, { path });
+      }
+    }
+  },
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function verifyInterruptionReport(value: unknown): void {
+  if (!isRecord(value) || !isRecord(value.config) || !isRecord(value.stats)) {
+    throw new Error("Scheduled expiry child report is malformed.");
+  }
+  const projects = value.config.projects;
+  if (
+    !Array.isArray(projects) ||
+    projects.length !== 1 ||
+    !isRecord(projects[0]) ||
+    projects[0].name !== "worker" ||
+    projects[0].timeout !== 30_000 ||
+    !Array.isArray(value.errors) ||
+    value.errors.length !== 0 ||
+    value.stats.expected !== 3 ||
+    value.stats.unexpected !== 1 ||
+    value.stats.skipped !== 0 ||
+    value.stats.flaky !== 0
+  ) {
+    throw new Error(
+      "Scheduled expiry child runner result differs from the four-case contract.",
+    );
+  }
+  const suites = value.suites;
+  if (!Array.isArray(suites) || suites.length !== 1 || !isRecord(suites[0])) {
+    throw new Error(
+      "Scheduled expiry child report must contain one file suite.",
+    );
+  }
+  const specs = suites[0].specs;
+  const expected = [
+    ["scheduled expiry times out with a pending trigger", "timedOut"],
+    ["the next scheduled Worker starts with the real payment clock", "passed"],
+    ["scheduled expiry refuses a missing payment default", "passed"],
+    ["the corruption probe restores the real payment default", "passed"],
+  ];
+  if (!Array.isArray(specs) || specs.length !== expected.length) {
+    throw new Error(
+      "Scheduled expiry child report has the wrong case inventory.",
+    );
+  }
+  for (const [index, [title, status]] of expected.entries()) {
+    const spec = specs[index];
+    const childTest =
+      isRecord(spec) && Array.isArray(spec.tests) ? spec.tests[0] : null;
+    const result =
+      isRecord(childTest) && Array.isArray(childTest.results)
+        ? childTest.results[0]
+        : null;
+    if (
+      !isRecord(spec) ||
+      spec.title !== title ||
+      !Array.isArray(spec.tests) ||
+      spec.tests.length !== 1 ||
+      !isRecord(childTest) ||
+      childTest.projectName !== "worker" ||
+      !Array.isArray(childTest.results) ||
+      childTest.results.length !== 1 ||
+      !isRecord(result) ||
+      result.status !== status ||
+      result.retry !== 0 ||
+      !Array.isArray(result.errors)
+    ) {
+      throw new Error(
+        `Scheduled expiry child case ${index + 1} differs from its expected result.`,
+      );
+    }
+    const messages = result.errors.map((entry: unknown) =>
+      isRecord(entry) && typeof entry.message === "string" ? entry.message : "",
+    );
+    if (index === 0) {
+      if (
+        !messages[0]?.includes("Test timeout of 1ms exceeded") ||
+        messages.length > 2 ||
+        (messages.length === 2 &&
+          !messages[1].startsWith("AbortError: The operation was aborted"))
+      ) {
+        throw new Error(
+          "Scheduled expiry child timeout has an unexpected failure class.",
+        );
+      }
+    } else if (messages.length !== 0) {
+      throw new Error(
+        `Scheduled expiry child case ${index + 1} has an unexpected error.`,
+      );
+    }
+  }
+}
+
+// One four-case child run reuses the Worker; retire it if schema mutation ends or an equivalent timeout observer replaces it.
+outerTest(
+  "a timed-out scheduled-expiry case leaves the next Worker case independent",
+  async ({ childProbe }) => {
+    const exit = await childProbe.completion;
+    expect(exit).toEqual({ code: 1, signal: null, error: undefined });
+    const report: unknown = JSON.parse(
+      readFileSync(join(childProbe.directory, "report.json"), "utf8"),
+    );
+    verifyInterruptionReport(report);
+  },
+);
+
 for (const { outcome, movement } of (
   ["release", "refund", "recovery-release"] as const
 ).flatMap((movement) =>
