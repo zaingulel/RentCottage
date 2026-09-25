@@ -76,7 +76,10 @@ export function SiteHeader({
             queryString={query}
           />
           <span className="site-header-rule" aria-hidden="true" />
-          <nav aria-label={copy.account} className="account-navigation">
+          <nav
+            aria-label={supportMessages[locale].accountNavigation}
+            className="account-navigation"
+          >
             {account.status === "unavailable" ? (
               <span role="status">{copy.sessionUnavailable}</span>
             ) : account.status === "signed_out" ? (

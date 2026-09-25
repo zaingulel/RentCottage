@@ -172,6 +172,7 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
   const copy = {
     en: {
       support: "Support",
+      accountNavigation: "Account and support",
       preLive: "Pre-live: support is not operating.",
       cannotSend:
         "You cannot send a complaint, contact a support team or open a case here.",
@@ -184,6 +185,7 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
     },
     ar: {
       support: "الدعم",
+      accountNavigation: "الحساب والدعم",
       preLive: "قبل الإطلاق: خدمة الدعم غير متاحة.",
       cannotSend: "لا يمكنك إرسال شكوى أو التواصل مع فريق دعم أو فتح قضية هنا.",
       noMessage: "لن تُرسل أي رسالة ولا يوجد وعد بوقت للرد.",
@@ -195,6 +197,7 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
     },
     ckb: {
       support: "پشتیوانی",
+      accountNavigation: "هەژمار و پشتیوانی",
       preLive: "پێش دەستپێکردن: پشتیوانی کار ناکات.",
       cannotSend:
         "لێرە ناتوانیت سکاڵا بنێریت، پەیوەندی بە تیمی پشتیوانیەوە بکەیت یان دۆسیەیەک بکەیتەوە.",
@@ -208,12 +211,38 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
     },
   } as const;
   for (const [locale, labels] of Object.entries(copy)) {
+    const account = ownerSignIn[locale as keyof typeof ownerSignIn];
     await page.goto(`/${locale}/bookings?token=private-support-sentinel`);
-    const support = page
-      .getByRole("banner")
-      .getByRole("link", { name: labels.support, exact: true });
+    const header = page.getByRole("banner");
+    const navigation = header.getByRole("navigation", {
+      name: labels.accountNavigation,
+    });
+    const support = navigation.getByRole("link", {
+      name: labels.support,
+      exact: true,
+    });
     await expect(support).toHaveAttribute("href", `/${locale}/support`);
-    await support.focus();
+    await page.keyboard.press("Tab");
+    await expect(
+      header.getByRole("link", { name: account.brand }),
+    ).toBeFocused();
+    for (const language of ["العربية", "کوردی", "English"]) {
+      await page.keyboard.press("Tab");
+      await expect(
+        header
+          .getByRole("navigation", { name: labels.language })
+          .getByRole("link", { name: language, exact: true }),
+      ).toBeFocused();
+    }
+    await page.keyboard.press("Tab");
+    await expect(
+      navigation.getByRole("link", { name: account.history, exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
+      navigation.getByRole("link", { name: account.label, exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
     await expect(support).toBeFocused();
     await expect(support).toHaveCSS("outline-style", "solid");
     await page.keyboard.press("Enter");
@@ -228,7 +257,8 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
     await expect(page.getByRole("main")).not.toContainText(
       "private-support-sentinel",
     );
-    await expect(page.getByRole("main").getByRole("form")).toHaveCount(0);
+    await expect(page.getByRole("main").locator("form")).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("textbox")).toHaveCount(0);
     await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
     await page.screenshot({
       path: testInfo.outputPath(
@@ -248,6 +278,9 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
       page.getByRole("heading", { level: 1, name: copy[nextLocale].support }),
     ).toBeVisible();
     await page.goto(`/${locale}/support?reference=private-support-sentinel`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: labels.support }),
+    ).toBeVisible();
     await expect(page.getByRole("main")).not.toContainText(
       "private-support-sentinel",
     );
@@ -264,25 +297,27 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
       await page.goto(`/${locale}/support`);
     }
   }
-  await page.setViewportSize({ width: 320, height: 800 });
-  for (const [locale, labels] of Object.entries(copy)) {
-    await page.goto(`/${locale}/support`);
-    await expect(
-      page.getByRole("heading", { level: 1, name: labels.support }),
-    ).toBeVisible();
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        ),
-      )
-      .toBeLessThanOrEqual(0);
-    await page.screenshot({
-      path: testInfo.outputPath(`support-mobile-320-${locale}.png`),
-      fullPage: true,
-    });
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 320, height: 800 });
+    for (const [locale, labels] of Object.entries(copy)) {
+      await page.goto(`/${locale}/support`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: labels.support }),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              document.documentElement.scrollWidth -
+              document.documentElement.clientWidth,
+          ),
+        )
+        .toBeLessThanOrEqual(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`support-mobile-320-${locale}.png`),
+        fullPage: true,
+      });
+    }
   }
 });
 

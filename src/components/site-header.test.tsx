@@ -142,6 +142,19 @@ describe("shared site header", () => {
           name: { en: "Support", ar: "الدعم", ckb: "پشتیوانی" }[locale],
         }),
       ).toHaveAttribute("href", `/${locale}/support`);
+      expect(
+        screen.getByRole("navigation", {
+          name: {
+            en: "Account and support",
+            ar: "الحساب والدعم",
+            ckb: "هەژمار و پشتیوانی",
+          }[locale],
+        }),
+      ).toContainElement(
+        screen.getByRole("link", {
+          name: { en: "Support", ar: "الدعم", ckb: "پشتیوانی" }[locale],
+        }),
+      );
     },
   );
   it("shows support to a customer outside the account disclosure", () => {
