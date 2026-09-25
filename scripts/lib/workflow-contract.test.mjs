@@ -100,6 +100,72 @@ test('handoff requires explicit owner authorization before remote publication', 
   );
 });
 
+// Independent oracle for the resume skill's parallel-slice route: Git runs its commands verbatim. Recurring cost: one
+// disposable repository and about fifteen Git subprocesses. Remove if builders no longer run parallel slices.
+test("the resume skill's parallel-slice commands run while the job branch is checked out", () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'flowgauge-parallel-slice-'));
+  const repository = join(fixture, 'repository');
+  const jobWorktree = join(fixture, 'job-1421');
+  const sliceWorktree = join(fixture, 'slice-1421-parallel');
+  const bullet = RESUME.slice(RESUME.indexOf('- Builders work inside the job worktree')).split(/\n- /)[0];
+  const commands = [...bullet.matchAll(/`(git [^`]+)`/g)].map(([, command]) =>
+    command.replaceAll('<issue>', '1421').replaceAll('<name>', 'parallel').replaceAll('<path>', sliceWorktree));
+  for (const command of commands) assert.doesNotMatch(command, /<[^>]+>/, `unfilled placeholder in \`${command}\``);
+  const argvs = commands.map((command) => command.split(/\s+/).slice(1));
+  const [add, merge, remove, deleteBranch] = argvs;
+  assert.deepEqual(
+    argvs.map((argv) => argv.slice(0, argv[0] === 'merge' ? 1 : 2).join(' ')),
+    ['worktree add', 'merge', 'worktree remove', 'branch -d'],
+    'the parallel-slice route must cut, merge back, remove the worktree and delete the branch, in that order',
+  );
+  const env = {
+    ...gitEnvironment(),
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_NOSYSTEM: '1',
+    // Force the editor on and make it fail, so the skill's merge command must be non-interactive.
+    GIT_MERGE_AUTOEDIT: 'yes',
+    GIT_EDITOR: 'false',
+    GIT_AUTHOR_NAME: 'Flowgauge Contract Test',
+    GIT_AUTHOR_EMAIL: 'contract-test@flowgauge.invalid',
+    GIT_COMMITTER_NAME: 'Flowgauge Contract Test',
+    GIT_COMMITTER_EMAIL: 'contract-test@flowgauge.invalid',
+  };
+  const git = (cwd, args) => spawnSync('git', args, { cwd, env, encoding: 'utf8' });
+  const ok = (run, what) => assert.equal(run.status, 0, `${what} failed: ${run.stderr}`);
+  const commitFile = (cwd, name) => {
+    writeFileSync(join(cwd, name), `${name}\n`);
+    ok(git(cwd, ['add', name]), `git add ${name}`);
+    ok(git(cwd, ['commit', '-q', '-m', name]), `git commit ${name}`);
+    return git(cwd, ['rev-parse', 'HEAD']).stdout.trim();
+  };
+
+  try {
+    ok(git(fixture, ['init', '-q', repository]), 'git init');
+    ok(git(repository, ['commit', '-q', '--allow-empty', '-m', 'fixture baseline']), 'baseline commit');
+    ok(git(repository, ['worktree', 'add', '-q', '-b', 'job/1421', jobWorktree]), 'job worktree');
+
+    const jobTip = git(jobWorktree, ['rev-parse', 'job/1421']).stdout.trim();
+    ok(git(jobWorktree, add), `git ${add.join(' ')}`);
+    assert.equal(git(sliceWorktree, ['rev-parse', 'HEAD']).stdout.trim(), jobTip, 'the slice must start at the job tip');
+
+    const sliceCommit = commitFile(sliceWorktree, 'a.txt');
+    commitFile(jobWorktree, 'b.txt');
+
+    ok(git(jobWorktree, merge), `git ${merge.join(' ')}`);
+    ok(git(jobWorktree, ['merge-base', '--is-ancestor', sliceCommit, 'job/1421']), 'slice commit on job/1421');
+
+    ok(git(jobWorktree, remove), `git ${remove.join(' ')}`);
+    ok(git(jobWorktree, deleteBranch), `git ${deleteBranch.join(' ')}`);
+    assert.notEqual(
+      git(jobWorktree, ['rev-parse', '--verify', '--quiet', 'refs/heads/slice/1421-parallel']).status,
+      0,
+      'the slice branch must be deleted',
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 // Independent oracle for the instruction-order contract. Recurring cost: one disposable repository and eight Git
 // subprocesses. Remove if closeout no longer relies on Git refusing deletion of a linked branch.
 test('Git permits job branch deletion only after its linked worktree is removed', () => {
@@ -728,17 +794,53 @@ test('the review line has one specified format, and the template and skills poin
   // Hand-written from the owner-approved format and slot, never extracted from a repo file, so
   // a drift in the manual's example or the template cannot silently redefine what the test accepts.
   const REVIEW_LINE =
-    /^Review: tier=(document|code|sign-off) rounds=([1-9]\d*) raised=(0|[1-9]\d*) fixed=(0|[1-9]\d*) dismissed=(0|[1-9]\d*) deferred=(0|[1-9]\d*)\s*$/;
-  const REVIEW_SLOT = 'Review: tier= rounds= raised= fixed= dismissed= deferred=';
+    /^Review: tier=(document|code|sign-off) rounds=([1-9]\d*) raised=(0|[1-9]\d*) fixed=(0|[1-9]\d*) dismissed=(0|[1-9]\d*) deferred=(0|[1-9]\d*) greptile_rounds=(0|[1-9]\d*) greptile_raised=(0|[1-9]\d*) greptile_true=(0|[1-9]\d*)\s*$/;
+  const REVIEW_SLOT =
+    'Review: tier= rounds= raised= fixed= dismissed= deferred= greptile_rounds= greptile_raised= greptile_true=';
   const assertValidLine = (line, where) => {
     const m = REVIEW_LINE.exec(line ?? '');
     assert.ok(m, `${where}: example review line ${JSON.stringify(line)} no longer matches the approved format`);
+    const [rounds, raised, fixed, dismissed, deferred, gRounds, gRaised, gTrue] = m.slice(2).map(Number);
     assert.equal(
-      Number(m[3]),
-      Number(m[4]) + Number(m[5]) + Number(m[6]),
+      raised,
+      fixed + dismissed + deferred,
       `${where}: example review line has raised not equal to fixed plus dismissed plus deferred`,
     );
+    assert.ok(gRounds <= rounds, `${where}: example review line has greptile_rounds greater than rounds`);
+    assert.ok(gRaised <= raised, `${where}: example review line has greptile_raised greater than raised`);
+    assert.ok(gTrue <= gRaised, `${where}: example review line has greptile_true greater than greptile_raised`);
+    assert.ok(
+      gTrue <= fixed + deferred,
+      `${where}: example review line has greptile_true greater than fixed plus deferred`,
+    );
+    assert.ok(
+      gRaised - gTrue <= dismissed,
+      `${where}: example review line has more false Greptile findings than dismissed`,
+    );
+    assert.ok(
+      gRounds > 0 || gRaised === 0,
+      `${where}: example review line has Greptile findings but greptile_rounds=0`,
+    );
   };
+
+  const PREFIX = 'Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1';
+  assertValidLine(`${PREFIX} greptile_rounds=0 greptile_raised=0 greptile_true=0`, 'no-Greptile fixture');
+  for (const [broken, message] of [
+    [`${PREFIX} greptile_rounds=8 greptile_raised=1 greptile_true=1`, /greptile_rounds greater than rounds/],
+    [`${PREFIX} greptile_rounds=2 greptile_raised=17 greptile_true=1`, /greptile_raised greater than raised/],
+    [`${PREFIX} greptile_rounds=2 greptile_raised=1 greptile_true=2`, /greptile_true greater than greptile_raised/],
+    [`${PREFIX} greptile_rounds=0 greptile_raised=1 greptile_true=0`, /Greptile findings but greptile_rounds=0/],
+    [
+      'Review: tier=sign-off rounds=2 raised=1 fixed=0 dismissed=1 deferred=0 greptile_rounds=1 greptile_raised=1 greptile_true=1',
+      /greptile_true greater than fixed plus deferred/,
+    ],
+    [
+      'Review: tier=sign-off rounds=2 raised=1 fixed=1 dismissed=0 deferred=0 greptile_rounds=1 greptile_raised=1 greptile_true=0',
+      /more false Greptile findings than dismissed/,
+    ],
+  ]) {
+    assert.throws(() => assertValidLine(broken, 'fixture'), message, `${broken} was accepted`);
+  }
 
   const manual = readFileSync(resolve(ROOT, 'docs/AI-WORKFLOW.md'), 'utf8').split('\n');
   const heading = manual.indexOf('## The review line');

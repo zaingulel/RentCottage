@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "2c7c2b3314834b45aa38ea5ebd34ee0fd9ab05e6",
+  "syncedFrom": "f72e75976b8fa4733d6f1776259905347f591610",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -59,7 +59,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "6d9759700ecb910bb0c71a3aa1b793e128bb96f5dc0ee97fc5272fd074f7f392"
+      "sha256": "4a4b67e0ad10df5e3eba187efe0b73359abf7069612143f65677e23c5aba1410"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -410,7 +410,7 @@
     },
     {
       "path": ".github/pull_request_template.md",
-      "sha256": "cd6818fc1c58481977f7405eec1c2f393a5209a6402a6082dc9b9c99868049c7"
+      "sha256": "84bc1fd471e229992721a2fed3632ee45fa281593e59dc79448e7537f368e77c"
     },
     {
       "path": ".github/workflows/sweep-scope.yml",
@@ -431,7 +431,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "96965103f43a0a56f0347211f87634745f9c6900d53bb3c4d42e1f20cb9d28b8"
+      "sha256": "3df754b867f5bfd361f7851b33cee71bf98696e020b1c62fdf32f84141b9aed0"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -628,7 +628,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "b5f42f6738ec96dd0755ea71823fb045f80cc32f31256d0006a9f245e0995217"
+      "sha256": "57ade6f79a850cb1f054fda9df08a2f8296e14a2b9643ab74235c953f5b826eb"
     },
     {
       "path": "scripts/run-log.mjs",
