@@ -276,6 +276,35 @@ test("a verified Customer double-submit creates one Pending request and one mini
     fullPage: true,
   });
 
+  await page.getByRole("banner").getByRole("link", { name: "Support" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "support is not operating",
+  );
+  await page
+    .getByRole("main")
+    .getByRole("link", { name: "My customer bookings" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "My bookings" }),
+  ).toBeVisible();
+  await page.goto(`/en/booking-requests/${requestReference}`);
+
+  await ownerPage
+    .getByRole("banner")
+    .getByRole("link", { name: "Support" })
+    .click();
+  await expect(ownerPage.getByRole("status")).toContainText(
+    "support is not operating",
+  );
+  await ownerPage
+    .getByRole("main")
+    .getByRole("link", { name: "Bookings for my cottages" })
+    .click();
+  await expect(
+    ownerPage.getByRole("heading", { name: "Bookings for my cottages" }),
+  ).toBeVisible();
+  await ownerPage.goto("/en/owner/cottages");
+
   async function submitAnotherRequest(locale: "en" | "ckb") {
     await page.goto(`/${locale}/request/${slug}?${query.toString()}`);
     const form = page.locator("form.booking-request-form");

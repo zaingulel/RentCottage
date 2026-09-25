@@ -166,6 +166,142 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
   }
 });
 
+test("pre-live support stays honest, private and keyboard-accessible in every language", async ({
+  page,
+}, testInfo) => {
+  const copy = {
+    en: {
+      support: "Support",
+      accountNavigation: "Account and support",
+      preLive: "Pre-live: support is not operating.",
+      cannotSend:
+        "You cannot send a complaint, contact a support team or open a case here.",
+      noMessage: "No message is sent and no response time is promised.",
+      signIn: "Sign in or create an account",
+      customer: "My customer bookings",
+      owner: "Bookings for my cottages",
+      language: "Language",
+      dir: "ltr",
+    },
+    ar: {
+      support: "الدعم",
+      accountNavigation: "الحساب والدعم",
+      preLive: "قبل الإطلاق: خدمة الدعم غير متاحة.",
+      cannotSend: "لا يمكنك إرسال شكوى أو التواصل مع فريق دعم أو فتح قضية هنا.",
+      noMessage: "لن تُرسل أي رسالة ولا يوجد وعد بوقت للرد.",
+      signIn: "سجّل الدخول أو أنشئ حسابًا",
+      customer: "حجوزاتي كعميل",
+      owner: "حجوزات أكواخي",
+      language: "اللغة",
+      dir: "rtl",
+    },
+    ckb: {
+      support: "پشتیوانی",
+      accountNavigation: "هەژمار و پشتیوانی",
+      preLive: "پێش دەستپێکردن: پشتیوانی کار ناکات.",
+      cannotSend:
+        "لێرە ناتوانیت سکاڵا بنێریت، پەیوەندی بە تیمی پشتیوانیەوە بکەیت یان دۆسیەیەک بکەیتەوە.",
+      noMessage:
+        "هیچ پەیامێک نانێردرێت و هیچ کاتێک بۆ وەڵامدانەوە بەڵێن نادرێت.",
+      signIn: "بچۆ ژوورەوە یان هەژمارێک دروست بکە",
+      customer: "حجزەکانم وەک کڕیار",
+      owner: "حجزەکانی کۆتێجەکانم",
+      language: "زمان",
+      dir: "rtl",
+    },
+  } as const;
+  for (const [locale, labels] of Object.entries(copy)) {
+    await page.goto(`/${locale}/bookings?token=private-support-sentinel`);
+    const header = page.getByRole("banner");
+    const navigation = header.getByRole("navigation", {
+      name: labels.accountNavigation,
+    });
+    const support = navigation.getByRole("link", {
+      name: labels.support,
+      exact: true,
+    });
+    await expect(support).toHaveAttribute("href", `/${locale}/support`);
+    for (let index = 0; index < 7; index += 1) {
+      await page.keyboard.press("Tab");
+    }
+    await expect(support).toBeFocused();
+    await expect(support).toHaveCSS("outline-style", "solid");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/${locale}/support$`));
+    await expect(page.locator("html")).toHaveAttribute("dir", labels.dir);
+    await expect(
+      page.getByRole("heading", { level: 1, name: labels.support }),
+    ).toBeVisible();
+    await expect(page.getByRole("status")).toContainText(labels.preLive);
+    await expect(page.getByRole("status")).toContainText(labels.cannotSend);
+    await expect(page.getByRole("status")).toContainText(labels.noMessage);
+    await expect(page.getByRole("main")).not.toContainText(
+      "private-support-sentinel",
+    );
+    await expect(page.getByRole("main").locator("form")).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("textbox")).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `support-${testInfo.project.name}-${locale}.png`,
+      ),
+      fullPage: true,
+    });
+    const language = page.getByRole("navigation", { name: labels.language });
+    const nextLocale = locale === "en" ? "ar" : locale === "ar" ? "ckb" : "en";
+    await language
+      .getByRole("link", {
+        name: { en: "English", ar: "العربية", ckb: "کوردی" }[nextLocale],
+      })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`/${nextLocale}/support$`));
+    await expect(
+      page.getByRole("heading", { level: 1, name: copy[nextLocale].support }),
+    ).toBeVisible();
+    await page.goto(`/${locale}/support?reference=private-support-sentinel`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: labels.support }),
+    ).toBeVisible();
+    await expect(page.getByRole("main")).not.toContainText(
+      "private-support-sentinel",
+    );
+    for (const [label, href] of [
+      [labels.customer, `/${locale}/bookings`],
+      [labels.owner, `/${locale}/bookings?workspace=owner`],
+    ]) {
+      const link = page.getByRole("main").getByRole("link", { name: label });
+      await expect(link).toHaveAttribute("href", href);
+      await link.click();
+      await expect(
+        page.getByRole("heading", { name: labels.signIn }),
+      ).toBeVisible();
+      await page.goto(`/${locale}/support`);
+    }
+  }
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 320, height: 800 });
+    for (const [locale, labels] of Object.entries(copy)) {
+      await page.goto(`/${locale}/support`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: labels.support }),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              document.documentElement.scrollWidth -
+              document.documentElement.clientWidth,
+          ),
+        )
+        .toBeLessThanOrEqual(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`support-mobile-320-${locale}.png`),
+        fullPage: true,
+      });
+    }
+  }
+});
+
 test("disconnects the fictional booking-request route", async ({ page }) => {
   const response = await page.goto("/en/request/garden-house");
   expect(response?.status()).toBe(404);

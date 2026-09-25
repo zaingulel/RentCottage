@@ -4,6 +4,7 @@ export const accessMessages: Record<
   Locale,
   {
     account: string;
+    accountNavigation: string;
     signInAccount: string;
     accessTitle: string;
     accessIntro: string;
@@ -50,6 +51,7 @@ export const accessMessages: Record<
 > = {
   ar: {
     account: "الحساب",
+    accountNavigation: "الحساب والدعم",
     signInAccount: "تسجيل الدخول",
     accessTitle: "سجّل الدخول أو أنشئ حسابًا",
     accessIntro:
@@ -99,6 +101,7 @@ export const accessMessages: Record<
   },
   ckb: {
     account: "هەژمار",
+    accountNavigation: "هەژمار و پشتیوانی",
     signInAccount: "چوونەژوورەوە",
     accessTitle: "بچۆ ژوورەوە یان هەژمارێک دروست بکە",
     accessIntro:
@@ -151,6 +154,7 @@ export const accessMessages: Record<
   },
   en: {
     account: "Account",
+    accountNavigation: "Account and support",
     signInAccount: "Sign in",
     accessTitle: "Sign in or create an account",
     accessIntro:
