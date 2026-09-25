@@ -3,6 +3,7 @@ import { request } from "node:http";
 export async function triggerScheduled(
   baseURL: string | undefined,
   path: string,
+  signal?: AbortSignal,
 ): Promise<Response> {
   if (!baseURL) throw new Error("Scheduled trigger requires a local base URL.");
   const target = new URL(path, baseURL);
@@ -24,7 +25,7 @@ export async function triggerScheduled(
     // A close header alone can still reuse a stale socket from the shared agent.
     const invocation = request(
       target,
-      { method: "GET", agent: false },
+      { method: "GET", agent: false, signal },
       (response) => {
         const chunks: Buffer[] = [];
         response.on("data", (chunk: Buffer) => chunks.push(chunk));
