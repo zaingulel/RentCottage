@@ -2,7 +2,6 @@ import type { Locale } from "./routing";
 
 type SupportCopy = {
   title: string;
-  accountNavigation: string;
   preLive: string;
   notice: string;
   complaints: string;
@@ -23,7 +22,6 @@ type SupportCopy = {
 export const supportMessages: Record<Locale, SupportCopy> = {
   en: {
     title: "Support",
-    accountNavigation: "Account and support",
     preLive: "Pre-live: support is not operating.",
     notice:
       "This page explains where to find existing records. You cannot send a complaint, contact a support team or open a case here. No message is sent and no response time is promised.",
@@ -48,7 +46,6 @@ export const supportMessages: Record<Locale, SupportCopy> = {
   },
   ar: {
     title: "الدعم",
-    accountNavigation: "الحساب والدعم",
     preLive: "قبل الإطلاق: خدمة الدعم غير متاحة.",
     notice:
       "توضح هذه الصفحة مكان العثور على السجلات الحالية. لا يمكنك إرسال شكوى أو التواصل مع فريق دعم أو فتح قضية هنا. لن تُرسل أي رسالة ولا يوجد وعد بوقت للرد.",
@@ -73,7 +70,6 @@ export const supportMessages: Record<Locale, SupportCopy> = {
   },
   ckb: {
     title: "پشتیوانی",
-    accountNavigation: "هەژمار و پشتیوانی",
     preLive: "پێش دەستپێکردن: پشتیوانی کار ناکات.",
     notice:
       "ئەم لاپەڕەیە شوێنی تۆمارە هەبووەکان ڕوون دەکاتەوە. لێرە ناتوانیت سکاڵا بنێریت، پەیوەندی بە تیمی پشتیوانیەوە بکەیت یان دۆسیەیەک بکەیتەوە. هیچ پەیامێک نانێردرێت و هیچ کاتێک بۆ وەڵامدانەوە بەڵێن نادرێت.",

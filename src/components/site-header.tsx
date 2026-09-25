@@ -77,7 +77,7 @@ export function SiteHeader({
           />
           <span className="site-header-rule" aria-hidden="true" />
           <nav
-            aria-label={supportMessages[locale].accountNavigation}
+            aria-label={copy.accountNavigation}
             className="account-navigation"
           >
             {account.status === "unavailable" ? (
