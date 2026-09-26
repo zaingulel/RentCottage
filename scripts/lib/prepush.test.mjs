@@ -17,14 +17,26 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { posixShell } from './posix-shell.mjs';
 
 const HOOK = resolve(dirname(fileURLToPath(import.meta.url)), '../../.githooks/pre-push');
+const NO_SHELL = 'a POSIX shell is required: install Git for Windows';
+
+// The located POSIX shell, null when there is none. On Windows it can be Git's bin\sh.exe, a launcher
+// that puts Git's own tool directories, real git included, ahead of the PATH it is given, which would
+// shadow the fixture's fake git; there the fixture runs the MSYS sh.exe behind it, which keeps PATH as given.
+function fixtureShell() {
+  const shell = posixShell();
+  if (process.platform !== 'win32' || !shell) return shell;
+  return spawnSync(shell, ['-c', 'cygpath -w /usr/bin/sh.exe'], { encoding: 'utf8' }).stdout.trim();
+}
+
+const SHELL = fixtureShell();
 
 function executable(path, source) {
   writeFileSync(path, source);
@@ -32,7 +44,8 @@ function executable(path, source) {
 }
 
 function commandPath(name) {
-  const result = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' });
+  assert.ok(SHELL, NO_SHELL);
+  const result = spawnSync(SHELL, ['-c', `command -v ${name}`], { encoding: 'utf8' });
   assert.equal(result.status, 0, `fixture requires ${name}`);
   return result.stdout.trim();
 }
@@ -55,7 +68,9 @@ case "$*" in
   *) exit 90 ;;
 esac
 `);
-    symlinkSync(commandPath('dirname'), join(bin, 'dirname'));
+    // Wrapper stubs rather than symlinks, because a symlink needs privilege on Windows; `sh` is on the
+    // hook's PATH because a bare `sh` launcher resolves through it.
+    for (const name of ['dirname', 'sh']) executable(join(bin, name), `#!/bin/sh\nexec "${commandPath(name)}" "$@"\n`);
 
     if (options.node !== false) {
       executable(join(bin, 'node'), `#!/bin/sh
@@ -84,7 +99,7 @@ esac
       executable(eslint, '#!/bin/sh\nexit 0\n');
     }
 
-    const run = (extra = {}) => spawnSync('/bin/sh', [HOOK], {
+    const run = (extra = {}) => spawnSync(SHELL, [HOOK], {
       cwd,
       encoding: 'utf8',
       env: {
@@ -101,7 +116,12 @@ esac
       },
     });
     const recorded = () => readFileSync(calls, 'utf8').split('\n').filter(Boolean);
-    fn({ recorded, repo, run });
+    // The repository root as the shell names it once the hook has changed into it: the path itself off
+    // Windows, where MSYS instead names it in its own POSIX form.
+    const root = process.platform === 'win32'
+      ? spawnSync(SHELL, ['-c', 'cd "$REPO_ROOT" && printf %s "$PWD"'], { cwd, encoding: 'utf8', env: { REPO_ROOT: repo } }).stdout
+      : repo;
+    fn({ recorded, root, run });
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -112,7 +132,7 @@ function output(result) {
 }
 
 test('pre-push invokes installed lint exactly once, then the script suite, from the resolved root', () => {
-  withFixture({}, ({ recorded, repo, run }) => {
+  withFixture({}, ({ recorded, root, run }) => {
     const result = run();
     assert.equal(result.status, 0, output(result));
     const calls = recorded().map((line) => line.split('\t'));
@@ -120,7 +140,7 @@ test('pre-push invokes installed lint exactly once, then the script suite, from 
       'npm run lint --silent',
       'node --test scripts/lib/*.test.mjs',
     ]);
-    assert.deepEqual(calls.map(([, , cwd]) => cwd), [repo, repo]);
+    assert.deepEqual(calls.map(([, , cwd]) => cwd), [root, root]);
   });
 });
 

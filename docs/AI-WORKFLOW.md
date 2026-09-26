@@ -30,13 +30,39 @@ overstates what was verified. The workflow is built around three answers to that
 
 The factory runs on Claude Code and on Codex, and switches between them when one runs out of budget. Both read
 the same manual: `AGENTS.md` is the contract, `CLAUDE.md` imports it and adds its own Claude-only notes. Skills
-live once under `.agents/skills/`, with `.claude/skills/` holding symlinks into them; Codex reads that one
-directory directly. Ten of those entries are themselves symlinks into `.agents/upstream/mattpocock-skills/`, a
-verbatim vendored copy of an upstream skill set kept with its own licence, so a vendored skill is invoked by
-the same name and reached by the same path as a first-party one. `AGENTS.md` owns which upstream commit that
+are written under `.agents/skills/`, which Codex reads directly, and `.claude/skills/` holds a byte-identical
+copy of each for Claude Code; they are real copies rather than symlinks so they survive a Windows checkout. Ten
+of those skills are themselves copied whole from `.agents/upstream/mattpocock-skills/`, a verbatim vendored copy
+of an upstream skill set kept with its own licence, so a vendored skill is invoked by the same name and reached
+by the same path as a first-party one. `AGENTS.md` owns which upstream commit that
 copy pins and how it is refreshed. The agent seats under `.claude/agents/` and `.codex/agents/` are
 maintained counterparts, with shared charters kept aligned across the two runtime formats. The safety hooks
 exist as twins: `.claude/settings.json` wires the Claude set, `.codex/hooks.json` the Codex set.
+
+On native Windows both runtimes need Git for Windows. Claude Code runs its hook commands through Git Bash (the
+Claude hooks are unchanged; `CLAUDE_CODE_GIT_BASH_PATH` points it at a non-default install), and the `.sh` hooks and
+their tests run through its `sh.exe`, which `scripts/lib/posix-shell.mjs` locates. Codex uses each handler's
+`commandWindows` on Windows and runs it through the session's PowerShell as `-NoProfile -Command`; each form
+resolves the hook path first, falling back to the working directory when git cannot answer as the macOS form does,
+seeds `$LASTEXITCODE = 1` immediately before `node`, and ends `exit $LASTEXITCODE`, because PowerShell otherwise
+turns an exit 2 block into 1 and a missing `node` into a silent pass. The Stop hook's Windows form runs
+`.codex/hooks/verify-green.mjs`, which runs the same `verify-green.sh` through that shell and blocks when none is
+found. The `.sh` hooks need LF endings, which each hook directory's own `.gitattributes` keeps.
+`scripts/lib/codex-hooks-windows.test.mjs` runs each registered form through PowerShell wherever one is on PATH, so
+a Windows CI runner proves the repository's contract, not that a running Codex fired it. Two upstream limits stand:
+Codex does not yet emit `PreToolUse` for shell commands on Windows (openai/codex#24453), and there its shell payload
+wraps the command in a `powershell.exe -Command` string the git guard does not read. A hook that cannot run, because
+`node` is missing or because a Codex that finds no shell launches hooks through `cmd.exe /C`, which cannot read
+these forms, is reported as a failed hook and the action proceeds, as a failed hook does on macOS: the failure is
+visible, not blocking. Codex trusts each handler by a fingerprint of its event, matcher, `timeout`, `async`,
+`statusMessage`, `additionalContextLimit`, and the one command it runs on the current platform: `commandWindows`
+on Windows when set, `command` otherwise. It records that trust under the handler's position in its event's list
+([command choice](https://github.com/openai/codex/blob/dfdb40cd0b72dfba3293db5c7c441232e8ef1a60/codex-rs/hooks/src/engine/discovery.rs#L503-L566)
+and [`hook_hash`](https://github.com/openai/codex/blob/dfdb40cd0b72dfba3293db5c7c441232e8ef1a60/codex-rs/hooks/src/engine/discovery.rs#L766-L792)
+in openai/codex). So a changed `commandWindows` needs re-approval only on Windows; a changed `command` needs it
+on macOS and Linux, and on Windows only for a handler without `commandWindows`; any other fingerprinted change,
+or moving a handler or inserting one ahead of it, needs it on every platform. Re-approve by running `/hooks` in
+Codex at the repository root on each affected platform.
 
 ## The seats
 
@@ -135,8 +161,9 @@ The diagram is the whole path from a card to a merged commit. In words:
   cut from the job branch and merge back with git. A generated artifact the `generated artifacts` row of the
   Conventions table in `AGENTS.md` names is never hand-merged, and the hooks keep it from landing stale.
 - **Evidence during the build.** Every executed check runs through `scripts/run-log.mjs`, which appends the
-  real exit code to a per-branch log so the pull request body quotes what a script wrote, not what an agent
-  remembers. Every green slice is committed on the job branch, so a crash costs at most the slice in progress.
+  real exit code, the commit and the tree state to a per-branch log so the pull request body quotes what a
+  script wrote, not what an agent remembers. Every green slice is committed on the job branch, so a crash costs
+  at most the slice in progress.
 - **Verification before review.** Visual work is driven as the Conventions table's `visual verification` row says
   and a current screenshot is shown in chat; any further gate the Surfaces table names runs here.
 - **Review in two layers.** One fresh review of the final tree before the pull request opens, by tier. Documents

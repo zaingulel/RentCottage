@@ -135,12 +135,32 @@ export function checkPathRefs(refs, existsFn) {
     .map((r) => ({ path: r.path, line: r.line }));
 }
 
-// The ONE scan-set resolver shared by the CLI and repo-pass test. Skills live once under
-// .agents/skills/; `.claude/skills/<name>` entries are symlinks to them, which `git ls-files`
-// lists as the link itself, so no `.claude/skills/...md` path ever reaches this classifier.
-// Vendored upstream skills are exposed the same way, so `skillMeta` reads their bodies at
-// `.agents/upstream/<source>/<name>/SKILL.md` for the disabled-skill set; those bodies are never linted.
-export function classifyDocLintPath(rel) {
+// Tracked paths identify vendored skill names from their upstream SKILL.md files.
+export function vendoredSkillNames(paths) {
+  return new Set(
+    paths
+      .map(
+        (rel) =>
+          rel.match(/^\.agents\/upstream\/[^/]+\/([^/]+)\/SKILL\.md$/)?.[1],
+      )
+      .filter(Boolean),
+  );
+}
+
+// The ONE scan-set resolver shared by the CLI and repo-pass test. Vendored upstream
+// skill bodies and their copies feed only skill metadata, never body scans.
+// Claude skill copies are byte-identical to their .agents twins (contract-tested),
+// so their bodies classify as nothing and are linted only through the twin.
+export function classifyDocLintPath(rel, vendoredNames = new Set()) {
+  const vendoredCopy = rel.match(/^\.agents\/skills\/([^/]+)\/SKILL\.md$/);
+  if (vendoredCopy && vendoredNames.has(vendoredCopy[1])) {
+    return {
+      pathRefs: false,
+      dateStamps: false,
+      illegalInvocations: false,
+      skillMeta: true,
+    };
+  }
   const claudeProseSurface =
     rel === "CLAUDE.md" || /^\.claude\/(rules|agents)\/.*\.md$/.test(rel);
   const skillBody = /^\.agents\/skills\/[^/]+\/SKILL\.md$/.test(rel);

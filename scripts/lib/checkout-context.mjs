@@ -5,20 +5,25 @@
 // common dir. Resolved here, in the hook shell's world, so blockReason stays a pure rule that unit
 // tests drive with an injected resolver.
 import { execFileSync } from 'node:child_process';
+import { gitExecutable } from './posix-shell.mjs';
 
 const isMainWorkingTree = (dir) => {
+  // By path on Windows, whose bare-name search reaches the working directory first.
+  const git = gitExecutable();
+  if (!git) throw new Error('no git.exe in an absolute PATH entry');
   const [gitDir, commonDir] = execFileSync(
-    'git',
+    git,
     ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
   ).trim().split('\n');
   return gitDir === commonDir;
 };
 
-// Returns { checkout } for blockReason, or { unresolved } naming why the hook's working directory
-// could not be read (git missing, not a repository, a directory that does not exist). The hook
-// then applies every other rule and says on stderr that this one was not applied: the guard is an
-// accident-catcher, and wedging every Bash call on an unreadable directory is the wrong failure.
+// Returns { checkout } for blockReason, carrying the platform whose path rules the walk resolves
+// with, or { unresolved } naming why the hook's working directory could not be read (git missing,
+// not a repository, a directory that does not exist). The hook then applies every other rule and
+// says on stderr that this one was not applied: the guard is an accident-catcher, and wedging
+// every Bash call on an unreadable directory is the wrong failure.
 export function checkoutContext(cwd) {
   try {
     isMainWorkingTree(cwd);
@@ -36,5 +41,5 @@ export function checkoutContext(cwd) {
       return false;
     }
   };
-  return { checkout: { cwd, isRootCheckout } };
+  return { checkout: { cwd, isRootCheckout, platform: process.platform } };
 }

@@ -46,6 +46,7 @@ import {
   buildTrackedSet,
   pathExists,
   classifyDocLintPath,
+  vendoredSkillNames,
 } from "./lib/doc-lint.mjs";
 import { checkMarkdownLinks } from "./lib/doc-lint-links.mjs";
 import {
@@ -101,17 +102,18 @@ const workingTreeFiles = [
 ];
 const scanFiles = STAGED ? indexedFiles : workingTreeTrackedFiles;
 const trackedSet = buildTrackedSet(STAGED ? indexedFiles : workingTreeFiles);
+const vendoredNames = vendoredSkillNames(indexedFiles);
 const dateStampFiles = scanFiles.filter(
-  (rel) => classifyDocLintPath(rel).dateStamps,
+  (rel) => classifyDocLintPath(rel, vendoredNames).dateStamps,
 );
 const pathRefScanFiles = scanFiles.filter(
-  (rel) => classifyDocLintPath(rel).pathRefs,
+  (rel) => classifyDocLintPath(rel, vendoredNames).pathRefs,
 );
 const commandFiles = scanFiles.filter(
-  (rel) => classifyDocLintPath(rel).illegalInvocations,
+  (rel) => classifyDocLintPath(rel, vendoredNames).illegalInvocations,
 );
 const skillMetaFiles = scanFiles.filter(
-  (rel) => classifyDocLintPath(rel).skillMeta,
+  (rel) => classifyDocLintPath(rel, vendoredNames).skillMeta,
 );
 
 function main() {

@@ -15,7 +15,7 @@
 //                            -> the root is the integration checkout: it stays on main and
 //                                nothing is branched, switched, or committed there; a job runs in
 //                                a linked worktree. Judged only when the hook passes
-//                                `checkout` ({ cwd, isRootCheckout(dir) }, resolved by git in
+//                                `checkout` ({ cwd, isRootCheckout(dir), platform }, resolved in
 //                                scripts/lib/checkout-context.mjs); `git switch main`,
 //                                `git branch -d`, pulls, and worktree upkeep stay allowed
 //
@@ -30,11 +30,12 @@
 // case-insensitive volume, so `Git push --force` runs the real binary. Only the name is widened;
 // subcommands and flags stay exact (`git COMMIT` is not a command, `-F` is not `-f`), and `cd` stays
 // lowercase because a capitalised `CD` runs /usr/bin/cd in a child process and moves nothing.
-import { resolve } from 'node:path';
+import { posix, win32 } from 'node:path';
 
 // Returns a reason string when `cmd` should be blocked, or "" when it's allowed. `checkout` is the
-// hook's working-directory context, `{ cwd, isRootCheckout(dir) }`; without it the root-checkout rule
-// is not judged, and every other rule is unchanged.
+// hook's working-directory context, `{ cwd, isRootCheckout(dir), platform }`, whose platform picks the
+// path rules the walk resolves with; without it the root-checkout rule is not judged, and every other
+// rule is unchanged.
 export function blockReason(cmd, checkout) {
   cmd = cmd ?? "";
   // Widen each letter of a name to its own class rather than using a regex `i` flag, which would
@@ -158,7 +159,12 @@ export function blockReason(cmd, checkout) {
   // Fail-OPEN residuals, named: a target the guard cannot resolve (`cd` alone, `cd -`, `~`, a
   // variable, a blanked span) is an unknown candidate the walk cannot judge, though the known ones
   // beside it still are, and --git-dir/--work-tree on the invocation makes the invocation unknown;
-  // `pushd` and a backslash-escaped space in a path are not modelled.
+  // `pushd` and a backslash-escaped space in a path are not modelled. On Windows a path is read as Git
+  // Bash reads it, the shell Claude Code's Bash tool runs there: `/c/...` is drive C:, and any other
+  // single-slash rooted path is an unresolved target, since Git Bash maps it to a folder the walk
+  // cannot name (its install folder, or the user's temp folder for `/tmp`). PowerShell reads a rooted
+  // path against the current drive instead; no PowerShell command reaches the guard yet, and the Codex
+  // hook would hand one the same win32 context, so #1471 and #1480 own reading it as PowerShell does.
   // Fail-CLOSED residuals: a parenthesised `(cd x && …)` never relocates, because nothing would
   // restore the directory when the subshell closes, so the whole command is judged where it started;
   // `cd x || exit 1; git commit` keeps the old directory as a candidate although the exit would have
@@ -166,11 +172,18 @@ export function blockReason(cmd, checkout) {
   // known to have succeeded. All are visible and recoverable: chain with `&&`.
   const CD_SEGMENT = /^cd(?:\s+(\S+))?(?:\s|$)/;
   const GIT_BRANCH_WORK = new RegExp(String.raw`^${GIT_EXEC}\s+((?:${GIT_OPT_WITH_ARG}|-\S+\s+)*)(commit|checkout|switch|branch|merge|cherry-pick|revert|rebase|am)(?=\s|$)(.*)$`);
+  const onWindows = checkout?.platform === 'win32';
+  const { isAbsolute, resolve } = onWindows ? win32 : posix;
   const relocate = (from, target) => {
     if (target === undefined) return null;
     const planted = /^␀(\d+)␀$/.exec(target);
-    const path = planted ? quotedPaths[Number(planted[1])] : target;
-    if (/^[-~]|[$`]/.test(path) || (from === null && !path.startsWith('/'))) return null;
+    let path = planted ? quotedPaths[Number(planted[1])] : target;
+    if (onWindows) {
+      const drive = /^\/([A-Za-z])(?=\/|$)/.exec(path);
+      if (drive) path = `${drive[1].toUpperCase()}:\\${path.slice(2)}`;
+      else if (/^\/(?!\/)/.test(path)) return null;
+    }
+    if (/^[-~]|[$`]/.test(path) || (from === null && !isAbsolute(path))) return null;
     return resolve(from ?? '', path);
   };
   const isBranchWork = (subcommand, args) => {

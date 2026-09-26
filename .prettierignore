@@ -22,6 +22,7 @@ CONTEXT.md
 .claude/agents/
 .claude/hooks/
 .claude/settings.json
+.claude/skills/
 .claude/templates/
 .codex/agents/
 .codex/hooks/
@@ -58,6 +59,7 @@ scripts/lib/cli-flags.mjs
 scripts/lib/cli-flags.test.mjs
 scripts/lib/codex-hook-adapters.mjs
 scripts/lib/codex-hook-adapters.test.mjs
+scripts/lib/codex-hooks-windows.test.mjs
 scripts/lib/doc-lint-citations.mjs
 scripts/lib/doc-lint-citations.test.mjs
 scripts/lib/doc-lint-links.mjs
@@ -71,6 +73,8 @@ scripts/lib/handoff-check.mjs
 scripts/lib/handoff-check.test.mjs
 scripts/lib/issue-publish.mjs
 scripts/lib/issue-publish.test.mjs
+scripts/lib/posix-shell.mjs
+scripts/lib/posix-shell.test.mjs
 scripts/lib/precommit.test.mjs
 scripts/lib/prepush.test.mjs
 scripts/lib/run-log.test.mjs

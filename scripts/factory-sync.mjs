@@ -72,8 +72,8 @@ function write() {
 function sync({ from, into = '.', canonical }) {
   const [source, target] = [topLevel(from), topLevel(into)];
   if (source === target) throw new Error(`the source and target are the same repository (${source})`);
-  const { files, symlinks, regions } = syncInto({ source, target, canonical, fetchMain });
-  console.log(`factory-sync: wrote ${files} files, ${symlinks} symlinks and ${regions} regions from ${source} into ${target}`);
+  const { files, regions } = syncInto({ source, target, canonical, fetchMain });
+  console.log(`factory-sync: wrote ${files} files and ${regions} regions from ${source} into ${target}`);
 }
 
 function fetchCanonicalManifest(canonical) {
