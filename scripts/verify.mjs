@@ -352,7 +352,7 @@ function nonExecutableRegularOrAbsent(mode) {
   return mode === "000000" || mode === "100644";
 }
 
-function classifyChanges(changes) {
+export function classifyChanges(changes) {
   if (changes.length === 0) {
     return { browser: false, database: false, reason: "no changed paths" };
   }

@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   baselineVerificationSteps,
+  classifyChanges,
   expensiveVerificationSteps,
   main,
 } from "./verify.mjs";
@@ -143,20 +144,26 @@ it("keeps explicit Node workflow entry points non-executable for baseline eligib
 it.each(explicitNodeWorkflowEntries)(
   "rejects executable explicit Node workflow entry %s for baseline eligibility",
   (path) => {
-    const repository = createRepository();
-    write(repository, path, "export {};\n");
-    chmodSync(join(repository, path), 0o755);
-    git(repository, ["add", path]);
-    git(repository, ["commit", "-m", `executable ${path}`]);
-    const rejected = runVerification(repository);
-    expect(rejected.status).toBe(0);
-    expect(rejected.calls.map(([command, args]) => [command, args])).toEqual([
-      ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
-    ]);
-    expect(rejected.stdout).toHaveBeenCalledWith(
-      expect.stringContaining(`${path} is executable`),
-    );
+    expect(
+      classifyChanges([
+        { path, oldMode: "100644", newMode: "100644", status: "M" },
+      ]),
+    ).toEqual({
+      browser: false,
+      database: false,
+      reason: `only approved workflow or prose changed: ${path}`,
+    });
+    for (const [oldMode, newMode, status] of [
+      ["000000", "100755", "A"],
+      ["100644", "100755", "M"],
+      ["100755", "100644", "M"],
+    ]) {
+      expect(classifyChanges([{ path, oldMode, newMode, status }])).toEqual({
+        browser: true,
+        database: true,
+        reason: `${path} is executable or has an executable-mode change`,
+      });
+    }
   },
 );
 
@@ -1243,9 +1250,10 @@ describe("repository verification command", () => {
 
       const result = runVerification(repository);
 
-      expect(result.calls).toHaveLength(
-        requiredBaselineSteps.length + requiredExpensiveSteps.length,
-      );
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual([
+        ...requiredBaselineSteps,
+        ...requiredExpensiveSteps,
+      ]);
       expect(result.stdout).toHaveBeenCalledWith(
         expect.stringMatching(/executable/i),
       );
