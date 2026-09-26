@@ -154,6 +154,22 @@ normal installed-dependency, Docker and browser prerequisites. An unidentified f
 child diagnosis without claiming the combined route is the smallest group. Raw build or scan arguments identify
 the attempt only. Diagnostics include no environment values.
 
+Disposable access verification emits `access-phase` records for shared project preparation, startup,
+ownership validation, reset and credential retrieval, each invoked database or browser check, and cleanup.
+`scope` distinguishes `shared-setup`, `check` and `shared-cleanup`; `inclusive: true` marks outer cleanup and
+`access-lifecycle` totals, which already include their children and must not be added to them. The final lifecycle
+record follows cleanup, including failed or interrupted checks. `cleanupMs: null` with `cleanupReason` means
+exact teardown could not be completed and resources may be retained; an observed cleanup span does not establish
+successful teardown. Fixed names and exact command vectors accompany UTC timestamps, monotonic milliseconds and
+exit, signal or spawn-failure outcomes. Records contain no environment values, SQL, credentials or child output.
+
+Known internal database failures reproduce with `npm run verify:access:database`; known browser failures with
+`npm run verify:access:browser`; fixture-only failures with `node scripts/verify-access.mjs --fixture-contract`.
+Shared preparation and cleanup failures repeat the original mode, including `npm run verify:access` for combined
+verification. `attemptedCommand` identifies the actual failing invocation; no smallest child group is guessed for
+shared work. Command doubles prove reporting and routing, while real disposable database evidence remains required
+for database invariants.
+
 Run focused checks, intentional red/restored green proofs, and convergence through `node scripts/run-log.mjs <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.

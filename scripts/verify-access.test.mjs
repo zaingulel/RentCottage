@@ -343,6 +343,7 @@ async function observeInterruptedAccessVerification(
     inspectionFailure,
     interruptStartup = false,
     cleanupStage,
+    observeTiming,
   } = {},
 ) {
   assertProcessObserverReady();
@@ -623,6 +624,8 @@ if (args[1] === "status") {
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
+    const stdout = [];
+    wrapper.stdout.on("data", (chunk) => stdout.push(String(chunk)));
     const stderr = [];
     wrapper.stderr.on("data", (chunk) => stderr.push(String(chunk)));
     if (cleanupStage) {
@@ -855,6 +858,20 @@ if (args[1] === "status") {
     );
     expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
     expect(stderr.join("")).toBe("");
+    if (observeTiming) {
+      await waitForCondition(
+        () => stdout.join("").includes('"type":"access-lifecycle"'),
+        "access lifecycle completion record",
+      );
+      observeTiming(
+        stdout
+          .join("")
+          .trim()
+          .split("\n")
+          .filter((line) => line.startsWith("{"))
+          .map((line) => JSON.parse(line)),
+      );
+    }
   } finally {
     const cleanupErrors = [];
     const identities = [
@@ -2889,4 +2906,428 @@ setInterval(() => {}, 1000);
     expect(stderr).toHaveBeenCalledWith("Local Supabase cleanup failed.");
     expect(removeTemp).not.toHaveBeenCalled();
   });
+  it("reports shared access phase costs and the authoritative failing child group", async () => {
+    const captureCommand = [
+      "node",
+      "scripts/verify-booking-request-capture-concurrency.mjs",
+    ];
+    const nextCommand = [browserCommands[2][0], ...browserCommands[2][1]];
+    const fixtureCommand = [
+      "node",
+      "scripts/verify-access-fixture-contract.mjs",
+    ];
+    const scenarios = [
+      {
+        args: [],
+        failure: captureCommand,
+        recipe: ["npm", "run", "verify:access:database"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+          ...databaseCheckCommands.slice(0, 10),
+        ],
+      },
+      {
+        args: [],
+        failure: nextCommand,
+        recipe: ["npm", "run", "verify:access:browser"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+          ...databaseCheckCommands,
+          ...browserCommands.slice(0, 3),
+        ],
+      },
+      {
+        args: ["--fixture-contract"],
+        failure: fixtureCommand,
+        recipe: ["node", "scripts/verify-access.mjs", "--fixture-contract"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          statusCommand,
+          databaseCheckCommands[0],
+        ],
+      },
+      {
+        args: [],
+        credentials: "secret-invalid-json",
+        recipe: ["npm", "run", "verify:access"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+        ],
+      },
+      {
+        args: [],
+        credentials: JSON.stringify({
+          API_URL: {},
+          PUBLISHABLE_KEY: [],
+          SECRET_KEY: true,
+        }),
+        recipe: ["npm", "run", "verify:access"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+        ],
+      },
+      {
+        args: [],
+        schema: "secret-schema-invalid-json",
+        recipe: ["npm", "run", "verify:access:database"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          declaredSchemaDiffCommand,
+        ],
+      },
+      {
+        args: ["--browser"],
+        failure: ["npx", "supabase", "db", "reset", "--local"],
+        prefix: true,
+        recipe: ["npm", "run", "verify:access:browser"],
+        before: [startCommand, ownershipCommand, resetCommand],
+      },
+    ];
+    for (const scenario of scenarios) {
+      let tick = 100;
+      const timestamp = () =>
+        new Date(Date.UTC(2026, 0, 1) + tick).toISOString();
+      const lines = [];
+      const baseRun = successfulRun();
+      const run = vi.fn((command, args, options) => {
+        // Advance time in actual work, including ownership inspections.
+        tick += 7;
+        const vector = [command, ...args];
+        if (
+          scenario.failure &&
+          (scenario.prefix
+            ? vector.slice(0, scenario.failure.length).join("|") ===
+              scenario.failure.join("|")
+            : vector.join("|") === scenario.failure.join("|"))
+        )
+          return { status: 9 };
+        if (args[1] === "status" && scenario.credentials !== undefined)
+          return { status: 0, stdout: scenario.credentials };
+        if (
+          args[1] === "db" &&
+          args[2] === "diff" &&
+          scenario.schema !== undefined
+        )
+          return { status: 0, stdout: scenario.schema };
+        return baseRun(command, args, options);
+      });
+      expect(
+        await mainWithPreparedProject(scenario.args, {
+          environment: { HIDDEN_VALUE: "hidden-environment-value" },
+          makeTemp: () => "/tmp/access-timing",
+          prepareProject: ({ stateRoot }) => {
+            tick += 11;
+            return join(stateRoot, "project");
+          },
+          removeTemp: () => {
+            tick += 3;
+          },
+          run,
+          stderr: vi.fn(),
+          stdout: (line) => lines.push(JSON.parse(line)),
+          monotonicNow: () => tick,
+          utcNow: timestamp,
+        }),
+      ).toBe(scenario.failure ? 9 : 1);
+      expect(commands(run)).toEqual([
+        ...scenario.before,
+        ownershipCommand,
+        stopCommand,
+      ]);
+      const records = lines.filter((line) => line.type === "access-phase");
+      expect(records[0]).toMatchObject({
+        name: "project-preparation",
+        command: null,
+        scope: "shared-setup",
+        durationMs: 11,
+        inclusive: false,
+        startedAt: "2026-01-01T00:00:00.100Z",
+        completedAt: "2026-01-01T00:00:00.111Z",
+      });
+      const commandRecords = records.filter((line) => line.command !== null);
+      expect(
+        commandRecords.map((line) => [line.command[0], line.command.slice(1)]),
+      ).toEqual(commands(run));
+      for (const record of commandRecords) {
+        expect(record.durationMs).toBe(7);
+        expect(
+          Date.parse(record.completedAt) - Date.parse(record.startedAt),
+        ).toBe(7);
+      }
+      expect(
+        lines.filter((line) => line.type === "verification-failure"),
+      ).toEqual([
+        {
+          type: "verification-failure",
+          attemptedCommand: commandRecords.at(-3).command,
+          reproduceGroup: scenario.recipe,
+        },
+      ]);
+      const summary = lines.at(-1);
+      expect(summary).toMatchObject({
+        type: "access-lifecycle",
+        inclusive: true,
+        durationMs: 11 + commands(run).length * 7 + 3,
+        cleanupMs: 17,
+        cleanupReason: null,
+        outcome: { type: "exit", status: scenario.failure ? 9 : 1 },
+      });
+      expect(summary.sharedSetupMs).toBe(
+        records
+          .filter((line) => line.scope === "shared-setup")
+          .reduce((sum, line) => sum + line.durationMs, 0),
+      );
+      expect(summary.checksMs).toBe(
+        records
+          .filter((line) => line.scope === "check")
+          .reduce((sum, line) => sum + line.durationMs, 0),
+      );
+      expect(summary.sharedSetupMs + summary.checksMs + summary.cleanupMs).toBe(
+        summary.durationMs,
+      );
+      expect(JSON.stringify(lines)).not.toMatch(
+        /hidden-environment-value|local-secret|local-publishable|secret-invalid-json|secret-schema-invalid-json/,
+      );
+      if (scenario.failure)
+        expect(commandRecords.at(-3).outcome).toEqual({
+          type: "exit",
+          status: 9,
+        });
+    }
+  });
+
+  it("finishes access timing after cleanup and preserves failed or retained teardown", async () => {
+    for (const scenario of [
+      "passed",
+      "cleanup-failure",
+      "primary-and-cleanup-failure",
+      "ownership-change",
+      "ownership-spawn-failure",
+      "startup-interrupted",
+      "child-interrupted",
+      "spawn-failure",
+      "preparation-failure",
+    ]) {
+      let tick = 100;
+      let inspections = 0;
+      const lines = [];
+      const removeTemp = vi.fn(() => {
+        tick += 3;
+      });
+      const baseRun = successfulRun();
+      const run = vi.fn((command, args, options) => {
+        tick += args[1] === "stop" ? 41 : 7;
+        if (command === "docker") {
+          inspections += 1;
+          if (scenario === "ownership-spawn-failure")
+            return {
+              error: Object.assign(new Error("inspection unavailable"), {
+                code: "EACCES",
+              }),
+            };
+          if (scenario === "ownership-change" && inspections === 2)
+            return { status: 0, stdout: "foreign-project|foreign-workdir\n" };
+        }
+        if (args[1] === "stop" && scenario.includes("cleanup-failure"))
+          return { status: 6 };
+        if (args[0] === "scripts/verify-access-fixture-contract.mjs") {
+          if (scenario === "primary-and-cleanup-failure") return { status: 9 };
+          if (scenario === "child-interrupted") process.emit("SIGTERM");
+          if (scenario === "ownership-spawn-failure")
+            expect(
+              lines.find((line) => line.name === "startup-ownership").outcome,
+            ).toEqual({ type: "spawn-failure", code: "EACCES" });
+          if (scenario === "spawn-failure")
+            return {
+              error: Object.assign(new Error("no child"), { code: "ENOENT" }),
+            };
+        }
+        if (args[1] === "start" && scenario === "startup-interrupted")
+          process.emit("SIGTERM");
+        return baseRun(command, args, options);
+      });
+      const expected =
+        scenario === "passed"
+          ? 0
+          : scenario === "cleanup-failure"
+            ? 6
+            : scenario === "primary-and-cleanup-failure"
+              ? 9
+              : scenario.includes("interrupted")
+                ? 143
+                : 1;
+      expect(
+        await mainWithPreparedProject(["--fixture-contract"], {
+          environment: {},
+          makeTemp: () => "/tmp/access-timing",
+          removeTemp,
+          run,
+          prepareProject: ({ stateRoot }) => {
+            tick += 11;
+            if (scenario === "preparation-failure")
+              throw new Error("preparation failed");
+            return join(stateRoot, "project");
+          },
+          stderr: vi.fn(),
+          stdout: (line) => lines.push(JSON.parse(line)),
+          monotonicNow: () => tick,
+          utcNow: () => new Date(Date.UTC(2026, 0, 1) + tick).toISOString(),
+        }),
+      ).toBe(expected);
+      const retained = [
+        "cleanup-failure",
+        "primary-and-cleanup-failure",
+        "ownership-change",
+        "ownership-spawn-failure",
+        "startup-interrupted",
+      ].includes(scenario);
+      const cleanup = lines.find((line) => line.name === "outer-cleanup");
+      const summary = lines.at(-1);
+      expect(cleanup).toMatchObject({
+        type: "access-phase",
+        name: "outer-cleanup",
+        scope: "shared-cleanup",
+        inclusive: true,
+        outcome: { type: "exit", status: retained ? 1 : 0 },
+      });
+      expect(summary).toMatchObject({
+        type: "access-lifecycle",
+        inclusive: true,
+        durationMs: tick - 100,
+        completedAt: new Date(Date.UTC(2026, 0, 1) + tick).toISOString(),
+        cleanupMs: retained ? null : cleanup.durationMs,
+        cleanupReason: retained
+          ? "Exact cleanup could not be completed; resources may be retained."
+          : null,
+        outcome: scenario.includes("interrupted")
+          ? { type: "signal", signal: "SIGTERM" }
+          : { type: "exit", status: expected },
+      });
+      expect(removeTemp).toHaveBeenCalledTimes(retained ? 0 : 1);
+      const stop = lines.find((line) => line.name === "supabase-stop");
+      if (
+        [
+          "ownership-change",
+          "ownership-spawn-failure",
+          "startup-interrupted",
+          "preparation-failure",
+        ].includes(scenario)
+      ) {
+        expect(stop).toBeUndefined();
+      } else {
+        expect(stop.durationMs).toBe(41);
+        expect(Date.parse(summary.completedAt)).toBeGreaterThanOrEqual(
+          Date.parse(stop.completedAt),
+        );
+        expect(stop.outcome).toEqual({
+          type: "exit",
+          status: scenario.includes("cleanup-failure") ? 6 : 0,
+        });
+      }
+      const diagnostics = lines.filter(
+        (line) => line.type === "verification-failure",
+      );
+      expect(
+        diagnostics.every(
+          (line) =>
+            line.reproduceGroup.join(" ") ===
+            "node scripts/verify-access.mjs --fixture-contract",
+        ),
+      ).toBe(true);
+      if (scenario === "spawn-failure")
+        expect(
+          lines.find(
+            (line) =>
+              line.name === "scripts/verify-access-fixture-contract.mjs",
+          ).outcome,
+        ).toEqual({ type: "spawn-failure", code: "ENOENT" });
+    }
+    for (const failure of ["temporary-state", "preparation-cleanup"]) {
+      let tick = 100;
+      const lines = [];
+      const run = vi.fn();
+      const removeTemp = vi.fn(() => {
+        tick += 13;
+        throw new Error("cleanup failed");
+      });
+      await expect(
+        mainWithPreparedProject([], {
+          environment: {},
+          run,
+          removeTemp,
+          makeTemp: () => {
+            tick += 5;
+            if (failure === "temporary-state")
+              throw new Error("temporary state failed");
+            return "/tmp/access-timing";
+          },
+          prepareProject: () => {
+            tick += 11;
+            throw new Error("preparation failed");
+          },
+          stdout: (line) => lines.push(JSON.parse(line)),
+          stderr: vi.fn(),
+          monotonicNow: () => tick,
+          utcNow: () => new Date(Date.UTC(2026, 0, 1) + tick).toISOString(),
+        }),
+      ).rejects.toThrow(
+        failure === "temporary-state"
+          ? "temporary state failed"
+          : "cleanup failed",
+      );
+      expect(run).not.toHaveBeenCalled();
+      expect(removeTemp).toHaveBeenCalledTimes(
+        failure === "temporary-state" ? 0 : 1,
+      );
+      expect(lines.at(-1)).toMatchObject({
+        type: "access-lifecycle",
+        durationMs: tick - 100,
+        cleanupMs: null,
+        cleanupReason:
+          failure === "temporary-state"
+            ? "Cleanup was not entered because temporary project state was not created."
+            : "Exact cleanup could not be completed; resources may be retained.",
+        outcome: { type: "exit", status: 1 },
+      });
+    }
+    await observeInterruptedAccessVerification("SIGTERM", {
+      observeTiming: (lines) => {
+        const summary = lines.at(-1);
+        expect(summary).toMatchObject({
+          type: "access-lifecycle",
+          cleanupReason: null,
+          outcome: { type: "signal", signal: "SIGTERM" },
+        });
+        expect(summary.cleanupMs).toBeGreaterThanOrEqual(0);
+        const stopped = lines.find((line) => line.name === "supabase-stop");
+        expect(stopped.outcome).toEqual({ type: "exit", status: 0 });
+        expect(Date.parse(summary.completedAt)).toBeGreaterThanOrEqual(
+          Date.parse(stopped.completedAt),
+        );
+        expect(
+          lines.find((line) => line.name === "supabase-db-reset").outcome,
+        ).toEqual({ type: "signal", signal: "SIGTERM" });
+      },
+    });
+  }, 15_000);
 });
