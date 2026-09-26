@@ -262,8 +262,11 @@ remaining Worker build, secret scan, browser and smoke commands too. Combined ac
 and independently completed database evidence survives a later browser failure. Failed, interrupted, unreached or
 superseded attempts never certify success. Every local `--full` invocation executes its selected services fresh,
 while genuinely completed stable groups may seed later ordinary local reuse. Hosted runs neither consume nor
-retain local evidence. Reports distinguish executed checks, reused local evidence with provenance, and groups
-not selected; phase outcomes and fresh reproduction recipes remain authoritative.
+retain local evidence. Selected groups report fresh execution or reuse with provenance; unselected groups have
+one canonical skipped report. A spawn failure reports that fresh verification could not start. A command
+that starts and then exits unsuccessfully or receives a signal reports execution, without certifying group
+completion. Admission failure reports no service execution. Phase outcomes, completion records and fresh
+reproduction recipes remain authoritative.
 
 A green ordinary verification receipt may include reused service evidence. Fresh local convergence must use
 explicit `--full` and quote it in run-log's exact argument vector, for example
@@ -272,7 +275,9 @@ explicit `--full` and quote it in run-log's exact argument vector, for example
 `--full` always executes selected groups fresh and invalidates their local markers before launch. `CI` or
 `GITHUB_ACTIONS` disables local reuse and persistence. Hosted baseline, database and browser jobs and their final
 aggregate still require fresh success on the same exact merge revision. `--plan` probes no runtime inputs and writes
-no local records: it prints the selected command plan and states that eligibility is checked during execution.
+no local records: it prints the selected command plan. Only ordinary local plans with selected services state
+that reuse eligibility will be checked during execution; baseline-only, unselected, forced and hosted plans
+make no reuse promise.
 Local reuse never replaces the final exact-source hosted gate or real PostgreSQL, Worker and browser proof.
 
 The recurring cost is conservative source/runtime content capture, private records and focused contract tests.

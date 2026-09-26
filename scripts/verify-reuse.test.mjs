@@ -1,5 +1,7 @@
+import fs from "node:fs";
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   renameSync,
@@ -8,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -31,6 +33,456 @@ import {
 } from "./verify-test-fixtures.mjs";
 
 describe("repository verification command", () => {
+  it("reports group states without duplicates or invented execution", () => {
+    const reports = (result) =>
+      result.stdout.mock.calls
+        .flat()
+        .filter((line) =>
+          /^(?:Baseline|Database|Browser|Expensive) verification:|^(?:database|browser):/.test(
+            line,
+          ),
+        );
+    const records = (mock, type) =>
+      mock.mock.calls
+        .flat()
+        .filter((line) => line.startsWith("{"))
+        .map((line) => JSON.parse(line))
+        .filter((record) => record.type === type);
+    const baselineRepository = createRepository();
+    const baseline = localVerification(baselineRepository, {
+      args: ["--baseline"],
+    });
+    expect(baseline.status).toBe(0);
+    expect(commands(baseline)).toEqual(requiredBaselineSteps);
+    expect(reports(baseline)).toEqual([
+      "Baseline verification: selected",
+      "Database verification: skipped (baseline mode)",
+      "Browser verification: skipped (baseline mode)",
+      "Expensive verification: skipped (baseline mode)",
+    ]);
+
+    const scenarios = [
+      {
+        args: ["--full"],
+        steps: [...requiredBaselineSteps, ...requiredExpensiveSteps],
+        selection: [
+          "Baseline verification: selected",
+          "Database verification: selected (explicit --full)",
+          "Browser verification: selected (explicit --full)",
+          "Expensive verification: selected (explicit --full)",
+        ],
+        fresh: [
+          "database: fresh local verification required (explicit --full)",
+          "browser: fresh local verification required (explicit --full)",
+        ],
+        executed: [
+          "database: executed fresh verification",
+          "browser: executed fresh verification",
+        ],
+        couldNotStart: [
+          "database: fresh verification could not start",
+          "browser: fresh verification could not start",
+        ],
+        access: ["npm", ["run", "verify:access"]],
+        reproduction: {
+          reproduceSelectedGroups: ["npm", "run", "verify", "--", "--full"],
+        },
+        completed: ["database", "browser"],
+      },
+      {
+        args: ["--database", "--full"],
+        steps: requiredDatabaseSteps,
+        selection: [
+          "Baseline verification: unselected",
+          "Database verification: selected (explicit --full)",
+          "Browser verification: skipped (explicit --full)",
+          "Expensive verification: selected (explicit --full)",
+        ],
+        fresh: [
+          "database: fresh local verification required (explicit --full)",
+        ],
+        executed: ["database: executed fresh verification"],
+        couldNotStart: ["database: fresh verification could not start"],
+        access: ["npm", ["run", "verify:access:database"]],
+        reproduction: {
+          reproduceGroup: [
+            "npm",
+            "run",
+            "verify",
+            "--",
+            "--database",
+            "--full",
+          ],
+        },
+        completed: ["database"],
+      },
+      {
+        args: ["--browser", "--full"],
+        steps: requiredBrowserSteps,
+        selection: [
+          "Baseline verification: unselected",
+          "Database verification: skipped (explicit --full)",
+          "Browser verification: selected (explicit --full)",
+          "Expensive verification: selected (explicit --full)",
+        ],
+        fresh: ["browser: fresh local verification required (explicit --full)"],
+        executed: ["browser: executed fresh verification"],
+        couldNotStart: ["browser: fresh verification could not start"],
+        access: ["npm", ["run", "verify:access:browser"]],
+        reproduction: {
+          reproduceGroup: ["npm", "run", "verify", "--", "--browser", "--full"],
+        },
+        completed: ["browser"],
+      },
+    ];
+    const failures = [
+      {
+        result: {
+          status: null,
+          error: Object.assign(new Error("fixture cannot start"), {
+            code: "ENOENT",
+          }),
+        },
+        status: 1,
+        outcome: { type: "spawn-failure", code: "ENOENT" },
+        started: false,
+      },
+      {
+        result: { status: 7 },
+        status: 7,
+        outcome: { type: "exit", status: 7 },
+        started: true,
+      },
+      {
+        result: { status: null, signal: "SIGTERM" },
+        status: 1,
+        outcome: { type: "signal", signal: "SIGTERM" },
+        started: true,
+      },
+    ];
+    for (const scenario of scenarios) {
+      const repository = createRepository();
+      const successful = localVerification(repository, { args: scenario.args });
+      expect(successful.status).toBe(0);
+      expect(commands(successful)).toEqual(scenario.steps);
+      expect(reports(successful)).toEqual([
+        ...scenario.selection,
+        ...scenario.fresh,
+        ...scenario.executed,
+      ]);
+      for (const group of ["database", "browser"])
+        expect(existsSync(evidenceFile(repository, "success", group))).toBe(
+          scenario.completed.includes(group),
+        );
+      for (const failure of failures) {
+        const failedRepository = createRepository();
+        const failedIndex = scenario.steps.findIndex(
+          ([command, args]) =>
+            command === scenario.access[0] && args[1] === scenario.access[1][1],
+        );
+        const run = vi.fn(() =>
+          run.mock.calls.length === failedIndex + 1
+            ? failure.result
+            : { status: 0 },
+        );
+        const failed = localVerification(failedRepository, {
+          args: scenario.args,
+          run,
+        });
+        expect(failed.status).toBe(failure.status);
+        expect(commands(failed)).toEqual(
+          scenario.steps.slice(0, failedIndex + 1),
+        );
+        expect(reports(failed)).toEqual([
+          ...scenario.selection,
+          ...scenario.fresh,
+          ...(failure.started ? scenario.executed : scenario.couldNotStart),
+        ]);
+        const phases = records(failed.stdout, "verification-phase");
+        expect(phases.map((phase) => phase.command)).toEqual(
+          scenario.steps
+            .slice(0, failedIndex + 1)
+            .map(([command, args]) => [command, ...args]),
+        );
+        expect(phases.slice(0, -1).map((phase) => phase.outcome)).toEqual(
+          Array.from({ length: failedIndex }, () => ({
+            type: "exit",
+            status: 0,
+          })),
+        );
+        expect(phases.at(-1).outcome).toEqual(failure.outcome);
+        expect(records(failed.stderr, "verification-failure")).toEqual([
+          {
+            type: "verification-failure",
+            attemptedCommand: [scenario.access[0], ...scenario.access[1]],
+            ...scenario.reproduction,
+          },
+        ]);
+        for (const group of ["database", "browser"])
+          expect(
+            existsSync(evidenceFile(failedRepository, "success", group)),
+          ).toBe(false);
+      }
+    }
+
+    const reuseRepository = createRepository();
+    commit(reuseRepository, "src/runtime.ts", "seed\n");
+    const head = git(reuseRepository, ["rev-parse", "HEAD"]);
+    const base = git(reuseRepository, ["merge-base", "origin/main", "HEAD"]);
+    const cold = localVerification(reuseRepository);
+    expect(cold.status).toBe(0);
+    expect(commands(cold)).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+    expect(reports(cold)).toEqual([
+      "Baseline verification: selected",
+      "Database verification: selected (src/runtime.ts requires full evidence)",
+      "Browser verification: selected (src/runtime.ts requires full evidence)",
+      "Expensive verification: selected (src/runtime.ts requires full evidence)",
+      "database: fresh local verification required (local evidence missing, stale or unavailable)",
+      "browser: fresh local verification required (local evidence missing, stale or unavailable)",
+      "database: executed fresh verification",
+      "browser: executed fresh verification",
+    ]);
+    commit(reuseRepository, "AGENTS.md", "repaired instructions\n");
+    const reused = localVerification(reuseRepository);
+    expect(reused.status).toBe(0);
+    expect(commands(reused)).toEqual(requiredBaselineSteps);
+    expect(reports(reused)).toEqual([
+      "Baseline verification: selected",
+      "Database verification: selected (src/runtime.ts requires full evidence)",
+      "Browser verification: selected (src/runtime.ts requires full evidence)",
+      "Expensive verification: selected (src/runtime.ts requires full evidence)",
+      `database: reused local evidence from HEAD ${head}; base ${base}`,
+      `browser: reused local evidence from HEAD ${head}; base ${base}`,
+    ]);
+
+    const laterRepository = createRepository();
+    const laterRun = vi.fn((_command, args) => ({
+      status: args[1] === "test:browser" ? 9 : 0,
+    }));
+    const later = localVerification(laterRepository, {
+      args: ["--full"],
+      run: laterRun,
+    });
+    expect(later.status).toBe(9);
+    expect(commands(later)).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps.slice(0, 4),
+    ]);
+    expect(reports(later)).toEqual([
+      ...scenarios[0].selection,
+      ...scenarios[0].fresh,
+      ...scenarios[0].executed,
+    ]);
+    expect(records(later.stdout, "verification-phase").at(-1)).toMatchObject({
+      command: ["npm", "run", "test:browser"],
+      outcome: { type: "exit", status: 9 },
+    });
+    expect(records(later.stderr, "verification-failure")).toEqual([
+      {
+        type: "verification-failure",
+        attemptedCommand: ["npm", "run", "test:browser"],
+        reproduceGroup: ["npm", "run", "verify", "--", "--browser", "--full"],
+      },
+    ]);
+    expect(
+      existsSync(evidenceFile(laterRepository, "success", "database")),
+    ).toBe(true);
+    expect(
+      existsSync(evidenceFile(laterRepository, "success", "browser")),
+    ).toBe(false);
+
+    const blockedRepository = createRepository();
+    const originalRename = fs.renameSync;
+    const denied = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (to.endsWith("browser.attempt.json"))
+        throw Object.assign(new Error("fixture denied browser marker"), {
+          code: "EACCES",
+        });
+      return originalRename(from, to);
+    });
+    try {
+      const blocked = localVerification(blockedRepository, {
+        args: ["--full"],
+      });
+      expect(blocked.status).toBe(1);
+      expect(commands(blocked)).toEqual(requiredBaselineSteps);
+      expect(reports(blocked)).toEqual([
+        ...scenarios[0].selection,
+        scenarios[0].fresh[0],
+      ]);
+      expect(
+        records(blocked.stdout, "verification-phase").map(
+          (phase) => phase.command,
+        ),
+      ).toEqual(
+        requiredBaselineSteps.map(([command, args]) => [command, ...args]),
+      );
+      expect(records(blocked.stderr, "verification-failure")).toEqual([]);
+      expect(records(blocked.stderr, "verification-admission-failure")).toEqual(
+        [
+          {
+            type: "verification-admission-failure",
+            group: "browser",
+            step: "atomic replacement",
+          },
+        ],
+      );
+      for (const group of ["database", "browser"])
+        expect(
+          existsSync(evidenceFile(blockedRepository, "success", group)),
+        ).toBe(false);
+    } finally {
+      denied.mockRestore();
+    }
+  }, 60000);
+
+  it("only promises reuse checks for eligible local service plans", () => {
+    const cases = [
+      {
+        args: [],
+        environment: {},
+        steps: [...requiredBaselineSteps, ...requiredExpensiveSteps],
+        promise: true,
+      },
+      {
+        args: ["--database"],
+        environment: {},
+        steps: requiredDatabaseSteps,
+        promise: true,
+      },
+      {
+        args: ["--browser"],
+        environment: {},
+        steps: requiredBrowserSteps,
+        promise: true,
+      },
+      {
+        args: [],
+        environment: { CI: "", GITHUB_ACTIONS: "" },
+        steps: [...requiredBaselineSteps, ...requiredExpensiveSteps],
+        promise: true,
+      },
+      {
+        args: ["--baseline"],
+        environment: {},
+        steps: requiredBaselineSteps,
+        promise: false,
+      },
+      {
+        args: ["--full"],
+        environment: {},
+        steps: [...requiredBaselineSteps, ...requiredExpensiveSteps],
+        promise: false,
+      },
+      {
+        args: ["--database", "--full"],
+        environment: {},
+        steps: requiredDatabaseSteps,
+        promise: false,
+      },
+      {
+        args: ["--browser", "--full"],
+        environment: {},
+        steps: requiredBrowserSteps,
+        promise: false,
+      },
+      {
+        args: ["--baseline", "--full"],
+        environment: {},
+        steps: requiredBaselineSteps,
+        promise: false,
+      },
+      ...[
+        { CI: "true" },
+        { CI: "false" },
+        { GITHUB_ACTIONS: "true" },
+        { GITHUB_ACTIONS: "false" },
+      ].flatMap((environment) => [
+        {
+          args: [],
+          environment,
+          steps:
+            environment.GITHUB_ACTIONS === "true"
+              ? requiredCiSteps()
+              : [...requiredBaselineSteps, ...requiredExpensiveSteps],
+          promise: false,
+        },
+        {
+          args: ["--database"],
+          environment,
+          steps: requiredDatabaseSteps,
+          promise: false,
+        },
+        {
+          args: ["--browser"],
+          environment,
+          steps:
+            environment.GITHUB_ACTIONS === "true"
+              ? requiredCiSteps("--browser")
+              : requiredBrowserSteps,
+          promise: false,
+        },
+      ]),
+    ];
+    const markerState = (repository) => {
+      const directory = dirname(evidenceFile(repository, "attempt"));
+      return existsSync(directory)
+        ? fs
+            .readdirSync(directory)
+            .sort()
+            .map((name) => [name, readFileSync(join(directory, name), "utf8")])
+        : null;
+    };
+    const assertPlan = (repository, scenario) => {
+      const before = markerState(repository);
+      const captureRuntimeContract = vi.fn(runtimeFixture);
+      const result = localVerification(repository, {
+        args: [...scenario.args, "--plan"],
+        environment: scenario.environment,
+        captureRuntimeContract,
+      });
+      expect(result.status).toBe(0);
+      expect(result.run).not.toHaveBeenCalled();
+      expect(captureRuntimeContract).not.toHaveBeenCalled();
+      const lines = result.stdout.mock.calls.flat();
+      expect(
+        lines.filter((line) => line.includes("reuse eligibility")),
+      ).toEqual(
+        scenario.promise
+          ? ["Local reuse eligibility will be checked during execution."]
+          : [],
+      );
+      expect(
+        lines
+          .filter((line) => line.startsWith("Planned command: "))
+          .map((line) => JSON.parse(line.slice("Planned command: ".length))),
+      ).toEqual(scenario.steps.map(([command, args]) => [command, ...args]));
+      expect(
+        lines.filter((line) => line === "Plan only: no verification ran."),
+      ).toEqual(["Plan only: no verification ran."]);
+      expect(markerState(repository)).toEqual(before);
+    };
+    for (const retained of [false, true]) {
+      const repository = createRepository();
+      commit(repository, "src/runtime.ts", "seed\n");
+      if (retained) expect(localVerification(repository).status).toBe(0);
+      expect(markerState(repository) !== null).toBe(retained);
+      for (const scenario of cases) assertPlan(repository, scenario);
+    }
+    const unselected = createRepository();
+    for (const args of [[], ["--database"], ["--browser"]])
+      assertPlan(unselected, {
+        args,
+        environment: {},
+        steps: args.length === 0 ? requiredBaselineSteps : [],
+        promise: false,
+      });
+    expect(markerState(unselected)).toBe(null);
+  }, 60000);
+
   it("reuses only unchanged local groups after classified repairs", () => {
     const repository = createRepository();
     commit(repository, "src/runtime.ts", "export const value = 'seed';\n");

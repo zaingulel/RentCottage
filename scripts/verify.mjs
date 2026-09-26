@@ -1309,8 +1309,6 @@ export function main(
   stdout(
     `Browser verification: ${selectedBrowser ? "selected" : "skipped"} (${selection.reason})`,
   );
-  if (!selectedDatabase) stdout("database: not selected");
-  if (!selectedBrowser) stdout("browser: not selected");
   stdout(
     `Expensive verification: ${expensive ? "selected" : "skipped"} (${selection.reason})`,
   );
@@ -1328,6 +1326,8 @@ export function main(
     ...prefixSteps,
     ...serviceVerificationSteps(mode, selectedDatabase, selectedBrowser),
   ];
+  const local = !environment.CI && !environment.GITHUB_ACTIONS;
+  const forced = args.includes("--full");
   if (plan) {
     stdout(
       `Verification scope: ${mode === undefined ? "all groups" : mode.slice(2)}`,
@@ -1340,13 +1340,12 @@ export function main(
         ? "Dependency preflight: Wrangler and Workerd will be checked before execution; not run in plan-only mode."
         : "Dependency preflight: unnecessary because no verification commands are selected.",
     );
-    stdout("Local reuse eligibility will be checked during execution.");
+    if (local && !forced && expensive)
+      stdout("Local reuse eligibility will be checked during execution.");
     stdout("Plan only: no verification ran.");
     return 0;
   }
   if (steps.length > 0 && !checkLockedDependencies(cwd, stderr)) return 1;
-  const local = !environment.CI && !environment.GITHUB_ACTIONS;
-  const forced = args.includes("--full");
   const snapshots = {};
   const tokens = {};
   for (let index = 0; index < steps.length; index += 1) {
