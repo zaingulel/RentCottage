@@ -1,15 +1,22 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+
+const harness = createLocalSupabaseConcurrencyHarness({
+  timing: {
+    check: "verify-booking-request-payment-history-concurrency",
+    isolation: "serial",
+  },
+});
+harness.markTimingPhase("setup");
 // SQL arrangement mirrors admission, isolated effect, and explicit recording.
 const paymentEvidenceSql =
   "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
   "\n-- END PAYMENT EVIDENCE FIXTURE\n";
-import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-
-import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
-
-const harness = createLocalSupabaseConcurrencyHarness();
 const identity = {
   provider: "fictional-payments",
   environment: "local-test",
@@ -69,7 +76,8 @@ const sequences = (session) =>
 
 // Reuse the established public submission scenario through its first finalized
 // request: one indeterminate authorization is resolved by the real query RPC.
-function verifyProviderResolution() {
+export async function verifyProviderResolution(databaseHarness) {
+  databaseHarness.markTimingPhase("setup");
   const submission = readFileSync(
     "supabase/tests/database/booking_request_submission.test.sql",
     "utf8",
@@ -79,20 +87,27 @@ function verifyProviderResolution() {
   assert.ok(submission.includes(cutoff));
   // This self-contained submission source supplies its ordinary authorization helpers.
   // Prepending the recovery/expiry helper overloads would make those calls ambiguous.
-  const result = harness.runSql(
+  const setup =
     submission
       .slice(0, submission.indexOf(cutoff) + cutoff.length)
       .replace(
         "begin;",
         "begin; create extension if not exists pgtap with schema extensions; set local search_path=public,extensions;",
       ) +
-      `
+    `
     reset role;
     update public.account_contexts set role='platform_administrator', owner_approval_state=null where user_id=(select customer_user_id from public.booking_requests);
     select set_config('request.jwt.claims',jsonb_build_object('sub',(select customer_user_id from public.booking_requests),'role','authenticated','aal','aal2')::text,true);
     create temp table history_reference as select booking_request_reference reference from public.booking_requests;
     grant select on history_reference to authenticated;
     set local role authenticated;
+  `;
+  let session, failure;
+  databaseHarness.markTimingPhase("execution");
+  try {
+    session = await databaseHarness.startSessionAfterSetup(
+      setup,
+      `
     select 'RESOLVED:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
     select 'SOURCE:'||jsonb_build_object('id',id,'originalOutcome',original_outcome,'outcome',current_outcome,'executions',(select physical_execution_count from public.simulated_payment_effects where operation_id=payment_provider_operations.id),'physicalAttemptId',physical_attempt_id,'request',provider_request_id,'reference',provider_reference,'movement',movement_reference)::text from public.payment_provider_operations;
@@ -116,107 +131,132 @@ function verifyProviderResolution() {
     update public.payment_provider_operations set movement_reference=movement_reference,authoritative_outcome_at=authoritative_outcome_at,updated_at=updated_at+interval '1 second';
     set local role authenticated;
     select 'EVIDENCE_MOVEMENT:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
-    rollback;
+    select 'RC330_HISTORY_EXECUTION_READY';
   `,
-  );
-  assert.doesNotMatch(
-    result,
-    /not ok /,
-    "The established submission setup must pass",
-  );
-  const values = (prefix) =>
-    result
-      .split("\n")
-      .filter((line) => line.startsWith(prefix))
-      .map((line) => JSON.parse(line.slice(prefix.length)));
-  const [before, after] = values("RESOLVED:");
-  const [source] = values("SOURCE:");
-  assert.deepEqual(
-    after,
-    before,
-    "Repeated query and timestamp-only update append no duplicate history",
-  );
-  assert.equal(source.originalOutcome, "indeterminate");
-  assert.equal(source.outcome, "succeeded");
-  assert.equal(source.executions, 1);
-  assert.equal(values("RECEIPTS:")[0], 0);
-  assert.match(result, /REPEAT:succeeded/);
-  assert.equal(before.historyCoverage, "complete");
-  const physical = before.events.filter(
-    (event) => event.kind === "physical-attempt",
-  );
-  assert.equal(physical.length, 1);
-  assert.equal(physical[0].outcome, "indeterminate");
-  const transitions = before.events.filter(
-    (event) =>
-      event.source === "provider-operation" &&
-      event.kind === "state-transition",
-  );
-  assert.equal(
-    transitions.length,
-    1,
-    "Real provider query resolution is retained without inventing a receipt",
-  );
-  assert.equal(transitions[0].fromState, "indeterminate");
-  assert.equal(transitions[0].toState, "succeeded");
-  assert.equal(transitions[0].outcome, "succeeded");
-  assert.equal(transitions[0].physicalAttemptId, source.physicalAttemptId);
-  assert.equal(transitions[0].receivedAt, undefined);
-  assert.equal(
-    transitions[0].providerRequestId,
-    `internal-request:${source.id}`,
-  );
-  assert.equal(
-    transitions[0].providerReference,
-    `internal-reference:${source.id}`,
-  );
-  assert.equal(
-    transitions[0].movementReference,
-    `internal-movement:${source.id}`,
-  );
-  assert.equal(
-    before.events.filter((event) => event.kind === "receipt-observation")
-      .length,
-    0,
-  );
-  const [timeEvidence] = values("EVIDENCE_TIME:");
-  const [movementEvidence, repeatedEvidence] = values("EVIDENCE_MOVEMENT:");
-  for (const [previous, next] of [
-    [after, timeEvidence],
-    [timeEvidence, movementEvidence],
-  ]) {
+    );
+    await databaseHarness.waitForMarker(
+      session,
+      "RC330_HISTORY_EXECUTION_READY",
+    );
+    databaseHarness.markTimingPhase("cleanup");
+    await databaseHarness.finishSession(session, { action: "rollback" });
+    databaseHarness.markTimingPhase("execution");
+    const result = session.setupStdout + session.stdout;
+    assert.doesNotMatch(
+      result,
+      /not ok /,
+      "The established submission setup must pass",
+    );
+    const values = (prefix) =>
+      result
+        .split("\n")
+        .filter((line) => line.startsWith(prefix))
+        .map((line) => JSON.parse(line.slice(prefix.length)));
+    const [before, after] = values("RESOLVED:");
+    const [source] = values("SOURCE:");
     assert.deepEqual(
-      next.events.slice(0, previous.events.length),
-      previous.events,
+      after,
+      before,
+      "Repeated query and timestamp-only update append no duplicate history",
     );
-    assert.equal(next.events.length, previous.events.length + 1);
-    assert.equal(next.events.at(-1).kind, "state-transition");
-    assert.equal(next.events.at(-1).fromState, "succeeded");
-    assert.equal(next.events.at(-1).toState, "succeeded");
+    assert.equal(source.originalOutcome, "indeterminate");
+    assert.equal(source.outcome, "succeeded");
+    assert.equal(source.executions, 1);
+    assert.equal(values("RECEIPTS:")[0], 0);
+    assert.match(result, /REPEAT:succeeded/);
+    assert.equal(before.historyCoverage, "complete");
+    const physical = before.events.filter(
+      (event) => event.kind === "physical-attempt",
+    );
+    assert.equal(physical.length, 1);
+    assert.equal(physical[0].outcome, "indeterminate");
+    const transitions = before.events.filter(
+      (event) =>
+        event.source === "provider-operation" &&
+        event.kind === "state-transition",
+    );
     assert.equal(
-      next.events.at(-1).physicalAttemptId,
-      source.physicalAttemptId,
+      transitions.length,
+      1,
+      "Real provider query resolution is retained without inventing a receipt",
     );
-    assert.equal(next.events.at(-1).receivedAt, undefined);
+    assert.equal(transitions[0].fromState, "indeterminate");
+    assert.equal(transitions[0].toState, "succeeded");
+    assert.equal(transitions[0].outcome, "succeeded");
+    assert.equal(transitions[0].physicalAttemptId, source.physicalAttemptId);
+    assert.equal(transitions[0].receivedAt, undefined);
+    assert.equal(
+      transitions[0].providerRequestId,
+      `internal-request:${source.id}`,
+    );
+    assert.equal(
+      transitions[0].providerReference,
+      `internal-reference:${source.id}`,
+    );
+    assert.equal(
+      transitions[0].movementReference,
+      `internal-movement:${source.id}`,
+    );
+    assert.equal(
+      before.events.filter((event) => event.kind === "receipt-observation")
+        .length,
+      0,
+    );
+    const [timeEvidence] = values("EVIDENCE_TIME:");
+    const [movementEvidence, repeatedEvidence] = values("EVIDENCE_MOVEMENT:");
+    for (const [previous, next] of [
+      [after, timeEvidence],
+      [timeEvidence, movementEvidence],
+    ]) {
+      assert.deepEqual(
+        next.events.slice(0, previous.events.length),
+        previous.events,
+      );
+      assert.equal(next.events.length, previous.events.length + 1);
+      assert.equal(next.events.at(-1).kind, "state-transition");
+      assert.equal(next.events.at(-1).fromState, "succeeded");
+      assert.equal(next.events.at(-1).toState, "succeeded");
+      assert.equal(
+        next.events.at(-1).physicalAttemptId,
+        source.physicalAttemptId,
+      );
+      assert.equal(next.events.at(-1).receivedAt, undefined);
+    }
+    assert.equal(
+      timeEvidence.events.at(-1).providerOccurredAt,
+      "2099-01-01T00:00:00+00:00",
+    );
+    assert.equal(
+      movementEvidence.events.at(-1).movementReference,
+      "sim-movement-1234567890abcdef1234567890abcdef",
+    );
+    assert.deepEqual(repeatedEvidence, movementEvidence);
+    console.log(
+      "Public authorization query retains indeterminate-to-succeeded transition, original physical outcome, safe internal support references and one execution without receipts; repeat query and timestamp-only update retain identical AAL2 history.",
+    );
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    if (session && !session.exit) {
+      databaseHarness.markTimingPhase("cleanup");
+      try {
+        session.child.kill("SIGTERM");
+      } catch (error) {
+        if (!failure) throw error;
+        failure.cleanupErrors = [...(failure.cleanupErrors ?? []), error];
+      } finally {
+        await session.exited;
+      }
+    }
   }
-  assert.equal(
-    timeEvidence.events.at(-1).providerOccurredAt,
-    "2099-01-01T00:00:00+00:00",
-  );
-  assert.equal(
-    movementEvidence.events.at(-1).movementReference,
-    "sim-movement-1234567890abcdef1234567890abcdef",
-  );
-  assert.deepEqual(repeatedEvidence, movementEvidence);
-  console.log(
-    "Public authorization query retains indeterminate-to-succeeded transition, original physical outcome, safe internal support references and one execution without receipts; repeat query and timestamp-only update retain identical AAL2 history.",
-  );
 }
 
 // Hold only the request row while querying release evidence. Detect an
 // unexpected dependency and cancel the query before releasing that holder;
 // never create a circular wait between the real query and lease procedures.
 async function verifyReleaseDependencies() {
+  harness.markTimingPhase("setup");
   const request = "60000000-0000-4000-8000-000000001431";
   const lifecycle = "73000000-0000-4000-8000-000000001431";
   const setup = fixtureFor(143)
@@ -247,18 +287,20 @@ async function verifyReleaseDependencies() {
     lease,
     seeded = false;
   try {
+    harness.markTimingPhase("setup");
     assert.equal(
-      harness.runSql(
-        paymentEvidenceSql +
-          `select count(*) from public.booking_requests where id='${request}';`,
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select count(*) from public.booking_requests where id='${request}';`,
       ),
       "0",
     );
-    harness.runSql(paymentEvidenceSql + `begin;${setup}commit;`);
+    await harness.runSqlAfterSetup(paymentEvidenceSql, `begin;${setup}commit;`);
     seeded = true;
-    const setupResult = harness.runSql(
-      paymentEvidenceSql +
-        `begin;
+    harness.markTimingPhase("execution");
+    const setupResult = await harness.runSqlAfterSetup(
+      paymentEvidenceSql,
+      `begin;
       set local role service_role;
       select public.claim_booking_request_action('10000000-0000-4000-8000-000000001432','${request}','withdraw',null,null);
       reset role;
@@ -313,15 +355,15 @@ async function verifyReleaseDependencies() {
       operationGeneration: permit.operationGeneration,
     };
     const admission = JSON.parse(
-      harness.runSql(
-        paymentEvidenceSql +
-          `begin; set local role service_role; select public.admit_booking_request_provider_operation(${literal(execution)}); commit;`,
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `begin; set local role service_role; select public.admit_booking_request_provider_operation(${literal(execution)}); commit;`,
       ),
     );
     const querySql = `pg_temp.payment_query(${literal(operation)},null,null,'succeeded')`;
-    holder = harness.startSession(
-      paymentEvidenceSql +
-        `begin; set application_name='history_release_holder'; select 'HOLDER_PID:'||pg_backend_pid(); select id from public.booking_requests where id='${request}' for update; select 'HOLDER_READY';`,
+    holder = await harness.startSessionAfterSetup(
+      paymentEvidenceSql,
+      `begin; set application_name='history_release_holder'; select 'HOLDER_PID:'||pg_backend_pid(); select id from public.booking_requests where id='${request}' for update; select 'HOLDER_READY';`,
     );
     await harness.waitForMarker(holder, "HOLDER_READY");
     const holderPid = Number(
@@ -330,9 +372,9 @@ async function verifyReleaseDependencies() {
         .find((line) => line.startsWith("HOLDER_PID:"))
         .slice(11),
     );
-    query = harness.startSession(
-      paymentEvidenceSql +
-        `begin; set application_name='history_release_query'; select 'QUERY_PID:'||pg_backend_pid(); set local role service_role; select 'QUERY_RESULT:'||${querySql}::text; reset role;
+    query = await harness.startSessionAfterSetup(
+      paymentEvidenceSql,
+      `begin; set application_name='history_release_query'; select 'QUERY_PID:'||pg_backend_pid(); set local role service_role; select 'QUERY_RESULT:'||${querySql}::text; reset role;
       select 'QUERY_STATE:'||state from public.booking_request_release_operations where work_id='${permit.workId}';
       select 'QUERY_HISTORY:'||count(*) from public.booking_request_payment_history where payment_lifecycle_id='${lifecycle}' and source='release-operation' and to_state='retryable' and outcome='not_executed';
       select 'QUERY_COMPLETE';`,
@@ -346,14 +388,14 @@ async function verifyReleaseDependencies() {
     );
     const started = Date.now();
     while (!query.stdout.includes("QUERY_COMPLETE")) {
-      const blocked = harness.runSql(
-        paymentEvidenceSql +
-          `select ${holderPid}=any(pg_blocking_pids(${queryPid}));`,
+      const blocked = await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select ${holderPid}=any(pg_blocking_pids(${queryPid}));`,
       );
       if (blocked === "t") {
-        harness.runSql(
-          paymentEvidenceSql +
-            `select pg_cancel_backend(pid) from pg_stat_activity where pid=${queryPid} and application_name='history_release_query';`,
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `select pg_cancel_backend(pid) from pg_stat_activity where pid=${queryPid} and application_name='history_release_query';`,
         );
         const cancelled = query;
         query = undefined;
@@ -372,9 +414,9 @@ async function verifyReleaseDependencies() {
     assert.match(query.stdout, /QUERY_RESULT:.*"outcome": "not-executed"/);
     assert.match(query.stdout, /QUERY_STATE:retryable/);
     assert.match(query.stdout, /QUERY_HISTORY:1/);
-    lease = harness.startSession(
-      paymentEvidenceSql +
-        `begin; set application_name='history_release_lease'; select 'LEASE_PID:'||pg_backend_pid(); set local role service_role; select 'LEASE_RESULT:'||public.claim_booking_request_action('10000000-0000-4000-8000-000000001432','${request}','withdraw',null,null)::text; select 'LEASE_COMPLETE';`,
+    lease = await harness.startSessionAfterSetup(
+      paymentEvidenceSql,
+      `begin; set application_name='history_release_lease'; select 'LEASE_PID:'||pg_backend_pid(); set local role service_role; select 'LEASE_RESULT:'||public.claim_booking_request_action('10000000-0000-4000-8000-000000001432','${request}','withdraw',null,null)::text; select 'LEASE_COMPLETE';`,
     );
     await harness.waitForMarker(lease, "LEASE_PID:");
     const leasePid = Number(
@@ -385,9 +427,9 @@ async function verifyReleaseDependencies() {
     );
     await harness.waitForLock("history_release_lease", lease);
     assert.equal(
-      harness.runSql(
-        paymentEvidenceSql +
-          `select ${holderPid}=any(pg_blocking_pids(${leasePid})) and not ${queryPid}=any(pg_blocking_pids(${leasePid}));`,
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select ${holderPid}=any(pg_blocking_pids(${leasePid})) and not ${queryPid}=any(pg_blocking_pids(${leasePid}));`,
       ),
       "t",
       "Canonical lease waits only on the held request while query has completed holding release work",
@@ -402,22 +444,22 @@ async function verifyReleaseDependencies() {
     lease = undefined;
     // The inquiry fixture transaction rolled back its closure and recording.
     // Resume the original admitted caller; a fresh admission would reconcile instead.
-    const outcome = harness.runSql(
-      paymentEvidenceSql +
-        `begin; set local role service_role; select pg_temp.payment_fixture_result(${literal(admission)},'succeeded')->>'outcome'; commit;`,
+    const outcome = await harness.runSqlAfterSetup(
+      paymentEvidenceSql,
+      `begin; set local role service_role; select pg_temp.payment_fixture_result(${literal(admission)},'succeeded')->>'outcome'; commit;`,
     );
     assert.equal(outcome, "succeeded");
     assert.equal(
-      harness.runSql(
-        paymentEvidenceSql +
-          `select sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=payment_provider_operations.id)) from public.payment_provider_operations where payment_lifecycle_id='${lifecycle}';`,
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=payment_provider_operations.id)) from public.payment_provider_operations where payment_lifecycle_id='${lifecycle}';`,
       ),
       "1",
     );
     assert.equal(
-      harness.runSql(
-        paymentEvidenceSql +
-          `select count(*) from public.booking_request_payment_history where payment_lifecycle_id='${lifecycle}' and kind='physical-attempt';`,
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select count(*) from public.booking_request_payment_history where payment_lifecycle_id='${lifecycle}' and kind='physical-attempt';`,
       ),
       "1",
     );
@@ -425,14 +467,15 @@ async function verifyReleaseDependencies() {
       "Canonical release query records authoritative absence without requesting the held request row; concurrent lease depends only on that holder. Original query/lease outcomes and one subsequent physical release execution are preserved.",
     );
   } finally {
+    harness.markTimingPhase("cleanup");
     // Query is resolved or cancelled before the holder is released. The lease
     // never holds the work row while the holder is open.
     try {
       if (query) {
         if (!query.exit && !query.stdout.includes("QUERY_COMPLETE")) {
-          harness.runSql(
-            paymentEvidenceSql +
-              `select pg_cancel_backend(pid) from pg_stat_activity where pid=${queryPid ?? "null"} and application_name='history_release_query';`,
+          await harness.runSqlAfterSetup(
+            paymentEvidenceSql,
+            `select pg_cancel_backend(pid) from pg_stat_activity where pid=${queryPid ?? "null"} and application_name='history_release_query';`,
           );
           await harness.finishSession(query, { expectedState: "57014" });
         } else {
@@ -455,7 +498,7 @@ async function verifyReleaseDependencies() {
         } finally {
           if (seeded) {
             harness.guardDisposableLocalDatabase();
-            harness.runSql(paymentEvidenceSql + cleanup);
+            await harness.runSqlAfterSetup(paymentEvidenceSql, cleanup);
           }
         }
       }
@@ -463,85 +506,118 @@ async function verifyReleaseDependencies() {
   }
 }
 
-harness.guardDisposableLocalDatabase();
-await verifyReleaseDependencies();
-verifyProviderResolution();
-try {
-  for (const index of [141, 142]) {
-    const request = `60000000-0000-4000-8000-00000000${index}1`;
-    const session = harness.startSession(
-      paymentEvidenceSql +
-        `begin;${fixtureFor(index)}
+export async function prepareHistorySession(databaseHarness, index) {
+  databaseHarness.markTimingPhase("setup");
+  const request = `60000000-0000-4000-8000-00000000${index}1`;
+  const setup =
+    paymentEvidenceSql +
+    `begin;${fixtureFor(index)}
       update public.account_contexts set role='platform_administrator' where user_id='10000000-0000-4000-8000-00000000${index}3';
       set request.jwt.claims='{"sub":"10000000-0000-4000-8000-00000000${index}3","role":"authenticated","aal":"aal2"}';
       set local role service_role;
+    `;
+  databaseHarness.markTimingPhase("execution");
+  return databaseHarness.startSessionAfterSetup(
+    setup,
+    `
       create temp table history_lease as select public.lease_booking_request_capture_work('${request}',${literal(identity)}) result;
       create temp table history_execution as select pg_temp.capture_execute((select result->'permit' from history_lease),'failed') result;
       reset role;
       ${historySql(index)}
       select 'HISTORY_READY';
     `,
-    );
-    sessions.push({ index, request, session });
-  }
-  await Promise.all(
-    sessions.map(({ session }) =>
-      harness.waitForMarker(session, "HISTORY_READY"),
-    ),
   );
-  // Both real source transactions remain open; later completion must append to
-  // the same original request without replacing the first execution evidence.
-  for (const { index, request, session } of sessions) {
-    session.child.stdin.write(`set local role service_role;
+}
+
+async function main() {
+  let passed = false;
+  try {
+    harness.guardDisposableLocalDatabase();
+    await verifyReleaseDependencies();
+    harness.markTimingPhase("execution");
+    await verifyProviderResolution(harness);
+    try {
+      for (const index of [141, 142]) {
+        const request = `60000000-0000-4000-8000-00000000${index}1`;
+        const session = await prepareHistorySession(harness, index);
+        sessions.push({ index, request, session });
+      }
+      await Promise.all(
+        sessions.map(({ session }) =>
+          harness.waitForMarker(session, "HISTORY_READY"),
+        ),
+      );
+      // Both real source transactions remain open; later completion must append to
+      // the same original request without replacing the first execution evidence.
+      for (const { index, request, session } of sessions) {
+        session.child.stdin.write(`set local role service_role;
       select public.record_booking_request_capture_failure('${request}',(select (result#>>'{permit,leaseGeneration}')::bigint from history_lease),(select (result#>>'{permit,leaseToken}')::uuid from history_lease),(select result from history_execution));
       reset role;
       ${historySql(index)}
       select 'HISTORY_COMPLETED';
     `);
+      }
+      await Promise.all(
+        sessions.map(({ session }) =>
+          harness.waitForMarker(session, "HISTORY_COMPLETED"),
+        ),
+      );
+      const allSequences = [];
+      for (const { index, session } of sessions) {
+        const [before, after] = histories(session);
+        assert.equal(
+          before.bookingRequestReference,
+          `RC-REQ-000000000000${index}1`,
+        );
+        assert.equal(
+          before.events.filter((event) => event.kind === "physical-attempt")
+            .length,
+          1,
+        );
+        assert.equal(before.events.at(-1).outcome, "failed");
+        assert.deepEqual(
+          after.events.slice(0, before.events.length),
+          before.events,
+        );
+        assert.equal(after.events.at(-1).source, "capture-work");
+        assert.equal(after.events.at(-1).toState, "payment_required");
+        assert.equal(
+          after.events.filter((event) => event.kind === "physical-attempt")
+            .length,
+          1,
+        );
+        const [beforeSequence, afterSequence] = sequences(session);
+        assert.deepEqual(
+          afterSequence.slice(0, beforeSequence.length),
+          beforeSequence,
+        );
+        assert.equal(afterSequence.length, after.events.length);
+        allSequences.push(...afterSequence);
+      }
+      assert.equal(new Set(allSequences).size, allSequences.length);
+      console.log(
+        "Concurrent real capture procedures retain one physical attempt per request and immutable ordered AAL2 history prefixes when completion appends; all fixtures roll back.",
+      );
+    } finally {
+      harness.markTimingPhase("cleanup");
+      await Promise.all(
+        sessions.map(({ session }) =>
+          harness.finishSession(session, { action: "rollback" }),
+        ),
+      );
+    }
+    passed = true;
+  } finally {
+    harness.finishTiming({
+      outcome: passed ? "passed" : "failed",
+      cleanupDisposition: "local",
+    });
   }
-  await Promise.all(
-    sessions.map(({ session }) =>
-      harness.waitForMarker(session, "HISTORY_COMPLETED"),
-    ),
-  );
-  const allSequences = [];
-  for (const { index, session } of sessions) {
-    const [before, after] = histories(session);
-    assert.equal(
-      before.bookingRequestReference,
-      `RC-REQ-000000000000${index}1`,
-    );
-    assert.equal(
-      before.events.filter((event) => event.kind === "physical-attempt").length,
-      1,
-    );
-    assert.equal(before.events.at(-1).outcome, "failed");
-    assert.deepEqual(
-      after.events.slice(0, before.events.length),
-      before.events,
-    );
-    assert.equal(after.events.at(-1).source, "capture-work");
-    assert.equal(after.events.at(-1).toState, "payment_required");
-    assert.equal(
-      after.events.filter((event) => event.kind === "physical-attempt").length,
-      1,
-    );
-    const [beforeSequence, afterSequence] = sequences(session);
-    assert.deepEqual(
-      afterSequence.slice(0, beforeSequence.length),
-      beforeSequence,
-    );
-    assert.equal(afterSequence.length, after.events.length);
-    allSequences.push(...afterSequence);
-  }
-  assert.equal(new Set(allSequences).size, allSequences.length);
-  console.log(
-    "Concurrent real capture procedures retain one physical attempt per request and immutable ordered AAL2 history prefixes when completion appends; all fixtures roll back.",
-  );
-} finally {
-  await Promise.all(
-    sessions.map(({ session }) =>
-      harness.finishSession(session, { action: "rollback" }),
-    ),
-  );
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  await main();
 }
