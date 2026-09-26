@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   chmodSync,
   existsSync,
@@ -342,6 +343,7 @@ async function observeInterruptedAccessVerification(
     inspectionFailure,
     interruptStartup = false,
     cleanupStage,
+    observeTiming,
   } = {},
 ) {
   assertProcessObserverReady();
@@ -622,6 +624,8 @@ if (args[1] === "status") {
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
+    const stdout = [];
+    wrapper.stdout.on("data", (chunk) => stdout.push(String(chunk)));
     const stderr = [];
     wrapper.stderr.on("data", (chunk) => stderr.push(String(chunk)));
     if (cleanupStage) {
@@ -854,6 +858,25 @@ if (args[1] === "status") {
     );
     expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
     expect(stderr.join("")).toBe("");
+    if (observeTiming) {
+      await waitForCondition(
+        () =>
+          stdout
+            .join("")
+            .split("\n")
+            .slice(0, -1)
+            .some((line) => line.includes('"type":"access-lifecycle"')),
+        "access lifecycle completion record",
+      );
+      observeTiming(
+        stdout
+          .join("")
+          .split("\n")
+          .slice(0, -1)
+          .filter((line) => line.startsWith("{"))
+          .map((line) => JSON.parse(line)),
+      );
+    }
   } finally {
     const cleanupErrors = [];
     const identities = [
@@ -896,6 +919,808 @@ if (args[1] === "status") {
 }
 
 describe("local Supabase concurrency harness", () => {
+  it("accumulates repeated concurrency phases without inventing absent cleanup", () => {
+    let tick = 100;
+    const stdout = vi.fn();
+    const utcNow = () => new Date(Date.UTC(2026, 8, 26) + tick).toISOString();
+    const harness = createLocalSupabaseConcurrencyHarness({
+      timing: { check: "controlled-check", isolation: "serial" },
+      monotonicNow: () => tick,
+      utcNow,
+      stdout,
+    });
+    harness.markTimingPhase("setup");
+    tick = 137;
+    harness.markTimingPhase("execution");
+    tick = 150;
+    harness.markTimingPhase("setup");
+    tick = 159;
+    harness.markTimingPhase("execution");
+    tick = 180;
+    harness.markTimingPhase("cleanup");
+    tick = 190;
+    harness.finishTiming({ outcome: "passed", cleanupDisposition: "local" });
+    const records = stdout.mock.calls.map(([line]) => JSON.parse(line));
+    expect(
+      records.slice(0, -1).map(({ phase, elapsedMs }) => [phase, elapsedMs]),
+    ).toEqual([
+      ["setup", 37],
+      ["execution", 13],
+      ["setup", 9],
+      ["execution", 21],
+      ["cleanup", 10],
+    ]);
+    expect(records[0]).toEqual({
+      type: "concurrency-phase",
+      check: "controlled-check",
+      isolation: "serial",
+      phase: "setup",
+      startedAt: "2026-09-26T00:00:00.100Z",
+      completedAt: "2026-09-26T00:00:00.137Z",
+      elapsedMs: 37,
+    });
+    expect(records.at(-1)).toEqual({
+      type: "concurrency-summary",
+      check: "controlled-check",
+      isolation: "serial",
+      startedAt: "2026-09-26T00:00:00.100Z",
+      completedAt: "2026-09-26T00:00:00.190Z",
+      setupMs: 46,
+      executionMs: 34,
+      cleanupMs: 10,
+      outcome: "passed",
+      cleanupDisposition: "local",
+      phaseReasons: {},
+    });
+    tick = 1000;
+    harness.finishTiming({
+      outcome: "failed",
+      cleanupDisposition: "project-teardown",
+    });
+    harness.markTimingPhase("setup");
+    expect(stdout).toHaveBeenCalledTimes(6);
+
+    const deferred = createLocalSupabaseConcurrencyHarness({
+      timing: { check: "deferred-check", isolation: "serial" },
+      monotonicNow: () => tick,
+      utcNow,
+      stdout,
+    });
+    deferred.markTimingPhase("setup");
+    deferred.markTimingPhase("execution");
+    deferred.finishTiming({
+      outcome: "passed",
+      cleanupDisposition: "project-teardown",
+    });
+    expect(JSON.parse(stdout.mock.lastCall[0])).toMatchObject({
+      setupMs: 0,
+      executionMs: 0,
+      cleanupMs: null,
+      phaseReasons: {
+        cleanup: "Cleanup is deferred to disposable project teardown.",
+      },
+    });
+
+    for (const failedPhase of ["setup", "cleanup"]) {
+      const failed = createLocalSupabaseConcurrencyHarness({
+        timing: { check: "failed-check", isolation: "serial" },
+        monotonicNow: () => tick,
+        utcNow,
+        stdout,
+      });
+      expect(() => {
+        try {
+          failed.markTimingPhase(failedPhase);
+          tick += 7;
+          throw new Error(`${failedPhase} failed`);
+        } finally {
+          failed.finishTiming({
+            outcome: "failed",
+            cleanupDisposition: "local",
+          });
+        }
+      }).toThrow(`${failedPhase} failed`);
+      const summary = JSON.parse(stdout.mock.lastCall[0]);
+      expect(summary).toMatchObject({
+        outcome: "failed",
+        [`${failedPhase}Ms`]: 7,
+      });
+      for (const phase of ["setup", "execution", "cleanup"].filter(
+        (phase) => phase !== failedPhase,
+      )) {
+        expect(summary[`${phase}Ms`]).toBeNull();
+        expect(summary.phaseReasons[phase]).toBe("Phase was not reached.");
+      }
+    }
+
+    stdout.mockClear();
+    const monotonicNow = vi.fn();
+    const silent = createLocalSupabaseConcurrencyHarness({
+      stdout,
+      monotonicNow,
+    });
+    silent.markTimingPhase("setup");
+    silent.finishTiming({ outcome: "passed", cleanupDisposition: "local" });
+    expect(stdout).not.toHaveBeenCalled();
+    expect(monotonicNow).not.toHaveBeenCalled();
+    for (const timing of [
+      null,
+      { check: " ", isolation: "serial" },
+      { check: 42, isolation: "serial" },
+      { check: "check", isolation: "independent" },
+    ]) {
+      expect(() => createLocalSupabaseConcurrencyHarness({ timing })).toThrow(
+        "Concurrency timing requires a nonblank check and serial isolation.",
+      );
+    }
+  });
+
+  it("acknowledges SQL setup before sending the body on the same owned session", async () => {
+    vi.useFakeTimers();
+    function childProcess() {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.stdout.setEncoding = vi.fn();
+      child.stderr.setEncoding = vi.fn();
+      child.stdin = {
+        write: vi.fn(),
+        end: vi.fn(),
+        destroyed: false,
+        writableEnded: false,
+      };
+      child.kill = vi.fn();
+      return child;
+    }
+    try {
+      let tick = 100;
+      const stdout = vi.fn();
+      const child = childProcess();
+      const spawnProcess = vi.fn(() => child);
+      const harness = createLocalSupabaseConcurrencyHarness({
+        timing: { check: "protocol-check", isolation: "serial" },
+        monotonicNow: () => tick,
+        stdout,
+        spawnProcess,
+      });
+      harness.markTimingPhase("execution");
+      let openingSettled = false;
+      const opening = harness
+        .startSessionAfterSetup("begin;\nselect 'fixture';", "select 'body';")
+        .then((session) => {
+          openingSettled = true;
+          return session;
+        });
+      expect(child.stdin.write.mock.calls).toEqual([
+        [
+          "\\set VERBOSITY verbose\nbegin;\nselect 'fixture';\nselect 'RC330_SQL_SETUP_READY';\n",
+        ],
+      ]);
+      child.stdout.emit("data", "fixture-output\nRC330_SQL_SETUP_");
+      await vi.advanceTimersByTimeAsync(15_020);
+      expect(openingSettled).toBe(false);
+      expect(child.stdin.write).toHaveBeenCalledTimes(1);
+      expect(child.kill).not.toHaveBeenCalled();
+      tick = 137;
+      child.stdout.emit("data", "READY\n");
+      await vi.advanceTimersByTimeAsync(20);
+      const session = await opening;
+      expect(child.stdout.listenerCount("data")).toBe(1);
+      expect(child.listenerCount("error")).toBe(1);
+      expect(child.listenerCount("close")).toBe(1);
+      expect(session.child).toBe(child);
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
+      expect(session.setupStdout).toBe("fixture-output\n");
+      expect(session.stdout).toBe("");
+      expect(child.stdin.write.mock.calls).toEqual([
+        [
+          "\\set VERBOSITY verbose\nbegin;\nselect 'fixture';\nselect 'RC330_SQL_SETUP_READY';\n",
+        ],
+        ["select 'body';\n"],
+      ]);
+      expect(child.stdin.end).not.toHaveBeenCalled();
+      child.stdout.emit("data", "body-output\n");
+      tick = 150;
+      const closing = harness.finishSession(session, { action: "rollback" });
+      expect(child.stdin.end).toHaveBeenCalledExactlyOnceWith("rollback;\n");
+      child.emit("close", 0, null);
+      await closing;
+      expect(session.stdout).toBe("body-output\n");
+      harness.finishTiming({
+        outcome: "passed",
+        cleanupDisposition: "project-teardown",
+      });
+      expect(JSON.parse(stdout.mock.lastCall[0])).toMatchObject({
+        setupMs: 37,
+        executionMs: 13,
+        cleanupMs: null,
+      });
+
+      for (const phase of ["setup", "execution", "cleanup", undefined]) {
+        const oneShotChild = childProcess();
+        const lines = [];
+        const oneShot = createLocalSupabaseConcurrencyHarness({
+          ...(phase
+            ? { timing: { check: "one-shot", isolation: "serial" } }
+            : {}),
+          monotonicNow: () => tick,
+          stdout: (line) => lines.push(JSON.parse(line)),
+          spawnProcess: () => oneShotChild,
+        });
+        if (phase) oneShot.markTimingPhase(phase);
+        const running = oneShot.runSqlAfterSetup(
+          "select 'setup';",
+          "select 'result';\ncommit;",
+        );
+        tick += 10;
+        oneShotChild.stdout.emit(
+          "data",
+          "setup-output\nRC330_SQL_SETUP_READY\n",
+        );
+        await vi.advanceTimersByTimeAsync(20);
+        expect(oneShotChild.stdin.end).toHaveBeenCalledExactlyOnceWith(
+          "select 'result';\ncommit;\n",
+        );
+        tick += 20;
+        oneShotChild.stdout.emit("data", "  body-result\n");
+        oneShotChild.emit("close", 0, null);
+        expect(await running).toBe("body-result");
+        oneShot.finishTiming({
+          outcome: "passed",
+          cleanupDisposition: "local",
+        });
+        if (phase) {
+          expect(lines.at(-1).setupMs).toBe(phase === "setup" ? 30 : 10);
+          expect(lines.at(-1)[`${phase}Ms`]).toBe(phase === "setup" ? 30 : 20);
+        } else {
+          expect(lines).toEqual([]);
+        }
+      }
+
+      const contenderChild = childProcess();
+      const contender = createLocalSupabaseConcurrencyHarness({
+        spawnProcess: () => contenderChild,
+        waitLimitMilliseconds: 30,
+      });
+      const contenderSession = contender.startSession("select 'contender';");
+      const markerWait = contender
+        .waitForMarker(contenderSession, "CONTENTION_READY")
+        .catch((error) => error);
+      await vi.advanceTimersByTimeAsync(40);
+      expect((await markerWait).message).toBe(
+        "PostgreSQL session did not reach CONTENTION_READY.",
+      );
+      contenderChild.emit("close", 0, null);
+
+      for (const failure of ["eof", "error", "body", "body-write", "cleanup"]) {
+        const failedChild = childProcess();
+        const primary = new Error("setup spawn failed");
+        const cleanupError = new Error("termination failed");
+        const writeError = new Error("body write failed");
+        const lines = [];
+        const failed = createLocalSupabaseConcurrencyHarness({
+          timing: { check: "failed-protocol", isolation: "serial" },
+          monotonicNow: () => tick,
+          stdout: (line) => lines.push(JSON.parse(line)),
+          spawnProcess: () => failedChild,
+          waitLimitMilliseconds: 30,
+        });
+        failed.markTimingPhase("execution");
+        if (failure === "cleanup")
+          failedChild.kill.mockImplementation(() => {
+            throw cleanupError;
+          });
+        let settled = false;
+        const failedRun = failed
+          .runSqlAfterSetup("select 'setup';", "select 'body';")
+          .catch((error) => {
+            settled = true;
+            return error;
+          });
+        tick += 5;
+        if (failure === "eof") {
+          failedChild.stderr.emit("data", "setup SQL failed");
+          failedChild.emit("close", 1, null);
+          await vi.advanceTimersByTimeAsync(20);
+        } else if (failure === "body" || failure === "body-write") {
+          if (failure === "body-write")
+            failedChild.stdin.end.mockImplementation(() => {
+              throw writeError;
+            });
+          failedChild.stdout.emit("data", "RC330_SQL_SETUP_READY\n");
+          await vi.advanceTimersByTimeAsync(20);
+          if (failure === "body") {
+            failedChild.stderr.emit("data", "body SQL failed");
+            failedChild.emit("close", 9, null);
+          } else {
+            expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+            expect(settled).toBe(false);
+            failedChild.emit("close", null, "SIGTERM");
+          }
+        } else {
+          failedChild.emit("error", primary);
+          await vi.advanceTimersByTimeAsync(0);
+          expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+          expect(settled).toBe(false);
+          failedChild.emit("close", null, "SIGTERM");
+          await vi.advanceTimersByTimeAsync(20);
+        }
+        const error = await failedRun;
+        if (failure === "error" || failure === "cleanup")
+          expect(error).toBe(primary);
+        else if (failure === "body-write") expect(error).toBe(writeError);
+        else
+          expect(error.message).toContain(
+            failure === "eof" ? "session exited before" : "body SQL failed",
+          );
+        if (failure === "cleanup")
+          expect(error.cleanupErrors).toEqual([cleanupError]);
+        if (failure !== "body" && failure !== "body-write")
+          expect(failedChild.stdin.end).not.toHaveBeenCalled();
+        expect(failedChild.stdin.write).toHaveBeenCalledTimes(1);
+        if (failure === "eof" || failure === "body")
+          expect(failedChild.kill).not.toHaveBeenCalled();
+        expect(settled).toBe(true);
+        expect(failedChild.stdout.listenerCount("data")).toBe(1);
+        expect(failedChild.listenerCount("error")).toBe(1);
+        expect(failedChild.listenerCount("close")).toBe(1);
+        failed.finishTiming({ outcome: "failed", cleanupDisposition: "local" });
+        expect(lines.at(-1)).toMatchObject({ outcome: "failed", cleanupMs: 0 });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("attributes actual terminal notification setup and delivery costs separately", async () => {
+    vi.useFakeTimers();
+    try {
+      const { verifyTerminalReleaseNotifications } =
+        await import("./verify-booking-request-notification-concurrency.mjs");
+      let tick = 0;
+      const children = [];
+      const order = [];
+      const lines = [];
+      const actions = ["decline", "withdraw", "expire"];
+      const statuses = ["declined", "withdrawn", "expired"];
+      const harness = createLocalSupabaseConcurrencyHarness({
+        timing: { check: "actual-notification", isolation: "serial" },
+        monotonicNow: () => tick,
+        stdout: (line) => lines.push(JSON.parse(line)),
+        spawnSyncProcess: (_command, _args, { input }) => {
+          let stdout = "";
+          if (input.includes("select jsonb_agg(jsonb_build_object('role'")) {
+            order.push("events");
+            stdout = JSON.stringify([
+              {
+                role: "cottage_owner",
+                recipient: "10000000-0000-4000-8000-000000001001",
+                receipt: null,
+              },
+              {
+                role: "customer",
+                recipient: "10000000-0000-4000-8000-000000001002",
+                receipt: null,
+              },
+            ]);
+          } else if (
+            input.includes("select count(*) from public.booking_receipts")
+          ) {
+            order.push("receipts");
+            stdout = "0";
+          } else {
+            expect(input).toContain("delete from public.booking_requests");
+            order.push("cleanup");
+          }
+          return { status: 0, stdout, stderr: "" };
+        },
+        spawnProcess: () => {
+          const position = children.length;
+          const index = Math.floor(position / 2);
+          const release = position % 2 === 0;
+          const child = new EventEmitter();
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          child.stdout.setEncoding = vi.fn();
+          child.stderr.setEncoding = vi.fn();
+          const chargeSetup = (sql) => {
+            if (release && sql.includes("insert into auth.users"))
+              tick += [10, 20, 30][index];
+            if (!release && sql.includes("create function pg_temp.notice_call"))
+              tick += [1, 2, 3][index];
+          };
+          child.stdin = {
+            destroyed: false,
+            writableEnded: false,
+            write: vi.fn((sql) => {
+              chargeSetup(sql);
+              order.push(release ? "release-setup" : "delivery-setup");
+            }),
+            end: vi.fn((sql) => {
+              chargeSetup(sql);
+              if (release) {
+                expect(sql).toBe(
+                  ` select pg_temp.finish_terminal_release('${actions[index]}'); commit;\n`,
+                );
+                tick += [100, 200, 300][index];
+                order.push(actions[index]);
+                child.stdout.emit(
+                  "data",
+                  JSON.stringify({ status: statuses[index] }) + "\n",
+                );
+              } else {
+                expect(sql).toContain(
+                  `pg_temp.prepare_request_notice('request_${statuses[index]}',role)`,
+                );
+                expect(sql).toContain(
+                  "(values ('customer'),('cottage_owner')) recipients(role)",
+                );
+                expect(sql).not.toMatch(/\b(?:begin|commit|rollback);/);
+                tick += [10, 20, 30][index];
+                order.push("delivery");
+                child.stdout.emit(
+                  "data",
+                  '[{"status":"delivered"},{"status":"delivered"}]\n',
+                );
+              }
+              child.emit("close", 0, null);
+            }),
+          };
+          child.kill = vi.fn();
+          children.push(child);
+          return child;
+        },
+      });
+      harness.markTimingPhase("execution");
+      const running = verifyTerminalReleaseNotifications(harness);
+      for (let position = 0; position < 6; position++) {
+        expect(children).toHaveLength(position + 1);
+        const child = children[position];
+        expect(child.stdin.write).toHaveBeenCalledTimes(1);
+        expect(child.stdin.end).not.toHaveBeenCalled();
+        const setup = child.stdin.write.mock.calls[0][0];
+        expect(setup).toMatch(/select 'RC330_SQL_SETUP_READY';\n$/);
+        if (position % 2 === 0) {
+          expect(setup).toContain("insert into auth.users");
+          expect(setup).toContain(
+            "create function pg_temp.finish_terminal_release",
+          );
+          expect(setup).not.toContain(
+            `select pg_temp.finish_terminal_release('${actions[Math.floor(position / 2)]}');`,
+          );
+          expect(setup).toContain("begin;");
+          expect(setup).not.toContain("commit;");
+          if (position === 4)
+            expect(setup).toContain(
+              "statement_timestamp()-interval '4 hours 1 second'",
+            );
+        } else {
+          expect(setup).toContain("create function pg_temp.notice_call");
+          expect(setup).not.toContain("insert into auth.users");
+          expect(setup).not.toMatch(/\b(?:begin|commit|rollback);/);
+        }
+        child.stdout.emit("data", "setup-output\nRC330_SQL_SETUP_");
+        await vi.advanceTimersByTimeAsync(20);
+        expect(child.stdin.end).not.toHaveBeenCalled();
+        child.stdout.emit("data", "READY\n");
+        await vi.advanceTimersByTimeAsync(20);
+        expect(child.stdin.end).toHaveBeenCalledTimes(1);
+        expect(child.kill).not.toHaveBeenCalled();
+      }
+      await running;
+      harness.finishTiming({ outcome: "passed", cleanupDisposition: "local" });
+      expect(lines.at(-1)).toMatchObject({
+        setupMs: 66,
+        executionMs: 660,
+        outcome: "passed",
+      });
+      expect(order).toEqual([
+        "cleanup",
+        "release-setup",
+        "decline",
+        "events",
+        "delivery-setup",
+        "delivery",
+        "receipts",
+        "cleanup",
+        "release-setup",
+        "withdraw",
+        "events",
+        "delivery-setup",
+        "delivery",
+        "receipts",
+        "cleanup",
+        "release-setup",
+        "expire",
+        "events",
+        "delivery-setup",
+        "delivery",
+        "receipts",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("acknowledges actual history setup before readers and preserves owned rollback", async () => {
+    vi.useFakeTimers();
+    try {
+      const { verifyProviderResolution, prepareHistorySession } =
+        await import("./verify-booking-request-payment-history-concurrency.mjs");
+      const physicalAttemptId = "authorization-attempt";
+      const transition = {
+        source: "provider-operation",
+        kind: "state-transition",
+        fromState: "indeterminate",
+        toState: "succeeded",
+        outcome: "succeeded",
+        physicalAttemptId,
+        providerRequestId: "internal-request:operation-1",
+        providerReference: "internal-reference:operation-1",
+        movementReference: "internal-movement:operation-1",
+      };
+      const before = {
+        historyCoverage: "complete",
+        events: [
+          { kind: "physical-attempt", outcome: "indeterminate" },
+          transition,
+        ],
+      };
+      const timeEvidence = {
+        ...before,
+        events: [
+          ...before.events,
+          {
+            kind: "state-transition",
+            fromState: "succeeded",
+            toState: "succeeded",
+            physicalAttemptId,
+            providerOccurredAt: "2099-01-01T00:00:00+00:00",
+          },
+        ],
+      };
+      const movementEvidence = {
+        ...timeEvidence,
+        events: [
+          ...timeEvidence.events,
+          {
+            kind: "state-transition",
+            fromState: "succeeded",
+            toState: "succeeded",
+            physicalAttemptId,
+            movementReference: "sim-movement-1234567890abcdef1234567890abcdef",
+          },
+        ],
+      };
+      const output =
+        [
+          `RESOLVED:${JSON.stringify(before)}`,
+          `SOURCE:${JSON.stringify({ id: "operation-1", physicalAttemptId, originalOutcome: "indeterminate", outcome: "succeeded", executions: 1 })}`,
+          "RECEIPTS:0",
+          "REPEAT:succeeded",
+          `RESOLVED:${JSON.stringify(before)}`,
+          `EVIDENCE_TIME:${JSON.stringify(timeEvidence)}`,
+          `EVIDENCE_MOVEMENT:${JSON.stringify(movementEvidence)}`,
+          `EVIDENCE_MOVEMENT:${JSON.stringify(movementEvidence)}`,
+          "RC330_HISTORY_EXECUTION_READY",
+        ].join("\n") + "\n";
+      function childProcess() {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.stdout.setEncoding = vi.fn();
+        child.stderr.setEncoding = vi.fn();
+        child.stdin = {
+          write: vi.fn(),
+          end: vi.fn(() => child.emit("close", 0, null)),
+          destroyed: false,
+          writableEnded: false,
+        };
+        child.kill = vi.fn(() => child.emit("close", null, "SIGTERM"));
+        return child;
+      }
+      let tick = 0;
+      const lines = [];
+      const child = childProcess();
+      child.stdin.end.mockImplementation(() => {
+        tick += 7;
+        child.emit("close", 0, null);
+      });
+      const harness = createLocalSupabaseConcurrencyHarness({
+        timing: { check: "actual-history", isolation: "serial" },
+        monotonicNow: () => tick,
+        stdout: (line) => lines.push(JSON.parse(line)),
+        spawnProcess: () => child,
+      });
+      const running = verifyProviderResolution(harness);
+      const setup = child.stdin.write.mock.calls[0][0];
+      expect(setup).toContain(
+        "'successful authorization finalizes one Pending Booking Request'",
+      );
+      expect(setup).toContain("create temp table history_reference");
+      expect(setup).toContain(
+        "grant select on history_reference to authenticated",
+      );
+      expect(setup).not.toContain("select 'RESOLVED:'");
+      expect(child.stdin.write).toHaveBeenCalledTimes(1);
+      tick = 20;
+      child.stdout.emit(
+        "data",
+        "ok 1 - established submission\nRC330_SQL_SETUP_READY\n",
+      );
+      await vi.advanceTimersByTimeAsync(20);
+      expect(child.stdin.write).toHaveBeenCalledTimes(2);
+      const body = child.stdin.write.mock.calls[1][0];
+      expect(body).toMatch(/^\s*select 'RESOLVED:'/);
+      for (const statement of [
+        "select 'SOURCE:'",
+        "select 'RECEIPTS:'",
+        "select 'REPEAT:'",
+        "select 'EVIDENCE_TIME:'",
+        "select 'EVIDENCE_MOVEMENT:'",
+        "select 'RC330_HISTORY_EXECUTION_READY';",
+      ])
+        expect(body).toContain(statement);
+      expect(body).not.toContain("rollback;");
+      expect(child.stdin.end).not.toHaveBeenCalled();
+      tick = 50;
+      child.stdout.emit("data", output);
+      await vi.advanceTimersByTimeAsync(20);
+      await running;
+      expect(child.stdin.end).toHaveBeenCalledExactlyOnceWith("rollback;\n");
+      expect(child.kill).not.toHaveBeenCalled();
+      harness.finishTiming({ outcome: "passed", cleanupDisposition: "local" });
+      expect(lines.at(-1)).toMatchObject({
+        setupMs: 20,
+        executionMs: 30,
+        cleanupMs: 7,
+      });
+
+      const children = [childProcess(), childProcess()];
+      let position = 0;
+      const paired = createLocalSupabaseConcurrencyHarness({
+        spawnProcess: () => children[position++],
+      });
+      const sessions = [];
+      for (const [offset, index] of [141, 142].entries()) {
+        const opening = prepareHistorySession(paired, index);
+        const actor = children[offset];
+        const preparation = actor.stdin.write.mock.calls[0][0];
+        expect(preparation).toContain("-- BEGIN PAYMENT EVIDENCE FIXTURE");
+        expect(preparation).toContain("begin;");
+        expect(preparation).toContain(`00000000${index}3`);
+        expect(preparation).toContain('"aal":"aal2"');
+        expect(preparation).not.toContain("create temp table history_lease");
+        expect(actor.stdin.write).toHaveBeenCalledTimes(1);
+        actor.stdout.emit("data", "fixture-output\nRC330_SQL_SETUP_READY\n");
+        await vi.advanceTimersByTimeAsync(20);
+        const session = await opening;
+        sessions.push(session);
+        const operation = actor.stdin.write.mock.calls[1][0];
+        expect(operation).toMatch(/^\s*create temp table history_lease/);
+        expect(operation).toContain(
+          `lease_booking_request_capture_work('60000000-0000-4000-8000-00000000${index}1'`,
+        );
+        expect(operation.indexOf("history_lease")).toBeLessThan(
+          operation.indexOf("history_execution"),
+        );
+        expect(operation.indexOf("history_execution")).toBeLessThan(
+          operation.indexOf("select 'HISTORY:'"),
+        );
+        expect(operation).toContain("select 'SEQUENCES:'");
+        expect(operation).toContain("select 'HISTORY_READY';");
+        expect(operation).not.toMatch(/\b(?:commit|rollback);/);
+        actor.stdout.emit("data", "HISTORY_READY\n");
+      }
+      await Promise.all(
+        sessions.map((session) =>
+          paired.waitForMarker(session, "HISTORY_READY"),
+        ),
+      );
+      for (const session of sessions) {
+        expect(session.exit).toBeUndefined();
+        expect(session.child.stdin.end).not.toHaveBeenCalled();
+        expect(session.child.stdin.write).toHaveBeenCalledTimes(2);
+      }
+      for (const session of sessions)
+        await paired.finishSession(session, { action: "rollback" });
+      for (const actor of children)
+        expect(actor.stdin.end).toHaveBeenCalledExactlyOnceWith("rollback;\n");
+      const source = readFileSync(
+        "scripts/verify-booking-request-payment-history-concurrency.mjs",
+        "utf8",
+      );
+      const readyBarrier = source.indexOf(
+        'harness.waitForMarker(session, "HISTORY_READY")',
+      );
+      expect(
+        source.indexOf("sessions.push({ index, request, session })"),
+      ).toBeLessThan(readyBarrier);
+      expect(readyBarrier).toBeLessThan(
+        source.indexOf("select public.record_booking_request_capture_failure"),
+      );
+      expect(source).toContain(
+        "assert.equal(new Set(allSequences).size, allSequences.length)",
+      );
+      expect(source).toContain('"payment_required"');
+
+      for (const failure of [
+        "setup",
+        "body",
+        "body-timeout",
+        "setup-assertion",
+      ]) {
+        const failedChild = childProcess();
+        const primary = new Error("actual history setup failure");
+        const failed = createLocalSupabaseConcurrencyHarness({
+          spawnProcess: () => failedChild,
+          waitLimitMilliseconds: 30,
+        });
+        const failureRun = verifyProviderResolution(failed).catch(
+          (error) => error,
+        );
+        if (failure === "setup") {
+          failedChild.emit("error", primary);
+          await vi.advanceTimersByTimeAsync(20);
+          expect(await failureRun).toBe(primary);
+          expect(failedChild.stdin.write).toHaveBeenCalledTimes(1);
+          expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+        } else {
+          failedChild.stdout.emit(
+            "data",
+            (failure === "setup-assertion"
+              ? "not ok 1 - submission setup\n"
+              : "ok 1 - setup\n") + "RC330_SQL_SETUP_READY\n",
+          );
+          await vi.advanceTimersByTimeAsync(20);
+          if (failure === "body") {
+            failedChild.stderr.emit("data", "actual history body SQL failure");
+            failedChild.emit("close", 9, null);
+          } else if (failure === "setup-assertion") {
+            failedChild.stdout.emit("data", output);
+          }
+          await vi.advanceTimersByTimeAsync(40);
+          const error = await failureRun;
+          expect(error.message).toContain(
+            failure === "body"
+              ? "actual history body SQL failure"
+              : failure === "body-timeout"
+                ? "PostgreSQL session did not reach RC330_HISTORY_EXECUTION_READY"
+                : "The established submission setup must pass",
+          );
+          if (failure === "body-timeout")
+            expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+          if (failure === "setup-assertion")
+            expect(failedChild.stdin.end).toHaveBeenCalledExactlyOnceWith(
+              "rollback;\n",
+            );
+        }
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("declares mixed concurrency checks serial with acknowledged setup", () => {
+    for (const name of [
+      "verify-booking-request-payment-history-concurrency",
+      "verify-booking-event-notification-concurrency",
+      "verify-booking-request-notification-concurrency",
+      "verify-booking-payout-concurrency",
+    ]) {
+      const source = readFileSync(`scripts/${name}.mjs`, "utf8");
+      expect(source).toMatch(
+        new RegExp(`check: "${name}",\\s*isolation: "serial"`),
+      );
+      expect(source).toMatch(/(?:runSqlAfterSetup|startSessionAfterSetup)\(/);
+      expect(source).toContain('harness.markTimingPhase("setup")');
+      expect(source).toContain('harness.markTimingPhase("execution")');
+      expect(source).toContain('harness.markTimingPhase("cleanup")');
+      expect(source).toContain('outcome: passed ? "passed" : "failed"');
+      expect(source).toContain('cleanupDisposition: "local"');
+    }
+  });
+
   it("awaits the exact ownership inspection before granting asynchronous access", async () => {
     let resolveInspection;
     let settled = false;
@@ -932,6 +1757,31 @@ describe("local Supabase concurrency harness", () => {
     });
     await guarded;
     expect(settled).toBe(true);
+  });
+
+  it("declares payment prefix concurrency checks serial with acknowledged setup", () => {
+    const checks = [
+      "verify-booking-request-concurrency",
+      "verify-booking-request-capture-concurrency",
+      "verify-booking-request-payment-recovery-concurrency",
+      "verify-booking-request-payment-required-expiry-concurrency",
+    ];
+    expect(
+      databaseCheckCommands
+        .map(([, args]) => basename(args[0], ".mjs"))
+        .filter((check) => checks.includes(check)),
+    ).toEqual(checks);
+    for (const check of checks) {
+      const source = readFileSync(`scripts/${check}.mjs`, "utf8");
+      expect(source).toMatch(
+        new RegExp(
+          `timing:\\s*\\{\\s*check:\\s*"${check}",\\s*isolation:\\s*"serial"`,
+        ),
+      );
+      expect(source).toContain("runSqlAfterSetup");
+      expect(source).toContain("startSessionAfterSetup");
+      expect(source).not.toMatch(/paymentEvidenceSql\s*\+/);
+    }
   });
 
   it("rejects an invalid asynchronous guard before execution", async () => {
@@ -1297,6 +2147,32 @@ describe("access verification command", () => {
     },
   );
 
+  it("declares homogeneous concurrency checks serial without changing their command order", () => {
+    const checks = [
+      "verify-account-access-concurrency",
+      "verify-cottage-profile-draft-concurrency",
+      "verify-cottage-shift-schedule-concurrency",
+      "verify-cottage-inventory-concurrency",
+      "verify-booking-period-hold-concurrency",
+      "verify-booking-request-lifecycle-concurrency",
+      "verify-booking-confirmation-notification-concurrency",
+      "verify-booking-preparation-reminder-concurrency",
+      "verify-booking-cancellation-concurrency",
+      "verify-messaging-concurrency",
+      "verify-booking-completion-concurrency",
+      "verify-customer-review-concurrency",
+      "verify-booking-refund-concurrency",
+    ];
+    for (const check of checks) {
+      const source = readFileSync(`scripts/${check}.mjs`, "utf8");
+      expect(source, check).toMatch(
+        new RegExp(
+          `timing: \\s*\\{\\s*check: \\s*"${check}",\\s*isolation: \\s*"serial",?\\s*\\}`,
+        ),
+      );
+    }
+  });
+
   it("exposes stable standalone database and browser aliases", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 
@@ -1524,6 +2400,52 @@ describe("access verification command", () => {
       }),
     ).toBe(2);
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("loads reused messaging cancellation templates before rejecting invalid database identity", () => {
+    const result = spawnSync(
+      process.execPath,
+      [resolve(process.cwd(), "scripts/verify-messaging-concurrency.mjs")],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          SUPABASE_LOCAL_PROJECT: "invalid",
+          SUPABASE_DB_CONTAINER: "invalid",
+          PATH: "",
+        },
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "The guarded local Supabase database identity is invalid.",
+    );
+    expect(result.stderr).not.toMatch(
+      /Missing .*template|Duplicate .*template|unresolved interpolation/,
+    );
+    const summaries = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((record) => record.type === "concurrency-summary");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      check: "verify-messaging-concurrency",
+      isolation: "serial",
+      outcome: "failed",
+      executionMs: null,
+      cleanupMs: null,
+      phaseReasons: {
+        execution: "Phase was not reached.",
+        cleanup: "Phase was not reached.",
+      },
+    });
+    expect(Number.isFinite(summaries[0].setupMs)).toBe(true);
+    expect(summaries[0].setupMs).toBeGreaterThanOrEqual(0);
   });
 
   it("reports a public command spawn failure without tracking an invalid process group", async () => {
@@ -2546,4 +3468,428 @@ setInterval(() => {}, 1000);
     expect(stderr).toHaveBeenCalledWith("Local Supabase cleanup failed.");
     expect(removeTemp).not.toHaveBeenCalled();
   });
+  it("reports shared access phase costs and the authoritative failing child group", async () => {
+    const captureCommand = [
+      "node",
+      "scripts/verify-booking-request-capture-concurrency.mjs",
+    ];
+    const nextCommand = [browserCommands[2][0], ...browserCommands[2][1]];
+    const fixtureCommand = [
+      "node",
+      "scripts/verify-access-fixture-contract.mjs",
+    ];
+    const scenarios = [
+      {
+        args: [],
+        failure: captureCommand,
+        recipe: ["npm", "run", "verify:access:database"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+          ...databaseCheckCommands.slice(0, 10),
+        ],
+      },
+      {
+        args: [],
+        failure: nextCommand,
+        recipe: ["npm", "run", "verify:access:browser"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+          ...databaseCheckCommands,
+          ...browserCommands.slice(0, 3),
+        ],
+      },
+      {
+        args: ["--fixture-contract"],
+        failure: fixtureCommand,
+        recipe: ["node", "scripts/verify-access.mjs", "--fixture-contract"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          statusCommand,
+          databaseCheckCommands[0],
+        ],
+      },
+      {
+        args: [],
+        credentials: "secret-invalid-json",
+        recipe: ["npm", "run", "verify:access"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+        ],
+      },
+      {
+        args: [],
+        credentials: JSON.stringify({
+          API_URL: {},
+          PUBLISHABLE_KEY: [],
+          SECRET_KEY: true,
+        }),
+        recipe: ["npm", "run", "verify:access"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+        ],
+      },
+      {
+        args: [],
+        schema: "secret-schema-invalid-json",
+        recipe: ["npm", "run", "verify:access:database"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          declaredSchemaDiffCommand,
+        ],
+      },
+      {
+        args: ["--browser"],
+        failure: ["npx", "supabase", "db", "reset", "--local"],
+        prefix: true,
+        recipe: ["npm", "run", "verify:access:browser"],
+        before: [startCommand, ownershipCommand, resetCommand],
+      },
+    ];
+    for (const scenario of scenarios) {
+      let tick = 100;
+      const timestamp = () =>
+        new Date(Date.UTC(2026, 0, 1) + tick).toISOString();
+      const lines = [];
+      const baseRun = successfulRun();
+      const run = vi.fn((command, args, options) => {
+        // Advance time in actual work, including ownership inspections.
+        tick += 7;
+        const vector = [command, ...args];
+        if (
+          scenario.failure &&
+          (scenario.prefix
+            ? vector.slice(0, scenario.failure.length).join("|") ===
+              scenario.failure.join("|")
+            : vector.join("|") === scenario.failure.join("|"))
+        )
+          return { status: 9 };
+        if (args[1] === "status" && scenario.credentials !== undefined)
+          return { status: 0, stdout: scenario.credentials };
+        if (
+          args[1] === "db" &&
+          args[2] === "diff" &&
+          scenario.schema !== undefined
+        )
+          return { status: 0, stdout: scenario.schema };
+        return baseRun(command, args, options);
+      });
+      expect(
+        await mainWithPreparedProject(scenario.args, {
+          environment: { HIDDEN_VALUE: "hidden-environment-value" },
+          makeTemp: () => "/tmp/access-timing",
+          prepareProject: ({ stateRoot }) => {
+            tick += 11;
+            return join(stateRoot, "project");
+          },
+          removeTemp: () => {
+            tick += 3;
+          },
+          run,
+          stderr: vi.fn(),
+          stdout: (line) => lines.push(JSON.parse(line)),
+          monotonicNow: () => tick,
+          utcNow: timestamp,
+        }),
+      ).toBe(scenario.failure ? 9 : 1);
+      expect(commands(run)).toEqual([
+        ...scenario.before,
+        ownershipCommand,
+        stopCommand,
+      ]);
+      const records = lines.filter((line) => line.type === "access-phase");
+      expect(records[0]).toMatchObject({
+        name: "project-preparation",
+        command: null,
+        scope: "shared-setup",
+        durationMs: 11,
+        inclusive: false,
+        startedAt: "2026-01-01T00:00:00.100Z",
+        completedAt: "2026-01-01T00:00:00.111Z",
+      });
+      const commandRecords = records.filter((line) => line.command !== null);
+      expect(
+        commandRecords.map((line) => [line.command[0], line.command.slice(1)]),
+      ).toEqual(commands(run));
+      for (const record of commandRecords) {
+        expect(record.durationMs).toBe(7);
+        expect(
+          Date.parse(record.completedAt) - Date.parse(record.startedAt),
+        ).toBe(7);
+      }
+      expect(
+        lines.filter((line) => line.type === "verification-failure"),
+      ).toEqual([
+        {
+          type: "verification-failure",
+          attemptedCommand: commandRecords.at(-3).command,
+          reproduceGroup: scenario.recipe,
+        },
+      ]);
+      const summary = lines.at(-1);
+      expect(summary).toMatchObject({
+        type: "access-lifecycle",
+        inclusive: true,
+        durationMs: 11 + commands(run).length * 7 + 3,
+        cleanupMs: 17,
+        cleanupReason: null,
+        outcome: { type: "exit", status: scenario.failure ? 9 : 1 },
+      });
+      expect(summary.sharedSetupMs).toBe(
+        records
+          .filter((line) => line.scope === "shared-setup")
+          .reduce((sum, line) => sum + line.durationMs, 0),
+      );
+      expect(summary.checksMs).toBe(
+        records
+          .filter((line) => line.scope === "check")
+          .reduce((sum, line) => sum + line.durationMs, 0),
+      );
+      expect(summary.sharedSetupMs + summary.checksMs + summary.cleanupMs).toBe(
+        summary.durationMs,
+      );
+      expect(JSON.stringify(lines)).not.toMatch(
+        /hidden-environment-value|local-secret|local-publishable|secret-invalid-json|secret-schema-invalid-json/,
+      );
+      if (scenario.failure)
+        expect(commandRecords.at(-3).outcome).toEqual({
+          type: "exit",
+          status: 9,
+        });
+    }
+  });
+
+  it("finishes access timing after cleanup and preserves failed or retained teardown", async () => {
+    for (const scenario of [
+      "passed",
+      "cleanup-failure",
+      "primary-and-cleanup-failure",
+      "ownership-change",
+      "ownership-spawn-failure",
+      "startup-interrupted",
+      "child-interrupted",
+      "spawn-failure",
+      "preparation-failure",
+    ]) {
+      let tick = 100;
+      let inspections = 0;
+      const lines = [];
+      const removeTemp = vi.fn(() => {
+        tick += 3;
+      });
+      const baseRun = successfulRun();
+      const run = vi.fn((command, args, options) => {
+        tick += args[1] === "stop" ? 41 : 7;
+        if (command === "docker") {
+          inspections += 1;
+          if (scenario === "ownership-spawn-failure")
+            return {
+              error: Object.assign(new Error("inspection unavailable"), {
+                code: "EACCES",
+              }),
+            };
+          if (scenario === "ownership-change" && inspections === 2)
+            return { status: 0, stdout: "foreign-project|foreign-workdir\n" };
+        }
+        if (args[1] === "stop" && scenario.includes("cleanup-failure"))
+          return { status: 6 };
+        if (args[0] === "scripts/verify-access-fixture-contract.mjs") {
+          if (scenario === "primary-and-cleanup-failure") return { status: 9 };
+          if (scenario === "child-interrupted") process.emit("SIGTERM");
+          if (scenario === "ownership-spawn-failure")
+            expect(
+              lines.find((line) => line.name === "startup-ownership").outcome,
+            ).toEqual({ type: "spawn-failure", code: "EACCES" });
+          if (scenario === "spawn-failure")
+            return {
+              error: Object.assign(new Error("no child"), { code: "ENOENT" }),
+            };
+        }
+        if (args[1] === "start" && scenario === "startup-interrupted")
+          process.emit("SIGTERM");
+        return baseRun(command, args, options);
+      });
+      const expected =
+        scenario === "passed"
+          ? 0
+          : scenario === "cleanup-failure"
+            ? 6
+            : scenario === "primary-and-cleanup-failure"
+              ? 9
+              : scenario.includes("interrupted")
+                ? 143
+                : 1;
+      expect(
+        await mainWithPreparedProject(["--fixture-contract"], {
+          environment: {},
+          makeTemp: () => "/tmp/access-timing",
+          removeTemp,
+          run,
+          prepareProject: ({ stateRoot }) => {
+            tick += 11;
+            if (scenario === "preparation-failure")
+              throw new Error("preparation failed");
+            return join(stateRoot, "project");
+          },
+          stderr: vi.fn(),
+          stdout: (line) => lines.push(JSON.parse(line)),
+          monotonicNow: () => tick,
+          utcNow: () => new Date(Date.UTC(2026, 0, 1) + tick).toISOString(),
+        }),
+      ).toBe(expected);
+      const retained = [
+        "cleanup-failure",
+        "primary-and-cleanup-failure",
+        "ownership-change",
+        "ownership-spawn-failure",
+        "startup-interrupted",
+      ].includes(scenario);
+      const cleanup = lines.find((line) => line.name === "outer-cleanup");
+      const summary = lines.at(-1);
+      expect(cleanup).toMatchObject({
+        type: "access-phase",
+        name: "outer-cleanup",
+        scope: "shared-cleanup",
+        inclusive: true,
+        outcome: { type: "exit", status: retained ? 1 : 0 },
+      });
+      expect(summary).toMatchObject({
+        type: "access-lifecycle",
+        inclusive: true,
+        durationMs: tick - 100,
+        completedAt: new Date(Date.UTC(2026, 0, 1) + tick).toISOString(),
+        cleanupMs: retained ? null : cleanup.durationMs,
+        cleanupReason: retained
+          ? "Exact cleanup could not be completed; resources may be retained."
+          : null,
+        outcome: scenario.includes("interrupted")
+          ? { type: "signal", signal: "SIGTERM" }
+          : { type: "exit", status: expected },
+      });
+      expect(removeTemp).toHaveBeenCalledTimes(retained ? 0 : 1);
+      const stop = lines.find((line) => line.name === "supabase-stop");
+      if (
+        [
+          "ownership-change",
+          "ownership-spawn-failure",
+          "startup-interrupted",
+          "preparation-failure",
+        ].includes(scenario)
+      ) {
+        expect(stop).toBeUndefined();
+      } else {
+        expect(stop.durationMs).toBe(41);
+        expect(Date.parse(summary.completedAt)).toBeGreaterThanOrEqual(
+          Date.parse(stop.completedAt),
+        );
+        expect(stop.outcome).toEqual({
+          type: "exit",
+          status: scenario.includes("cleanup-failure") ? 6 : 0,
+        });
+      }
+      const diagnostics = lines.filter(
+        (line) => line.type === "verification-failure",
+      );
+      expect(
+        diagnostics.every(
+          (line) =>
+            line.reproduceGroup.join(" ") ===
+            "node scripts/verify-access.mjs --fixture-contract",
+        ),
+      ).toBe(true);
+      if (scenario === "spawn-failure")
+        expect(
+          lines.find(
+            (line) =>
+              line.name === "scripts/verify-access-fixture-contract.mjs",
+          ).outcome,
+        ).toEqual({ type: "spawn-failure", code: "ENOENT" });
+    }
+    for (const failure of ["temporary-state", "preparation-cleanup"]) {
+      let tick = 100;
+      const lines = [];
+      const run = vi.fn();
+      const removeTemp = vi.fn(() => {
+        tick += 13;
+        throw new Error("cleanup failed");
+      });
+      await expect(
+        mainWithPreparedProject([], {
+          environment: {},
+          run,
+          removeTemp,
+          makeTemp: () => {
+            tick += 5;
+            if (failure === "temporary-state")
+              throw new Error("temporary state failed");
+            return "/tmp/access-timing";
+          },
+          prepareProject: () => {
+            tick += 11;
+            throw new Error("preparation failed");
+          },
+          stdout: (line) => lines.push(JSON.parse(line)),
+          stderr: vi.fn(),
+          monotonicNow: () => tick,
+          utcNow: () => new Date(Date.UTC(2026, 0, 1) + tick).toISOString(),
+        }),
+      ).rejects.toThrow(
+        failure === "temporary-state"
+          ? "temporary state failed"
+          : "cleanup failed",
+      );
+      expect(run).not.toHaveBeenCalled();
+      expect(removeTemp).toHaveBeenCalledTimes(
+        failure === "temporary-state" ? 0 : 1,
+      );
+      expect(lines.at(-1)).toMatchObject({
+        type: "access-lifecycle",
+        durationMs: tick - 100,
+        cleanupMs: null,
+        cleanupReason:
+          failure === "temporary-state"
+            ? "Cleanup was not entered because temporary project state was not created."
+            : "Exact cleanup could not be completed; resources may be retained.",
+        outcome: { type: "exit", status: 1 },
+      });
+    }
+    await observeInterruptedAccessVerification("SIGTERM", {
+      observeTiming: (lines) => {
+        const summary = lines.at(-1);
+        expect(summary).toMatchObject({
+          type: "access-lifecycle",
+          cleanupReason: null,
+          outcome: { type: "signal", signal: "SIGTERM" },
+        });
+        expect(summary.cleanupMs).toBeGreaterThanOrEqual(0);
+        const stopped = lines.find((line) => line.name === "supabase-stop");
+        expect(stopped.outcome).toEqual({ type: "exit", status: 0 });
+        expect(Date.parse(summary.completedAt)).toBeGreaterThanOrEqual(
+          Date.parse(stopped.completedAt),
+        );
+        expect(
+          lines.find((line) => line.name === "supabase-db-reset").outcome,
+        ).toEqual({ type: "signal", signal: "SIGTERM" });
+      },
+    });
+  }, 15_000);
 });

@@ -10,6 +10,10 @@ import { build } from "esbuild";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
+  timing: {
+    check: "verify-booking-request-lifecycle-concurrency",
+    isolation: "serial",
+  },
   messages: {
     invalidGuard:
       "The Booking Request lifecycle fence test requires guarded local Supabase.",
@@ -17,34 +21,38 @@ const harness = createLocalSupabaseConcurrencyHarness({
       "The Supabase container does not belong to this disposable checkout.",
   },
 });
-const temporaryDirectory = mkdtempSync(
-  join(tmpdir(), "rentcottage-lifecycle-workers-"),
-);
-const workerBundle = join(temporaryDirectory, "worker.mjs");
-const workers = new Set();
-const databaseSessions = new Set();
-const fixtureIds = Object.freeze({
-  bookingRequest: randomUUID(),
-  bookingSnapshot: randomUUID(),
-  commitment: randomUUID(),
-  attempt: randomUUID(),
-  claim: randomUUID(),
-  paymentLifecycle: randomUUID(),
-  scheduleRevision: randomUUID(),
-  fullDayBundle: randomUUID(),
-  morningShift: randomUUID(),
-  idempotencyKey: randomUUID(),
-  eveningShift: randomUUID(),
-});
+let timingOutcome = "failed";
+try {
+  harness.markTimingPhase("setup");
+  const temporaryDirectory = mkdtempSync(
+    join(tmpdir(), "rentcottage-lifecycle-workers-"),
+  );
+  const workerBundle = join(temporaryDirectory, "worker.mjs");
+  const workers = new Set();
+  const databaseSessions = new Set();
+  const fixtureIds = Object.freeze({
+    bookingRequest: randomUUID(),
+    bookingSnapshot: randomUUID(),
+    commitment: randomUUID(),
+    attempt: randomUUID(),
+    claim: randomUUID(),
+    paymentLifecycle: randomUUID(),
+    scheduleRevision: randomUUID(),
+    fullDayBundle: randomUUID(),
+    morningShift: randomUUID(),
+    idempotencyKey: randomUUID(),
+    eveningShift: randomUUID(),
+  });
 
-function required(name) {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required for lifecycle concurrency`);
-  return value;
-}
+  function required(name) {
+    const value = process.env[name];
+    if (!value)
+      throw new Error(`${name} is required for lifecycle concurrency`);
+    return value;
+  }
 
-function seedSource() {
-  harness.runSql(`
+  function seedSource() {
+    harness.runSql(`
     begin;
     insert into public.test_booking_request_lifecycle_fences (
       label, booking_request_id, booking_snapshot_id, commitment_id,
@@ -276,11 +284,12 @@ function seedSource() {
     );
     commit;
   `);
-}
+  }
 
-function seed(label, ordinal) {
-  const day = String(ordinal + 1).padStart(2, "0");
-  harness.runSql(`
+  function seed(label, ordinal) {
+    harness.markTimingPhase("setup");
+    const day = String(ordinal + 1).padStart(2, "0");
+    harness.runSql(`
     insert into public.test_booking_request_lifecycle_fences (
       label, booking_request_id, booking_snapshot_id, commitment_id,
       attempt_id, claim_id, payment_lifecycle_id, customer_user_id,
@@ -512,93 +521,94 @@ function seed(label, ordinal) {
     from public.test_booking_request_lifecycle_fences
     where label = '${label}';
   `);
-}
+    harness.markTimingPhase("execution");
+  }
 
-function fixture(label) {
-  const value = harness.runSql(`
+  function fixture(label) {
+    const value = harness.runSql(`
     select booking_request_id || '|' || customer_user_id
     from public.test_booking_request_lifecycle_fences
     where label = '${label}';
   `);
-  const [bookingRequestId, customerId] = value.split("|");
-  if (!bookingRequestId || !customerId) {
-    throw new Error(`Lifecycle fence fixture ${label} was not created`);
+    const [bookingRequestId, customerId] = value.split("|");
+    if (!bookingRequestId || !customerId) {
+      throw new Error(`Lifecycle fence fixture ${label} was not created`);
+    }
+    return { bookingRequestId, customerId };
   }
-  return { bookingRequestId, customerId };
-}
 
-function startWorker(label, pause = "none") {
-  const target = fixture(label);
-  const child = spawn(process.execPath, [workerBundle], {
-    env: {
-      ...process.env,
-      SUPABASE_URL: required("SUPABASE_URL"),
-      SUPABASE_SECRET_KEY: required("SUPABASE_SECRET_KEY"),
-      LIFECYCLE_BOOKING_REQUEST_ID: target.bookingRequestId,
-      LIFECYCLE_CUSTOMER_ID: target.customerId,
-      LIFECYCLE_WORKER_PAUSE: pause,
-    },
-    stdio: ["ignore", "pipe", "pipe", "ipc"],
-  });
-  const worker = { child, messages: [], stderr: "", exit: undefined };
-  workers.add(worker);
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk) => {
-    worker.stderr += chunk;
-  });
-  child.on("message", (message) => worker.messages.push(message));
-  worker.exited = new Promise((resolve) => {
-    child.on("close", (code, signal) => {
-      worker.exit = { code, signal };
-      resolve(worker.exit);
+  function startWorker(label, pause = "none") {
+    const target = fixture(label);
+    const child = spawn(process.execPath, [workerBundle], {
+      env: {
+        ...process.env,
+        SUPABASE_URL: required("SUPABASE_URL"),
+        SUPABASE_SECRET_KEY: required("SUPABASE_SECRET_KEY"),
+        LIFECYCLE_BOOKING_REQUEST_ID: target.bookingRequestId,
+        LIFECYCLE_CUSTOMER_ID: target.customerId,
+        LIFECYCLE_WORKER_PAUSE: pause,
+      },
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
-  });
-  return worker;
-}
+    const worker = { child, messages: [], stderr: "", exit: undefined };
+    workers.add(worker);
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      worker.stderr += chunk;
+    });
+    child.on("message", (message) => worker.messages.push(message));
+    worker.exited = new Promise((resolve) => {
+      child.on("close", (code, signal) => {
+        worker.exit = { code, signal };
+        resolve(worker.exit);
+      });
+    });
+    return worker;
+  }
 
-async function waitForStage(worker, stage) {
-  const started = Date.now();
-  while (true) {
-    const message = worker.messages.find(
-      (candidate) => candidate.stage === stage,
-    );
-    if (message) return message;
-    const error = worker.messages.find(
-      (candidate) => candidate.stage === "error",
-    );
-    if (error) throw new Error(`Lifecycle worker failed: ${error.message}`);
-    if (worker.exit) {
-      throw new Error(
-        `Lifecycle worker exited before ${stage}: ${worker.stderr.trim()}`,
+  async function waitForStage(worker, stage) {
+    const started = Date.now();
+    while (true) {
+      const message = worker.messages.find(
+        (candidate) => candidate.stage === stage,
       );
+      if (message) return message;
+      const error = worker.messages.find(
+        (candidate) => candidate.stage === "error",
+      );
+      if (error) throw new Error(`Lifecycle worker failed: ${error.message}`);
+      if (worker.exit) {
+        throw new Error(
+          `Lifecycle worker exited before ${stage}: ${worker.stderr.trim()}`,
+        );
+      }
+      if (Date.now() - started > 15_000) {
+        throw new Error(`Lifecycle worker did not reach ${stage}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    if (Date.now() - started > 15_000) {
-      throw new Error(`Lifecycle worker did not reach ${stage}`);
+  }
+
+  async function finishWorker(worker) {
+    const result = await worker.exited;
+    if (result.code !== 0) {
+      throw new Error(`Lifecycle worker failed: ${worker.stderr.trim()}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    return waitForStage(worker, "complete");
   }
-}
 
-async function finishWorker(worker) {
-  const result = await worker.exited;
-  if (result.code !== 0) {
-    throw new Error(`Lifecycle worker failed: ${worker.stderr.trim()}`);
-  }
-  return waitForStage(worker, "complete");
-}
-
-function expireLease(label) {
-  harness.runSql(`
+  function expireLease(label) {
+    harness.runSql(`
     update public.booking_request_release_work work
     set lease_expires_at = clock_timestamp() - interval '1 millisecond'
     from public.test_booking_request_lifecycle_fences fixture
     where fixture.label = '${label}'
       and work.booking_request_id = fixture.booking_request_id;
   `);
-}
+  }
 
-function releaseWorkFixture(label) {
-  const value = harness.runSql(`
+  function releaseWorkFixture(label) {
+    const value = harness.runSql(`
     select work.id || '|' || work.lease_generation || '|' ||
       fixture.attempt_id || '|' || coalesce(work.active_operation_id::text, '')
     from public.test_booking_request_lifecycle_fences fixture
@@ -606,262 +616,266 @@ function releaseWorkFixture(label) {
       on work.booking_request_id = fixture.booking_request_id
     where fixture.label = '${label}';
   `);
-  const [workId, leaseGeneration, attemptId, operationId] = value.split("|");
-  if (!workId || !leaseGeneration || !attemptId) {
-    throw new Error(`Lifecycle release fixture ${label} is incomplete`);
+    const [workId, leaseGeneration, attemptId, operationId] = value.split("|");
+    if (!workId || !leaseGeneration || !attemptId) {
+      throw new Error(`Lifecycle release fixture ${label} is incomplete`);
+    }
+    return { workId, leaseGeneration, attemptId, operationId };
   }
-  return { workId, leaseGeneration, attemptId, operationId };
-}
 
-function startDatabaseSession(sql, closeInput = false) {
-  const session = harness.startSession(sql, closeInput);
-  databaseSessions.add(session);
-  return session;
-}
+  function startDatabaseSession(sql, closeInput = false) {
+    const session = harness.startSession(sql, closeInput);
+    databaseSessions.add(session);
+    return session;
+  }
 
-const sqlJson = (value) =>
-  `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
-function effectFor(admission) {
-  return JSON.parse(
-    harness.runSql(
-      `select to_jsonb(effect) from public.simulated_payment_effects effect where operation_id='${admission.operationId}';`,
-    ),
-  );
-}
-function effectBinding(admission) {
-  return {
-    operationId: admission.operationId,
-    providerIdentity: admission.providerIdentity,
-    idempotencyKey: admission.idempotencyKey,
-    requestFingerprint: admission.requestFingerprint,
-    notBefore: admission.notBefore,
-    notAfter: admission.notAfter,
-  };
-}
-function proposedEffect(admission) {
-  return {
-    outcome: "succeeded",
-    providerRequestId: `race-request-${admission.operationId}`,
-    providerReference: `race-reference-${admission.operationId}`,
-    movementReference: `race-movement-${admission.operationId}`,
-    evidence: {
+  const sqlJson = (value) =>
+    `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
+  function effectFor(admission) {
+    return JSON.parse(
+      harness.runSql(
+        `select to_jsonb(effect) from public.simulated_payment_effects effect where operation_id='${admission.operationId}';`,
+      ),
+    );
+  }
+  function effectBinding(admission) {
+    return {
       operationId: admission.operationId,
-      eventId: `race-event-${admission.operationId}`,
-      provenance: "fictional-provider",
-      originalOutcome: "succeeded",
-      executedAt: new Date().toISOString(),
-      occurredAt: new Date().toISOString(),
-      closedAt: null,
-    },
-  };
-}
-async function verifyEffectWinner(admission, winner) {
-  const binding = sqlJson(effectBinding(admission));
-  const execute = `public.persist_simulated_payment_effect(${binding},${sqlJson(proposedEffect(admission))})`;
-  const close = `public.seal_simulated_payment_absence(${binding})`;
-  const holderName = `effect_${winner}_holder`;
-  const contenderName = `effect_${winner}_contender`;
-  const holder = startDatabaseSession(
-    `begin; set application_name='${holderName}'; set local role service_role; select ${winner === "execute" ? execute : close}; select 'EFFECT_WINNER_HELD';`,
-  );
-  await harness.waitForMarker(holder, "EFFECT_WINNER_HELD");
-  const contender = startDatabaseSession(
-    `begin; set application_name='${contenderName}'; set local role service_role; select ${winner === "execute" ? close : execute}; commit;`,
-    true,
-  );
-  await harness.waitForLock(contenderName, contender);
-  assertBlockedBy(contenderName, holderName);
-  await harness.finishSession(holder, { action: "commit" });
-  await harness.finishSession(contender);
-  const returned = (session) =>
-    JSON.parse(session.stdout.split("\n").find((line) => line.startsWith("{")));
-  assert.deepEqual(
-    returned(contender),
-    returned(holder),
-    "The opposing operation returns the exact winner after an observed key lock wait",
-  );
-  assert.equal(
-    effectFor(admission).physical_execution_count,
-    winner === "execute" ? 1 : 0,
-  );
-  assert.equal(
-    effectFor(admission).state,
-    winner === "execute" ? "executed" : "closed-not-executed",
-  );
-}
-async function verifyEffectDeadlineAfterLock(worker, admission) {
-  const bound = effectBinding(admission);
-  const holder =
-    startDatabaseSession(`begin; set application_name='effect_deadline_holder';
+      providerIdentity: admission.providerIdentity,
+      idempotencyKey: admission.idempotencyKey,
+      requestFingerprint: admission.requestFingerprint,
+      notBefore: admission.notBefore,
+      notAfter: admission.notAfter,
+    };
+  }
+  function proposedEffect(admission) {
+    return {
+      outcome: "succeeded",
+      providerRequestId: `race-request-${admission.operationId}`,
+      providerReference: `race-reference-${admission.operationId}`,
+      movementReference: `race-movement-${admission.operationId}`,
+      evidence: {
+        operationId: admission.operationId,
+        eventId: `race-event-${admission.operationId}`,
+        provenance: "fictional-provider",
+        originalOutcome: "succeeded",
+        executedAt: new Date().toISOString(),
+        occurredAt: new Date().toISOString(),
+        closedAt: null,
+      },
+    };
+  }
+  async function verifyEffectWinner(admission, winner) {
+    const binding = sqlJson(effectBinding(admission));
+    const execute = `public.persist_simulated_payment_effect(${binding},${sqlJson(proposedEffect(admission))})`;
+    const close = `public.seal_simulated_payment_absence(${binding})`;
+    const holderName = `effect_${winner}_holder`;
+    const contenderName = `effect_${winner}_contender`;
+    const holder = startDatabaseSession(
+      `begin; set application_name='${holderName}'; set local role service_role; select ${winner === "execute" ? execute : close}; select 'EFFECT_WINNER_HELD';`,
+    );
+    await harness.waitForMarker(holder, "EFFECT_WINNER_HELD");
+    const contender = startDatabaseSession(
+      `begin; set application_name='${contenderName}'; set local role service_role; select ${winner === "execute" ? close : execute}; commit;`,
+      true,
+    );
+    await harness.waitForLock(contenderName, contender);
+    assertBlockedBy(contenderName, holderName);
+    await harness.finishSession(holder, { action: "commit" });
+    await harness.finishSession(contender);
+    const returned = (session) =>
+      JSON.parse(
+        session.stdout.split("\n").find((line) => line.startsWith("{")),
+      );
+    assert.deepEqual(
+      returned(contender),
+      returned(holder),
+      "The opposing operation returns the exact winner after an observed key lock wait",
+    );
+    assert.equal(
+      effectFor(admission).physical_execution_count,
+      winner === "execute" ? 1 : 0,
+    );
+    assert.equal(
+      effectFor(admission).state,
+      winner === "execute" ? "executed" : "closed-not-executed",
+    );
+  }
+  async function verifyEffectDeadlineAfterLock(worker, admission) {
+    const bound = effectBinding(admission);
+    const holder =
+      startDatabaseSession(`begin; set application_name='effect_deadline_holder';
     insert into public.simulated_payment_effects(operation_id,provider,environment,merchant_id,terminal_id,idempotency_key,binding,state,physical_execution_count)
       values('${admission.operationId}','fictional-payments','local-test','fictional-merchant','fictional-terminal','${admission.idempotencyKey}',${sqlJson(bound)},'reserved',0);
     select 'EFFECT_DEADLINE_HELD';`);
-  await harness.waitForMarker(holder, "EFFECT_DEADLINE_HELD");
-  assert.equal(
-    harness.runSql(
-      `select clock_timestamp() < '${admission.notAfter}'::timestamptz;`,
-    ),
-    "t",
-    "Executor starts before the immutable admission deadline",
-  );
-  const contender = startDatabaseSession(
-    `begin; set application_name='effect_deadline_contender'; set local statement_timeout='45s'; set local role service_role;
+    await harness.waitForMarker(holder, "EFFECT_DEADLINE_HELD");
+    assert.equal(
+      harness.runSql(
+        `select clock_timestamp() < '${admission.notAfter}'::timestamptz;`,
+      ),
+      "t",
+      "Executor starts before the immutable admission deadline",
+    );
+    const contender = startDatabaseSession(
+      `begin; set application_name='effect_deadline_contender'; set local statement_timeout='45s'; set local role service_role;
     select public.persist_simulated_payment_effect(${sqlJson(bound)},${sqlJson(proposedEffect(admission))}); commit;`,
-    true,
-  );
-  await harness.waitForLock("effect_deadline_contender", contender);
-  assertBlockedBy("effect_deadline_contender", "effect_deadline_holder");
-  const observationLimit = Date.now() + 45_000;
-  assert.equal(
-    harness.runSql(
-      `select clock_timestamp() < '${admission.notAfter}'::timestamptz;`,
-    ),
-    "t",
-    "The effect contender is visibly waiting before the deadline",
-  );
-  while (
-    harness.runSql(
-      `select clock_timestamp() >= '${admission.notAfter}'::timestamptz;`,
-    ) !== "t"
-  ) {
-    assert.ok(
-      Date.now() < observationLimit,
-      "Database deadline did not become observable",
+      true,
     );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  // The reserved candidate exists only in this fixture transaction and is never committed.
-  await harness.finishSession(holder, { action: "rollback" });
-  await harness.finishSession(contender);
-  const closed = effectFor(admission);
-  assert.deepEqual(
-    JSON.parse(
-      contender.stdout.split("\n").find((line) => line.startsWith("{")),
-    ),
-    closed.result,
-  );
-  worker.child.send("continue");
-  await finishWorker(worker);
-  assert.deepEqual(
-    effectFor(admission),
-    closed,
-    "The delayed real worker replays the closed attempt without reopening it",
-  );
-  assert.equal(closed.state, "closed-not-executed");
-  assert.equal(closed.physical_execution_count, 0);
-  assert.equal(closed.result.evidence.occurredAt, null);
-  assert.equal(closed.result.evidence.executedAt, null);
-  assert.ok(
-    Date.parse(closed.result.evidence.closedAt) >=
-      Date.parse(admission.notAfter),
-  );
-}
-
-function inquiryBinding(request, identity) {
-  return {
-    providerIdentity: identity,
-    requestFingerprint: null,
-    paymentLifecycleId: request.paymentLifecycleId,
-    logicalOperationId: request.logicalOperationId,
-    physicalAttemptId: request.attemptId,
-    operationKind: request.kind,
-    amountFils: request.amountFils,
-    currency: request.currency,
-  };
-}
-async function verifyAdmissionArbitration(ordinaryWins) {
-  const label = ordinaryWins
-    ? "ordinary-admission-wins"
-    : "dual-reconstruction";
-  seed(label, ordinaryWins ? 7 : 8);
-  const original = startWorker(label, "before-admission");
-  const { request, identity } = await waitForStage(original, "permitted");
-  let recovery;
-  if (!ordinaryWins) {
-    expireLease(label);
-    recovery = startWorker(label, "before-reload");
-    await waitForStage(recovery, "querying");
-  }
-  const operation = inquiryBinding(request, identity);
-  const permit = request.executionPermit;
-  const admission = {
-    ...operation,
-    requestFingerprint: permit.requestFingerprint,
-    permitPurpose: permit.purpose,
-    claimId: null,
-    claimGeneration: null,
-    idempotencyKey: permit.idempotencyKey,
-    notAfter: permit.notAfter,
-    workId: permit.workId,
-    leaseGeneration: permit.leaseGeneration,
-    leaseToken: permit.leaseToken,
-    operationId: permit.operationId,
-    operationGeneration: permit.operationGeneration,
-    cleanupAttemptId: null,
-    stateRevision: null,
-  };
-  const reload = `public.reload_booking_request_payment_operation(${sqlJson(operation)},null,null)`;
-  const holderName = `${label}_holder`;
-  const contenderName = `${label}_contender`;
-  const first =
-    startDatabaseSession(`begin; set application_name='${holderName}'; set local role service_role;
-    select ${ordinaryWins ? `public.admit_booking_request_provider_operation(${sqlJson(admission)})` : reload}; select 'ADMISSION_WINNER_HELD';`);
-  await harness.waitForMarker(first, "ADMISSION_WINNER_HELD");
-  const second = startDatabaseSession(
-    `begin; set application_name='${contenderName}'; set local role service_role; select ${reload}; commit;`,
-    true,
-  );
-  await harness.waitForLock(contenderName, second);
-  assertBlockedBy(contenderName, holderName);
-  await harness.finishSession(first, { action: "commit" });
-  await harness.finishSession(second);
-  const returned = (session) =>
-    JSON.parse(session.stdout.split("\n").find((line) => line.startsWith("{")));
-  const winner = returned(first);
-  assert.deepEqual(
-    returned(second),
-    { ...winner, mode: "reconcile" },
-    "A reloader waiting on source locks retains the first committed operation UUID and bounds",
-  );
-  assert.equal(
-    harness.runSql(
-      `select count(*) from public.payment_provider_operations where provider_idempotency_key='${permit.idempotencyKey}';`,
-    ),
-    "1",
-  );
-  const stored = JSON.parse(
-    harness.runSql(
-      `select jsonb_build_object('admission',admission,'outcome',current_outcome,'executedAt',executed_at,'recordedAt',recorded_at,'provenance',evidence_provenance) from public.payment_provider_operations where id='${winner.operationId}';`,
-    ),
-  );
-  assert.equal(stored.outcome, null);
-  assert.equal(stored.executedAt, null);
-  assert.equal(stored.recordedAt, null);
-  assert.equal(stored.provenance, "admitted");
-  if (ordinaryWins) {
+    await harness.waitForLock("effect_deadline_contender", contender);
+    assertBlockedBy("effect_deadline_contender", "effect_deadline_holder");
+    const observationLimit = Date.now() + 45_000;
+    assert.equal(
+      harness.runSql(
+        `select clock_timestamp() < '${admission.notAfter}'::timestamptz;`,
+      ),
+      "t",
+      "The effect contender is visibly waiting before the deadline",
+    );
+    while (
+      harness.runSql(
+        `select clock_timestamp() >= '${admission.notAfter}'::timestamptz;`,
+      ) !== "t"
+    ) {
+      assert.ok(
+        Date.now() < observationLimit,
+        "Database deadline did not become observable",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    // The reserved candidate exists only in this fixture transaction and is never committed.
+    await harness.finishSession(holder, { action: "rollback" });
+    await harness.finishSession(contender);
+    const closed = effectFor(admission);
     assert.deepEqual(
-      stored.admission.permit,
-      admission,
-      "Reconstruction cannot replace a committed executable permit",
+      JSON.parse(
+        contender.stdout.split("\n").find((line) => line.startsWith("{")),
+      ),
+      closed.result,
     );
-    harness.runSql(
-      `set role service_role; select public.persist_simulated_payment_effect(${sqlJson(effectBinding(winner))},${sqlJson(proposedEffect(winner))});`,
+    worker.child.send("continue");
+    await finishWorker(worker);
+    assert.deepEqual(
+      effectFor(admission),
+      closed,
+      "The delayed real worker replays the closed attempt without reopening it",
     );
-    original.child.send("continue");
-    assert.equal((await finishWorker(original)).result.status, "withdrawn");
-    verify(label, 1, 1);
-  } else {
-    assert.equal(stored.admission.reconciliationOnly, true);
-    recovery.child.send("continue");
-    assert.equal((await finishWorker(recovery)).result.status, "withdrawn");
-    original.child.send("continue");
-    await finishWorker(original);
-    verify(label, 2);
+    assert.equal(closed.state, "closed-not-executed");
+    assert.equal(closed.physical_execution_count, 0);
+    assert.equal(closed.result.evidence.occurredAt, null);
+    assert.equal(closed.result.evidence.executedAt, null);
+    assert.ok(
+      Date.parse(closed.result.evidence.closedAt) >=
+        Date.parse(admission.notAfter),
+    );
   }
-}
 
-function assertBlockedBy(contenderName, blockerName) {
-  const blockers = harness.runSql(`
+  function inquiryBinding(request, identity) {
+    return {
+      providerIdentity: identity,
+      requestFingerprint: null,
+      paymentLifecycleId: request.paymentLifecycleId,
+      logicalOperationId: request.logicalOperationId,
+      physicalAttemptId: request.attemptId,
+      operationKind: request.kind,
+      amountFils: request.amountFils,
+      currency: request.currency,
+    };
+  }
+  async function verifyAdmissionArbitration(ordinaryWins) {
+    const label = ordinaryWins
+      ? "ordinary-admission-wins"
+      : "dual-reconstruction";
+    seed(label, ordinaryWins ? 7 : 8);
+    const original = startWorker(label, "before-admission");
+    const { request, identity } = await waitForStage(original, "permitted");
+    let recovery;
+    if (!ordinaryWins) {
+      expireLease(label);
+      recovery = startWorker(label, "before-reload");
+      await waitForStage(recovery, "querying");
+    }
+    const operation = inquiryBinding(request, identity);
+    const permit = request.executionPermit;
+    const admission = {
+      ...operation,
+      requestFingerprint: permit.requestFingerprint,
+      permitPurpose: permit.purpose,
+      claimId: null,
+      claimGeneration: null,
+      idempotencyKey: permit.idempotencyKey,
+      notAfter: permit.notAfter,
+      workId: permit.workId,
+      leaseGeneration: permit.leaseGeneration,
+      leaseToken: permit.leaseToken,
+      operationId: permit.operationId,
+      operationGeneration: permit.operationGeneration,
+      cleanupAttemptId: null,
+      stateRevision: null,
+    };
+    const reload = `public.reload_booking_request_payment_operation(${sqlJson(operation)},null,null)`;
+    const holderName = `${label}_holder`;
+    const contenderName = `${label}_contender`;
+    const first =
+      startDatabaseSession(`begin; set application_name='${holderName}'; set local role service_role;
+    select ${ordinaryWins ? `public.admit_booking_request_provider_operation(${sqlJson(admission)})` : reload}; select 'ADMISSION_WINNER_HELD';`);
+    await harness.waitForMarker(first, "ADMISSION_WINNER_HELD");
+    const second = startDatabaseSession(
+      `begin; set application_name='${contenderName}'; set local role service_role; select ${reload}; commit;`,
+      true,
+    );
+    await harness.waitForLock(contenderName, second);
+    assertBlockedBy(contenderName, holderName);
+    await harness.finishSession(first, { action: "commit" });
+    await harness.finishSession(second);
+    const returned = (session) =>
+      JSON.parse(
+        session.stdout.split("\n").find((line) => line.startsWith("{")),
+      );
+    const winner = returned(first);
+    assert.deepEqual(
+      returned(second),
+      { ...winner, mode: "reconcile" },
+      "A reloader waiting on source locks retains the first committed operation UUID and bounds",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.payment_provider_operations where provider_idempotency_key='${permit.idempotencyKey}';`,
+      ),
+      "1",
+    );
+    const stored = JSON.parse(
+      harness.runSql(
+        `select jsonb_build_object('admission',admission,'outcome',current_outcome,'executedAt',executed_at,'recordedAt',recorded_at,'provenance',evidence_provenance) from public.payment_provider_operations where id='${winner.operationId}';`,
+      ),
+    );
+    assert.equal(stored.outcome, null);
+    assert.equal(stored.executedAt, null);
+    assert.equal(stored.recordedAt, null);
+    assert.equal(stored.provenance, "admitted");
+    if (ordinaryWins) {
+      assert.deepEqual(
+        stored.admission.permit,
+        admission,
+        "Reconstruction cannot replace a committed executable permit",
+      );
+      harness.runSql(
+        `set role service_role; select public.persist_simulated_payment_effect(${sqlJson(effectBinding(winner))},${sqlJson(proposedEffect(winner))});`,
+      );
+      original.child.send("continue");
+      assert.equal((await finishWorker(original)).result.status, "withdrawn");
+      verify(label, 1, 1);
+    } else {
+      assert.equal(stored.admission.reconciliationOnly, true);
+      recovery.child.send("continue");
+      assert.equal((await finishWorker(recovery)).result.status, "withdrawn");
+      original.child.send("continue");
+      await finishWorker(original);
+      verify(label, 2);
+    }
+  }
+
+  function assertBlockedBy(contenderName, blockerName) {
+    const blockers = harness.runSql(`
     select count(*)::integer
     from pg_catalog.pg_stat_activity contender
     join pg_catalog.pg_stat_activity blocker
@@ -869,39 +883,39 @@ function assertBlockedBy(contenderName, blockerName) {
     where contender.application_name = '${contenderName}'
       and blocker.application_name = '${blockerName}';
   `);
-  if (blockers !== "1") {
-    throw new Error(
-      `${contenderName} was not blocked by ${blockerName}; found ${blockers}`,
-    );
+    if (blockers !== "1") {
+      throw new Error(
+        `${contenderName} was not blocked by ${blockerName}; found ${blockers}`,
+      );
+    }
   }
-}
 
-async function assertNowaitSucceeds(sql) {
-  const probe = startDatabaseSession(
-    `
+  async function assertNowaitSucceeds(sql) {
+    const probe = startDatabaseSession(
+      `
       begin;
       ${sql}
       rollback;
     `,
-    true,
-  );
-  await harness.finishSession(probe);
-}
+      true,
+    );
+    await harness.finishSession(probe);
+  }
 
-async function verifyCompletedRequestBeforeWork(label, operation) {
-  const fixture = releaseWorkFixture(label);
-  const suffix = operation === "lease" ? "lease" : "finalize";
-  const holderName = `rc_request_holder_${suffix}`;
-  const contenderName = `rc_release_contender_${suffix}`;
-  const marker = `${suffix}-request-locked`;
-  const expectedResult = `${suffix}-result:withdrawn`;
-  const targetCall =
-    operation === "lease"
-      ? `public.lease_booking_request_release_work('${fixture.workId}')`
-      : `public.finalize_booking_request_release(
+  async function verifyCompletedRequestBeforeWork(label, operation) {
+    const fixture = releaseWorkFixture(label);
+    const suffix = operation === "lease" ? "lease" : "finalize";
+    const holderName = `rc_request_holder_${suffix}`;
+    const contenderName = `rc_release_contender_${suffix}`;
+    const marker = `${suffix}-request-locked`;
+    const expectedResult = `${suffix}-result:withdrawn`;
+    const targetCall =
+      operation === "lease"
+        ? `public.lease_booking_request_release_work('${fixture.workId}')`
+        : `public.finalize_booking_request_release(
           '${fixture.workId}', ${fixture.leaseGeneration}, '${randomUUID()}'
         )`;
-  const holder = startDatabaseSession(`
+    const holder = startDatabaseSession(`
     set application_name = '${holderName}';
     begin;
     select 1 from public.booking_requests requests
@@ -913,47 +927,50 @@ async function verifyCompletedRequestBeforeWork(label, operation) {
     for update;
     select '${marker}';
   `);
-  await harness.waitForMarker(holder, marker);
-  const contender = startDatabaseSession(
-    `
+    await harness.waitForMarker(holder, marker);
+    const contender = startDatabaseSession(
+      `
       set application_name = '${contenderName}';
       begin;
       select '${suffix}-result:' || (${targetCall} ->> 'status');
       rollback;
     `,
-    true,
-  );
-  try {
-    await harness.waitForLock(contenderName, contender);
-    assertBlockedBy(contenderName, holderName);
-    await assertNowaitSucceeds(`
+      true,
+    );
+    try {
+      await harness.waitForLock(contenderName, contender);
+      assertBlockedBy(contenderName, holderName);
+      await assertNowaitSucceeds(`
       select 1 from public.booking_request_release_work work
       where work.id = '${fixture.workId}'
       for update nowait;
     `);
-  } finally {
-    await harness.finishSession(holder, { action: "rollback" });
-    await harness.finishSession(contender);
-  }
-  if (!contender.stdout.includes(expectedResult)) {
-    throw new Error(
-      `${operation} changed the completed terminal result: ${contender.stdout.trim()}`,
-    );
-  }
-}
+    } finally {
+      harness.markTimingPhase("cleanup");
+      await harness.finishSession(holder, { action: "rollback" });
+      await harness.finishSession(contender);
+    }
+    harness.markTimingPhase("execution");
 
-async function verifyAttemptBeforeActiveOperation(label) {
-  const fixture = releaseWorkFixture(label);
-  if (!fixture.operationId) {
-    throw new Error(
-      `Lifecycle release fixture ${label} has no active operation`,
-    );
+    if (!contender.stdout.includes(expectedResult)) {
+      throw new Error(
+        `${operation} changed the completed terminal result: ${contender.stdout.trim()}`,
+      );
+    }
   }
-  const holderName = "rc_attempt_holder_active_release";
-  const contenderName = "rc_lease_contender_active_release";
-  const marker = "active-release-attempt-locked";
-  const expectedResult = "active-release-result:release-required";
-  const holder = startDatabaseSession(`
+
+  async function verifyAttemptBeforeActiveOperation(label) {
+    const fixture = releaseWorkFixture(label);
+    if (!fixture.operationId) {
+      throw new Error(
+        `Lifecycle release fixture ${label} has no active operation`,
+      );
+    }
+    const holderName = "rc_attempt_holder_active_release";
+    const contenderName = "rc_lease_contender_active_release";
+    const marker = "active-release-attempt-locked";
+    const expectedResult = "active-release-result:release-required";
+    const holder = startDatabaseSession(`
     set application_name = '${holderName}';
     begin;
     select 1 from public.booking_request_submission_attempts attempts
@@ -961,9 +978,9 @@ async function verifyAttemptBeforeActiveOperation(label) {
     for update;
     select '${marker}';
   `);
-  await harness.waitForMarker(holder, marker);
-  const contender = startDatabaseSession(
-    `
+    await harness.waitForMarker(holder, marker);
+    const contender = startDatabaseSession(
+      `
       set application_name = '${contenderName}';
       begin;
       select 'active-release-result:' ||
@@ -971,29 +988,32 @@ async function verifyAttemptBeforeActiveOperation(label) {
           ->> 'status');
       rollback;
     `,
-    true,
-  );
-  try {
-    await harness.waitForLock(contenderName, contender);
-    assertBlockedBy(contenderName, holderName);
-    await assertNowaitSucceeds(`
+      true,
+    );
+    try {
+      await harness.waitForLock(contenderName, contender);
+      assertBlockedBy(contenderName, holderName);
+      await assertNowaitSucceeds(`
       select 1 from public.booking_request_release_operations operations
       where operations.id = '${fixture.operationId}'
       for update nowait;
     `);
-  } finally {
-    await harness.finishSession(holder, { action: "rollback" });
-    await harness.finishSession(contender);
-  }
-  if (!contender.stdout.includes(expectedResult)) {
-    throw new Error(
-      `The reclaimed lease result changed: ${contender.stdout.trim()}`,
-    );
-  }
-}
+    } finally {
+      harness.markTimingPhase("cleanup");
+      await harness.finishSession(holder, { action: "rollback" });
+      await harness.finishSession(contender);
+    }
+    harness.markTimingPhase("execution");
 
-function verify(label, expectedOperations, expectedLeaseGeneration = 2) {
-  const actual = harness.runSql(`
+    if (!contender.stdout.includes(expectedResult)) {
+      throw new Error(
+        `The reclaimed lease result changed: ${contender.stdout.trim()}`,
+      );
+    }
+  }
+
+  function verify(label, expectedOperations, expectedLeaseGeneration = 2) {
+    const actual = harness.runSql(`
     select requests.status || '|' || work.state || '|' ||
       work.lease_generation || '|' || commitments.status || '|' ||
       bool_and(not occupancies.active) || '|' ||
@@ -1027,19 +1047,19 @@ function verify(label, expectedOperations, expectedLeaseGeneration = 2) {
     group by requests.status, work.state, work.lease_generation,
       commitments.status;
   `);
-  const expected = `withdrawn|complete|${expectedLeaseGeneration}|released_hold|true|2|${expectedOperations}|${expectedOperations}|1`;
-  const effects =
-    harness.runSql(`select count(*) filter(where effect.state='executed')||'|'||sum(effect.physical_execution_count)||'|'||count(*) filter(where effect.state='closed-not-executed')
+    const expected = `withdrawn|complete|${expectedLeaseGeneration}|released_hold|true|2|${expectedOperations}|${expectedOperations}|1`;
+    const effects =
+      harness.runSql(`select count(*) filter(where effect.state='executed')||'|'||sum(effect.physical_execution_count)||'|'||count(*) filter(where effect.state='closed-not-executed')
     from public.simulated_payment_effects effect join public.payment_provider_operations operation on operation.id=effect.operation_id
     join public.test_booking_request_lifecycle_fences fixture on fixture.payment_lifecycle_id=operation.payment_lifecycle_id where fixture.label='${label}';`);
-  if (effects !== `1|1|${expectedOperations - 1}`)
-    throw new Error(`${label} effect count/fence changed: ${effects}`);
-  if (actual !== expected) {
-    throw new Error(`${label} produced ${actual}; expected ${expected}`);
+    if (effects !== `1|1|${expectedOperations - 1}`)
+      throw new Error(`${label} effect count/fence changed: ${effects}`);
+    if (actual !== expected) {
+      throw new Error(`${label} produced ${actual}; expected ${expected}`);
+    }
   }
-}
 
-const cleanup = `begin;
+  const cleanup = `begin;
   alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
   delete from public.booking_notification_events events
   using public.test_booking_request_lifecycle_fences fixture
@@ -1121,40 +1141,40 @@ const cleanup = `begin;
     enable trigger reject_cottage_shift_schedule_revision_delete;
 commit;`;
 
-let failure;
-try {
-  harness.guardDisposableLocalDatabase();
-  await build({
-    entryPoints: ["scripts/booking-request-lifecycle-worker.ts"],
-    outfile: workerBundle,
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    target: "node22",
-    plugins: [
-      {
-        name: "server-only-noop",
-        setup(buildApi) {
-          buildApi.onResolve({ filter: /^server-only$/ }, () => ({
-            path: "server-only",
-            namespace: "server-only-noop",
-          }));
-          buildApi.onLoad(
-            { filter: /.*/, namespace: "server-only-noop" },
-            () => ({ contents: "export {};", loader: "js" }),
-          );
+  let failure;
+  try {
+    harness.guardDisposableLocalDatabase();
+    await build({
+      entryPoints: ["scripts/booking-request-lifecycle-worker.ts"],
+      outfile: workerBundle,
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      target: "node22",
+      plugins: [
+        {
+          name: "server-only-noop",
+          setup(buildApi) {
+            buildApi.onResolve({ filter: /^server-only$/ }, () => ({
+              path: "server-only",
+              namespace: "server-only-noop",
+            }));
+            buildApi.onLoad(
+              { filter: /.*/, namespace: "server-only-noop" },
+              () => ({ contents: "export {};", loader: "js" }),
+            );
+          },
         },
-      },
-    ],
-  });
-  if (
-    harness.runSql(
-      "select to_regclass('public.test_booking_request_lifecycle_fences') is not null;",
-    ) === "t"
-  ) {
-    harness.runSql(cleanup);
-  }
-  harness.runSql(`
+      ],
+    });
+    if (
+      harness.runSql(
+        "select to_regclass('public.test_booking_request_lifecycle_fences') is not null;",
+      ) === "t"
+    ) {
+      harness.runSql(cleanup);
+    }
+    harness.runSql(`
     create table public.test_booking_request_lifecycle_fences (
       label text primary key,
       booking_request_id uuid not null unique,
@@ -1168,177 +1188,191 @@ try {
     );
   `);
 
-  seedSource();
-  seed("pre-admitted", 1);
-  const admitted = startWorker("pre-admitted", "after-effect");
-  await waitForStage(admitted, "effect");
-  expireLease("pre-admitted");
-  await verifyAttemptBeforeActiveOperation("pre-admitted");
-  const admittedRecovery = startWorker("pre-admitted");
-  const recoveredAdmission = await finishWorker(admittedRecovery);
-  if (recoveredAdmission.result.status !== "withdrawn") {
-    throw new Error(
-      `The recovery worker did not finalize pre-admitted work: ${JSON.stringify(recoveredAdmission)}`,
-    );
-  }
-  admitted.child.send("continue");
-  await finishWorker(admitted);
-  verify("pre-admitted", 1);
-  await verifyCompletedRequestBeforeWork("pre-admitted", "lease");
-
-  seed("post-expiry", 2);
-  const rejected = startWorker("post-expiry", "before-admission");
-  await waitForStage(rejected, "permitted");
-  expireLease("post-expiry");
-  const rejectedRecovery = startWorker("post-expiry");
-  const recoveredAbsence = await finishWorker(rejectedRecovery);
-  if (recoveredAbsence.result.status !== "withdrawn") {
-    throw new Error(
-      `The recovery worker did not retry proven provider absence: ${JSON.stringify(recoveredAbsence)}`,
-    );
-  }
-  rejected.child.send("continue");
-  await finishWorker(rejected);
-  verify("post-expiry", 2);
-  await verifyCompletedRequestBeforeWork("post-expiry", "finalize");
-  seed("absence-before-record", 3);
-  const waitingExecutor = startWorker(
-    "absence-before-record",
-    "after-admission",
-  );
-  const { admission: unused } = await waitForStage(waitingExecutor, "admitted");
-  expireLease("absence-before-record");
-  const waitingRecorder = startWorker("absence-before-record", "before-record");
-  const unrecorded = await waitForStage(waitingRecorder, "unrecorded");
-  assert.equal(unrecorded.admission.operationId, unused.operationId);
-  assert.equal(unrecorded.result.outcome, "not-executed");
-  assert.equal(effectFor(unused).physical_execution_count, 0);
-  assert.equal(
-    harness.runSql(
-      `select current_outcome is null and recorded_at is null from public.payment_provider_operations where id='${unused.operationId}';`,
-    ),
-    "t",
-  );
-  assert.equal(
-    harness.runSql(
-      `select state from public.booking_request_release_operations where id=(select active_operation_id from public.booking_request_release_work where booking_request_id='${fixture("absence-before-record").bookingRequestId}');`,
-    ),
-    "reconcile_required",
-    "Unrecorded absence cannot authorize retry",
-  );
-  assert.equal(
-    (await finishWorker(startWorker("absence-before-record"))).result.status,
-    "processing",
-  );
-  assert.equal(
-    harness.runSql(
-      `select count(*) from public.payment_provider_operations where payment_lifecycle_id='${unused.binding.paymentLifecycleId}' and operation_kind='release';`,
-    ),
-    "1",
-  );
-  waitingRecorder.child.send("continue");
-  assert.equal(
-    (await finishWorker(waitingRecorder)).result.status,
-    "withdrawn",
-  );
-  waitingExecutor.child.send("continue");
-  await finishWorker(waitingExecutor);
-  assert.equal(effectFor(unused).physical_execution_count, 0);
-  verify("absence-before-record", 2);
-
-  for (const [winner, ordinal] of [
-    ["execute", 4],
-    ["close", 5],
-  ]) {
-    const label = `effect-winner-${winner}`;
-    seed(label, ordinal);
-    const contender = startWorker(label, "after-admission");
-    const { admission } = await waitForStage(contender, "admitted");
-    await verifyEffectWinner(admission, winner);
-    contender.child.send("continue");
-    const terminal = await finishWorker(contender);
-    assert.equal(
-      terminal.result.status,
-      winner === "execute" ? "withdrawn" : "processing",
-      `${winner} winner retains the existing execute-result handling`,
-    );
-    if (winner === "close") {
-      assert.equal(
-        harness.runSql(
-          `select current_outcome from public.payment_provider_operations where id='${admission.operationId}';`,
-        ),
-        "not-executed",
-      );
-      expireLease(label);
-      assert.equal(
-        (await finishWorker(startWorker(label))).result.status,
-        "withdrawn",
+    seedSource();
+    seed("pre-admitted", 1);
+    const admitted = startWorker("pre-admitted", "after-effect");
+    await waitForStage(admitted, "effect");
+    expireLease("pre-admitted");
+    await verifyAttemptBeforeActiveOperation("pre-admitted");
+    const admittedRecovery = startWorker("pre-admitted");
+    const recoveredAdmission = await finishWorker(admittedRecovery);
+    if (recoveredAdmission.result.status !== "withdrawn") {
+      throw new Error(
+        `The recovery worker did not finalize pre-admitted work: ${JSON.stringify(recoveredAdmission)}`,
       );
     }
-    verify(label, winner === "execute" ? 1 : 2, winner === "execute" ? 1 : 2);
-  }
+    admitted.child.send("continue");
+    await finishWorker(admitted);
+    verify("pre-admitted", 1);
+    await verifyCompletedRequestBeforeWork("pre-admitted", "lease");
 
-  await verifyAdmissionArbitration(true);
-  await verifyAdmissionArbitration(false);
-  seed("effect-deadline", 6);
-  const expiredExecutor = startWorker("effect-deadline", "after-admission");
-  const { admission: expiredAdmission } = await waitForStage(
-    expiredExecutor,
-    "admitted",
-  );
-  await verifyEffectDeadlineAfterLock(expiredExecutor, expiredAdmission);
-  assert.equal(
-    (await finishWorker(startWorker("effect-deadline"))).result.status,
-    "withdrawn",
-  );
-  verify("effect-deadline", 2);
-
-  console.log(
-    "Booking Request release concurrency passed: separate Node workers with separate Supabase clients used the production repository and DurablePaymentSimulator; an effect before lease loss reconciled once; an intent without shared admission was reconstructed and closed after takeover, then retried only after recorded absence; the original caller could not execute afterward. Fresh-process closure could not authorize retry before explicit recording; both opposing effect/absence insert orders waited and retained one winner; an already admitted executor blocked on the effect key across its deadline produced durable zero-execution closure.",
-  );
-} catch (error) {
-  failure = error;
-  try {
-    if (
+    seed("post-expiry", 2);
+    const rejected = startWorker("post-expiry", "before-admission");
+    await waitForStage(rejected, "permitted");
+    expireLease("post-expiry");
+    const rejectedRecovery = startWorker("post-expiry");
+    const recoveredAbsence = await finishWorker(rejectedRecovery);
+    if (recoveredAbsence.result.status !== "withdrawn") {
+      throw new Error(
+        `The recovery worker did not retry proven provider absence: ${JSON.stringify(recoveredAbsence)}`,
+      );
+    }
+    rejected.child.send("continue");
+    await finishWorker(rejected);
+    verify("post-expiry", 2);
+    await verifyCompletedRequestBeforeWork("post-expiry", "finalize");
+    seed("absence-before-record", 3);
+    const waitingExecutor = startWorker(
+      "absence-before-record",
+      "after-admission",
+    );
+    const { admission: unused } = await waitForStage(
+      waitingExecutor,
+      "admitted",
+    );
+    expireLease("absence-before-record");
+    const waitingRecorder = startWorker(
+      "absence-before-record",
+      "before-record",
+    );
+    const unrecorded = await waitForStage(waitingRecorder, "unrecorded");
+    assert.equal(unrecorded.admission.operationId, unused.operationId);
+    assert.equal(unrecorded.result.outcome, "not-executed");
+    assert.equal(effectFor(unused).physical_execution_count, 0);
+    assert.equal(
       harness.runSql(
-        "select to_regclass('public.test_booking_request_lifecycle_fences') is not null;",
-      ) === "t"
-    ) {
-      console.error(
-        "Lifecycle failure state:",
-        harness.runSql(`select jsonb_build_object('databaseNow',clock_timestamp(),
+        `select current_outcome is null and recorded_at is null from public.payment_provider_operations where id='${unused.operationId}';`,
+      ),
+      "t",
+    );
+    assert.equal(
+      harness.runSql(
+        `select state from public.booking_request_release_operations where id=(select active_operation_id from public.booking_request_release_work where booking_request_id='${fixture("absence-before-record").bookingRequestId}');`,
+      ),
+      "reconcile_required",
+      "Unrecorded absence cannot authorize retry",
+    );
+    assert.equal(
+      (await finishWorker(startWorker("absence-before-record"))).result.status,
+      "processing",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.payment_provider_operations where payment_lifecycle_id='${unused.binding.paymentLifecycleId}' and operation_kind='release';`,
+      ),
+      "1",
+    );
+    waitingRecorder.child.send("continue");
+    assert.equal(
+      (await finishWorker(waitingRecorder)).result.status,
+      "withdrawn",
+    );
+    waitingExecutor.child.send("continue");
+    await finishWorker(waitingExecutor);
+    assert.equal(effectFor(unused).physical_execution_count, 0);
+    verify("absence-before-record", 2);
+
+    for (const [winner, ordinal] of [
+      ["execute", 4],
+      ["close", 5],
+    ]) {
+      const label = `effect-winner-${winner}`;
+      seed(label, ordinal);
+      const contender = startWorker(label, "after-admission");
+      const { admission } = await waitForStage(contender, "admitted");
+      await verifyEffectWinner(admission, winner);
+      contender.child.send("continue");
+      const terminal = await finishWorker(contender);
+      assert.equal(
+        terminal.result.status,
+        winner === "execute" ? "withdrawn" : "processing",
+        `${winner} winner retains the existing execute-result handling`,
+      );
+      if (winner === "close") {
+        assert.equal(
+          harness.runSql(
+            `select current_outcome from public.payment_provider_operations where id='${admission.operationId}';`,
+          ),
+          "not-executed",
+        );
+        expireLease(label);
+        assert.equal(
+          (await finishWorker(startWorker(label))).result.status,
+          "withdrawn",
+        );
+      }
+      verify(label, winner === "execute" ? 1 : 2, winner === "execute" ? 1 : 2);
+    }
+
+    await verifyAdmissionArbitration(true);
+    await verifyAdmissionArbitration(false);
+    seed("effect-deadline", 6);
+    const expiredExecutor = startWorker("effect-deadline", "after-admission");
+    const { admission: expiredAdmission } = await waitForStage(
+      expiredExecutor,
+      "admitted",
+    );
+    await verifyEffectDeadlineAfterLock(expiredExecutor, expiredAdmission);
+    assert.equal(
+      (await finishWorker(startWorker("effect-deadline"))).result.status,
+      "withdrawn",
+    );
+    verify("effect-deadline", 2);
+
+    console.log(
+      "Booking Request release concurrency passed: separate Node workers with separate Supabase clients used the production repository and DurablePaymentSimulator; an effect before lease loss reconciled once; an intent without shared admission was reconstructed and closed after takeover, then retried only after recorded absence; the original caller could not execute afterward. Fresh-process closure could not authorize retry before explicit recording; both opposing effect/absence insert orders waited and retained one winner; an already admitted executor blocked on the effect key across its deadline produced durable zero-execution closure.",
+    );
+  } catch (error) {
+    failure = error;
+    try {
+      if (
+        harness.runSql(
+          "select to_regclass('public.test_booking_request_lifecycle_fences') is not null;",
+        ) === "t"
+      ) {
+        console.error(
+          "Lifecycle failure state:",
+          harness.runSql(`select jsonb_build_object('databaseNow',clock_timestamp(),
         'work',(select jsonb_agg(jsonb_build_object('fixture',fixture.label,'id',work.id,'state',work.state,'generation',work.lease_generation,'expiresAt',work.lease_expires_at)) from public.booking_request_release_work work join public.test_booking_request_lifecycle_fences fixture on fixture.booking_request_id=work.booking_request_id),
         'operations',(select jsonb_agg(jsonb_build_object('fixture',fixture.label,'id',operation.id,'state',operation.state,'outcome',operation.provider_outcome)) from public.booking_request_release_operations operation join public.test_booking_request_lifecycle_fences fixture on fixture.attempt_id=operation.attempt_id),
         'evidence',(select jsonb_agg(jsonb_build_object('fixture',fixture.label,'id',operation.id,'outcome',operation.current_outcome,'notAfter',operation.admission->'notAfter','executedAt',operation.executed_at,'recordedAt',operation.recorded_at,'effectState',effect.state,'count',effect.physical_execution_count)) from public.payment_provider_operations operation join public.test_booking_request_lifecycle_fences fixture on fixture.claim_id=operation.claim_id left join public.simulated_payment_effects effect on effect.operation_id=operation.id));`),
+        );
+      }
+    } catch (diagnosticError) {
+      console.error(
+        "Lifecycle failure state unavailable:",
+        diagnosticError.message,
       );
     }
-  } catch (diagnosticError) {
-    console.error(
-      "Lifecycle failure state unavailable:",
-      diagnosticError.message,
-    );
-  }
-} finally {
-  for (const worker of workers) {
-    if (!worker.exit) worker.child.kill("SIGTERM");
-  }
-  for (const session of databaseSessions) {
-    if (!session.exit) session.child.kill("SIGTERM");
-  }
-  try {
-    harness.guardDisposableLocalDatabase();
-    if (
-      harness.runSql(
-        "select to_regclass('public.test_booking_request_lifecycle_fences') is not null;",
-      ) === "t"
-    ) {
-      harness.runSql(cleanup);
+  } finally {
+    harness.markTimingPhase("cleanup");
+    for (const worker of workers) {
+      if (!worker.exit) worker.child.kill("SIGTERM");
     }
-  } catch (cleanupError) {
-    failure = failure
-      ? new AggregateError([failure, cleanupError], "Lifecycle cleanup failed")
-      : cleanupError;
+    for (const session of databaseSessions) {
+      if (!session.exit) session.child.kill("SIGTERM");
+    }
+    try {
+      harness.guardDisposableLocalDatabase();
+      if (
+        harness.runSql(
+          "select to_regclass('public.test_booking_request_lifecycle_fences') is not null;",
+        ) === "t"
+      ) {
+        harness.runSql(cleanup);
+      }
+    } catch (cleanupError) {
+      failure = failure
+        ? new AggregateError(
+            [failure, cleanupError],
+            "Lifecycle cleanup failed",
+          )
+        : cleanupError;
+    }
+    rmSync(temporaryDirectory, { recursive: true, force: true });
   }
-  rmSync(temporaryDirectory, { recursive: true, force: true });
+  if (failure) throw failure;
+  timingOutcome = "passed";
+} finally {
+  harness.finishTiming({ outcome: timingOutcome, cleanupDisposition: "local" });
 }
-if (failure) throw failure;

@@ -400,6 +400,9 @@ export async function main(
   {
     environment = process.env,
     cleanupCommandLimitMs = CLEANUP_COMMAND_LIMIT_MS,
+    monotonicNow = () => performance.now(),
+    utcNow = () => new Date().toISOString(),
+    stdout = console.log,
     makeTemp = () => mkdtempSync(join(tmpdir(), "rentcottage-docker-config-")),
     prepareProject = prepareIsolatedSupabaseWorkdir,
     removeTemp = defaultRemoveTemp,
@@ -435,7 +438,111 @@ export async function main(
     return 2;
   }
 
-  const dockerConfig = makeTemp();
+  const originalRecipe = focusedFixtureContract
+    ? ["node", "scripts/verify-access.mjs", FIXTURE_CONTRACT_MODE]
+    : [
+        "npm",
+        "run",
+        mode === DATABASE_MODE
+          ? "verify:access:database"
+          : mode === BROWSER_MODE
+            ? "verify:access:browser"
+            : "verify:access",
+      ];
+  const lifecycleStart = { startedAt: utcNow(), tick: monotonicNow() };
+  let sharedSetupMs = 0;
+  let checksMs = 0;
+  let lastAttemptedCommand = null;
+  let group = "shared-setup";
+  const startTiming = () => ({ startedAt: utcNow(), tick: monotonicNow() });
+  const commandOutcome = (result) =>
+    result.error
+      ? { type: "spawn-failure", code: result.error.code ?? null }
+      : result.signal
+        ? { type: "signal", signal: result.signal }
+        : { type: "exit", status: result.status ?? 1 };
+  const finishTiming = (
+    start,
+    name,
+    scope,
+    command,
+    outcome,
+    inclusive = false,
+  ) => {
+    const durationMs = monotonicNow() - start.tick;
+    if (!inclusive && scope === "shared-setup") sharedSetupMs += durationMs;
+    if (!inclusive && scope === "check") checksMs += durationMs;
+    stdout(
+      JSON.stringify({
+        type: "access-phase",
+        name,
+        scope,
+        command,
+        startedAt: start.startedAt,
+        completedAt: utcNow(),
+        durationMs,
+        outcome,
+        inclusive,
+      }),
+    );
+    return durationMs;
+  };
+  const reportFailure = (failedGroup, attemptedCommand) => {
+    const reproduceGroup =
+      failedGroup === "database"
+        ? ["npm", "run", "verify:access:database"]
+        : failedGroup === "browser"
+          ? ["npm", "run", "verify:access:browser"]
+          : failedGroup === "fixture"
+            ? ["node", "scripts/verify-access.mjs", FIXTURE_CONTRACT_MODE]
+            : originalRecipe;
+    stdout(
+      JSON.stringify({
+        type: "verification-failure",
+        attemptedCommand,
+        reproduceGroup,
+      }),
+    );
+  };
+  const finishLifecycle = (status, signal, cleanupMs, cleanupReason) => {
+    stdout(
+      JSON.stringify({
+        type: "access-lifecycle",
+        command: ["node", "scripts/verify-access.mjs", ...args],
+        startedAt: lifecycleStart.startedAt,
+        completedAt: utcNow(),
+        durationMs: monotonicNow() - lifecycleStart.tick,
+        inclusive: true,
+        sharedSetupMs,
+        checksMs,
+        cleanupMs,
+        cleanupReason,
+        outcome: signal ? { type: "signal", signal } : { type: "exit", status },
+      }),
+    );
+  };
+
+  const preparationStart = startTiming();
+  let dockerConfig;
+  try {
+    dockerConfig = makeTemp();
+  } catch (error) {
+    finishTiming(
+      preparationStart,
+      "project-preparation",
+      "shared-setup",
+      null,
+      { type: "exit", status: 1 },
+    );
+    reportFailure("shared-setup", null);
+    finishLifecycle(
+      1,
+      undefined,
+      null,
+      "Cleanup was not entered because temporary project state was not created.",
+    );
+    throw error;
+  }
   let localWorkdir;
   try {
     localWorkdir = prepareProject({
@@ -444,12 +551,49 @@ export async function main(
       workingDirectory: resolve(workingDirectory),
     });
   } catch (error) {
-    removeTemp(dockerConfig);
+    finishTiming(
+      preparationStart,
+      "project-preparation",
+      "shared-setup",
+      null,
+      { type: "exit", status: 1 },
+    );
+    reportFailure("shared-setup", null);
+    const cleanupStart = startTiming();
+    let cleanupFailed = false;
+    try {
+      removeTemp(dockerConfig);
+    } catch (cleanupError) {
+      cleanupFailed = true;
+      reportFailure("shared-cleanup", null);
+      throw cleanupError;
+    } finally {
+      const cleanupMs = finishTiming(
+        cleanupStart,
+        "outer-cleanup",
+        "shared-cleanup",
+        null,
+        { type: "exit", status: cleanupFailed ? 1 : 0 },
+        true,
+      );
+      finishLifecycle(
+        1,
+        undefined,
+        cleanupFailed ? null : cleanupMs,
+        cleanupFailed
+          ? "Exact cleanup could not be completed; resources may be retained."
+          : null,
+      );
+    }
     stderr(
       `Unable to prepare the disposable local Supabase project: ${error.message}`,
     );
     return 1;
   }
+  finishTiming(preparationStart, "project-preparation", "shared-setup", null, {
+    type: "exit",
+    status: 0,
+  });
   const supabaseArguments = (commandArgs) => [
     ...commandArgs,
     "--workdir",
@@ -488,7 +632,7 @@ export async function main(
   process.on("SIGINT", handleSigint);
   process.on("SIGTERM", handleSigterm);
 
-  const execute = async (
+  const executeUntimed = async (
     command,
     commandArgs,
     { cleanup = false, ...options } = {},
@@ -541,6 +685,51 @@ export async function main(
     };
   };
 
+  const execute = async (command, commandArgs, options = {}) => {
+    if (interruptedSignal && !options.cleanup) {
+      return executeUntimed(command, commandArgs, options);
+    }
+    const commandVector = [command, ...commandArgs];
+    lastAttemptedCommand = commandVector;
+    const start = startTiming();
+    let outcome;
+    try {
+      const result = await executeUntimed(command, commandArgs, options);
+      outcome =
+        result.error || options.cleanup || !interruptedSignal
+          ? commandOutcome(result)
+          : { type: "signal", signal: interruptedSignal };
+      return result;
+    } catch (error) {
+      outcome = { type: "exit", status: 1 };
+      throw error;
+    } finally {
+      const name =
+        commandArgs[0] === "supabase"
+          ? `supabase-${commandArgs[1]}${commandArgs[1] === "db" ? `-${commandArgs[2]}` : ""}`
+          : commandArgs[0] === "playwright"
+            ? commandArgs.includes("--project=mobile")
+              ? "access-next"
+              : commandArgs.includes("tests/worker-scheduled-expiry.spec.ts")
+                ? "scheduled-expiry-worker"
+                : "access-worker"
+            : command === "npm"
+              ? commandArgs[1]
+              : commandArgs[0];
+      finishTiming(
+        start,
+        name,
+        options.cleanup
+          ? "shared-cleanup"
+          : group === "shared-setup"
+            ? "shared-setup"
+            : "check",
+        commandVector,
+        outcome,
+      );
+    }
+  };
+
   const databaseConcurrencyEnvironment = {
     ...supabaseEnvironment,
     SUPABASE_DB_CONTAINER: `supabase_db_${localProject}`,
@@ -559,21 +748,36 @@ export async function main(
       { encoding: "utf8", stdio: "pipe" },
     );
     if (result.status !== 0) return result.status;
+    const ownershipStart = startTiming();
+    let ownershipOutcome = { type: "exit", status: 0 };
     try {
       await createLocalSupabaseConcurrencyHarness({
         environment: databaseConcurrencyEnvironment,
         workingDirectory: localWorkdir,
-      }).guardDisposableLocalDatabaseAsync((command, args, options) =>
-        runCommand(command, args, {
+      }).guardDisposableLocalDatabaseAsync(async (command, args, options) => {
+        lastAttemptedCommand = [command, ...args];
+        const guarded = await runCommand(command, args, {
           ...options,
           env: databaseConcurrencyEnvironment,
-        }),
-      );
+        });
+        ownershipOutcome = commandOutcome(guarded);
+        return guarded;
+      });
     } catch (error) {
+      if (ownershipOutcome.type === "exit" && ownershipOutcome.status === 0)
+        ownershipOutcome = { type: "exit", status: 1 };
       stderr(
         `Unable to verify disposable local Supabase ownership: ${error.message}`,
       );
       return 1;
+    } finally {
+      finishTiming(
+        ownershipStart,
+        "startup-ownership",
+        "shared-setup",
+        lastAttemptedCommand,
+        ownershipOutcome,
+      );
     }
     started = true;
 
@@ -634,10 +838,12 @@ export async function main(
       return result.status;
     };
     if (databaseMode) {
+      group = "database";
       const preflightStatus = await verifyDatabasePreflight();
       if (preflightStatus !== 0) return preflightStatus;
     }
 
+    group = "shared-setup";
     const status = await execute(
       "npx",
       supabaseArguments(["supabase", "status", "-o", "json"]),
@@ -682,7 +888,10 @@ export async function main(
       );
       return fixtureContract.status;
     };
-    if (focusedFixtureContract) return await verifyFixtureContract();
+    if (focusedFixtureContract) {
+      group = "fixture";
+      return await verifyFixtureContract();
+    }
 
     const verifyDatabaseChecks = async () => {
       const fixtureContractStatus = await verifyFixtureContract();
@@ -864,6 +1073,7 @@ export async function main(
       ).status;
     };
     if (databaseMode) {
+      group = "database";
       const databaseStatus = await verifyDatabaseChecks();
       if (databaseStatus !== 0) return databaseStatus;
     }
@@ -1006,79 +1216,135 @@ export async function main(
       }
       return 0;
     };
+    group = "browser";
     return await verifyBrowserJourneys();
   };
 
   let retainedResources = false;
+  let failedCleanup = false;
+  let verificationThrew = false;
   try {
     exitCode = await verify();
+    if (exitCode !== 0) reportFailure(group, lastAttemptedCommand);
+  } catch (error) {
+    verificationThrew = true;
+    reportFailure(group, lastAttemptedCommand);
+    throw error;
   } finally {
-    cleaningUp = true;
-    await interruptionCleanup;
-    if (activeInvocation?.retentionError) {
-      retainedResources = true;
-    }
-    if (startupAttempted && !started) retainedResources = true;
-    if (started && !retainedResources) {
-      try {
-        await createLocalSupabaseConcurrencyHarness({
-          environment: databaseConcurrencyEnvironment,
-          workingDirectory: localWorkdir,
-        }).guardDisposableLocalDatabaseAsync((command, args, options) =>
-          runCommand(command, args, {
-            ...options,
-            env: databaseConcurrencyEnvironment,
-            lifecycleLimit: cleanupCommandLimitMs,
-          }),
-        );
-      } catch (error) {
+    const cleanupStart = startTiming();
+    try {
+      cleaningUp = true;
+      lastAttemptedCommand = null;
+      await interruptionCleanup;
+      if (activeInvocation?.retentionError) {
+        retainedResources = true;
+      }
+      if (startupAttempted && !started) retainedResources = true;
+      if (started && !retainedResources) {
+        const ownershipStart = startTiming();
+        let ownershipOutcome = { type: "exit", status: 0 };
+        try {
+          await createLocalSupabaseConcurrencyHarness({
+            environment: databaseConcurrencyEnvironment,
+            workingDirectory: localWorkdir,
+          }).guardDisposableLocalDatabaseAsync(
+            async (command, args, options) => {
+              lastAttemptedCommand = [command, ...args];
+              const guarded = await runCommand(command, args, {
+                ...options,
+                env: databaseConcurrencyEnvironment,
+                lifecycleLimit: cleanupCommandLimitMs,
+              });
+              ownershipOutcome = commandOutcome(guarded);
+              return guarded;
+            },
+          );
+        } catch (error) {
+          if (ownershipOutcome.type === "exit" && ownershipOutcome.status === 0)
+            ownershipOutcome = { type: "exit", status: 1 };
+          retainedResources = true;
+          if (exitCode === 0) exitCode = 1;
+          stderr(
+            `Unable to reverify disposable local Supabase ownership before cleanup: ${error.message}`,
+          );
+        } finally {
+          finishTiming(
+            ownershipStart,
+            "cleanup-ownership",
+            "shared-cleanup",
+            lastAttemptedCommand,
+            ownershipOutcome,
+          );
+        }
+        if (!retainedResources) {
+          const stopped = await execute(
+            "npx",
+            supabaseArguments([
+              "supabase",
+              "stop",
+              "--no-backup",
+              "--project-id",
+              localProject,
+            ]),
+            {
+              cleanup: true,
+              encoding: "utf8",
+              lifecycleLimit: cleanupCommandLimitMs,
+              stdio: "pipe",
+            },
+          );
+          if (stopped.status !== 0) {
+            retainedResources = true;
+            stderr("Local Supabase cleanup failed.");
+            if (exitCode === 0) exitCode = stopped.status;
+          } else {
+            started = false;
+          }
+        }
+      }
+      if (activeInvocation?.retentionError) {
         retainedResources = true;
         if (exitCode === 0) exitCode = 1;
         stderr(
-          `Unable to reverify disposable local Supabase ownership before cleanup: ${error.message}`,
+          `Retained command process group ${activeInvocation.group} (${activeInvocation.command}); last verified identities: ${activeInvocation.knownMembers.map((member) => `PID ${member.pid}, started ${member.started}`).join("; ") || "none"}. Exact termination could not be confirmed: ${activeInvocation.retentionError.message}`,
+        );
+      }
+      if (retainedResources) {
+        reportFailure("shared-cleanup", lastAttemptedCommand);
+        stderr(
+          `Retained local Supabase project ${localProject} in ${localWorkdir} because exact cleanup could not be completed; temporary state ${dockerConfig}.`,
         );
       }
       if (!retainedResources) {
-        const stopped = await execute(
-          "npx",
-          supabaseArguments([
-            "supabase",
-            "stop",
-            "--no-backup",
-            "--project-id",
-            localProject,
-          ]),
-          {
-            cleanup: true,
-            encoding: "utf8",
-            lifecycleLimit: cleanupCommandLimitMs,
-            stdio: "pipe",
-          },
-        );
-        if (stopped.status !== 0) {
-          retainedResources = true;
-          stderr("Local Supabase cleanup failed.");
-          if (exitCode === 0) exitCode = stopped.status;
-        } else {
-          started = false;
-        }
+        lastAttemptedCommand = null;
+        removeTemp(dockerConfig);
       }
-    }
-    if (activeInvocation?.retentionError) {
-      retainedResources = true;
-      if (exitCode === 0) exitCode = 1;
-      stderr(
-        `Retained command process group ${activeInvocation.group} (${activeInvocation.command}); last verified identities: ${activeInvocation.knownMembers.map((member) => `PID ${member.pid}, started ${member.started}`).join("; ") || "none"}. Exact termination could not be confirmed: ${activeInvocation.retentionError.message}`,
+    } catch (error) {
+      failedCleanup = true;
+      reportFailure("shared-cleanup", lastAttemptedCommand);
+      throw error;
+    } finally {
+      process.off("SIGINT", handleSigint);
+      process.off("SIGTERM", handleSigterm);
+      const cleanupReason =
+        retainedResources || failedCleanup
+          ? "Exact cleanup could not be completed; resources may be retained."
+          : null;
+      const observedCleanupMs = finishTiming(
+        cleanupStart,
+        "outer-cleanup",
+        "shared-cleanup",
+        null,
+        { type: "exit", status: cleanupReason ? 1 : 0 },
+        true,
+      );
+      finishLifecycle(
+        verificationThrew || failedCleanup ? 1 : exitCode,
+        interruptedSignal,
+        cleanupReason ? null : observedCleanupMs,
+        cleanupReason,
       );
     }
-    if (retainedResources) {
-      stderr(
-        `Retained local Supabase project ${localProject} in ${localWorkdir} because exact cleanup could not be completed; temporary state ${dockerConfig}.`,
-      );
-    }
-    if (!retainedResources) removeTemp(dockerConfig);
-    process.off("SIGINT", handleSigint);
-    process.off("SIGTERM", handleSigterm);
   }
   if (interruptedSignal) return interruptedSignal === "SIGINT" ? 130 : 143;
   return exitCode;

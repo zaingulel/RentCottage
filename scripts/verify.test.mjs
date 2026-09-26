@@ -525,6 +525,316 @@ describe("repository verification command", () => {
     );
   });
 
+  it("reports prepared failure recipes without guessing a combined access group", () => {
+    const repository = createRepository();
+    const baselineRecipe = ["npm", "run", "verify", "--", "--baseline"];
+    const databaseRecipe = [
+      "npm",
+      "run",
+      "verify",
+      "--",
+      "--database",
+      "--full",
+    ];
+    const browserRecipe = ["npm", "run", "verify", "--", "--browser", "--full"];
+    const combinedRecipe = ["npm", "run", "verify", "--", "--full"];
+    const chromium = [
+      "npx",
+      ["playwright", "install", "--with-deps", "chromium"],
+    ];
+    const scenarios = [
+      ...requiredBaselineSteps.map((failedStep) => ({
+        args: ["--baseline"],
+        steps: requiredBaselineSteps,
+        failedStep,
+        reproduction: { reproduceGroup: baselineRecipe },
+      })),
+      {
+        args: ["--database", "--full"],
+        steps: requiredDatabaseSteps,
+        failedStep: requiredDatabaseSteps[0],
+        reproduction: { reproduceGroup: databaseRecipe },
+      },
+      ...[chromium, ...requiredBrowserSteps].map((failedStep) => ({
+        args: ["--browser", "--full"],
+        steps: [chromium, ...requiredBrowserSteps],
+        failedStep,
+        reproduction: { reproduceGroup: browserRecipe },
+      })),
+      {
+        args: ["--full"],
+        steps: [...requiredBaselineSteps, chromium, ...requiredExpensiveSteps],
+        failedStep: requiredExpensiveSteps[0],
+        reproduction: { reproduceSelectedGroups: combinedRecipe },
+      },
+    ];
+    const failures = [
+      { result: { status: 7 }, status: 7 },
+      { result: { status: null, signal: "SIGTERM" }, status: 1 },
+      {
+        result: {
+          status: null,
+          error: Object.assign(new Error("executable unavailable"), {
+            code: "ENOENT",
+          }),
+        },
+        status: 1,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      for (const failure of failures) {
+        const stdout = vi.fn();
+        const stderr = vi.fn();
+        const failedIndex = scenario.steps.indexOf(scenario.failedStep);
+        const run = vi.fn(() =>
+          run.mock.calls.length === failedIndex + 1
+            ? failure.result
+            : { status: 0 },
+        );
+
+        expect(
+          main(scenario.args, {
+            cwd: repository,
+            environment: { GITHUB_ACTIONS: "true" },
+            run,
+            stdout,
+            stderr,
+          }),
+        ).toBe(failure.status);
+        expect(
+          run.mock.calls.map(([command, args]) => [command, args]),
+        ).toEqual(scenario.steps.slice(0, failedIndex + 1));
+        const diagnostics = stderr.mock.calls
+          .map(([line]) => line)
+          .filter((line) => line.startsWith("{"))
+          .map((line) => JSON.parse(line));
+        expect(diagnostics).toEqual([
+          {
+            type: "verification-failure",
+            attemptedCommand: [
+              scenario.failedStep[0],
+              ...scenario.failedStep[1],
+            ],
+            ...scenario.reproduction,
+          },
+        ]);
+      }
+    }
+  });
+
+  it("reproduces a failed browser group with its bindings and Worker artifact prerequisites", () => {
+    const repository = createRepository();
+    commit(repository, "docs/research/study.md", "# Study\n");
+    const requiredBindings = {
+      APP_ENVIRONMENT: "test",
+      NEXTJS_ENV: "test",
+      SUPABASE_PROJECT_REF: "local-test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_PUBLISHABLE_KEY: "local-test-publishable",
+      SUPABASE_SECRET_KEY: "local-test-secret",
+      PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
+    };
+    const conflictingBindings = Object.fromEntries(
+      Object.keys(requiredBindings).map((key) => [
+        key,
+        `inherited-${key}-private`,
+      ]),
+    );
+
+    for (const environment of [{}, conflictingBindings]) {
+      const execute = (args) => {
+        let artifactPresent = false;
+        const stdout = vi.fn();
+        const stderr = vi.fn();
+        const run = vi.fn((command, commandArgs, bindings, cwd) => {
+          expect(cwd).toBe(repository);
+          if (
+            Object.entries(requiredBindings).some(
+              ([key, value]) => bindings[key] !== value,
+            )
+          ) {
+            return { status: 71 };
+          }
+          if (
+            command === "npm" &&
+            commandArgs.join(" ") === "run build:worker"
+          ) {
+            artifactPresent = true;
+          }
+          if (
+            command === "npm" &&
+            commandArgs.join(" ") === "run scan:client-secrets"
+          ) {
+            return { status: artifactPresent ? 7 : 72 };
+          }
+          return { status: 0 };
+        });
+        const status = main(args, {
+          cwd: repository,
+          environment,
+          run,
+          stdout,
+          stderr,
+        });
+        const diagnostic = stderr.mock.calls
+          .map(([line]) => line)
+          .filter((line) => line.startsWith("{"))
+          .map((line) => JSON.parse(line))[0];
+        const output = [...stdout.mock.calls, ...stderr.mock.calls]
+          .map(([line]) => line)
+          .join("\n");
+        for (const value of [
+          ...Object.values(requiredBindings),
+          ...Object.values(environment),
+        ]) {
+          expect(output).not.toContain(value);
+        }
+        return { diagnostic, run, status };
+      };
+
+      const failed = execute(["--browser", "--full"]);
+      expect(failed.status).toBe(7);
+      expect(failed.diagnostic.attemptedCommand).toEqual([
+        "npm",
+        "run",
+        "scan:client-secrets",
+      ]);
+      expect(failed.diagnostic.reproduceGroup.slice(0, 4)).toEqual([
+        "npm",
+        "run",
+        "verify",
+        "--",
+      ]);
+
+      const reproduced = execute(failed.diagnostic.reproduceGroup.slice(4));
+      expect(reproduced.status).toBe(7);
+      for (const result of [failed, reproduced]) {
+        expect(
+          result.run.mock.calls.map(([command, args]) => [command, args]),
+        ).toEqual([
+          ["npm", ["run", "verify:access:browser"]],
+          ["npm", ["run", "build:worker"]],
+          ["npm", ["run", "scan:client-secrets"]],
+        ]);
+      }
+    }
+  });
+
+  it("records command timing only after execution and preserves fail-fast outcomes", () => {
+    const repository = createRepository();
+    const expectedSteps = [...requiredBaselineSteps, ...requiredExpensiveSteps];
+    const scenarios = [
+      {
+        result: { status: 0 },
+        outcome: { type: "exit", status: 0 },
+        status: 0,
+        expectedSteps,
+      },
+      {
+        result: { status: 7 },
+        outcome: { type: "exit", status: 7 },
+        status: 7,
+        expectedSteps: expectedSteps.slice(0, 2),
+      },
+      {
+        result: { status: null, signal: "SIGTERM" },
+        outcome: { type: "signal", signal: "SIGTERM" },
+        status: 1,
+        expectedSteps: expectedSteps.slice(0, 2),
+      },
+      {
+        result: {
+          status: null,
+          error: Object.assign(new Error("executable unavailable"), {
+            code: "ENOENT",
+          }),
+        },
+        outcome: { type: "spawn-failure", code: "ENOENT" },
+        status: 1,
+        expectedSteps: expectedSteps.slice(0, 2),
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      let monotonic = 100;
+      let utc = "2026-09-26T10:00:00.000Z";
+      const records = [];
+      const stdout = vi.fn((line) => {
+        if (line.startsWith("{")) records.push(JSON.parse(line));
+      });
+      const run = vi.fn((_command, _args, _environment, cwd) => {
+        expect(cwd).toBe(repository);
+        expect(records).toHaveLength(run.mock.calls.length - 1);
+        monotonic += 37;
+        utc = new Date(Date.parse(utc) + 1000).toISOString();
+        return run.mock.calls.length === 2 ? scenario.result : { status: 0 };
+      });
+
+      expect(
+        main(["--full"], {
+          cwd: repository,
+          environment: {},
+          monotonicNow: () => monotonic,
+          utcNow: () => utc,
+          run,
+          stdout,
+          stderr: vi.fn(),
+        }),
+      ).toBe(scenario.status);
+      expect(run.mock.calls.map(([command, args]) => [command, args])).toEqual(
+        scenario.expectedSteps,
+      );
+      expect(records).toHaveLength(scenario.expectedSteps.length);
+      expect(records.map((record) => record.command)).toEqual(
+        scenario.expectedSteps.map(([command, args]) => [command, ...args]),
+      );
+      expect(records[0]).toEqual({
+        type: "verification-phase",
+        command: ["npm", "run", "audit:production"],
+        startedAt: "2026-09-26T10:00:00.000Z",
+        completedAt: "2026-09-26T10:00:01.000Z",
+        durationMs: 37,
+        outcome: { type: "exit", status: 0 },
+      });
+      expect(records[1]).toEqual({
+        type: "verification-phase",
+        command: ["npm", "run", "format:check"],
+        startedAt: "2026-09-26T10:00:01.000Z",
+        completedAt: "2026-09-26T10:00:02.000Z",
+        durationMs: 37,
+        outcome: scenario.outcome,
+      });
+      for (const record of records.slice(2)) {
+        expect(record.durationMs).toBe(37);
+        expect(record.outcome).toEqual({ type: "exit", status: 0 });
+      }
+    }
+
+    const planned = runVerification(repository, {
+      args: ["--full", "--plan"],
+    });
+    expect(planned.status).toBe(0);
+    expect(planned.run).not.toHaveBeenCalled();
+    expect(
+      planned.stdout.mock.calls.some(([line]) => line.startsWith("{")),
+    ).toBe(false);
+    expect(
+      planned.stdout.mock.calls
+        .map(([line]) => line)
+        .filter((line) => line.startsWith("Planned command: "))
+        .map((line) => JSON.parse(line.slice("Planned command: ".length))),
+    ).toEqual(expectedSteps.map(([command, args]) => [command, ...args]));
+
+    rmSync(join(repository, "node_modules/wrangler/package.json"));
+    const blocked = runVerification(repository, { args: ["--full"] });
+    expect(blocked.status).toBe(1);
+    expect(blocked.run).not.toHaveBeenCalled();
+    expect(
+      blocked.stdout.mock.calls.some(([line]) => line.startsWith("{")),
+    ).toBe(false);
+  });
+
   it("fails loudly when a verification executable cannot start or is signalled", () => {
     const repository = createRepository();
     const stderr = vi.fn();

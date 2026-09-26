@@ -20,6 +20,8 @@ function fail(message, cause) {
 }
 
 const {
+  markTimingPhase,
+  finishTiming,
   finishSession: finishHarnessSession,
   guardDisposableLocalDatabase,
   psqlArguments,
@@ -29,6 +31,10 @@ const {
   waitForLock,
   waitForMarker,
 } = createLocalSupabaseConcurrencyHarness({
+  timing: {
+    check: "verify-booking-period-hold-concurrency",
+    isolation: "serial",
+  },
   messages: {
     invalidGuard:
       "The Booking Period concurrency test requires guarded local Supabase.",
@@ -48,25 +54,27 @@ const {
       `Transaction unexpectedly failed: ${stderr}`,
   },
 });
+let timingOutcome = "failed";
+try {
+  markTimingPhase("setup");
+  async function finishSession(session, action, expectedState) {
+    return finishHarnessSession(session, { action, expectedState });
+  }
 
-async function finishSession(session, action, expectedState) {
-  return finishHarnessSession(session, { action, expectedState });
-}
-
-function holdSql(
-  applicationName,
-  marker,
-  customer,
-  profile,
-  reference,
-  kind,
-  position,
-) {
-  const selection =
-    kind === "full-day"
-      ? `{"serviceDay":"${day}","kind":"full-day"}`
-      : `{"serviceDay":"${day}","kind":"shift","position":${position}}`;
-  return `
+  function holdSql(
+    applicationName,
+    marker,
+    customer,
+    profile,
+    reference,
+    kind,
+    position,
+  ) {
+    const selection =
+      kind === "full-day"
+        ? `{"serviceDay":"${day}","kind":"full-day"}`
+        : `{"serviceDay":"${day}","kind":"shift","position":${position}}`;
+    return `
     set application_name = '${applicationName}';
     begin;
     set local role service_role;
@@ -76,28 +84,28 @@ function holdSql(
     );
     select '${marker}';
   `;
-}
-
-function expectMutationDetected(name, sql) {
-  const marker = `RC_MUTATION_DETECTED_${name}`;
-  const result = runDocker(
-    psqlArguments(),
-    `\\set VERBOSITY verbose\nbegin;\n${sql}\n`,
-  );
-  if (result.status === 0 || !result.stderr.includes(marker)) {
-    fail(`The ${name} mutation was not detected: ${result.stderr.trim()}`);
   }
-}
 
-function cleanupInjectedOccupancyFailure() {
-  runSql(`
+  function expectMutationDetected(name, sql) {
+    const marker = `RC_MUTATION_DETECTED_${name}`;
+    const result = runDocker(
+      psqlArguments(),
+      `\\set VERBOSITY verbose\nbegin;\n${sql}\n`,
+    );
+    if (result.status === 0 || !result.stderr.includes(marker)) {
+      fail(`The ${name} mutation was not detected: ${result.stderr.trim()}`);
+    }
+  }
+
+  function cleanupInjectedOccupancyFailure() {
+    runSql(`
     drop trigger if exists test_fail_later_booking_period_occupancy
       on public.cottage_booking_period_occupancies;
     drop function if exists public.test_fail_later_booking_period_occupancy();
   `);
-}
+  }
 
-const cleanupSql = `
+  const cleanupSql = `
   begin;
   delete from public.cottage_booking_period_commitments
     where profile_id in ('${profileA}', '${profileB}');
@@ -144,7 +152,7 @@ const cleanupSql = `
   commit;
 `;
 
-const setupSql = `
+  const setupSql = `
   begin;
   insert into auth.users (id, aud, role, phone, phone_confirmed_at) values
     ('${ownerId}', 'authenticated', 'authenticated', '+9647500099031', now()),
@@ -224,97 +232,104 @@ const setupSql = `
   commit;
 `;
 
-function terminateSessions() {
-  runSql(`
+  function terminateSessions() {
+    runSql(`
     select pg_terminate_backend(pid) from pg_catalog.pg_stat_activity
     where application_name like 'rc_i31_%' and pid <> pg_backend_pid();
   `);
-}
-
-guardDisposableLocalDatabase();
-let failure;
-try {
-  cleanupInjectedOccupancyFailure();
-  runSql(cleanupSql);
-  runSql(setupSql);
-
-  const sameCottageWinner = startSession(
-    holdSql(
-      "rc_i31_same_winner",
-      "SAME_WINNER",
-      customerA,
-      profileA,
-      "RC-I31-SAME-WINNER",
-      "shift",
-      1,
-    ),
-  );
-  await waitForMarker(sameCottageWinner, "SAME_WINNER");
-  const sameCottageLoserName = "rc_i31_same_loser";
-  const sameCottageLoser = startSession(
-    `${holdSql(sameCottageLoserName, "SAME_LOSER", customerB, profileA, "RC-I31-SAME-LOSER", "full-day")}commit;`,
-    true,
-  );
-  await waitForLock(sameCottageLoserName, sameCottageLoser);
-  await finishSession(sameCottageWinner, "commit");
-  await finishSession(sameCottageLoser, "commit", "RC409");
-  runSql(
-    `delete from public.cottage_booking_period_commitments where profile_id = '${profileA}';`,
-  );
-
-  const customerWinner = startSession(
-    holdSql(
-      "rc_i31_customer_winner",
-      "CUSTOMER_WINNER",
-      customerA,
-      profileA,
-      "RC-I31-CUSTOMER-WINNER",
-      "shift",
-      1,
-    ),
-  );
-  await waitForMarker(customerWinner, "CUSTOMER_WINNER");
-  const customerLoserName = "rc_i31_customer_loser";
-  const customerLoser = startSession(
-    `${holdSql(customerLoserName, "CUSTOMER_LOSER", customerA, profileB, "RC-I31-CUSTOMER-LOSER", "shift", 1)}commit;`,
-    true,
-  );
-  await waitForLock(customerLoserName, customerLoser);
-  await finishSession(customerWinner, "commit");
-  await finishSession(customerLoser, "commit", "RC409");
-  runSql(`delete from public.cottage_booking_period_commitments;`);
-
-  const rolledBack = startSession(
-    holdSql(
-      "rc_i31_rollback_owner",
-      "ROLLBACK_OWNER",
-      customerA,
-      profileA,
-      "RC-I31-ROLLBACK",
-      "shift",
-      1,
-    ),
-  );
-  await waitForMarker(rolledBack, "ROLLBACK_OWNER");
-  const releasedName = "rc_i31_rollback_contender";
-  const released = startSession(
-    `${holdSql(releasedName, "ROLLBACK_CONTENDER", customerB, profileA, "RC-I31-AFTER-ROLLBACK", "full-day")}commit;`,
-    true,
-  );
-  await waitForLock(releasedName, released);
-  await finishSession(rolledBack, "rollback");
-  await finishSession(released, "commit");
-  if (
-    runSql(
-      `select count(*) from public.cottage_booking_period_commitments where commitment_reference = 'RC-I31-AFTER-ROLLBACK';`,
-    ) !== "1"
-  ) {
-    fail("Rollback did not release the Booking Period constraints.");
   }
-  runSql(`delete from public.cottage_booking_period_commitments;`);
 
+  guardDisposableLocalDatabase();
+  let failure;
   try {
-    runSql(`
+    cleanupInjectedOccupancyFailure();
+    runSql(cleanupSql);
+    runSql(setupSql);
+
+    markTimingPhase("execution");
+    const sameCottageWinner = startSession(
+      holdSql(
+        "rc_i31_same_winner",
+        "SAME_WINNER",
+        customerA,
+        profileA,
+        "RC-I31-SAME-WINNER",
+        "shift",
+        1,
+      ),
+    );
+    await waitForMarker(sameCottageWinner, "SAME_WINNER");
+    const sameCottageLoserName = "rc_i31_same_loser";
+    const sameCottageLoser = startSession(
+      `${holdSql(sameCottageLoserName, "SAME_LOSER", customerB, profileA, "RC-I31-SAME-LOSER", "full-day")}commit;`,
+      true,
+    );
+    await waitForLock(sameCottageLoserName, sameCottageLoser);
+    await finishSession(sameCottageWinner, "commit");
+    await finishSession(sameCottageLoser, "commit", "RC409");
+    markTimingPhase("setup");
+    runSql(
+      `delete from public.cottage_booking_period_commitments where profile_id = '${profileA}';`,
+    );
+    markTimingPhase("execution");
+
+    const customerWinner = startSession(
+      holdSql(
+        "rc_i31_customer_winner",
+        "CUSTOMER_WINNER",
+        customerA,
+        profileA,
+        "RC-I31-CUSTOMER-WINNER",
+        "shift",
+        1,
+      ),
+    );
+    await waitForMarker(customerWinner, "CUSTOMER_WINNER");
+    const customerLoserName = "rc_i31_customer_loser";
+    const customerLoser = startSession(
+      `${holdSql(customerLoserName, "CUSTOMER_LOSER", customerA, profileB, "RC-I31-CUSTOMER-LOSER", "shift", 1)}commit;`,
+      true,
+    );
+    await waitForLock(customerLoserName, customerLoser);
+    await finishSession(customerWinner, "commit");
+    await finishSession(customerLoser, "commit", "RC409");
+    markTimingPhase("setup");
+    runSql(`delete from public.cottage_booking_period_commitments;`);
+    markTimingPhase("execution");
+
+    const rolledBack = startSession(
+      holdSql(
+        "rc_i31_rollback_owner",
+        "ROLLBACK_OWNER",
+        customerA,
+        profileA,
+        "RC-I31-ROLLBACK",
+        "shift",
+        1,
+      ),
+    );
+    await waitForMarker(rolledBack, "ROLLBACK_OWNER");
+    const releasedName = "rc_i31_rollback_contender";
+    const released = startSession(
+      `${holdSql(releasedName, "ROLLBACK_CONTENDER", customerB, profileA, "RC-I31-AFTER-ROLLBACK", "full-day")}commit;`,
+      true,
+    );
+    await waitForLock(releasedName, released);
+    await finishSession(rolledBack, "rollback");
+    await finishSession(released, "commit");
+    if (
+      runSql(
+        `select count(*) from public.cottage_booking_period_commitments where commitment_reference = 'RC-I31-AFTER-ROLLBACK';`,
+      ) !== "1"
+    ) {
+      fail("Rollback did not release the Booking Period constraints.");
+    }
+    markTimingPhase("setup");
+    runSql(`delete from public.cottage_booking_period_commitments;`);
+    markTimingPhase("execution");
+
+    try {
+      runSql(`
     create function public.test_fail_later_booking_period_occupancy()
     returns trigger language plpgsql set search_path = '' as $$
     declare seen integer := coalesce(nullif(current_setting('rentcottage.test_occupancy_count', true), '')::integer, 0) + 1;
@@ -328,7 +343,7 @@ try {
       before insert on public.cottage_booking_period_occupancies
       for each row execute function public.test_fail_later_booking_period_occupancy();
   `);
-    runSql(`
+      runSql(`
     do $$
     begin
       perform set_config('rentcottage.test_occupancy_count', '0', true);
@@ -346,20 +361,22 @@ try {
     end;
     $$;
   `);
-  } finally {
-    cleanupInjectedOccupancyFailure();
-  }
+    } finally {
+      markTimingPhase("cleanup");
+      cleanupInjectedOccupancyFailure();
+    }
+    markTimingPhase("execution");
 
-  runSql(`
+    runSql(`
   set local role service_role;
   select public.create_pending_booking_period_hold(
     '${customerA}', '${profileA}', 'RC-I31-MUTATION-BUNDLE',
     '{"from":"${day}","to":"${day}","guests":1,"selections":[{"serviceDay":"${day}","kind":"full-day"}]}'::jsonb
   );
 `);
-  expectMutationDetected(
-    "COMPONENT_EXPANSION",
-    `
+    expectMutationDetected(
+      "COMPONENT_EXPANSION",
+      `
   delete from public.cottage_booking_period_occupancies
   where booking_period_commitment_id = (
     select id from public.cottage_booking_period_commitments
@@ -373,13 +390,13 @@ try {
     end if;
   end $$;
 `,
-  );
-  runSql(
-    `update public.cottage_booking_period_commitments set status = 'confirmed_booking' where commitment_reference = 'RC-I31-MUTATION-BUNDLE';`,
-  );
-  expectMutationDetected(
-    "CONFIRMED_BLOCKING",
-    `
+    );
+    runSql(
+      `update public.cottage_booking_period_commitments set status = 'confirmed_booking' where commitment_reference = 'RC-I31-MUTATION-BUNDLE';`,
+    );
+    expectMutationDetected(
+      "CONFIRMED_BLOCKING",
+      `
   delete from public.cottage_booking_period_occupancies
   where shift_id = '${shiftA1}' and booking_period_commitment_id = (
     select id from public.cottage_booking_period_commitments
@@ -391,10 +408,10 @@ try {
     end if;
   end $$;
 `,
-  );
-  expectMutationDetected(
-    "RANGE_CONSTRUCTION",
-    `
+    );
+    expectMutationDetected(
+      "RANGE_CONSTRUCTION",
+      `
   alter table public.cottage_booking_period_commitments disable trigger enforce_cottage_booking_period_commitment_transition;
   update public.cottage_booking_period_commitments
     set access_ranges = '{["2099-08-20 06:00:00+00","2099-08-20 07:00:00+00")}'::tstzmultirange
@@ -407,9 +424,11 @@ try {
     end if;
   end $$;
 `,
-  );
-  runSql(`delete from public.cottage_booking_period_commitments;`);
-  runSql(`
+    );
+    markTimingPhase("setup");
+    runSql(`delete from public.cottage_booking_period_commitments;`);
+    markTimingPhase("execution");
+    runSql(`
   set local role service_role;
   select public.create_pending_booking_period_hold(
     '${customerA}', '${profileA}', 'RC-I31-MUTATION-CUSTOMER-A',
@@ -419,9 +438,9 @@ try {
     set status = 'confirmed_booking'
     where commitment_reference = 'RC-I31-MUTATION-CUSTOMER-A';
 `);
-  expectMutationDetected(
-    "CONFIRMED_CUSTOMER_EXCLUSION",
-    `
+    expectMutationDetected(
+      "CONFIRMED_CUSTOMER_EXCLUSION",
+      `
   alter table public.cottage_booking_period_commitments
     drop constraint cottage_booking_period_customer_access_excl;
   alter table public.cottage_booking_period_commitments
@@ -441,21 +460,26 @@ try {
     end if;
   end $$;
 `,
-  );
+    );
 
-  console.log(
-    "Booking Period concurrency passed same-cottage, cross-cottage Customer, rollback, atomic failure, confirmed-customer predicate, and mutation checks.",
-  );
-} catch (error) {
-  failure = error;
-} finally {
-  try {
-    terminateSessions();
-    cleanupInjectedOccupancyFailure();
-    runSql(cleanupSql);
-  } catch (cleanupError) {
-    if (!failure) failure = cleanupError;
-    else console.error(cleanupError);
+    console.log(
+      "Booking Period concurrency passed same-cottage, cross-cottage Customer, rollback, atomic failure, confirmed-customer predicate, and mutation checks.",
+    );
+  } catch (error) {
+    failure = error;
+  } finally {
+    markTimingPhase("cleanup");
+    try {
+      terminateSessions();
+      cleanupInjectedOccupancyFailure();
+      runSql(cleanupSql);
+    } catch (cleanupError) {
+      if (!failure) failure = cleanupError;
+      else console.error(cleanupError);
+    }
   }
+  if (failure) throw failure;
+  timingOutcome = "passed";
+} finally {
+  finishTiming({ outcome: timingOutcome, cleanupDisposition: "local" });
 }
-if (failure) throw failure;

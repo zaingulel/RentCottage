@@ -138,6 +138,51 @@ Before its first selected command, executable verification compares the installe
 their `package-lock.json` entries. A missing, malformed or mismatched record stops execution and tells the operator to
 run `npm ci`; it never repairs dependencies automatically. Plan-only output names that pending check but does not run it.
 
+Each attempted top-level verification command emits a `verification-phase` JSON record after execution with
+its exact argument vector, UTC start and completion timestamps, monotonic elapsed milliseconds, and an exit,
+signal, or spawn-failure outcome. These measurements cover whole commands, not individual checks inside them,
+and impose no speed pass/fail threshold. Unstarted commands and plan-only runs emit no timing records;
+environment values and child output are not included.
+
+Each concurrency check declares serial isolation and reports client-observed milliseconds for setup,
+execution and existing local cleanup. Repeated fixture resets and seeds accumulate as setup; race commands,
+waits and assertions count as execution. Explicit fixture loading, authentication and bundling are included;
+static import startup remains process overhead. Phase records include timestamps, and a final summary reports
+completion and passed or failed outcome without a speed threshold. An unentered phase is null with a reason.
+Shift-schedule cleanup is deferred to disposable project teardown, so its summary has null cleanup cost and
+uses the shared project cleanup record; profile-draft reports its existing final profile clear as local cleanup.
+A killed check may lack a final summary, which is incomplete evidence, never inferred success. The serial
+source declaration guard proves classification only; real disposable PostgreSQL evidence still proves the
+unchanged database assertions and contention barriers.
+
+After a failed attempted command, the parent `verification-failure` JSON diagnostic is written to stderr; an
+access-child `verification-failure` diagnostic is written to stdout. Retain both streams: a narrower child recipe
+remains relevant alongside its parent's fallback route. Each diagnostic separates the exact `attemptedCommand`
+argument vector from its preparation-complete `reproduceGroup` route. Baseline failures use
+`npm run verify -- --baseline`; database failures use `npm run verify -- --database --full`; browser preparation,
+build, scan and journey failures use `npm run verify -- --browser --full`. These routes repeat the dependency
+check, restore the fixed test bindings and run the group's required predecessors. The browser route keeps its
+normal installed-dependency, Docker and browser prerequisites. An unidentified failure inside combined
+`verify:access` uses `reproduceSelectedGroups: ["npm","run","verify","--","--full"]`, preserving any narrower
+child diagnosis without claiming the combined route is the smallest group. Raw build or scan arguments identify
+the attempt only. Diagnostics include no environment values.
+
+Disposable access verification emits `access-phase` records for shared project preparation, startup,
+ownership validation, reset and credential retrieval, each invoked database or browser check, and cleanup.
+`scope` distinguishes `shared-setup`, `check` and `shared-cleanup`; `inclusive: true` marks outer cleanup and
+`access-lifecycle` totals, which already include their children and must not be added to them. The final lifecycle
+record follows cleanup, including failed or interrupted checks. `cleanupMs: null` with `cleanupReason` means
+exact teardown could not be completed and resources may be retained; an observed cleanup span does not establish
+successful teardown. Fixed names and exact command vectors accompany UTC timestamps, monotonic milliseconds and
+exit, signal or spawn-failure outcomes. Records contain no environment values, SQL, credentials or child output.
+
+Known internal database failures reproduce with `npm run verify:access:database`; known browser failures with
+`npm run verify:access:browser`; fixture-only failures with `node scripts/verify-access.mjs --fixture-contract`.
+Shared preparation and cleanup failures repeat the original mode, including `npm run verify:access` for combined
+verification. `attemptedCommand` identifies the actual failing invocation; no smallest child group is guessed for
+shared work. Command doubles prove reporting and routing, while real disposable database evidence remains required
+for database invariants.
+
 Run focused checks, intentional red/restored green proofs, and convergence through `node scripts/run-log.mjs <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.
