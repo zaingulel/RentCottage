@@ -4,6 +4,11 @@ import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
 
+import {
+  type OwnedAccessJourney,
+  prepareOwnedAccessJourney,
+} from "../scripts/access-journey-playwright";
+
 type BrowserLocale = "en" | "ar" | "ckb";
 
 type AccessBrowserFixture = {
@@ -574,6 +579,34 @@ function documentActionFor(card: Locator, copy: BrowserApplicationFixture) {
     .or(card.getByRole("button", { name: copy.replace, exact: true }));
 }
 
+const { accessJourneyCases } = createRequire(import.meta.url)(
+  "../scripts/lib/access-journey-fixtures.mjs",
+) as {
+  accessJourneyCases: ReadonlyArray<{
+    journey: OwnedAccessJourney;
+    title: string;
+  }>;
+};
+type OwnedJourneyCallback = Parameters<typeof test>[2];
+const ownedJourneyCallbacks = new Map<
+  OwnedAccessJourney,
+  OwnedJourneyCallback
+>();
+
+function registerOwnedJourney(
+  journey: OwnedAccessJourney,
+  callback: OwnedJourneyCallback,
+) {
+  const fixtureCase = accessJourneyCases.find((row) => row.journey === journey);
+  if (!fixtureCase || ownedJourneyCallbacks.has(journey)) {
+    throw new Error(`Unknown or duplicate owned journey callback: ${journey}`);
+  }
+  ownedJourneyCallbacks.set(journey, callback);
+  if (process.env.ACCESS_JOURNEY_PHASE !== "reverse") {
+    test(fixtureCase.title, callback);
+  }
+}
+
 test.describe.configure({ mode: "serial" });
 
 test("the fictional booking-request back door is unavailable", async ({
@@ -583,16 +616,15 @@ test("the fictional booking-request back door is unavailable", async ({
   expect(response?.status()).toBe(404);
 });
 
-test("shared sign-in from the homepage returns a prospective owner to their private application", async ({
-  page,
-}) => {
+registerOwnedJourney("signin", async ({ page }, testInfo) => {
+  const fixture = await prepareOwnedAccessJourney("signin", testInfo);
   await page.goto("/ckb");
   await page
     .getByRole("banner")
     .getByRole("link", { name: "کۆتێجەکەت تۆمار بکە", exact: true })
     .click();
   await expect(page).toHaveURL(/\/ckb\/access\?returnTo=/);
-  await page.getByLabel("ژمارە تەلەفۆنی عێراقی").fill("+9647500000002");
+  await page.getByLabel("ژمارە تەلەفۆنی عێراقی").fill(fixture.phone);
   await page.getByRole("button", { name: "کۆدی پشتڕاستکردنەوە بنێرە" }).click();
   await page.getByLabel("کۆدی پشتڕاستکردنەوە").fill("123456");
   await page.getByRole("button", { name: "پشتڕاست بکەرەوە" }).click();
@@ -600,7 +632,7 @@ test("shared sign-in from the homepage returns a prospective owner to their priv
   await expect(page).toHaveURL(/\/ckb\/owner\/application$/);
   await expect(
     page.getByLabel(browserFixtures.ckb.application.legalName),
-  ).toHaveValue("Concurrent Upload Test");
+  ).toHaveValue("Access Journey Draft Owner");
   await expect(
     page.getByRole("button", { name: "Create another cottage draft" }),
   ).toHaveCount(0);
@@ -613,15 +645,10 @@ test("Arabic access renders right to left", async ({ page }) => {
   await expect(page.getByLabel("رقم الهاتف العراقي")).toBeVisible();
 });
 
-test("a Cottage Owner saves, resumes and submits a complete private application", async ({
-  page,
-}, testInfo) => {
+registerOwnedJourney("owner-submit", async ({ page }, testInfo) => {
   test.setTimeout(60_000);
-  await openOwnerApplication(
-    page,
-    "en",
-    journeyPhone(testInfo.project.name, ["3", "4", "5"]),
-  );
+  const fixture = await prepareOwnedAccessJourney("owner-submit", testInfo);
+  await openOwnerApplication(page, "en", fixture.phone);
   expect(
     (await page.context().cookies()).some((cookie) =>
       cookie.name.startsWith("rentcottage-auth"),
@@ -684,15 +711,10 @@ test("a Cottage Owner saves, resumes and submits a complete private application"
   await expect(page.getByRole("link", { name: /secure link/i })).toHaveCount(0);
 });
 
-test("Owner Application keeps evidence controls aligned and accessible in every locale", async ({
-  page,
-}, testInfo) => {
+registerOwnedJourney("owner-layout", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
-  await openOwnerApplication(
-    page,
-    "en",
-    journeyPhone(testInfo.project.name, ["6", "7", "8"]),
-  );
+  const fixture = await prepareOwnedAccessJourney("owner-layout", testInfo);
+  await openOwnerApplication(page, "en", fixture.phone);
 
   for (const locale of ["en", "ar", "ckb"] as const) {
     if (locale !== "en") await page.goto(`/${locale}/owner/application`);
@@ -2248,16 +2270,9 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   });
 });
 
-test("one account returns to customer bookings, enrolls explicitly and signs out only this device", async ({
-  page,
-  browser,
-}, testInfo) => {
+registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   test.setTimeout(60_000);
-  const suffix = { mobile: "0", desktop: "1", worker: "2" }[
-    testInfo.project.name
-  ];
-  if (!suffix) throw new Error("Shared account fixture project is unmapped");
-  const phone = `+964755000000${suffix}`;
+  const { phone } = await prepareOwnedAccessJourney("shared-account", testInfo);
   assertIsolatedLocalAccessDatabase();
   const before = await listAllAccessFixtureUsers(auditClient.auth.admin);
   expect(findAccessFixtureUser(before, phone)).toBeUndefined();
@@ -2426,3 +2441,15 @@ test("one account returns to customer bookings, enrolls explicitly and signs out
   }
   await second.close();
 });
+
+if (ownedJourneyCallbacks.size !== accessJourneyCases.length) {
+  throw new Error("Missing owned access journey callback.");
+}
+if (process.env.ACCESS_JOURNEY_PHASE === "reverse") {
+  for (const fixtureCase of [...accessJourneyCases].reverse()) {
+    const callback = ownedJourneyCallbacks.get(fixtureCase.journey);
+    if (!callback)
+      throw new Error(`Missing owned journey: ${fixtureCase.journey}`);
+    test(fixtureCase.title, callback);
+  }
+}

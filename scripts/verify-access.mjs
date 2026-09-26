@@ -14,12 +14,20 @@ import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import {
+  addAccessJourneyTestOtps,
+  LOCAL_PROJECT_PATTERN,
+} from "./lib/access-journey-fixtures.mjs";
 
 const FIXTURE_CONTRACT_MODE = "--fixture-contract";
+const OWNED_JOURNEYS_MODE = "--owned-journeys";
+const OWNED_JOURNEYS_GREP =
+  "(?:shared sign-in from the homepage returns a prospective owner to their private application|a Cottage Owner saves, resumes and submits a complete private application|Owner Application keeps evidence controls aligned and accessible in every locale|one account returns to customer bookings, enrolls explicitly and signs out only this device)$";
+const OWNED_SUBMISSION_GREP =
+  "a Cottage Owner saves, resumes and submits a complete private application$";
 const DATABASE_MODE = "--database";
 const BROWSER_MODE = "--browser";
-const USAGE = `Usage: npm run verify:access [${DATABASE_MODE}|${BROWSER_MODE}|${FIXTURE_CONTRACT_MODE}]`;
-const LOCAL_PROJECT_PATTERN = /^rentcottage(?:-[a-z0-9]+)*$/;
+const USAGE = `Usage: npm run verify:access [${DATABASE_MODE}|${BROWSER_MODE}|${FIXTURE_CONTRACT_MODE}|${OWNED_JOURNEYS_MODE}]`;
 const EXCLUDED_SERVICES =
   "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
 
@@ -360,6 +368,7 @@ export function prepareIsolatedSupabaseWorkdir({
     }
     config = config.replace(current, replacement);
   }
+  config = addAccessJourneyTestOtps(config);
   writeFileSync(join(target, "config.toml"), config);
   symlinkSync(join(source, "migrations"), join(target, "migrations"), "dir");
   symlinkSync(join(source, "schemas"), join(target, "schemas"), "dir");
@@ -417,14 +426,30 @@ export async function main(
     (mode !== undefined &&
       mode !== DATABASE_MODE &&
       mode !== BROWSER_MODE &&
-      mode !== FIXTURE_CONTRACT_MODE)
+      mode !== FIXTURE_CONTRACT_MODE &&
+      mode !== OWNED_JOURNEYS_MODE)
   ) {
     stderr(USAGE);
     return 2;
   }
   const focusedFixtureContract = mode === FIXTURE_CONTRACT_MODE;
+  const ownedJourneysMode = mode === OWNED_JOURNEYS_MODE;
+  const phase = ownedJourneysMode
+    ? (environment.ACCESS_JOURNEY_PHASE ?? "forward")
+    : "ordinary";
+  if (
+    (ownedJourneysMode &&
+      !["forward", "reverse", "retry-proof"].includes(phase)) ||
+    (!ownedJourneysMode &&
+      environment.ACCESS_JOURNEY_PHASE !== undefined &&
+      environment.ACCESS_JOURNEY_PHASE !== "ordinary")
+  ) {
+    stderr("ACCESS_JOURNEY_PHASE must match the finite owned-journeys mode.");
+    return 2;
+  }
   const databaseMode = mode === undefined || mode === DATABASE_MODE;
-  const browserMode = mode === undefined || mode === BROWSER_MODE;
+  const browserMode =
+    mode === undefined || mode === BROWSER_MODE || ownedJourneysMode;
 
   const localProject =
     environment.SUPABASE_LOCAL_PROJECT ?? "rentcottage-verification";
@@ -601,6 +626,7 @@ export async function main(
   ];
   const supabaseEnvironment = {
     ...environment,
+    ACCESS_JOURNEY_PHASE: phase,
     DOCKER_CONFIG: dockerConfig,
     SUPABASE_TELEMETRY_DISABLED: "1",
     DO_NOT_TRACK: "1",
@@ -882,11 +908,36 @@ export async function main(
         "node",
         ["scripts/verify-access-fixture-contract.mjs"],
         {
-          env: { ...accessEnvironment, ...databaseConcurrencyEnvironment },
+          env: {
+            ...accessEnvironment,
+            ...databaseConcurrencyEnvironment,
+            ACCESS_JOURNEY_PHASE: "boundary",
+          },
           stdio: "inherit",
         },
       );
-      return fixtureContract.status;
+      if (fixtureContract.status !== 0) return fixtureContract.status;
+      const journeyReadiness = await execute(
+        "npx",
+        [
+          "playwright",
+          "test",
+          "--config=scripts/access-journey-fixture.config.ts",
+          "--workers=1",
+          "--retries=0",
+          "--grep",
+          "owned access readiness uses production account and application readers",
+        ],
+        {
+          env: {
+            ...accessEnvironment,
+            ...databaseConcurrencyEnvironment,
+            ACCESS_JOURNEY_PHASE: "boundary",
+          },
+          stdio: "inherit",
+        },
+      );
+      return journeyReadiness.status;
     };
     if (focusedFixtureContract) {
       group = "fixture";
@@ -1078,6 +1129,10 @@ export async function main(
       if (databaseStatus !== 0) return databaseStatus;
     }
     if (!browserMode) return 0;
+    if (ownedJourneysMode) {
+      const readinessStatus = await verifyFixtureContract();
+      if (readinessStatus !== 0) return readinessStatus;
+    }
     const verifyBrowserJourneys = async () => {
       const createNextFixtures = await execute(
         "node",
@@ -1109,21 +1164,36 @@ export async function main(
       };
       const browser = await execute(
         "npx",
-        [
-          "playwright",
-          "test",
-          "tests/access.spec.ts",
-          "tests/booking-request-access.spec.ts",
-          "tests/administrator-payment-history.spec.ts",
-          "tests/booking-history.spec.ts",
-          "tests/request-notification-details.spec.ts",
-          "tests/messaging.spec.ts",
-          "tests/customer-reviews.spec.ts",
-          "--project=mobile",
-          "--project=desktop",
-          "--workers=1",
-          "--output=playwright-report/access-next",
-        ],
+        ownedJourneysMode
+          ? [
+              "playwright",
+              "test",
+              "tests/access.spec.ts",
+              "--project=mobile",
+              "--project=desktop",
+              "--workers=1",
+              phase === "retry-proof" ? "--retries=1" : "--retries=0",
+              "--grep",
+              phase === "retry-proof"
+                ? OWNED_SUBMISSION_GREP
+                : OWNED_JOURNEYS_GREP,
+              `--output=playwright-report/owned-next-${phase}`,
+            ]
+          : [
+              "playwright",
+              "test",
+              "tests/access.spec.ts",
+              "tests/booking-request-access.spec.ts",
+              "tests/administrator-payment-history.spec.ts",
+              "tests/booking-history.spec.ts",
+              "tests/request-notification-details.spec.ts",
+              "tests/messaging.spec.ts",
+              "tests/customer-reviews.spec.ts",
+              "--project=mobile",
+              "--project=desktop",
+              "--workers=1",
+              "--output=playwright-report/access-next",
+            ],
         { env: browserEnvironment, stdio: "inherit" },
       );
       if (browser.status !== 0) return browser.status;
@@ -1158,26 +1228,42 @@ export async function main(
 
       const workerBrowser = await execute(
         "npx",
-        [
-          "playwright",
-          "test",
-          "tests/access.spec.ts",
-          "tests/booking-request-access.spec.ts",
-          "tests/administrator-payment-history.spec.ts",
-          "tests/booking-cancellation-refund.spec.ts",
-          "tests/messaging.spec.ts",
-          "tests/customer-reviews.spec.ts",
-          "--project=worker",
-          "--config=playwright.worker-prebuilt.config.ts",
-          "--workers=1",
-          "--output=playwright-report/access-worker",
-        ],
+        ownedJourneysMode
+          ? [
+              "playwright",
+              "test",
+              "tests/access.spec.ts",
+              "--project=worker",
+              "--config=playwright.worker-prebuilt.config.ts",
+              "--workers=1",
+              phase === "retry-proof" ? "--retries=1" : "--retries=0",
+              "--grep",
+              phase === "retry-proof"
+                ? OWNED_SUBMISSION_GREP
+                : OWNED_JOURNEYS_GREP,
+              `--output=playwright-report/owned-worker-${phase}`,
+            ]
+          : [
+              "playwright",
+              "test",
+              "tests/access.spec.ts",
+              "tests/booking-request-access.spec.ts",
+              "tests/administrator-payment-history.spec.ts",
+              "tests/booking-cancellation-refund.spec.ts",
+              "tests/messaging.spec.ts",
+              "tests/customer-reviews.spec.ts",
+              "--project=worker",
+              "--config=playwright.worker-prebuilt.config.ts",
+              "--workers=1",
+              "--output=playwright-report/access-worker",
+            ],
         {
           env: workerEnvironment,
           stdio: "inherit",
         },
       );
       if (workerBrowser.status !== 0) return workerBrowser.status;
+      if (ownedJourneysMode) return 0;
       const scheduledExpirySeed = await execute(
         "node",
         ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],

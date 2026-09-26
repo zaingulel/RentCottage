@@ -94,6 +94,31 @@ the fixture through the production reader before launching its browser or Worker
 
 Before an expensive journey, validate each new database observer query and fixture at its relevant disposable
 database seam: qualify ambiguous columns, assert the expected row cardinality, and preserve the public outcome.
+
+The four owned access journeys use finite journey/project/native retry/native repeat/phase coordinates in each
+fresh disposable lifecycle. Their Node-side adapter prepares the initial recipe and awaits the production account
+and Owner Application readers before navigation. Synthetic identity/readiness attachments contain no credentials
+or sessions. Failed attempts retain their rows until the existing guarded project reset/disposal; native retries
+consume a different identity, with no per-journey deletion or disk ledger.
+
+`node scripts/verify-access.mjs --owned-journeys` is the focused isolation proof. `ACCESS_JOURNEY_PHASE` accepts
+only `forward`, `reverse`, or `retry-proof` in this mode and defaults to `forward`; ordinary verification uses
+`ordinary`, and the real readiness observer uses `boundary`. The `forward` and `reverse` phases each select the
+four journeys across three projects: eight Next.js cases and four Worker cases, twelve total, with one worker
+and no retries. Inspect the matching `--list` selection before execution; require all twelve cases to pass in
+each phase, with no skips or unexpected flakiness.
+
+The `retry-proof` phase selects the owner-submission journey in each of two Next.js projects and the Worker
+project, for three submission leaves total. Each leaf must deliberately fail attempt 0 at the temporary assertion,
+then pass retry 1 with a different identity and readiness established before navigation. There must be no extra
+skips or unintended flakes; a top-level exit status of 0 alone does not certify this experiment. Classify its
+intentional flakes as proof instrumentation, restore the temporary assertion immediately, then require a restored
+clean `forward` run with all twelve cases passing and zero retries. This route validates real readiness, retains
+legacy foreign-booking fixtures, builds Next.js once and the real-credential Worker once per invocation, and uses
+the existing Worker prebuilt configuration only after that build succeeds. Its cost is these two builds and
+twelve browser cases; retire the focused mode if the ordinary runner provides equivalent order/retry evidence.
+It does not replace ordinary database/browser evidence or the final exact-source hosted gate.
+
 Validate each browser selector against its intended rendered state using an accessible name or meaningful scope;
 positional selection does not establish identity. Name the authoritative clock at every time boundary and align
 fixtures, triggers, and assertions to it without weakening deadline behaviour or reproducing production logic.
