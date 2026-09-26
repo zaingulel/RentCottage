@@ -3674,7 +3674,7 @@ setInterval(() => {}, 1000);
           resetCommand,
           ...databasePreflightCommands,
           statusCommand,
-          ...databaseCheckCommands.slice(0, 10),
+          ...databaseCheckCommands.slice(0, 11),
         ],
       },
       {
