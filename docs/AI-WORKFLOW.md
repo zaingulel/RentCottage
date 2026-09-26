@@ -54,8 +54,15 @@ Codex does not yet emit `PreToolUse` for shell commands on Windows (openai/codex
 wraps the command in a `powershell.exe -Command` string the git guard does not read. A hook that cannot run, because
 `node` is missing or because a Codex that finds no shell launches hooks through `cmd.exe /C`, which cannot read
 these forms, is reported as a failed hook and the action proceeds, as a failed hook does on macOS: the failure is
-visible, not blocking. Changing a hook definition resets Codex's trust in it: run `/hooks` in Codex at the
-repository root to trust it again.
+visible, not blocking. Codex trusts each handler by a fingerprint of its event, matcher, `timeout`, `async`,
+`statusMessage`, `additionalContextLimit`, and the one command it runs on the current platform: `commandWindows`
+on Windows when set, `command` otherwise. It records that trust under the handler's position in its event's list
+([command choice](https://github.com/openai/codex/blob/dfdb40cd0b72dfba3293db5c7c441232e8ef1a60/codex-rs/hooks/src/engine/discovery.rs#L503-L566)
+and [`hook_hash`](https://github.com/openai/codex/blob/dfdb40cd0b72dfba3293db5c7c441232e8ef1a60/codex-rs/hooks/src/engine/discovery.rs#L766-L792)
+in openai/codex). So a changed `commandWindows` needs re-approval only on Windows; a changed `command` needs it
+on macOS and Linux, and on Windows only for a handler without `commandWindows`; any other fingerprinted change,
+or moving a handler or inserting one ahead of it, needs it on every platform. Re-approve by running `/hooks` in
+Codex at the repository root on each affected platform.
 
 ## The seats
 

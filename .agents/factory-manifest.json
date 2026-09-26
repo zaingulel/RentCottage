@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "1ef0c34e65f89f94debbaa73d1577dd867e09536",
+  "syncedFrom": "93a3b9ccfc0f3b4dadc57dfce4f447f76f6ca124",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -583,7 +583,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "65c1827db946ee2db469a214dfa0e0ac9feb6346ba2052c4c42fbc42eab5c6bd"
+      "sha256": "128be1419417867955962ed7bd2121afc811821d8a4b8c3e63f7fc1feb44de70"
     },
     {
       "path": "scripts/board-add.mjs",
