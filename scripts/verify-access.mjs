@@ -14,7 +14,10 @@ import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
-import { addAccessJourneyTestOtps } from "./lib/access-journey-fixtures.mjs";
+import {
+  addAccessJourneyTestOtps,
+  LOCAL_PROJECT_PATTERN,
+} from "./lib/access-journey-fixtures.mjs";
 
 const FIXTURE_CONTRACT_MODE = "--fixture-contract";
 const OWNED_JOURNEYS_MODE = "--owned-journeys";
@@ -25,7 +28,6 @@ const OWNED_SUBMISSION_GREP =
 const DATABASE_MODE = "--database";
 const BROWSER_MODE = "--browser";
 const USAGE = `Usage: npm run verify:access [${DATABASE_MODE}|${BROWSER_MODE}|${FIXTURE_CONTRACT_MODE}|${OWNED_JOURNEYS_MODE}]`;
-const LOCAL_PROJECT_PATTERN = /^rentcottage(?:-[a-z0-9]+)*$/;
 const EXCLUDED_SERVICES =
   "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
 

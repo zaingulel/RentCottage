@@ -52,8 +52,11 @@ const { findAccessFixtureUser, listAllAccessFixtureUsers } =
     ): { phone?: string } | undefined;
   };
 
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const { validateEnvironment, uuidPattern } =
+  require("./lib/access-journey-fixtures.mjs") as {
+    validateEnvironment(environment: NodeJS.ProcessEnv, url: string): void;
+    uuidPattern: RegExp;
+  };
 const zeroCountKeySet =
   "cleanup,documentVersions,documents,informationRequests,marketplaceListings,notices,renewalWork,transitions,verificationRecords";
 
@@ -75,24 +78,7 @@ export async function validateAccessJourneyInitialState({
   const { journey, project, phase, retry } = fixture.allocation;
   const label = `${journey}/${project}/${phase}/retry ${retry}/${fixture.fixtureCase.recipe}`;
   try {
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      throw new Error(`${label} has an invalid readiness environment.`);
-    }
-    if (
-      environment.APP_ENVIRONMENT !== "test" ||
-      environment.SUPABASE_URL !== url ||
-      parsedUrl.protocol !== "http:" ||
-      parsedUrl.hostname !== "127.0.0.1" ||
-      !/^rentcottage(?:-[a-z0-9]+)*$/.test(
-        environment.SUPABASE_LOCAL_PROJECT ?? "",
-      ) ||
-      !environment.SUPABASE_LOCAL_WORKDIR
-    ) {
-      throw new Error(`${label} readiness environment is not disposable.`);
-    }
+    validateEnvironment(environment, url);
     const harness = createLocalSupabaseConcurrencyHarness({ environment });
     harness.guardDisposableLocalDatabase();
     if (fixture.fixtureCase.recipe === "new-account") {

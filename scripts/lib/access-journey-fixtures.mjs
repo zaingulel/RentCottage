@@ -9,8 +9,9 @@ import {
 const projects = ["mobile", "desktop", "worker"];
 const phases = ["ordinary", "forward", "reverse", "retry-proof", "boundary"];
 const password = "Local-test-password-2026";
-const uuidPattern =
+export const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const LOCAL_PROJECT_PATTERN = /^rentcottage(?:-[a-z0-9]+)*$/;
 
 export const accessJourneyCases = Object.freeze([
   Object.freeze({
@@ -185,7 +186,7 @@ export function addAccessJourneyTestOtps(config) {
   return `${config.slice(0, sectionStart)}\n${lines}${config.slice(sectionStart)}`;
 }
 
-function validateEnvironment(environment, url) {
+export function validateEnvironment(environment, url) {
   if (environment.APP_ENVIRONMENT !== "test") {
     throw new Error("Access journey fixtures require APP_ENVIRONMENT=test.");
   }
@@ -199,9 +200,7 @@ function validateEnvironment(environment, url) {
     parsed.hostname !== "127.0.0.1" ||
     parsed.protocol !== "http:" ||
     environment.SUPABASE_URL !== url ||
-    !/^rentcottage(?:-[a-z0-9]+)*$/.test(
-      environment.SUPABASE_LOCAL_PROJECT ?? "",
-    ) ||
+    !LOCAL_PROJECT_PATTERN.test(environment.SUPABASE_LOCAL_PROJECT ?? "") ||
     typeof environment.SUPABASE_LOCAL_WORKDIR !== "string" ||
     environment.SUPABASE_LOCAL_WORKDIR.length === 0
   ) {

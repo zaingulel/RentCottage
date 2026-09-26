@@ -78,6 +78,58 @@ test("owned access readiness uses production account and application readers", a
     expect(fixture.profileId).toBeUndefined();
   }
 
+  for (const [overrides, candidateUrl, expectedError] of [
+    [
+      { APP_ENVIRONMENT: "production" },
+      url,
+      "Access journey fixtures require APP_ENVIRONMENT=test.",
+    ],
+    [
+      { SUPABASE_URL: "http://127.0.0.1:54331" },
+      url,
+      "Access journey fixture environment is not disposable.",
+    ],
+    [
+      { SUPABASE_URL: "invalid" },
+      "invalid",
+      "Access journey fixtures require loopback Supabase.",
+    ],
+    [
+      { SUPABASE_URL: "https://127.0.0.1:55331" },
+      "https://127.0.0.1:55331",
+      "Access journey fixture environment is not disposable.",
+    ],
+    [
+      { SUPABASE_URL: "http://example.com:55331" },
+      "http://example.com:55331",
+      "Access journey fixture environment is not disposable.",
+    ],
+    [
+      { SUPABASE_LOCAL_PROJECT: "demo_project" },
+      url,
+      "Access journey fixture environment is not disposable.",
+    ],
+    [
+      { SUPABASE_LOCAL_WORKDIR: "" },
+      url,
+      "Access journey fixture environment is not disposable.",
+    ],
+  ] as const) {
+    let invalidEnvironmentConsumed = false;
+    await expect(
+      validateAccessJourneyInitialState({
+        environment: { ...process.env, ...overrides },
+        fixture: prepared,
+        privilegedClient,
+        publishableKey,
+        url: candidateUrl,
+      }).then(() => {
+        invalidEnvironmentConsumed = true;
+      }),
+    ).rejects.toThrow(expectedError);
+    expect(invalidEnvironmentConsumed).toBe(false);
+  }
+
   const absent = fixtures[1];
   const created = await privilegedClient.auth.admin.createUser({
     phone: absent.phone,
