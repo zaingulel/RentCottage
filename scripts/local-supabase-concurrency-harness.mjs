@@ -281,8 +281,6 @@ export function createLocalSupabaseConcurrencyHarness({
         session.child.stdout.on("data", onSetupData);
         session.child.on("error", onSetupError);
         session.child.on("close", onSetupClose);
-        if (session.stdout.includes(marker)) onSetupData();
-        else if (session.exit) onSetupClose();
       });
       session.setupStdout = session.stdout.slice(
         0,
