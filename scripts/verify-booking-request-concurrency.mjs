@@ -1,37 +1,17 @@
-// SQL arrangement mirrors admission, isolated effect, and explicit recording.
-const paymentEvidenceSql =
-  "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
-  readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
-  "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
-const customerId = "97000000-0000-4000-8000-000000000032";
-const authorizationMarker = "RC_BOOKING_REQUEST_AUTHORIZED";
-const finalizationMarker = "RC_BOOKING_REQUEST_FIRST_FINALIZED";
-const contenderName = "rc-booking-request-contender";
-const paymentCasMarker = "RC_BOOKING_REQUEST_RELEASE_SAVED";
-const paymentCasContenderName = "rc-booking-request-payment-stale";
-const finalizationTimeBlockerName = "rc-booking-request-time-blocker";
-const lookupCommitName = "rc-booking-request-lookup-commit";
-const lookupRollbackName = "rc-booking-request-lookup-rollback";
-const inlinePersistenceMarker = "RC_BOOKING_REQUEST_INLINE_PERSISTING";
-const outboxCompletionName = "rc-booking-request-outbox-completion";
-const durableExecutionContenderName =
-  "rc-booking-request-durable-execution-contender";
-const expiryStaleCompletionName = "rc-booking-request-expiry-stale-completion";
-const releaseRetryOwnerName = "rc-booking-request-release-retry-owner";
-const releaseRetryContenderName = "rc-booking-request-release-retry-contender";
-const releaseRetryMarker = "RC_BOOKING_REQUEST_RELEASE_RETRY_LEASED";
-
 const {
   finishSession,
+  finishTiming,
+  markTimingPhase,
   guardDisposableLocalDatabase,
-  runSql: rawRunSql,
-  startSession: openSession,
+  runSqlAfterSetup: rawRunSql,
+  startSessionAfterSetup: openSession,
   waitForLock,
   waitForMarker,
 } = createLocalSupabaseConcurrencyHarness({
+  timing: { check: "verify-booking-request-concurrency", isolation: "serial" },
   messages: {
     invalidGuard:
       "The Booking Request concurrency test requires guarded local Supabase.",
@@ -39,24 +19,55 @@ const {
       "The Supabase container does not belong to this disposable checkout.",
   },
 });
-const runSql = (sql) => rawRunSql(paymentEvidenceSql + sql);
-const activeSessions = new Set();
+markTimingPhase("setup");
+let timingOutcome = "failed";
+try {
+  // SQL arrangement mirrors admission, isolated effect, and explicit recording.
+  const paymentEvidenceSql =
+    "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
+    readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
+    "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 
-function startSession(sql, closeInput) {
-  const session = openSession(paymentEvidenceSql + sql, closeInput);
-  activeSessions.add(session);
-  return session;
-}
+  const customerId = "97000000-0000-4000-8000-000000000032";
+  const authorizationMarker = "RC_BOOKING_REQUEST_AUTHORIZED";
+  const finalizationMarker = "RC_BOOKING_REQUEST_FIRST_FINALIZED";
+  const contenderName = "rc-booking-request-contender";
+  const paymentCasMarker = "RC_BOOKING_REQUEST_RELEASE_SAVED";
+  const paymentCasContenderName = "rc-booking-request-payment-stale";
+  const finalizationTimeBlockerName = "rc-booking-request-time-blocker";
+  const lookupCommitName = "rc-booking-request-lookup-commit";
+  const lookupRollbackName = "rc-booking-request-lookup-rollback";
+  const inlinePersistenceMarker = "RC_BOOKING_REQUEST_INLINE_PERSISTING";
+  const outboxCompletionName = "rc-booking-request-outbox-completion";
+  const durableExecutionContenderName =
+    "rc-booking-request-durable-execution-contender";
+  const expiryStaleCompletionName =
+    "rc-booking-request-expiry-stale-completion";
+  const releaseRetryOwnerName = "rc-booking-request-release-retry-owner";
+  const releaseRetryContenderName =
+    "rc-booking-request-release-retry-contender";
+  const releaseRetryMarker = "RC_BOOKING_REQUEST_RELEASE_RETRY_LEASED";
 
-function prepareSql(idempotencyKey) {
-  return `public.prepare_booking_request_submission(
+  const runSql = async (sql) => await rawRunSql(paymentEvidenceSql, sql);
+  const activeSessions = new Set();
+
+  async function startSession(sql, closeInput) {
+    const session = await openSession(paymentEvidenceSql, sql, closeInput);
+    activeSessions.add(session);
+    return session;
+  }
+
+  function prepareSql(idempotencyKey) {
+    return `public.prepare_booking_request_submission(
     '${customerId}', '${idempotencyKey}',
     (select submission from public.test_booking_request_concurrency_fixture)
   )`;
-}
+  }
 
-function restoreBaseBookingWindow() {
-  runSql(`
+  async function restoreBaseBookingWindow() {
+    markTimingPhase("setup");
+    try {
+      await runSql(`
     delete from public.cottage_inventory_availability availability
     using public.test_booking_request_concurrency_fixture fixture
     where availability.schedule_revision_id = fixture.schedule_id
@@ -101,16 +112,21 @@ function restoreBaseBookingWindow() {
     on conflict (schedule_revision_id, unit_kind, unit_id, service_day)
       do update set state = 'open';
   `);
-}
+    } finally {
+      markTimingPhase("execution");
+    }
+  }
 
-function prepareBoundaryAttempt({
-  authorize = true,
-  boundaryHours,
-  idempotencyKey,
-  label,
-  providerSuffix,
-}) {
-  runSql(`
+  async function prepareBoundaryAttempt({
+    authorize = true,
+    boundaryHours,
+    idempotencyKey,
+    label,
+    providerSuffix,
+  }) {
+    markTimingPhase("setup");
+    try {
+      await runSql(`
     delete from public.cottage_inventory_availability availability
     using public.test_booking_request_concurrency_fixture fixture
     where availability.schedule_revision_id = fixture.schedule_id
@@ -220,8 +236,8 @@ function prepareBoundaryAttempt({
         ${prepareSql(idempotencyKey)}
       from public.test_booking_request_concurrency_fixture fixture;
   `);
-  if (authorize) {
-    runSql(`
+      if (authorize) {
+        await runSql(`
     with prepared as (
       select prepare_result as result
       from public.test_booking_request_time_boundary_fixture
@@ -359,29 +375,29 @@ function prepareBoundaryAttempt({
     from public.test_booking_request_time_boundary_fixture fixture
     where fixture.label = '${label}';
     `);
-  } else {
-    runSql(`
+      } else {
+        await runSql(`
       update public.test_booking_request_time_boundary_fixture
       set attempt_id = (prepare_result ->> 'attemptId')::uuid
       where label = '${label}'
         and prepare_result ->> 'status' = 'ready';
     `);
-  }
-  const fixtureReady = authorize
-    ? runSql(`
+      }
+      const fixtureReady = authorize
+        ? await runSql(`
       select count(*) from public.test_booking_request_time_boundary_fixture
       where label = '${label}'
         and attempt_id is not null
         and payment_snapshot is not null;
     `)
-    : runSql(`
+        : await runSql(`
       select count(*) from public.test_booking_request_time_boundary_fixture
       where label = '${label}'
         and attempt_id is not null
         and payment_snapshot is null;
     `);
-  if (fixtureReady !== "1") {
-    const result = runSql(`
+      if (fixtureReady !== "1") {
+        const result = await runSql(`
       select jsonb_build_object(
         'prepareResult', boundary.prepare_result,
         'crossesAt', boundary.crosses_at,
@@ -392,19 +408,22 @@ function prepareBoundaryAttempt({
       cross join public.test_booking_request_concurrency_fixture fixture
       where boundary.label = '${label}';
     `);
-    throw new Error(
-      `The ${label} boundary fixture was not prepared: ${result}`,
-    );
+        throw new Error(
+          `The ${label} boundary fixture was not prepared: ${result}`,
+        );
+      }
+    } finally {
+      markTimingPhase("execution");
+    }
   }
-}
 
-async function verifyLockDelayedPreparationBoundary({
-  expectedStatus,
-  idempotencyKey,
-  label,
-}) {
-  const blockerMarker = `RC_BOOKING_REQUEST_${label.toUpperCase()}_LOCKED`;
-  const blocker = startSession(`
+  async function verifyLockDelayedPreparationBoundary({
+    expectedStatus,
+    idempotencyKey,
+    label,
+  }) {
+    const blockerMarker = `RC_BOOKING_REQUEST_${label.toUpperCase()}_LOCKED`;
+    const blocker = await startSession(`
     set application_name = '${finalizationTimeBlockerName}-${label}';
     begin;
     select profiles.id
@@ -418,28 +437,28 @@ async function verifyLockDelayedPreparationBoundary({
         where label = '${label}') - clock_timestamp()
     ))));
   `);
-  await waitForMarker(blocker, blockerMarker);
-  const preparerName = `rc-booking-request-${label}-preparer`;
-  const preparer = startSession(
-    `
+    await waitForMarker(blocker, blockerMarker);
+    const preparerName = `rc-booking-request-${label}-preparer`;
+    const preparer = await startSession(
+      `
     set application_name = '${preparerName}';
     begin;
     set local role service_role;
     select ${prepareSql(idempotencyKey)} ->> 'status';
     commit;
   `,
-    true,
-  );
-  await waitForLock(preparerName, preparer);
-  await finishSession(blocker, { action: "commit" });
-  await finishSession(preparer);
-  if (!preparer.stdout.includes(expectedStatus)) {
-    throw new Error(
-      `The ${label} pre-authorization retry returned the wrong state: ${preparer.stdout}`,
+      true,
     );
-  }
-  if (
-    runSql(`
+    await waitForLock(preparerName, preparer);
+    await finishSession(blocker, { action: "commit" });
+    await finishSession(preparer);
+    if (!preparer.stdout.includes(expectedStatus)) {
+      throw new Error(
+        `The ${label} pre-authorization retry returned the wrong state: ${preparer.stdout}`,
+      );
+    }
+    if (
+      (await runSql(`
       select count(*)
       from public.test_booking_request_time_boundary_fixture fixture
       join public.booking_request_submission_attempts attempts
@@ -453,16 +472,18 @@ async function verifyLockDelayedPreparationBoundary({
           from public.booking_request_provider_operation_identities identities
           where identities.attempt_id = attempts.id
         );
-    `) !== "1"
-  ) {
-    throw new Error(
-      `The ${label} retry persisted provider authorization evidence before freshness passed.`,
-    );
+    `)) !== "1"
+    ) {
+      throw new Error(
+        `The ${label} retry persisted provider authorization evidence before freshness passed.`,
+      );
+    }
   }
-}
 
-function removeBoundaryAttempt(label) {
-  runSql(`
+  async function removeBoundaryAttempt(label) {
+    markTimingPhase("setup");
+    try {
+      await runSql(`
     do $payment_fixture_cleanup$ begin
       alter table public.payment_provider_observations disable trigger guard_payment_provider_observation;
       delete from public.payment_provider_observations where operation_id in (select operations.id from public.payment_provider_operations operations, public.booking_request_authorization_claims claims,
@@ -518,14 +539,17 @@ function removeBoundaryAttempt(label) {
     delete from public.test_booking_request_time_boundary_fixture
     where label = '${label}';
   `);
-}
+    } finally {
+      markTimingPhase("execution");
+    }
+  }
 
-async function verifyPostAuthorizationPolicyBoundary({
-  expectedMessage,
-  label,
-}) {
-  const blockerMarker = `RC_BOOKING_REQUEST_${label.toUpperCase()}_LOCKED`;
-  const blocker = startSession(`
+  async function verifyPostAuthorizationPolicyBoundary({
+    expectedMessage,
+    label,
+  }) {
+    const blockerMarker = `RC_BOOKING_REQUEST_${label.toUpperCase()}_LOCKED`;
+    const blocker = await startSession(`
     set application_name = '${finalizationTimeBlockerName}-${label}';
     begin;
     select profiles.id
@@ -539,10 +563,10 @@ async function verifyPostAuthorizationPolicyBoundary({
         where label = '${label}') - clock_timestamp()
     ))));
   `);
-  await waitForMarker(blocker, blockerMarker);
-  const finalizerName = `rc-booking-request-${label}-finalizer`;
-  const finalizer = startSession(
-    `
+    await waitForMarker(blocker, blockerMarker);
+    const finalizerName = `rc-booking-request-${label}-finalizer`;
+    const finalizer = await startSession(
+      `
     set application_name = '${finalizerName}';
     begin;
     set local role service_role;
@@ -551,17 +575,17 @@ async function verifyPostAuthorizationPolicyBoundary({
     where label = '${label}';
     commit;
   `,
-    true,
-  );
-  await waitForLock(finalizerName, finalizer);
-  await finishSession(blocker, { action: "rollback" });
-  await finishSession(finalizer, { expectedState: "RC409" });
-  if (!finalizer.stderr.includes(expectedMessage)) {
-    throw new Error(
-      `The ${label} finalization failed for the wrong reason: ${finalizer.stderr}`,
+      true,
     );
-  }
-  const retainedState = runSql(`
+    await waitForLock(finalizerName, finalizer);
+    await finishSession(blocker, { action: "rollback" });
+    await finishSession(finalizer, { expectedState: "RC409" });
+    if (!finalizer.stderr.includes(expectedMessage)) {
+      throw new Error(
+        `The ${label} finalization failed for the wrong reason: ${finalizer.stderr}`,
+      );
+    }
+    const retainedState = await runSql(`
     select
       (select count(*)
        from public.booking_request_submission_attempts attempts
@@ -582,15 +606,15 @@ async function verifyPostAuthorizationPolicyBoundary({
        where fixture.label = '${label}'
          and identities.operation_kind = 'authorization');
   `);
-  if (retainedState !== "1|0|0|1") {
-    throw new Error(
-      `The ${label} overlap failure did not preserve one releasable authorization without a request or hold: ${retainedState}`,
-    );
+    if (retainedState !== "1|0|0|1") {
+      throw new Error(
+        `The ${label} overlap failure did not preserve one releasable authorization without a request or hold: ${retainedState}`,
+      );
+    }
   }
-}
 
-function verifyCutoffExpiryRelease(label) {
-  runSql(`
+  async function verifyCutoffExpiryRelease(label) {
+    await runSql(`
     drop table if exists public.test_booking_request_cutoff_stale_work;
     update public.booking_request_authorization_claims claims
     -- The preceding cutoff observer already proved not_after is in the past.
@@ -609,7 +633,7 @@ function verifyCutoffExpiryRelease(label) {
     select public.expire_booking_request_authorization_claims();
     reset role;
   `);
-  const releaseState = runSql(`
+    const releaseState = await runSql(`
     select attempts.state, claims.state::text, occupancies.active,
       outbox.state, attempts.payment_snapshot -> 'release' ->> 'status',
       outbox.lease_token is null,
@@ -628,12 +652,12 @@ function verifyCutoffExpiryRelease(label) {
       on outbox.claim_id = claims.id
     where fixture.label = '${label}';
   `);
-  if (releaseState !== "releasing|releasing|t|pending|pending|t|0|0") {
-    throw new Error(
-      `Cut-off expiry did not preserve inventory around a recoverable release: ${releaseState}`,
-    );
-  }
-  const staleCompletion = runSql(`
+    if (releaseState !== "releasing|releasing|t|pending|pending|t|0|0") {
+      throw new Error(
+        `Cut-off expiry did not preserve inventory around a recoverable release: ${releaseState}`,
+      );
+    }
+    const staleCompletion = await runSql(`
     set role service_role;
     select public.complete_booking_request_authorization_reconciliation(
       (work.result ->> 'claimId')::uuid,
@@ -648,15 +672,15 @@ function verifyCutoffExpiryRelease(label) {
     where fixture.label = '${label}';
     reset role;
   `);
-  if (staleCompletion !== "conflict") {
-    throw new Error(
-      `A stale pre-cut-off worker overwrote the release transition: ${staleCompletion}`,
-    );
+    if (staleCompletion !== "conflict") {
+      throw new Error(
+        `A stale pre-cut-off worker overwrote the release transition: ${staleCompletion}`,
+      );
+    }
+    await runSql(`drop table public.test_booking_request_cutoff_stale_work;`);
   }
-  runSql(`drop table public.test_booking_request_cutoff_stale_work;`);
-}
 
-const cleanup = `begin;
+  const cleanup = `begin;
   create table if not exists public.test_booking_request_concurrency_fixture (
     profile_id uuid, schedule_id uuid, shift_id uuid, slug text,
     position smallint, service_day date, submission jsonb,
@@ -790,10 +814,10 @@ const cleanup = `begin;
   drop table if exists public.test_booking_request_cross_cottage_fixture;
 commit;`;
 
-async function main() {
-  guardDisposableLocalDatabase();
-  runSql(cleanup);
-  runSql(`
+  async function main() {
+    guardDisposableLocalDatabase();
+    await runSql(cleanup);
+    await runSql(`
     insert into auth.users (id, aud, role, phone, phone_confirmed_at)
     values ('${customerId}', 'authenticated', 'authenticated', '+9647500097032', now());
     insert into public.account_contexts (user_id, role)
@@ -922,83 +946,85 @@ async function main() {
     );
     grant select on public.test_booking_request_time_boundary_fixture to service_role;
   `);
-  if (
-    runSql(
-      "select count(*) from public.test_booking_request_concurrency_fixture where submission is not null;",
-    ) !== "1"
-  ) {
-    throw new Error(
-      "No isolated Booking Request concurrency fixture was available.",
-    );
-  }
-  if (
-    runSql(
-      "select count(*) from public.test_booking_request_cross_cottage_fixture;",
-    ) !== "1"
-  ) {
-    throw new Error(
-      "No second isolated Cottage was available for the cross-cottage overlap observer.",
-    );
-  }
+    if (
+      (await runSql(
+        "select count(*) from public.test_booking_request_concurrency_fixture where submission is not null;",
+      )) !== "1"
+    ) {
+      throw new Error(
+        "No isolated Booking Request concurrency fixture was available.",
+      );
+    }
+    if (
+      (await runSql(
+        "select count(*) from public.test_booking_request_cross_cottage_fixture;",
+      )) !== "1"
+    ) {
+      throw new Error(
+        "No second isolated Cottage was available for the cross-cottage overlap observer.",
+      );
+    }
 
-  prepareBoundaryAttempt({
-    authorize: false,
-    boundaryHours: 6,
-    idempotencyKey: "11111111-1111-4111-8111-111111119716",
-    label: "preauth-six-hour",
-    providerSuffix: "unused-preauth-six-hour",
-  });
-  await verifyLockDelayedPreparationBoundary({
-    expectedStatus: "too-late",
-    idempotencyKey: "11111111-1111-4111-8111-111111119716",
-    label: "preauth-six-hour",
-  });
-  removeBoundaryAttempt("preauth-six-hour");
-  restoreBaseBookingWindow();
+    markTimingPhase("execution");
+    await prepareBoundaryAttempt({
+      authorize: false,
+      boundaryHours: 6,
+      idempotencyKey: "11111111-1111-4111-8111-111111119716",
+      label: "preauth-six-hour",
+      providerSuffix: "unused-preauth-six-hour",
+    });
+    await verifyLockDelayedPreparationBoundary({
+      expectedStatus: "too-late",
+      idempotencyKey: "11111111-1111-4111-8111-111111119716",
+      label: "preauth-six-hour",
+    });
+    await removeBoundaryAttempt("preauth-six-hour");
+    await restoreBaseBookingWindow();
 
-  prepareBoundaryAttempt({
-    authorize: false,
-    boundaryHours: 48,
-    idempotencyKey: "11111111-1111-4111-8111-111111119758",
-    label: "preauth-inside-48-hour",
-    providerSuffix: "unused-preauth-inside-48-hour",
-  });
-  await verifyLockDelayedPreparationBoundary({
-    expectedStatus: "invalid",
-    idempotencyKey: "11111111-1111-4111-8111-111111119758",
-    label: "preauth-inside-48-hour",
-  });
-  removeBoundaryAttempt("preauth-inside-48-hour");
-  restoreBaseBookingWindow();
+    await prepareBoundaryAttempt({
+      authorize: false,
+      boundaryHours: 48,
+      idempotencyKey: "11111111-1111-4111-8111-111111119758",
+      label: "preauth-inside-48-hour",
+      providerSuffix: "unused-preauth-inside-48-hour",
+    });
+    await verifyLockDelayedPreparationBoundary({
+      expectedStatus: "invalid",
+      idempotencyKey: "11111111-1111-4111-8111-111111119758",
+      label: "preauth-inside-48-hour",
+    });
+    await removeBoundaryAttempt("preauth-inside-48-hour");
+    await restoreBaseBookingWindow();
 
-  prepareBoundaryAttempt({
-    boundaryHours: 6,
-    idempotencyKey: "11111111-1111-4111-8111-111111119706",
-    label: "six-hour",
-    providerSuffix: "six-hour",
-  });
-  await verifyPostAuthorizationPolicyBoundary({
-    expectedMessage: "Booking Request Cut-Off has passed",
-    label: "six-hour",
-  });
-  verifyCutoffExpiryRelease("six-hour");
-  removeBoundaryAttempt("six-hour");
-  restoreBaseBookingWindow();
+    await prepareBoundaryAttempt({
+      boundaryHours: 6,
+      idempotencyKey: "11111111-1111-4111-8111-111111119706",
+      label: "six-hour",
+      providerSuffix: "six-hour",
+    });
+    await verifyPostAuthorizationPolicyBoundary({
+      expectedMessage: "Booking Request Cut-Off has passed",
+      label: "six-hour",
+    });
+    await verifyCutoffExpiryRelease("six-hour");
+    await removeBoundaryAttempt("six-hour");
+    await restoreBaseBookingWindow();
 
-  prepareBoundaryAttempt({
-    boundaryHours: 48,
-    idempotencyKey: "11111111-1111-4111-8111-111111119748",
-    label: "inside-48-hour",
-    providerSuffix: "inside-48-hour",
-  });
-  await verifyPostAuthorizationPolicyBoundary({
-    expectedMessage: "Booking acceptance evidence changed before finalization",
-    label: "inside-48-hour",
-  });
-  removeBoundaryAttempt("inside-48-hour");
-  restoreBaseBookingWindow();
+    await prepareBoundaryAttempt({
+      boundaryHours: 48,
+      idempotencyKey: "11111111-1111-4111-8111-111111119748",
+      label: "inside-48-hour",
+      providerSuffix: "inside-48-hour",
+    });
+    await verifyPostAuthorizationPolicyBoundary({
+      expectedMessage:
+        "Booking acceptance evidence changed before finalization",
+      label: "inside-48-hour",
+    });
+    await removeBoundaryAttempt("inside-48-hour");
+    await restoreBaseBookingWindow();
 
-  const authorization = startSession(`
+    const authorization = await startSession(`
     set application_name = 'rc-booking-request-first';
     begin;
     set local role service_role;
@@ -1064,11 +1090,11 @@ async function main() {
       payment_snapshot = (select snapshot from authorized);
     select '${authorizationMarker}';
   `);
-  await waitForMarker(authorization, authorizationMarker);
-  const crossCottageClaimContenderName =
-    "rc-booking-request-cross-cottage-claim-contender";
-  const crossCottageClaimContender = startSession(
-    `
+    await waitForMarker(authorization, authorizationMarker);
+    const crossCottageClaimContenderName =
+      "rc-booking-request-cross-cottage-claim-contender";
+    const crossCottageClaimContender = await startSession(
+      `
     set application_name = '${crossCottageClaimContenderName}';
     begin;
     set local role service_role;
@@ -1086,13 +1112,17 @@ async function main() {
     from public.test_booking_request_cross_cottage_fixture fixture;
     commit;
   `,
-    true,
-  );
-  await waitForLock(crossCottageClaimContenderName, crossCottageClaimContender);
-  await finishSession(authorization, { action: "commit" });
-  await finishSession(crossCottageClaimContender, { expectedState: "RC409" });
+      true,
+    );
+    await waitForLock(
+      crossCottageClaimContenderName,
+      crossCottageClaimContender,
+    );
+    await finishSession(authorization, { action: "commit" });
+    await finishSession(crossCottageClaimContender, { expectedState: "RC409" });
 
-  runSql(`
+    markTimingPhase("setup");
+    await runSql(`
     create table public.test_booking_request_durable_operation as
     select jsonb_build_object(
       'providerIdentity', jsonb_build_object(
@@ -1128,7 +1158,8 @@ async function main() {
     );
     grant select on public.test_booking_request_durable_operation to service_role;
   `);
-  const firstDurableExecution = startSession(`
+    markTimingPhase("execution");
+    const firstDurableExecution = await startSession(`
     set application_name = 'rc-booking-request-durable-execution-first';
     begin;
     set local role service_role;
@@ -1138,12 +1169,12 @@ async function main() {
     from public.test_booking_request_durable_operation;
     select 'RC_BOOKING_REQUEST_DURABLE_EXECUTION_LOCKED';
   `);
-  await waitForMarker(
-    firstDurableExecution,
-    "RC_BOOKING_REQUEST_DURABLE_EXECUTION_LOCKED",
-  );
-  const duplicateDurableExecution = startSession(
-    `
+    await waitForMarker(
+      firstDurableExecution,
+      "RC_BOOKING_REQUEST_DURABLE_EXECUTION_LOCKED",
+    );
+    const duplicateDurableExecution = await startSession(
+      `
     set application_name = '${durableExecutionContenderName}';
     begin;
     set local role service_role;
@@ -1153,12 +1184,12 @@ async function main() {
     from public.test_booking_request_durable_operation;
     commit;
   `,
-    true,
-  );
-  await waitForLock(durableExecutionContenderName, duplicateDurableExecution);
-  await finishSession(firstDurableExecution, { action: "commit" });
-  await finishSession(duplicateDurableExecution);
-  const durableLedgerCounts = runSql(`
+      true,
+    );
+    await waitForLock(durableExecutionContenderName, duplicateDurableExecution);
+    await finishSession(firstDurableExecution, { action: "commit" });
+    await finishSession(duplicateDurableExecution);
+    const durableLedgerCounts = await runSql(`
     select
       (select count(*)::integer
         from public.payment_provider_operations operations
@@ -1175,7 +1206,7 @@ async function main() {
           select attempt_id from public.test_booking_request_concurrency_fixture
         ));
   `);
-  const durableReconciliationOutcome = runSql(`
+    const durableReconciliationOutcome = await runSql(`
     set role service_role;
     select pg_temp.payment_query(
       (select operation from public.test_booking_request_durable_operation),
@@ -1183,15 +1214,16 @@ async function main() {
     ) ->> 'outcome';
     reset role;
   `);
-  if (
-    durableLedgerCounts !== "1|1" ||
-    durableReconciliationOutcome !== "succeeded"
-  ) {
-    throw new Error(
-      `Concurrent durable reconciliation was not exactly-once: ${durableLedgerCounts}|${durableReconciliationOutcome}`,
-    );
-  }
-  runSql(`
+    if (
+      durableLedgerCounts !== "1|1" ||
+      durableReconciliationOutcome !== "succeeded"
+    ) {
+      throw new Error(
+        `Concurrent durable reconciliation was not exactly-once: ${durableLedgerCounts}|${durableReconciliationOutcome}`,
+      );
+    }
+    markTimingPhase("setup");
+    await runSql(`
     update public.test_booking_request_concurrency_fixture fixture
     set payment_snapshot = fixture.payment_snapshot || jsonb_build_object(
       'authorization', (fixture.payment_snapshot -> 'authorization') ||
@@ -1216,8 +1248,10 @@ async function main() {
       where claims.attempt_id = fixture.attempt_id
     ) and operations.operation_kind = 'authorization';
   `);
+    markTimingPhase("execution");
 
-  runSql(`
+    markTimingPhase("setup");
+    await runSql(`
     create table public.test_booking_request_reconciliation_work (result jsonb not null);
     grant select, insert on public.test_booking_request_reconciliation_work to service_role;
     set role service_role;
@@ -1225,7 +1259,8 @@ async function main() {
     select public.dequeue_booking_request_authorization_reconciliation();
     reset role;
   `);
-  const inlinePersistence = startSession(`
+    markTimingPhase("execution");
+    const inlinePersistence = await startSession(`
     set application_name = 'rc-booking-request-inline-persistence';
     begin;
     set local role service_role;
@@ -1235,9 +1270,9 @@ async function main() {
     ) from public.test_booking_request_concurrency_fixture;
     select '${inlinePersistenceMarker}';
   `);
-  await waitForMarker(inlinePersistence, inlinePersistenceMarker);
-  const outboxCompletion = startSession(
-    `
+    await waitForMarker(inlinePersistence, inlinePersistenceMarker);
+    const outboxCompletion = await startSession(
+      `
     set application_name = '${outboxCompletionName}';
     begin;
     set local role service_role;
@@ -1253,18 +1288,18 @@ async function main() {
     cross join public.test_booking_request_concurrency_fixture fixture;
     commit;
   `,
-    true,
-  );
-  await waitForLock(outboxCompletionName, outboxCompletion);
-  await finishSession(inlinePersistence, { action: "commit" });
-  await finishSession(outboxCompletion);
-  if (!outboxCompletion.stdout.includes("conflict")) {
-    throw new Error(
-      `Concurrent outbox completion did not lose the monotonic CAS: ${outboxCompletion.stdout}`,
+      true,
     );
-  }
-  if (
-    runSql(`
+    await waitForLock(outboxCompletionName, outboxCompletion);
+    await finishSession(inlinePersistence, { action: "commit" });
+    await finishSession(outboxCompletion);
+    if (!outboxCompletion.stdout.includes("conflict")) {
+      throw new Error(
+        `Concurrent outbox completion did not lose the monotonic CAS: ${outboxCompletion.stdout}`,
+      );
+    }
+    if (
+      (await runSql(`
       select count(*)
       from public.booking_request_submission_attempts attempts
       join public.booking_request_authorization_claims claims
@@ -1277,15 +1312,16 @@ async function main() {
           select payment_snapshot from public.test_booking_request_concurrency_fixture
         )
         and claims.state = 'authorized';
-    `) !== "1"
-  ) {
-    throw new Error(
-      "Concurrent inline persistence and outbox completion did not retain one authorized result.",
-    );
-  }
-  runSql(`drop table public.test_booking_request_reconciliation_work;`);
+    `)) !== "1"
+    ) {
+      throw new Error(
+        "Concurrent inline persistence and outbox completion did not retain one authorized result.",
+      );
+    }
+    await runSql(`drop table public.test_booking_request_reconciliation_work;`);
 
-  runSql(`
+    markTimingPhase("setup");
+    await runSql(`
     create table public.test_booking_request_release_retry_fixture as
     select fixture.attempt_id, fixture.payment_snapshot as authorized_snapshot,
       fixture.payment_snapshot || jsonb_build_object(
@@ -1393,7 +1429,8 @@ async function main() {
     grant select, insert on public.test_booking_request_first_release_retry_work,
       public.test_booking_request_recovered_release_retry_work to service_role;
   `);
-  const releaseRetryOwner = startSession(`
+    markTimingPhase("execution");
+    const releaseRetryOwner = await startSession(`
     set application_name = '${releaseRetryOwnerName}';
     begin;
     set local role service_role;
@@ -1401,25 +1438,25 @@ async function main() {
     select public.dequeue_booking_request_authorization_reconciliation();
     select '${releaseRetryMarker}';
   `);
-  await waitForMarker(releaseRetryOwner, releaseRetryMarker);
-  const releaseRetryContender = startSession(
-    `
+    await waitForMarker(releaseRetryOwner, releaseRetryMarker);
+    const releaseRetryContender = await startSession(
+      `
     set application_name = '${releaseRetryContenderName}';
     begin;
     set local role service_role;
     select public.dequeue_booking_request_authorization_reconciliation() ->> 'status';
     commit;
   `,
-    true,
-  );
-  await finishSession(releaseRetryContender);
-  await finishSession(releaseRetryOwner, { action: "commit" });
-  if (!releaseRetryContender.stdout.includes("empty")) {
-    throw new Error(
-      `A concurrent release retry worker obtained the active lease: ${releaseRetryContender.stdout}`,
+      true,
     );
-  }
-  runSql(`
+    await finishSession(releaseRetryContender);
+    await finishSession(releaseRetryOwner, { action: "commit" });
+    if (!releaseRetryContender.stdout.includes("empty")) {
+      throw new Error(
+        `A concurrent release retry worker obtained the active lease: ${releaseRetryContender.stdout}`,
+      );
+    }
+    await runSql(`
     update public.booking_request_authorization_reconciliation_outbox
     set lease_expires_at = clock_timestamp() - interval '1 second'
     where claim_id = (
@@ -1433,7 +1470,7 @@ async function main() {
     select public.dequeue_booking_request_authorization_reconciliation();
     reset role;
   `);
-  const releaseRetryEvidence = runSql(`
+    const releaseRetryEvidence = await runSql(`
     select
       first.result ->> 'physicalAttemptId'
         = recovered.result ->> 'physicalAttemptId',
@@ -1455,12 +1492,12 @@ async function main() {
     join public.booking_request_authorization_reconciliation_outbox outbox
       on outbox.claim_id = claims.id;
   `);
-  if (releaseRetryEvidence !== "t|t|execute|releasing|t|pending|1") {
-    throw new Error(
-      `Release retry lease recovery lost its binding or evidence: ${releaseRetryEvidence}`,
-    );
-  }
-  const staleReleaseRetry = runSql(`
+    if (releaseRetryEvidence !== "t|t|execute|releasing|t|pending|1") {
+      throw new Error(
+        `Release retry lease recovery lost its binding or evidence: ${releaseRetryEvidence}`,
+      );
+    }
+    const staleReleaseRetry = await runSql(`
     set role service_role;
     select public.complete_booking_request_authorization_reconciliation(
       (work.result ->> 'claimId')::uuid,
@@ -1473,12 +1510,13 @@ async function main() {
     from public.test_booking_request_first_release_retry_work work;
     reset role;
   `);
-  if (staleReleaseRetry !== "conflict") {
-    throw new Error(
-      `A stale failed-release worker retained its expired lease: ${staleReleaseRetry}`,
-    );
-  }
-  runSql(`
+    if (staleReleaseRetry !== "conflict") {
+      throw new Error(
+        `A stale failed-release worker retained its expired lease: ${staleReleaseRetry}`,
+      );
+    }
+    markTimingPhase("setup");
+    await runSql(`
     do $payment_fixture_cleanup$ begin
       alter table public.payment_provider_observations disable trigger guard_payment_provider_observation;
       delete from public.payment_provider_observations where operation_id in (select operations.id from public.payment_provider_operations operations, public.booking_request_authorization_claims claims,
@@ -1525,8 +1563,10 @@ async function main() {
       public.test_booking_request_failed_release_operation,
       public.test_booking_request_release_retry_fixture;
   `);
+    markTimingPhase("execution");
 
-  runSql(`
+    markTimingPhase("setup");
+    await runSql(`
     insert into public.booking_request_submission_attempts (
       id, customer_user_id, idempotency_key, payment_lifecycle_id, profile_id,
       locale, public_slug, requested_search, quote_fingerprint, quote_payload,
@@ -1604,7 +1644,8 @@ async function main() {
     from stale;
     grant select on public.test_booking_request_payment_cas_fixture to service_role;
   `);
-  const newerPayment = startSession(`
+    markTimingPhase("execution");
+    const newerPayment = await startSession(`
     set application_name = 'rc-booking-request-payment-newer';
     begin;
     set local role service_role;
@@ -1614,9 +1655,9 @@ async function main() {
     ) from public.test_booking_request_payment_cas_fixture;
     select '${paymentCasMarker}';
   `);
-  await waitForMarker(newerPayment, paymentCasMarker);
-  const stalePayment = startSession(
-    `
+    await waitForMarker(newerPayment, paymentCasMarker);
+    const stalePayment = await startSession(
+      `
     set application_name = '${paymentCasContenderName}';
     begin;
     set local role service_role;
@@ -1626,35 +1667,37 @@ async function main() {
     ) from public.test_booking_request_payment_cas_fixture;
     commit;
   `,
-    true,
-  );
-  await waitForLock(paymentCasContenderName, stalePayment);
-  await finishSession(newerPayment, { action: "commit" });
-  await finishSession(stalePayment, { expectedState: "RC409" });
-  if (
-    runSql(`
+      true,
+    );
+    await waitForLock(paymentCasContenderName, stalePayment);
+    await finishSession(newerPayment, { action: "commit" });
+    await finishSession(stalePayment, { expectedState: "RC409" });
+    if (
+      (await runSql(`
       select count(*)
       from public.booking_request_submission_attempts attempts
       join public.test_booking_request_payment_cas_fixture fixture
         on fixture.attempt_id = attempts.id
       where attempts.state = 'released'
         and attempts.payment_snapshot = fixture.released_snapshot;
-    `) !== "1"
-  ) {
-    throw new Error(
-      "A competing stale payment save regressed released evidence.",
-    );
-  }
-  runSql(`
+    `)) !== "1"
+    ) {
+      throw new Error(
+        "A competing stale payment save regressed released evidence.",
+      );
+    }
+    markTimingPhase("setup");
+    await runSql(`
     delete from public.booking_request_provider_operation_identities
     where attempt_id = '97200000-0000-4000-8000-000000000032';
     delete from public.booking_request_submission_attempts
     where id = '97200000-0000-4000-8000-000000000032';
     drop table public.test_booking_request_payment_cas_fixture;
   `);
+    markTimingPhase("execution");
 
-  const priceMutation = startSession(
-    `
+    const priceMutation = await startSession(
+      `
     set application_name = 'rc-booking-request-price-mutation';
     begin;
     select profiles.id
@@ -1674,20 +1717,21 @@ async function main() {
       and prices.unit_id = shifts.id;
     commit;
   `,
-    true,
-  );
-  await finishSession(priceMutation, { expectedState: "RC204" });
-  if (
-    runSql(
-      `select count(*) from public.booking_requests where customer_user_id = '${customerId}';`,
-    ) !== "0"
-  ) {
-    throw new Error(
-      "A rejected claim-protected price change created a request.",
+      true,
     );
-  }
+    await finishSession(priceMutation, { expectedState: "RC204" });
+    if (
+      (await runSql(
+        `select count(*) from public.booking_requests where customer_user_id = '${customerId}';`,
+      )) !== "0"
+    ) {
+      throw new Error(
+        "A rejected claim-protected price change created a request.",
+      );
+    }
 
-  runSql(`
+    markTimingPhase("setup");
+    await runSql(`
     delete from public.booking_request_provider_operation_identities identities
     using public.test_booking_request_time_boundary_fixture fixture
     where identities.attempt_id = fixture.attempt_id;
@@ -1711,8 +1755,9 @@ async function main() {
     where attempts.id = fixture.attempt_id;
     delete from public.test_booking_request_time_boundary_fixture;
   `);
+    markTimingPhase("execution");
 
-  const rolledBackFinalization = startSession(`
+    const rolledBackFinalization = await startSession(`
     set application_name = 'rc-booking-request-finalization-rollback';
     begin;
     set local role service_role;
@@ -1720,12 +1765,12 @@ async function main() {
     from public.test_booking_request_concurrency_fixture;
     select 'RC_BOOKING_REQUEST_FINALIZATION_ROLLBACK_LOCKED';
   `);
-  await waitForMarker(
-    rolledBackFinalization,
-    "RC_BOOKING_REQUEST_FINALIZATION_ROLLBACK_LOCKED",
-  );
-  const rollbackLookup = startSession(
-    `
+    await waitForMarker(
+      rolledBackFinalization,
+      "RC_BOOKING_REQUEST_FINALIZATION_ROLLBACK_LOCKED",
+    );
+    const rollbackLookup = await startSession(
+      `
     set application_name = '${lookupRollbackName}';
     begin;
     set local role service_role;
@@ -1733,18 +1778,19 @@ async function main() {
     from public.test_booking_request_concurrency_fixture;
     commit;
   `,
-    true,
-  );
-  await waitForLock(lookupRollbackName, rollbackLookup);
-  await finishSession(rolledBackFinalization, { action: "rollback" });
-  await finishSession(rollbackLookup);
-  if (!rollbackLookup.stdout.includes("absent")) {
-    throw new Error(
-      `Lookup after rolled-back finalization was not absent: ${rollbackLookup.stdout}`,
+      true,
     );
-  }
+    await waitForLock(lookupRollbackName, rollbackLookup);
+    await finishSession(rolledBackFinalization, { action: "rollback" });
+    await finishSession(rollbackLookup);
+    if (!rollbackLookup.stdout.includes("absent")) {
+      throw new Error(
+        `Lookup after rolled-back finalization was not absent: ${rollbackLookup.stdout}`,
+      );
+    }
 
-  runSql(`
+    markTimingPhase("setup");
+    await runSql(`
     update public.booking_request_authorization_claims claims
     set reconciliation_expires_at = clock_timestamp() - interval '1 second'
     where claims.attempt_id = (
@@ -1754,17 +1800,18 @@ async function main() {
     select public.dequeue_booking_request_authorization_reconciliation() as result;
     grant select on public.test_booking_request_expiry_stale_work to service_role;
   `);
-  const first = startSession(`
+    markTimingPhase("execution");
+    const first = await startSession(`
     set application_name = 'rc-booking-request-expiry-finalization';
     begin;
     set local role service_role;
     select public.expire_booking_request_authorization_claims();
     select '${finalizationMarker}';
   `);
-  await waitForMarker(first, finalizationMarker);
+    await waitForMarker(first, finalizationMarker);
 
-  const committedLookup = startSession(
-    `
+    const committedLookup = await startSession(
+      `
     set application_name = '${lookupCommitName}';
     begin;
     set local role service_role;
@@ -1772,11 +1819,11 @@ async function main() {
     from public.test_booking_request_concurrency_fixture;
     commit;
   `,
-    true,
-  );
-  await waitForLock(lookupCommitName, committedLookup);
-  const expiryStaleCompletion = startSession(
-    `
+      true,
+    );
+    await waitForLock(lookupCommitName, committedLookup);
+    const expiryStaleCompletion = await startSession(
+      `
     set application_name = '${expiryStaleCompletionName}';
     begin;
     set local role service_role;
@@ -1792,40 +1839,40 @@ async function main() {
     cross join public.test_booking_request_concurrency_fixture fixture;
     commit;
   `,
-    true,
-  );
-  await waitForLock(expiryStaleCompletionName, expiryStaleCompletion);
-  const contender = startSession(
-    `
+      true,
+    );
+    await waitForLock(expiryStaleCompletionName, expiryStaleCompletion);
+    const contender = await startSession(
+      `
     set application_name = '${contenderName}';
     begin;
     set local role service_role;
     select ${prepareSql("11111111-1111-4111-8111-111111119702")} ->> 'status';
     commit;
   `,
-    true,
-  );
-  await waitForLock(contenderName, contender);
-  await finishSession(first, { action: "commit" });
-  await finishSession(committedLookup);
-  await finishSession(expiryStaleCompletion);
-  await finishSession(contender);
-  if (!committedLookup.stdout.includes("pending")) {
-    throw new Error(
-      `Lookup after committed finalization was not Pending: ${committedLookup.stdout}`,
+      true,
     );
-  }
-  if (!expiryStaleCompletion.stdout.includes("conflict")) {
-    throw new Error(
-      `Stale recovery completion overwrote expiry finalization: ${expiryStaleCompletion.stdout}`,
-    );
-  }
-  if (!contender.stdout.includes("pending")) {
-    throw new Error(
-      `Concurrent unchanged intent did not recover Pending: ${contender.stdout}`,
-    );
-  }
-  const counts = runSql(`
+    await waitForLock(contenderName, contender);
+    await finishSession(first, { action: "commit" });
+    await finishSession(committedLookup);
+    await finishSession(expiryStaleCompletion);
+    await finishSession(contender);
+    if (!committedLookup.stdout.includes("pending")) {
+      throw new Error(
+        `Lookup after committed finalization was not Pending: ${committedLookup.stdout}`,
+      );
+    }
+    if (!expiryStaleCompletion.stdout.includes("conflict")) {
+      throw new Error(
+        `Stale recovery completion overwrote expiry finalization: ${expiryStaleCompletion.stdout}`,
+      );
+    }
+    if (!contender.stdout.includes("pending")) {
+      throw new Error(
+        `Concurrent unchanged intent did not recover Pending: ${contender.stdout}`,
+      );
+    }
+    const counts = await runSql(`
     select
       (select count(*) from public.booking_request_submission_attempts where customer_user_id = '${customerId}'),
       (select count(*) from public.booking_requests where customer_user_id = '${customerId}'),
@@ -1846,44 +1893,49 @@ async function main() {
                 booking_request_submission_attempts.authorization_provider_request_id
           ));
   `);
-  if (counts !== "1|1|1|1|1") {
-    throw new Error(
-      `Concurrent Booking Request effects were not singular: ${counts}`,
+    if (counts !== "1|1|1|1|1") {
+      throw new Error(
+        `Concurrent Booking Request effects were not singular: ${counts}`,
+      );
+    }
+    console.log(
+      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending.",
     );
   }
-  console.log(
-    "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending.",
-  );
-}
 
-let failure;
-try {
-  await main();
-} catch (error) {
-  failure = error;
-} finally {
+  let failure;
   try {
-    for (const session of activeSessions) {
-      if (session.exit) continue;
-      if (
-        !session.child.stdin.destroyed &&
-        !session.child.stdin.writableEnded
-      ) {
-        session.child.stdin.end("rollback;\n");
-      } else {
-        session.child.kill("SIGTERM");
+    await main();
+  } catch (error) {
+    failure = error;
+  } finally {
+    markTimingPhase("cleanup");
+    try {
+      for (const session of activeSessions) {
+        if (session.exit) continue;
+        if (
+          !session.child.stdin.destroyed &&
+          !session.child.stdin.writableEnded
+        ) {
+          session.child.stdin.end("rollback;\n");
+        } else {
+          session.child.kill("SIGTERM");
+        }
+        await session.exited;
       }
-      await session.exited;
+      guardDisposableLocalDatabase();
+      await runSql(cleanup);
+    } catch (cleanupError) {
+      failure = failure
+        ? new AggregateError(
+            [failure, cleanupError],
+            "Booking Request concurrency and cleanup failed.",
+          )
+        : cleanupError;
     }
-    guardDisposableLocalDatabase();
-    runSql(cleanup);
-  } catch (cleanupError) {
-    failure = failure
-      ? new AggregateError(
-          [failure, cleanupError],
-          "Booking Request concurrency and cleanup failed.",
-        )
-      : cleanupError;
   }
+  if (failure) throw failure;
+  timingOutcome = "passed";
+} finally {
+  finishTiming({ outcome: timingOutcome, cleanupDisposition: "local" });
 }
-if (failure) throw failure;

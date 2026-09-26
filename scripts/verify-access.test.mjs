@@ -1743,6 +1743,31 @@ describe("local Supabase concurrency harness", () => {
     expect(settled).toBe(true);
   });
 
+  it("declares payment prefix concurrency checks serial with acknowledged setup", () => {
+    const checks = [
+      "verify-booking-request-concurrency",
+      "verify-booking-request-capture-concurrency",
+      "verify-booking-request-payment-recovery-concurrency",
+      "verify-booking-request-payment-required-expiry-concurrency",
+    ];
+    expect(
+      databaseCheckCommands
+        .map(([, args]) => basename(args[0], ".mjs"))
+        .filter((check) => checks.includes(check)),
+    ).toEqual(checks);
+    for (const check of checks) {
+      const source = readFileSync(`scripts/${check}.mjs`, "utf8");
+      expect(source).toMatch(
+        new RegExp(
+          `timing:\\s*\\{\\s*check:\\s*"${check}",\\s*isolation:\\s*"serial"`,
+        ),
+      );
+      expect(source).toContain("runSqlAfterSetup");
+      expect(source).toContain("startSessionAfterSetup");
+      expect(source).not.toMatch(/paymentEvidenceSql\s*\+/);
+    }
+  });
+
   it("rejects an invalid asynchronous guard before execution", async () => {
     const execute = vi.fn();
     const harness = createLocalSupabaseConcurrencyHarness({
