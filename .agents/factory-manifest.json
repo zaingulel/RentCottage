@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "93a3b9ccfc0f3b4dadc57dfce4f447f76f6ca124",
+  "syncedFrom": "2593463099ef78751751dfe142f129c234efa5af",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "4a4b67e0ad10df5e3eba187efe0b73359abf7069612143f65677e23c5aba1410"
+      "sha256": "62a7b6cd46102addac5015bb8a46a27a8f09db2d0cde702ecb444d287a40b7f5"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -443,7 +443,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "4a4b67e0ad10df5e3eba187efe0b73359abf7069612143f65677e23c5aba1410"
+      "sha256": "62a7b6cd46102addac5015bb8a46a27a8f09db2d0cde702ecb444d287a40b7f5"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -562,7 +562,7 @@
     },
     {
       "path": ".github/pull_request_template.md",
-      "sha256": "84bc1fd471e229992721a2fed3632ee45fa281593e59dc79448e7537f368e77c"
+      "sha256": "9acc33cf9435af8166f9095377043818ebd0cbb0474c632b51811692a121944b"
     },
     {
       "path": ".github/workflows/sweep-scope.yml",
@@ -583,7 +583,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "128be1419417867955962ed7bd2121afc811821d8a4b8c3e63f7fc1feb44de70"
+      "sha256": "344f4c5f08889234d83d1e06a36ccb03cb8df12c5230189287f140fd876f5dd0"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -752,7 +752,7 @@
     },
     {
       "path": "scripts/lib/run-log.test.mjs",
-      "sha256": "9b56e564e65fdbd3e36bc100108d190070f91ecf28717533e3e9a300f574e717"
+      "sha256": "c973bbaf09fe756a179960541b4003f4125253852aba7645fa6f05cc461df33d"
     },
     {
       "path": "scripts/lib/settings-policy.test.mjs",
@@ -796,7 +796,7 @@
     },
     {
       "path": "scripts/run-log.mjs",
-      "sha256": "afc450d7c9d0e2ddbdfad81054c655732fec29da441011b2df04d1115b70c2a3"
+      "sha256": "2f74e93ee8071ee0ce9a533e08d7035fa5b2a0cff2d3bfc9a28d4ea2785241f1"
     },
     {
       "path": "scripts/sweep-scope-check.mjs",

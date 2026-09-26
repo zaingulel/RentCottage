@@ -161,8 +161,9 @@ The diagram is the whole path from a card to a merged commit. In words:
   cut from the job branch and merge back with git. A generated artifact the `generated artifacts` row of the
   Conventions table in `AGENTS.md` names is never hand-merged, and the hooks keep it from landing stale.
 - **Evidence during the build.** Every executed check runs through `scripts/run-log.mjs`, which appends the
-  real exit code to a per-branch log so the pull request body quotes what a script wrote, not what an agent
-  remembers. Every green slice is committed on the job branch, so a crash costs at most the slice in progress.
+  real exit code, the commit and the tree state to a per-branch log so the pull request body quotes what a
+  script wrote, not what an agent remembers. Every green slice is committed on the job branch, so a crash costs
+  at most the slice in progress.
 - **Verification before review.** Visual work is driven as the Conventions table's `visual verification` row says
   and a current screenshot is shown in chat; any further gate the Surfaces table names runs here.
 - **Review in two layers.** One fresh review of the final tree before the pull request opens, by tier. Documents

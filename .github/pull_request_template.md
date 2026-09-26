@@ -12,7 +12,7 @@ Closes #
 
 ## Evidence
 
-<!-- Paste the lines `node scripts/run-log.mjs` wrote for this branch: focused tests, the executed mutation (red then green), lint, and the convergence checks the testing strategy names. Each line carries the real exit code. -->
+<!-- Paste the lines `node scripts/run-log.mjs` wrote for this branch: focused tests, the executed mutation (red then green), lint, and the convergence checks the testing strategy names. Each line carries the real exit code and the `head=` and `tree=` state it ran against. -->
 
 | Claim | Construction mode | Focused test | Mutation | Result |
 |---|---|---|---|---|

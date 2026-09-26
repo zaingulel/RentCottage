@@ -180,9 +180,14 @@ it.
 
 ## 8. Deliver
 
-1. Rebase onto `origin/main`, rerunning the convergence checks the testing strategy names, then push;
-   `gh pr create --draft --body-file <body>` with `Closes #<issue>` in the body. Greptile is requested only for
-   the sign-off tier in section 6; the other tiers go straight to step 3. Move the card to `In review`.
+1. Rebase onto `origin/main`, then settle each convergence check the testing strategy names: reuse its latest
+   worklog receipt for the same command when that receipt reads `exit 0`, its `head=` is exactly the current
+   `git rev-parse HEAD`, its `tree=` is `clean`, and `git status --porcelain --untracked-files=normal` still prints
+   nothing; otherwise run the check again. A no-op rebase leaves `HEAD` unchanged and keeps the evidence; a rebase
+   onto a moved `main` changes `HEAD` and needs the rerun, as does a dirty tree or a missing, failed or `unknown`
+   receipt. The pre-push hook still runs its own gates on every push. Then push;
+   `gh pr create --draft --body-file <body>` with `Closes #<issue>` in the body. Greptile is requested only for the
+   sign-off tier in section 6; the other tiers go straight to step 3. Move the card to `In review`.
 2. Read the current allowance first on Greptile's usage page: Greptile is metered from one pool shared by every
    adopter. Record the source, the observation time and the credits left in the pull request body; confirmed
    exhaustion is the `UNAVAILABLE` evidence below and skips the request. Then read the open draft's `headRefOid`
@@ -207,11 +212,11 @@ it.
 3. Re-read the open draft and require current local evidence, every finding/thread resolved, and a review line
    that matches the rounds actually run and the findings actually raised and settled. For the sign-off tier, also
    require the same reviewed head and a settled `COMPLETE` or `UNAVAILABLE` attempt. If a rebase is needed, do it
-   while draft, verify the result and push. Repeat step 2 only when the change requires Greptile and
-   `git range-diff <old-base>..<reviewed-head> <new-base>..<new-head>` shows any `!`, `<` or `>` row, where the
-   bases are the `main` commits the reviewed head and the new head sit on. A `!` from context drift alone still
-   counts; it costs one review attempt and never skips one. When every job commit lines up as `=`, the recorded
-   `COMPLETE` attempt stands and only CI reruns. Then `gh pr ready <pr>` starts CI, and
+   while draft, reverify under the step 1 reuse rule and push. Repeat step 2 only when the change requires
+   Greptile and `git range-diff <old-base>..<reviewed-head> <new-base>..<new-head>` shows any `!`, `<` or `>` row,
+   where the bases are the `main` commits the reviewed head and the new head sit on. A `!` from context drift
+   alone still counts; it costs one review attempt and never skips one. When every job commit lines up as `=`,
+   the recorded `COMPLETE` attempt stands and only CI reruns. Then `gh pr ready <pr>` starts CI, and
    `gh pr merge --auto --squash --delete-branch <pr>` queues the merge for GitHub once `test` passes.
    Never any other merge form; the hook refuses it. If CI needs a repair, use `gh pr ready <pr> --undo` before
    pushing, complete local repair evidence, and reassess the full pull-request diff against the section 6 tiers;
