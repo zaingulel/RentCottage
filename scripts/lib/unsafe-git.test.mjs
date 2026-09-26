@@ -243,7 +243,7 @@ test('a capitalised git or gh name is refused exactly as the lowercase form', ()
   assert.equal(blockReason('GH pr create --draft --title x'), '');
   assert.equal(blockReason('GH pr merge --auto 493'), '');
   // the root-checkout rule anchors on the same name; `CD` is not a relocation, so the walk stays put
-  const inRoot = { cwd: '/root', isRootCheckout: (dir) => dir === '/root' };
+  const inRoot = { cwd: '/root', isRootCheckout: (dir) => dir === '/root', platform: process.platform };
   assert.equal(blockReason('Git checkout -b job/1188', inRoot), blockReason('git checkout -b job/1188', inRoot));
   assert.ok(blockReason('CD /job && git commit -m wip', inRoot));
   assert.equal(blockReason('cd /job && git commit -m wip', inRoot), '');
@@ -369,8 +369,8 @@ const ROOT = resolve('/Users/z/Claude Code/repo');
 const WORKTREES = join(ROOT, '.claude', 'worktrees');
 const JOB = join(WORKTREES, '1170');
 const isRootCheckout = (dir) => dir === ROOT || (dir.startsWith(`${ROOT}${sep}`) && !dir.startsWith(`${WORKTREES}${sep}`));
-const inRoot = { cwd: ROOT, isRootCheckout };
-const inJob = { cwd: JOB, isRootCheckout };
+const inRoot = { cwd: ROOT, isRootCheckout, platform: process.platform };
+const inJob = { cwd: JOB, isRootCheckout, platform: process.platform };
 const rootReason = (subcommand) => `git ${subcommand} in the integration checkout: the root stays on main and nothing is branched, switched, or committed there — open a job checkout with git worktree add and run it from there`;
 
 test('ANTI-REGRESSION: branch work in the root checkout is refused; the same call in a worktree passes', () => {
@@ -512,4 +512,45 @@ test('without a checkout context, or at a directory the guard cannot resolve, th
 test('the path placeholder carries a real quoted path, spaces and all', () => {
   assert.equal(blockReason(`cd "${ROOT}" && git commit -m "wip"`, inJob), rootReason('commit'));
   assert.equal(blockReason(`git -C "${ROOT}" commit -m "wip"`, inJob), rootReason('commit'));
+});
+
+// ── Git Bash paths on Windows ────────────────────────────────────────────────
+// Claude Code runs a Bash-tool command on Windows through Git for Windows' bash, whose mount table
+// puts each drive at /<letter> and its own install folder at /. The expected paths are written out
+// by hand, never derived with node:path. Mutation: drop the drive-path reading and `/c/…` resolves
+// to C:\c\…, so the cd into the root from a worktree is allowed.
+
+const WIN_ROOT = 'C:\\Users\\z\\Claude Code\\repo';
+const WIN_JOB = 'C:\\Users\\z\\Claude Code\\repo\\.claude\\worktrees\\1170';
+const winCheckout = (root, cwd) => ({
+  cwd,
+  platform: 'win32',
+  isRootCheckout: (dir) => dir === root || (dir.startsWith(`${root}\\`) && !dir.startsWith(`${root}\\.claude\\worktrees\\`)),
+});
+
+test('ANTI-REGRESSION: on Windows a Git Bash drive path after cd or -C is read as its drive', () => {
+  const winJob = winCheckout(WIN_ROOT, WIN_JOB);
+  assert.equal(blockReason('cd "/c/Users/z/Claude Code/repo" && git commit -m "wip"', winJob), rootReason('commit'));
+  assert.equal(blockReason('git -C "/c/Users/z/Claude Code/repo" switch -c x', winJob), rootReason('switch'));
+  assert.equal(blockReason('cd "/C/Users/z/Claude Code/repo" && git commit -m "wip"', winJob), rootReason('commit'));
+  const winRoot = winCheckout(WIN_ROOT, WIN_ROOT);
+  assert.equal(blockReason('cd "/c/Users/z/Claude Code/repo/.claude/worktrees/1170" && git commit -m "wip"', winRoot), '');
+});
+
+test('on Windows a rooted path other than a drive is an unresolved target', () => {
+  const root = 'C:\\srv\\repo';
+  assert.equal(blockReason('cd /srv/repo && git commit -m "wip"', winCheckout(root, 'C:\\srv\\repo\\.claude\\worktrees\\1170')), '');
+  assert.equal(blockReason('cd /srv/repo; git commit -m "wip"', winCheckout(root, root)), rootReason('commit'));
+});
+
+test('on macOS and Linux a /c/ folder is judged as the real folder it names', () => {
+  const posixCheckout = (root, cwd) => ({
+    cwd,
+    platform: 'linux',
+    isRootCheckout: (dir) => dir === root || (dir.startsWith(`${root}/`) && !dir.startsWith(`${root}/.claude/worktrees/`)),
+  });
+  const root = '/c/Users/z/repo';
+  assert.equal(blockReason('cd /c/Users/z/repo && git commit -m "wip"', posixCheckout(root, `${root}/.claude/worktrees/1170`)), rootReason('commit'));
+  assert.equal(blockReason('cd /c/Users/z/repo/.claude/worktrees/1170 && git commit -m "wip"', posixCheckout(root, root)), '');
+  assert.equal(blockReason('cd /srv/repo && git commit -m "wip"', posixCheckout('/srv/repo', '/srv/repo/.claude/worktrees/1170')), rootReason('commit'));
 });

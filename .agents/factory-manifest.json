@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "2593463099ef78751751dfe142f129c234efa5af",
+  "syncedFrom": "3cc114b001fc7912fafcf59692bb23ed68fd2b27",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -656,11 +656,11 @@
     },
     {
       "path": "scripts/lib/checkout-context.mjs",
-      "sha256": "a570f0da45e4ea6ea8bf7c0bebd7a9163b177a1492571fe8df2a542451052022"
+      "sha256": "25ea385ea0c03d2c5bbeddedb85a9078eb90de5a11fd454d337941e3401b4259"
     },
     {
       "path": "scripts/lib/checkout-context.test.mjs",
-      "sha256": "57448d85f8beb6ec5f316bf1e31a7b7918722f13b673d8055cdd1f6eccc9ecfa"
+      "sha256": "d016e813f3052f7377ca8af86fada61dd5840d2c162bb447babe427cfae4b4a7"
     },
     {
       "path": "scripts/lib/cli-flags.mjs",
@@ -780,11 +780,11 @@
     },
     {
       "path": "scripts/lib/unsafe-git.mjs",
-      "sha256": "1f4f0963dcee60f08dbb95afd2d92a785e9e2858df6a53a6602c7ef92adcef1a"
+      "sha256": "cdce5047cb4ce0311336c0fa99e49052e085e9867d7c63b3856ee93c54ca1275"
     },
     {
       "path": "scripts/lib/unsafe-git.test.mjs",
-      "sha256": "a7fbfde72b22fb990525f941e0bc9eb00945e6aa009103e0232c58ad44d42369"
+      "sha256": "a051ca0fec8a87aedff579b34093fe7b9e6ee6fb0f11e89e0c3d5637a760aa6a"
     },
     {
       "path": "scripts/lib/verify-green.test.mjs",

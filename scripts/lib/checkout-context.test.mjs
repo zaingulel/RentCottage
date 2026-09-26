@@ -26,6 +26,7 @@ test('checkoutContext tells the main working tree from a linked worktree, and sa
 
     const fromRoot = checkoutContext(root).checkout;
     assert.equal(fromRoot.cwd, root);
+    assert.equal(fromRoot.platform, process.platform);
     assert.equal(fromRoot.isRootCheckout(root), true);
     assert.equal(fromRoot.isRootCheckout(join(root, 'src')), true, 'a subdirectory of the root is still the root checkout');
     assert.equal(fromRoot.isRootCheckout(job), false);
