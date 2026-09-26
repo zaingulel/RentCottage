@@ -1,3 +1,6 @@
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+
 import { afterEach, expect, it, vi } from "vitest";
 
 import {
@@ -23,6 +26,90 @@ const prepareAttempt = (journey, info) =>
     writeFile: doubles.writeFile,
   });
 afterEach(() => vi.unstubAllEnvs());
+
+it("owned Playwright collection preserves forward and reverse order for both Next projects", () => {
+  const forward = [
+    "shared sign-in from the homepage returns a prospective owner to their private application",
+    "a Cottage Owner saves, resumes and submits a complete private application",
+    "Owner Application keeps evidence controls aligned and accessible in every locale",
+    "one account returns to customer bookings, enrolls explicitly and signs out only this device",
+  ];
+  const reverse = [
+    "one account returns to customer bookings, enrolls explicitly and signs out only this device",
+    "Owner Application keeps evidence controls aligned and accessible in every locale",
+    "a Cottage Owner saves, resumes and submits a complete private application",
+    "shared sign-in from the homepage returns a prospective owner to their private application",
+  ];
+  const cli = createRequire(import.meta.url).resolve("@playwright/test/cli");
+  const environment = {
+    ...process.env,
+    PLAYWRIGHT_SERVER: "next",
+    PLAYWRIGHT_WORKER_PORT: "8788",
+    SUPABASE_URL: "http://127.0.0.1:55331",
+    SUPABASE_SECRET_KEY: "synthetic-collection-secret",
+  };
+  delete environment.PLAYWRIGHT_JSON_OUTPUT_FILE;
+  delete environment.PLAYWRIGHT_JSON_OUTPUT_DIR;
+  delete environment.PLAYWRIGHT_JSON_OUTPUT_NAME;
+
+  for (const [phase, expected] of [
+    ["forward", forward],
+    ["reverse", reverse],
+  ]) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "test",
+        "tests/access.spec.ts",
+        "--config=playwright.config.ts",
+        "--project=mobile",
+        "--project=desktop",
+        "--workers=1",
+        "--retries=0",
+        "--repeat-each=1",
+        "--list",
+        "--reporter=json",
+        "--grep",
+        `(?:${forward.join("|")})$`,
+      ],
+      {
+        env: { ...environment, ACCESS_JOURNEY_PHASE: phase },
+        encoding: "utf8",
+        timeout: 30_000,
+        killSignal: "SIGKILL",
+        maxBuffer: 1024 * 1024,
+      },
+    );
+    expect(result.error, phase).toBeUndefined();
+    expect(result.signal, phase).toBeNull();
+    expect(result.status, phase).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.errors, phase).toEqual([]);
+    expect(report.suites, phase).toHaveLength(1);
+    const [suite] = report.suites;
+    expect(suite.title, phase).toBe("access.spec.ts");
+    expect(suite.suites, phase).toBeUndefined();
+    expect(Array.isArray(suite.specs), phase).toBe(true);
+    const records = [];
+    for (const spec of suite.specs) {
+      expect(Array.isArray(spec.tests), phase).toBe(true);
+      for (const test of spec.tests) {
+        expect(["mobile", "desktop"], phase).toContain(test.projectName);
+        records.push({ project: test.projectName, title: spec.title });
+      }
+    }
+    expect(records, phase).toHaveLength(8);
+    for (const project of ["mobile", "desktop"]) {
+      expect(
+        records
+          .filter((record) => record.project === project)
+          .map((record) => record.title),
+        `${phase} ${project}`,
+      ).toEqual(expected);
+    }
+  }
+}, 70_000);
 
 function nativeAttempt(journey, overrides = {}) {
   return {
