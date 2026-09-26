@@ -165,7 +165,7 @@ export async function validateAccessJourneyInitialState({
       context.userId !== fixture.userId ||
       context.role !== "cottage_owner" ||
       context.approvalState !== "prospective" ||
-      application?.applicationId !== fixture.applicationId ||
+      application.applicationId !== fixture.applicationId ||
       application.ownerUserId !== fixture.userId ||
       application.status !== "draft" ||
       application.legalName !==
