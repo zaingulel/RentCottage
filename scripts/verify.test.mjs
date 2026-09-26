@@ -798,6 +798,56 @@ describe("repository verification command", () => {
   });
 
   it.each([
+    ".claude/skills/example/SKILL.md",
+    ".claude/skills/example/references/guide.md",
+    ".claude/skills/example/agents/openai.yaml",
+    ".claude/hooks/.gitattributes",
+    ".codex/hooks/.gitattributes",
+    ".githooks/.gitattributes",
+    ".codex/hooks/verify-green.mjs",
+  ])("keeps copied workflow file %s on baseline evidence", (path) => {
+    const repository = createRepository();
+    commit(repository, path, "copied workflow fixture\n");
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      requiredBaselineSteps,
+    );
+  });
+
+  it("requires full evidence for root LF checkout policy", () => {
+    const repository = createRepository();
+    commit(repository, ".gitattributes", "* text=auto eol=lf\n");
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+  });
+
+  it.each([
+    ".claude/skills/example/scripts/runtime.mjs",
+    ".claude/skills/example/fixtures/worker/agents/openai.yaml",
+  ])(
+    "does not classify executable copied skill input as baseline: %s",
+    (path) => {
+      const repository = createRepository();
+      commit(repository, path, "export {};\n");
+
+      const result = runVerification(repository);
+
+      expect(result.status).toBe(3);
+      expect(result.run).not.toHaveBeenCalled();
+      expect(result.stderr).toHaveBeenCalledWith(expect.stringContaining(path));
+    },
+  );
+
+  it.each([
     ".githooks/pre-commit",
     ".githooks/pre-merge-commit",
     ".githooks/pre-push",

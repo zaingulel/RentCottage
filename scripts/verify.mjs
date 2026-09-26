@@ -118,10 +118,12 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/doc-lint-links.test.mjs",
   "scripts/lib/doc-lint-citations.mjs",
   "scripts/lib/doc-lint-citations.test.mjs",
+  ".githooks/.gitattributes",
   ".githooks/README.md",
   ".githooks/pre-commit",
   ".githooks/pre-merge-commit",
   ".githooks/pre-push",
+  ".claude/hooks/.gitattributes",
   ".claude/hooks/block-unsafe-git.mjs",
   ".claude/hooks/check-builder-handoff.mjs",
   ".claude/hooks/filter-test-output.mjs",
@@ -129,8 +131,10 @@ const baselineOnlyPaths = new Set([
   ".claude/hooks/verify-green.sh",
   ".claude/settings.json",
   ".codex/hooks.json",
+  ".codex/hooks/.gitattributes",
   ".codex/hooks/block-unsafe-git.mjs",
   ".codex/hooks/check-builder-handoff.mjs",
+  ".codex/hooks/verify-green.mjs",
   ".codex/hooks/verify-green.sh",
   ".codex/rules/playwright.rules",
 ]);
@@ -153,6 +157,7 @@ function isBaselineOnlyPath(path) {
     /^\.agents\/upstream\/mattpocock-skills\/(?:LICENSE|.+\.(?:md|yaml))$/i.test(
       path,
     ) ||
+    /^\.claude\/skills\/[^/]+\/(?:.+\.md|agents\/openai\.yaml)$/i.test(path) ||
     /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
     /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
     /^docs\/.+\.(?:avif|docx|gif|jpe?g|md|png|svg|webp)$/i.test(path)
@@ -176,6 +181,7 @@ function isBrowserOnlyPath(path) {
 }
 
 const fullEvidenceRootPaths = new Set([
+  ".gitattributes",
   ".gitignore",
   ".nvmrc",
   ".prettierignore",
