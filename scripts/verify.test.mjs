@@ -1,17 +1,20 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import {
   chmodSync,
+  cpSync,
   globSync,
   lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -267,11 +270,12 @@ function runVerification(repository, options = {}) {
   const status = main(options.args ?? [], {
     cwd: repository,
     environment: options.environment ?? {},
-    run,
+    run: options.run ?? run,
+    captureRuntimeContract: options.captureRuntimeContract,
     stderr,
     stdout,
   });
-  return { calls, run, status, stderr, stdout };
+  return { calls, run: options.run ?? run, status, stderr, stdout };
 }
 
 afterEach(() => {
@@ -280,7 +284,1078 @@ afterEach(() => {
   }
 });
 
+function runtimeFixture() {
+  return { digest: "a".repeat(64), dockerReferences: [] };
+}
+
+function localVerification(repository, options = {}) {
+  return runVerification(repository, {
+    captureRuntimeContract: runtimeFixture,
+    ...options,
+  });
+}
+
+function productionFixture({ browsers = false } = {}) {
+  const repository = createRepository();
+  const tools = mkdtempSync(join(tmpdir(), "rentcottage-native-"));
+  repositories.push(tools);
+  const bin = join(tools, "bin");
+  mkdirSync(bin);
+  for (const name of ["node", "git"]) {
+    const actual =
+      name === "node"
+        ? process.execPath
+        : spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
+    symlinkSync(actual, join(bin, name));
+  }
+  const images = join(tools, "images.json");
+  const daemon = join(tools, "daemon.json");
+  const commandLog = join(tools, "commands.jsonl");
+  writeFileSync(images, "");
+  writeFileSync(daemon, JSON.stringify("fixture-daemon"));
+  const npmConfig = {
+    userconfig: join(tools, "user.npmrc"),
+    globalconfig: join(tools, "global.npmrc"),
+  };
+  const launcher = `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const name = require('node:path').basename(process.argv[1]);
+if (name === 'docker') {
+  if (args[0] === 'version') console.log(JSON.stringify({ Client: { Version: 'fixture-client' }, Server: { Version: 'fixture-server' } }));
+  else if (args[0] === 'info') console.log(fs.readFileSync(${JSON.stringify(daemon)}, 'utf8'));
+  else if (args[0] === 'context') console.log('fixture-context');
+  else if (args[0] === 'image') process.stdout.write(fs.readFileSync(${JSON.stringify(images)}, 'utf8'));
+  else process.exitCode = 2;
+} else if (args[0] === 'config') console.log(${JSON.stringify(JSON.stringify(npmConfig))});
+else fs.appendFileSync(${JSON.stringify(commandLog)}, JSON.stringify([name, ...args]) + '\\n');
+`;
+  for (const name of ["npm", "npx", "docker"]) {
+    writeFileSync(join(bin, name), launcher, { mode: 0o755 });
+  }
+  const environment = { PATH: bin, HOME: tools };
+  let distributions;
+  if (browsers) {
+    cpSync(
+      join(ROOT, "node_modules/playwright-core"),
+      join(repository, "node_modules/playwright-core"),
+      { recursive: true },
+    );
+    const browserRoot = join(tools, "browsers");
+    environment.PLAYWRIGHT_BROWSERS_PATH = browserRoot;
+    const resolveDistributions = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `const {createRequire}=require('node:module');const requireHere=createRequire(process.cwd()+'/package.json');const {registry}=requireHere('playwright-core/lib/coreBundle');console.log(JSON.stringify(['chromium','chromium-headless-shell'].map(name=>{const entry=registry.registry.findExecutable(name);return {name,directory:entry.directory,executable:entry.executablePath()}})));`,
+      ],
+      { cwd: repository, env: environment, encoding: "utf8" },
+    );
+    if (resolveDistributions.status !== 0)
+      throw new Error(resolveDistributions.stderr);
+    distributions = JSON.parse(resolveDistributions.stdout);
+    for (const entry of distributions) {
+      mkdirSync(dirname(entry.executable), { recursive: true });
+      writeFileSync(entry.executable, "fixture-launcher", { mode: 0o755 });
+      write(entry.directory, "Resources/locale.pak", "fixture-resource");
+    }
+  }
+  commit(repository, "src/runtime.ts", "seed\n");
+  return {
+    repository,
+    tools,
+    images,
+    daemon,
+    commandLog,
+    environment,
+    distributions,
+  };
+}
+
+function evidenceFile(repository, suffix, group = "database") {
+  return join(
+    git(repository, ["rev-parse", "--absolute-git-dir"]),
+    "rentcottage-verification",
+    `${group}.${suffix}.json`,
+  );
+}
+
+function commands(result) {
+  return result.run.mock.calls.map(([command, args]) => [command, args]);
+}
+
 describe("repository verification command", () => {
+  it("reuses only unchanged local groups after classified repairs", () => {
+    const repository = createRepository();
+    commit(repository, "src/runtime.ts", "export const value = 'seed';\n");
+    expect(commands(localVerification(repository))).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+    commit(repository, "AGENTS.md", "repaired instructions\n");
+    const repaired = localVerification(repository);
+    expect(repaired.status).toBe(0);
+    expect(commands(repaired)).toEqual(requiredBaselineSteps);
+    expect(repaired.stdout.mock.calls.flat().join("\n")).toContain(
+      "reused local evidence",
+    );
+    commit(repository, "src/app/globals.css", "body { color: red; }\n");
+    expect(commands(localVerification(repository))).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredBrowserSteps,
+    ]);
+    write(repository, "src/runtime.ts", "export const value = 'repaired';\n");
+    expect(commands(localVerification(repository))).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+  }, 30000);
+
+  it("refuses stale source base and environment evidence", () => {
+    const cases = [
+      (repository) =>
+        commit(repository, "src/runtime.ts", "committed repair\n"),
+      (repository) => {
+        write(repository, "src/runtime.ts", "staged repair\n");
+        git(repository, ["add", "src/runtime.ts"]);
+        write(repository, "src/runtime.ts", "seed\n");
+      },
+      (repository) => write(repository, "src/runtime.ts", "unstaged repair\n"),
+      (repository) => write(repository, "src/new.ts", "untracked repair\n"),
+      (repository) => rmSync(join(repository, "src/runtime.ts")),
+      (repository) =>
+        renameSync(
+          join(repository, "src/runtime.ts"),
+          join(repository, "src/renamed.ts"),
+        ),
+      (repository) => {
+        chmodSync(join(repository, "AGENTS.md"), 0o755);
+        git(repository, ["add", "AGENTS.md"]);
+        chmodSync(join(repository, "AGENTS.md"), 0o644);
+      },
+      (repository) => {
+        const baseTree = git(repository, ["rev-parse", "origin/main^{tree}"]);
+        const movedBase = git(repository, [
+          "commit-tree",
+          baseTree,
+          "-p",
+          "origin/main",
+          "-m",
+          "advanced base",
+        ]);
+        const jobTree = git(repository, ["rev-parse", "HEAD^{tree}"]);
+        const merged = git(repository, [
+          "commit-tree",
+          jobTree,
+          "-p",
+          "HEAD",
+          "-p",
+          movedBase,
+          "-m",
+          "merge base movement",
+        ]);
+        git(repository, ["update-ref", "HEAD", merged]);
+        git(repository, ["update-ref", "refs/remotes/origin/main", movedBase]);
+      },
+      (repository) =>
+        git(repository, ["update-ref", "-d", "refs/remotes/origin/main"]),
+      (repository) => chmodSync(join(repository, "AGENTS.md"), 0o755),
+      (repository) => {
+        rmSync(join(repository, "AGENTS.md"));
+        symlinkSync("src/runtime.ts", join(repository, "AGENTS.md"));
+      },
+      (repository) => {
+        const tree = git(repository, ["rev-parse", "origin/main^{tree}"]);
+        const moved = git(repository, [
+          "commit-tree",
+          tree,
+          "-p",
+          "origin/main",
+          "-m",
+          "base movement",
+        ]);
+        git(repository, ["update-ref", "refs/remotes/origin/main", moved]);
+      },
+    ];
+    for (const change of cases) {
+      const repository = createRepository();
+      commit(repository, "src/runtime.ts", "seed\n");
+      expect(
+        localVerification(repository, { args: ["--database"] }).status,
+      ).toBe(0);
+      change(repository);
+      const result = localVerification(repository, { args: ["--database"] });
+      expect(commands(result)).toEqual(requiredDatabaseSteps);
+      expect(result.stdout.mock.calls.flat().join("\n")).not.toContain(
+        "reused local evidence",
+      );
+    }
+    const linkedRepository = createRepository();
+    const externalDirectory = mkdtempSync(
+      join(tmpdir(), "rentcottage-source-target-"),
+    );
+    repositories.push(externalDirectory);
+    const externalSource = join(externalDirectory, "runtime.ts");
+    writeFileSync(externalSource, "first external source");
+    rmSync(join(linkedRepository, "src/runtime.ts"));
+    symlinkSync(externalSource, join(linkedRepository, "src/runtime.ts"));
+    expect(
+      localVerification(linkedRepository, { args: ["--database"] }).status,
+    ).toBe(0);
+    writeFileSync(externalSource, "same-path external source replacement");
+    const replacedTarget = localVerification(linkedRepository, {
+      args: ["--database"],
+    });
+    expect(commands(replacedTarget)).toEqual(requiredDatabaseSteps);
+    expect(replacedTarget.stdout.mock.calls.flat().join("\n")).toContain(
+      "source symlink prevents reuse",
+    );
+    expect(replacedTarget.stdout.mock.calls.flat().join("\n")).toContain(
+      "local evidence not retained",
+    );
+
+    const repository = createRepository();
+    commit(repository, "src/runtime.ts", "seed\n");
+    localVerification(repository, {
+      args: ["--database"],
+      environment: { CONTRACT: "before" },
+    });
+    const changed = localVerification(repository, {
+      args: ["--database"],
+      environment: { CONTRACT: "after" },
+    });
+    expect(commands(changed)).toEqual(requiredDatabaseSteps);
+    const runtimeChanged = localVerification(repository, {
+      args: ["--database"],
+      environment: { CONTRACT: "after" },
+      captureRuntimeContract: () => ({
+        digest: "b".repeat(64),
+        dockerReferences: [],
+      }),
+    });
+    expect(commands(runtimeChanged)).toEqual(requiredDatabaseSteps);
+    const rerunReason = localVerification(repository, {
+      args: ["--database"],
+      environment: {
+        CONTRACT: "after",
+        RUN_LOG_RERUN_REASON: "changed explanation",
+      },
+      captureRuntimeContract: () => ({
+        digest: "b".repeat(64),
+        dockerReferences: [],
+      }),
+    });
+    expect(commands(rerunReason)).toEqual([]);
+  }, 60000);
+
+  it("retains only authoritatively completed service groups", () => {
+    for (const failure of ["verify:access", "build:worker", "test:browser"]) {
+      const repository = createRepository();
+      commit(repository, "src/runtime.ts", "seed\n");
+      const run = vi.fn((_command, args) => ({
+        status: args[1] === failure ? 7 : 0,
+      }));
+      expect(localVerification(repository, { run }).status).toBe(7);
+      commit(repository, "AGENTS.md", "baseline-only repair\n");
+      const repaired = localVerification(repository);
+      if (failure !== "verify:access")
+        expect(repaired.stdout.mock.calls.flat().join("\n")).toContain(
+          "database: reused local evidence",
+        );
+      expect(commands(repaired)).toEqual([
+        ...requiredBaselineSteps,
+        ...(failure === "verify:access"
+          ? requiredExpensiveSteps
+          : requiredBrowserSteps),
+      ]);
+    }
+    const independentRepository = createRepository();
+    commit(independentRepository, "src/runtime.ts", "seed\n");
+    expect(
+      localVerification(independentRepository, { args: ["--database"] }).status,
+    ).toBe(0);
+    expect(
+      localVerification(independentRepository, {
+        args: ["--browser"],
+        run: vi.fn(() => ({ status: 7 })),
+      }).status,
+    ).toBe(7);
+    commit(
+      independentRepository,
+      "src/app/globals.css",
+      "presentation repair\n",
+    );
+    expect(commands(localVerification(independentRepository))).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredBrowserSteps,
+    ]);
+    for (const outcome of [
+      { status: 5 },
+      { status: null, signal: "SIGTERM" },
+      {
+        status: null,
+        error: Object.assign(new Error("missing"), { code: "ENOENT" }),
+      },
+    ]) {
+      const repository = createRepository();
+      commit(repository, "src/runtime.ts", "seed\n");
+      const failed = localVerification(repository, {
+        args: ["--database"],
+        run: vi.fn(() => outcome),
+      });
+      expect(failed.status).not.toBe(0);
+      expect(
+        commands(localVerification(repository, { args: ["--database"] })),
+      ).toEqual(requiredDatabaseSteps);
+    }
+    const repository = createRepository();
+    commit(repository, "src/runtime.ts", "seed\n");
+    localVerification(repository, {
+      args: ["--database"],
+      run: vi.fn(() => {
+        write(repository, "src/runtime.ts", "changed during execution\n");
+        return { status: 0 };
+      }),
+    });
+    expect(
+      commands(localVerification(repository, { args: ["--database"] })),
+    ).toEqual(requiredDatabaseSteps);
+  }, 60000);
+
+  it("rejects corrupt interrupted and superseded local evidence", () => {
+    const changes = [
+      (path) => {
+        const record = JSON.parse(readFileSync(path));
+        record.head = [record.head];
+        writeFileSync(path, JSON.stringify(record));
+      },
+      (path, marker) => {
+        for (const target of [path, marker]) {
+          const record = JSON.parse(readFileSync(target));
+          record.token = "-".repeat(36);
+          writeFileSync(target, JSON.stringify(record));
+        }
+      },
+      (path) => {
+        const record = JSON.parse(readFileSync(path));
+        record.completedAt = "2026";
+        writeFileSync(path, JSON.stringify(record));
+      },
+      (path) => writeFileSync(path, "{broken"),
+      (path) => writeFileSync(path, "x".repeat(1024 * 1024 + 1)),
+      (path) => {
+        const record = JSON.parse(readFileSync(path));
+        record.version = 2;
+        writeFileSync(path, JSON.stringify(record));
+      },
+      (path) => {
+        const record = JSON.parse(readFileSync(path));
+        record.group = "browser";
+        writeFileSync(path, JSON.stringify(record));
+      },
+      (path) => {
+        const record = JSON.parse(readFileSync(path));
+        record.identity.dockerReferences = [
+          ["b".repeat(64), "c".repeat(64)],
+          ["b".repeat(64), "c".repeat(64)],
+        ];
+        writeFileSync(path, JSON.stringify(record));
+      },
+      (path) => {
+        renameSync(path, `${path}.original`);
+        symlinkSync(`${path}.original`, path);
+      },
+      (_path, marker) => rmSync(marker),
+      (_path, marker) => {
+        const record = JSON.parse(readFileSync(marker));
+        record.token = "00000000-0000-0000-0000-000000000000";
+        writeFileSync(marker, JSON.stringify(record));
+      },
+    ];
+    for (const change of changes) {
+      const repository = createRepository();
+      commit(repository, "src/runtime.ts", "seed\n");
+      localVerification(repository, { args: ["--database"] });
+      change(
+        evidenceFile(repository, "success"),
+        evidenceFile(repository, "attempt"),
+      );
+      expect(
+        commands(localVerification(repository, { args: ["--database"] })),
+      ).toEqual(requiredDatabaseSteps);
+    }
+    const oversizedRepository = createRepository();
+    commit(oversizedRepository, "src/runtime.ts", "seed\n");
+    const oversized = localVerification(oversizedRepository, {
+      args: ["--database"],
+      captureRuntimeContract: () => ({
+        digest: "a".repeat(64),
+        dockerReferences: Array.from({ length: 10000 }, (_, index) => [
+          index.toString(16).padStart(64, "0"),
+          "b".repeat(64),
+        ]),
+      }),
+    });
+    expect(oversized.status).toBe(0);
+    expect(oversized.stdout.mock.calls.flat().join("\n")).toContain(
+      "local evidence not retained",
+    );
+    expect(() =>
+      readFileSync(evidenceFile(oversizedRepository, "success")),
+    ).toThrow();
+    const repository = createRepository();
+    commit(repository, "src/runtime.ts", "seed\n");
+    localVerification(repository, {
+      args: ["--database"],
+      run: vi.fn(() => {
+        const marker = evidenceFile(repository, "attempt");
+        const record = JSON.parse(readFileSync(marker));
+        record.token = "00000000-0000-0000-0000-000000000000";
+        writeFileSync(marker, JSON.stringify(record));
+        return { status: 0 };
+      }),
+    });
+    expect(
+      commands(localVerification(repository, { args: ["--database"] })),
+    ).toEqual(requiredDatabaseSteps);
+    const stateDirectory = dirname(evidenceFile(repository, "success"));
+    renameSync(stateDirectory, `${stateDirectory}.elsewhere`);
+    symlinkSync(`${stateDirectory}.elsewhere`, stateDirectory);
+    const escaped = localVerification(repository, { args: ["--database"] });
+    expect(commands(escaped)).toEqual([]);
+    expect(escaped.status).toBe(1);
+    expect(escaped.stderr.mock.calls.flat().join("\n")).toContain(
+      "verification-admission-failure",
+    );
+  }, 60000);
+
+  it("keeps forced hosted and planned verification honest", () => {
+    const repository = createRepository();
+    commit(repository, "src/runtime.ts", "seed\n");
+    localVerification(repository);
+    const marker = evidenceFile(repository, "attempt");
+    const oldMarker = readFileSync(marker, "utf8");
+    const captureRuntimeContract = vi.fn(runtimeFixture);
+    const plan = localVerification(repository, {
+      args: ["--plan"],
+      captureRuntimeContract,
+    });
+    expect(plan.status).toBe(0);
+    expect(commands(plan)).toEqual([]);
+    expect(captureRuntimeContract).not.toHaveBeenCalled();
+    expect(readFileSync(marker, "utf8")).toBe(oldMarker);
+    expect(plan.stdout.mock.calls.flat().join("\n")).toContain(
+      "reuse eligibility will be checked during execution",
+    );
+    const baselineFailure = localVerification(repository, {
+      run: vi.fn(() => ({ status: 8 })),
+      captureRuntimeContract,
+    });
+    expect(baselineFailure.status).toBe(8);
+    expect(captureRuntimeContract).not.toHaveBeenCalled();
+    expect(baselineFailure.stdout.mock.calls.flat().join("\n")).not.toContain(
+      "reused local evidence",
+    );
+    for (const environment of [{ CI: "true" }, { GITHUB_ACTIONS: "true" }]) {
+      const hosted = localVerification(repository, {
+        args: ["--full"],
+        environment,
+        captureRuntimeContract,
+      });
+      expect(commands(hosted)).toEqual(
+        environment.GITHUB_ACTIONS
+          ? requiredCiSteps()
+          : [...requiredBaselineSteps, ...requiredExpensiveSteps],
+      );
+      expect(hosted.status).toBe(0);
+      expect(captureRuntimeContract).not.toHaveBeenCalled();
+      expect(readFileSync(marker, "utf8")).toBe(oldMarker);
+    }
+    const forced = localVerification(repository, { args: ["--full"] });
+    expect(commands(forced)).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+    expect(readFileSync(marker, "utf8")).not.toBe(oldMarker);
+    expect(commands(localVerification(repository))).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+    expect(
+      commands(localVerification(repository, { args: ["--database"] })),
+    ).toEqual([]);
+    expect(
+      commands(localVerification(repository, { args: ["--browser"] })),
+    ).toEqual([]);
+  }, 30000);
+
+  it("wires local evidence reuse through a real child invocation", () => {
+    const fixture = productionFixture();
+    const child = () =>
+      spawnSync(
+        process.execPath,
+        [join(ROOT, "scripts/verify.mjs"), "--database"],
+        { cwd: fixture.repository, env: fixture.environment, encoding: "utf8" },
+      );
+    const first = child();
+    expect(first.status, first.stderr).toBe(0);
+    expect(
+      readFileSync(fixture.commandLog, "utf8")
+        .trim()
+        .split("\n")
+        .map(JSON.parse),
+    ).toEqual([["npm", "run", "verify:access:database"]]);
+    const second = child();
+    expect(second.status, second.stderr).toBe(0);
+    expect(second.stdout).toContain("reused local evidence");
+    expect(
+      readFileSync(fixture.commandLog, "utf8").trim().split("\n"),
+    ).toHaveLength(1);
+    write(fixture.repository, "src/runtime.ts", "stale source\n");
+    const stale = child();
+    expect(stale.status, stale.stderr).toBe(0);
+    expect(stale.stdout).not.toContain("reused local evidence");
+    expect(
+      readFileSync(fixture.commandLog, "utf8")
+        .trim()
+        .split("\n")
+        .map(JSON.parse),
+    ).toEqual([
+      ["npm", "run", "verify:access:database"],
+      ["npm", "run", "verify:access:database"],
+    ]);
+  }, 30000);
+
+  it("refuses external executable overrides through production capture", () => {
+    const fixture = productionFixture();
+    const external = join(fixture.tools, "external-binary");
+    writeFileSync(external, "first executable", { mode: 0o755 });
+    const execute = (environment, args = ["--database"]) =>
+      runVerification(fixture.repository, {
+        environment: { ...fixture.environment, ...environment },
+        args,
+      });
+    expect(execute({}).status).toBe(0);
+    expect(commands(execute({}))).toEqual([]);
+    for (const name of [
+      "SUPABASE_CLI_BINARY_OVERRIDE",
+      "ESBUILD_BINARY_PATH",
+      "MINIFLARE_WORKERD_PATH",
+    ]) {
+      for (const value of [external, ""]) {
+        const earlierReceipt = readFileSync(
+          evidenceFile(fixture.repository, "success"),
+          "utf8",
+        );
+        const result = execute({ [name]: value });
+        expect(commands(result)).toEqual(requiredDatabaseSteps);
+        expect(result.stdout.mock.calls.flat().join("\n")).toContain(
+          `${name}: external executable override prevents reuse`,
+        );
+        expect(result.stdout.mock.calls.flat().join("\n")).not.toContain(
+          external,
+        );
+        writeFileSync(external, "same path replacement", { mode: 0o755 });
+        expect(commands(execute({ [name]: value }))).toEqual(
+          requiredDatabaseSteps,
+        );
+        expect(
+          readFileSync(evidenceFile(fixture.repository, "success"), "utf8"),
+        ).toBe(earlierReceipt);
+        const refusedBrowser = execute({ [name]: value }, ["--browser"]);
+        expect(commands(refusedBrowser)).toEqual(requiredBrowserSteps);
+        expect(refusedBrowser.stdout.mock.calls.flat().join("\n")).toContain(
+          `${name}: external executable override prevents reuse`,
+        );
+        expect(() =>
+          readFileSync(evidenceFile(fixture.repository, "success", "browser")),
+        ).toThrow();
+      }
+      expect(commands(execute({}))).toEqual(requiredDatabaseSteps);
+      expect(commands(execute({}))).toEqual([]);
+    }
+    for (const name of [
+      "NODE_OPTIONS",
+      "NODE_PATH",
+      "PW_INSTRUMENT_MODULES",
+      "LD_PRELOAD",
+      "LD_LIBRARY_PATH",
+      "DYLD_INSERT_LIBRARIES",
+      "DYLD_LIBRARY_PATH",
+    ]) {
+      const refused = execute({ [name]: "external" });
+      expect(commands(refused)).toEqual(requiredDatabaseSteps);
+      expect(refused.stdout.mock.calls.flat().join("\n")).toContain(
+        `${name}: external executable override prevents reuse`,
+      );
+    }
+    for (const name of ["SELENIUM_REMOTE_URL", "PW_TEST_CONNECT_WS_ENDPOINT"]) {
+      const remote = execute({ [name]: "remote-secret" }, ["--browser"]);
+      expect(commands(remote)).toEqual(requiredBrowserSteps);
+      expect(remote.stdout.mock.calls.flat().join("\n")).toContain(
+        `${name}: remote browser prevents reuse`,
+      );
+      expect(remote.stdout.mock.calls.flat().join("\n")).not.toContain(
+        "remote-secret",
+      );
+    }
+  }, 60000);
+
+  it("distinguishes installed inputs from generated results after baseline", () => {
+    const fixture = productionFixture({ browsers: true });
+    const execute = (mutate) =>
+      runVerification(fixture.repository, {
+        environment: fixture.environment,
+        run: vi.fn((_command, args) => {
+          if (args[0] === "test" && mutate) mutate();
+          return { status: 0 };
+        }),
+      });
+    expect(execute().status).toBe(0);
+    const resultPath = `node_modules/.vite/vitest/${"a".repeat(40)}/results.json`;
+    for (const mutate of [
+      () =>
+        write(
+          fixture.repository,
+          resultPath,
+          JSON.stringify({
+            version: "4.1.10",
+            results: [["case", { duration: 12, failed: false }]],
+          }),
+        ),
+      () =>
+        write(
+          fixture.repository,
+          resultPath,
+          JSON.stringify({
+            version: "4.1.10",
+            results: [["case", { duration: 99, failed: true }]],
+          }),
+        ),
+      () => rmSync(join(fixture.repository, resultPath)),
+    ]) {
+      const result = execute(mutate);
+      expect(commands(result)).toEqual(requiredBaselineSteps);
+      expect(result.stdout.mock.calls.flat().join("\n")).toContain(
+        "database: reused local evidence",
+      );
+      expect(result.stdout.mock.calls.flat().join("\n")).toContain(
+        "browser: reused local evidence",
+      );
+    }
+    for (const [path, contents, mode] of [
+      ["node_modules/workerd/installed.js", "first installed input", 0o644],
+      [
+        "node_modules/workerd/installed.js",
+        "same-path installed replacement",
+        0o644,
+      ],
+      ["node_modules/.vite/executable-output", "executable result", 0o755],
+      [resultPath, "executable results", 0o755],
+    ]) {
+      const result = execute(() => {
+        write(fixture.repository, path, contents);
+        chmodSync(join(fixture.repository, path), mode);
+      });
+      expect(commands(result)).toEqual([
+        ...requiredBaselineSteps,
+        ...requiredExpensiveSteps,
+      ]);
+    }
+    const symlinkReplacement = execute(() => {
+      rmSync(join(fixture.repository, resultPath));
+      symlinkSync(
+        "../../../workerd/installed.js",
+        join(fixture.repository, resultPath),
+      );
+    });
+    expect(commands(symlinkReplacement)).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+    const symlinkResult = execute();
+    expect(commands(symlinkResult)).toEqual(requiredBaselineSteps);
+    const ancestor = join(fixture.repository, "node_modules/.vite/vitest");
+    renameSync(ancestor, `${ancestor}.original`);
+    symlinkSync("vitest.original", ancestor);
+    const invalidAncestor = execute();
+    expect(commands(invalidAncestor)).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+    expect(invalidAncestor.stdout.mock.calls.flat().join("\n")).toContain(
+      "local evidence not retained",
+    );
+    rmSync(ancestor);
+    renameSync(`${ancestor}.original`, ancestor);
+    expect(execute().status).toBe(0);
+    const external = join(fixture.tools, "external-installed-input");
+    writeFileSync(external, "unbounded external input");
+    const dependencyRoot = join(fixture.repository, "node_modules");
+    symlinkSync(
+      relative(dependencyRoot, external),
+      join(dependencyRoot, "external-input"),
+    );
+    const unbounded = execute();
+    expect(commands(unbounded)).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredExpensiveSteps,
+    ]);
+    expect(unbounded.stdout.mock.calls.flat().join("\n")).toContain(
+      "local evidence not retained",
+    );
+  }, 60000);
+
+  it("admits cold image preparation and ignores unrelated image additions", () => {
+    const fixture = productionFixture();
+    const image = (repository, tag, id) => ({
+      Repository: repository,
+      Tag: tag,
+      Digest: "<none>",
+      ID: `sha256:${id.repeat(64)}`,
+    });
+    const original = image("fixture/required", "latest", "a");
+    const unrelated = image("other/fixture", "extra", "b");
+    const writeImages = (rows) =>
+      writeFileSync(
+        fixture.images,
+        rows.map((row) => JSON.stringify(row)).join("\n"),
+      );
+    const execute = (mutate) =>
+      runVerification(fixture.repository, {
+        args: ["--database"],
+        environment: fixture.environment,
+        run: vi.fn(() => {
+          if (mutate) mutate();
+          return { status: 0 };
+        }),
+      });
+    expect(execute(() => writeImages([original])).status).toBe(0);
+    const saved = readFileSync(
+      evidenceFile(fixture.repository, "success"),
+      "utf8",
+    );
+    expect(saved).not.toContain(original.Repository);
+    expect(saved).not.toContain(original.ID);
+    expect(commands(execute())).toEqual([]);
+    writeImages([original, unrelated]);
+    expect(commands(execute())).toEqual([]);
+    expect(
+      readFileSync(evidenceFile(fixture.repository, "success"), "utf8"),
+    ).toBe(saved);
+    writeImages([image(original.Repository, original.Tag, "c"), unrelated]);
+    expect(commands(execute())).toEqual(requiredDatabaseSteps);
+    writeImages([unrelated]);
+    expect(commands(execute())).toEqual(requiredDatabaseSteps);
+    writeFileSync(fixture.daemon, JSON.stringify("changed-daemon"));
+    expect(commands(execute())).toEqual(requiredDatabaseSteps);
+    expect(commands(execute())).toEqual([]);
+    write(fixture.repository, "src/runtime.ts", "repair requiring execution\n");
+    const changedDuring = execute(() =>
+      writeImages([image(unrelated.Repository, unrelated.Tag, "d")]),
+    );
+    expect(changedDuring.stdout.mock.calls.flat().join("\n")).toContain(
+      "local evidence not retained",
+    );
+    expect(commands(execute())).toEqual(requiredDatabaseSteps);
+    for (const metadata of [
+      "{malformed",
+      JSON.stringify({
+        Repository: "private-image-name",
+        Tag: "latest",
+        ID: "bad",
+        Digest: "<none>",
+      }),
+      [image("conflict", "tag", "a"), image("conflict", "tag", "b")]
+        .map(JSON.stringify)
+        .join("\n"),
+    ]) {
+      writeFileSync(fixture.images, metadata);
+      const malformed = execute();
+      expect(commands(malformed)).toEqual(requiredDatabaseSteps);
+      expect(malformed.stdout.mock.calls.flat().join("\n")).toContain(
+        "local evidence not retained",
+      );
+      expect(malformed.stdout.mock.calls.flat().join("\n")).not.toContain(
+        "private-image-name",
+      );
+    }
+  }, 60000);
+
+  it("fingerprints browser distribution sidecars through production capture", () => {
+    const fixture = productionFixture({ browsers: true });
+    const [chromium, headless] = fixture.distributions;
+    const framework = join(
+      chromium.directory,
+      "Fixture.app/Contents/Frameworks/Fixture.framework/Versions",
+    );
+    write(framework, "A/Fixture", "framework executable");
+    chmodSync(join(framework, "A/Fixture"), 0o755);
+    write(framework, "A/Resources/resource.pak", "framework resource");
+    symlinkSync("A", join(framework, "Current"));
+    const library = join(dirname(headless.executable), "libfixture.dylib");
+    const icd = join(dirname(headless.executable), "vk_fixture_icd.json");
+    writeFileSync(library, "headless sibling library");
+    writeFileSync(icd, '{"fixture":"initial"}');
+    const launchers = fixture.distributions.map((entry) =>
+      readFileSync(entry.executable, "utf8"),
+    );
+    const execute = (environment = fixture.environment) =>
+      runVerification(fixture.repository, { args: ["--browser"], environment });
+    expect(execute().status).toBe(0);
+    expect(commands(execute())).toEqual([]);
+    for (const [path, contents] of [
+      [join(framework, "Current/Fixture"), "changed framework executable"],
+      [
+        join(framework, "Current/Resources/resource.pak"),
+        "changed framework resource",
+      ],
+      [library, "changed headless library"],
+      [icd, '{"fixture":"changed"}'],
+    ]) {
+      writeFileSync(path, contents);
+      const changed = execute();
+      expect(commands(changed)).toEqual(requiredBrowserSteps);
+      expect(changed.status).toBe(0);
+      expect(commands(execute())).toEqual([]);
+      expect(
+        fixture.distributions.map((entry) =>
+          readFileSync(entry.executable, "utf8"),
+        ),
+      ).toEqual(launchers);
+    }
+    const aliasEnvironment = { ...fixture.environment };
+    aliasEnvironment.npm_config_playwright_browsers_path =
+      aliasEnvironment.PLAYWRIGHT_BROWSERS_PATH;
+    delete aliasEnvironment.PLAYWRIGHT_BROWSERS_PATH;
+    expect(commands(execute(aliasEnvironment))).toEqual(requiredBrowserSteps);
+    expect(commands(execute(aliasEnvironment))).toEqual([]);
+    const external = join(fixture.tools, "outside-distribution");
+    writeFileSync(external, "outside content");
+    symlinkSync(
+      relative(chromium.directory, external),
+      join(chromium.directory, "escape"),
+    );
+    const escape = execute();
+    expect(commands(escape)).toEqual(requiredBrowserSteps);
+    expect(escape.stdout.mock.calls.flat().join("\n")).toContain(
+      "local evidence not retained",
+    );
+    rmSync(join(chromium.directory, "escape"));
+    rmSync(headless.directory, { recursive: true });
+    const missing = execute();
+    expect(commands(missing)).toEqual(requiredBrowserSteps);
+    expect(missing.stdout.mock.calls.flat().join("\n")).toContain(
+      "local evidence not retained",
+    );
+  }, 60000);
+
+  it("requires durable invalidation before fresh local execution", () => {
+    const repository = createRepository();
+    commit(repository, "src/runtime.ts", "seed\n");
+    localVerification(repository, { args: ["--database"] });
+    const marker = evidenceFile(repository, "attempt");
+    const directory = dirname(marker);
+    const originalMarker = readFileSync(marker, "utf8");
+    const provenance = JSON.parse(
+      readFileSync(evidenceFile(repository, "success")),
+    ).head;
+    chmodSync(directory, 0o500);
+    try {
+      const blocked = localVerification(repository, {
+        args: ["--database", "--full"],
+      });
+      expect(blocked.status).toBe(1);
+      expect(commands(blocked)).toEqual([]);
+      expect(blocked.stderr.mock.calls.flat().join("\n")).toContain(
+        "verification-admission-failure",
+      );
+      expect(blocked.stderr.mock.calls.flat().join("\n")).not.toContain(
+        '"type":"verification-failure"',
+      );
+      expect(blocked.stdout.mock.calls.flat().join("\n")).not.toContain(
+        '"type":"verification-phase"',
+      );
+    } finally {
+      chmodSync(directory, 0o700);
+    }
+    const recovered = localVerification(repository, { args: ["--database"] });
+    expect(commands(recovered)).toEqual([]);
+    expect(recovered.stdout.mock.calls.flat().join("\n")).toContain(
+      `HEAD ${provenance}`,
+    );
+    const failedAttempt = localVerification(repository, {
+      args: ["--database", "--full"],
+      run: vi.fn(() => {
+        expect(readFileSync(marker, "utf8")).not.toBe(originalMarker);
+        return { status: 9 };
+      }),
+    });
+    expect(failedAttempt.status).toBe(9);
+    expect(
+      commands(localVerification(repository, { args: ["--database"] })),
+    ).toEqual(requiredDatabaseSteps);
+    for (const fault of [
+      "write",
+      "file-flush",
+      "rename",
+      "directory-flush",
+      "readback",
+    ]) {
+      const originalWrite = fs.writeFileSync;
+      const originalFlush = fs.fsyncSync;
+      const originalRename = fs.renameSync;
+      const originalRead = fs.readFileSync;
+      const spies = [
+        vi.spyOn(fs, "writeFileSync").mockImplementation((...args) => {
+          if (fault === "write")
+            throw Object.assign(new Error("fixture denied marker write"), {
+              code: "EACCES",
+            });
+          return originalWrite(...args);
+        }),
+        vi.spyOn(fs, "fsyncSync").mockImplementation((fd) => {
+          const directory = fs.fstatSync(fd).isDirectory();
+          if (
+            (fault === "directory-flush" && directory) ||
+            (fault === "file-flush" && !directory)
+          )
+            throw Object.assign(new Error("fixture denied flush"), {
+              code: "EIO",
+            });
+          return originalFlush(fd);
+        }),
+        vi.spyOn(fs, "renameSync").mockImplementation((...args) => {
+          if (fault === "rename")
+            throw Object.assign(new Error("fixture denied rename"), {
+              code: "EACCES",
+            });
+          return originalRename(...args);
+        }),
+        vi.spyOn(fs, "readFileSync").mockImplementation((...args) => {
+          if (fault === "readback")
+            throw Object.assign(new Error("fixture denied readback"), {
+              code: "EIO",
+            });
+          return originalRead(...args);
+        }),
+      ];
+      try {
+        const blocked = localVerification(repository, {
+          args: ["--database", "--full"],
+        });
+        expect(blocked.status, fault).toBe(1);
+        expect(commands(blocked), fault).toEqual([]);
+        expect(blocked.stderr.mock.calls.flat().join("\n"), fault).toContain(
+          "verification-admission-failure",
+        );
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
+    }
+    const originalRename = fs.renameSync;
+    const browserDenied = vi
+      .spyOn(fs, "renameSync")
+      .mockImplementation((from, to) => {
+        if (to.endsWith("browser.attempt.json"))
+          throw Object.assign(new Error("fixture denied browser marker"), {
+            code: "EACCES",
+          });
+        return originalRename(from, to);
+      });
+    try {
+      const combined = localVerification(repository, { args: ["--full"] });
+      expect(combined.status).toBe(1);
+      expect(commands(combined)).toEqual(requiredBaselineSteps);
+      expect(combined.stderr.mock.calls.flat().join("\n")).toContain(
+        '"group":"browser"',
+      );
+      expect(combined.stdout.mock.calls.flat().join("\n")).not.toContain(
+        "database: executed",
+      );
+    } finally {
+      browserDenied.mockRestore();
+    }
+  }, 60000);
+
+  it("keeps completion write failures separate from product outcomes", () => {
+    const repository = createRepository();
+    commit(repository, "src/runtime.ts", "seed\n");
+    localVerification(repository, { args: ["--database"] });
+    const receipt = evidenceFile(repository, "success");
+    const marker = evidenceFile(repository, "attempt");
+    const directory = dirname(receipt);
+    const originalReceipt = readFileSync(receipt, "utf8");
+    const originalToken = JSON.parse(originalReceipt).token;
+    chmodSync(receipt, 0o000);
+    try {
+      const completed = localVerification(repository, {
+        args: ["--database"],
+        run: vi.fn(() => {
+          expect(JSON.parse(readFileSync(marker)).token).not.toBe(
+            originalToken,
+          );
+          chmodSync(receipt, 0o600);
+          chmodSync(directory, 0o500);
+          return { status: 0 };
+        }),
+      });
+      expect(completed.status).toBe(0);
+      expect(commands(completed)).toEqual(requiredDatabaseSteps);
+      expect(completed.stdout.mock.calls.flat().join("\n")).toContain(
+        "local evidence not retained",
+      );
+      expect(completed.stdout.mock.calls.flat().join("\n")).toContain(
+        '"outcome":{"type":"exit","status":0}',
+      );
+      expect(completed.stderr).not.toHaveBeenCalled();
+    } finally {
+      chmodSync(directory, 0o700);
+      chmodSync(receipt, 0o600);
+    }
+    expect(readFileSync(receipt, "utf8")).toBe(originalReceipt);
+    expect(
+      commands(localVerification(repository, { args: ["--database"] })),
+    ).toEqual(requiredDatabaseSteps);
+    expect(
+      commands(localVerification(repository, { args: ["--database"] })),
+    ).toEqual([]);
+    for (const operation of ["writeFileSync", "fsyncSync", "renameSync"]) {
+      const before = readFileSync(receipt, "utf8");
+      chmodSync(receipt, 0o000);
+      let fault;
+      try {
+        const completed = localVerification(repository, {
+          args: ["--database"],
+          run: vi.fn(() => {
+            chmodSync(receipt, 0o600);
+            fault = vi.spyOn(fs, operation).mockImplementation(() => {
+              throw Object.assign(new Error("fixture completion write fault"), {
+                code: "EIO",
+              });
+            });
+            return { status: 0 };
+          }),
+        });
+        expect(completed.status, operation).toBe(0);
+        expect(
+          completed.stdout.mock.calls.flat().join("\n"),
+          operation,
+        ).toContain("local evidence not retained");
+        expect(completed.stderr, operation).not.toHaveBeenCalled();
+        expect(fault, operation).toHaveBeenCalled();
+      } finally {
+        fault?.mockRestore();
+        chmodSync(receipt, 0o600);
+      }
+      expect(readFileSync(receipt, "utf8"), operation).toBe(before);
+      expect(
+        commands(localVerification(repository, { args: ["--database"] })),
+        operation,
+      ).toEqual(requiredDatabaseSteps);
+    }
+  }, 60000);
+
   it("rejects arguments before running an external command", () => {
     const run = vi.fn();
     const stderr = vi.fn();

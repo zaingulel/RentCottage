@@ -212,6 +212,62 @@ Run focused checks, intentional red/restored green proofs, and convergence throu
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.
 
+## Local verification evidence
+
+After the fresh selected baseline succeeds, `npm run verify` may reuse completed local database or browser
+evidence whose classified source layers, comparison base, exact command contract and effective runtime inputs
+remain unchanged. Service-only modes check immediately after dependency preflight. Baseline always executes:
+its dependency audit needs current external evidence, and its generated output must settle before service
+eligibility is checked. Baseline-only repairs may preserve both service groups; presentation repairs may
+preserve database evidence. Full inputs invalidate both. Source identity includes HEAD, index, working files,
+nonignored untracked files, executable modes, symlink types, deletions, `origin/main` and the unique merge base.
+Relevant source symlink layers prevent reuse and retention because their target inputs are not bounded. Fresh
+execution still requires marker admission. An unrelated source commit may reuse an earlier success, whose HEAD
+and base are printed as provenance. This is
+local source-and-environment evidence, not an exact-revision delivery pass.
+
+Runtime identity includes installed dependency contents, effective environment and npm configuration, local
+configuration files, executable identities, operating system and Docker client/server/context/daemon inputs.
+Only ordinary non-executable Vitest `.vite/vitest/<40-character hexadecimal key>/results.json` files under
+`node_modules` are excluded as generated results; executable output, symlink ancestors and other installed bytes
+remain inputs. Browser identity also includes both complete installed Chromium and Chromium headless-shell
+distributions resolved through the installed Playwright registry, including framework, resource and sibling
+library bytes. Missing or unsafe observations prevent reuse and retention. Fixed external executable or module
+injection overrides prevent reuse; remote browser overrides prevent browser reuse. Diagnostics name an override
+without printing its value.
+
+Fresh successful service execution may add Docker image references during cold preparation. Every previously
+observed reference must keep its image identity, and the completed record retains the post-command requirements.
+Later unrelated additions preserve reuse; removing or replacing a saved reference invalidates it. Records store
+hashed references and identities, never image names or raw environment, configuration, credential or probe data.
+
+The verifier stores private versioned records in the worktree's Git directory. A receipt is eligible only while
+its token matches the current attempt marker. Before fresh local service execution, including `--full`, the
+verifier must write and flush a new marker, replace it atomically, flush the directory and read back its token.
+An invalid, missing or unreadable receipt is a cache miss. A failed marker operation is an admission failure:
+`verification-admission-failure` names the group and step, exits 1 and stops before that service or later selected
+work. Repair private-state access before retrying; an unexecuted check has no product-failure or execution-timing
+record. If no newer product attempt occurred, an earlier success may remain eligible after access recovers.
+A completion-record write failure after successful execution reports `local evidence not retained` while preserving
+the actual command outcome; its unmatched new marker requires fresh execution next time.
+
+Only authoritatively successful commands and stable before/after inputs certify a group. Combined `verify:access`
+success includes database cleanup and may retain database evidence immediately. Browser evidence requires the
+remaining Worker build, secret scan, browser and smoke commands too. Combined access failure certifies neither,
+and independently completed database evidence survives a later browser failure. Failed, interrupted, unreached or
+superseded attempts never certify success. Reports distinguish executed checks, reused local evidence with
+provenance, and groups not selected; phase outcomes and fresh reproduction recipes remain authoritative.
+
+`--full` always executes selected groups fresh and invalidates their local markers before launch. `CI` or
+`GITHUB_ACTIONS` disables local reuse and persistence. Hosted baseline, database and browser jobs and their final
+aggregate still require fresh success on the same exact merge revision. `--plan` probes no runtime inputs and writes
+no local records: it prints the selected command plan and states that eligibility is checked during execution.
+Local reuse never replaces the final exact-source hosted gate or real PostgreSQL, Worker and browser proof.
+
+The recurring cost is conservative source/runtime content capture, private records and focused contract tests.
+Retire the local reuse machinery when an authoritative native evidence system provides equivalent scoped reuse,
+or when it no longer avoids expensive reruns. Command doubles prove admission and routing, not product outcomes.
+
 ## Evidence economics
 
 An expensive test or piece of machinery declares the distinct risk it covers, its recurring cost, and a legitimate
