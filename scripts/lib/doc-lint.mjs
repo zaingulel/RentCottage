@@ -139,7 +139,10 @@ export function checkPathRefs(refs, existsFn) {
 export function vendoredSkillNames(paths) {
   return new Set(
     paths
-      .map((rel) => rel.match(/^\.agents\/upstream\/[^/]+\/([^/]+)\/SKILL\.md$/)?.[1])
+      .map(
+        (rel) =>
+          rel.match(/^\.agents\/upstream\/[^/]+\/([^/]+)\/SKILL\.md$/)?.[1],
+      )
       .filter(Boolean),
   );
 }

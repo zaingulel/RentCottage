@@ -223,20 +223,29 @@ test("classifyDocLintPath: a vendored upstream skill body feeds only the disable
 
 test("classifyDocLintPath: a vendored skill's copy under .agents/skills/ is classified like its upstream source", () => {
   const vendored = new Set(["grilling"]);
-  assert.deepEqual(classifyDocLintPath(".agents/skills/grilling/SKILL.md", vendored), {
-    pathRefs: false,
-    dateStamps: false,
-    illegalInvocations: false,
-    skillMeta: true,
-  });
+  assert.deepEqual(
+    classifyDocLintPath(".agents/skills/grilling/SKILL.md", vendored),
+    {
+      pathRefs: false,
+      dateStamps: false,
+      illegalInvocations: false,
+      skillMeta: true,
+    },
+  );
   const firstParty = {
     pathRefs: true,
     dateStamps: true,
     illegalInvocations: true,
     skillMeta: true,
   };
-  assert.deepEqual(classifyDocLintPath(".agents/skills/resume/SKILL.md", vendored), firstParty);
-  assert.deepEqual(classifyDocLintPath(".agents/skills/grilling/SKILL.md"), firstParty);
+  assert.deepEqual(
+    classifyDocLintPath(".agents/skills/resume/SKILL.md", vendored),
+    firstParty,
+  );
+  assert.deepEqual(
+    classifyDocLintPath(".agents/skills/grilling/SKILL.md"),
+    firstParty,
+  );
 });
 
 test("vendoredSkillNames: derives the Set of <name> from every upstream SKILL.md path, ignoring siblings and non-vendored skills", () => {
