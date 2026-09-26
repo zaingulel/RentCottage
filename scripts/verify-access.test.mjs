@@ -860,14 +860,19 @@ if (args[1] === "status") {
     expect(stderr.join("")).toBe("");
     if (observeTiming) {
       await waitForCondition(
-        () => stdout.join("").includes('"type":"access-lifecycle"'),
+        () =>
+          stdout
+            .join("")
+            .split("\n")
+            .slice(0, -1)
+            .some((line) => line.includes('"type":"access-lifecycle"')),
         "access lifecycle completion record",
       );
       observeTiming(
         stdout
           .join("")
-          .trim()
           .split("\n")
+          .slice(0, -1)
           .filter((line) => line.startsWith("{"))
           .map((line) => JSON.parse(line)),
       );

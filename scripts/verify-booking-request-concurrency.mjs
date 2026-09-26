@@ -1248,8 +1248,6 @@ commit;`;
       where claims.attempt_id = fixture.attempt_id
     ) and operations.operation_kind = 'authorization';
   `);
-    markTimingPhase("execution");
-
     markTimingPhase("setup");
     await runSql(`
     create table public.test_booking_request_reconciliation_work (result jsonb not null);
@@ -1563,8 +1561,6 @@ commit;`;
       public.test_booking_request_failed_release_operation,
       public.test_booking_request_release_retry_fixture;
   `);
-    markTimingPhase("execution");
-
     markTimingPhase("setup");
     await runSql(`
     insert into public.booking_request_submission_attempts (
