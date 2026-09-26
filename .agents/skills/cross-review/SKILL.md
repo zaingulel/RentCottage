@@ -7,7 +7,7 @@ description: The fresh reviewer pass for a code diff, run by the model family th
 
 The `resume` skill's review step for the code and sign-off tiers. A writer's own family shares its blind spots,
 so the `reviewer` charter runs on the other family. Both seats carry the same charter; this skill chooses which
-one and how to call it. One command from the job worktree, read-only, nothing wrapped.
+one and how to call it. Plain single commands from the job worktree, read-only, nothing wrapped.
 
 ## 1. Dispatch the other family's seat as configured
 
@@ -18,23 +18,57 @@ and the charter's own `gh` and web calls fail harmlessly. `<out>` is a directory
 **Claude wrote the diff**: the Codex `reviewer` seat, `.codex/agents/reviewer.toml`. Codex's native
 `exec review --base` accepts no custom instructions, so the charter goes through plain `codex exec`, read from
 a prompt file so quoting cannot bite. The charter returns its findings as its final message; give it no OUTPUT
-FILE, and say so, since the sandbox cannot write one.
+FILE, and say so, since the sandbox cannot write one. Each step below is one command; the session types each
+value it reads as a literal into the later steps.
 
-    { sed -n '/^developer_instructions = """/,/^"""/p' .codex/agents/reviewer.toml | sed '1d;$d'
-      printf '\nReview branch %s against main for issue #<issue>, whose card follows. The sandbox has no network,
-    so use this copy instead of gh, and return the JSON object as your final message.\n\n' "$(git branch --show-current)"
-      gh issue view <issue> --json title,body,comments \
-        --jq '"# \(.title)\n\n\(.body)\n\n## Comments\n\n" + (.comments | map(.body) | join("\n\n---\n\n"))'; } > <out>/prompt.md
-    codex exec -m "$(sed -n 's/^model = "\(.*\)"/\1/p' .codex/agents/reviewer.toml)" \
-      -c model_reasoning_effort="$(sed -n 's/^model_reasoning_effort = "\(.*\)"/\1/p' .codex/agents/reviewer.toml)" \
-      -s read-only --skip-git-repo-check --ephemeral --json -o <out>/review.json -C "$PWD" - \
-      < <out>/prompt.md > <out>/events.jsonl
+1. Read the branch, `<branch>`:
+
+   ```sh
+   git branch --show-current
+   ```
+
+2. Read the seat's `model` and `model_reasoning_effort` from `.codex/agents/reviewer.toml`, `<model>` and
+   `<effort>`, at run time; never copy them from anywhere else:
+
+   ```sh
+   grep -E '^(model|model_reasoning_effort) = ' .codex/agents/reviewer.toml
+   ```
+
+3. Start the prompt file with the charter:
+
+   ```sh
+   sed -n '/^developer_instructions = """/,/^"""/p' .codex/agents/reviewer.toml | sed '1d;$d' > <out>/prompt.md
+   ```
+
+4. Append the review request:
+
+   ```sh
+   printf '\nReview branch %s against main for issue #<issue>, whose card follows. The sandbox has no network,
+   so use this copy instead of gh, and return the JSON object as your final message.\n\n' '<branch>' >> <out>/prompt.md
+   ```
+
+5. Append the card:
+
+   ```sh
+   gh issue view <issue> --json title,body,comments \
+     --jq '"# \(.title)\n\n\(.body)\n\n## Comments\n\n" + (.comments | map(.body) | join("\n\n---\n\n"))' >> <out>/prompt.md
+   ```
+
+6. Run the reviewer:
+
+   ```sh
+   codex exec -m <model> -c model_reasoning_effort=<effort> \
+     -s read-only --skip-git-repo-check --ephemeral --json -o <out>/review.json -C . - \
+     < <out>/prompt.md > <out>/events.jsonl
+   ```
 
 **Codex wrote the diff**: the Claude `reviewer` seat, `.claude/agents/reviewer.md`, which the CLI loads whole,
-model, effort, tools and charter:
+model, effort, tools and charter. Read `<branch>` with `git branch --show-current` first, then:
 
-    claude -p --agent reviewer --permission-mode plan --output-format json \
-      "Review branch $(git branch --show-current) against main for issue #<issue>." > <out>/result.json
+```sh
+claude -p --agent reviewer --permission-mode plan --output-format json \
+  "Review branch <branch> against main for issue #<issue>." > <out>/result.json
+```
 
 Read-only is not instruction isolation: the reviewer reads the checkout's manual, rules and skills as its charter
 directs, and nothing else is handed to it.

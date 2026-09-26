@@ -33,10 +33,11 @@ export function ghArgvPrefix(raw = process.env.BOARD_TOOLKIT_GH) {
   return parsed;
 }
 
-function defaultExec(args) {
+export function runGh(args) {
   // Bounded timeout so a hung gh process (network stall, stray auth prompt) fails
   // loud instead of blocking a ritual forever; 60s covers the slowest --paginate
   // reads with wide margin. Applies to the rate-limit probe too (same exec).
+  // The single call with no quota probe, for a caller that must make no read beyond its own.
   const [command, ...prefix] = ghArgvPrefix();
   return execFileSync(command, [...prefix, ...args], { encoding: 'utf8', timeout: 60_000 });
 }
@@ -72,7 +73,7 @@ export function classifyGhFailure(originalError, rateLimitJson) {
 // the real `gh` unless `BOARD_TOOLKIT_GH` redirects it) so this is testable without `gh`.
 // On failure, probes `rate_limit` in its OWN try/catch — a probe failure rethrows the
 // original error, never the probe's.
-export function ghExec(args, execImpl = defaultExec) {
+export function ghExec(args, execImpl = runGh) {
   try {
     return execImpl(args);
   } catch (originalError) {

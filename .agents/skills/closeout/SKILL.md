@@ -16,30 +16,33 @@ inferred from chat.
 2. **Issues.** `Closes #` in the body closed them at merge; confirm with `gh issue view <n> --json state`. An
    issue the pull request resolved but did not name is reported to the owner, never closed unasked: only the
    issues the approved body names are within this run's authorisation.
-3. **Main.** Run [Update local main](#update-local-main). A session inside the job worktree is retained until its
-   runtime can leave it; on Claude Code, `ExitWorktree` with `action: "keep"` returns the session to the directory
-   it started in and removes nothing, so step 5 finishes in the same run. `keep` matches what the tool can do:
-   `ExitWorktree` removes only a worktree this session's own `EnterWorktree` created, so for a worktree that
-   `git worktree add` made and the session entered by path, it returns the session and leaves the directory in
-   place, and step 5's `git worktree remove` stays the thing that deletes it. This does not require switching
-   the root checkout. Stop closeout if no current verifier checkout is available.
+3. **Main.** Run [Update local main](#update-local-main). A session inside the job worktree is retained until
+   its runtime can leave it; on Claude Code, `ExitWorktree` with `action: "keep"` returns the session to the folder
+   the shell was in when `EnterWorktree` ran and removes nothing, so step 5 finishes in the same run. If that
+   folder no longer exists, the session stays in the job worktree and cannot leave it in this run: a Bash `cd` out
+   of it is reset back into the worktree. `keep` matches what the tool can do: `ExitWorktree` removes only a
+   worktree this session's own `EnterWorktree` created, so for a worktree that `git worktree add` made and the
+   session entered by path, it returns the session and leaves the directory in place, and step 5's `git worktree
+   remove` stays the thing that deletes it. This does not require switching the root checkout. Stop closeout if no
+   current verifier checkout is available.
 4. **Board.** From the current verifier checkout selected by Update local main, run
    `node scripts/board-move.mjs --batch <issue>:Done ...` for every closed issue. Done is the board's only
    terminal column, so a card closed as superseded or not planned also moves there. Then run
    `node scripts/board.mjs --closeout` (strict: it fails on an unreadable card or a non-advisory drift row) and
    reconcile anything it reports.
 5. **Branch and worktree.** Confirm the exact job worktree path and its ownership. Stop any local server the job
-   left serving that worktree, such as a visual-verification server: stop it as the session's own
-   background task when the session holds one, otherwise find listening processes with
-   `lsof -nP -iTCP -sTCP:LISTEN`, confirm a candidate's working directory is the job worktree with
-   `lsof -a -p <pid> -d cwd`, and stop only that one; leave alone a server whose working directory is not this
-   job's worktree. Leave the job worktree through the available runtime mechanism described in step 3; if the
-   runtime cannot leave it or ownership is uncertain, retain it, report why, and stop before worktree removal and
-   branch deletion; continue to step 6 and the final report. From the verifier checkout, outside the target
-   worktree, run `git worktree remove <path>` on that exact approved job path. If removal is refused, stop before
-   branch deletion and report the refusal. Confirm `git worktree list --porcelain` no longer registers that path,
-   then run ordinary `git branch -d job/<issue>`; report a refusal and never force deletion. The remote branch is
-   deleted by the merge setting or `git push origin --delete <branch>`. Finish with `git worktree prune`.
+   left serving that worktree, such as a visual-verification server: stop it as the session's own background task
+   when the session holds one, otherwise find listening processes with `lsof -nP -iTCP -sTCP:LISTEN`, confirm a
+   candidate's working directory is the job worktree with `lsof -a -p <pid> -d cwd`, and stop only that one; leave
+   alone a server whose working directory is not this job's worktree. Leave the job worktree through the available
+   runtime mechanism described in step 3; if the runtime cannot leave it or ownership is uncertain, retain it,
+   report why, and stop before worktree removal and branch deletion; continue to step 6 and the final report. That
+   report tells the owner that removing the worktree the session sits in ends the session's shell, so it is removed
+   with `git worktree remove <path>` only after the session is finished. From the verifier checkout, outside the
+   target worktree, run `git worktree remove <path>` on that exact approved job path. If removal is refused, stop
+   before branch deletion and report the refusal. Confirm `git worktree list --porcelain` no longer registers that
+   path, then run ordinary `git branch -d job/<issue>`; report a refusal and never force deletion. The remote
+   branch is deleted by the merge setting or `git push origin --delete <branch>`. Finish with `git worktree prune`.
 6. **Rulings.** Anything the owner settled this session that should outlive it goes where it belongs: a comment
    on the issue, or the manual or rule that owns the topic. Never as a new document.
 

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(node scripts/board.mjs *)",
       "Bash(node scripts/board-move.mjs *)",
-      "Bash(node scripts/board-add.mjs *)"
+      "Bash(node scripts/board-add.mjs *)",
+      "Bash(node scripts/merge-watch.mjs *)"
     ]
   },
   "hooks": {

@@ -465,230 +465,197 @@ test('a Codex session waits on helpers with one long timeout and the deliver ste
   assert.match(step[1], /`Bash` with `run_in_background: true`/, 'step 4 must background the watch on Claude Code');
   assert.match(
     step[1],
-    /stops the moment a check fails, the merge is blocked, or the state is `MERGED`, whichever comes first/,
-    'step 4 must keep its stop conditions',
+    /exits 0 only when the pull request has merged, and otherwise exits 1 with its reason as the last line of output/,
+    'step 4 must state the exit contract the session relies on',
   );
   assert.match(step[1], /Merged: run `closeout` in the same session/, 'step 4 must still run closeout on merge');
-  assert.match(watchCommand('7'), /^\s*sleep 30$/m, 'step 4 must wait between reads with sleep');
+  const rawStep = RESUME.match(/^4\. Watch it land[\s\S]*?(?=^Greptile is metered)/m);
+  assert.deepEqual(
+    shellBlocks(rawStep[0]).map((block) => block.body),
+    ['node scripts/merge-watch.mjs <pr>'],
+    'step 4 must carry exactly one fenced block, the committed watch command',
+  );
 });
 
-// The gh stub answers the loop's `pr view` and `pr checks` from numbered files, one pair per read, and repeats the
-// last pair; it answers the base-branch read and the two required-set `api` reads from the `base`, `branch` and
-// `rules` files without counting a read. Each file holds the exit code on line 1 and the body after it. A zero-code
-// body is the JSON gh exports, piped through the call's own `--jq` expression with real jq as gh does, or printed raw
-// without `--jq`; a non-zero-code body is gh's error message, printed to stderr. The `rules` body holds one JSON page
-// per line: a call with `--paginate` gets every page, each a separate jq input as gh applies `--jq` per page, and a
-// call without it gets page one only, as the real API answers. It refuses any call missing the flags the command
-// relies on, the substituted pull request number, gh's own `{owner}/{repo}` placeholders, or the substituted base
-// branch `trunk`.
-//
-// Price tag: recurring cost is one `sh` per watch scenario, running the skill's own step-4 block against this fake
-// gh and real jq in a temporary directory, with no network. Removal condition: retire the harness together with the
-// watch command in the resume skill's deliver step 4.
-const GH_STUB = `#!/bin/sh
-n=$(cat "$GH_STUB_DIR/n")
-case "$1 $2" in
-  "pr view")
-    case " $* " in
-      *" --json baseRefName "*) kind=base; want='--json baseRefName' ;;
-      *) n=$((n + 1)); echo "$n" > "$GH_STUB_DIR/n"; kind=view; want='--json state,mergeStateStatus' ;;
-    esac ;;
-  "pr checks") kind=checks; want='--required --json name,bucket' ;;
-  "api "*)
-    path=; for arg do case "$arg" in repos/*) path=$arg; break ;; esac; done
-    case "$path" in *'repos/{owner}/{repo}/'*) ;; *) echo "gh stub: api path without repos/{owner}/{repo}/: $*" >&2; exit 99 ;; esac
-    case "$path" in
-      */rules/branches/trunk) kind=rules ;;
-      */branches/trunk) kind=branch ;;
-      *) echo "gh stub: the base branch was not substituted: $*" >&2; exit 99 ;;
-    esac ;;
-  *) echo "gh stub: unexpected gh $*" >&2; exit 99 ;;
-esac
-case "$kind" in
-  view|checks|base)
-    case " $* " in *" $want "*) ;; *) echo "gh stub: $kind called without $want: $*" >&2; exit 99 ;; esac
-    case " $* " in *" 7 "*) ;; *) echo "gh stub: <pr> was not substituted: $*" >&2; exit 99 ;; esac ;;
-esac
-expr=; jq=no; paginate=no; prev=
-for arg do [ "$prev" = --jq ] && { expr=$arg; jq=yes; }; [ "$arg" = --paginate ] && paginate=yes; prev=$arg; done
-case "$kind" in
-  view|checks) f="$GH_STUB_DIR/$kind.$n"; [ -f "$f" ] || f="$GH_STUB_DIR/$kind.last" ;;
-  *) f="$GH_STUB_DIR/$kind" ;;
-esac
-body() { if [ "$kind" = rules ] && [ "$paginate" = no ]; then sed -n 2p "$f"; else tail -n +2 "$f"; fi; }
-code=$(head -n 1 "$f")
-if [ "$code" -ne 0 ]; then body >&2
-elif [ "$jq" = yes ]; then body | jq -r "$expr" || exit 1
-else body; fi
-exit "$code"
-`;
-const SLEEP_STUB = '#!/bin/sh\necho 1 >> "$GH_STUB_DIR/sleeps"\nexit 0\n';
+// Splits markdown into the blocks a session copies into a shell and the prose around them. A block is a fence tagged
+// `sh`, `bash` or `shell` or untagged, or an indented code block: a run of lines indented four spaces or a tab that
+// follows a blank line. A fence tagged with any other language is skipped; prose keeps every other line, with each
+// block's lines blanked so line numbers still match.
+const SHELL_FENCE_TAGS = new Set(['sh', 'bash', 'shell', '']);
+const INDENTED = /^(?: {4}|\t)/;
 
-function watchCommand(pr) {
-  const block = RESUME.match(/^4\. Watch it land[\s\S]*?\n[ \t]*```sh\n([\s\S]*?)\n[ \t]*```/m);
-  assert.ok(block, 'deliver step 4 must carry one fenced sh block');
-  assert.ok(block[1].includes('<pr>'), 'the block must take the pull request number as <pr>');
-  return block[1].replaceAll('<pr>', pr);
+function splitMarkdown(markdown) {
+  const blocks = [];
+  const prose = [];
+  const lines = markdown.split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const open = lines[index].match(/^([ \t]*)```(\w*)[ \t]*$/);
+    if (open) {
+      const close = lines.findIndex((line, at) => at > index && /^[ \t]*```[ \t]*$/.test(line));
+      assert.notEqual(close, -1, `the fence opened on line ${index + 1} must close`);
+      if (SHELL_FENCE_TAGS.has(open[2])) {
+        const body = lines.slice(index + 1, close).map((line) => (line.startsWith(open[1]) ? line.slice(open[1].length) : line));
+        blocks.push({ line: index + 1, body: body.join('\n') });
+      }
+      prose.push(...Array(close - index + 1).fill(''));
+      index = close;
+    } else if (INDENTED.test(lines[index]) && (index === 0 || !lines[index - 1].trim())) {
+      let end = index;
+      while (end < lines.length && (INDENTED.test(lines[end]) || !lines[end].trim())) end += 1;
+      while (!lines[end - 1].trim()) end -= 1;
+      const body = lines.slice(index, end).map((line) => line.replace(INDENTED, ''));
+      blocks.push({ line: index + 1, body: body.join('\n') });
+      prose.push(...Array(end - index).fill(''));
+      index = end - 1;
+    } else {
+      prose.push(lines[index]);
+    }
+  }
+  return { blocks, prose: prose.join('\n') };
 }
 
-// The JSON gh exports before `--jq`: `pr view --json` an object of the named fields, `pr checks --json` an array of
-// the checks GitHub has created, each with its `name` and `bucket`.
-const view = (state, mergeStateStatus) => JSON.stringify({ state, mergeStateStatus });
-const checks = (byName) => JSON.stringify(Object.entries(byName).map(([name, bucket]) => ({ name, bucket })));
-
-const OPEN_BLOCKED = [0, view('OPEN', 'BLOCKED')];
-const MERGED = { view: [0, view('MERGED', 'CLEAN')], checks: [0, checks({ test: 'pass', 'sweep-scope': 'pass' })] };
-
-// steps: one { view: [code, body], checks: [code, body] } per read; the last step repeats until the command exits.
-// The base branch requires `classic` through classic protection and `ruled` through a ruleset; the default union is
-// split across the two sources so dropping either read shows. The rules come as two pages, the ruleset's checks on
-// page two so reading page one alone shows; `extraRules` joins page two. `branch` or `rules` replaces that read's
-// [code, body].
-function runWatchCommand(steps, { classic = ['test'], ruled = ['sweep-scope'], extraRules = [], branch, rules } = {}) {
-  assert.equal(
-    spawnSync('sh', ['-c', 'command -v jq']).status,
-    0,
-    "jq must be on PATH: the gh stub applies the command's --jq expressions with real jq",
-  );
-  const dir = mkdtempSync(join(tmpdir(), 'flowgauge-watch-'));
-  const write = (name, [code, body]) => writeFileSync(join(dir, name), `${code}\n${body}\n`);
-  steps.forEach((s, i) => { write(`view.${i + 1}`, s.view); write(`checks.${i + 1}`, s.checks); });
-  write('view.last', steps.at(-1).view);
-  write('checks.last', steps.at(-1).checks);
-  write('base', [0, JSON.stringify({ baseRefName: 'trunk' })]);
-  write('branch', branch ?? [0, JSON.stringify({ protection: { required_status_checks: { contexts: classic } } })]);
-  write('rules', rules ?? [0, [
-    JSON.stringify([{ type: 'pull_request', parameters: {} }]),
-    JSON.stringify([
-      { type: 'required_status_checks', parameters: { required_status_checks: ruled.map((context) => ({ context })) } },
-      ...extraRules,
-    ]),
-  ].join('\n')]);
-  writeFileSync(join(dir, 'n'), '0');
-  writeFileSync(join(dir, 'gh'), GH_STUB, { mode: 0o755 });
-  writeFileSync(join(dir, 'sleep'), SLEEP_STUB, { mode: 0o755 });
-  const result = spawnSync('sh', ['-c', watchCommand('7')], {
-    encoding: 'utf8',
-    timeout: 5000,
-    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GH_STUB_DIR: dir },
-  });
-  const reads = Number(readFileSync(join(dir, 'n'), 'utf8'));
-  const sleeps = existsSync(join(dir, 'sleeps')) ? readFileSync(join(dir, 'sleeps'), 'utf8').split('\n').length - 1 : 0;
-  rmSync(dir, { recursive: true, force: true });
-  assert.equal(result.signal, null, `the watch command must exit on its own; stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
-  return { ...result, reads, sleeps };
+function shellBlocks(markdown) {
+  return splitMarkdown(markdown).blocks;
 }
 
-test('the watch command exits non-zero the moment gh itself fails', () => {
-  const auth = runWatchCommand([{ view: [4, 'To get started with GitHub CLI, please run: gh auth login'], checks: [0, checks({ test: 'pass', 'sweep-scope': 'pass' })] }]);
-  assert.notEqual(auth.status, 0, 'an authentication failure must stop the wait');
-  assert.equal(auth.reads, 1, 'an authentication failure must stop on the first read');
-  assert.match(auth.stderr, /gh auth login/, 'the gh error must reach the session');
-
-  const network = runWatchCommand([
-    { view: OPEN_BLOCKED, checks: [0, checks({ test: 'pending', 'sweep-scope': 'pending' })] },
-    { view: OPEN_BLOCKED, checks: [1, 'error connecting to api.github.com'] },
-  ]);
-  assert.equal(network.status, 1, 'a network failure while reading checks must stop the wait');
-  assert.equal(network.reads, 2);
-  assert.match(network.stdout, /error connecting to api\.github\.com/, 'the gh error must be printed as the reason');
-});
-
-test('the watch command stops on a failed required check, a dirty or behind merge, or a closed pull request, even while checks are pending', () => {
-  const failed = runWatchCommand([{ view: OPEN_BLOCKED, checks: [0, checks({ test: 'fail', 'sweep-scope': 'pending' })] }, MERGED]);
-  assert.equal(failed.status, 1);
-  assert.equal(failed.reads, 1, 'a failed check must stop before the next read');
-  assert.match(failed.stdout, /a required check failed/);
-
-  for (const status of ['DIRTY', 'BEHIND']) {
-    const blocked = runWatchCommand([{ view: [0, view('OPEN', status)], checks: [0, checks({ test: 'pending', 'sweep-scope': 'pending' })] }, MERGED]);
-    assert.equal(blocked.status, 1, `${status} must stop the wait`);
-    assert.equal(blocked.reads, 1, `${status} must stop before the next read`);
-    assert.match(blocked.stdout, new RegExp(`merge blocked: OPEN ${status}`));
+// Every inline code span in the prose, its line breaks read as spaces; a span never crosses a blank line.
+function inlineSpans(prose) {
+  const spans = [];
+  for (const match of prose.matchAll(/(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n)[\s\S])*?[^`])\1(?!`)/g)) {
+    spans.push({ line: prose.slice(0, match.index).split('\n').length, body: match[2].replace(/\n/g, ' ') });
   }
+  return spans;
+}
 
-  const closed = runWatchCommand([{ view: [0, view('CLOSED', 'CLEAN')], checks: [0, checks({ test: 'pass', 'sweep-scope': 'pass' })] }]);
-  assert.equal(closed.status, 1, 'a closed pull request must stop the wait');
-  assert.match(closed.stdout, /closed without merging/);
-});
+// Everything a skill hands a session to run that isolation would refuse: each shell block's refused shapes, and each
+// inline code span's too, since a session also runs a command quoted in prose, except brace expansion: spans also
+// quote non-shell code such as the Codex `tools.write_stdin({ ... })` call, whose comma inside braces is not a command.
+const SPAN_SHAPES = new Set(['command substitution', 'grouped block', 'control structure', 'more than one command']);
 
-test('the watch command keeps waiting through BLOCKED while required checks are pending or unreported, and stops on BLOCKED once they have all finished', () => {
-  const pending = runWatchCommand([
-    { view: OPEN_BLOCKED, checks: [0, checks({ test: 'pending', 'sweep-scope': 'pass' })] },
-    { view: OPEN_BLOCKED, checks: [0, checks({ test: 'pending', 'sweep-scope': 'pass' })] },
-    MERGED,
-  ]);
-  assert.equal(pending.status, 0, 'BLOCKED with a pending required check must not stop the wait');
-  assert.equal(pending.reads, 3, 'the wait must read again after each pending pass');
-  assert.equal(pending.sleeps, 2, 'the wait must sleep between reads');
-
-  const unreported = runWatchCommand([
-    { view: OPEN_BLOCKED, checks: [1, "no required checks reported on the 'job/7' branch"] },
-    { view: OPEN_BLOCKED, checks: [1, "no checks reported on the 'job/7' branch"] },
-    MERGED,
-  ]);
-  assert.equal(unreported.status, 0, 'a required check not yet reported must not stop the wait');
-  assert.equal(unreported.reads, 3);
-
-  const finished = runWatchCommand([{ view: OPEN_BLOCKED, checks: [0, checks({ test: 'pass', 'sweep-scope': 'skipping' })] }, MERGED]);
-  assert.equal(finished.status, 1, 'BLOCKED with every required check finished must stop the wait');
-  assert.equal(finished.reads, 1);
-  assert.match(finished.stdout, /merge blocked with every required check finished/);
-});
-
-test('the watch command keeps waiting through BLOCKED while a required check from either source has not yet appeared', () => {
-  for (const partial of [{ 'sweep-scope': 'pass' }, { test: 'pass' }]) {
-    const waiting = runWatchCommand([
-      { view: OPEN_BLOCKED, checks: [0, checks(partial)] },
-      { view: OPEN_BLOCKED, checks: [0, checks({ 'sweep-scope': 'pass', test: 'pending' })] },
-      MERGED,
-    ]);
-    assert.equal(waiting.status, 0, `BLOCKED with only ${Object.keys(partial)} reported must not stop the wait`);
-    assert.equal(waiting.reads, 3);
-    assert.equal(waiting.sleeps, 2);
-    assert.match(waiting.stdout, /^merged$/m);
+function skillShapeFindings(markdown) {
+  const { blocks, prose } = splitMarkdown(markdown);
+  const findings = [];
+  for (const { line, body } of blocks) {
+    const shapes = refusedShapes(body);
+    if (shapes.length) findings.push({ where: `the block opened on line ${line}`, body, shapes });
   }
-});
+  for (const { line, body } of inlineSpans(prose)) {
+    const shapes = refusedShapes(body).filter((shape) => SPAN_SHAPES.has(shape));
+    if (shapes.length) findings.push({ where: `the inline span on line ${line}`, body, shapes });
+  }
+  return findings;
+}
 
-test('the watch command exits non-zero when the required set cannot be read', () => {
-  const unreadable = runWatchCommand([MERGED], { branch: [1, 'gh: Resource not accessible by integration (HTTP 403)'] });
-  assert.notEqual(unreadable.status, 0, 'an unreadable required set must stop the wait');
-  assert.equal(unreadable.reads, 0, 'an unreadable required set must stop before the first read');
-  assert.match(`${unreadable.stdout}${unreadable.stderr}`, /HTTP 403/, 'the gh error must reach the session');
-});
+// The shapes Claude Code's worktree isolation refuses in one block, or [] when the block is one plain command.
+// Continuation lines are joined, then quoted text is dropped: single quotes expand nothing, so a `$(` or `\(`
+// inside a jq or GraphQL string is text; double quotes still expand `$(` and backticks, so those are caught first.
+// Isolation reads a comma anywhere inside a `{...}` span as brace expansion, through quotes and nested brackets alike.
+function refusedShapes(block) {
+  const text = block.replace(/\\\n/g, ' ');
+  const shapes = new Set();
+  let residue = '';
+  let quote = '';
+  for (let at = 0; at < text.length; at += 1) {
+    const char = text[at];
+    if (quote === "'") {
+      if (char === "'") quote = '';
+    } else if (quote === '"') {
+      if (char === '\\') at += 1;
+      else if (char === '"') quote = '';
+      else if (char === '`' || (char === '$' && text[at + 1] === '(')) shapes.add('command substitution');
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      residue += 'Q';
+    } else if (char === '\\') {
+      at += 1;
+      residue += 'E';
+    } else {
+      residue += char;
+    }
+  }
+  if (/`|\$\(/.test(residue)) shapes.add('command substitution');
+  if (/(?:^|[|;&])\s*[{(]/m.test(residue)) shapes.add('grouped block');
+  if (/(?:^|[|;&])\s*(?:while|for|until|if|case)\b/m.test(residue)) shapes.add('control structure');
+  if (/;|&&|\|\|/.test(residue) || residue.split('\n').filter((line) => line.trim()).length > 1) {
+    shapes.add('more than one command');
+  }
+  let depth = 0;
+  for (const char of text) {
+    if (char === '{') depth += 1;
+    else if (char === '}') depth = Math.max(depth - 1, 0);
+    else if (char === ',' && depth > 0) shapes.add('brace expansion');
+  }
+  return [...shapes];
+}
 
-test('the watch command stops before its first read when a ruleset requires checks it does not name', () => {
-  for (const rule of [
-    { type: 'workflows', parameters: { workflows: [{ path: '.github/workflows/<workflow>.yml', repository_id: 1 }] } },
-    { type: 'code_scanning', parameters: { code_scanning_tools: [{ tool: 'CodeQL', security_alerts_threshold: 'high_or_higher', alerts_threshold: 'errors' }] } },
-  ]) {
-    const unnamed = runWatchCommand([MERGED], { extraRules: [rule] });
-    assert.equal(unnamed.status, 1, `a ${rule.type} rule must stop the wait`);
-    assert.equal(unnamed.reads, 0, `a ${rule.type} rule must stop before the first read`);
-    assert.match(unnamed.stdout, /a ruleset requires checks it does not name/);
+test('the resume, cross-review and to-issues skills give only command shapes an isolated worktree session accepts', () => {
+  for (const name of ['resume', 'cross-review', 'to-issues']) {
+    const path = `.agents/skills/${name}/SKILL.md`;
+    const markdown = readFileSync(resolve(ROOT, path), 'utf8');
+    assert.ok(shellBlocks(markdown).length > 0, `${path} must carry fenced shell blocks to inspect`);
+    for (const { where, body, shapes } of skillShapeFindings(markdown)) {
+      assert.fail(`${path}, ${where}, must be one plain command, but has ${shapes.join(', ')}:\n${body}`);
+    }
   }
 });
 
-test('the watch command stops on BLOCKED at once when the base branch requires no checks', () => {
-  const none = runWatchCommand(
-    [{ view: OPEN_BLOCKED, checks: [1, "no required checks reported on the 'job/7' branch"] }],
-    { classic: [], ruled: [] },
+test('the refused-shape check catches each refused shape and passes quoted jq text', () => {
+  const cases = [
+    ['echo "$(git branch --show-current)"', ['command substitution']],
+    ['echo `date`', ['command substitution']],
+    ['{ echo a; } > out', ['grouped block', 'more than one command']],
+    ['( cd x )', ['grouped block']],
+    ['while :; do sleep 1; done', ['control structure', 'more than one command']],
+    ['cat a | if true', ['control structure']],
+    ['a && b', ['more than one command']],
+    ['a\nb', ['more than one command']],
+    ["gh api \\\n  --jq '\"\\(.x) $(y)\"' > out", []],
+    [
+      "gh api graphql -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c}){subIssue{number}}}' -f p=X -f c=Y",
+      ['brace expansion'],
+    ],
+    ['gh api graphql -f query=\'query{repository(owner:"a",name:"b"){id}}\'', ['brace expansion']],
+    [
+      "gh api graphql -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p subIssueId:$c}){subIssue{number}}}' -f p=X -f c=Y",
+      [],
+    ],
+    ['gh api repos/{owner}/{repo}/issues/1', []],
+  ];
+  for (const [block, shapes] of cases) assert.deepEqual(refusedShapes(block), shapes, block);
+
+  const markdown = [
+    'Read the branch with `git branch --show-current`, then',
+    'run `cd x && make` or `echo $(date)`, but `jq ".a; .b"` is text.',
+    'Nor may a span run `(cd x)` or `while true`.',
+    '',
+    '    git fetch; git status',
+    '',
+    '```sh',
+    'node scripts/board.mjs',
+    '```',
+  ].join('\n');
+  assert.deepEqual(skillShapeFindings(markdown), [
+    { where: 'the block opened on line 5', body: 'git fetch; git status', shapes: ['more than one command'] },
+    { where: 'the inline span on line 2', body: 'cd x && make', shapes: ['more than one command'] },
+    { where: 'the inline span on line 2', body: 'echo $(date)', shapes: ['command substitution'] },
+    { where: 'the inline span on line 3', body: '(cd x)', shapes: ['grouped block'] },
+    { where: 'the inline span on line 3', body: 'while true', shapes: ['control structure'] },
+  ]);
+});
+
+test('the cross-review skill reads the reviewer model and effort from the seat file at run time, never a copy', () => {
+  const skill = readFileSync(resolve(ROOT, '.agents/skills/cross-review/SKILL.md'), 'utf8');
+  assert.match(
+    skill.replace(/\s+/g, ' '),
+    /Read the seat's `model` and `model_reasoning_effort` from `\.codex\/agents\/reviewer\.toml`/,
+    'cross-review must name the seat file as where the model and effort are read',
   );
-  assert.equal(none.status, 1);
-  assert.equal(none.reads, 1);
-  assert.match(none.stdout, /merge blocked with every required check finished/);
-});
-
-test('the watch command exits 0 only on MERGED', () => {
-  const merged = runWatchCommand([{ view: OPEN_BLOCKED, checks: [0, checks({ test: 'pending', 'sweep-scope': 'pending' })] }, MERGED]);
-  assert.equal(merged.status, 0);
-  assert.equal(merged.reads, 2);
-  assert.match(merged.stdout, /^merged$/m);
-
-  const pending = runWatchCommand([{ view: [0, view('MERGED', 'UNKNOWN')], checks: [0, checks({ test: 'pending', 'sweep-scope': 'pending' })] }]);
-  assert.equal(pending.status, 0, 'MERGED must end the wait even while a required check is pending');
-  assert.equal(pending.reads, 1);
-  assert.match(pending.stdout, /^merged$/m);
+  const seat = readFileSync(resolve(ROOT, '.codex/agents/reviewer.toml'), 'utf8');
+  for (const key of ['model', 'model_reasoning_effort']) {
+    const value = seat.match(new RegExp(`^${key} = "([^"]+)"$`, 'm'))?.[1];
+    assert.ok(value, `.codex/agents/reviewer.toml must set ${key}`);
+    assert.ok(!skill.includes(value), `cross-review must not copy the reviewer's ${key} value ${value}`);
+  }
 });
 
 test('the manual carries one shared workflow region followed by the product headings and tables', () => {

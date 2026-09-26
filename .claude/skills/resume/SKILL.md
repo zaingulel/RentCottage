@@ -29,9 +29,13 @@ available, report board freshness unavailable rather than presenting stale local
   paged walk overlaps the remaining reads. That one command lists the board and judges it from the same read:
   exit 1 with drift rows is a reconciliation to do before work-pick, not a failed command, while a
   `board: failed to read` line on stderr is a failed read, so report board freshness unavailable.
+- During intake, from the root checkout, inspect another job's worktree with `git -C <path>`, never by `cd`. On
+  Claude Code, `EnterWorktree` records the shell's current folder as the one `ExitWorktree` later returns to, and
+  a sibling job's closeout may remove that folder, leaving this session unable to leave its own worktree.
 - Run `node scripts/factory-sync.mjs --check` in the same refreshed checkout and report its result at work-pick in
-  one advisory line: exit 0 is in sync; exit 1 is lag, naming the paths it lists, which a sync card resolves;
-  exit 2 is lag unknown with its stated cause, never reported as in sync. The result never blocks work-pick.
+  one advisory line: exit 0 is in sync; exit 1 is lag, naming the paths it lists, which one sync job clears at
+  once, resolving every sync card its run carries (`AGENTS.md`, Shared workflow adoption); exit 2 is lag unknown
+  with its stated cause, never reported as in sync. The result never blocks work-pick.
 - A branch with an open draft pull request is unfinished work. Read its body: the "Not done" section says
   where to pick up.
 - The board output for planned work. Prefer `Ready` work matching the owner's latest objective;
@@ -57,7 +61,7 @@ Read the candidate cards' bodies and comments in one call, one alias per issue, 
 per card.
 
 ```sh
-gh api graphql -F owner='{owner}' -F name='{repo}' -f query='query($owner:String!,$name:String!){ repository(owner:$owner,name:$name) { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body parent { number } blockedBy(first:50) { nodes { number state } } comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\nparent: \(if .parent then "#\(.parent.number)" else "none" end); open blockers: \([.blockedBy.nodes[] | select(.state == "OPEN") | "#\(.number)"] | join(" ") | if . == "" then "none" else . end)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
+gh api graphql -F owner='{owner}' -F name='{repo}' -f query='query($owner:String!,$name:String!){ repository(owner:$owner name:$name) { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body parent { number } blockedBy(first:50) { nodes { number state } } comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\nparent: \(if .parent then "#\(.parent.number)" else "none" end); open blockers: \([.blockedBy.nodes[] | select(.state == "OPEN") | "#\(.number)"] | join(" ") | if . == "" then "none" else . end)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
 ```
 
 State the session's own model in one line, then always present this table, even for one candidate:
@@ -78,8 +82,12 @@ disjoint.
 ## 3. Start the job
 
 - After selection, fetch `origin/main` again with `git fetch --no-prune origin main` and record the new target.
-- On Claude Code: `git worktree add .claude/worktrees/job-<issue> -b job/<issue> <recorded-origin-main>`, then
-  enter it with `EnterWorktree`. That is the one location a session may enter without the owner approving the move:
+- On Claude Code, the coordinating session is started at the root checkout, never with the desktop app's worktree
+  option: auto-archive removes that worktree at merge, before closeout can leave it. Confirm with `pwd` that the
+  shell is in the root checkout, because `EnterWorktree` records the shell's current folder as the one
+  `ExitWorktree` returns to; immediately after, run
+  `git worktree add .claude/worktrees/job-<issue> -b job/<issue> <recorded-origin-main>` and enter it with
+  `EnterWorktree`. `.claude/worktrees/` is the one location a session may enter without the owner approving the move:
   Claude Code asks whenever a session takes its working directory to a path outside the repository's
   `.claude/worktrees/`. `EnterWorktree` isolates the session, so the runtime refuses what it cannot verify stays
   inside this worktree: a git command redirected by `git -C`, `--git-dir` or a leading `cd`, for example, or one
@@ -134,6 +142,8 @@ disjoint.
 - Wrap every executed check in `node scripts/run-log.mjs <label words> -- <command>` (plain unquoted label,
   then a bare `--`) so the exit code is recorded by a script, not asserted: focused tests, the one executed mutation per claim (red, restore, green), lint,
   and the convergence checks `docs/TESTING-STRATEGY.md` names. The log lives at `.claude/worklog/<branch>.md`.
+  On every agent-initiated rerun, supply a nonblank diagnosed reason through `RUN_LOG_RERUN_REASON`; for example,
+  `RUN_LOG_RERUN_REASON='Changed the failing assertion' node scripts/run-log.mjs focused -- npm run lint`.
 - When two repair-and-re-review cycles still produce true findings, new or repeated, judge them. If each is bounded
   and verifiable, run one more round that fixes all of them. Bring the owner the choice, with a recommendation, only
   when a finding needs an unsettled design, owner judgment or evidence that cannot be bounded, or when that round
@@ -202,7 +212,7 @@ it.
    resolve the thread, and dismiss false findings with evidence. Update the review line's Greptile fields after
    each Greptile review; a pull request Greptile never reviewed, because its tier requests no Greptile review or
    every attempt was `UNAVAILABLE`, records `greptile_rounds=0`. For the new head, request
-   `@greptileai review this draft again; <what changed> in <commit>`. A re-review can edit the existing summary and
+   `@greptileai review this draft again: <what changed> in <commit>`. A re-review can edit the existing summary and
    raise its `Reviews (N)` footer; check the reviewed commit, not just the count or a new comment. `UNAVAILABLE`
    requires, reported in the pull-request body, either the allowance observation above showing exhaustion, with the
    head it would have covered, or the explicit request URL, head, observation time and provider-failure evidence.
@@ -227,37 +237,12 @@ it.
    `tools.write_stdin({ session_id, chars: "", yield_time_ms: 300000 })` until `exit_code` is set, and returns once;
    if the cell yields early, the session calls `wait` on its cell ID with the same `yield_time_ms`, and never polls
    by hand. On Claude Code it runs through `Bash` with `run_in_background: true`, which re-invokes the session
-   when it exits. Every pass reads the pull request and its required checks together, so it
-   stops the moment a check fails, the merge is blocked, or the state is `MERGED`, whichever comes first, and it
-   exits non-zero the moment `gh` itself fails. It first reads the full required set from the base branch's
-   classic protection and every page of its rules, because `gh pr checks --required` lists a check only once GitHub
-   has created its run; only a required check still pending or not yet reported keeps it waiting, `BLOCKED` means
-   nothing until every one has finished, and a branch that requires no checks stops on `BLOCKED` at once; a ruleset
-   that requires workflows or code-scanning results names no checks, so the command stops and says so.
+   when it exits. `<pr>` is the pull request number, typed as a literal. The command only reads GitHub, exits 0
+   only when the pull request has merged, and otherwise exits 1 with its reason as the last line of output: closed,
+   a failed required check, blocked or behind, an unknown required set, or a `gh` failure.
 
    ```sh
-   base=$(gh pr view <pr> --json baseRefName --jq .baseRefName) || exit 1
-   classic=$(gh api "repos/{owner}/{repo}/branches/$base" --jq '.protection.required_status_checks.contexts // []') || exit 1
-   rules=$(gh api --paginate "repos/{owner}/{repo}/rules/branches/$base" --jq '.[] | select(.type == "required_status_checks" or .type == "workflows" or .type == "code_scanning") | if .type == "required_status_checks" then .parameters.required_status_checks[].context else {unnamed: .type} end | @json') || exit 1
-   ruled="[$(printf '%s\n' "$rules" | paste -sd, -)]"
-   case "$ruled" in *'{"unnamed":'*) echo "a ruleset requires checks it does not name, so the full required set is unknown: $ruled"; exit 1 ;; esac
-   while :; do
-     view=$(gh pr view <pr> --json state,mergeStateStatus --jq '.state + " " + .mergeStateStatus') || exit 1
-     if ! checks=$(gh pr checks <pr> --required --json name,bucket --jq "(($classic + $ruled) - [.[].name] | map(\"unreported\")) + [.[].bucket] | join(\" \")" 2>&1); then
-       case "$checks" in
-         *"checks reported on the"*) case "$classic$ruled" in "[][]") checks= ;; *) checks=unreported ;; esac ;;
-         *) echo "$checks"; exit 1 ;;
-       esac
-     fi
-     case " $view $checks " in
-       " MERGED "*) echo "merged"; exit 0 ;;
-       " CLOSED "*) echo "closed without merging"; exit 1 ;;
-       *" fail"*) echo "a required check failed: $checks"; exit 1 ;;
-       *" DIRTY "*|*" BEHIND "*) echo "merge blocked: $view"; exit 1 ;;
-       *" BLOCKED "*) case " $checks " in *" pending "*|*" unreported "*) ;; *) echo "merge blocked with every required check finished: $view $checks"; exit 1 ;; esac ;;
-     esac
-     sleep 30
-   done
+   node scripts/merge-watch.mjs <pr>
    ```
 
    Merged: run `closeout` in the same session; the owner's yes already covers it. Failed, blocked or closed:
