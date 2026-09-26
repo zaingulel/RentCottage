@@ -816,9 +816,9 @@ describe("repository verification command", () => {
     });
     expect(planned.status).toBe(0);
     expect(planned.run).not.toHaveBeenCalled();
-    expect(planned.stdout.mock.calls.some(([line]) => line.startsWith("{"))).toBe(
-      false,
-    );
+    expect(
+      planned.stdout.mock.calls.some(([line]) => line.startsWith("{")),
+    ).toBe(false);
     expect(
       planned.stdout.mock.calls
         .map(([line]) => line)
@@ -830,9 +830,9 @@ describe("repository verification command", () => {
     const blocked = runVerification(repository, { args: ["--full"] });
     expect(blocked.status).toBe(1);
     expect(blocked.run).not.toHaveBeenCalled();
-    expect(blocked.stdout.mock.calls.some(([line]) => line.startsWith("{"))).toBe(
-      false,
-    );
+    expect(
+      blocked.stdout.mock.calls.some(([line]) => line.startsWith("{")),
+    ).toBe(false);
   });
 
   it("fails loudly when a verification executable cannot start or is signalled", () => {
