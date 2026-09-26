@@ -30,10 +30,85 @@ export function createLocalSupabaseConcurrencyHarness({
   spawnSyncProcess = spawnSync,
   waitLimitMilliseconds = 15_000,
   workingDirectory = environment.SUPABASE_LOCAL_WORKDIR ?? process.cwd(),
+  timing,
+  monotonicNow = () => performance.now(),
+  utcNow = () => new Date().toISOString(),
+  stdout = (line) => console.log(line),
 } = {}) {
   const container = environment.SUPABASE_DB_CONTAINER;
   const project = environment.SUPABASE_LOCAL_PROJECT;
   const messages = { ...defaultMessages, ...messageOverrides };
+  if (
+    timing !== undefined &&
+    (typeof timing?.check !== "string" ||
+      !timing.check.trim() ||
+      timing.isolation !== "serial")
+  ) {
+    fail("Concurrency timing requires a nonblank check and serial isolation.");
+  }
+  const startedAt = timing ? utcNow() : undefined;
+  const totals = { setup: null, execution: null, cleanup: null };
+  let currentPhase;
+  let phaseStarted;
+  let timingFinished = false;
+
+  function changeTimingPhase(phase) {
+    if (!timing || timingFinished) return;
+    const tick = monotonicNow();
+    const timestamp = utcNow();
+    if (currentPhase) {
+      const elapsedMs = tick - phaseStarted.tick;
+      totals[currentPhase] += elapsedMs;
+      stdout(
+        JSON.stringify({
+          type: "concurrency-phase",
+          check: timing.check,
+          isolation: timing.isolation,
+          phase: currentPhase,
+          startedAt: phaseStarted.timestamp,
+          completedAt: timestamp,
+          elapsedMs,
+        }),
+      );
+    }
+    currentPhase = phase;
+    phaseStarted = { tick, timestamp };
+    if (phase && totals[phase] === null) totals[phase] = 0;
+  }
+
+  function markTimingPhase(phase) {
+    changeTimingPhase(phase);
+  }
+
+  function finishTiming({ outcome, cleanupDisposition }) {
+    if (!timing || timingFinished) return;
+    changeTimingPhase(undefined);
+    timingFinished = true;
+    const phaseReasons = {};
+    for (const phase of ["setup", "execution", "cleanup"]) {
+      if (totals[phase] === null) {
+        phaseReasons[phase] =
+          phase === "cleanup" && cleanupDisposition === "project-teardown"
+            ? "Cleanup is deferred to disposable project teardown."
+            : "Phase was not reached.";
+      }
+    }
+    stdout(
+      JSON.stringify({
+        type: "concurrency-summary",
+        check: timing.check,
+        isolation: timing.isolation,
+        startedAt,
+        completedAt: phaseStarted.timestamp,
+        setupMs: totals.setup,
+        executionMs: totals.execution,
+        cleanupMs: totals.cleanup,
+        outcome,
+        cleanupDisposition,
+        phaseReasons,
+      }),
+    );
+  }
 
   function validateGuardIdentity() {
     if (
@@ -158,6 +233,62 @@ export function createLocalSupabaseConcurrencyHarness({
     }
   }
 
+  async function cleanUpOwnedSession(session, error) {
+    markTimingPhase("cleanup");
+    const cleanupErrors = [];
+    try {
+      if (!session.exit) session.child.kill("SIGTERM");
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    try {
+      await session.exited;
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    if (cleanupErrors.length) error.cleanupErrors = cleanupErrors;
+  }
+
+  async function startSessionAfterSetup(setupSql, sql, closeInput = false) {
+    const savedPhase = currentPhase;
+    markTimingPhase("setup");
+    const marker = "RC330_SQL_SETUP_READY";
+    const session = startSession(`${setupSql}\nselect '${marker}';`);
+    let rejectSetupError;
+    const setupError = new Promise((_resolve, reject) => {
+      rejectSetupError = reject;
+    });
+    session.child.once("error", rejectSetupError);
+    try {
+      await Promise.race([waitForMarker(session, marker), setupError]);
+      session.setupStdout = session.stdout.slice(
+        0,
+        session.stdout.indexOf(marker),
+      );
+      session.stdout = "";
+      changeTimingPhase(savedPhase);
+      if (closeInput) session.child.stdin.end(`${sql}\n`);
+      else session.child.stdin.write(`${sql}\n`);
+      return session;
+    } catch (error) {
+      await cleanUpOwnedSession(session, error);
+      throw error;
+    } finally {
+      session.child.removeListener("error", rejectSetupError);
+    }
+  }
+
+  async function runSqlAfterSetup(setupSql, sql) {
+    const session = await startSessionAfterSetup(setupSql, sql, true);
+    try {
+      await finishSession(session);
+      return session.stdout.trim();
+    } catch (error) {
+      await cleanUpOwnedSession(session, error);
+      throw error;
+    }
+  }
+
   async function waitForLock(applicationName, session) {
     const started = Date.now();
     while (true) {
@@ -210,13 +341,17 @@ export function createLocalSupabaseConcurrencyHarness({
   }
 
   return {
+    finishTiming,
     finishSession,
     guardDisposableLocalDatabase,
     guardDisposableLocalDatabaseAsync,
     psqlArguments,
+    markTimingPhase,
     runDocker,
     runSql,
+    runSqlAfterSetup,
     startSession,
+    startSessionAfterSetup,
     waitForLock,
     waitForMarker,
   };

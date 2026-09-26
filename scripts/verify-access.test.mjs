@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   chmodSync,
   existsSync,
@@ -896,6 +897,348 @@ if (args[1] === "status") {
 }
 
 describe("local Supabase concurrency harness", () => {
+  it("accumulates repeated concurrency phases without inventing absent cleanup", () => {
+    let tick = 100;
+    const stdout = vi.fn();
+    const utcNow = () => new Date(Date.UTC(2026, 8, 26) + tick).toISOString();
+    const harness = createLocalSupabaseConcurrencyHarness({
+      timing: { check: "controlled-check", isolation: "serial" },
+      monotonicNow: () => tick,
+      utcNow,
+      stdout,
+    });
+    harness.markTimingPhase("setup");
+    tick = 137;
+    harness.markTimingPhase("execution");
+    tick = 150;
+    harness.markTimingPhase("setup");
+    tick = 159;
+    harness.markTimingPhase("execution");
+    tick = 180;
+    harness.markTimingPhase("cleanup");
+    tick = 190;
+    harness.finishTiming({ outcome: "passed", cleanupDisposition: "local" });
+    const records = stdout.mock.calls.map(([line]) => JSON.parse(line));
+    expect(
+      records.slice(0, -1).map(({ phase, elapsedMs }) => [phase, elapsedMs]),
+    ).toEqual([
+      ["setup", 37],
+      ["execution", 13],
+      ["setup", 9],
+      ["execution", 21],
+      ["cleanup", 10],
+    ]);
+    expect(records[0]).toEqual({
+      type: "concurrency-phase",
+      check: "controlled-check",
+      isolation: "serial",
+      phase: "setup",
+      startedAt: "2026-09-26T00:00:00.100Z",
+      completedAt: "2026-09-26T00:00:00.137Z",
+      elapsedMs: 37,
+    });
+    expect(records.at(-1)).toEqual({
+      type: "concurrency-summary",
+      check: "controlled-check",
+      isolation: "serial",
+      startedAt: "2026-09-26T00:00:00.100Z",
+      completedAt: "2026-09-26T00:00:00.190Z",
+      setupMs: 46,
+      executionMs: 34,
+      cleanupMs: 10,
+      outcome: "passed",
+      cleanupDisposition: "local",
+      phaseReasons: {},
+    });
+    tick = 1000;
+    harness.finishTiming({
+      outcome: "failed",
+      cleanupDisposition: "project-teardown",
+    });
+    harness.markTimingPhase("setup");
+    expect(stdout).toHaveBeenCalledTimes(6);
+
+    const deferred = createLocalSupabaseConcurrencyHarness({
+      timing: { check: "deferred-check", isolation: "serial" },
+      monotonicNow: () => tick,
+      utcNow,
+      stdout,
+    });
+    deferred.markTimingPhase("setup");
+    deferred.markTimingPhase("execution");
+    deferred.finishTiming({
+      outcome: "passed",
+      cleanupDisposition: "project-teardown",
+    });
+    expect(JSON.parse(stdout.mock.lastCall[0])).toMatchObject({
+      setupMs: 0,
+      executionMs: 0,
+      cleanupMs: null,
+      phaseReasons: {
+        cleanup: "Cleanup is deferred to disposable project teardown.",
+      },
+    });
+
+    for (const failedPhase of ["setup", "cleanup"]) {
+      const failed = createLocalSupabaseConcurrencyHarness({
+        timing: { check: "failed-check", isolation: "serial" },
+        monotonicNow: () => tick,
+        utcNow,
+        stdout,
+      });
+      expect(() => {
+        try {
+          failed.markTimingPhase(failedPhase);
+          tick += 7;
+          throw new Error(`${failedPhase} failed`);
+        } finally {
+          failed.finishTiming({
+            outcome: "failed",
+            cleanupDisposition: "local",
+          });
+        }
+      }).toThrow(`${failedPhase} failed`);
+      const summary = JSON.parse(stdout.mock.lastCall[0]);
+      expect(summary).toMatchObject({
+        outcome: "failed",
+        [`${failedPhase}Ms`]: 7,
+      });
+      for (const phase of ["setup", "execution", "cleanup"].filter(
+        (phase) => phase !== failedPhase,
+      )) {
+        expect(summary[`${phase}Ms`]).toBeNull();
+        expect(summary.phaseReasons[phase]).toBe("Phase was not reached.");
+      }
+    }
+
+    stdout.mockClear();
+    const monotonicNow = vi.fn();
+    const silent = createLocalSupabaseConcurrencyHarness({
+      stdout,
+      monotonicNow,
+    });
+    silent.markTimingPhase("setup");
+    silent.finishTiming({ outcome: "passed", cleanupDisposition: "local" });
+    expect(stdout).not.toHaveBeenCalled();
+    expect(monotonicNow).not.toHaveBeenCalled();
+    for (const timing of [
+      null,
+      { check: " ", isolation: "serial" },
+      { check: 42, isolation: "serial" },
+      { check: "check", isolation: "independent" },
+    ]) {
+      expect(() => createLocalSupabaseConcurrencyHarness({ timing })).toThrow(
+        "Concurrency timing requires a nonblank check and serial isolation.",
+      );
+    }
+  });
+
+  it("acknowledges SQL setup before sending the body on the same owned session", async () => {
+    vi.useFakeTimers();
+    function childProcess() {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.stdout.setEncoding = vi.fn();
+      child.stderr.setEncoding = vi.fn();
+      child.stdin = {
+        write: vi.fn(),
+        end: vi.fn(),
+        destroyed: false,
+        writableEnded: false,
+      };
+      child.kill = vi.fn();
+      return child;
+    }
+    try {
+      let tick = 100;
+      const stdout = vi.fn();
+      const child = childProcess();
+      const spawnProcess = vi.fn(() => child);
+      const harness = createLocalSupabaseConcurrencyHarness({
+        timing: { check: "protocol-check", isolation: "serial" },
+        monotonicNow: () => tick,
+        stdout,
+        spawnProcess,
+      });
+      harness.markTimingPhase("execution");
+      const opening = harness.startSessionAfterSetup(
+        "begin;\nselect 'fixture';",
+        "select 'body';",
+      );
+      expect(child.stdin.write.mock.calls).toEqual([
+        [
+          "\\set VERBOSITY verbose\nbegin;\nselect 'fixture';\nselect 'RC330_SQL_SETUP_READY';\n",
+        ],
+      ]);
+      child.stdout.emit("data", "fixture-output\nRC330_SQL_SETUP_");
+      await vi.advanceTimersByTimeAsync(20);
+      expect(child.stdin.write).toHaveBeenCalledTimes(1);
+      tick = 137;
+      child.stdout.emit("data", "READY\n");
+      await vi.advanceTimersByTimeAsync(20);
+      const session = await opening;
+      expect(session.child).toBe(child);
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
+      expect(session.setupStdout).toBe("fixture-output\n");
+      expect(session.stdout).toBe("");
+      expect(child.stdin.write.mock.calls).toEqual([
+        [
+          "\\set VERBOSITY verbose\nbegin;\nselect 'fixture';\nselect 'RC330_SQL_SETUP_READY';\n",
+        ],
+        ["select 'body';\n"],
+      ]);
+      expect(child.stdin.end).not.toHaveBeenCalled();
+      child.stdout.emit("data", "body-output\n");
+      tick = 150;
+      const closing = harness.finishSession(session, { action: "rollback" });
+      expect(child.stdin.end).toHaveBeenCalledExactlyOnceWith("rollback;\n");
+      child.emit("close", 0, null);
+      await closing;
+      expect(session.stdout).toBe("body-output\n");
+      harness.finishTiming({
+        outcome: "passed",
+        cleanupDisposition: "project-teardown",
+      });
+      expect(JSON.parse(stdout.mock.lastCall[0])).toMatchObject({
+        setupMs: 37,
+        executionMs: 13,
+        cleanupMs: null,
+      });
+
+      for (const phase of ["setup", "execution", "cleanup", undefined]) {
+        const oneShotChild = childProcess();
+        const lines = [];
+        const oneShot = createLocalSupabaseConcurrencyHarness({
+          ...(phase
+            ? { timing: { check: "one-shot", isolation: "serial" } }
+            : {}),
+          monotonicNow: () => tick,
+          stdout: (line) => lines.push(JSON.parse(line)),
+          spawnProcess: () => oneShotChild,
+        });
+        if (phase) oneShot.markTimingPhase(phase);
+        const running = oneShot.runSqlAfterSetup(
+          "select 'setup';",
+          "select 'result';\ncommit;",
+        );
+        tick += 10;
+        oneShotChild.stdout.emit(
+          "data",
+          "setup-output\nRC330_SQL_SETUP_READY\n",
+        );
+        await vi.advanceTimersByTimeAsync(20);
+        expect(oneShotChild.stdin.end).toHaveBeenCalledExactlyOnceWith(
+          "select 'result';\ncommit;\n",
+        );
+        tick += 20;
+        oneShotChild.stdout.emit("data", "  body-result\n");
+        oneShotChild.emit("close", 0, null);
+        expect(await running).toBe("body-result");
+        oneShot.finishTiming({
+          outcome: "passed",
+          cleanupDisposition: "local",
+        });
+        if (phase) {
+          expect(lines.at(-1).setupMs).toBe(phase === "setup" ? 30 : 10);
+          expect(lines.at(-1)[`${phase}Ms`]).toBe(phase === "setup" ? 30 : 20);
+        } else {
+          expect(lines).toEqual([]);
+        }
+      }
+
+      for (const failure of [
+        "eof",
+        "error",
+        "timeout",
+        "body",
+        "body-write",
+        "cleanup",
+      ]) {
+        const failedChild = childProcess();
+        const primary = new Error("setup spawn failed");
+        const cleanupError = new Error("termination failed");
+        const writeError = new Error("body write failed");
+        const lines = [];
+        const failed = createLocalSupabaseConcurrencyHarness({
+          timing: { check: "failed-protocol", isolation: "serial" },
+          monotonicNow: () => tick,
+          stdout: (line) => lines.push(JSON.parse(line)),
+          spawnProcess: () => failedChild,
+          waitLimitMilliseconds: 30,
+        });
+        failed.markTimingPhase("execution");
+        if (failure === "cleanup")
+          failedChild.kill.mockImplementation(() => {
+            throw cleanupError;
+          });
+        let settled = false;
+        const failedRun = failed
+          .runSqlAfterSetup("select 'setup';", "select 'body';")
+          .catch((error) => {
+            settled = true;
+            return error;
+          });
+        tick += 5;
+        if (failure === "eof") {
+          failedChild.stderr.emit("data", "setup SQL failed");
+          failedChild.emit("close", 1, null);
+          await vi.advanceTimersByTimeAsync(20);
+        } else if (failure === "body" || failure === "body-write") {
+          if (failure === "body-write")
+            failedChild.stdin.end.mockImplementation(() => {
+              throw writeError;
+            });
+          failedChild.stdout.emit("data", "RC330_SQL_SETUP_READY\n");
+          await vi.advanceTimersByTimeAsync(20);
+          if (failure === "body") {
+            failedChild.stderr.emit("data", "body SQL failed");
+            failedChild.emit("close", 9, null);
+          } else {
+            expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+            expect(settled).toBe(false);
+            failedChild.emit("close", null, "SIGTERM");
+          }
+        } else {
+          if (failure === "timeout") await vi.advanceTimersByTimeAsync(40);
+          else {
+            failedChild.emit("error", primary);
+            await vi.advanceTimersByTimeAsync(0);
+          }
+          expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+          expect(settled).toBe(false);
+          failedChild.emit("close", null, "SIGTERM");
+          await vi.advanceTimersByTimeAsync(20);
+        }
+        const error = await failedRun;
+        if (failure === "error" || failure === "cleanup")
+          expect(error).toBe(primary);
+        else if (failure === "body-write") expect(error).toBe(writeError);
+        else
+          expect(error.message).toContain(
+            failure === "eof"
+              ? "session exited before"
+              : failure === "body"
+                ? "body SQL failed"
+                : "did not reach",
+          );
+        if (failure === "cleanup")
+          expect(error.cleanupErrors).toEqual([cleanupError]);
+        if (failure !== "body" && failure !== "body-write")
+          expect(failedChild.stdin.end).not.toHaveBeenCalled();
+        expect(failedChild.stdin.write).toHaveBeenCalledTimes(1);
+        if (failure === "eof" || failure === "body")
+          expect(failedChild.kill).not.toHaveBeenCalled();
+        expect(settled).toBe(true);
+        expect(failedChild.listenerCount("error")).toBe(1);
+        failed.finishTiming({ outcome: "failed", cleanupDisposition: "local" });
+        expect(lines.at(-1)).toMatchObject({ outcome: "failed", cleanupMs: 0 });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("awaits the exact ownership inspection before granting asynchronous access", async () => {
     let resolveInspection;
     let settled = false;
