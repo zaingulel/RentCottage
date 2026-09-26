@@ -1084,22 +1084,30 @@ describe("local Supabase concurrency harness", () => {
         spawnProcess,
       });
       harness.markTimingPhase("execution");
-      const opening = harness.startSessionAfterSetup(
-        "begin;\nselect 'fixture';",
-        "select 'body';",
-      );
+      let openingSettled = false;
+      const opening = harness
+        .startSessionAfterSetup("begin;\nselect 'fixture';", "select 'body';")
+        .then((session) => {
+          openingSettled = true;
+          return session;
+        });
       expect(child.stdin.write.mock.calls).toEqual([
         [
           "\\set VERBOSITY verbose\nbegin;\nselect 'fixture';\nselect 'RC330_SQL_SETUP_READY';\n",
         ],
       ]);
       child.stdout.emit("data", "fixture-output\nRC330_SQL_SETUP_");
-      await vi.advanceTimersByTimeAsync(20);
+      await vi.advanceTimersByTimeAsync(15_020);
+      expect(openingSettled).toBe(false);
       expect(child.stdin.write).toHaveBeenCalledTimes(1);
+      expect(child.kill).not.toHaveBeenCalled();
       tick = 137;
       child.stdout.emit("data", "READY\n");
       await vi.advanceTimersByTimeAsync(20);
       const session = await opening;
+      expect(child.stdout.listenerCount("data")).toBe(1);
+      expect(child.listenerCount("error")).toBe(1);
+      expect(child.listenerCount("close")).toBe(1);
       expect(session.child).toBe(child);
       expect(spawnProcess).toHaveBeenCalledTimes(1);
       expect(session.setupStdout).toBe("fixture-output\n");
@@ -1169,14 +1177,22 @@ describe("local Supabase concurrency harness", () => {
         }
       }
 
-      for (const failure of [
-        "eof",
-        "error",
-        "timeout",
-        "body",
-        "body-write",
-        "cleanup",
-      ]) {
+      const contenderChild = childProcess();
+      const contender = createLocalSupabaseConcurrencyHarness({
+        spawnProcess: () => contenderChild,
+        waitLimitMilliseconds: 30,
+      });
+      const contenderSession = contender.startSession("select 'contender';");
+      const markerWait = contender
+        .waitForMarker(contenderSession, "CONTENTION_READY")
+        .catch((error) => error);
+      await vi.advanceTimersByTimeAsync(40);
+      expect((await markerWait).message).toBe(
+        "PostgreSQL session did not reach CONTENTION_READY.",
+      );
+      contenderChild.emit("close", 0, null);
+
+      for (const failure of ["eof", "error", "body", "body-write", "cleanup"]) {
         const failedChild = childProcess();
         const primary = new Error("setup spawn failed");
         const cleanupError = new Error("termination failed");
@@ -1222,11 +1238,8 @@ describe("local Supabase concurrency harness", () => {
             failedChild.emit("close", null, "SIGTERM");
           }
         } else {
-          if (failure === "timeout") await vi.advanceTimersByTimeAsync(40);
-          else {
-            failedChild.emit("error", primary);
-            await vi.advanceTimersByTimeAsync(0);
-          }
+          failedChild.emit("error", primary);
+          await vi.advanceTimersByTimeAsync(0);
           expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
           expect(settled).toBe(false);
           failedChild.emit("close", null, "SIGTERM");
@@ -1238,11 +1251,7 @@ describe("local Supabase concurrency harness", () => {
         else if (failure === "body-write") expect(error).toBe(writeError);
         else
           expect(error.message).toContain(
-            failure === "eof"
-              ? "session exited before"
-              : failure === "body"
-                ? "body SQL failed"
-                : "did not reach",
+            failure === "eof" ? "session exited before" : "body SQL failed",
           );
         if (failure === "cleanup")
           expect(error.cleanupErrors).toEqual([cleanupError]);
@@ -1252,7 +1261,9 @@ describe("local Supabase concurrency harness", () => {
         if (failure === "eof" || failure === "body")
           expect(failedChild.kill).not.toHaveBeenCalled();
         expect(settled).toBe(true);
+        expect(failedChild.stdout.listenerCount("data")).toBe(1);
         expect(failedChild.listenerCount("error")).toBe(1);
+        expect(failedChild.listenerCount("close")).toBe(1);
         failed.finishTiming({ outcome: "failed", cleanupDisposition: "local" });
         expect(lines.at(-1)).toMatchObject({ outcome: "failed", cleanupMs: 0 });
       }

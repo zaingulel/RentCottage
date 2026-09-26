@@ -254,13 +254,36 @@ export function createLocalSupabaseConcurrencyHarness({
     markTimingPhase("setup");
     const marker = "RC330_SQL_SETUP_READY";
     const session = startSession(`${setupSql}\nselect '${marker}';`);
-    let rejectSetupError;
-    const setupError = new Promise((_resolve, reject) => {
-      rejectSetupError = reject;
-    });
-    session.child.once("error", rejectSetupError);
     try {
-      await Promise.race([waitForMarker(session, marker), setupError]);
+      await new Promise((resolveSetup, rejectSetup) => {
+        function removeSetupListeners() {
+          session.child.stdout.removeListener("data", onSetupData);
+          session.child.removeListener("error", onSetupError);
+          session.child.removeListener("close", onSetupClose);
+        }
+        function onSetupData() {
+          if (!session.stdout.includes(marker)) return;
+          removeSetupListeners();
+          resolveSetup();
+        }
+        function onSetupError(error) {
+          removeSetupListeners();
+          rejectSetup(error);
+        }
+        function onSetupClose() {
+          removeSetupListeners();
+          rejectSetup(
+            new Error(
+              messages.sessionExitedBeforeMarker(marker, session.stderr.trim()),
+            ),
+          );
+        }
+        session.child.stdout.on("data", onSetupData);
+        session.child.on("error", onSetupError);
+        session.child.on("close", onSetupClose);
+        if (session.stdout.includes(marker)) onSetupData();
+        else if (session.exit) onSetupClose();
+      });
       session.setupStdout = session.stdout.slice(
         0,
         session.stdout.indexOf(marker),
@@ -273,8 +296,6 @@ export function createLocalSupabaseConcurrencyHarness({
     } catch (error) {
       await cleanUpOwnedSession(session, error);
       throw error;
-    } finally {
-      session.child.removeListener("error", rejectSetupError);
     }
   }
 
@@ -341,6 +362,7 @@ export function createLocalSupabaseConcurrencyHarness({
   }
 
   return {
+    cleanUpOwnedSession,
     finishTiming,
     finishSession,
     guardDisposableLocalDatabase,

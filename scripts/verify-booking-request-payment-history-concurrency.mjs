@@ -102,7 +102,7 @@ export async function verifyProviderResolution(databaseHarness) {
     grant select on history_reference to authenticated;
     set local role authenticated;
   `;
-  let session, failure;
+  let session;
   databaseHarness.markTimingPhase("execution");
   try {
     session = await databaseHarness.startSessionAfterSetup(
@@ -235,20 +235,9 @@ export async function verifyProviderResolution(databaseHarness) {
       "Public authorization query retains indeterminate-to-succeeded transition, original physical outcome, safe internal support references and one execution without receipts; repeat query and timestamp-only update retain identical AAL2 history.",
     );
   } catch (error) {
-    failure = error;
+    if (session && !session.exit)
+      await databaseHarness.cleanUpOwnedSession(session, error);
     throw error;
-  } finally {
-    if (session && !session.exit) {
-      databaseHarness.markTimingPhase("cleanup");
-      try {
-        session.child.kill("SIGTERM");
-      } catch (error) {
-        if (!failure) throw error;
-        failure.cleanupErrors = [...(failure.cleanupErrors ?? []), error];
-      } finally {
-        await session.exited;
-      }
-    }
   }
 }
 

@@ -155,8 +155,10 @@ A killed check may lack a final summary, which is incomplete evidence, never inf
 source declaration guard proves classification only; real disposable PostgreSQL evidence still proves the
 unchanged database assertions and contention barriers.
 
-After a failed attempted command, a `verification-failure` JSON diagnostic separates the exact
-`attemptedCommand` argument vector from its preparation-complete `reproduceGroup` route. Baseline failures use
+After a failed attempted command, the parent `verification-failure` JSON diagnostic is written to stderr; an
+access-child `verification-failure` diagnostic is written to stdout. Retain both streams: a narrower child recipe
+remains relevant alongside its parent's fallback route. Each diagnostic separates the exact `attemptedCommand`
+argument vector from its preparation-complete `reproduceGroup` route. Baseline failures use
 `npm run verify -- --baseline`; database failures use `npm run verify -- --database --full`; browser preparation,
 build, scan and journey failures use `npm run verify -- --browser --full`. These routes repeat the dependency
 check, restore the fixed test bindings and run the group's required predecessors. The browser route keeps its
