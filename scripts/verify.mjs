@@ -1470,7 +1470,7 @@ export function main(
       );
       return result.status ?? 1;
     }
-    if (local && !forced) {
+    if (local) {
       const completed = [...(accessContract?.completedGroups ?? [])];
       if (index === steps.length - 1 && tokens.browser)
         completed.push("browser");

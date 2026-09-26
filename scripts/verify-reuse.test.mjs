@@ -300,15 +300,15 @@ describe("repository verification command", () => {
       expect(readFileSync(marker, "utf8")).toBe(oldMarker);
     }
     const forced = localVerification(repository, { args: ["--full"] });
+    expect(forced.status).toBe(0);
     expect(commands(forced)).toEqual([
       ...requiredBaselineSteps,
       ...requiredExpensiveSteps,
     ]);
     expect(readFileSync(marker, "utf8")).not.toBe(oldMarker);
-    expect(commands(localVerification(repository))).toEqual([
-      ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
-    ]);
+    expect(commands(localVerification(repository))).toEqual(
+      requiredBaselineSteps,
+    );
     expect(
       commands(localVerification(repository, { args: ["--database"] })),
     ).toEqual([]);

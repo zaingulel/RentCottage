@@ -98,6 +98,109 @@ describe("repository verification command", () => {
     ).toEqual(requiredDatabaseSteps);
   }, 60000);
 
+  it("retains completed forced-run evidence without reusing forced execution", () => {
+    const repository = createRepository();
+    commit(repository, "src/runtime.ts", "seed\n");
+    expect(localVerification(repository).status).toBe(0);
+    const previousTokens = Object.fromEntries(
+      ["database", "browser"].map((group) => [
+        group,
+        JSON.parse(readFileSync(evidenceFile(repository, "attempt", group)))
+          .token,
+      ]),
+    );
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const run = vi.fn((_command, args) => {
+        if (args[1] === "verify:access") {
+          for (const group of ["database", "browser"]) {
+            const marker = JSON.parse(
+              readFileSync(evidenceFile(repository, "attempt", group)),
+            );
+            expect(marker.token).not.toBe(previousTokens[group]);
+          }
+        }
+        return { status: 0 };
+      });
+      const forced = localVerification(repository, { args: ["--full"], run });
+      expect(forced.status).toBe(0);
+      expect(commands(forced)).toEqual([
+        ...requiredBaselineSteps,
+        ...requiredExpensiveSteps,
+      ]);
+      for (const group of ["database", "browser"]) {
+        const marker = JSON.parse(
+          readFileSync(evidenceFile(repository, "attempt", group)),
+        );
+        const success = JSON.parse(
+          readFileSync(evidenceFile(repository, "success", group)),
+        );
+        expect(marker.token).not.toBe(previousTokens[group]);
+        expect(success.token).toBe(marker.token);
+        previousTokens[group] = marker.token;
+      }
+    }
+    commit(repository, "AGENTS.md", "baseline-only repair\n");
+    const reused = localVerification(repository);
+    expect(reused.status).toBe(0);
+    expect(commands(reused)).toEqual(requiredBaselineSteps);
+
+    for (const [group, expected] of [
+      ["database", requiredDatabaseSteps],
+      ["browser", requiredBrowserSteps],
+    ]) {
+      const independentRepository = createRepository();
+      commit(independentRepository, "src/runtime.ts", "seed\n");
+      const forced = localVerification(independentRepository, {
+        args: [`--${group}`, "--full"],
+      });
+      expect(forced.status).toBe(0);
+      expect(commands(forced)).toEqual(expected);
+      const marker = JSON.parse(
+        readFileSync(evidenceFile(independentRepository, "attempt", group)),
+      );
+      const success = JSON.parse(
+        readFileSync(evidenceFile(independentRepository, "success", group)),
+      );
+      expect(success.token).toBe(marker.token);
+      const reused = localVerification(independentRepository, {
+        args: [`--${group}`],
+      });
+      expect(reused.status).toBe(0);
+      expect(commands(reused)).toEqual([]);
+    }
+
+    for (const failure of ["verify:access", "build:worker", "test:browser"]) {
+      const failedRepository = createRepository();
+      commit(failedRepository, "src/runtime.ts", "seed\n");
+      expect(localVerification(failedRepository).status).toBe(0);
+      const forced = localVerification(failedRepository, {
+        args: ["--full"],
+        run: vi.fn((_command, args) => ({
+          status: args[1] === failure ? 7 : 0,
+        })),
+      });
+      expect(forced.status).toBe(7);
+      for (const group of ["database", "browser"]) {
+        const marker = JSON.parse(
+          readFileSync(evidenceFile(failedRepository, "attempt", group)),
+        );
+        const success = JSON.parse(
+          readFileSync(evidenceFile(failedRepository, "success", group)),
+        );
+        if (group === "database" && failure !== "verify:access")
+          expect(success.token).toBe(marker.token);
+        else expect(success.token).not.toBe(marker.token);
+      }
+      commit(failedRepository, "AGENTS.md", "baseline-only repair\n");
+      expect(commands(localVerification(failedRepository))).toEqual([
+        ...requiredBaselineSteps,
+        ...(failure === "verify:access"
+          ? requiredExpensiveSteps
+          : requiredBrowserSteps),
+      ]);
+    }
+  }, 60000);
+
   it("rejects corrupt interrupted and superseded local evidence", () => {
     const changes = [
       (path) => {
@@ -127,6 +230,11 @@ describe("repository verification command", () => {
       (path) => {
         const record = JSON.parse(readFileSync(path));
         record.group = "browser";
+        writeFileSync(path, JSON.stringify(record));
+      },
+      (path) => {
+        const record = JSON.parse(readFileSync(path));
+        record.commandDigest = "0".repeat(64);
         writeFileSync(path, JSON.stringify(record));
       },
       (path) => {
