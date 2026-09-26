@@ -245,7 +245,7 @@ board's own automation, so no agent moves a card for these cases:
 |---|---|---|---|
 | Auto-add to project | On | `is:issue is:open` on this repository | A new issue is visible on the board before anyone triages it by hand |
 | Item added to project | On | Status: Backlog | A card added by automation lands in Backlog, the same column `to-issues` and `resume` add to |
-| Auto-add sub-issues to project | On | Default | An epic's decomposition shows up on the board without a manual add per slice |
+| Auto-add sub-issues to project | Off | | Cross-repository sub-issues would join this board, but the scripts cannot read them; this repository's epic slices already arrive through Auto-add to project |
 | Item closed | On | Status: Done | The terminal move to Done happens without an agent or network access at merge time; `moveCards` reads it back and skips its own write when this already ran |
 | Auto-archive items | On | `is:issue,pr is:closed updated:<@today-2w` | Keeps the active board small; a Done card is archived, never deleted, so history stays intact |
 | Pull request linked to issue | Off | | Awaiting push and In review are `resume`'s calls, tied to push authorisation and the draft actually opening, not merely a link existing |

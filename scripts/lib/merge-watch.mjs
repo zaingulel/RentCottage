@@ -91,10 +91,10 @@ export async function watchMerge({ pr, ghExec, sleep }) {
       if (!PR_STATES.has(state) || !MERGE_STATES.has(mergeStateStatus)) {
         return { exitCode: 1, reason: `unreadable pull request state: ${JSON.stringify({ state, mergeStateStatus })}` };
       }
-      const buckets = readRequiredBuckets(pr, required, ghExec);
-      const view = `${state} ${mergeStateStatus}`;
       if (state === 'MERGED') return { exitCode: 0, reason: 'merged' };
       if (state === 'CLOSED') return { exitCode: 1, reason: 'closed without merging' };
+      const buckets = readRequiredBuckets(pr, required, ghExec);
+      const view = `${state} ${mergeStateStatus}`;
       if (buckets.includes('fail')) return { exitCode: 1, reason: `a required check failed: ${buckets.join(' ')}` };
       if (mergeStateStatus === 'DIRTY' || mergeStateStatus === 'BEHIND') {
         return { exitCode: 1, reason: `merge blocked: ${view}` };
