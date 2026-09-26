@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   baselineVerificationSteps,
+  classifyChanges,
   expensiveVerificationSteps,
   main,
 } from "./verify.mjs";
@@ -117,30 +118,54 @@ function git(cwd, args) {
 }
 
 it("keeps explicit Node workflow entry points non-executable for baseline eligibility", () => {
+  const trackedEntries = git(ROOT, [
+    "ls-files",
+    "--stage",
+    "--",
+    ...explicitNodeWorkflowEntries,
+  ])
+    .split("\n")
+    .map((record) => {
+      const [metadata, path] = record.split("\t");
+      const [mode, , stage] = metadata.split(" ");
+      return { mode, path, stage };
+    });
   for (const path of explicitNodeWorkflowEntries) {
-    const trackedMode = git(ROOT, ["ls-files", "--stage", "--", path]).split(
-      /\s/,
-    )[0];
-    expect(trackedMode, `${path} must be tracked`).toBe("100644");
-    expect(
-      lstatSync(join(ROOT, path)).mode & 0o111,
-      `${path} on-disk mode`,
-    ).toBe(0);
-
-    const repository = createRepository();
-    write(repository, path, "export {};\n");
-    chmodSync(join(repository, path), 0o755);
-    git(repository, ["add", path]);
-    git(repository, ["commit", "-m", `executable ${path}`]);
-    const rejected = runVerification(repository);
-    expect(rejected.calls).toHaveLength(
-      requiredBaselineSteps.length + requiredExpensiveSteps.length,
-    );
-    expect(rejected.stdout).toHaveBeenCalledWith(
-      expect.stringContaining(`${path} is executable`),
-    );
+    const entries = trackedEntries.filter((entry) => entry.path === path);
+    expect(entries, `${path} must be tracked exactly once`).toHaveLength(1);
+    expect(entries[0].mode, `${path} tracked mode`).toBe("100644");
+    expect(entries[0].stage, `${path} index stage`).toBe("0");
+    const stat = lstatSync(join(ROOT, path));
+    expect(stat.isFile(), `${path} must be a regular file`).toBe(true);
+    expect(stat.mode & 0o111, `${path} on-disk mode`).toBe(0);
   }
 });
+
+it.each(explicitNodeWorkflowEntries)(
+  "rejects executable explicit Node workflow entry %s for baseline eligibility",
+  (path) => {
+    expect(
+      classifyChanges([
+        { path, oldMode: "100644", newMode: "100644", status: "M" },
+      ]),
+    ).toEqual({
+      browser: false,
+      database: false,
+      reason: `only approved workflow or prose changed: ${path}`,
+    });
+    for (const [oldMode, newMode, status] of [
+      ["000000", "100755", "A"],
+      ["100644", "100755", "M"],
+      ["100755", "100644", "M"],
+    ]) {
+      expect(classifyChanges([{ path, oldMode, newMode, status }])).toEqual({
+        browser: true,
+        database: true,
+        reason: `${path} is executable or has an executable-mode change`,
+      });
+    }
+  },
+);
 
 function write(repository, path, contents) {
   const target = join(repository, path);
@@ -1225,9 +1250,10 @@ describe("repository verification command", () => {
 
       const result = runVerification(repository);
 
-      expect(result.calls).toHaveLength(
-        requiredBaselineSteps.length + requiredExpensiveSteps.length,
-      );
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual([
+        ...requiredBaselineSteps,
+        ...requiredExpensiveSteps,
+      ]);
       expect(result.stdout).toHaveBeenCalledWith(
         expect.stringMatching(/executable/i),
       );

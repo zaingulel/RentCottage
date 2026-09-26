@@ -232,6 +232,7 @@ select jsonb_build_object(
   ),
   'observedBeforeCallAt',clock_timestamp()
 );
+select 'CUSTOMER_REVIEW_DEADLINE_CLOCKS_READY';
 ${actor(deadlineFixture.ids.customerUserId)}
 select public.submit_customer_review(
   '${deadlineFixture.ids.bookingReference}',5,'en','Arrived before the lock released'
@@ -243,6 +244,10 @@ commit;`,
   await harness.waitForLock(
     "customer_review_deadline_contender",
     deadlineContender,
+  );
+  await harness.waitForMarker(
+    deadlineContender,
+    "CUSTOMER_REVIEW_DEADLINE_CLOCKS_READY",
   );
   assertions += 1;
   const [deadlinePreCall] = jsonResults(deadlineContender);
