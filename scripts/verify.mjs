@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+// Namespace operations expose private-state faults; named dependency/source reads stay outside them.
 import fs from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -11,8 +12,7 @@ import {
 } from "node:fs";
 import { dirname, join, delimiter, relative, isAbsolute } from "node:path";
 import { release } from "node:os";
-import { fileURLToPath } from "node:url";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const USAGE =
   "Usage: npm run verify [-- [--baseline|--database|--browser] [--full] [--plan]]";
@@ -58,6 +58,39 @@ const groupVerificationSteps = {
     ["npm", ["run", "verify:access:browser"]],
     ...expensiveVerificationSteps.slice(1),
   ],
+};
+
+function serviceVerificationSteps(mode, database, browser) {
+  return mode === undefined && database && browser
+    ? expensiveVerificationSteps
+    : [
+        ...(database ? groupVerificationSteps.database : []),
+        ...(browser ? groupVerificationSteps.browser : []),
+      ];
+}
+
+const accessCommandContracts = {
+  "verify:access": {
+    groups: ["database", "browser"],
+    completedGroups: ["database"],
+    failureRecipe: {
+      reproduceSelectedGroups: ["npm", "run", "verify", "--", "--full"],
+    },
+  },
+  "verify:access:database": {
+    groups: ["database"],
+    completedGroups: ["database"],
+    failureRecipe: {
+      reproduceGroup: ["npm", "run", "verify", "--", "--database", "--full"],
+    },
+  },
+  "verify:access:browser": {
+    groups: ["browser"],
+    completedGroups: [],
+    failureRecipe: {
+      reproduceGroup: ["npm", "run", "verify", "--", "--browser", "--full"],
+    },
+  },
 };
 
 const baselineOnlyPaths = new Set([
@@ -1286,19 +1319,14 @@ export function main(
     browser && selectedBrowser && environment.GITHUB_ACTIONS === "true"
       ? [["npx", ["playwright", "install", "--with-deps", "chromium"]]]
       : [];
-  const databaseSteps = groupVerificationSteps.database;
-  const browserSteps = groupVerificationSteps.browser;
-  const selectedServiceSteps =
-    mode === undefined && selectedDatabase && selectedBrowser
-      ? expensiveVerificationSteps
-      : [
-          ...(selectedDatabase ? databaseSteps : []),
-          ...(selectedBrowser ? browserSteps : []),
-        ];
-  let steps = [
+  const prefixSteps = [
     ...(baseline ? baselineVerificationSteps : []),
     ...preparation,
-    ...selectedServiceSteps,
+  ];
+  const serviceStart = prefixSteps.length;
+  let steps = [
+    ...prefixSteps,
+    ...serviceVerificationSteps(mode, selectedDatabase, selectedBrowser),
   ];
   if (plan) {
     stdout(
@@ -1319,8 +1347,6 @@ export function main(
   if (steps.length > 0 && !checkLockedDependencies(cwd, stderr)) return 1;
   const local = !environment.CI && !environment.GITHUB_ACTIONS;
   const forced = args.includes("--full");
-  const serviceStart = baseline ? baselineVerificationSteps.length : 0;
-  const groupCommands = { database: databaseSteps, browser: browserSteps };
   const snapshots = {};
   const tokens = {};
   for (let index = 0; index < steps.length; index += 1) {
@@ -1333,7 +1359,7 @@ export function main(
           cwd,
           verificationEnvironment,
           group,
-          groupCommands[group],
+          groupVerificationSteps[group],
           captureRuntime,
         );
         const evidence =
@@ -1368,34 +1394,21 @@ export function main(
         }
       }
       steps = [
-        ...steps.slice(0, serviceStart),
-        ...(fresh.database && fresh.browser && mode === undefined
-          ? expensiveVerificationSteps
-          : [
-              ...(fresh.database ? databaseSteps : []),
-              ...(fresh.browser ? browserSteps : []),
-            ]),
+        ...prefixSteps,
+        ...serviceVerificationSteps(mode, fresh.database, fresh.browser),
       ];
       if (index === steps.length) break;
     }
     const [command, commandArgs] = steps[index];
+    const accessContract =
+      command === "npm" && commandArgs[0] === "run"
+        ? accessCommandContracts[commandArgs[1]]
+        : undefined;
     const startedAt = utcNow();
     const started = monotonicNow();
     const result = run(command, commandArgs, verificationEnvironment, cwd);
-    if (
-      commandArgs[1] === "verify:access" ||
-      commandArgs[1] === "verify:access:database" ||
-      commandArgs[1] === "verify:access:browser"
-    ) {
-      const groups =
-        commandArgs[1] === "verify:access"
-          ? ["database", "browser"]
-          : [
-              commandArgs[1] === "verify:access:database"
-                ? "database"
-                : "browser",
-            ];
-      for (const group of groups)
+    if (accessContract) {
+      for (const group of accessContract.groups)
         stdout(
           `${group}: ${result.error ? "fresh verification could not start" : "executed fresh verification"}`,
         );
@@ -1421,28 +1434,16 @@ export function main(
       const reproduction =
         baseline && index < baselineVerificationSteps.length
           ? { reproduceGroup: ["npm", "run", "verify", "--", "--baseline"] }
-          : commandArgs[1] === "verify:access"
-            ? {
-                reproduceSelectedGroups: [
-                  "npm",
-                  "run",
-                  "verify",
-                  "--",
-                  "--full",
-                ],
-              }
-            : {
-                reproduceGroup: [
-                  "npm",
-                  "run",
-                  "verify",
-                  "--",
-                  commandArgs[1] === "verify:access:database"
-                    ? "--database"
-                    : "--browser",
-                  "--full",
-                ],
-              };
+          : (accessContract?.failureRecipe ?? {
+              reproduceGroup: [
+                "npm",
+                "run",
+                "verify",
+                "--",
+                "--browser",
+                "--full",
+              ],
+            });
       stderr(
         JSON.stringify({
           type: "verification-failure",
@@ -1470,11 +1471,7 @@ export function main(
       return result.status ?? 1;
     }
     if (local && !forced) {
-      const completed =
-        commandArgs[1] === "verify:access" ||
-        commandArgs[1] === "verify:access:database"
-          ? ["database"]
-          : [];
+      const completed = [...(accessContract?.completedGroups ?? [])];
       if (index === steps.length - 1 && tokens.browser)
         completed.push("browser");
       for (const group of completed) {
@@ -1482,7 +1479,7 @@ export function main(
           cwd,
           verificationEnvironment,
           group,
-          groupCommands[group],
+          groupVerificationSteps[group],
           captureRuntime,
         );
         if (
