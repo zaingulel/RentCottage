@@ -1,13 +1,3 @@
-import { randomUUID } from "node:crypto";
-import {
-  existsSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { join } from "node:path";
-
 import { createClient } from "@supabase/supabase-js";
 
 import { createLocalSupabaseConcurrencyHarness } from "../local-supabase-concurrency-harness.mjs";
@@ -17,7 +7,7 @@ import {
 } from "./access-fixture-users.mjs";
 
 const projects = ["mobile", "desktop", "worker"];
-const orders = ["ordinary", "forward", "reverse"];
+const phases = ["ordinary", "forward", "reverse", "retry-proof", "boundary"];
 const password = "Local-test-password-2026";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -31,6 +21,24 @@ export const accessJourneyCases = Object.freeze([
       "shared sign-in from the homepage returns a prospective owner to their private application",
     projects,
     recipe: "draft",
+  }),
+  Object.freeze({
+    id: 2,
+    journey: "owner-submit",
+    file: "tests/access.spec.ts",
+    title:
+      "a Cottage Owner saves, resumes and submits a complete private application",
+    projects,
+    recipe: "new-account",
+  }),
+  Object.freeze({
+    id: 3,
+    journey: "owner-layout",
+    file: "tests/access.spec.ts",
+    title:
+      "Owner Application keeps evidence controls aligned and accessible in every locale",
+    projects,
+    recipe: "new-account",
   }),
   Object.freeze({
     id: 9,
@@ -48,7 +56,7 @@ const identityKeys = [
   "project",
   "retry",
   "repeatEachIndex",
-  "order",
+  "phase",
 ];
 
 function boundedInteger(value, name, maximum) {
@@ -80,7 +88,7 @@ export function accessJourneyIdentity(input) {
     }
   }
 
-  const { journey, project, retry, repeatEachIndex, order } = input;
+  const { journey, project, retry, repeatEachIndex, phase } = input;
   const fixtureCase = fixtureCaseFor(journey);
   const projectIndex = projects.indexOf(project);
   if (projectIndex === -1) {
@@ -88,20 +96,19 @@ export function accessJourneyIdentity(input) {
   }
   boundedInteger(retry, "retry", 2);
   boundedInteger(repeatEachIndex, "repeatEachIndex", 1);
-  const orderIndex = orders.indexOf(order);
-  if (orderIndex === -1) {
-    throw new RangeError(`Unknown access journey order: ${order}`);
+  const phaseIndex = phases.indexOf(phase);
+  if (phaseIndex === -1) {
+    throw new RangeError(`Unknown access journey phase: ${phase}`);
   }
 
   const slot =
-    ((((fixtureCase.id - 1) * projects.length + projectIndex) * 3 + retry) *
-      2 +
+    ((((fixtureCase.id - 1) * projects.length + projectIndex) * 3 + retry) * 2 +
       repeatEachIndex) *
-      orders.length +
-    orderIndex;
+      phases.length +
+    phaseIndex;
   const phone = `+9647${700000000 + slot * 256}`;
   return {
-    allocation: { journey, project, retry, repeatEachIndex, order },
+    allocation: { journey, project, retry, repeatEachIndex, phase },
     fixtureCase,
     phone,
     slot,
@@ -130,14 +137,18 @@ export function accessJourneyOtpEntries() {
   for (const fixtureCase of accessJourneyCases) {
     for (const project of projects) {
       for (let retry = 0; retry <= 2; retry += 1) {
-        for (let repeatEachIndex = 0; repeatEachIndex <= 1; repeatEachIndex += 1) {
-          for (const order of orders) {
+        for (
+          let repeatEachIndex = 0;
+          repeatEachIndex <= 1;
+          repeatEachIndex += 1
+        ) {
+          for (const phase of phases) {
             const identity = accessJourneyIdentity({
               journey: fixtureCase.journey,
               project,
               retry,
               repeatEachIndex,
-              order,
+              phase,
             });
             entries.push([identity.phone.replace(/^\+/, ""), "123456"]);
           }
@@ -165,10 +176,14 @@ export function addAccessJourneyTestOtps(config) {
   const existing = config.slice(sectionStart, sectionEnd);
   for (const [phone] of entries) {
     if (new RegExp(`^${phone}\\s*=`, "m").test(existing)) {
-      throw new Error(`Generated access journey OTP phone conflicts: ${phone}.`);
+      throw new Error(
+        `Generated access journey OTP phone conflicts: ${phone}.`,
+      );
     }
   }
-  const lines = entries.map(([phone, code]) => `${phone} = "${code}"`).join("\n");
+  const lines = entries
+    .map(([phone, code]) => `${phone} = "${code}"`)
+    .join("\n");
   return `${config.slice(0, sectionStart)}\n${lines}${config.slice(sectionStart)}`;
 }
 
@@ -196,111 +211,17 @@ function validateEnvironment(environment, url) {
   }
 }
 
-function parseAttempt(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Access journey attempt record is malformed.");
-  }
-  const keys = [
-    "version",
-    "attemptToken",
-    "coordinates",
-    "phone",
-    "userId",
-    "applicationId",
-    "profileId",
-    "pendingOperation",
-  ];
-  if (
-    Object.keys(value).some((key) => !keys.includes(key)) ||
-    keys.some((key) => !Object.hasOwn(value, key)) ||
-    value.version !== 1 ||
-    !uuidPattern.test(value.attemptToken) ||
-    typeof value.phone !== "string" ||
-    !value.coordinates ||
-    typeof value.coordinates !== "object" ||
-    [value.userId, value.applicationId, value.profileId].some(
-      (id) => id !== null && (typeof id !== "string" || !uuidPattern.test(id)),
-    ) ||
-    (value.pendingOperation !== null &&
-      typeof value.pendingOperation !== "string")
-  ) {
-    throw new Error("Access journey attempt record is malformed.");
-  }
-  return value;
-}
-
-function createAttempt(path, identity) {
-  const record = {
-    version: 1,
-    attemptToken: randomUUID(),
-    coordinates: identity.allocation,
-    phone: identity.phone,
-    userId: null,
-    applicationId: null,
-    profileId: null,
-    pendingOperation: null,
-  };
-  try {
-    writeFileSync(path, `${JSON.stringify(record)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
-  } catch (error) {
-    if (error.code !== "EEXIST") throw error;
-    try {
-      parseAttempt(JSON.parse(readFileSync(path, "utf8")));
-    } catch (recordError) {
-      throw new Error("Access journey attempt record is unreadable or malformed.", {
-        cause: recordError,
-      });
-    }
-    throw new Error("An unresolved access journey attempt already exists.");
-  }
-  return record;
-}
-
-function attemptWriter(path, initial) {
-  let record = initial;
-  let poisoned = false;
-  const assertOwned = () => {
-    if (poisoned) {
-      throw new Error("Access journey attempt record can no longer be updated.");
-    }
-    const current = parseAttempt(JSON.parse(readFileSync(path, "utf8")));
-    if (current.attemptToken !== record.attemptToken) {
-      throw new Error("Access journey attempt ownership changed.");
-    }
-  };
-  return {
-    current: () => record,
-    removeBeforeMutation() {
-      assertOwned();
-      unlinkSync(path);
-    },
-    update(changes) {
-      assertOwned();
-      const next = { ...record, ...changes };
-      const temporary = `${path}.${randomUUID()}.tmp`;
-      try {
-        writeFileSync(temporary, `${JSON.stringify(next)}\n`, {
-          encoding: "utf8",
-          flag: "wx",
-        });
-        renameSync(temporary, path);
-        record = next;
-      } catch (error) {
-        poisoned = true;
-        if (existsSync(temporary)) unlinkSync(temporary);
-        throw new Error("Access journey attempt record update failed.", {
-          cause: error,
-        });
-      }
-    },
-  };
-}
-
 function requireProvider(result, description) {
-  if (result.error) throw new Error(`${description} failed.`, { cause: result.error });
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !Object.hasOwn(result, "data") ||
+    !Object.hasOwn(result, "error")
+  ) {
+    throw new Error(`${description} returned malformed provider data.`);
+  }
+  if (result.error)
+    throw new Error(`${description} failed.`, { cause: result.error });
   return result.data;
 }
 
@@ -316,153 +237,157 @@ export async function prepareAccessJourney({
   createSupabaseClient = createClient,
   environment = process.env,
   guardDatabase = () =>
-    createLocalSupabaseConcurrencyHarness({ environment })
-      .guardDisposableLocalDatabase(),
+    createLocalSupabaseConcurrencyHarness({
+      environment,
+    }).guardDisposableLocalDatabase(),
   privilegedClient,
   publishableKey,
   selectedTitle,
   url,
 }) {
   const identity = accessJourneyIdentity(allocation);
-  if (selectedTitle !== identity.fixtureCase.title) {
+  try {
+    if (selectedTitle !== identity.fixtureCase.title) {
+      throw new Error(
+        `Selected access journey title does not match ${identity.fixtureCase.journey}.`,
+      );
+    }
+    validateEnvironment(environment, url);
+    guardDatabase();
+
+    const users = await listAllAccessFixtureUsers(privilegedClient.auth.admin);
+    if (findAccessFixtureUser(users, identity.phone)) {
+      throw new Error("Allocated access journey identity already exists.");
+    }
+
+    if (identity.fixtureCase.recipe === "new-account") {
+      return identity;
+    }
+
+    const created = requireProvider(
+      await privilegedClient.auth.admin.createUser({
+        phone: identity.phone,
+        password,
+        phone_confirm: true,
+      }),
+      "Access journey Auth creation",
+    );
+    const userId = requireUuid(
+      created?.user?.id,
+      "Access journey Auth creation",
+    );
+    if (
+      created.user.phone?.replace(/^\+/, "") !==
+      identity.phone.replace(/^\+/, "")
+    ) {
+      throw new Error("Access journey Auth creation returned another phone.");
+    }
+
+    const ownerClient = createSupabaseClient(url, publishableKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const signedIn = requireProvider(
+      await ownerClient.auth.signInWithPassword({
+        phone: identity.phone,
+        password,
+      }),
+      "Access journey sign-in",
+    );
+    if (signedIn?.user?.id !== userId) {
+      throw new Error("Access journey sign-in returned another identity.");
+    }
+
+    const context = requireProvider(
+      await ownerClient.rpc("claim_marketplace_role", {
+        requested_role: "cottage_owner",
+      }),
+      "Access journey owner enrollment",
+    );
+    if (
+      context?.user_id !== userId ||
+      context.role !== "cottage_owner" ||
+      context.owner_approval_state !== "prospective"
+    ) {
+      throw new Error(
+        "Access journey owner enrollment returned incorrect facts.",
+      );
+    }
+
+    requireProvider(
+      await ownerClient.rpc("save_owner_application", {
+        requested_applicant_kind: identity.draft.applicantKind,
+        requested_legal_name: identity.draft.legalName,
+        requested_company_name: null,
+        requested_licensing_basis: identity.draft.licensingBasis,
+        requested_exemption_basis: null,
+        requested_cottage_name: identity.draft.cottageName,
+        requested_governorate: identity.draft.governorate,
+        requested_approximate_location: identity.draft.approximateLocation,
+        requested_exact_address: identity.draft.exactAddress,
+        requested_capacity: identity.draft.capacity,
+        requested_bedrooms: identity.draft.bedrooms,
+        requested_bathrooms: identity.draft.bathrooms,
+        requested_amenities: identity.draft.amenities,
+        requested_description: identity.draft.description,
+        requested_house_rules: identity.draft.houseRules,
+      }),
+      "Access journey private draft",
+    );
+    const application = requireProvider(
+      await ownerClient
+        .from("owner_applications")
+        .select("id,owner_user_id,status,current_verification_record_id")
+        .eq("owner_user_id", userId)
+        .single(),
+      "Access journey application acknowledgement",
+    );
+    const profile = requireProvider(
+      await ownerClient
+        .from("owner_application_cottage_profiles")
+        .select(
+          "id,application_id,owner_user_id,status,current_publication_id,submitted_source_revision_id,current_shift_schedule_id",
+        )
+        .eq("owner_user_id", userId)
+        .single(),
+      "Access journey profile acknowledgement",
+    );
+    const applicationId = requireUuid(
+      application?.id,
+      "Access journey application acknowledgement",
+    );
+    const profileId = requireUuid(
+      profile?.id,
+      "Access journey profile acknowledgement",
+    );
+    if (
+      application.owner_user_id !== userId ||
+      application.status !== "draft" ||
+      application.current_verification_record_id !== null ||
+      profile.owner_user_id !== userId ||
+      profile.application_id !== applicationId ||
+      profile.status !== "draft" ||
+      profile.current_publication_id !== null ||
+      profile.submitted_source_revision_id !== null ||
+      profile.current_shift_schedule_id !== null
+    ) {
+      throw new Error(
+        "Access journey private draft acknowledgement was incorrect.",
+      );
+    }
+    return {
+      ...identity,
+      applicationId,
+      ownerClient,
+      profileId,
+      userId,
+    };
+  } catch (cause) {
+    const { journey, project, phase, retry } = identity.allocation;
+    const reason =
+      cause instanceof Error ? cause.message : "Provider result unavailable.";
     throw new Error(
-      `Selected access journey title does not match ${identity.fixtureCase.journey}.`,
+      `${journey}/${project}/${phase}/retry ${retry} preparation failed: ${reason} Discard the failed disposable run.`,
+      { cause },
     );
   }
-  validateEnvironment(environment, url);
-  guardDatabase();
-
-  const attemptPath = join(
-    environment.SUPABASE_LOCAL_WORKDIR,
-    "access-journey-attempt.json",
-  );
-  const writer = attemptWriter(attemptPath, createAttempt(attemptPath, identity));
-  const users = await listAllAccessFixtureUsers(privilegedClient.auth.admin);
-  if (findAccessFixtureUser(users, identity.phone)) {
-    writer.removeBeforeMutation();
-    throw new Error("Allocated access journey identity already exists.");
-  }
-
-  if (identity.fixtureCase.recipe === "new-account") {
-    return { ...identity, attemptPath, record: writer.current() };
-  }
-
-  writer.update({ pendingOperation: "create_auth_user" });
-  const created = requireProvider(
-    await privilegedClient.auth.admin.createUser({
-      phone: identity.phone,
-      password,
-      phone_confirm: true,
-    }),
-    "Access journey Auth creation",
-  );
-  const userId = requireUuid(created?.user?.id, "Access journey Auth creation");
-  if (created.user.phone?.replace(/^\+/, "") !== identity.phone.replace(/^\+/, "")) {
-    throw new Error("Access journey Auth creation returned another phone.");
-  }
-  writer.update({ pendingOperation: null, userId });
-
-  const ownerClient = createSupabaseClient(url, publishableKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  writer.update({ pendingOperation: "sign_in" });
-  const signedIn = requireProvider(
-    await ownerClient.auth.signInWithPassword({ phone: identity.phone, password }),
-    "Access journey sign-in",
-  );
-  if (signedIn?.user?.id !== userId) {
-    throw new Error("Access journey sign-in returned another identity.");
-  }
-  writer.update({ pendingOperation: null });
-
-  writer.update({ pendingOperation: "claim_owner_role" });
-  const context = requireProvider(
-    await ownerClient.rpc("claim_marketplace_role", {
-      requested_role: "cottage_owner",
-    }),
-    "Access journey owner enrollment",
-  );
-  if (
-    context?.user_id !== userId ||
-    context.role !== "cottage_owner" ||
-    context.owner_approval_state !== "prospective"
-  ) {
-    throw new Error("Access journey owner enrollment returned incorrect facts.");
-  }
-  writer.update({ pendingOperation: null });
-
-  writer.update({ pendingOperation: "save_private_draft" });
-  requireProvider(
-    await ownerClient.rpc("save_owner_application", {
-      requested_applicant_kind: identity.draft.applicantKind,
-      requested_legal_name: identity.draft.legalName,
-      requested_company_name: null,
-      requested_licensing_basis: identity.draft.licensingBasis,
-      requested_exemption_basis: null,
-      requested_cottage_name: identity.draft.cottageName,
-      requested_governorate: identity.draft.governorate,
-      requested_approximate_location: identity.draft.approximateLocation,
-      requested_exact_address: identity.draft.exactAddress,
-      requested_capacity: identity.draft.capacity,
-      requested_bedrooms: identity.draft.bedrooms,
-      requested_bathrooms: identity.draft.bathrooms,
-      requested_amenities: identity.draft.amenities,
-      requested_description: identity.draft.description,
-      requested_house_rules: identity.draft.houseRules,
-    }),
-    "Access journey private draft",
-  );
-  const application = requireProvider(
-    await ownerClient
-      .from("owner_applications")
-      .select("id,owner_user_id,status,current_verification_record_id")
-      .eq("owner_user_id", userId)
-      .single(),
-    "Access journey application acknowledgement",
-  );
-  const profile = requireProvider(
-    await ownerClient
-      .from("owner_application_cottage_profiles")
-      .select(
-        "id,application_id,owner_user_id,status,current_publication_id,submitted_source_revision_id,current_shift_schedule_id",
-      )
-      .eq("owner_user_id", userId)
-      .single(),
-    "Access journey profile acknowledgement",
-  );
-  const applicationId = requireUuid(
-    application?.id,
-    "Access journey application acknowledgement",
-  );
-  const profileId = requireUuid(
-    profile?.id,
-    "Access journey profile acknowledgement",
-  );
-  if (
-    application.owner_user_id !== userId ||
-    application.status !== "draft" ||
-    application.current_verification_record_id !== null ||
-    profile.owner_user_id !== userId ||
-    profile.application_id !== applicationId ||
-    profile.status !== "draft" ||
-    profile.current_publication_id !== null ||
-    profile.submitted_source_revision_id !== null ||
-    profile.current_shift_schedule_id !== null
-  ) {
-    throw new Error("Access journey private draft acknowledgement was incorrect.");
-  }
-  writer.update({
-    applicationId,
-    pendingOperation: null,
-    profileId,
-  });
-  return {
-    ...identity,
-    applicationId,
-    attemptPath,
-    ownerClient,
-    profileId,
-    record: writer.current(),
-    userId,
-  };
 }

@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 import { createClient } from "@supabase/supabase-js";
@@ -9,22 +8,23 @@ import {
   validateAccessJourneyInitialState,
 } from "./access-journey-readers";
 
-const allocation = (journey: "signin" | "shared-account") => ({
+const allocation = (
+  journey: "signin" | "owner-submit" | "owner-layout" | "shared-account",
+) => ({
   journey,
   project: "worker" as const,
   retry: 0,
   repeatEachIndex: 0,
-  order: "ordinary" as const,
+  phase: "boundary" as const,
 });
 const require = createRequire(import.meta.url);
-const { accessJourneyIdentity, prepareAccessJourney } =
+const { accessJourneyCases, prepareAccessJourney } =
   require("./lib/access-journey-fixtures.mjs") as {
-    accessJourneyIdentity(coordinates: ReturnType<typeof allocation>): {
-      allocation: ReturnType<typeof allocation>;
-      draft: { exactAddress: string; legalName: string };
-      fixtureCase: { recipe: "draft" | "new-account" };
-      phone: string;
-    };
+    accessJourneyCases: ReadonlyArray<{
+      journey: ReturnType<typeof allocation>["journey"];
+      title: string;
+      recipe: "draft" | "new-account";
+    }>;
     prepareAccessJourney(options: {
       allocation: ReturnType<typeof allocation>;
       environment: NodeJS.ProcessEnv;
@@ -32,49 +32,86 @@ const { accessJourneyIdentity, prepareAccessJourney } =
       publishableKey: string;
       selectedTitle: string;
       url: string;
-    }): Promise<{
-      allocation: ReturnType<typeof allocation>;
-      applicationId: string;
-      attemptPath: string;
-      draft: { exactAddress: string; legalName: string };
-      fixtureCase: { recipe: "draft" };
-      phone: string;
-      profileId: string;
-      userId: string;
-      ownerClient: NonNullable<AccessJourneyInitialState["ownerClient"]>;
-    }>;
+    }): Promise<AccessJourneyInitialState>;
   };
 
 const url = process.env.SUPABASE_URL!;
 const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY!;
 const secretKey = process.env.SUPABASE_SECRET_KEY!;
-const signinTitle =
-  "shared sign-in from the homepage returns a prospective owner to their private application";
 
 test("owned access readiness uses production account and application readers", async () => {
   const privilegedClient = createClient(url, secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const anonymous = accessJourneyIdentity(allocation("shared-account"));
-  await validateAccessJourneyInitialState({
-    fixture: anonymous,
-    privilegedClient,
-    publishableKey,
-    url,
-  });
-
-  const prepared = await prepareAccessJourney({
-    allocation: allocation("signin"),
-    environment: process.env,
-    privilegedClient,
-    publishableKey,
-    selectedTitle: signinTitle,
-    url,
-  });
-  expect(prepared.phone).not.toBe(anonymous.phone);
+  const fixtures: AccessJourneyInitialState[] = [];
+  for (const fixtureCase of accessJourneyCases) {
+    const fixture = await prepareAccessJourney({
+      allocation: allocation(fixtureCase.journey),
+      environment: process.env,
+      privilegedClient,
+      publishableKey,
+      selectedTitle: fixtureCase.title,
+      url,
+    });
+    await validateAccessJourneyInitialState({
+      fixture,
+      privilegedClient,
+      publishableKey,
+      url,
+    });
+    fixtures.push(fixture);
+  }
+  expect(fixtures.map((fixture) => fixture.allocation.journey)).toEqual([
+    "signin",
+    "owner-submit",
+    "owner-layout",
+    "shared-account",
+  ]);
+  expect(new Set(fixtures.map((fixture) => fixture.phone)).size).toBe(4);
+  const prepared = fixtures[0];
   expect(prepared.userId).toMatch(/^[0-9a-f-]{36}$/i);
   expect(prepared.applicationId).toMatch(/^[0-9a-f-]{36}$/i);
   expect(prepared.profileId).toMatch(/^[0-9a-f-]{36}$/i);
+  for (const fixture of fixtures.slice(1)) {
+    expect(fixture.userId).toBeUndefined();
+    expect(fixture.applicationId).toBeUndefined();
+    expect(fixture.profileId).toBeUndefined();
+  }
+
+  const absent = fixtures[1];
+  const created = await privilegedClient.auth.admin.createUser({
+    phone: absent.phone,
+    phone_confirm: true,
+  });
+  expect(created.error).toBeNull();
+  expect(created.data.user?.id).toMatch(/^[0-9a-f-]{36}$/i);
+  let absentConsumed = false;
+  await expect(
+    validateAccessJourneyInitialState({
+      fixture: absent,
+      privilegedClient,
+      publishableKey,
+      url,
+    }).then(() => {
+      absentConsumed = true;
+    }),
+  ).rejects.toThrow("reserved phone is not absent");
+  expect(absentConsumed).toBe(false);
+
+  for (const field of ["userId", "applicationId", "profileId"]) {
+    let invalidIdConsumed = false;
+    await expect(
+      validateAccessJourneyInitialState({
+        fixture: { ...prepared, [field]: "invalid'::uuid" },
+        privilegedClient,
+        publishableKey,
+        url,
+      }).then(() => {
+        invalidIdConsumed = true;
+      }),
+    ).rejects.toThrow("incomplete issued identifiers");
+    expect(invalidIdConsumed).toBe(false);
+  }
 
   let consumed = false;
   await expect(
@@ -110,14 +147,5 @@ test("owned access readiness uses production account and application readers", a
     privilegedClient,
     publishableKey,
     url,
-  });
-  const record = JSON.parse(readFileSync(prepared.attemptPath, "utf8"));
-  expect(record).toMatchObject({
-    applicationId: prepared.applicationId,
-    pendingOperation: null,
-    phone: prepared.phone,
-    profileId: prepared.profileId,
-    userId: prepared.userId,
-    version: 1,
   });
 });

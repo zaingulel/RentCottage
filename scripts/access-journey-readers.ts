@@ -22,7 +22,12 @@ export type AccessJourneyInitialState = {
     readonly project: "mobile" | "desktop" | "worker";
     readonly retry: number;
     readonly repeatEachIndex: number;
-    readonly order: "ordinary" | "forward" | "reverse";
+    readonly phase:
+      | "ordinary"
+      | "forward"
+      | "reverse"
+      | "retry-proof"
+      | "boundary";
   };
   readonly applicationId?: string;
   readonly draft: {
@@ -35,6 +40,17 @@ export type AccessJourneyInitialState = {
   readonly userId?: string;
   readonly ownerClient?: SupabaseClient;
 };
+
+const { findAccessFixtureUser, listAllAccessFixtureUsers } =
+  require("./lib/access-fixture-users.mjs") as {
+    listAllAccessFixtureUsers(
+      admin: SupabaseClient["auth"]["admin"],
+    ): Promise<Array<{ phone?: string }>>;
+    findAccessFixtureUser(
+      users: Array<{ phone?: string }>,
+      phone: string,
+    ): { phone?: string } | undefined;
+  };
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -56,117 +72,115 @@ export async function validateAccessJourneyInitialState({
   publishableKey: string;
   url: string;
 }) {
-  const { journey, project } = fixture.allocation;
-  const label = `${journey}/${project}/${fixture.fixtureCase.recipe}`;
-  if (fixture.fixtureCase.recipe === "new-account") {
-    const anonymous = createClient(url, publishableKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    if (await new SupabaseAccountContextStore(anonymous).resolve()) {
-      throw new Error(`${label} unexpectedly has an account context.`);
-    }
-    let missingSession: unknown;
+  const { journey, project, phase, retry } = fixture.allocation;
+  const label = `${journey}/${project}/${phase}/retry ${retry}/${fixture.fixtureCase.recipe}`;
+  try {
+    let parsedUrl: URL;
     try {
-      await new SupabaseOwnerApplicationRepository(
-        anonymous,
-        privilegedClient,
-      ).load();
-    } catch (error) {
-      missingSession = error;
+      parsedUrl = new URL(url);
+    } catch {
+      throw new Error(`${label} has an invalid readiness environment.`);
     }
-    const providerCause =
-      missingSession instanceof Error ? missingSession.cause : undefined;
     if (
-      !(missingSession instanceof Error) ||
-      missingSession.message !== "Owner Application provider is unavailable" ||
-      !providerCause ||
-      typeof providerCause !== "object" ||
-      !("name" in providerCause) ||
-      (providerCause.name !== "AuthSessionMissingError" &&
-        (!("code" in providerCause) ||
-          providerCause.code !== "session_not_found"))
+      environment.APP_ENVIRONMENT !== "test" ||
+      environment.SUPABASE_URL !== url ||
+      parsedUrl.protocol !== "http:" ||
+      parsedUrl.hostname !== "127.0.0.1" ||
+      !/^rentcottage(?:-[a-z0-9]+)*$/.test(
+        environment.SUPABASE_LOCAL_PROJECT ?? "",
+      ) ||
+      !environment.SUPABASE_LOCAL_WORKDIR
     ) {
-      throw new Error(`${label} did not preserve the missing-session result.`);
+      throw new Error(`${label} readiness environment is not disposable.`);
     }
-    const users = await privilegedClient.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-    if (
-      users.error ||
-      users.data.users.some(
-        (user) =>
-          user.phone?.replace(/^\+/, "") === fixture.phone.replace(/^\+/, ""),
-      )
-    ) {
-      throw new Error(`${label} reserved phone is not absent.`);
+    const harness = createLocalSupabaseConcurrencyHarness({ environment });
+    harness.guardDisposableLocalDatabase();
+    if (fixture.fixtureCase.recipe === "new-account") {
+      const anonymous = createClient(url, publishableKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      if (await new SupabaseAccountContextStore(anonymous).resolve()) {
+        throw new Error(`${label} unexpectedly has an account context.`);
+      }
+      let missingSession: unknown;
+      try {
+        await new SupabaseOwnerApplicationRepository(
+          anonymous,
+          privilegedClient,
+        ).load();
+      } catch (error) {
+        missingSession = error;
+      }
+      const providerCause =
+        missingSession instanceof Error ? missingSession.cause : undefined;
+      if (
+        !(missingSession instanceof Error) ||
+        missingSession.message !==
+          "Owner Application provider is unavailable" ||
+        !providerCause ||
+        typeof providerCause !== "object" ||
+        !("name" in providerCause) ||
+        (providerCause.name !== "AuthSessionMissingError" &&
+          (!("code" in providerCause) ||
+            providerCause.code !== "session_not_found"))
+      ) {
+        throw new Error(
+          `${label} did not preserve the missing-session result.`,
+        );
+      }
+      const users = await listAllAccessFixtureUsers(
+        privilegedClient.auth.admin,
+      );
+      if (findAccessFixtureUser(users, fixture.phone)) {
+        throw new Error(`${label} reserved phone is not absent.`);
+      }
+      return;
     }
-    return;
-  }
 
-  const owner = fixture.ownerClient;
-  if (!owner) {
-    throw new Error(`${label} has no acknowledged authenticated client.`);
-  }
-  const context = await new SupabaseAccountContextStore(owner).resolve();
-  const application = await new SupabaseOwnerApplicationRepository(
-    owner,
-    privilegedClient,
-  ).load();
-  if (!context || !application) {
-    throw new Error(
-      `${label} production readers found incorrect initial state.`,
-    );
-  }
-  if (
-    context.userId !== fixture.userId ||
-    context.role !== "cottage_owner" ||
-    context.approvalState !== "prospective" ||
-    application?.applicationId !== fixture.applicationId ||
-    application.ownerUserId !== fixture.userId ||
-    application.status !== "draft" ||
-    application.legalName !== (expectedLegalName ?? fixture.draft.legalName) ||
-    application.cottage.exactAddress !== fixture.draft.exactAddress ||
-    application.documents.length !== 0
-  ) {
-    throw new Error(
-      `${label} production readers found incorrect initial state.`,
-    );
-  }
-  const applicationId = fixture.applicationId;
-  const profileId = fixture.profileId;
-  const userId = fixture.userId;
-  if (
-    !uuidPattern.test(userId ?? "") ||
-    !uuidPattern.test(applicationId ?? "") ||
-    !uuidPattern.test(profileId ?? "")
-  ) {
-    throw new Error(`${label} has incomplete issued identifiers.`);
-  }
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(url);
-  } catch {
-    throw new Error(`${label} has an invalid readiness environment.`);
-  }
-  if (
-    environment.APP_ENVIRONMENT !== "test" ||
-    environment.SUPABASE_URL !== url ||
-    parsedUrl.protocol !== "http:" ||
-    parsedUrl.hostname !== "127.0.0.1" ||
-    !/^rentcottage(?:-[a-z0-9]+)*$/.test(
-      environment.SUPABASE_LOCAL_PROJECT ?? "",
-    ) ||
-    !environment.SUPABASE_LOCAL_WORKDIR
-  ) {
-    throw new Error(`${label} readiness environment is not disposable.`);
-  }
-  const harness = createLocalSupabaseConcurrencyHarness({ environment });
-  harness.guardDisposableLocalDatabase();
-  let snapshot: unknown;
-  try {
-    snapshot = JSON.parse(
-      harness.runSql(`begin transaction isolation level repeatable read read only;
+    const applicationId = fixture.applicationId;
+    const profileId = fixture.profileId;
+    const userId = fixture.userId;
+    if (
+      !uuidPattern.test(userId ?? "") ||
+      !uuidPattern.test(applicationId ?? "") ||
+      !uuidPattern.test(profileId ?? "")
+    ) {
+      throw new Error(`${label} has incomplete issued identifiers.`);
+    }
+    const owner = fixture.ownerClient;
+    if (!owner) {
+      throw new Error(`${label} has no acknowledged authenticated client.`);
+    }
+    const context = await new SupabaseAccountContextStore(owner).resolve();
+    const application = await new SupabaseOwnerApplicationRepository(
+      owner,
+      privilegedClient,
+    ).load();
+    if (!context || !application) {
+      throw new Error(
+        `${label} production readers found incorrect initial state.`,
+      );
+    }
+    if (
+      context.userId !== fixture.userId ||
+      context.role !== "cottage_owner" ||
+      context.approvalState !== "prospective" ||
+      application?.applicationId !== fixture.applicationId ||
+      application.ownerUserId !== fixture.userId ||
+      application.status !== "draft" ||
+      application.legalName !==
+        (expectedLegalName ?? fixture.draft.legalName) ||
+      application.cottage.exactAddress !== fixture.draft.exactAddress ||
+      application.documents.length !== 0
+    ) {
+      throw new Error(
+        `${label} production readers found incorrect initial state.`,
+      );
+    }
+    let snapshot: unknown;
+    try {
+      snapshot = JSON.parse(
+        harness.runSql(`begin transaction isolation level repeatable read read only;
 select jsonb_build_object(
   'applications', (select coalesce(jsonb_agg(jsonb_build_object(
     'id', id, 'ownerUserId', owner_user_id, 'status', status,
@@ -194,59 +208,67 @@ select jsonb_build_object(
   )
 );
 commit;`),
-    );
+      );
+    } catch (cause) {
+      throw new Error(`${label} guarded readiness snapshot is unavailable.`, {
+        cause,
+      });
+    }
+    if (
+      !snapshot ||
+      typeof snapshot !== "object" ||
+      !Array.isArray((snapshot as { applications?: unknown }).applications) ||
+      !Array.isArray((snapshot as { profiles?: unknown }).profiles) ||
+      !(snapshot as { counts?: unknown }).counts ||
+      typeof (snapshot as { counts?: unknown }).counts !== "object"
+    ) {
+      throw new Error(`${label} guarded readiness snapshot is invalid.`);
+    }
+    const observed = snapshot as {
+      applications: Array<Record<string, unknown>>;
+      profiles: Array<Record<string, unknown>>;
+      counts: Record<string, unknown>;
+    };
+    if (observed.applications.length !== 1 || observed.profiles.length !== 1) {
+      throw new Error(`${label} private draft root cardinality is incorrect.`);
+    }
+    const applicationRow = observed.applications[0];
+    const profileRow = observed.profiles[0];
+    const invalidBindings = [
+      applicationRow.id !== applicationId && "application id",
+      applicationRow.ownerUserId !== userId && "application owner",
+      applicationRow.status !== "draft" && "application status",
+      applicationRow.verificationRecordId !== null &&
+        "application verification pointer",
+      applicationRow.reviewStartedAt !== null && "application review start",
+      applicationRow.reviewDueAt !== null && "application review deadline",
+      applicationRow.reviewPausedAt !== null && "application review pause",
+      applicationRow.decidedAt !== null && "application decision",
+      profileRow.id !== profileId && "profile id",
+      profileRow.applicationId !== applicationId && "profile application",
+      profileRow.ownerUserId !== userId && "profile owner",
+      profileRow.status !== "draft" && "profile status",
+      profileRow.publicationId !== null && "profile publication pointer",
+      profileRow.sourceRevisionId !== null && "profile source pointer",
+      profileRow.shiftScheduleId !== null && "profile schedule pointer",
+    ].filter(Boolean);
+    if (invalidBindings.length > 0) {
+      throw new Error(
+        `${label} private draft binding is incorrect: ${invalidBindings.join(", ")}.`,
+      );
+    }
+    if (
+      Object.keys(observed.counts).sort().join(",") !== zeroCountKeySet ||
+      Object.values(observed.counts).some((count) => count !== 0)
+    ) {
+      throw new Error(`${label} has forbidden initial descendants.`);
+    }
   } catch (cause) {
-    throw new Error(`${label} guarded readiness snapshot is unavailable.`, {
-      cause,
-    });
-  }
-  if (
-    !snapshot ||
-    typeof snapshot !== "object" ||
-    !Array.isArray((snapshot as { applications?: unknown }).applications) ||
-    !Array.isArray((snapshot as { profiles?: unknown }).profiles) ||
-    !(snapshot as { counts?: unknown }).counts ||
-    typeof (snapshot as { counts?: unknown }).counts !== "object"
-  ) {
-    throw new Error(`${label} guarded readiness snapshot is invalid.`);
-  }
-  const observed = snapshot as {
-    applications: Array<Record<string, unknown>>;
-    profiles: Array<Record<string, unknown>>;
-    counts: Record<string, unknown>;
-  };
-  if (observed.applications.length !== 1 || observed.profiles.length !== 1) {
-    throw new Error(`${label} private draft root cardinality is incorrect.`);
-  }
-  const applicationRow = observed.applications[0];
-  const profileRow = observed.profiles[0];
-  const invalidBindings = [
-    applicationRow.id !== applicationId && "application id",
-    applicationRow.ownerUserId !== userId && "application owner",
-    applicationRow.status !== "draft" && "application status",
-    applicationRow.verificationRecordId !== null &&
-      "application verification pointer",
-    applicationRow.reviewStartedAt !== null && "application review start",
-    applicationRow.reviewDueAt !== null && "application review deadline",
-    applicationRow.reviewPausedAt !== null && "application review pause",
-    applicationRow.decidedAt !== null && "application decision",
-    profileRow.id !== profileId && "profile id",
-    profileRow.applicationId !== applicationId && "profile application",
-    profileRow.ownerUserId !== userId && "profile owner",
-    profileRow.status !== "draft" && "profile status",
-    profileRow.publicationId !== null && "profile publication pointer",
-    profileRow.sourceRevisionId !== null && "profile source pointer",
-    profileRow.shiftScheduleId !== null && "profile schedule pointer",
-  ].filter(Boolean);
-  if (invalidBindings.length > 0) {
+    const reason =
+      cause instanceof Error ? cause.message : "Provider result unavailable.";
     throw new Error(
-      `${label} private draft binding is incorrect: ${invalidBindings.join(", ")}.`,
+      `${label} readiness failed: ${reason} Discard the failed disposable run.`,
+      { cause },
     );
-  }
-  if (
-    Object.keys(observed.counts).sort().join(",") !== zeroCountKeySet ||
-    Object.values(observed.counts).some((count) => count !== 0)
-  ) {
-    throw new Error(`${label} has forbidden initial descendants.`);
   }
 }
