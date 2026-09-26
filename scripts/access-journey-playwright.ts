@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -65,6 +66,7 @@ export async function prepareOwnedAccessJourney(
     createClient,
     prepareAccessJourney,
     validateAccessJourneyInitialState,
+    writeFile,
   },
 ): Promise<AccessJourneyInitialState> {
   const allocation = ownedAccessJourneyAllocation(
@@ -98,17 +100,23 @@ export async function prepareOwnedAccessJourney(
     publishableKey,
     url,
   });
+  const readinessPath = testInfo.outputPath(
+    "owned-access-journey-readiness.json",
+  );
+  await dependencies.writeFile(
+    readinessPath,
+    JSON.stringify({
+      allocation: fixture.allocation,
+      phone: fixture.phone,
+      applicationId: fixture.applicationId,
+      profileId: fixture.profileId,
+      userId: fixture.userId,
+      readiness: "validated",
+    }),
+    "utf8",
+  );
   await testInfo.attach("owned-access-journey-readiness", {
-    body: Buffer.from(
-      JSON.stringify({
-        allocation: fixture.allocation,
-        phone: fixture.phone,
-        applicationId: fixture.applicationId,
-        profileId: fixture.profileId,
-        userId: fixture.userId,
-        readiness: "validated",
-      }),
-    ),
+    path: readinessPath,
     contentType: "application/json",
   });
   return fixture;

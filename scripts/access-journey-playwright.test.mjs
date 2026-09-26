@@ -13,12 +13,14 @@ const doubles = {
   createClient: vi.fn(),
   prepare: vi.fn(),
   validate: vi.fn(),
+  writeFile: vi.fn(),
 };
 const prepareAttempt = (journey, info) =>
   prepareOwnedAccessJourney(journey, info, {
     createClient: doubles.createClient,
     prepareAccessJourney: doubles.prepare,
     validateAccessJourneyInitialState: doubles.validate,
+    writeFile: doubles.writeFile,
   });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -28,6 +30,7 @@ function nativeAttempt(journey, overrides = {}) {
     retry: 0,
     repeatEachIndex: 0,
     title: accessJourneyCases.find((row) => row.journey === journey).title,
+    outputPath: vi.fn((filename) => `/synthetic-attempt/${filename}`),
     attach: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -98,6 +101,13 @@ it("owned Playwright adapter maps native attempt coordinates and rejects duplica
   doubles.createClient.mockReturnValue(privilegedClient);
   let resolvePreparation;
   let resolveReadiness;
+  let resolveWrite;
+  doubles.writeFile.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveWrite = resolve;
+      }),
+  );
   doubles.prepare.mockImplementation(
     () =>
       new Promise((resolve) => {
@@ -156,16 +166,34 @@ it("owned Playwright adapter maps native attempt coordinates and rejects duplica
     publishableKey: "synthetic-publishable",
     url: "http://127.0.0.1:55331",
   });
+  expect(info.outputPath).not.toHaveBeenCalled();
+  expect(doubles.writeFile).not.toHaveBeenCalled();
   expect(info.attach).not.toHaveBeenCalled();
   expect(consumed).toBe(false);
   resolveReadiness();
+  await vi.waitFor(() => expect(doubles.writeFile).toHaveBeenCalledTimes(1));
+  const readinessPath =
+    "/synthetic-attempt/owned-access-journey-readiness.json";
+  expect(info.outputPath).toHaveBeenCalledWith(
+    "owned-access-journey-readiness.json",
+  );
+  const [writtenPath, writtenMetadata, encoding] =
+    doubles.writeFile.mock.calls[0];
+  expect(writtenPath).toBe(readinessPath);
+  expect(encoding).toBe("utf8");
+  expect(info.attach).not.toHaveBeenCalled();
+  expect(consumed).toBe(false);
+  resolveWrite();
   expect(await pending).toBe(fixture);
   expect(consumed).toBe(true);
   expect(info.attach).toHaveBeenCalledTimes(1);
   const [name, attachment] = info.attach.mock.calls[0];
   expect(name).toBe("owned-access-journey-readiness");
-  expect(attachment.contentType).toBe("application/json");
-  expect(JSON.parse(attachment.body.toString())).toEqual({
+  expect(attachment).toEqual({
+    path: readinessPath,
+    contentType: "application/json",
+  });
+  expect(JSON.parse(writtenMetadata)).toEqual({
     allocation,
     phone: fixture.phone,
     applicationId: fixture.applicationId,
@@ -190,7 +218,9 @@ it("owned Playwright adapter maps native attempt coordinates and rejects duplica
   await expect(prepareAttempt("owner-submit", rejected)).rejects.toThrow(
     "production readiness rejected",
   );
+  expect(rejected.outputPath).not.toHaveBeenCalled();
   expect(rejected.attach).not.toHaveBeenCalled();
+  expect(doubles.writeFile).toHaveBeenCalledTimes(1);
   const validationCount = doubles.validate.mock.calls.length;
   doubles.prepare.mockRejectedValue(new Error("preparation rejected"));
   await expect(
@@ -209,4 +239,24 @@ it("owned Playwright adapter maps native attempt coordinates and rejects duplica
     prepareAttempt("shared-account", nativeAttempt("shared-account")),
   ).rejects.toThrow("phase");
   expect(doubles.prepare).toHaveBeenCalledTimes(preparationCount);
+
+  vi.stubEnv("ACCESS_JOURNEY_PHASE", "forward");
+  const failedWrite = nativeAttempt("shared-account");
+  doubles.prepare.mockResolvedValue(
+    accessJourneyIdentity({
+      journey: "shared-account",
+      project: "mobile",
+      retry: 0,
+      repeatEachIndex: 0,
+      phase: "forward",
+    }),
+  );
+  doubles.validate.mockResolvedValue(undefined);
+  doubles.writeFile.mockRejectedValue(
+    new Error("readiness output unavailable"),
+  );
+  await expect(prepareAttempt("shared-account", failedWrite)).rejects.toThrow(
+    "readiness output unavailable",
+  );
+  expect(failedWrite.attach).not.toHaveBeenCalled();
 });
