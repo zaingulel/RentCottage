@@ -205,6 +205,21 @@ test('the watch exits 1 the moment gh itself fails, with the gh error as its las
   assert.equal(network.last, 'error connecting to api.github.com', 'the gh error must be printed as the reason');
 });
 
+test('terminal pull request state stops before check-status read even when it would fail', async () => {
+  const failingChecks = [1, 'HTTP 502: Bad Gateway (https://api.github.com/graphql)'];
+  for (const [state, status, reason] of [
+    ['MERGED', 0, 'merged'],
+    ['CLOSED', 1, 'closed without merging'],
+  ]) {
+    const terminal = await watch([{ view: view(state, 'CLEAN'), checks: failingChecks }]);
+    assert.equal(terminal.status, status, `${state} must determine the exit status`);
+    assert.equal(terminal.last, reason, `${state} must determine the last line`);
+    assert.equal(terminal.reads, 1, `${state} must stop after one PR state read`);
+    assert.equal(terminal.calls.filter((call) => callKind(call) === 'checks').length, 0, `${state} must not read checks`);
+    assert.deepEqual(terminal.sleeps, [], `${state} must not sleep`);
+  }
+});
+
 test('the watch makes exactly one attempt at the gh call that fails, and no gh call of any kind after it', async () => {
   const error = [1, 'HTTP 502: Bad Gateway (https://api.github.com/graphql)'];
   const pending = { view: OPEN_BLOCKED, checks: checks({ test: 'pending', 'sweep-scope': 'pending' }) };
@@ -384,7 +399,7 @@ test('the watch exits 0 only on MERGED', async () => {
 test('the watch only ever reads GitHub state', async () => {
   const run = await watch([{ view: OPEN_BLOCKED, checks: checks({ test: 'pending', 'sweep-scope': 'pending' }) }, MERGED]);
   assert.equal(run.status, 0);
-  assert.deepEqual(run.calls.map(callKind), ['base', 'branch', 'rules', 'view', 'checks', 'view', 'checks']);
+  assert.deepEqual(run.calls.map(callKind), ['base', 'branch', 'rules', 'view', 'checks', 'view']);
   for (const write of [['pr', 'merge', '7'], ['pr', 'ready', '7'], ['pr', 'comment', '7'], ['issue', 'edit', '7'], ['api', '-X', 'PATCH', 'repos/{owner}/{repo}/pulls/7'], ['api', 'repos/{owner}/{repo}/issues/7/comments', '-f', 'body=x']]) {
     assert.throws(() => assertReadOnly([write]), /must only read/, `the read-only check must refuse gh ${write.join(' ')}`);
   }

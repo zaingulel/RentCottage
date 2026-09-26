@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "7100271acd408f0439d9beda462fbe48eded1fac",
+  "syncedFrom": "e09aa5411ec96985c299eedc476217f12ccce44a",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "2d82089a217863567dcf1b119ab606f0876bb182e290a25ea613d74c44d56e1a"
+      "sha256": "0aa9339c5a5a146090fa25ba2b51e06d0f7790c079484f9c6764817773324d6e"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -443,7 +443,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "2d82089a217863567dcf1b119ab606f0876bb182e290a25ea613d74c44d56e1a"
+      "sha256": "0aa9339c5a5a146090fa25ba2b51e06d0f7790c079484f9c6764817773324d6e"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -583,7 +583,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "a8e8ab636f1c68663f51e59b4259fea27d6b3f6197a35a8eea3c217a6fb3ca17"
+      "sha256": "729dbd41210cebb28862e0be035a6d8a18ec48fbd11b9ba1730734077d748072"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -736,11 +736,11 @@
     },
     {
       "path": "scripts/lib/merge-watch.mjs",
-      "sha256": "d2b375dbb38c58bedb57c7c83f320a20baba038d71b4e48991247514f0cf4841"
+      "sha256": "6e2c1cfa8548e0e8088d2c30c874a6ccfe0d0c6ba92dbdfb32003def04ed4f34"
     },
     {
       "path": "scripts/lib/merge-watch.test.mjs",
-      "sha256": "657ce49aa1a82659eaf0508d3039ff9a98e42aa440a22e19ac7855da50fad3fe"
+      "sha256": "eecc25f64a6a8f69888ee4182f7f4c64b1c5c5614a764fcb26f6c4d4092bf147"
     },
     {
       "path": "scripts/lib/posix-shell.mjs",

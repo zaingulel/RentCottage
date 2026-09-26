@@ -239,7 +239,8 @@ it.
    by hand. On Claude Code it runs through `Bash` with `run_in_background: true`, which re-invokes the session
    when it exits. `<pr>` is the pull request number, typed as a literal. The command only reads GitHub, exits 0
    only when the pull request has merged, and otherwise exits 1 with its reason as the last line of output: closed,
-   a failed required check, blocked or behind, an unknown required set, or a `gh` failure.
+   a failed required check, blocked or behind, an unknown required set, or a `gh` failure. Once the pull request state
+   is `MERGED` or `CLOSED`, the watch ends before reading check statuses; only an `OPEN` pull request needs that read.
 
    ```sh
    node scripts/merge-watch.mjs <pr>
