@@ -525,6 +525,120 @@ describe("repository verification command", () => {
     );
   });
 
+  it("records command timing only after execution and preserves fail-fast outcomes", () => {
+    const repository = createRepository();
+    const expectedSteps = [...requiredBaselineSteps, ...requiredExpensiveSteps];
+    const scenarios = [
+      {
+        result: { status: 0 },
+        outcome: { type: "exit", status: 0 },
+        status: 0,
+        expectedSteps,
+      },
+      {
+        result: { status: 7 },
+        outcome: { type: "exit", status: 7 },
+        status: 7,
+        expectedSteps: expectedSteps.slice(0, 2),
+      },
+      {
+        result: { status: null, signal: "SIGTERM" },
+        outcome: { type: "signal", signal: "SIGTERM" },
+        status: 1,
+        expectedSteps: expectedSteps.slice(0, 2),
+      },
+      {
+        result: {
+          status: null,
+          error: Object.assign(new Error("executable unavailable"), {
+            code: "ENOENT",
+          }),
+        },
+        outcome: { type: "spawn-failure", code: "ENOENT" },
+        status: 1,
+        expectedSteps: expectedSteps.slice(0, 2),
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      let monotonic = 100;
+      let utc = "2026-09-26T10:00:00.000Z";
+      const records = [];
+      const stdout = vi.fn((line) => {
+        if (line.startsWith("{")) records.push(JSON.parse(line));
+      });
+      const run = vi.fn((_command, _args, _environment, cwd) => {
+        expect(cwd).toBe(repository);
+        expect(records).toHaveLength(run.mock.calls.length - 1);
+        monotonic += 37;
+        utc = new Date(Date.parse(utc) + 1000).toISOString();
+        return run.mock.calls.length === 2 ? scenario.result : { status: 0 };
+      });
+
+      expect(
+        main(["--full"], {
+          cwd: repository,
+          environment: {},
+          monotonicNow: () => monotonic,
+          utcNow: () => utc,
+          run,
+          stdout,
+          stderr: vi.fn(),
+        }),
+      ).toBe(scenario.status);
+      expect(run.mock.calls.map(([command, args]) => [command, args])).toEqual(
+        scenario.expectedSteps,
+      );
+      expect(records).toHaveLength(scenario.expectedSteps.length);
+      expect(records.map((record) => record.command)).toEqual(
+        scenario.expectedSteps.map(([command, args]) => [command, ...args]),
+      );
+      expect(records[0]).toEqual({
+        type: "verification-phase",
+        command: ["npm", "run", "audit:production"],
+        startedAt: "2026-09-26T10:00:00.000Z",
+        completedAt: "2026-09-26T10:00:01.000Z",
+        durationMs: 37,
+        outcome: { type: "exit", status: 0 },
+      });
+      expect(records[1]).toEqual({
+        type: "verification-phase",
+        command: ["npm", "run", "format:check"],
+        startedAt: "2026-09-26T10:00:01.000Z",
+        completedAt: "2026-09-26T10:00:02.000Z",
+        durationMs: 37,
+        outcome: scenario.outcome,
+      });
+      for (const record of records.slice(2)) {
+        expect(record.durationMs).toBe(37);
+        expect(record.outcome).toEqual({ type: "exit", status: 0 });
+      }
+    }
+
+    const planned = runVerification(repository, {
+      args: ["--full", "--plan"],
+    });
+    expect(planned.status).toBe(0);
+    expect(planned.run).not.toHaveBeenCalled();
+    expect(planned.stdout.mock.calls.some(([line]) => line.startsWith("{"))).toBe(
+      false,
+    );
+    expect(
+      planned.stdout.mock.calls
+        .map(([line]) => line)
+        .filter((line) => line.startsWith("Planned command: "))
+        .map((line) => JSON.parse(line.slice("Planned command: ".length))),
+    ).toEqual(expectedSteps.map(([command, args]) => [command, ...args]));
+
+    rmSync(join(repository, "node_modules/wrangler/package.json"));
+    const blocked = runVerification(repository, { args: ["--full"] });
+    expect(blocked.status).toBe(1);
+    expect(blocked.run).not.toHaveBeenCalled();
+    expect(blocked.stdout.mock.calls.some(([line]) => line.startsWith("{"))).toBe(
+      false,
+    );
+  });
+
   it("fails loudly when a verification executable cannot start or is signalled", () => {
     const repository = createRepository();
     const stderr = vi.fn();

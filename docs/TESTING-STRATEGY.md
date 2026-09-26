@@ -138,6 +138,12 @@ Before its first selected command, executable verification compares the installe
 their `package-lock.json` entries. A missing, malformed or mismatched record stops execution and tells the operator to
 run `npm ci`; it never repairs dependencies automatically. Plan-only output names that pending check but does not run it.
 
+Each attempted top-level verification command emits a `verification-phase` JSON record after execution with
+its exact argument vector, UTC start and completion timestamps, monotonic elapsed milliseconds, and an exit,
+signal, or spawn-failure outcome. These measurements cover whole commands, not individual checks inside them,
+and impose no speed pass/fail threshold. Unstarted commands and plan-only runs emit no timing records;
+environment values and child output are not included.
+
 Run focused checks, intentional red/restored green proofs, and convergence through `node scripts/run-log.mjs <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.

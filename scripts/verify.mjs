@@ -525,9 +525,11 @@ export function main(
   {
     cwd = process.cwd(),
     environment = process.env,
+    monotonicNow = () => Number(process.hrtime.bigint()) / 1e6,
     run = runStep,
     stderr = console.error,
     stdout = console.log,
+    utcNow = () => new Date().toISOString(),
   } = {},
 ) {
   const modes = args.filter((arg) => !["--full", "--plan"].includes(arg));
@@ -620,7 +622,26 @@ export function main(
   if (steps.length > 0 && !checkLockedDependencies(cwd, stderr)) return 1;
   for (let index = 0; index < steps.length; index += 1) {
     const [command, commandArgs] = steps[index];
+    const startedAt = utcNow();
+    const started = monotonicNow();
     const result = run(command, commandArgs, verificationEnvironment, cwd);
+    const durationMs = monotonicNow() - started;
+    const completedAt = utcNow();
+    const outcome = result.error
+      ? { type: "spawn-failure", code: result.error.code ?? null }
+      : result.signal
+        ? { type: "signal", signal: result.signal }
+        : { type: "exit", status: result.status };
+    stdout(
+      JSON.stringify({
+        type: "verification-phase",
+        command: [command, ...commandArgs],
+        startedAt,
+        completedAt,
+        durationMs,
+        outcome,
+      }),
+    );
     if (result.error) {
       stderr(
         `Unable to run ${command}: ${result.error.message}; ${steps.length - index - 1} later selected checks were not reached.`,
