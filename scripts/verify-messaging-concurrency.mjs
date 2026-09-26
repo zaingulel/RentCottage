@@ -125,13 +125,13 @@ try {
   const resetCancellation = between(
     cleanupSource,
     "const resetCancellation = `",
-    "`;\nconst cleanup",
+    "`;\n  const cleanup",
     "cancellation reset template",
   ).slice("const resetCancellation = `".length);
   const cancellationCleanup = between(
     cleanupSource,
     "const cleanup = `",
-    "`;\nconst sessions",
+    "`;\n  const sessions",
     "cancellation cleanup template",
   )
     .slice("const cleanup = `".length)

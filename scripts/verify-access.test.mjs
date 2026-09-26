@@ -2402,6 +2402,52 @@ describe("access verification command", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it("loads reused messaging cancellation templates before rejecting invalid database identity", () => {
+    const result = spawnSync(
+      process.execPath,
+      [resolve(process.cwd(), "scripts/verify-messaging-concurrency.mjs")],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          SUPABASE_LOCAL_PROJECT: "invalid",
+          SUPABASE_DB_CONTAINER: "invalid",
+          PATH: "",
+        },
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "The guarded local Supabase database identity is invalid.",
+    );
+    expect(result.stderr).not.toMatch(
+      /Missing .*template|Duplicate .*template|unresolved interpolation/,
+    );
+    const summaries = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((record) => record.type === "concurrency-summary");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      check: "verify-messaging-concurrency",
+      isolation: "serial",
+      outcome: "failed",
+      executionMs: null,
+      cleanupMs: null,
+      phaseReasons: {
+        execution: "Phase was not reached.",
+        cleanup: "Phase was not reached.",
+      },
+    });
+    expect(Number.isFinite(summaries[0].setupMs)).toBe(true);
+    expect(summaries[0].setupMs).toBeGreaterThanOrEqual(0);
+  });
+
   it("reports a public command spawn failure without tracking an invalid process group", async () => {
     const emptyPath = mkdtempSync(join(tmpdir(), "rentcottage-empty-path-"));
     const stderr = [];
