@@ -816,13 +816,11 @@ registerOwnedJourney("owner-layout", async ({ page }, testInfo) => {
     await page
       .getByRole("heading", { name: copy.documentsSection })
       .scrollIntoViewIfNeeded();
-    const layoutScreenshotPath = testInfo.outputPath(
-      `${locale}-owner-application-evidence-submit.png`,
-    );
-    await page.screenshot({ path: layoutScreenshotPath, fullPage: true });
-    await testInfo.attach(`${locale}-owner-application-evidence-submit`, {
-      path: layoutScreenshotPath,
-      contentType: "image/png",
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `${locale}-owner-application-evidence-submit.png`,
+      ),
+      fullPage: true,
     });
 
     if (testInfo.project.name !== "mobile") {

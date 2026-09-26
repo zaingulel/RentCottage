@@ -76,9 +76,7 @@ it("access journey identities isolate all four owned attempts", () => {
             expect(identity.draft).toEqual({
               applicantKind: "individual",
               legalName: "Access Journey Draft Owner",
-              companyName: "",
               licensingBasis: "licence",
-              exemptionBasis: "",
               cottageName: "Access Journey Draft Cottage",
               governorate: "Erbil",
               approximateLocation: "Synthetic test area",
