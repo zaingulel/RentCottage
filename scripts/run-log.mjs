@@ -14,6 +14,8 @@
 // commit, `dirty` when either had changes (untracked files included), and `unknown` otherwise, so an
 // unreadable state never reads as clean.
 // Nothing else reads the log, and the script keeps nothing between runs.
+// Child start/completion are UTC; elapsedMs uses a monotonic clock and excludes Git snapshots.
+// RUN_LOG_RERUN_REASON is explicit caller context, never inferred from the log.
 
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync } from 'node:fs';
@@ -27,6 +29,11 @@ if (separator < 1 || separator === args.length - 1) {
 }
 const label = args.slice(0, separator).join(' ');
 const command = args.slice(separator + 1);
+const rerunReason = process.env.RUN_LOG_RERUN_REASON ?? null;
+if (rerunReason !== null && !rerunReason.trim()) {
+  console.error('run-log: RUN_LOG_RERUN_REASON must be nonblank when supplied');
+  process.exit(2);
+}
 
 // Output of a git command, or null when git is missing or the command fails.
 function git(gitArgs) {
@@ -52,14 +59,22 @@ function renderState(before, after) {
   return `head=${head} tree=${tree}`;
 }
 
+function escapeReceiptField(value) {
+  return JSON.stringify(value).replace(/[`|<>&\u007f-\u009f\u2028\u2029]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 const branch = git(['branch', '--show-current'])?.trim() || 'detached';
 const root = git(['rev-parse', '--show-toplevel'])?.trim() || process.cwd();
 const dir = join(root, '.claude', 'worklog');
 const logFile = join(dir, `${branch.replace(/[^A-Za-z0-9._-]+/g, '_')}.md`);
 
-const started = new Date().toISOString();
 const before = snapshot();
+const started = new Date().toISOString();
+const startedTick = process.hrtime.bigint();
 const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', shell: false });
+const elapsedMs = Number(process.hrtime.bigint() - startedTick) / 1e6;
+const completed = new Date().toISOString();
 let outcome;
 let exitCode;
 let signal;
@@ -74,8 +89,9 @@ if (result.error) {
   exitCode = result.status;
 }
 const state = renderState(before, snapshot());
-const recordedCommand = JSON.stringify(command).replaceAll('`', '\\u0060');
-const line = `- ${started} | ${label} | \`${recordedCommand}\` | ${outcome} | ${state}`;
+const recordedCommand = escapeReceiptField(command);
+const recordedReason = escapeReceiptField(rerunReason);
+const line = `- ${started} | ${label} | \`${recordedCommand}\` | ${outcome} | completed=${completed} | elapsedMs=${elapsedMs} | rerunReason=\`${recordedReason}\` | ${state}`;
 try {
   mkdirSync(dir, { recursive: true });
   appendFileSync(logFile, `${line}\n`);

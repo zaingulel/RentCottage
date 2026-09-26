@@ -122,19 +122,24 @@ feature over custom code, a hook over a script, and a sentence over a hook.
 
 ## Shared workflow adoption
 
-The files `.agents/factory-manifest.json` lists are shared workflow bytes. The manifest's `canonical` repository
-owns them, every repository in its `adopters` list carries identical copies, and `AGENTS.md` shares only the text
-between its `factory-shared` markers. A shared change is a card in the canonical repository plus one sync card per
-adopter; the sync card runs `node scripts/factory-sync.mjs --from <canonical checkout>` from the adopter's job
-worktree against a clean canonical checkout at its fetched `main`. The change stays partial until every adopter's
-sync lands. A shared file edited without its manifest hash following fails the contract test;
-`node scripts/factory-sync.mjs --write` refreshes the hashes, and only in the canonical repository. Shared files
-are real files, never symlinks, since a symlink reaches a Windows checkout as plain text: a skill is written in
-`.agents/skills/` and copied whole to `.claude/skills/`, and each hook directory carries its own `.gitattributes`
-so hooks keep LF endings wherever line endings are converted; the contract test fails on a symlink, a copy that
-differs from its source, or a missing rule. A git hook's run permission is its committed file mode. An intentional
-adopter exception needs owner agreement and lives outside the shared files. `resume` reports at intake whether this
-repository lags the canonical copy.
+The files `.agents/factory-manifest.json` lists are shared workflow bytes. The manifest's `canonical` repository owns
+them, every repository in its `adopters` list carries identical copies, and `AGENTS.md` shares only the text between
+its `factory-shared` markers. A shared change is a card in the canonical repository plus one sync card per adopter;
+the sync card runs `node scripts/factory-sync.mjs --from <canonical checkout>` from the adopter's job worktree against
+a clean canonical checkout at its fetched `main`. That run copies every shared change already on the canonical `main`,
+so one sync job resolves every open sync card in the adopter whose change it carried. A card is covered when `git
+merge-base --is-ancestor` shows its canonical merge commit is an ancestor of the canonical commit the run copied from,
+and its acceptance criteria hold in the adopter; the job's pull request body lists each covered card with that
+evidence. After the merge, the job's own card closes as completed and closeout closes each covered card as not
+planned, with a comment naming the card that did the sync and quoting its evidence. A card whose change merged after
+the run, or whose evidence the job cannot show, stays open. The change stays partial until every adopter's sync lands.
+A shared file edited without its manifest hash following fails the contract test; `node scripts/factory-sync.mjs
+--write` refreshes the hashes, and only in the canonical repository. Shared files are real files, never symlinks,
+since a symlink reaches a Windows checkout as plain text: a skill is written in `.agents/skills/` and copied whole to
+`.claude/skills/`, and each hook directory carries its own `.gitattributes` so hooks keep LF endings wherever line
+endings are converted; the contract test fails on a symlink, a copy that differs from its source, or a missing rule. A
+git hook's run permission is its committed file mode. An intentional adopter exception needs owner agreement and lives
+outside the shared files. `resume` reports at intake whether this repository lags the canonical copy.
 
 <!-- factory-shared:end -->
 

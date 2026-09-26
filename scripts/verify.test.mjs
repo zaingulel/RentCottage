@@ -66,6 +66,7 @@ const requiredBrowserSteps = [
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const explicitNodeWorkflowEntries = [
+  "scripts/merge-watch.mjs",
   "scripts/doc-lint.mjs",
   ".claude/hooks/filter-test-output.mjs",
   ".claude/hooks/test-output-filter-run.mjs",
@@ -717,6 +718,9 @@ describe("repository verification command", () => {
     ],
     ["native hook manual", ".githooks/README.md", "# Hooks\n"],
     ["shared workflow manifest", ".agents/factory-manifest.json", "{}\n"],
+    ["merge watch entry", "scripts/merge-watch.mjs", "export {};\n"],
+    ["merge watch library", "scripts/lib/merge-watch.mjs", "export {};\n"],
+    ["merge watch tests", "scripts/lib/merge-watch.test.mjs", "export {};\n"],
     ["shared workflow sync entry", "scripts/factory-sync.mjs", "export {};\n"],
     [
       "shared workflow sync library",

@@ -40,6 +40,9 @@ scripts/run-log.mjs
 scripts/sweep-scope-check.mjs
 scripts/verify-issue-publish.mjs
 scripts/lib/board.mjs
+scripts/merge-watch.mjs
+scripts/lib/merge-watch.mjs
+scripts/lib/merge-watch.test.mjs
 scripts/lib/board.test.mjs
 scripts/lib/board-add.mjs
 scripts/lib/board-add.test.mjs

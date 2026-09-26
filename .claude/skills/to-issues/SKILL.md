@@ -103,12 +103,22 @@ Use `board-move.mjs` only to move an existing card, never to create one.
 
 **c. Link each child to its parent Epic as a native sub-issue** (a markdown checklist is NOT a sub-issue):
 
+Look up the two node IDs first, one command each, `<PARENT_ID>` from the Epic and `<CHILD_ID>` from the child:
+
 ```bash
-PARENT=$(gh issue view <EPIC_N> --json id --jq .id)
-CHILD=$(gh issue view <CHILD_N> --json id --jq .id)
+gh issue view <EPIC_N> --json id --jq .id
+```
+
+```bash
+gh issue view <CHILD_N> --json id --jq .id
+```
+
+Then link them in one command, with both IDs typed as literals:
+
+```bash
 gh api graphql \
-  -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c}){subIssue{number}}}' \
-  -f p="$PARENT" -f c="$CHILD"
+  -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p subIssueId:$c}){subIssue{number}}}' \
+  -f p=<PARENT_ID> -f c=<CHILD_ID>
 ```
 
 New backlog items go to **Backlog** until the owner promotes them.
