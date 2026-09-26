@@ -411,6 +411,69 @@ describe("repository verification command", () => {
     ]);
   }, 30000);
 
+  it("ignores only bookkeeping environment changes through production capture", () => {
+    const fixture = productionFixture({ browsers: true });
+    const bookkeepingKeys = [
+      "RUN_LOG_RERUN_REASON",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_PID",
+      "CODEX_SESSION_ID",
+      "STARSHIP_SESSION_KEY",
+      "_",
+      "OLDPWD",
+    ];
+    const initialEnvironment = {
+      ...fixture.environment,
+      TZ: "Etc/UTC",
+      VERIFY_FIXTURE_UNRECOGNIZED_INPUT: "private-unknown-before",
+      ...Object.fromEntries(
+        bookkeepingKeys.map((key) => [key, `private-${key}-before`]),
+      ),
+    };
+    const changedBookkeeping = {
+      ...initialEnvironment,
+      ...Object.fromEntries(
+        bookkeepingKeys.map((key) => [key, `private-${key}-after`]),
+      ),
+    };
+    const execute = (environment, expectedCommands, reused) => {
+      const result = runVerification(fixture.repository, { environment });
+      expect(result.status).toBe(0);
+      expect(commands(result)).toEqual(expectedCommands);
+      for (const [, , suppliedEnvironment] of result.calls) {
+        expect(suppliedEnvironment).toMatchObject(environment);
+      }
+      const output = [
+        ...result.stdout.mock.calls.flat(),
+        ...result.stderr.mock.calls.flat(),
+      ].join("\n");
+      for (const group of ["database", "browser"]) {
+        expect(output.includes(`${group}: reused local evidence`)).toBe(reused);
+        const record = readFileSync(
+          evidenceFile(fixture.repository, "success", group),
+          "utf8",
+        );
+        for (const value of Object.values(environment)) {
+          expect(output).not.toContain(value);
+          expect(record).not.toContain(value);
+        }
+      }
+    };
+    const freshCommands = [...requiredBaselineSteps, ...requiredExpensiveSteps];
+    execute(initialEnvironment, freshCommands, false);
+    execute(changedBookkeeping, requiredBaselineSteps, true);
+    for (const [key, value] of [
+      ["TZ", "Pacific/Auckland"],
+      ["VERIFY_FIXTURE_UNRECOGNIZED_INPUT", "private-unknown-after"],
+    ]) {
+      const changedInput = { ...changedBookkeeping, [key]: value };
+      execute(changedInput, freshCommands, false);
+      execute(changedInput, requiredBaselineSteps, true);
+      execute(changedBookkeeping, freshCommands, false);
+      execute(changedBookkeeping, requiredBaselineSteps, true);
+    }
+  }, 60000);
+
   it("refuses stale source base and environment evidence", () => {
     const cases = [
       (repository) =>
@@ -791,6 +854,23 @@ describe("repository verification command", () => {
 
   it("wires local evidence reuse through a real child invocation", () => {
     const fixture = productionFixture();
+    const gitExecutable = join(fixture.tools, "bin/git");
+    const originalGit = fs.realpathSync(gitExecutable);
+    const gitLog = join(fixture.tools, "git-commands.jsonl");
+    rmSync(gitExecutable);
+    writeFileSync(
+      gitExecutable,
+      `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(gitLog)}, JSON.stringify(args) + '\\n');
+const result = require('node:child_process').spawnSync(${JSON.stringify(originalGit)}, args, { stdio: 'inherit' });
+if (result.error) throw result.error;
+if (result.signal) process.kill(process.pid, result.signal);
+else process.exit(result.status);
+`,
+      { mode: 0o755 },
+    );
     const child = () =>
       spawnSync(
         process.execPath,
@@ -824,6 +904,17 @@ describe("repository verification command", () => {
       ["npm", "run", "verify:access:database"],
       ["npm", "run", "verify:access:database"],
     ]);
+    const gitArguments = readFileSync(gitLog, "utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    expect(gitArguments.some(([command]) => command === "ls-tree")).toBe(true);
+    expect(gitArguments.some(([command]) => command === "ls-files")).toBe(true);
+    expect(
+      gitArguments.filter(
+        ([command, type]) => command === "cat-file" && type === "blob",
+      ),
+    ).toEqual([]);
   }, 30000);
 
   it("refuses external executable overrides through production capture", () => {

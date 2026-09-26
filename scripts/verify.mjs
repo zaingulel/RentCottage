@@ -566,6 +566,16 @@ function gitRecords(cwd, args, layer) {
     : [];
 }
 
+const bookkeepingEnvironmentKeys = new Set([
+  "RUN_LOG_RERUN_REASON",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_PID",
+  "CODEX_SESSION_ID",
+  "STARSHIP_SESSION_KEY",
+  "_",
+  "OLDPWD",
+]);
+
 function captureLocalEvidenceInputs(
   cwd,
   environment,
@@ -659,9 +669,7 @@ function captureLocalEvidenceInputs(
         entry
           ? {
               mode: entry.mode,
-              content: digest(
-                gitOutput(cwd, ["cat-file", "blob", entry.object]),
-              ),
+              content: digest(entry.object),
             }
           : null;
       layers.push({
@@ -688,7 +696,7 @@ function captureLocalEvidenceInputs(
             layers,
             commands,
             environment: Object.entries(environment)
-              .filter(([key]) => key !== "RUN_LOG_RERUN_REASON")
+              .filter(([key]) => !bookkeepingEnvironmentKeys.has(key))
               .sort(([left], [right]) => left.localeCompare(right)),
             runtime: runtime.digest,
             verifier: digest(readFileSync(fileURLToPath(import.meta.url))),

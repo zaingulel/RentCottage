@@ -228,6 +228,11 @@ local source-and-environment evidence, not an exact-revision delivery pass.
 
 Runtime identity includes installed dependency contents, effective environment and npm configuration, local
 configuration files, executable identities, operating system and Docker client/server/context/daemon inputs.
+The raw environment fingerprint excludes exactly `RUN_LOG_RERUN_REASON`, `CLAUDE_CODE_SESSION_ID`,
+`CLAUDE_PID`, `CODEX_SESSION_ID`, `STARSHIP_SESSION_KEY`, `_` and `OLDPWD` as bookkeeping inputs. Every other
+key, including unknown keys, remains an input. Commands and native probes receive the supplied environment;
+resolved npm configuration, configuration bytes and native observations remain inputs even when a bookkeeping
+value affects them.
 Only ordinary non-executable Vitest `.vite/vitest/<40-character hexadecimal key>/results.json` files under
 `node_modules` are excluded as generated results; executable output, symlink ancestors and other installed bytes
 remain inputs. Browser identity also includes both complete installed Chromium and Chromium headless-shell
