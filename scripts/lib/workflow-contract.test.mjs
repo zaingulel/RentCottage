@@ -891,11 +891,90 @@ test('every manifest entry matches the file on disk', () => {
   );
 });
 
+// Each tracked path under the given directories with its git index mode.
+function indexEntries(...directories) {
+  const listed = spawnSync('git', ['ls-files', '-s', '--', ...directories], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(listed.status, 0, listed.stderr);
+  return listed.stdout.split('\n').filter(Boolean).map((line) => {
+    const [meta, path] = line.split('\t');
+    return { mode: meta.split(' ')[0], path };
+  });
+}
+
+// A symlink does not survive a Windows checkout without developer mode, so every installed skill is a real copy
+// that must stay byte-identical to the file it copies.
+test('skill copies are byte-identical to their sources and no skill is a symlink', () => {
+  const entries = indexEntries('.agents/skills', '.claude/skills', '.agents/upstream');
+  const problems = entries
+    .filter(({ mode, path }) => mode === '120000' && /^\.(?:agents|claude)\/skills\//.test(path))
+    .map(({ path }) => `${path} is a symlink`);
+  const under = (prefix) =>
+    new Set(entries.filter(({ mode, path }) => mode !== '120000' && path.startsWith(prefix)).map(({ path }) => path.slice(prefix.length)));
+  const compare = (copies, copyRoot, sources, sourceRoot) => {
+    for (const rest of copies) {
+      if (!sources.has(rest)) problems.push(`${copyRoot}${rest} has no ${sourceRoot}${rest}`);
+      else if (!readFileSync(resolve(ROOT, copyRoot + rest)).equals(readFileSync(resolve(ROOT, sourceRoot + rest)))) {
+        problems.push(`${copyRoot}${rest} differs from ${sourceRoot}${rest}`);
+      }
+    }
+  };
+  const agents = under('.agents/skills/');
+  const claude = under('.claude/skills/');
+  compare(claude, '.claude/skills/', agents, '.agents/skills/');
+  compare([...agents].filter((rest) => !claude.has(rest)), '.agents/skills/', claude, '.claude/skills/');
+
+  const skillNames = new Set(entries.filter(({ path }) => path.startsWith('.agents/skills/')).map(({ path }) => path.split('/')[2]));
+  for (const { path } of entries) {
+    const match = /^(\.agents\/upstream\/[^/]+\/)([^/]+)\/SKILL\.md$/.exec(path);
+    if (!match || !skillNames.has(match[2])) continue;
+    const [, sourceRoot, name] = match;
+    const upstream = new Set([...under(sourceRoot)].filter((rest) => rest.startsWith(`${name}/`)));
+    const installed = new Set([...agents].filter((rest) => rest.startsWith(`${name}/`)));
+    compare(upstream, sourceRoot, installed, '.agents/skills/');
+    compare([...installed].filter((rest) => !upstream.has(rest)), '.agents/skills/', upstream, sourceRoot);
+  }
+  assert.deepEqual(problems, [], 'every skill is a tracked real copy, byte-identical to its source');
+});
+
+// gitattributes(5): an `eol=lf` rule overrides core.autocrlf, so a hook keeps its LF shebang line on Windows.
+const HOOK_DIRECTORIES = ['.githooks', '.claude/hooks', '.codex/hooks'];
+const LF_RULE = '* text eol=lf\n';
+
+test('hook scripts carry the LF rule and the git hooks their run permission', () => {
+  const manifest = new Map(readManifest(ROOT).entries.map((entry) => [entry.path, entry]));
+  const problems = [];
+  for (const directory of HOOK_DIRECTORIES) {
+    const tracked = indexEntries(directory);
+    const attributes = `${directory}/.gitattributes`;
+    if (!tracked.some(({ path }) => path === attributes)) problems.push(`${attributes} is not tracked`);
+    else if (readFileSync(resolve(ROOT, attributes), 'utf8') !== LF_RULE) problems.push(`${attributes} is not exactly ${JSON.stringify(LF_RULE)}`);
+    if (!manifest.has(attributes)) problems.push(`${attributes} is not a manifest entry`);
+
+    const eol = spawnSync('git', ['ls-files', '--eol', '--', directory], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(eol.status, 0, eol.stderr);
+    for (const line of eol.stdout.split('\n').filter(Boolean)) {
+      const [meta, path] = line.split('\t');
+      if (manifest.has(path) && !meta.startsWith('i/lf ')) problems.push(`${path} is not LF in the index (${meta.trim()})`);
+    }
+  }
+  for (const { mode, path } of indexEntries('.githooks')) {
+    if (path === '.githooks/README.md' || path === '.githooks/.gitattributes') continue;
+    if (mode !== '100755') problems.push(`${path} has index mode ${mode}, not 100755`);
+    if (manifest.get(path)?.executable !== true) problems.push(`${path} manifest entry lacks executable: true`);
+  }
+  assert.deepEqual(problems, [], 'every hook directory checks out LF and every git hook runs');
+});
+
 // Every shared workflow file the manifest pins, and the AGENTS.md shared region, reaches every adopter byte for
-// byte, so none may name a product fact. The vendored upstream copies are never edited in place, and this file
-// must name the tokens it forbids.
+// byte, so none may name a product fact. The vendored upstream skills and their installed copies are never edited
+// in place, and this file must name the tokens it forbids.
+const VENDORED_SKILLS = new Set(
+  indexEntries('.agents/upstream').flatMap(({ path }) => /^\.agents\/upstream\/[^/]+\/([^/]+)\/SKILL\.md$/.exec(path)?.slice(1) ?? []),
+);
+const vendoredCopy = (path) =>
+  path.startsWith('.agents/upstream/') || VENDORED_SKILLS.has(/^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(path)?.[1]);
 const TOKEN_SCAN_EXEMPT = (path) =>
-  path.startsWith('.agents/upstream/') || path === '.agents/factory-manifest.json' || path === 'scripts/lib/workflow-contract.test.mjs';
+  vendoredCopy(path) || path === '.agents/factory-manifest.json' || path === 'scripts/lib/workflow-contract.test.mjs';
 const PRODUCT_TOKENS = [
   'Flowgauge',
   'flow-metrics-dashboard',
@@ -918,7 +997,7 @@ test('shared workflow files name no product of any adopter', () => {
   const hits = [];
   for (const entry of readManifest(ROOT).entries) {
     const { path } = entry;
-    if ('symlink' in entry || TOKEN_SCAN_EXEMPT(path)) continue;
+    if (TOKEN_SCAN_EXEMPT(path)) continue;
     const text = readFileSync(resolve(ROOT, path), 'utf8');
     const [scanned, where] = 'region' in entry ? [regionText(text, path), `${path} shared region line `] : [text, `${path}:`];
     scanned.split('\n').forEach((line, index) => {
@@ -978,8 +1057,8 @@ test('no shared file names a path only this repository has', () => {
   const hits = [];
   for (const entry of entries) {
     const { path } = entry;
-    // Vendored upstream copies are replaced whole and never edited, so the product-name test skips them too.
-    if ('symlink' in entry || path.startsWith('.agents/upstream/')) continue;
+    // Vendored skills and their copies are replaced whole and never edited, so the product-name test skips them too.
+    if (vendoredCopy(path)) continue;
     let text = readFileSync(resolve(ROOT, path), 'utf8');
     if ('region' in entry) text = regionText(text, path);
     // This file's forbidden-word lists, each opening with the product name, must spell a file name they forbid.

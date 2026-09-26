@@ -22,9 +22,13 @@ import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, existsSync, readFileS
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { posixShell } from './posix-shell.mjs';
 
 const HOOK = resolve(dirname(fileURLToPath(import.meta.url)), '../../.githooks/pre-commit');
 const LIB_DIR = dirname(fileURLToPath(import.meta.url));
+// The located POSIX shell: `sh` off Windows, Git for Windows' sh.exe on it, null when there is none.
+const SHELL = posixShell();
+const NO_SHELL = 'a POSIX shell is required: install Git for Windows';
 
 function git(repo, args, input) {
   const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', input });
@@ -44,8 +48,9 @@ function initBaseRepo(root) {
   return repo;
 }
 
-function runHook(repo, env = process.env) {
-  const r = spawnSync('sh', [join(repo, '.githooks', 'pre-commit')], { cwd: repo, encoding: 'utf8', env });
+function runHook(repo) {
+  assert.ok(SHELL, NO_SHELL);
+  const r = spawnSync(SHELL, [join(repo, '.githooks', 'pre-commit')], { cwd: repo, encoding: 'utf8' });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -200,11 +205,14 @@ test('pre-commit: failed temporary allocation cannot target the live checkout', 
     writeFileSync(fakeMktemp, '#!/bin/sh\nprintf "%s\\n" "$PRECOMMIT_LIVE_CHECKOUT"\nexit 1\n');
     chmodSync(fakeMktemp, 0o755);
 
-    const result = runHook(repo, {
-      ...process.env,
-      PATH: `${fakeBin}:${process.env.PATH}`,
-      PRECOMMIT_LIVE_CHECKOUT: repo,
-    });
+    // Git for Windows' sh.exe puts its own tool directories ahead of the PATH it is given, where the real
+    // mktemp outranks the fake, so the fake is prepended inside the shell that then runs the hook.
+    assert.ok(SHELL, NO_SHELL);
+    const result = spawnSync(
+      SHELL,
+      ['-c', 'PATH="$(cd "$1" && pwd):$PATH"; exec sh "$2"', 'sh', fakeBin, join(repo, '.githooks', 'pre-commit')],
+      { cwd: repo, encoding: 'utf8', env: { ...process.env, PRECOMMIT_LIVE_CHECKOUT: repo } },
+    );
 
     assert.notEqual(result.status, 0);
     assert.equal(existsSync(repo), true, 'the live checkout must remain intact');
@@ -248,7 +256,8 @@ function runPreMergeCommit(repo) {
   const hook = join(repo, '.githooks', 'pre-merge-commit');
   writeFileSync(hook, readFileSync(resolve(dirname(HOOK), 'pre-merge-commit'), 'utf8'));
   chmodSync(hook, 0o755);
-  const r = spawnSync('sh', [hook], { cwd: repo, encoding: 'utf8' });
+  assert.ok(SHELL, NO_SHELL);
+  const r = spawnSync(SHELL, [hook], { cwd: repo, encoding: 'utf8' });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -340,7 +349,7 @@ test('product gate: an unavailable pre-commit gate passes with only its own stat
   });
 });
 
-test('product gate: a non-executable pre-commit gate blocks and names the chmod fix', () => {
+test('product gate: a non-executable pre-commit gate blocks and names the chmod fix', { skip: process.platform === 'win32' && 'the executable bit does not exist on Windows' }, () => {
   withScratchRoot((root) => {
     const { repo, gate } = initGateRepo(root, GATE_PASSING, 0o644);
     const r = runHook(repo);

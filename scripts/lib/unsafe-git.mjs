@@ -30,7 +30,7 @@
 // case-insensitive volume, so `Git push --force` runs the real binary. Only the name is widened;
 // subcommands and flags stay exact (`git COMMIT` is not a command, `-F` is not `-f`), and `cd` stays
 // lowercase because a capitalised `CD` runs /usr/bin/cd in a child process and moves nothing.
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 
 // Returns a reason string when `cmd` should be blocked, or "" when it's allowed. `checkout` is the
 // hook's working-directory context, `{ cwd, isRootCheckout(dir) }`; without it the root-checkout rule
@@ -170,7 +170,7 @@ export function blockReason(cmd, checkout) {
     if (target === undefined) return null;
     const planted = /^␀(\d+)␀$/.exec(target);
     const path = planted ? quotedPaths[Number(planted[1])] : target;
-    if (/^[-~]|[$`]/.test(path) || (from === null && !path.startsWith('/'))) return null;
+    if (/^[-~]|[$`]/.test(path) || (from === null && !isAbsolute(path))) return null;
     return resolve(from ?? '', path);
   };
   const isBranchWork = (subcommand, args) => {

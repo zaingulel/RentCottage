@@ -4,10 +4,11 @@
 // as the root.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkoutContext } from './checkout-context.mjs';
 
 const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -39,5 +40,40 @@ test('checkoutContext tells the main working tree from a linked worktree, and sa
     assert.match(outside.unresolved, /cannot resolve the working directory/);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+// Windows' default executable search tries the working directory before PATH, so the guard run in a
+// repository holding a git.exe would run it. The planted git.exe is a copy of node, which rejects
+// -C, so a checkout read through it would come back unresolved.
+// Recurring cost: one copy of the node binary, one node start and one git start, on Windows only.
+// Removal condition: remove when checkoutContext no longer spawns git.
+test('win32 checkoutContext ignores a git.exe in the working directory', {
+  skip: process.platform !== 'win32' && 'the working-directory executable search exists only on Windows',
+}, (t) => {
+  const nodeDir = dirname(process.execPath);
+  if (existsSync(join(nodeDir, 'git.exe'))) {
+    t.skip('node shares a directory with git.exe, so no PATH can hold node without it');
+    return;
+  }
+  const gitDir = (process.env.PATH ?? '').split(';').filter(Boolean)
+    .find((dir) => existsSync(join(dir, 'git.exe')));
+  assert.ok(gitDir, 'no PATH directory holds git.exe');
+  const repository = fileURLToPath(new URL('../..', import.meta.url));
+
+  const planted = mkdtempSync(join(tmpdir(), 'checkout-context-'));
+  try {
+    copyFileSync(process.execPath, join(planted, 'git.exe'));
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PATH'));
+    const moduleUrl = pathToFileURL(fileURLToPath(new URL('./checkout-context.mjs', import.meta.url))).href;
+    const r = spawnSync(process.execPath, [
+      '--input-type=module',
+      '-e',
+      `import { checkoutContext } from ${JSON.stringify(moduleUrl)}; console.log('checkout' in checkoutContext(${JSON.stringify(repository)}));`,
+    ], { cwd: planted, env: { ...env, PATH: [gitDir, nodeDir].join(';') }, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), 'true');
+  } finally {
+    rmSync(planted, { recursive: true, force: true });
   }
 });

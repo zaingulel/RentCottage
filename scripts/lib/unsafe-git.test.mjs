@@ -6,6 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { join, resolve, sep } from 'node:path';
 import { blockReason } from './unsafe-git.mjs';
 
 const REASON_CREATE = "gh pr create without --draft skips the draft review: open it as a draft (--draft/-d) so Greptile reviews it before CI runs";
@@ -361,10 +362,13 @@ EOF`,
 // The root checkout stays on main; branch work there is refused when the hook says the command
 // runs in it. The resolver is injected: git's own answer is exercised in checkout-context.test.mjs.
 // Mutation: delete rootCheckoutReason from the segment walk and every refusal below returns ''.
+// The walk resolves each hop with node:path, which on Windows yields a drive-letter, backslashed
+// path, so the fixture paths are built the same way to match on every platform.
 
-const ROOT = '/Users/z/Claude Code/repo';
-const JOB = `${ROOT}/.claude/worktrees/1170`;
-const isRootCheckout = (dir) => dir === ROOT || (dir.startsWith(`${ROOT}/`) && !dir.startsWith(`${ROOT}/.claude/worktrees/`));
+const ROOT = resolve('/Users/z/Claude Code/repo');
+const WORKTREES = join(ROOT, '.claude', 'worktrees');
+const JOB = join(WORKTREES, '1170');
+const isRootCheckout = (dir) => dir === ROOT || (dir.startsWith(`${ROOT}${sep}`) && !dir.startsWith(`${WORKTREES}${sep}`));
 const inRoot = { cwd: ROOT, isRootCheckout };
 const inJob = { cwd: JOB, isRootCheckout };
 const rootReason = (subcommand) => `git ${subcommand} in the integration checkout: the root stays on main and nothing is branched, switched, or committed there — open a job checkout with git worktree add and run it from there`;

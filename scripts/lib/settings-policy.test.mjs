@@ -47,6 +47,7 @@ test('the Codex hook set is exact and cannot be widened or deleted silently', ()
           hooks: [{
             type: 'command',
             command: 'node "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.codex/hooks/block-unsafe-git.mjs"',
+            commandWindows: '$r = Split-Path -Parent (git rev-parse --path-format=absolute --git-common-dir); if (-not $r) { $r = \'.\' }; $h = "$r/.codex/hooks/block-unsafe-git.mjs"; $LASTEXITCODE = 1; node $h; exit $LASTEXITCODE',
           }],
         },
         {
@@ -54,6 +55,7 @@ test('the Codex hook set is exact and cannot be widened or deleted silently', ()
           hooks: [{
             type: 'command',
             command: 'node "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.codex/hooks/check-builder-handoff.mjs"',
+            commandWindows: '$r = Split-Path -Parent (git rev-parse --path-format=absolute --git-common-dir); if (-not $r) { $r = \'.\' }; $h = "$r/.codex/hooks/check-builder-handoff.mjs"; $LASTEXITCODE = 1; node $h; exit $LASTEXITCODE',
           }],
         },
       ],
@@ -61,6 +63,7 @@ test('the Codex hook set is exact and cannot be widened or deleted silently', ()
         hooks: [{
           type: 'command',
           command: 'sh "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.codex/hooks/verify-green.sh"',
+          commandWindows: '$r = Split-Path -Parent (git rev-parse --path-format=absolute --git-common-dir); if (-not $r) { $r = \'.\' }; $h = "$r/.codex/hooks/verify-green.mjs"; $LASTEXITCODE = 1; node $h; exit $LASTEXITCODE',
         }],
       }],
     },

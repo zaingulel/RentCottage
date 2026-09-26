@@ -21,15 +21,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { posixShell } from './posix-shell.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const CLAUDE_HOOK = resolve(ROOT, '.claude/hooks/verify-green.sh');
-const CODEX_HOOK = resolve(ROOT, '.codex/hooks/verify-green.sh');
-const HOOKS = [CLAUDE_HOOK, CODEX_HOOK];
+// The located POSIX shell: `sh` off Windows, Git for Windows' sh.exe on it, null when there is none.
+const SHELL = posixShell();
+const NO_SHELL = 'a POSIX shell is required: install Git for Windows';
+// Each hook with the program that launches it: Codex on native Windows runs hook commands in
+// PowerShell, so its Stop hook is the Node launcher, which must reproduce the `.sh` outcome exactly.
+const CLAUDE_HOOK = { launcher: SHELL, script: resolve(ROOT, '.claude/hooks/verify-green.sh') };
+const CODEX_HOOK = { launcher: SHELL, script: resolve(ROOT, '.codex/hooks/verify-green.sh') };
+const CODEX_LAUNCHER = { launcher: process.execPath, script: resolve(ROOT, '.codex/hooks/verify-green.mjs') };
+const HOOKS = [CLAUDE_HOOK, CODEX_HOOK, CODEX_LAUNCHER];
 
 function git(dir, args) {
   const r = spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
@@ -38,7 +45,8 @@ function git(dir, args) {
 }
 
 // Scratch root checkout with a committed baseline: src/a.txt ("A") and a lint fixture (a
-// package.json lint script and a fake ESLint whose exit FAKE_ESLINT_STATUS sets).
+// package.json lint script and a fake ESLint whose exit FAKE_ESLINT_STATUS sets). npm on Windows runs
+// the script through cmd.exe, which needs the fake's `.cmd` twin there.
 function initRootRepo(scratch) {
   const repo = join(scratch, 'repo');
   mkdirSync(join(repo, 'src'), { recursive: true });
@@ -48,6 +56,9 @@ function initRootRepo(scratch) {
   const eslint = join(repo, 'node_modules', '.bin', 'eslint');
   writeFileSync(eslint, '#!/bin/sh\nprintf "eslint-status-%s-sentinel\\n" "${FAKE_ESLINT_STATUS:-0}" >&2\nexit "${FAKE_ESLINT_STATUS:-0}"\n');
   chmodSync(eslint, 0o755);
+  if (process.platform === 'win32') {
+    writeFileSync(`${eslint}.cmd`, '@echo off\r\necho eslint-status-%FAKE_ESLINT_STATUS%-sentinel 1>&2\r\nexit /b %FAKE_ESLINT_STATUS%\r\n');
+  }
   git(repo, ['init', '-q', '-b', 'main']);
   git(repo, ['add', '-A']);
   git(repo, ['-c', 'user.email=test@test.dev', '-c', 'user.name=Test', 'commit', '-q', '-m', 'base']);
@@ -56,11 +67,12 @@ function initRootRepo(scratch) {
 
 // The hook reads its event JSON from stdin; `{}` is a first (non-recursive) Stop event.
 function runHook(hook, cwd, projectDir, { input = '{}', env = {} } = {}) {
-  const r = spawnSync('/bin/sh', [hook], {
+  assert.ok(hook.launcher, NO_SHELL);
+  const r = spawnSync(hook.launcher, [hook.script], {
     cwd,
     encoding: 'utf8',
     input,
-    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir, ...env },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir, FAKE_ESLINT_STATUS: '0', ...env },
   });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
@@ -157,6 +169,7 @@ test('Stop gate: a missing local or ancestor ESLint executable makes lint explic
     const root = initRootRepo(scratch);
     makePending(root);
     rmSync(join(root, 'node_modules', '.bin', 'eslint'));
+    rmSync(join(root, 'node_modules', '.bin', 'eslint.cmd'), { force: true });
     for (const hook of HOOKS) {
       const r = runHook(hook, root, root);
       assert.equal(r.status, 0, r.stderr);
@@ -193,22 +206,38 @@ test('Stop gate: runnable lint succeeds silently', () => {
 });
 
 // A PATH directory holding only the named commands, so a test can take away one tool the hook needs.
+// Each entry is a wrapper stub rather than a symlink, because a symlink needs privilege on Windows.
 function pathWithOnly(scratch, label, commands) {
   const bin = join(scratch, label);
   mkdirSync(bin);
+  assert.ok(SHELL, NO_SHELL);
   for (const command of commands) {
-    const found = spawnSync('/bin/sh', ['-c', `command -v ${command}`], { encoding: 'utf8' });
+    const found = spawnSync(SHELL, ['-c', `command -v ${command}`], { encoding: 'utf8' });
     assert.equal(found.status, 0, `fixture requires ${command}`);
-    symlinkSync(found.stdout.trim(), join(bin, command));
+    writeFileSync(join(bin, command), `#!/bin/sh\nexec "${found.stdout.trim()}" "$@"\n`, { mode: 0o755 });
   }
   return bin;
+}
+
+// The Codex launcher finds its shell as sh.exe on PATH, which no wrapper stub is, so on Windows the
+// real shell's own directory follows the stubs; that Git for Windows directory holds no node or npm.
+function restrictedPath(bin) {
+  if (process.platform !== 'win32') return bin;
+  const shellDir = dirname(SHELL);
+  for (const name of ['node.exe', 'npm', 'npm.cmd']) {
+    assert.ok(
+      !existsSync(join(shellDir, name)),
+      `the shell's directory ${shellDir} also holds node or npm, so it cannot give the launcher its shell without restoring the tool this test removes`,
+    );
+  }
+  return [bin, shellDir].join(delimiter);
 }
 
 test('Stop gate: missing Node makes lint explicitly unavailable', () => {
   withScratchRoot((scratch) => {
     const root = initRootRepo(scratch);
     makePending(root);
-    const path = pathWithOnly(scratch, 'bin-without-node', ['cat', 'dirname', 'git', 'npm']);
+    const path = restrictedPath(pathWithOnly(scratch, 'bin-without-node', ['cat', 'dirname', 'git', 'npm', 'sh']));
     for (const hook of HOOKS) {
       const r = runHook(hook, root, root, { env: { PATH: path } });
       assert.equal(r.status, 0, r.stderr);
@@ -221,7 +250,7 @@ test('Stop gate: missing npm makes lint explicitly unavailable', () => {
   withScratchRoot((scratch) => {
     const root = initRootRepo(scratch);
     makePending(root);
-    const path = pathWithOnly(scratch, 'bin-without-npm', ['cat', 'dirname', 'git', 'node']);
+    const path = restrictedPath(pathWithOnly(scratch, 'bin-without-npm', ['cat', 'dirname', 'git', 'node', 'sh']));
     for (const hook of HOOKS) {
       const r = runHook(hook, root, root, { env: { PATH: path } });
       assert.equal(r.status, 0, r.stderr);
@@ -307,7 +336,7 @@ test('product gate: an unavailable Stop gate passes with only its own stated rea
   });
 });
 
-test('product gate: a non-executable Stop gate blocks and names the chmod fix', () => {
+test('product gate: a non-executable Stop gate blocks and names the chmod fix', { skip: process.platform === 'win32' && 'the executable bit does not exist on Windows' }, () => {
   withScratchRoot((scratch) => {
     const root = initRootRepo(scratch);
     const gate = writeStopGate(root, GATE_PASSING, 0o644);
@@ -316,5 +345,15 @@ test('product gate: a non-executable Stop gate blocks and names the chmod fix', 
       assert.equal(r.status, 2, r.stderr);
       assert.ok(r.stderr.includes(`chmod +x ${gate}`), r.stderr);
     }
+  });
+});
+
+test('Codex Stop launcher: no reachable POSIX shell blocks with the Git for Windows remedy', () => {
+  withScratchRoot((scratch) => {
+    const root = initRootRepo(scratch);
+    // An empty PATH leaves `sh` unspawnable (ENOENT), the same outcome as a Windows host with no shell.
+    const r = runHook(CODEX_LAUNCHER, root, root, { env: { PATH: '' } });
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /no POSIX shell found; install Git for Windows/);
   });
 });

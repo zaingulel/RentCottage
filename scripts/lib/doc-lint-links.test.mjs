@@ -22,7 +22,7 @@ import {
   resolveLinkTarget,
   checkMarkdownLinks,
 } from './doc-lint-links.mjs';
-import { buildTrackedSet, pathExists, classifyDocLintPath } from './doc-lint.mjs';
+import { buildTrackedSet, pathExists, classifyDocLintPath, vendoredSkillNames } from './doc-lint.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -154,7 +154,8 @@ test('repo-pass: the real repo classified prose files have zero dead Markdown li
     .split('\n').filter(Boolean)
     .filter((rel) => fs.existsSync(path.join(ROOT, rel)));
   const trackedSet = buildTrackedSet(tracked);
-  const scanFiles = tracked.filter((rel) => classifyDocLintPath(rel).pathRefs);
+  const vendored = vendoredSkillNames(tracked);
+  const scanFiles = tracked.filter((rel) => classifyDocLintPath(rel, vendored).pathRefs);
 
   // Vacuity guard: a classifier that stopped matching would make the scan
   // below pass over nothing. Named mandatory shared surfaces only — a numeric

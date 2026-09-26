@@ -45,17 +45,13 @@ function writeManifest(root, entries) {
   );
 }
 
-// A tree holding one file and one symlink to it, with a manifest that records both correctly.
+// A tree holding one file, with a manifest that records it correctly.
 function matchingTree(t) {
   const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, 'docs'));
   writeFileSync(join(root, 'docs', 'a.txt'), 'hello\n');
-  symlinkSync('docs/a.txt', join(root, 'link'));
-  writeManifest(root, [
-    { path: 'docs/a.txt', sha256: HELLO_SHA256 },
-    { path: 'link', symlink: 'docs/a.txt' },
-  ]);
+  writeManifest(root, [{ path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
   return root;
 }
 
@@ -82,13 +78,6 @@ test('one changed byte in a file entry is reported', (t) => {
   assert.equal(mismatch.expected, HELLO_SHA256);
   assert.match(mismatch.actual, /^[0-9a-f]{64}$/);
   assert.notEqual(mismatch.actual, HELLO_SHA256);
-});
-
-test('a replaced symlink target is reported', (t) => {
-  const root = matchingTree(t);
-  rmSync(join(root, 'link'));
-  symlinkSync('./docs/a.txt', join(root, 'link'));
-  assert.deepEqual(verifyManifest(root), [{ path: 'link', expected: 'docs/a.txt', actual: './docs/a.txt' }]);
 });
 
 test('a file replaced by a symlink is reported, even when the link resolves to identical bytes', (t) => {
@@ -133,12 +122,8 @@ test('recording a file entry marks it executable only when the file is', (t) => 
 
 test('a missing path is reported as missing', (t) => {
   const root = matchingTree(t);
-  rmSync(join(root, 'link'));
   rmSync(join(root, 'docs'), { recursive: true });
-  assert.deepEqual(verifyManifest(root), [
-    { path: 'docs/a.txt', expected: HELLO_SHA256, actual: 'missing' },
-    { path: 'link', expected: 'docs/a.txt', actual: 'missing' },
-  ]);
+  assert.deepEqual(verifyManifest(root), [{ path: 'docs/a.txt', expected: HELLO_SHA256, actual: 'missing' }]);
 });
 
 test('a missing, unparsable or malformed manifest fails loudly by name', (t) => {
@@ -150,7 +135,7 @@ test('a missing, unparsable or malformed manifest fails loudly by name', (t) => 
   assert.throws(() => readManifest(root), /factory-manifest\.json is not valid JSON/);
   for (const entry of [
     { path: 'a', sha256: 'not-a-hash' },
-    { path: 'a', symlink: '' },
+    { path: 'a', symlink: 'b' },
     { path: 'a', sha256: HELLO_SHA256, symlink: 'b' },
     { path: 'a', region: 'other', sha256: HELLO_SHA256 },
     { path: '../a', sha256: HELLO_SHA256 },
@@ -169,8 +154,8 @@ test('a manifest that lists one path twice is refused, naming the path', (t) => 
   t.after(() => rmSync(root, { recursive: true, force: true }));
   writeManifest(root, [
     { path: 'docs/a.txt', sha256: HELLO_SHA256 },
-    { path: 'link', symlink: 'docs/a.txt' },
-    { path: 'docs/a.txt', symlink: 'elsewhere' },
+    { path: 'b.txt', sha256: HELLO_SHA256 },
+    { path: 'docs/a.txt', sha256: ZERO_SHA256 },
   ]);
   assert.throws(() => readManifest(root), /\.agents\/factory-manifest\.json lists docs\/a\.txt more than once/);
 });
@@ -242,7 +227,7 @@ for (const [name, manual] of [
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'factory-sync.mjs');
 const ZERO_SHA256 = '0'.repeat(64);
 
-// A git repository whose manifest records stale values for a region, a file and a symlink.
+// A git repository whose manifest records stale values for a region and a file.
 function staleRepository(t, origin) {
   const root = mkdtempSync(join(tmpdir(), 'factory-sync-cli-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -251,11 +236,9 @@ function staleRepository(t, origin) {
   writeFileSync(join(root, 'AGENTS.md'), `# Product manual\n${START}\nx\ny\n${END}\n`);
   mkdirSync(join(root, 'docs'));
   writeFileSync(join(root, 'docs', 'a.txt'), 'hello\n');
-  symlinkSync('docs/a.txt', join(root, 'link'));
   writeManifest(root, [
     { path: 'AGENTS.md', region: 'factory-shared', sha256: ZERO_SHA256 },
     { path: 'docs/a.txt', sha256: ZERO_SHA256 },
-    { path: 'link', symlink: 'stale' },
   ]);
   return root;
 }
@@ -289,7 +272,6 @@ test('--write in the canonical repository records every entry deterministically'
       entries: [
         { path: 'AGENTS.md', region: 'factory-shared', sha256: REGION_SHA256 },
         { path: 'docs/a.txt', sha256: HELLO_SHA256 },
-        { path: 'link', symlink: 'docs/a.txt' },
       ],
     },
     null,
@@ -343,7 +325,6 @@ const SOURCE_ENTRIES = [
   { path: 'AGENTS.md', region: 'factory-shared', sha256: ZERO_SHA256 },
   { path: 'docs/a.txt', sha256: ZERO_SHA256 },
   { path: 'scripts/run.sh', sha256: ZERO_SHA256 },
-  { path: 'link', symlink: 'stale' },
 ];
 
 // Records the source's manifest from disk over the given entries, then commits the whole source.
@@ -352,7 +333,7 @@ function recordSource(source, entries) {
   commitAll(source);
 }
 
-// A canonical source on main with a region, a plain file, an executable file and a symlink; an adopter target
+// A canonical source on main with a region, a plain file and an executable file; an adopter target
 // whose committed manifest names the canonical, whose shared file is a symlink to a file outside it, and whose
 // script is not yet executable; and that outside directory.
 function syncFixture(t) {
@@ -365,7 +346,6 @@ function syncFixture(t) {
   put(source, 'AGENTS.md', `# Canonical manual\n${START}\nshared v2\n${END}\n## Canonical rules\n`);
   put(source, 'docs/a.txt', 'hello v2\n');
   put(source, 'scripts/run.sh', '#!/bin/sh\necho v2\n', 0o755);
-  link(source, 'link', 'scripts/run.sh');
   recordSource(source, SOURCE_ENTRIES);
 
   repository(target, ADOPTER_URL);
@@ -405,12 +385,12 @@ function assertRefused(fixture, cause, options) {
   assert.deepEqual([snapshot(fixture.target), snapshot(fixture.outside)], before, 'a refused sync must write nothing');
 }
 
-test('a sync writes every shared file, symlink and region into the adopter and records the source commit', (t) => {
+test('a sync writes every shared file and region into the adopter and records the source commit', (t) => {
   const fixture = syncFixture(t);
   const at = (path) => join(fixture.target, path);
   const outsideBefore = snapshot(fixture.outside);
 
-  assert.deepEqual(fixture.sync(), { files: 2, symlinks: 1, regions: 1 });
+  assert.deepEqual(fixture.sync(), { files: 2, regions: 1 });
 
   assert.equal(readFileSync(at('AGENTS.md'), 'utf8'), `# Adopter manual\n${START}\nshared v2\n${END}\n## Adopter rules\n`);
   assert.ok(lstatSync(at('docs/a.txt')).isFile(), 'a shared file that was a symlink must become a regular file');
@@ -418,7 +398,6 @@ test('a sync writes every shared file, symlink and region into the adopter and r
   assert.equal(lstatSync(at('docs/a.txt')).mode & 0o777, 0o644);
   assert.equal(readFileSync(at('scripts/run.sh'), 'utf8'), '#!/bin/sh\necho v2\n');
   assert.equal(lstatSync(at('scripts/run.sh')).mode & 0o777, 0o755, 'the executable bit must follow the source');
-  assert.equal(readlinkSync(at('link')), 'scripts/run.sh');
   assert.deepEqual(snapshot(fixture.outside), outsideBefore, 'the file the old symlink pointed at must be untouched');
 
   const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
@@ -453,16 +432,6 @@ test('an entry whose parent in the target is a symlink to a directory outside it
   assertRefused(fixture, /evil\/x\.txt: .*outside the target/);
 });
 
-// Through `docs/sub -> ..` the entry would land at the target's l, where its text ../../y leaves the target.
-test('a symlink entry whose parent in the target is a symlink back up the target is refused', (t) => {
-  const fixture = syncFixture(t);
-  link(fixture.source, 'docs/sub/l', '../../y');
-  recordSource(fixture.source, [...SOURCE_ENTRIES, { path: 'docs/sub/l', symlink: 'stale' }]);
-  link(fixture.target, 'docs/sub', '..');
-  commitAll(fixture.target);
-  assertRefused(fixture, /docs\/sub\/l: its parent .*\/docs\/sub is a symlink/);
-});
-
 test('a file entry whose parent in the target is a symlink to a directory inside it is refused', (t) => {
   const fixture = syncFixture(t);
   put(fixture.source, 'alias/x.txt', 'x\n');
@@ -473,75 +442,39 @@ test('a file entry whose parent in the target is a symlink to a directory inside
   assert.equal(lstatSync(join(fixture.target, 'docs', 'x.txt'), { throwIfNoEntry: false }), undefined, 'nothing may land at the symlink destination');
 });
 
-for (const [name, text] of [
-  ['climbs out of the target', '../../outside'],
-  ['is absolute', null],
-]) {
-  test(`a symlink entry whose link text ${name} is refused`, (t) => {
-    const fixture = syncFixture(t);
-    link(fixture.source, 'docs/escape', text ?? fixture.outside);
-    recordSource(fixture.source, [...SOURCE_ENTRIES, { path: 'docs/escape', symlink: 'stale' }]);
-    assertRefused(fixture, text ? /docs\/escape: .*link text .*outside the target/ : /docs\/escape: .*absolute link text/);
-  });
-}
-
-// A fixture whose target commits `pre`, made by makePre and by default a symlink to the outside directory, and whose
-// source shares a symlink docs/tool with the given link text.
-function throughPre(t, text, makePre = (target) => link(target, 'pre', '../outside')) {
+// An adopter that still commits a former shared symlink is told how to migrate off it.
+test('a file entry under a symlinked directory in the target is refused, naming the git rm that clears it', (t) => {
   const fixture = syncFixture(t);
-  makePre(fixture.target);
+  put(fixture.source, '.claude/skills/x/SKILL.md', 'skill\n');
+  recordSource(fixture.source, [...SOURCE_ENTRIES, { path: '.claude/skills/x/SKILL.md', sha256: ZERO_SHA256 }]);
+  put(fixture.target, '.agents/skills/x/SKILL.md', 'skill\n');
+  link(fixture.target, '.claude/skills/x', '../../.agents/skills/x');
   commitAll(fixture.target);
-  link(fixture.source, 'docs/tool', text);
-  recordSource(fixture.source, [...SOURCE_ENTRIES, { path: 'docs/tool', symlink: 'stale' }]);
-  return fixture;
-}
-
-test('a symlink entry whose link text leads through an outward symlink to a path that does not exist yet is refused', (t) => {
-  assertRefused(throughPre(t, '../pre/not-yet/tool'), /docs\/tool: link text \.\.\/pre\/not-yet\/tool resolves to .*outside the target/);
+  assertRefused(
+    fixture,
+    /\.claude\/skills\/x\/SKILL\.md: its parent .*\/\.claude\/skills\/x is a symlink, .*remove it first: git rm \.claude\/skills\/x, commit, then sync$/,
+  );
 });
 
-test('a symlink entry whose link text leads through an outward symlink to an existing file is refused', (t) => {
-  assertRefused(throughPre(t, '../pre/secret.txt'), /docs\/tool: link text \.\.\/pre\/secret\.txt resolves to .*outside the target/);
-});
-
-test('a symlink entry whose link text leads through a dangling symlink is refused', (t) => {
-  const fixture = throughPre(t, '../pre/tool', (target) => link(target, 'pre', '../outside/not-yet'));
-  assertRefused(fixture, /docs\/tool: link text \.\.\/pre\/tool resolves to \(nowhere\), outside the target/);
-});
-
-test('a symlink entry whose link text leads through a regular file is refused', (t) => {
-  const fixture = throughPre(t, '../pre/tool', (target) => put(target, 'pre', 'plain\n'));
-  assertRefused(fixture, /docs\/tool: link text \.\.\/pre\/tool resolves to \(nowhere\), outside the target/);
-});
-
-// Nothing is written until everything is validated, so the link's destination does not exist yet when its text is
-// checked, even though the file entry that creates it is listed after it.
-test('a first sync into an empty target accepts a symlink entry whose destination the same sync creates', (t) => {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), 'factory-sync-first-')));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
-  const [source, target] = ['source', 'target'].map((name) => join(base, name));
-  repository(source, CANONICAL_URL);
-  link(source, '.claude/skills/x', '../../.agents/skills/x');
-  put(source, '.agents/skills/x/SKILL.md', 'skill\n');
-  recordSource(source, [
-    { path: '.claude/skills/x', symlink: 'stale' },
-    { path: '.agents/skills/x/SKILL.md', sha256: ZERO_SHA256 },
-  ]);
-  repository(target, ADOPTER_URL);
-  commitAll(target);
-
-  const fetchMain = (root) => git(root, 'rev-parse', 'refs/heads/main');
-  assert.deepEqual(syncInto({ source, target, canonical: CANONICAL, fetchMain }), { files: 1, symlinks: 1, regions: 0 });
-
-  assert.equal(realpathSync(join(target, '.claude/skills/x')), join(target, '.agents/skills/x'));
-  assert.deepEqual(verifyManifest(target), []);
-});
-
-test('a non-empty directory where a symlink entry goes is refused', (t) => {
+test('a file entry whose parent is a regular file in the target is refused, naming the git rm that clears it', (t) => {
   const fixture = syncFixture(t);
-  put(fixture.target, 'link/kept.txt', 'kept\n');
+  put(fixture.source, '.claude/skills/x/SKILL.md', 'skill\n');
+  recordSource(fixture.source, [...SOURCE_ENTRIES, { path: '.claude/skills/x/SKILL.md', sha256: ZERO_SHA256 }]);
+  put(fixture.target, '.agents/skills/x/SKILL.md', 'skill\n');
+  put(fixture.target, '.claude/skills/x', '../../.agents/skills/x');
   commitAll(fixture.target);
-  assertRefused(fixture, /link: .*non-empty directory/);
+  assertRefused(
+    fixture,
+    /\.claude\/skills\/x\/SKILL\.md: its parent .*\/\.claude\/skills\/x is a file, not a directory, .*remove it first: git rm \.claude\/skills\/x, commit, then sync$/,
+  );
+});
+
+test('a non-empty directory where a file entry goes is refused', (t) => {
+  const fixture = syncFixture(t);
+  rmSync(join(fixture.target, 'scripts', 'run.sh'));
+  put(fixture.target, 'scripts/run.sh/kept.txt', 'kept\n');
+  commitAll(fixture.target);
+  assertRefused(fixture, /scripts\/run\.sh: .*non-empty directory/);
 });
 
 test('a source whose HEAD is not its freshly fetched origin main is refused', (t) => {
@@ -830,7 +763,6 @@ const LAG_MANIFEST = {
   adopters: ['example-owner/adopter'],
   entries: [
     { path: 'a.txt', sha256: HELLO_SHA256 },
-    { path: 'link', symlink: 'a.txt' },
     { path: 'AGENTS.md', region: 'factory-shared', sha256: REGION_SHA256 },
   ],
 };
@@ -845,7 +777,7 @@ function lag(t, local, fetchCanonicalManifest) {
 
 const remote = (manifest) => () => JSON.stringify(manifest);
 const withEntries = (entries) => ({ ...LAG_MANIFEST, entries });
-const [A, LINK, REGION] = LAG_MANIFEST.entries;
+const [A, REGION] = LAG_MANIFEST.entries;
 
 test('a local manifest matching the canonical main, apart from syncedFrom, is in sync', (t) => {
   const asked = [];
@@ -858,11 +790,10 @@ test('a local manifest matching the canonical main, apart from syncedFrom, is in
 });
 
 for (const [name, canonicalMain, differences] of [
-  ['a changed hash', withEntries([{ ...A, sha256: ZERO_SHA256 }, LINK, REGION]), ['a.txt: changed']],
-  ['a changed symlink text', withEntries([A, { ...LINK, symlink: 'b.txt' }, REGION]), ['link: changed']],
-  ['a changed executable bit', withEntries([{ ...A, executable: true }, LINK, REGION]), ['a.txt: changed']],
-  ['an entry missing here', withEntries([A, LINK, REGION, { path: 'docs/new.md', sha256: HELLO_SHA256 }]), ['docs/new.md: missing here']],
-  ['an entry no longer shared', withEntries([A, REGION]), ['link: no longer shared']],
+  ['a changed hash', withEntries([{ ...A, sha256: ZERO_SHA256 }, REGION]), ['a.txt: changed']],
+  ['a changed executable bit', withEntries([{ ...A, executable: true }, REGION]), ['a.txt: changed']],
+  ['an entry missing here', withEntries([A, REGION, { path: 'docs/new.md', sha256: HELLO_SHA256 }]), ['docs/new.md: missing here']],
+  ['an entry no longer shared', withEntries([REGION]), ['a.txt: no longer shared']],
   [
     'a different adopters list',
     { ...LAG_MANIFEST, adopters: ['example-owner/adopter', 'example-owner/other'] },
@@ -875,8 +806,8 @@ for (const [name, canonicalMain, differences] of [
   ],
   [
     'several differences, listed by path',
-    withEntries([{ path: 'z.txt', sha256: HELLO_SHA256 }, { ...REGION, sha256: ZERO_SHA256 }, A]),
-    ['AGENTS.md: changed', 'link: no longer shared', 'z.txt: missing here'],
+    withEntries([{ path: 'z.txt', sha256: HELLO_SHA256 }, { ...REGION, sha256: ZERO_SHA256 }]),
+    ['AGENTS.md: changed', 'a.txt: no longer shared', 'z.txt: missing here'],
   ],
 ]) {
   test(`${name} is reported as drifted`, (t) => {
@@ -903,20 +834,20 @@ for (const [name, local, fetch, cause] of [
   [
     'a canonical manifest that lists one path twice',
     LAG_MANIFEST,
-    remote(withEntries([A, LINK, REGION, A])),
+    remote(withEntries([A, REGION, A])),
     /^example-owner\/example-repo main's \.agents\/factory-manifest\.json lists a\.txt more than once$/,
   ],
   [
     'a canonical manifest that lists two paths naming one file',
     LAG_MANIFEST,
-    remote(withEntries([A, LINK, REGION, { ...A, path: 'A.txt' }])),
+    remote(withEntries([A, REGION, { ...A, path: 'A.txt' }])),
     /^example-owner\/example-repo main's \.agents\/factory-manifest\.json lists a\.txt and A\.txt, which name the same file on a case-insensitive or Unicode-normalising disk$/,
   ],
   [
     'a canonical manifest that lists one path under another',
     LAG_MANIFEST,
-    remote(withEntries([A, LINK, REGION, { path: 'Link/x', sha256: HELLO_SHA256 }])),
-    /^example-owner\/example-repo main's \.agents\/factory-manifest\.json lists link and Link\/x, and Link\/x lies under link$/,
+    remote(withEntries([A, REGION, { path: 'A.txt/x', sha256: HELLO_SHA256 }])),
+    /^example-owner\/example-repo main's \.agents\/factory-manifest\.json lists a\.txt and A\.txt\/x, and A\.txt\/x lies under a\.txt$/,
   ],
   ['no local manifest', null, remote(LAG_MANIFEST), /^no factory manifest here; run the first sync with --from$/],
   ['a malformed local manifest', '{', remote(LAG_MANIFEST), /^\.agents\/factory-manifest\.json is not valid JSON/],

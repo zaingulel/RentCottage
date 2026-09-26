@@ -1,9 +1,8 @@
 // factory-sync.mjs — read and verify the factory manifest, `.agents/factory-manifest.json`: the shared
-// workflow files every adopter carries byte for byte, each pinned in one of exactly three entry kinds.
+// workflow files every adopter carries byte for byte, each pinned in one of exactly two entry kinds.
 //
 //   { path, sha256[, executable: true] }         a regular file, hashed over its bytes; executable marks git mode
 //                                                100755 and is absent for 100644
-//   { path, symlink }                            a symlink, compared by its exact link text
 //   { path, region: 'factory-shared', sha256 }   the text strictly between the file's two region marker lines
 //
 // Every path is relative, POSIX and free of `.`, `..` and empty segments, and is checked before any read.
@@ -21,17 +20,14 @@
 // are refused loudly rather than silently left out, and the target's are never overwritten; the fetched commit
 // matches its own manifest in kind, mode and content; no existing directory on an entry's path in the target is a
 // symlink, even one pointing inside the target, so every write lands at its manifest path and never through a
-// symlink; each link text is relative and, resolved from the entry's path and then through the deepest existing
-// ancestor's real path, stays inside the target, and one that passes through a dangling symlink or a regular file is
-// refused; and each region file, in the commit and as a regular file in the target, carries well-formed region
-// markers. It then writes each file with the commit's bytes and mode, each symlink with its exact text, and each
-// region between the target's own markers, and records the commit's manifest, with the target's canonical, plus
+// symlink; and each region file, in the commit and as a regular file in the target, carries well-formed region
+// markers. It then writes each file with the commit's bytes and mode and each region between the target's own markers, and records the commit's manifest, with the target's canonical, plus
 // `syncedFrom`, the fetched commit. Files the manifest no longer lists are left in place.
 //
 // checkLag compares this repository's manifest on disk with the canonical's manifest on main, never
 // the working-tree files (local file drift is the workflow contract test's job). It ignores `syncedFrom` and
 // compares `canonical`, `adopters` and each entry by path: only on main is "missing here", only here is "no
-// longer shared", and a different kind, hash, executable bit or link text is "changed", one line each, sorted by
+// longer shared", and a different kind, hash or executable bit is "changed", one line each, sorted by
 // path. The state is 'in-sync' only when nothing differs, 'drifted' when something does, and 'unknown', with its
 // cause, whenever the answer cannot be known: no or a malformed local manifest, a failed fetch, or a canonical
 // manifest that fails the same validation as a local one. Unknown is never reported as in sync.
@@ -44,14 +40,12 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  readlinkSync,
   realpathSync,
   rmdirSync,
-  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export const MANIFEST_PATH = '.agents/factory-manifest.json';
 const REGION_START = '<!-- factory-shared:start -->';
@@ -79,11 +73,10 @@ function checkEntry(entry) {
   const shaped =
     (keys === 'path,sha256' && SHA256.test(entry.sha256)) ||
     (keys === 'executable,path,sha256' && entry.executable === true && SHA256.test(entry.sha256)) ||
-    (keys === 'path,symlink' && typeof entry.symlink === 'string' && entry.symlink !== '') ||
     (keys === 'path,region,sha256' && entry.region === 'factory-shared' && SHA256.test(entry.sha256));
   if (!shaped) {
     throw new Error(
-      `malformed manifest entry ${JSON.stringify(entry)}: it must be { path, sha256[, executable: true] }, { path, symlink } or { path, region: "factory-shared", sha256 }`,
+      `malformed manifest entry ${JSON.stringify(entry)}: it must be { path, sha256[, executable: true] } or { path, region: "factory-shared", sha256 }`,
     );
   }
   checkManifestPath(entry.path);
@@ -173,7 +166,7 @@ function kindOf(stat) {
   return stat.isFile() ? 'a regular file' : 'a special file';
 }
 
-// The entry's state on disk: { value } holding the file or region hash or the link text, plus, for a file entry,
+// The entry's state on disk: { value } holding the file or region hash, plus, for a file entry,
 // whether the owner may execute it, which is what git records as mode 100755; or { problem } naming why no value
 // of the entry's kind exists at its path.
 export function entryState(root, entry) {
@@ -185,9 +178,6 @@ export function entryState(root, entry) {
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return { problem: 'missing' };
     throw error;
   }
-  if ('symlink' in entry) {
-    return stat.isSymbolicLink() ? { value: valueOf(entry, readlinkSync(full, 'buffer')) } : { problem: `not a symlink (${kindOf(stat)})` };
-  }
   if (!stat.isFile()) return { problem: `not a regular file (${kindOf(stat)})` };
   const value = valueOf(entry, readFileSync(full));
   return 'region' in entry ? { value } : { value, executable: (stat.mode & 0o100) !== 0 };
@@ -195,10 +185,8 @@ export function entryState(root, entry) {
 
 const modeName = (executable) => (executable ? 'executable' : 'not executable');
 
-// The value the entry records for data, the bytes of a file or of a link's text: the link text, the region hash or
-// the file hash.
+// The value the entry records for a file's bytes: the region hash or the file hash.
 function valueOf(entry, data) {
-  if ('symlink' in entry) return data.toString('utf8');
   return sha256('region' in entry ? regionText(data.toString('utf8'), entry.path) : data);
 }
 
@@ -207,8 +195,7 @@ function valueOf(entry, data) {
 export function verifyManifest(root, manifest = readManifest(root)) {
   return manifest.entries.flatMap((entry) => {
     const { value, problem, executable } = entryState(root, entry);
-    const expected = entry.symlink ?? entry.sha256;
-    if (value !== expected) return [{ path: entry.path, expected, actual: value ?? problem }];
+    if (value !== entry.sha256) return [{ path: entry.path, expected: entry.sha256, actual: value ?? problem }];
     if (executable === undefined || executable === (entry.executable === true)) return [];
     return [{ path: entry.path, expected: modeName(entry.executable), actual: modeName(executable) }];
   });
@@ -220,7 +207,6 @@ export function computeEntries(root, manifest = readManifest(root)) {
   return manifest.entries.map((entry) => {
     const { value, problem, executable } = entryState(root, entry);
     if (problem) throw new Error(`cannot record ${entry.path}: ${problem}`);
-    if ('symlink' in entry) return { path: entry.path, symlink: value };
     if ('region' in entry) return { ...entry, sha256: value };
     return { path: entry.path, sha256: value, ...(executable ? { executable: true } : {}) };
   });
@@ -261,8 +247,8 @@ function committedManifest(root, commit) {
   return parseManifest(text, label);
 }
 
-// Each entry's content in the commit, keyed by path, as { data, mode }: the file bytes, the link text or the region
-// text, and the git mode. Refuses, naming every such path, an entry whose committed kind or content differs from
+// Each entry's content in the commit, keyed by path, as { data, mode }: the file bytes or the region text, and the
+// git mode. Refuses, naming every such path, an entry whose committed kind or content differs from
 // its record.
 function committedContents(root, commit, manifest) {
   const listing = git(root, '--literal-pathspecs', 'ls-tree', '-z', commit, '--', ...manifest.entries.map(({ path }) => path));
@@ -281,9 +267,9 @@ function committedContents(root, commit, manifest) {
   const mismatched = [];
   for (const entry of manifest.entries) {
     const { mode, object } = tree.get(entry.path) ?? {};
-    const modes = 'symlink' in entry ? ['120000'] : 'region' in entry ? ['100644', '100755'] : [entry.executable ? '100755' : '100644'];
+    const modes = 'region' in entry ? ['100644', '100755'] : [entry.executable ? '100755' : '100644'];
     const data = modes.includes(mode) ? blob(root, object) : null;
-    if (data === null || valueOf(entry, data) !== (entry.symlink ?? entry.sha256)) {
+    if (data === null || valueOf(entry, data) !== entry.sha256) {
       mismatched.push(entry.path);
       continue;
     }
@@ -323,10 +309,9 @@ function resolveCanonical(target, requested) {
   return canonical;
 }
 
-const within = (root, path) => path === root || path.startsWith(`${root}${sep}`);
-
 // Refuses a path with a symlink among its existing parent directories in the target, whatever the symlink points
-// to: a write below it would land away from the manifest path, possibly outside the target.
+// to: a write below it would land away from the manifest path, possibly outside the target. Refuses a path whose
+// existing parent is a file, as a former shared symlink is on a checkout that writes symlinks as plain files.
 function checkContained(root, path) {
   let dir = root;
   for (const part of path.split('/').slice(0, -1)) {
@@ -339,33 +324,11 @@ function checkContained(root, path) {
       throw error;
     }
     if (stat.isSymbolicLink()) {
-      throw new Error(`${path}: its parent ${dir} is a symlink, so a write there would not land at the manifest path and could land outside the target ${root}`);
+      throw new Error(`${path}: its parent ${dir} is a symlink, so a write there would not land at the manifest path and could land outside the target ${root}; if it is a former shared symlink, remove it first: git rm ${dir.slice(root.length + 1)}, commit, then sync`);
     }
-  }
-}
-
-// The real path of a path that may not exist yet: its deepest existing ancestor's real path with the missing
-// remainder re-appended. A dangling symlink on the way has no real path and throws.
-function realPath(path) {
-  try {
-    return realpathSync(path);
-  } catch (error) {
-    if (error.code !== 'ENOENT' || lstatSync(path, { throwIfNoEntry: false })) throw error;
-    return join(realPath(dirname(path)), basename(path));
-  }
-}
-
-function checkLinkText(root, path, text) {
-  if (isAbsolute(text)) throw new Error(`${path}: absolute link text ${text} would point outside the target`);
-  const lexical = resolve(root, dirname(path), text);
-  let real;
-  try {
-    real = realPath(lexical);
-  } catch {
-    real = '(nowhere)';
-  }
-  if (!within(root, lexical) || !within(root, real)) {
-    throw new Error(`${path}: link text ${text} resolves to ${real}, outside the target ${root}`);
+    if (!stat.isDirectory()) {
+      throw new Error(`${path}: its parent ${dir} is a file, not a directory, so the entry cannot be written there; if it is a former shared symlink checked out as a file, remove it first: git rm ${dir.slice(root.length + 1)}, commit, then sync`);
+    }
   }
 }
 
@@ -380,7 +343,7 @@ function checkReplaceable(full, path) {
   if (stat.isDirectory() && readdirSync(full).length > 0) throw new Error(`${path}: the target holds a non-empty directory here`);
 }
 
-// Clears whatever is at the path, so the new file or link never writes through an existing one.
+// Clears whatever is at the path, so the new file never writes through an existing one.
 function clear(full) {
   let stat;
   try {
@@ -411,7 +374,7 @@ export function fetchMain(source) {
 
 // Syncs the source's manifest entries into the target, per the contract at the top of this file. fetchMain, the
 // function above or a stand-in, fetches the source's origin main and returns its commit; it throws when the fetch
-// fails. Returns the counts written, as { files, symlinks, regions }.
+// fails. Returns the counts written, as { files, regions }.
 export function syncInto({ source, target, canonical: requested, fetchMain }) {
   const canonical = resolveCanonical(target, requested);
 
@@ -450,7 +413,6 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
   const root = realpathSync(target);
   for (const entry of manifest.entries) {
     checkContained(root, entry.path);
-    if ('symlink' in entry) checkLinkText(root, entry.path, entry.symlink);
     if (!('region' in entry)) checkReplaceable(join(root, entry.path), entry.path);
   }
   checkContained(root, MANIFEST_PATH);
@@ -467,15 +429,10 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
       }),
   );
 
-  const written = { files: 0, symlinks: 0, regions: 0 };
+  const written = { files: 0, regions: 0 };
   for (const entry of manifest.entries) {
     const full = join(root, entry.path);
-    if ('symlink' in entry) {
-      clear(full);
-      mkdirSync(dirname(full), { recursive: true });
-      symlinkSync(entry.symlink, full);
-      written.symlinks += 1;
-    } else if ('region' in entry) {
+    if ('region' in entry) {
       writeRegular(full, regions.get(entry.path), lstatSync(full).mode & 0o777);
       written.regions += 1;
     } else {
@@ -489,8 +446,7 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
   return written;
 }
 
-const sameEntry = (a, b) =>
-  a.sha256 === b.sha256 && a.symlink === b.symlink && a.region === b.region && a.executable === b.executable;
+const sameEntry = (a, b) => a.sha256 === b.sha256 && a.region === b.region && a.executable === b.executable;
 
 // Compares this repository's manifest with the canonical's manifest on main, per the --check contract at the top
 // of this file. fetchCanonicalManifest(canonical) returns that manifest's raw text and throws when it cannot.

@@ -5,10 +5,14 @@
 // common dir. Resolved here, in the hook shell's world, so blockReason stays a pure rule that unit
 // tests drive with an injected resolver.
 import { execFileSync } from 'node:child_process';
+import { gitExecutable } from './posix-shell.mjs';
 
 const isMainWorkingTree = (dir) => {
+  // By path on Windows, whose bare-name search reaches the working directory first.
+  const git = gitExecutable();
+  if (!git) throw new Error('no git.exe in an absolute PATH entry');
   const [gitDir, commonDir] = execFileSync(
-    'git',
+    git,
     ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
   ).trim().split('\n');

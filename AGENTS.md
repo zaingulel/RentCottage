@@ -8,11 +8,12 @@ owns all state. A rule a test or hook enforces is named here, not restated.
 ## Runtime notes
 
 Claude Code reads this file through `CLAUDE.md`, which adds its own notes; Codex reads it directly and prompts
-before a browser run (`.codex/rules/playwright.rules`). Skills are shared in `.agents/skills/`; the agent seats in
-`.claude/agents/` and `.codex/agents/` carry the same charters. Ten of those skills link to verbatim copies of
-mattpocock/skills at commit 5b15a47f2d7150f545fbcacbfe381787fc0230dc in `.agents/upstream/mattpocock-skills/`, with
-its licence; they are never edited in place, an update replaces them whole, and Codex invokes any skill as
-`$<name>`. The tracker and triage vocabulary those copies expect to have been provided is
+before a browser run (`.codex/rules/playwright.rules`). Skills are shared in `.agents/skills/`, and
+`.claude/skills/` holds a byte-identical copy of each; the agent seats in `.claude/agents/` and `.codex/agents/`
+carry the same charters. Ten of those skills are verbatim copies of mattpocock/skills at commit
+5b15a47f2d7150f545fbcacbfe381787fc0230dc, vendored with its licence in `.agents/upstream/mattpocock-skills/`;
+they are never edited in place, an update replaces the vendored source and every copy of it whole, and Codex
+invokes any skill as `$<name>`. The tracker and triage vocabulary those copies expect to have been provided is
 [docs/ISSUE-TRACKER.md](docs/ISSUE-TRACKER.md). The root checkout is the integration checkout: it stays on `main`,
 and nothing is edited, branched, or committed there; the git guard refuses the branching and committing half. Resume
 fetches before intake, reads the fetched manual and `resume`/`closeout` instructions, and uses closeout's safe
@@ -127,7 +128,11 @@ between its `factory-shared` markers. A shared change is a card in the canonical
 adopter; the sync card runs `node scripts/factory-sync.mjs --from <canonical checkout>` from the adopter's job
 worktree against a clean canonical checkout at its fetched `main`. The change stays partial until every adopter's
 sync lands. A shared file edited without its manifest hash following fails the contract test;
-`node scripts/factory-sync.mjs --write` refreshes the hashes, and only in the canonical repository. An intentional
+`node scripts/factory-sync.mjs --write` refreshes the hashes, and only in the canonical repository. Shared files
+are real files, never symlinks, since a symlink reaches a Windows checkout as plain text: a skill is written in
+`.agents/skills/` and copied whole to `.claude/skills/`, and each hook directory carries its own `.gitattributes`
+so hooks keep LF endings wherever line endings are converted; the contract test fails on a symlink, a copy that
+differs from its source, or a missing rule. A git hook's run permission is its committed file mode. An intentional
 adopter exception needs owner agreement and lives outside the shared files. `resume` reports at intake whether this
 repository lags the canonical copy.
 

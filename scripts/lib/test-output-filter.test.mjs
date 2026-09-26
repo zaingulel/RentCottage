@@ -2,9 +2,9 @@
 //
 // The load-bearing case is the ANTI-REGRESSION one: a filter that condenses output must never
 // let a RED run read as green, and must never touch the runner's exit status. So the red and
-// green cases drive the FULL rewritten shell command through bash, not the pure function alone.
+// green cases drive the FULL rewritten shell command through a POSIX shell, not the pure function alone.
 //
-// Recurring cost: ~1 s per suite run (three spawned bash/node runs over tiny fixtures).
+// Recurring cost: ~1 s per suite run (three spawned sh/node runs over tiny fixtures).
 // Removal condition: remove with the hook — see the price tag in .claude/hooks/filter-test-output.mjs.
 
 import { test } from 'node:test';
@@ -14,9 +14,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { posixShell } from './posix-shell.mjs';
 import { rewriteTestCommand, filterRunnerOutput } from './test-output-filter.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+// The located POSIX shell: `sh` off Windows, Git for Windows' sh.exe on it, null when there is none.
+// The rewritten command is plain POSIX, and a bare `bash` on Windows can resolve to WSL instead.
+const SHELL = posixShell();
 
 // Runs a rewritten command exactly as a Bash tool call would, and returns what reaches the agent.
 function runRewritten(command) {
@@ -26,12 +30,18 @@ function runRewritten(command) {
   // `node --test` skip its files with a recursion warning, so the case would prove nothing.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
-  const run = spawnSync('bash', ['-c', rewritten], { cwd: ROOT, encoding: 'utf8', env });
+  assert.ok(SHELL, 'a POSIX shell is required: install Git for Windows');
+  const run = spawnSync(SHELL, ['-c', rewritten], { cwd: ROOT, encoding: 'utf8', env });
   return { status: run.status, surfaced: `${run.stdout}${run.stderr}` };
 }
 
+// A fixture path goes into a POSIX shell command, so it is single-quoted: a space (as in a Windows
+// user folder like C:\Users\Jane Doe) stays one argument, and a Windows backslash stays literal.
+const shQuote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
+
+// The temp folder name carries a space on purpose, so every platform exercises the quoting above.
 function fixture(name, source) {
-  const file = join(mkdtempSync(join(tmpdir(), 'workflow-filter-')), name);
+  const file = join(mkdtempSync(join(tmpdir(), 'workflow filter-')), name);
   writeFileSync(file, source);
   return file;
 }
@@ -40,7 +50,7 @@ test('test output filtering condenses green runs, keeps red runs loud, and never
   await t.test('a red run surfaces the failing test name and error, and exits non-zero', () => {
     const file = fixture('red.test.mjs',
       "import { test } from 'node:test';\ntest('sentinel case that must stay visible', () => { throw new Error('boom-sentinel'); });\n");
-    const { status, surfaced } = runRewritten(`node --test ${file}`);
+    const { status, surfaced } = runRewritten(`node --test ${shQuote(file)}`);
     assert.notEqual(status, 0, `expected a non-zero exit, got ${status}`);
     assert.match(surfaced, /sentinel case that must stay visible/);
     assert.match(surfaced, /boom-sentinel/);
@@ -49,7 +59,7 @@ test('test output filtering condenses green runs, keeps red runs loud, and never
   await t.test('a green run surfaces only the condensed summary, and exits 0', () => {
     const file = fixture('green.test.mjs',
       "import { test } from 'node:test';\ntest('per-test line that should be dropped', () => {});\n");
-    const { status, surfaced } = runRewritten(`node --test ${file}`);
+    const { status, surfaced } = runRewritten(`node --test ${shQuote(file)}`);
     assert.equal(status, 0, `expected a clean exit, got ${status}: ${surfaced}`);
     assert.match(surfaced, /\[test-output-filter\] green run condensed to summary; rerun without the hook for full output/);
     // The nested runner's reporter is environment-dependent (spec locally, TAP on CI), so the counts
@@ -148,7 +158,7 @@ test('test output filtering condenses green runs, keeps red runs loud, and never
     writeFileSync(join(fixtureDir, 'package.json'), JSON.stringify({
       scripts: { 'run-log': `node "${resolve(ROOT, 'scripts/run-log.mjs')}"` },
     }));
-    const logged = `npm run run-log -- output filter green -- node --test ${file}`;
+    const logged = `npm run run-log -- output filter green -- node --test ${shQuote(file)}`;
     const wrapped = `cd "${fixtureDir}" && ${logged}`;
     const rewritten = rewriteTestCommand(wrapped);
     assert.ok(rewritten?.includes(`${logged} >"$__fg_out" 2>&1`));
