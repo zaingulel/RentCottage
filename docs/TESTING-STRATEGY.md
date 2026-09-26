@@ -144,6 +144,16 @@ signal, or spawn-failure outcome. These measurements cover whole commands, not i
 and impose no speed pass/fail threshold. Unstarted commands and plan-only runs emit no timing records;
 environment values and child output are not included.
 
+After a failed attempted command, a `verification-failure` JSON diagnostic separates the exact
+`attemptedCommand` argument vector from its preparation-complete `reproduceGroup` route. Baseline failures use
+`npm run verify -- --baseline`; database failures use `npm run verify -- --database --full`; browser preparation,
+build, scan and journey failures use `npm run verify -- --browser --full`. These routes repeat the dependency
+check, restore the fixed test bindings and run the group's required predecessors. The browser route keeps its
+normal installed-dependency, Docker and browser prerequisites. An unidentified failure inside combined
+`verify:access` uses `reproduceSelectedGroups: ["npm","run","verify","--","--full"]`, preserving any narrower
+child diagnosis without claiming the combined route is the smallest group. Raw build or scan arguments identify
+the attempt only. Diagnostics include no environment values.
+
 Run focused checks, intentional red/restored green proofs, and convergence through `node scripts/run-log.mjs <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.

@@ -642,6 +642,40 @@ export function main(
         outcome,
       }),
     );
+    if (result.error || result.signal || result.status !== 0) {
+      const reproduction =
+        baseline && index < baselineVerificationSteps.length
+          ? { reproduceGroup: ["npm", "run", "verify", "--", "--baseline"] }
+          : commandArgs[1] === "verify:access"
+            ? {
+                reproduceSelectedGroups: [
+                  "npm",
+                  "run",
+                  "verify",
+                  "--",
+                  "--full",
+                ],
+              }
+            : {
+                reproduceGroup: [
+                  "npm",
+                  "run",
+                  "verify",
+                  "--",
+                  commandArgs[1] === "verify:access:database"
+                    ? "--database"
+                    : "--browser",
+                  "--full",
+                ],
+              };
+      stderr(
+        JSON.stringify({
+          type: "verification-failure",
+          attemptedCommand: [command, ...commandArgs],
+          ...reproduction,
+        }),
+      );
+    }
     if (result.error) {
       stderr(
         `Unable to run ${command}: ${result.error.message}; ${steps.length - index - 1} later selected checks were not reached.`,
