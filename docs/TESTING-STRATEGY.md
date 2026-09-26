@@ -144,6 +144,17 @@ signal, or spawn-failure outcome. These measurements cover whole commands, not i
 and impose no speed pass/fail threshold. Unstarted commands and plan-only runs emit no timing records;
 environment values and child output are not included.
 
+Each concurrency check declares serial isolation and reports client-observed milliseconds for setup,
+execution and existing local cleanup. Repeated fixture resets and seeds accumulate as setup; race commands,
+waits and assertions count as execution. Explicit fixture loading, authentication and bundling are included;
+static import startup remains process overhead. Phase records include timestamps, and a final summary reports
+completion and passed or failed outcome without a speed threshold. An unentered phase is null with a reason.
+Shift-schedule cleanup is deferred to disposable project teardown, so its summary has null cleanup cost and
+uses the shared project cleanup record; profile-draft reports its existing final profile clear as local cleanup.
+A killed check may lack a final summary, which is incomplete evidence, never inferred success. The serial
+source declaration guard proves classification only; real disposable PostgreSQL evidence still proves the
+unchanged database assertions and contention barriers.
+
 After a failed attempted command, a `verification-failure` JSON diagnostic separates the exact
 `attemptedCommand` argument vector from its preparation-complete `reproduceGroup` route. Baseline failures use
 `npm run verify -- --baseline`; database failures use `npm run verify -- --database --full`; browser preparation,

@@ -17,6 +17,8 @@ function fail(message, cause) {
 }
 
 const {
+  markTimingPhase,
+  finishTiming,
   finishSession,
   guardDisposableLocalDatabase,
   runSql,
@@ -24,6 +26,10 @@ const {
   waitForLock: waitForDatabaseLock,
   waitForMarker,
 } = createLocalSupabaseConcurrencyHarness({
+  timing: {
+    check: "verify-cottage-inventory-concurrency",
+    isolation: "serial",
+  },
   messages: {
     invalidGuard:
       "The Cottage Inventory concurrency test requires the guarded local Supabase database.",
@@ -40,37 +46,39 @@ const {
       "The contender never reached the shared Cottage Profile lock.",
   },
 });
+let timingOutcome = "failed";
+try {
+  markTimingPhase("setup");
+  async function releaseSuccessfulSession(session) {
+    return finishSession(session, {
+      action: "commit",
+      unexpectedSessionFailure: (stderr) =>
+        `The lock-owning transaction failed: ${stderr}`,
+    });
+  }
 
-async function releaseSuccessfulSession(session) {
-  return finishSession(session, {
-    action: "commit",
-    unexpectedSessionFailure: (stderr) =>
-      `The lock-owning transaction failed: ${stderr}`,
-  });
-}
+  async function expectSqlState(session, sqlState) {
+    return finishSession(session, {
+      expectedState: sqlState,
+      expectedStateFailure: (expectedState, stderr) =>
+        `The losing transaction did not fail with ${expectedState}: ${stderr}`,
+    });
+  }
 
-async function expectSqlState(session, sqlState) {
-  return finishSession(session, {
-    expectedState: sqlState,
-    expectedStateFailure: (expectedState, stderr) =>
-      `The losing transaction did not fail with ${expectedState}: ${stderr}`,
-  });
-}
+  async function expectSuccessfulSession(session) {
+    return finishSession(session);
+  }
 
-async function expectSuccessfulSession(session) {
-  return finishSession(session);
-}
-
-function terminateTestSessions() {
-  runSql(`
+  function terminateTestSessions() {
+    runSql(`
     select pg_terminate_backend(pid)
     from pg_catalog.pg_stat_activity
     where application_name like 'rc_i27_%'
       and pid <> pg_backend_pid();
   `);
-}
+  }
 
-const cleanupSql = `
+  const cleanupSql = `
   begin;
   delete from public.cottage_booking_period_commitments
     where profile_id = '${profileId}';
@@ -126,7 +134,7 @@ const cleanupSql = `
   commit;
 `;
 
-const setupSql = `
+  const setupSql = `
   begin;
   insert into auth.users (id, aud, role, phone, phone_confirmed_at)
   values
@@ -192,14 +200,14 @@ const setupSql = `
   commit;
 `;
 
-const ownerClaims = JSON.stringify({
-  sub: ownerUserId,
-  role: "authenticated",
-  aal: "aal1",
-});
+  const ownerClaims = JSON.stringify({
+    sub: ownerUserId,
+    role: "authenticated",
+    aal: "aal1",
+  });
 
-function ownerMutation(applicationName, marker) {
-  return `
+  function ownerMutation(applicationName, marker) {
+    return `
     set application_name = '${applicationName}';
     begin;
     set local role authenticated;
@@ -210,10 +218,10 @@ function ownerMutation(applicationName, marker) {
     );
     select '${marker}';
   `;
-}
+  }
 
-function priceMutation(applicationName, marker, markBefore = false) {
-  return `
+  function priceMutation(applicationName, marker, markBefore = false) {
+    return `
     set application_name = '${applicationName}';
     begin;
     ${markBefore ? `select '${marker}';` : ""}
@@ -230,10 +238,10 @@ function priceMutation(applicationName, marker, markBefore = false) {
     );
     ${markBefore ? "" : `select '${marker}';`}
   `;
-}
+  }
 
-function scheduleMutation(applicationName, marker, markBefore = false) {
-  return `
+  function scheduleMutation(applicationName, marker, markBefore = false) {
+    return `
     set application_name = '${applicationName}';
     begin;
     ${markBefore ? `select '${marker}';` : ""}
@@ -248,10 +256,10 @@ function scheduleMutation(applicationName, marker, markBefore = false) {
     );
     ${markBefore ? "" : `select '${marker}';`}
   `;
-}
+  }
 
-function unpublishMutation(applicationName, marker, markBefore = false) {
-  return `
+  function unpublishMutation(applicationName, marker, markBefore = false) {
+    return `
     set application_name = '${applicationName}';
     begin;
     ${markBefore ? `select '${marker}';` : ""}
@@ -260,48 +268,48 @@ function unpublishMutation(applicationName, marker, markBefore = false) {
       where id = '${profileId}';
     ${markBefore ? "" : `select '${marker}';`}
   `;
-}
+  }
 
-function commitmentMutation(
-  applicationName,
-  marker,
-  reference,
-  holdLock = false,
-) {
-  const insert = `
+  function commitmentMutation(
+    applicationName,
+    marker,
+    reference,
+    holdLock = false,
+  ) {
+    const insert = `
     set local role service_role;
     select public.create_pending_booking_period_hold(
       '${customerUserId}', '${profileId}', '${reference}',
       '{"from":"${serviceDay}","to":"${serviceDay}","guests":1,"selections":[{"serviceDay":"${serviceDay}","kind":"shift","position":1}]}'::jsonb
     );
   `;
-  return `
+    return `
     set application_name = '${applicationName}';
     begin;
     ${holdLock ? insert : `select '${marker}';${insert}commit;`}
     ${holdLock ? `select '${marker}';` : ""}
   `;
-}
+  }
 
-async function verifyOwnerFirst() {
-  const owner = startSession(
-    ownerMutation("rc_i27_owner_first_owner", "OWNER_FIRST_LOCKED"),
-  );
-  await waitForMarker(owner, "OWNER_FIRST_LOCKED");
-  const contenderName = "rc_i27_owner_first_commitment";
-  const commitment = startSession(
-    commitmentMutation(
-      contenderName,
-      "OWNER_FIRST_CONTENDER",
-      "RC-OWNER-FIRST-27",
-    ),
-    true,
-  );
-  await waitForMarker(commitment, "OWNER_FIRST_CONTENDER");
-  await waitForDatabaseLock(contenderName, commitment);
-  await releaseSuccessfulSession(owner);
-  await expectSqlState(commitment, "RC409");
-  runSql(`
+  async function verifyOwnerFirst() {
+    const owner = startSession(
+      ownerMutation("rc_i27_owner_first_owner", "OWNER_FIRST_LOCKED"),
+    );
+    await waitForMarker(owner, "OWNER_FIRST_LOCKED");
+    const contenderName = "rc_i27_owner_first_commitment";
+    const commitment = startSession(
+      commitmentMutation(
+        contenderName,
+        "OWNER_FIRST_CONTENDER",
+        "RC-OWNER-FIRST-27",
+      ),
+      true,
+    );
+    await waitForMarker(commitment, "OWNER_FIRST_CONTENDER");
+    await waitForDatabaseLock(contenderName, commitment);
+    await releaseSuccessfulSession(owner);
+    await expectSqlState(commitment, "RC409");
+    runSql(`
     do $$
     begin
       if not exists (
@@ -318,27 +326,29 @@ async function verifyOwnerFirst() {
     end
     $$;
   `);
-}
+  }
 
-async function verifyCommitmentFirst() {
-  runSql(`
+  async function verifyCommitmentFirst() {
+    markTimingPhase("setup");
+    runSql(`
     update public.cottage_inventory_availability set state = 'open'
     where schedule_revision_id = '${revisionId}'
       and unit_kind = 'shift' and unit_id = '${firstShiftId}'
       and service_day = '${serviceDay}';
   `);
-  const commitment = startSession(
-    commitmentMutation(
-      "rc_i27_commitment_first_commitment",
-      "COMMITMENT_FIRST_LOCKED",
-      "RC-COMMITMENT-FIRST-27",
-      true,
-    ),
-  );
-  await waitForMarker(commitment, "COMMITMENT_FIRST_LOCKED");
-  const contenderName = "rc_i27_commitment_first_owner";
-  const owner = startSession(
-    `
+    markTimingPhase("execution");
+    const commitment = startSession(
+      commitmentMutation(
+        "rc_i27_commitment_first_commitment",
+        "COMMITMENT_FIRST_LOCKED",
+        "RC-COMMITMENT-FIRST-27",
+        true,
+      ),
+    );
+    await waitForMarker(commitment, "COMMITMENT_FIRST_LOCKED");
+    const contenderName = "rc_i27_commitment_first_owner";
+    const owner = startSession(
+      `
       set application_name = '${contenderName}';
       begin;
       select 'COMMITMENT_FIRST_CONTENDER';
@@ -350,13 +360,13 @@ async function verifyCommitmentFirst() {
       );
       commit;
     `,
-    true,
-  );
-  await waitForMarker(owner, "COMMITMENT_FIRST_CONTENDER");
-  await waitForDatabaseLock(contenderName, owner);
-  await releaseSuccessfulSession(commitment);
-  await expectSqlState(owner, "RC204");
-  runSql(`
+      true,
+    );
+    await waitForMarker(owner, "COMMITMENT_FIRST_CONTENDER");
+    await waitForDatabaseLock(contenderName, owner);
+    await releaseSuccessfulSession(commitment);
+    await expectSqlState(owner, "RC204");
+    runSql(`
     do $$
     begin
       if not exists (
@@ -374,27 +384,27 @@ async function verifyCommitmentFirst() {
     end
     $$;
   `);
-}
+  }
 
-async function verifyPriceOwnerFirst() {
-  const owner = startSession(
-    priceMutation("rc_i27_price_owner_first", "PRICE_OWNER_FIRST_LOCKED"),
-  );
-  await waitForMarker(owner, "PRICE_OWNER_FIRST_LOCKED");
-  const contenderName = "rc_i27_price_owner_first_commitment";
-  const commitment = startSession(
-    commitmentMutation(
-      contenderName,
-      "PRICE_OWNER_FIRST_CONTENDER",
-      "RC-PRICE-OWNER-FIRST-27",
-    ),
-    true,
-  );
-  await waitForMarker(commitment, "PRICE_OWNER_FIRST_CONTENDER");
-  await waitForDatabaseLock(contenderName, commitment);
-  await releaseSuccessfulSession(owner);
-  await expectSuccessfulSession(commitment);
-  runSql(`
+  async function verifyPriceOwnerFirst() {
+    const owner = startSession(
+      priceMutation("rc_i27_price_owner_first", "PRICE_OWNER_FIRST_LOCKED"),
+    );
+    await waitForMarker(owner, "PRICE_OWNER_FIRST_LOCKED");
+    const contenderName = "rc_i27_price_owner_first_commitment";
+    const commitment = startSession(
+      commitmentMutation(
+        contenderName,
+        "PRICE_OWNER_FIRST_CONTENDER",
+        "RC-PRICE-OWNER-FIRST-27",
+      ),
+      true,
+    );
+    await waitForMarker(commitment, "PRICE_OWNER_FIRST_CONTENDER");
+    await waitForDatabaseLock(contenderName, commitment);
+    await releaseSuccessfulSession(owner);
+    await expectSuccessfulSession(commitment);
+    runSql(`
     do $$
     begin
       if not exists (
@@ -417,38 +427,41 @@ async function verifyPriceOwnerFirst() {
     end
     $$;
   `);
-  runSql(`
+    markTimingPhase("setup");
+    runSql(`
     delete from public.cottage_booking_period_commitments
     where commitment_reference = 'RC-PRICE-OWNER-FIRST-27';
   `);
-}
+  }
 
-async function verifyPriceCommitmentFirst() {
-  runSql(`
+  async function verifyPriceCommitmentFirst() {
+    markTimingPhase("setup");
+    runSql(`
     delete from public.cottage_inventory_date_price_overrides
     where schedule_revision_id = '${revisionId}'
       and unit_kind = 'shift' and unit_id = '${firstShiftId}'
       and service_day = '${serviceDay}';
   `);
-  const commitment = startSession(
-    commitmentMutation(
-      "rc_i27_price_commitment_first",
-      "PRICE_COMMITMENT_FIRST_LOCKED",
-      "RC-PRICE-COMMITMENT-FIRST-27",
+    markTimingPhase("execution");
+    const commitment = startSession(
+      commitmentMutation(
+        "rc_i27_price_commitment_first",
+        "PRICE_COMMITMENT_FIRST_LOCKED",
+        "RC-PRICE-COMMITMENT-FIRST-27",
+        true,
+      ),
+    );
+    await waitForMarker(commitment, "PRICE_COMMITMENT_FIRST_LOCKED");
+    const contenderName = "rc_i27_price_commitment_first_owner";
+    const owner = startSession(
+      `${priceMutation(contenderName, "PRICE_COMMITMENT_FIRST_CONTENDER", true)}commit;`,
       true,
-    ),
-  );
-  await waitForMarker(commitment, "PRICE_COMMITMENT_FIRST_LOCKED");
-  const contenderName = "rc_i27_price_commitment_first_owner";
-  const owner = startSession(
-    `${priceMutation(contenderName, "PRICE_COMMITMENT_FIRST_CONTENDER", true)}commit;`,
-    true,
-  );
-  await waitForMarker(owner, "PRICE_COMMITMENT_FIRST_CONTENDER");
-  await waitForDatabaseLock(contenderName, owner);
-  await releaseSuccessfulSession(commitment);
-  await expectSqlState(owner, "RC204");
-  runSql(`
+    );
+    await waitForMarker(owner, "PRICE_COMMITMENT_FIRST_CONTENDER");
+    await waitForDatabaseLock(contenderName, owner);
+    await releaseSuccessfulSession(commitment);
+    await expectSqlState(owner, "RC204");
+    runSql(`
     do $$
     begin
       if exists (
@@ -472,30 +485,30 @@ async function verifyPriceCommitmentFirst() {
     end
     $$;
   `);
-}
+  }
 
-async function verifyScheduleOwnerFirst() {
-  const owner = startSession(
-    scheduleMutation(
-      "rc_i27_schedule_owner_first",
-      "SCHEDULE_OWNER_FIRST_LOCKED",
-    ),
-  );
-  await waitForMarker(owner, "SCHEDULE_OWNER_FIRST_LOCKED");
-  const contenderName = "rc_i27_schedule_owner_first_commitment";
-  const commitment = startSession(
-    commitmentMutation(
-      contenderName,
-      "SCHEDULE_OWNER_FIRST_CONTENDER",
-      "RC-SCHEDULE-OWNER-FIRST-27",
-    ),
-    true,
-  );
-  await waitForMarker(commitment, "SCHEDULE_OWNER_FIRST_CONTENDER");
-  await waitForDatabaseLock(contenderName, commitment);
-  await releaseSuccessfulSession(owner);
-  await expectSqlState(commitment, "RC409");
-  runSql(`
+  async function verifyScheduleOwnerFirst() {
+    const owner = startSession(
+      scheduleMutation(
+        "rc_i27_schedule_owner_first",
+        "SCHEDULE_OWNER_FIRST_LOCKED",
+      ),
+    );
+    await waitForMarker(owner, "SCHEDULE_OWNER_FIRST_LOCKED");
+    const contenderName = "rc_i27_schedule_owner_first_commitment";
+    const commitment = startSession(
+      commitmentMutation(
+        contenderName,
+        "SCHEDULE_OWNER_FIRST_CONTENDER",
+        "RC-SCHEDULE-OWNER-FIRST-27",
+      ),
+      true,
+    );
+    await waitForMarker(commitment, "SCHEDULE_OWNER_FIRST_CONTENDER");
+    await waitForDatabaseLock(contenderName, commitment);
+    await releaseSuccessfulSession(owner);
+    await expectSqlState(commitment, "RC409");
+    runSql(`
     do $$
     begin
       if (select current_shift_schedule_id = '${revisionId}'
@@ -511,28 +524,28 @@ async function verifyScheduleOwnerFirst() {
     end
     $$;
   `);
-}
+  }
 
-async function verifyScheduleCommitmentFirst() {
-  const commitment = startSession(
-    commitmentMutation(
-      "rc_i27_schedule_commitment_first",
-      "SCHEDULE_COMMITMENT_FIRST_LOCKED",
-      "RC-SCHEDULE-COMMITMENT-FIRST-27",
+  async function verifyScheduleCommitmentFirst() {
+    const commitment = startSession(
+      commitmentMutation(
+        "rc_i27_schedule_commitment_first",
+        "SCHEDULE_COMMITMENT_FIRST_LOCKED",
+        "RC-SCHEDULE-COMMITMENT-FIRST-27",
+        true,
+      ),
+    );
+    await waitForMarker(commitment, "SCHEDULE_COMMITMENT_FIRST_LOCKED");
+    const contenderName = "rc_i27_schedule_commitment_first_owner";
+    const owner = startSession(
+      `${scheduleMutation(contenderName, "SCHEDULE_COMMITMENT_FIRST_CONTENDER", true)}commit;`,
       true,
-    ),
-  );
-  await waitForMarker(commitment, "SCHEDULE_COMMITMENT_FIRST_LOCKED");
-  const contenderName = "rc_i27_schedule_commitment_first_owner";
-  const owner = startSession(
-    `${scheduleMutation(contenderName, "SCHEDULE_COMMITMENT_FIRST_CONTENDER", true)}commit;`,
-    true,
-  );
-  await waitForMarker(owner, "SCHEDULE_COMMITMENT_FIRST_CONTENDER");
-  await waitForDatabaseLock(contenderName, owner);
-  await releaseSuccessfulSession(commitment);
-  await expectSqlState(owner, "RC204");
-  runSql(`
+    );
+    await waitForMarker(owner, "SCHEDULE_COMMITMENT_FIRST_CONTENDER");
+    await waitForDatabaseLock(contenderName, owner);
+    await releaseSuccessfulSession(commitment);
+    await expectSqlState(owner, "RC204");
+    runSql(`
     do $$
     begin
       if not (select current_shift_schedule_id = '${revisionId}'
@@ -553,27 +566,27 @@ async function verifyScheduleCommitmentFirst() {
     end
     $$;
   `);
-}
+  }
 
-async function verifyUnpublishFirst() {
-  const unpublish = startSession(
-    unpublishMutation("rc_i27_unpublish_first", "UNPUBLISH_FIRST_LOCKED"),
-  );
-  await waitForMarker(unpublish, "UNPUBLISH_FIRST_LOCKED");
-  const contenderName = "rc_i27_unpublish_first_commitment";
-  const commitment = startSession(
-    commitmentMutation(
-      contenderName,
-      "UNPUBLISH_FIRST_CONTENDER",
-      "RC-UNPUBLISH-FIRST-27",
-    ),
-    true,
-  );
-  await waitForMarker(commitment, "UNPUBLISH_FIRST_CONTENDER");
-  await waitForDatabaseLock(contenderName, commitment);
-  await releaseSuccessfulSession(unpublish);
-  await expectSqlState(commitment, "RC409");
-  runSql(`
+  async function verifyUnpublishFirst() {
+    const unpublish = startSession(
+      unpublishMutation("rc_i27_unpublish_first", "UNPUBLISH_FIRST_LOCKED"),
+    );
+    await waitForMarker(unpublish, "UNPUBLISH_FIRST_LOCKED");
+    const contenderName = "rc_i27_unpublish_first_commitment";
+    const commitment = startSession(
+      commitmentMutation(
+        contenderName,
+        "UNPUBLISH_FIRST_CONTENDER",
+        "RC-UNPUBLISH-FIRST-27",
+      ),
+      true,
+    );
+    await waitForMarker(commitment, "UNPUBLISH_FIRST_CONTENDER");
+    await waitForDatabaseLock(contenderName, commitment);
+    await releaseSuccessfulSession(unpublish);
+    await expectSqlState(commitment, "RC409");
+    runSql(`
     do $$
     begin
       if (select current_publication_id is not null
@@ -587,33 +600,33 @@ async function verifyUnpublishFirst() {
     end
     $$;
   `);
-}
-
-async function verifyCommitmentBeforeUnpublish() {
-  const commitment = startSession(
-    commitmentMutation(
-      "rc_i27_commitment_before_unpublish",
-      "COMMITMENT_BEFORE_UNPUBLISH_LOCKED",
-      "RC-COMMITMENT-BEFORE-UNPUBLISH-27",
-      true,
-    ),
-  );
-  await waitForMarker(commitment, "COMMITMENT_BEFORE_UNPUBLISH_LOCKED");
-  const contenderName = "rc_i27_commitment_before_unpublish_owner";
-  const unpublish = startSession(
-    `${unpublishMutation(contenderName, "COMMITMENT_BEFORE_UNPUBLISH_CONTENDER", true)}commit;`,
-    true,
-  );
-  await waitForMarker(unpublish, "COMMITMENT_BEFORE_UNPUBLISH_CONTENDER");
-  await waitForDatabaseLock(contenderName, unpublish);
-  await releaseSuccessfulSession(commitment);
-  const result = await unpublish.exited;
-  if (result.code !== 0) {
-    fail(
-      `The permitted privileged unpublish failed: ${unpublish.stderr.trim()}`,
-    );
   }
-  runSql(`
+
+  async function verifyCommitmentBeforeUnpublish() {
+    const commitment = startSession(
+      commitmentMutation(
+        "rc_i27_commitment_before_unpublish",
+        "COMMITMENT_BEFORE_UNPUBLISH_LOCKED",
+        "RC-COMMITMENT-BEFORE-UNPUBLISH-27",
+        true,
+      ),
+    );
+    await waitForMarker(commitment, "COMMITMENT_BEFORE_UNPUBLISH_LOCKED");
+    const contenderName = "rc_i27_commitment_before_unpublish_owner";
+    const unpublish = startSession(
+      `${unpublishMutation(contenderName, "COMMITMENT_BEFORE_UNPUBLISH_CONTENDER", true)}commit;`,
+      true,
+    );
+    await waitForMarker(unpublish, "COMMITMENT_BEFORE_UNPUBLISH_CONTENDER");
+    await waitForDatabaseLock(contenderName, unpublish);
+    await releaseSuccessfulSession(commitment);
+    const result = await unpublish.exited;
+    if (result.code !== 0) {
+      fail(
+        `The permitted privileged unpublish failed: ${unpublish.stderr.trim()}`,
+      );
+    }
+    runSql(`
     do $$
     begin
       if (select current_publication_id is not null
@@ -632,43 +645,60 @@ async function verifyCommitmentBeforeUnpublish() {
     end
     $$;
   `);
-}
-
-guardDisposableLocalDatabase();
-let failure;
-try {
-  runSql(cleanupSql);
-  runSql(setupSql);
-  await verifyOwnerFirst();
-  await verifyCommitmentFirst();
-  runSql(cleanupSql);
-  runSql(setupSql);
-  await verifyPriceOwnerFirst();
-  await verifyPriceCommitmentFirst();
-  runSql(cleanupSql);
-  runSql(setupSql);
-  await verifyScheduleOwnerFirst();
-  runSql(cleanupSql);
-  runSql(setupSql);
-  await verifyScheduleCommitmentFirst();
-  runSql(cleanupSql);
-  runSql(setupSql);
-  await verifyUnpublishFirst();
-  runSql(cleanupSql);
-  runSql(setupSql);
-  await verifyCommitmentBeforeUnpublish();
-  console.log(
-    "Owner Calendar concurrency preserved availability, price, schedule, and publication outcomes in both transaction orders.",
-  );
-} catch (error) {
-  failure = error;
-} finally {
-  try {
-    terminateTestSessions();
-    runSql(cleanupSql);
-  } catch (cleanupError) {
-    if (!failure) failure = cleanupError;
-    else console.error(cleanupError);
   }
+
+  guardDisposableLocalDatabase();
+  let failure;
+  try {
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyOwnerFirst();
+    await verifyCommitmentFirst();
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyPriceOwnerFirst();
+    await verifyPriceCommitmentFirst();
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyScheduleOwnerFirst();
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyScheduleCommitmentFirst();
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyUnpublishFirst();
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyCommitmentBeforeUnpublish();
+    console.log(
+      "Owner Calendar concurrency preserved availability, price, schedule, and publication outcomes in both transaction orders.",
+    );
+  } catch (error) {
+    failure = error;
+  } finally {
+    markTimingPhase("cleanup");
+    try {
+      terminateTestSessions();
+      runSql(cleanupSql);
+    } catch (cleanupError) {
+      if (!failure) failure = cleanupError;
+      else console.error(cleanupError);
+    }
+  }
+  if (failure) throw failure;
+  timingOutcome = "passed";
+} finally {
+  finishTiming({ outcome: timingOutcome, cleanupDisposition: "local" });
 }
-if (failure) throw failure;

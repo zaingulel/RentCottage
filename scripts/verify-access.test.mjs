@@ -1657,6 +1657,32 @@ describe("access verification command", () => {
     },
   );
 
+  it("declares homogeneous concurrency checks serial without changing their command order", () => {
+    const checks = [
+      "verify-account-access-concurrency",
+      "verify-cottage-profile-draft-concurrency",
+      "verify-cottage-shift-schedule-concurrency",
+      "verify-cottage-inventory-concurrency",
+      "verify-booking-period-hold-concurrency",
+      "verify-booking-request-lifecycle-concurrency",
+      "verify-booking-confirmation-notification-concurrency",
+      "verify-booking-preparation-reminder-concurrency",
+      "verify-booking-cancellation-concurrency",
+      "verify-messaging-concurrency",
+      "verify-booking-completion-concurrency",
+      "verify-customer-review-concurrency",
+      "verify-booking-refund-concurrency",
+    ];
+    for (const check of checks) {
+      const source = readFileSync(`scripts/${check}.mjs`, "utf8");
+      expect(source, check).toMatch(
+        new RegExp(
+          `timing: \\s*\\{\\s*check: \\s*"${check}",\\s*isolation: \\s*"serial",?\\s*\\}`,
+        ),
+      );
+    }
+  });
+
   it("exposes stable standalone database and browser aliases", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 
