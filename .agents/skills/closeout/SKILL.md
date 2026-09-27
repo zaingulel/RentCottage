@@ -6,8 +6,8 @@ description: "Reconcile a merged pull request for work in this repository: board
 # closeout
 
 Runs in the same session the moment the merge lands, under the push authorisation that covered the merge;
-no further ask. Everything here is observable from git, GitHub and the machine's process list; nothing is
-inferred from chat.
+no further ask. Everything here is observable from git, GitHub, Docker's container records and the machine's
+process list; nothing is inferred from chat.
 
 1. **Confirm the merge.** `gh pr view <pr> --json state,mergedAt,mergeCommit` shows `MERGED`. If not, stop.
    Then check the body's review line against
@@ -34,14 +34,27 @@ inferred from chat.
    left serving that worktree, such as a visual-verification server: stop it as the session's own background task
    when the session holds one, otherwise find listening processes with `lsof -nP -iTCP -sTCP:LISTEN`, confirm a
    candidate's working directory is the job worktree with `lsof -a -p <pid> -d cwd`, and stop only that one; leave
-   alone a server whose working directory is not this job's worktree. Leave the job worktree through the available
-   runtime mechanism described in step 3; if the runtime cannot leave it or ownership is uncertain, retain it,
-   report why, and stop before worktree removal and branch deletion; continue to step 6 and the final report. That
-   report tells the owner that removing the worktree the session sits in ends the session's shell, so it is removed
-   with `git worktree remove <path>` only after the session is finished. From the verifier checkout, outside the
-   target worktree, run `git worktree remove <path>` on that exact approved job path. If removal is refused, stop
-   before branch deletion and report the refusal. Confirm `git worktree list --porcelain` no longer registers that
-   path, then run ordinary `git branch -d job/<issue>`; report a refusal and never force deletion. The remote
+   alone a server whose working directory is not this job's worktree. Skip Docker cleanup only if the Docker CLI
+   is not installed. Otherwise list all container IDs, including stopped ones, with `docker container ls -aq`;
+   inspect each ID with `docker inspect --type container <id>`. Read `.Mounts` and the recorded bind declarations
+   in `.HostConfig.Binds` and `.HostConfig.Mounts`; a declaration may retain the host path when the displayed mount
+   source is translated. Compare normalized absolute host paths by component: canonicalize the job worktree and
+   each recorded host bind source's longest existing prefix, then append any missing suffix. Only a source equal
+   to or below the job worktree matches. If a symlink or another filesystem namespace prevents comparison even
+   after checking the declarations, retain the worktree and report the unresolved container ID. Stop each
+   matching running container by ID, then remove each matching container by ID; never select by name or text
+   prefix. Any Docker command or API failure, including an unreachable daemon, also retains the worktree. On
+   either uncertainty or failure, stop before branch deletion and continue to step 6 and the final report. Keep
+   images and volumes. In the final report, name any other container or image confirmed as job-created by recorded
+   build output or Docker metadata, and leave its cleanup to the owner; do not infer ownership from a name. Leave
+   the job worktree through the available runtime mechanism described in step 3; if the runtime cannot leave it
+   or ownership is uncertain, retain it, report why, and stop before worktree removal and branch deletion;
+   continue to step 6 and the final report. That report tells the owner that removing the worktree the session
+   sits in ends the session's shell, so run `git worktree remove <path>` only after the session is finished. From
+   the verifier checkout, outside the target worktree, run `git worktree remove <path>` on that exact approved job
+   path. If removal is refused, stop before branch deletion and report the refusal. Confirm
+   `git worktree list --porcelain` no longer registers that path, then run ordinary `git branch -d job/<issue>`;
+   report a refusal and never force deletion. The remote
    branch is deleted by the merge setting or `git push origin --delete <branch>`. Finish with `git worktree prune`.
 6. **Rulings.** Anything the owner settled this session that should outlive it goes where it belongs: a comment
    on the issue, or the manual or rule that owns the topic. Never as a new document.
