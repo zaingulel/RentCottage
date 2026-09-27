@@ -1,0 +1,117 @@
+.content {
+  width: min(100%, 76rem);
+  margin-inline: auto;
+  padding: clamp(1rem, 3vw, 2.5rem);
+}
+
+.eyebrow {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.queues,
+.actions,
+.detailLinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block: 1.25rem;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border, #b9b9b9);
+  border-radius: 0.75rem;
+}
+
+.filters label {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.filters input,
+.filters select {
+  min-width: 0;
+  width: 100%;
+}
+
+.actions {
+  align-self: end;
+  margin: 0;
+}
+
+.results {
+  margin-block: 1.5rem;
+}
+
+.total {
+  font-size: 1.1rem;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+}
+
+.card {
+  min-width: 0;
+  padding: 1.25rem;
+  border: 1px solid var(--border, #b9b9b9);
+  border-radius: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.card a {
+  font-weight: 700;
+}
+
+.card dl,
+.detailList {
+  display: grid;
+  gap: 0.6rem;
+  margin-block: 1rem;
+}
+
+.card dl div,
+.detailList div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr);
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.card dt,
+.detailList dt {
+  font-weight: 700;
+}
+
+.card dd,
+.detailList dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.content a:focus-visible,
+.content button:focus-visible,
+.content input:focus-visible,
+.content select:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
+}
+
+@media (max-width: 37rem) {
+  .card dl div,
+  .detailList div {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+}

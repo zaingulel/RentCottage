@@ -10,6 +10,7 @@ import {
 } from "@/access/actions";
 import { safeAdministratorReturnDestination } from "@/access/return-destination";
 import { accessMessages } from "@/i18n/access-messages";
+import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import type { Locale } from "@/i18n/routing";
 
 import {
@@ -32,11 +33,13 @@ export function AdministratorAccessForm({
   returnTo,
   reviewHref,
   cottageProfilesHref,
+  recordsHref,
 }: {
   locale: Locale;
   returnTo?: string;
   reviewHref?: string;
   cottageProfilesHref?: string;
+  recordsHref?: string;
 }) {
   const router = useRouter();
   const copy = accessMessages[locale];
@@ -181,6 +184,11 @@ export function AdministratorAccessForm({
       {complete && cottageProfilesHref ? (
         <ActionLink kind="text" href={cottageProfilesHref}>
           {copy.manageCottageProfiles}
+        </ActionLink>
+      ) : null}
+      {complete && recordsHref ? (
+        <ActionLink kind="text" href={recordsHref}>
+          {administratorRecordsMessages[locale].records}
         </ActionLink>
       ) : null}
     </section>

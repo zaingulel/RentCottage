@@ -1485,3 +1485,6 @@ GRANT EXECUTE ON FUNCTION public.get_customer_review(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_public_customer_reviews(text,timestamptz,uuid,integer) TO anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.hide_customer_review(uuid,text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) TO authenticated;

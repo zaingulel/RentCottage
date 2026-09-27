@@ -29,6 +29,7 @@ export default async function AdministratorAccessPage({
         returnTo={safeAdministratorReturnDestination(locale, query.returnTo)}
         reviewHref={`/${locale}/administrator/owner-applications`}
         cottageProfilesHref={`/${locale}/administrator/cottages`}
+        recordsHref={`/${locale}/administrator/records`}
       />
     </main>
   );

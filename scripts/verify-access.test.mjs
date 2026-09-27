@@ -92,6 +92,7 @@ const emptyDeclaredSchemaDiff = JSON.stringify({
 const databasePreflightCommands = [
   declaredSchemaDiffCommand,
   ["node", ["scripts/verify-customer-review-upgrade.mjs"]],
+  ["node", ["scripts/verify-administrator-records-upgrade.mjs"]],
   ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
 ];
 const databaseCheckCommands = [
@@ -151,6 +152,7 @@ const browserCommands = [
       "tests/access.spec.ts",
       "tests/booking-request-access.spec.ts",
       "tests/administrator-payment-history.spec.ts",
+      "tests/administrator-records.spec.ts",
       "tests/booking-history.spec.ts",
       "tests/request-notification-details.spec.ts",
       "tests/messaging.spec.ts",
@@ -172,6 +174,7 @@ const browserCommands = [
       "tests/access.spec.ts",
       "tests/booking-request-access.spec.ts",
       "tests/administrator-payment-history.spec.ts",
+      "tests/administrator-records.spec.ts",
       "tests/booking-cancellation-refund.spec.ts",
       "tests/messaging.spec.ts",
       "tests/customer-reviews.spec.ts",

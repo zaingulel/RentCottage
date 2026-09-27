@@ -335,7 +335,7 @@ async function uploadApplicationDocuments({
   }
 }
 
-async function createSubmittedReviewFixture({
+export async function createSubmittedReviewFixture({
   fixture,
   privilegedClient,
   publishableKey,
