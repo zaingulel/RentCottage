@@ -159,6 +159,12 @@ The plan is a preflight: it runs no verification and supplies no pass evidence. 
 unexpected broad or narrow route against the affected consumers before execution; use `--full` while scope remains
 unresolved.
 
+Run ordinary local convergence through `node scripts/run-log.mjs convergence -- npm run verify`. Its receipt may
+include reused database or browser evidence when the group's classified source and
+runtime inputs remain unchanged. This establishes local convergence without claiming fresh full execution.
+A receipt claimed as proving fresh local full execution must use
+`node scripts/run-log.mjs convergence -- npm run verify -- --full`, quoted in run-log's exact argument vector.
+
 Before its first selected command, executable verification compares the installed Wrangler and Workerd versions with
 their `package-lock.json` entries. A missing, malformed or mismatched record stops execution and tells the operator to
 run `npm ci`; it never repairs dependencies automatically. Plan-only output names that pending check but does not run it.
@@ -273,9 +279,8 @@ that starts and then exits unsuccessfully or receives a signal reports execution
 completion. Admission failure reports no service execution. Phase outcomes, completion records and fresh
 reproduction recipes remain authoritative.
 
-A green ordinary verification receipt may include reused service evidence. Fresh local convergence must use
-explicit `--full` and quote it in run-log's exact argument vector, for example
-`node scripts/run-log.mjs convergence -- npm run verify -- --full`.
+The convergence receipt command and fresh full-proof requirement are defined in
+[Construction and convergence](#construction-and-convergence).
 
 `--full` always executes selected groups fresh and invalidates their local markers before launch. `CI` or
 `GITHUB_ACTIONS` disables local reuse and persistence. Hosted baseline, database and browser jobs and their final
