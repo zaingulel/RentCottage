@@ -170,6 +170,12 @@ test("desktop EN administrator access has current pixel evidence", async ({
 test("visual-only synthetic pending and file-control fixture", async ({
   page,
 }, testInfo) => {
+  // Application hydration must not replace manually inserted visual-only DOM.
+  await page.route("**/*", (route) =>
+    route.request().resourceType() === "script"
+      ? route.abort()
+      : route.continue(),
+  );
   await page.goto("/en/administrator/access");
   await page.evaluate(() => {
     const panel = document.querySelector(".access-panel");

@@ -159,6 +159,12 @@ The plan is a preflight: it runs no verification and supplies no pass evidence. 
 unexpected broad or narrow route against the affected consumers before execution; use `--full` while scope remains
 unresolved.
 
+Run ordinary local convergence through `node scripts/run-log.mjs convergence -- npm run verify`. Its receipt may
+include reused database or browser evidence when the group's classified source and
+runtime inputs remain unchanged. This establishes local convergence without claiming fresh full execution.
+A receipt claimed as proving fresh local full execution must use
+`node scripts/run-log.mjs convergence -- npm run verify -- --full`, quoted in run-log's exact argument vector.
+
 Before its first selected command, executable verification compares the installed Wrangler and Workerd versions with
 their `package-lock.json` entries. A missing, malformed or mismatched record stops execution and tells the operator to
 run `npm ci`; it never repairs dependencies automatically. Plan-only output names that pending check but does not run it.
@@ -211,6 +217,82 @@ for database invariants.
 Run focused checks, intentional red/restored green proofs, and convergence through `node scripts/run-log.mjs <label>
 -- <command> <args>`. Quote its recorded results in delivery evidence. Wrap each top-level check once; its nested
 commands retain their normal output and failure handling.
+
+## Local verification evidence
+
+After the fresh selected baseline succeeds, `npm run verify` may reuse completed local database or browser
+evidence whose classified source layers, comparison base, exact command contract and effective runtime inputs
+remain unchanged. Service-only modes check immediately after dependency preflight. Baseline always executes:
+its dependency audit needs current external evidence, and its generated output must settle before service
+eligibility is checked. Baseline-only repairs may preserve both service groups; presentation repairs may
+preserve database evidence. Full inputs invalidate both. Source identity includes HEAD, index, working files,
+nonignored untracked files, executable modes, symlink types, deletions, `origin/main` and the unique merge base.
+Relevant source symlink layers prevent reuse and retention because their target inputs are not bounded. Fresh
+execution still requires marker admission. An unrelated source commit may reuse an earlier success, whose HEAD
+and base are printed as provenance. This is
+local source-and-environment evidence, not an exact-revision delivery pass.
+
+Runtime identity includes installed dependency contents, effective environment and npm configuration, local
+configuration files, executable identities, operating system and Docker client/server/context/daemon inputs.
+The raw environment fingerprint excludes exactly `CLAUDE_CODE_AGENT`, `CLAUDE_CODE_CHILD_SESSION`,
+`CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`,
+`CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_EFFORT`, `CLAUDE_PID`,
+`CODEX_APP_TOOLS_PIPE_PATH`, `CODEX_SESSION_ID`, `OLDPWD`, `RUN_LOG_RERUN_REASON`, `STARSHIP_SESSION_KEY`
+and `_` as bookkeeping inputs. `CODEX_THREAD_ID` remains an entry when supplied, with its value represented
+by non-empty truthiness because installed agent detectors consume that predicate rather than ID contents.
+Non-empty ID changes preserve reuse; transitions between non-empty, empty and absent values invalidate it.
+Every other key remains fully bound, including SSH authentication, executable paths, AI/tool mode flags and
+unknown keys. Commands and native probes receive the supplied environment; resolved npm configuration,
+configuration bytes and native observations remain inputs even when a bookkeeping value affects them.
+Only ordinary non-executable Vitest `.vite/vitest/<40-character hexadecimal key>/results.json` files under
+`node_modules` are excluded as generated results; executable output, symlink ancestors and other installed bytes
+remain inputs. Browser identity also includes both complete installed Chromium and Chromium headless-shell
+distributions resolved through the installed Playwright registry, including framework, resource and sibling
+library bytes. Missing or unsafe observations prevent reuse and retention. Fixed external executable or module
+injection overrides prevent reuse; remote browser overrides prevent browser reuse. Diagnostics name an override
+without printing its value.
+
+Fresh successful service execution may add Docker image references during cold preparation. Every previously
+observed reference must keep its image identity, and the completed record retains the post-command requirements.
+Later unrelated additions preserve reuse; removing or replacing a saved reference invalidates it. Records store
+hashed references and identities, never image names or raw environment, configuration, credential or probe data.
+
+The verifier stores private versioned records in the worktree's Git directory. A receipt is eligible only while
+its token matches the current attempt marker. Before fresh local service execution, including `--full`, the
+verifier must write and flush a new marker, replace it atomically, flush the directory and read back its token.
+An invalid, missing or unreadable receipt is a cache miss. A failed marker operation is an admission failure:
+`verification-admission-failure` names the group and step, exits 1 and stops before that service or later selected
+work. Repair private-state access before retrying; an unexecuted check has no product-failure or execution-timing
+record. If no newer product attempt occurred, an earlier success may remain eligible after access recovers.
+A completion-record write failure after successful execution reports `local evidence not retained` while preserving
+the actual command outcome; its unmatched new marker requires fresh execution next time.
+
+Only authoritatively successful commands and stable before/after inputs certify a group. Combined `verify:access`
+success includes database cleanup and may retain database evidence immediately. Browser evidence requires the
+remaining Worker build, secret scan, browser and smoke commands too. Combined access failure certifies neither,
+and independently completed database evidence survives a later browser failure. Failed, interrupted, unreached or
+superseded attempts never certify success. Every local `--full` invocation executes its selected services fresh,
+while genuinely completed stable groups may seed later ordinary local reuse. Hosted runs neither consume nor
+retain local evidence. Selected groups report fresh execution or reuse with provenance; unselected groups have
+one canonical skipped report. A spawn failure reports that fresh verification could not start. A command
+that starts and then exits unsuccessfully or receives a signal reports execution, without certifying group
+completion. Admission failure reports no service execution. Phase outcomes, completion records and fresh
+reproduction recipes remain authoritative.
+
+The convergence receipt command and fresh full-proof requirement are defined in
+[Construction and convergence](#construction-and-convergence).
+
+`--full` always executes selected groups fresh and invalidates their local markers before launch. `CI` or
+`GITHUB_ACTIONS` disables local reuse and persistence. Hosted baseline, database and browser jobs and their final
+aggregate still require fresh success on the same exact merge revision. `--plan` probes no runtime inputs and writes
+no local records: it prints the selected command plan. Only ordinary local plans with selected services state
+that reuse eligibility will be checked during execution; baseline-only, unselected, forced and hosted plans
+make no reuse promise.
+Local reuse never replaces the final exact-source hosted gate or real PostgreSQL, Worker and browser proof.
+
+The recurring cost is conservative source/runtime content capture, private records and focused contract tests.
+Retire the local reuse machinery when an authoritative native evidence system provides equivalent scoped reuse,
+or when it no longer avoids expensive reruns. Command doubles prove admission and routing, not product outcomes.
 
 ## Evidence economics
 
@@ -265,7 +347,7 @@ migrations statement by statement and refuse that lock. Install with `npm ci`, w
 
 ## Stable commands
 
-- `npm run verify` is the local and continuous-integration gate. It always audits production dependencies, checks formatting, lint and strict TypeScript, runs Vitest, regenerates Cloudflare types and checks their drift. The selector independently names database and browser evidence. Regular non-executable Markdown in the established skill and template directories, direct Claude/Codex seat definitions, documentation Markdown, retained DOCX documents and documentation illustrations use baseline because their current consumers do not enter the application build, database, Worker or browser runtime. Root manuals, the pull-request template and run-log pair remain exact baseline exceptions. Global presentation CSS, the self-hosted web font files, ordinary bundled images, and the exact shell/display Playwright specifications add browser evidence without database evidence. Executable files, scripts, TypeScript, JSON and other runtime or configuration inputs remain full even when placed under a prose directory, except for the individually named board and workflow-control toolkit paths in `scripts/verify.mjs`, which are baseline because `npm test` already proves them through the `node --test` suite. Four exact executable entry points are baseline only while they stay executable; a chmod or any unnamed executable remains full. The toolkit's reach is GitHub, local Git, documentation, or agent dispatch, never Supabase, the Worker or a browser. That exception is an exact list and never a directory wildcard, because the same directories hold Supabase, Worker and browser fixtures that need the full route. The self-hosted font unit test and the font licences it reads are a further exact-path baseline exception, because `npm test` is their only observer and neither their content nor its loss can change a rendered page, the Worker's behaviour or the database; the font files themselves change rendering and stay on the browser route. A new consumer or configuration boundary requires this classification to be re-evaluated, and a mixed complete diff takes the strongest route selected by any path. A path that matches no route at all is not a reason to run everything: the selector names those paths, states that the fallback would otherwise be full verification, runs nothing and exits 3, so the route is classified once rather than paid for on every run. An unclassified path outranks every classified route and every full-evidence trigger the diff itself carries, a selector self-change, shared configuration, a symlink and an executable-mode change included: a mixed diff holding one still exits 3 rather than taking the full route, so a missing classification cannot hide behind a route that would have run anyway. Selector self-changes, shared configuration, symlinks and file-type or executable-mode changes take the full fallback once every changed path is classified; shallow or missing history, malformed Git evidence and multiple merge bases take it unconditionally, because they stop classification before it starts. Either way there is no question a human can answer faster. The local selector unions the source contribution from the unique `origin/main` merge base, staged and unstaged changes, and untracked files. CI unions the source contribution from the unique base/source merge base with the checked-out merge result's delta from the current base. `npm run verify -- --full` selects exhaustive convergence evidence. The full route requires Docker because access checks start an isolated local Supabase database and prove its policies directly.
+- `npm run verify` is the local and continuous-integration gate. It always audits production dependencies, checks formatting, lint and strict TypeScript, runs Vitest, regenerates Cloudflare types and checks their drift. The selector independently names database and browser evidence. Regular non-executable Markdown in the established skill and template directories, direct Claude/Codex seat definitions, documentation Markdown, retained DOCX documents and documentation illustrations use baseline because their current consumers do not enter the application build, database, Worker or browser runtime. Root manuals, the pull-request template and run-log pair remain exact baseline exceptions. Global presentation CSS, the self-hosted web font files, ordinary bundled images, and the exact shell/display Playwright specifications add browser evidence without database evidence. Executable files, scripts, TypeScript, JSON and other runtime or configuration inputs remain full even when placed under a prose directory, except for the individually named board and workflow-control toolkit paths in `scripts/verify.mjs`, which are baseline because `npm test` already proves them through the `node --test` suite. Four exact executable entry points are baseline only while they stay executable; a chmod or any unnamed executable remains full. The toolkit's reach is GitHub, local Git, documentation, or agent dispatch, never Supabase, the Worker or a browser. That exception is an exact list and never a directory wildcard, because the same directories hold Supabase, Worker and browser fixtures that need the full route. The self-hosted font unit test and the font licences it reads are a further exact-path baseline exception, because `npm test` is their only observer and neither their content nor its loss can change a rendered page, the Worker's behaviour or the database; the font files themselves change rendering and stay on the browser route. A new consumer or configuration boundary requires this classification to be re-evaluated, and a mixed complete diff takes the strongest route selected by any path. A path that matches no route at all is not a reason to run everything: the selector names those paths, states that the fallback would otherwise be full verification, runs nothing and exits 3, so the route is classified once rather than paid for on every run. An unclassified path outranks every classified route and every full-evidence trigger the diff itself carries, a selector self-change, shared configuration, a symlink and an executable-mode change included: a mixed diff holding one still exits 3 rather than taking the full route, so a missing classification cannot hide behind a route that would have run anyway. Selector self-changes, shared configuration, symlinks and file-type or executable-mode changes take the full fallback once every changed path is classified; shallow or missing history, malformed Git evidence and multiple merge bases take it unconditionally, because they stop classification before it starts. Either way there is no question a human can answer faster. The local selector unions the source contribution from the unique `origin/main` merge base, staged and unstaged changes, and untracked files. CI unions the source contribution from the unique base/source merge base with the checked-out merge result's delta from the current base. `npm run verify -- --full` selects fresh exhaustive convergence evidence. The full route requires Docker because access checks start an isolated local Supabase database and prove its policies directly.
   The exact Claude Code and Codex hook registrations, handoff wrappers, shared validator, Codex adapter and their
   focused tests are a further baseline exception. Their reach is agent tooling plus local Git and GitHub
   operations, and `npm test` proves their policy and payload mapping; database, Worker and browser evidence observe
