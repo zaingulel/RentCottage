@@ -857,6 +857,14 @@ export async function main(
       if (customerReviewUpgrade.status !== 0) {
         return customerReviewUpgrade.status;
       }
+      const administratorRecordsUpgrade = await execute(
+        "node",
+        ["scripts/verify-administrator-records-upgrade.mjs"],
+        { stdio: "inherit" },
+      );
+      if (administratorRecordsUpgrade.status !== 0) {
+        return administratorRecordsUpgrade.status;
+      }
       result = await execute(
         "npx",
         supabaseArguments(["supabase", "test", "db"]),
