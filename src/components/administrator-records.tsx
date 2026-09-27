@@ -147,7 +147,7 @@ export function AdministratorRecords({
       <p className={styles.eyebrow}>{copy.eyebrow}</p>
       <h1 id="administrator-records-title">{copy.title}</h1>
       <p>{copy.intro}</p>
-      <div className={styles.queues} aria-label={copy.matchingTotal}>
+      <div className={styles.queues} role="group" aria-label={copy.queuesLabel}>
         <ActionButton
           kind="secondary"
           size="regular"
@@ -292,7 +292,9 @@ export function AdministratorRecords({
         {view.status === "loading" ? <p>{copy.loading}</p> : null}
         {view.status === "invalid" ? (
           <div id="administrator-records-filter-error">
-            <ActionFeedback kind="error">{copy.invalid}</ActionFeedback>
+            <ActionFeedback kind="error">
+              {view.reason === "query" ? copy.invalidQuery : copy.invalid}
+            </ActionFeedback>
           </div>
         ) : null}
         {view.status === "access_required" ? (
@@ -587,10 +589,8 @@ export function AdministratorRecordDetailView({
             {record.localizedDecisions.length ? (
               <ol className={styles.list}>
                 {record.localizedDecisions.map((decision) => (
-                  <li key={decision.revisionId} className={styles.card}>
-                    <h3>
-                      <bdi>{decision.locale}</bdi>
-                    </h3>
+                  <li key={decision.decisionId} className={styles.card}>
+                    <h3>{copy.languageNames[decision.locale]}</h3>
                     <p>
                       {copy.revision}: <bdi>{decision.revisionId}</bdi>
                     </p>

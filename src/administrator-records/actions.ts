@@ -3,12 +3,14 @@
 import { isLocale } from "@/i18n/routing";
 import {
   parseAdministratorRecordSearch,
+  UnsupportedAdministratorQueryError,
   type AdministratorSearchPage,
 } from "./administrator-records";
 import { searchAdministratorRecords } from "./supabase-administrator-records";
 
 export type AdministratorRecordsActionState =
-  | { status: "idle" | "invalid" | "access_required" | "unavailable" }
+  | { status: "idle" | "access_required" | "unavailable" }
+  | { status: "invalid"; reason?: "query" }
   | { status: "ready"; page: AdministratorSearchPage };
 
 const fields = [
@@ -48,8 +50,10 @@ export async function searchAdministratorRecordsAction(
   let search: ReturnType<typeof parseAdministratorRecordSearch>;
   try {
     search = parseAdministratorRecordSearch(raw);
-  } catch {
-    return { status: "invalid" };
+  } catch (error) {
+    return error instanceof UnsupportedAdministratorQueryError
+      ? { status: "invalid", reason: "query" }
+      : { status: "invalid" };
   }
   return searchAdministratorRecords(search);
 }

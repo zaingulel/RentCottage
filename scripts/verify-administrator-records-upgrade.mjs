@@ -167,8 +167,8 @@ try {
     harness.runSql(
       "select count(*)::integer from public.account_contexts where user_id::text like '25000000-%' and role in ('customer','cottage_owner');",
     ),
-    "32",
-    "fixture retains 32 customer-capable accounts",
+    "34",
+    "fixture retains 34 customer-capable accounts",
   );
   check(
     harness.runSql(
@@ -207,7 +207,7 @@ try {
       search.pendingApplications,
       search.pendingApprovals,
     ],
-    [32, 25, 2, 1],
+    [34, 25, 2, 1],
     "AAL2 search returns bounded rows and authoritative counts",
   );
   const approval = JSON.parse(

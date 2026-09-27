@@ -102,7 +102,7 @@ test.beforeAll(async ({}, testInfo) => {
     harness.runSql(
       `begin;\n${source.slice(start + startMarker.length, end).trim()}\ncommit;`,
     );
-  else if (existing !== 33)
+  else if (existing !== 35)
     throw new Error(`Administrator fixture namespace is partial: ${existing}`);
   expect({
     customers: count(
@@ -117,7 +117,7 @@ test.beforeAll(async ({}, testInfo) => {
     approvals: count(
       "select count(*) from public.cottage_profile_review_cycles where profile_id='25000000-0000-4000-8000-000000000401' and state='in_review';",
     ),
-  }).toEqual({ customers: 32, owners: 6, applications: 2, approvals: 1 });
+  }).toEqual({ customers: 34, owners: 8, applications: 2, approvals: 1 });
   const cycles = harness
     .runSql(
       "select id::text from public.cottage_profile_review_cycles where profile_id='25000000-0000-4000-8000-000000000401' order by cycle_number;",

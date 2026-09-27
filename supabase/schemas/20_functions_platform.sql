@@ -336,7 +336,7 @@ begin
     where target_kind = 'owners' and contexts.role = 'cottage_owner'
     union all
     select 'cottages', profiles.id, profiles.owner_user_id, profiles.id, profiles.application_id,
-      profiles.name, profiles.status::text, profiles.created_at, null::integer,
+      coalesce(profiles.name, profiles.id::text), profiles.status::text, profiles.created_at, null::integer,
       null::text, null::text
     from public.owner_application_cottage_profiles profiles
     where target_kind = 'cottages'
@@ -441,7 +441,7 @@ begin
       ) from public.cottage_profile_publication_decisions decisions
       where decisions.review_cycle_id = cycles.id),
       'localizedDecisions', coalesce((select jsonb_agg(jsonb_build_object(
-        'locale', decisions.locale, 'revisionId', decisions.localized_revision_id,
+        'decisionId', decisions.id, 'locale', decisions.locale, 'revisionId', decisions.localized_revision_id,
         'approved', decisions.approved, 'reason', decisions.reason,
         'administratorId', decisions.administrator_user_id,
         'decidedAt', decisions.decided_at

@@ -81,6 +81,7 @@ export type AdministratorRecordDetail =
       decidedAt: string | null;
       publicationDecision: Decision | null;
       localizedDecisions: (Decision & {
+        decisionId: string;
         locale: "ar" | "ckb" | "en";
         revisionId: string;
       })[];
@@ -156,6 +157,8 @@ function phone(value: unknown): string | undefined {
   return value;
 }
 
+export class UnsupportedAdministratorQueryError extends Error {}
+
 export function parseAdministratorRecordSearch(
   value: unknown,
 ): AdministratorSearchInput {
@@ -169,6 +172,19 @@ export function parseAdministratorRecordSearch(
         : text(raw.query, 120);
   if (query && (query.length < 2 || query.length > 120))
     throw new Error("Invalid search text");
+  const isAccountId =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      query,
+    );
+  const isCanonicalPhone = /^\+964\d{10}$/.test(query);
+  if (
+    (kind === "customers" && query && !isAccountId && !isCanonicalPhone) ||
+    (kind === "owners" &&
+      query &&
+      !isCanonicalPhone &&
+      (/^\+/.test(query) || /^\d+$/.test(query)))
+  )
+    throw new UnsupportedAdministratorQueryError("Unsupported account search");
   if (
     /^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$/i.test(
       query,
@@ -313,11 +329,7 @@ export function parseAdministratorRecordDetail(
   }
   const state = oneOf(raw.state, statuses.approvals),
     cycleNumber = count(raw.cycleNumber);
-  if (
-    cycleNumber < 1 ||
-    !Array.isArray(raw.localizedDecisions) ||
-    raw.localizedDecisions.length > 3
-  )
+  if (cycleNumber < 1 || !Array.isArray(raw.localizedDecisions))
     throw new Error("Invalid history");
   const decidedAt = raw.decidedAt === null ? null : timestamp(raw.decidedAt);
   if ((state === "in_review") !== (decidedAt === null))
@@ -341,6 +353,7 @@ export function parseAdministratorRecordDetail(
       const item = object(value);
       return {
         ...decision(item),
+        decisionId: uuid(item.decisionId),
         locale: oneOf(item.locale, ["ar", "ckb", "en"]),
         revisionId: uuid(item.revisionId),
       };

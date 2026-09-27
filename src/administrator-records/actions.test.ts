@@ -49,4 +49,26 @@ describe("administrator records Server Action", () => {
       searchAdministratorRecordsAction({ status: "idle" } as never, form),
     ).resolves.toEqual({ status: "invalid" });
   });
+
+  it("rejects unsupported customer names and local phone input before search", async () => {
+    const form = new FormData();
+    form.set("locale", "en");
+    form.set("kind", "customers");
+    form.set("query", "Fictional Customer");
+    await expect(
+      searchAdministratorRecordsAction({ status: "idle" }, form),
+    ).resolves.toEqual({
+      status: "invalid",
+      reason: "query",
+    });
+    form.set("kind", "owners");
+    form.set("query", "07510000101");
+    await expect(
+      searchAdministratorRecordsAction({ status: "idle" }, form),
+    ).resolves.toEqual({
+      status: "invalid",
+      reason: "query",
+    });
+    expect(search).not.toHaveBeenCalled();
+  });
 });
