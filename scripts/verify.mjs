@@ -600,13 +600,21 @@ function gitRecords(cwd, args, layer) {
 }
 
 const bookkeepingEnvironmentKeys = new Set([
-  "RUN_LOG_RERUN_REASON",
+  "CLAUDE_CODE_AGENT",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_MESSAGING_SOCKET",
+  "CLAUDE_CODE_MESSAGING_TOKEN",
+  "CLAUDE_CODE_SESSION_ATTENDED",
   "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_EFFORT",
   "CLAUDE_PID",
+  "CODEX_APP_TOOLS_PIPE_PATH",
   "CODEX_SESSION_ID",
+  "OLDPWD",
+  "RUN_LOG_RERUN_REASON",
   "STARSHIP_SESSION_KEY",
   "_",
-  "OLDPWD",
 ]);
 
 function captureLocalEvidenceInputs(
@@ -730,6 +738,11 @@ function captureLocalEvidenceInputs(
             commands,
             environment: Object.entries(environment)
               .filter(([key]) => !bookkeepingEnvironmentKeys.has(key))
+              // Installed agent detectors consume thread-ID truthiness only.
+              .map(([key, value]) => [
+                key,
+                key === "CODEX_THREAD_ID" ? Boolean(value) : value,
+              ])
               .sort(([left], [right]) => left.localeCompare(right)),
             runtime: runtime.digest,
             verifier: digest(readFileSync(fileURLToPath(import.meta.url))),

@@ -228,11 +228,16 @@ local source-and-environment evidence, not an exact-revision delivery pass.
 
 Runtime identity includes installed dependency contents, effective environment and npm configuration, local
 configuration files, executable identities, operating system and Docker client/server/context/daemon inputs.
-The raw environment fingerprint excludes exactly `RUN_LOG_RERUN_REASON`, `CLAUDE_CODE_SESSION_ID`,
-`CLAUDE_PID`, `CODEX_SESSION_ID`, `STARSHIP_SESSION_KEY`, `_` and `OLDPWD` as bookkeeping inputs. Every other
-key, including unknown keys, remains an input. Commands and native probes receive the supplied environment;
-resolved npm configuration, configuration bytes and native observations remain inputs even when a bookkeeping
-value affects them.
+The raw environment fingerprint excludes exactly `CLAUDE_CODE_AGENT`, `CLAUDE_CODE_CHILD_SESSION`,
+`CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`,
+`CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_EFFORT`, `CLAUDE_PID`,
+`CODEX_APP_TOOLS_PIPE_PATH`, `CODEX_SESSION_ID`, `OLDPWD`, `RUN_LOG_RERUN_REASON`, `STARSHIP_SESSION_KEY`
+and `_` as bookkeeping inputs. `CODEX_THREAD_ID` remains an entry when supplied, with its value represented
+by non-empty truthiness because installed agent detectors consume that predicate rather than ID contents.
+Non-empty ID changes preserve reuse; transitions between non-empty, empty and absent values invalidate it.
+Every other key remains fully bound, including SSH authentication, executable paths, AI/tool mode flags and
+unknown keys. Commands and native probes receive the supplied environment; resolved npm configuration,
+configuration bytes and native observations remain inputs even when a bookkeeping value affects them.
 Only ordinary non-executable Vitest `.vite/vitest/<40-character hexadecimal key>/results.json` files under
 `node_modules` are excluded as generated results; executable output, symlink ancestors and other installed bytes
 remain inputs. Browser identity also includes both complete installed Chromium and Chromium headless-shell

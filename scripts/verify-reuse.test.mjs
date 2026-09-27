@@ -512,24 +512,38 @@ describe("repository verification command", () => {
   it("ignores only bookkeeping environment changes through production capture", () => {
     const fixture = productionFixture({ browsers: true });
     const bookkeepingKeys = [
-      "RUN_LOG_RERUN_REASON",
+      "CLAUDE_CODE_AGENT",
+      "CLAUDE_CODE_CHILD_SESSION",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_MESSAGING_SOCKET",
+      "CLAUDE_CODE_MESSAGING_TOKEN",
+      "CLAUDE_CODE_SESSION_ATTENDED",
       "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_EFFORT",
       "CLAUDE_PID",
+      "CODEX_APP_TOOLS_PIPE_PATH",
       "CODEX_SESSION_ID",
+      "OLDPWD",
+      "RUN_LOG_RERUN_REASON",
       "STARSHIP_SESSION_KEY",
       "_",
-      "OLDPWD",
     ];
     const initialEnvironment = {
       ...fixture.environment,
       TZ: "Etc/UTC",
       VERIFY_FIXTURE_UNRECOGNIZED_INPUT: "private-unknown-before",
+      SSH_AUTH_SOCK: "private-ssh-before",
+      CODEX_THREAD_ID: "private-thread-before",
+      CLAUDE_CODE_EXECPATH: "private-execpath-before",
+      SHLVL: "private-shell-context-before",
+      CODEX_SANDBOX_NETWORK_DISABLED: "private-network-mode-before",
       ...Object.fromEntries(
         bookkeepingKeys.map((key) => [key, `private-${key}-before`]),
       ),
     };
     const changedBookkeeping = {
       ...initialEnvironment,
+      CODEX_THREAD_ID: "private-thread-after",
       ...Object.fromEntries(
         bookkeepingKeys.map((key) => [key, `private-${key}-after`]),
       ),
@@ -552,6 +566,7 @@ describe("repository verification command", () => {
           "utf8",
         );
         for (const value of Object.values(environment)) {
+          if (value === "") continue;
           expect(output).not.toContain(value);
           expect(record).not.toContain(value);
         }
@@ -560,16 +575,28 @@ describe("repository verification command", () => {
     const freshCommands = [...requiredBaselineSteps, ...requiredExpensiveSteps];
     execute(initialEnvironment, freshCommands, false);
     execute(changedBookkeeping, requiredBaselineSteps, true);
+    const changedInput = { ...changedBookkeeping };
     for (const [key, value] of [
       ["TZ", "Pacific/Auckland"],
       ["VERIFY_FIXTURE_UNRECOGNIZED_INPUT", "private-unknown-after"],
+      ["SSH_AUTH_SOCK", "private-ssh-after"],
+      ["CLAUDE_CODE_EXECPATH", "private-execpath-after"],
+      ["SHLVL", "private-shell-context-after"],
+      ["CODEX_SANDBOX_NETWORK_DISABLED", "private-network-mode-after"],
     ]) {
-      const changedInput = { ...changedBookkeeping, [key]: value };
+      changedInput[key] = value;
       execute(changedInput, freshCommands, false);
-      execute(changedInput, requiredBaselineSteps, true);
-      execute(changedBookkeeping, freshCommands, false);
-      execute(changedBookkeeping, requiredBaselineSteps, true);
     }
+    execute(changedInput, requiredBaselineSteps, true);
+    changedInput.CODEX_THREAD_ID = "";
+    execute(changedInput, freshCommands, false);
+    execute(changedInput, requiredBaselineSteps, true);
+    delete changedInput.CODEX_THREAD_ID;
+    execute(changedInput, freshCommands, false);
+    execute(changedInput, requiredBaselineSteps, true);
+    changedInput.CODEX_THREAD_ID = "private-thread-restored";
+    execute(changedInput, freshCommands, false);
+    execute(changedInput, requiredBaselineSteps, true);
   }, 60000);
 
   it("refuses stale source base and environment evidence", () => {
