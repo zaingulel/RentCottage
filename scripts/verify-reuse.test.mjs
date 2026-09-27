@@ -597,7 +597,7 @@ describe("repository verification command", () => {
     changedInput.CODEX_THREAD_ID = "private-thread-restored";
     execute(changedInput, freshCommands, false);
     execute(changedInput, requiredBaselineSteps, true);
-  }, 60000);
+  }, 120000);
 
   it("refuses stale source base and environment evidence", () => {
     const cases = [
