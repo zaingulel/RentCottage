@@ -3,11 +3,11 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "e09aa5411ec96985c299eedc476217f12ccce44a",
+  "syncedFrom": "189556739f0357e0cd285022df1219b30f4cb48b",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "bcf52ad4884c6d446ad933c22716a02e69357ee7c9bb86d77641060dde794fdd"
+      "sha256": "0b9467b6117d196a73d00ad8d0f5c58d2c69fc6610a128d98be6d765e30eb431"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -331,7 +331,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "bcf52ad4884c6d446ad933c22716a02e69357ee7c9bb86d77641060dde794fdd"
+      "sha256": "0b9467b6117d196a73d00ad8d0f5c58d2c69fc6610a128d98be6d765e30eb431"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
