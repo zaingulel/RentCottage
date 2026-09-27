@@ -1,13 +1,13 @@
 \set ON_ERROR_STOP on
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(47);
+select plan(49);
 
 -- BEGIN ADMINISTRATOR RECORDS FIXTURE
 -- Fictional reserved 250 namespace. The local transaction rolls every row back.
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
 select ('25000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
-  'authenticated', 'authenticated', '+964750' || lpad(n::text, 7, '0'), now()
+  'authenticated', 'authenticated', '+964799' || lpad(n::text, 7, '0'), now()
 from generate_series(1, 26) n;
 insert into public.account_contexts (user_id, role, created_at)
 select ('25000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
@@ -34,7 +34,7 @@ insert into public.owner_applications
  (id, owner_user_id, applicant_kind, legal_name, status, submitted_at, review_started_at, review_due_at, decided_at, version, created_at)
 values
  ('25000000-0000-4000-8000-000000000302','25000000-0000-4000-8000-000000000102','individual','Fictional Draft Secret','draft',null,null,null,null,1,'2026-09-01 20:00+00'),
- ('25000000-0000-4000-8000-000000000303','25000000-0000-4000-8000-000000000105','individual','Fictional Queue Owner','submitted','2026-09-01 20:59+00',null,null,null,1,'2026-09-01 20:00+00'),
+ ('25000000-0000-4000-8000-000000000303','25000000-0000-4000-8000-000000000105','individual','Fictional Queue Owner','submitted','2026-09-01 20:59+00',now(),now()+interval '72 hours',null,1,'2026-09-01 20:00+00'),
  ('25000000-0000-4000-8000-000000000304','25000000-0000-4000-8000-000000000106','individual','Fictional Under Review','under_review','2026-09-02 20:59+00',now(),now()+interval '72 hours',null,2,'2026-09-02 20:00+00'),
  ('25000000-0000-4000-8000-000000000305','25000000-0000-4000-8000-000000000101','individual','Fictional Historical Owner','approved','2026-09-03 21:00+00',now(),null,now(),3,'2026-09-03 20:00+00');
 insert into public.owner_application_transitions
@@ -119,6 +119,8 @@ insert into public.cottage_translation_runtime_control select * from administrat
 select is((select count(*) from public.account_contexts where role in ('customer','cottage_owner')),32::bigint,'fixture has 32 customer-capable accounts');
 select is((select count(*) from public.account_contexts where role='cottage_owner'),6::bigint,'fixture has six coherent owner states');
 select is((select count(*) from public.owner_applications where status in ('submitted','under_review')),2::bigint,'fixture has two pending applications');
+select is((select count(*) from public.owner_applications where status in ('submitted','under_review') and review_started_at is not null and review_due_at > now()),2::bigint,'pending applications have active review deadlines');
+select is((select count(*) from auth.users where id::text like '25000000-%' and phone ~ '^\+964750000000[0-9]$'),0::bigint,'fixture phones avoid the access and booking-history reserved range');
 select is((select count(*) from public.cottage_profile_review_cycles where state='approved'),1::bigint,'fixture has historical approved cycle');
 select is((select count(*) from public.cottage_profile_review_cycles where state='in_review'),1::bigint,'fixture has remediation cycle');
 select is((select count(*) from public.owner_application_cottage_profiles where status='submitted_for_content_approval'),0::bigint,'remediation profile is draft');
@@ -147,7 +149,7 @@ select is((with first_page as (
 select is((public.search_administrator_records('customers',null,null,null,null,null,null,null)->>'pendingApplications')::integer,2,'global pending applications count shares search snapshot');
 select is((public.search_administrator_records('customers',null,null,null,null,null,null,null)->>'pendingApprovals')::integer,1,'global pending approvals count uses remediation state');
 select is((public.search_administrator_records('customers','25000000-0000-4000-8000-000000000001',null,null,null,null,null,null)->>'total')::integer,1,'exact UUID search');
-select is((public.search_administrator_records('customers','+9647500000001',null,null,null,null,null,null)->>'total')::integer,1,'exact verified phone search');
+select is((public.search_administrator_records('customers','+9647990000001',null,null,null,null,null,null)->>'total')::integer,1,'exact verified phone search');
 select is((public.search_administrator_records('owners','Fictional Draft Secret',null,null,null,null,null,null)->>'total')::integer,0,'draft owner name is excluded');
 select is((public.search_administrator_records('owners','Fictional%',null,null,null,null,null,null)->>'total')::integer,0,'percent remains literal search text');
 select is((public.search_administrator_records('owners','Fictional_',null,null,null,null,null,null)->>'total')::integer,0,'underscore remains literal search text');

@@ -13,14 +13,13 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
-const { accessBrowserFixture, ACCESS_REVIEW_DOCUMENT_FILENAME } = createRequire(
-  import.meta.url,
-)("../scripts/lib/access-browser-fixtures.mjs") as {
+const { accessBrowserFixture } = createRequire(import.meta.url)(
+  "../scripts/lib/access-browser-fixtures.mjs",
+) as {
   accessBrowserFixture(project: string): {
     reviewLegalName: string;
     reviewOwnerPhone: string;
   };
-  ACCESS_REVIEW_DOCUMENT_FILENAME: string;
 };
 const harness = createLocalSupabaseConcurrencyHarness();
 const password = "Local-test-password-2026";
@@ -318,7 +317,7 @@ test("an administrator discovers accounts and approval records with authoritativ
   await page.getByRole("link", { name: fixture.reviewLegalName }).click();
   const documentRow = page
     .getByRole("listitem")
-    .filter({ hasText: ACCESS_REVIEW_DOCUMENT_FILENAME });
+    .filter({ hasText: "Identity evidence" });
   await expect(
     documentRow.getByRole("link", { name: "Open secure document" }),
   ).toHaveCount(0);
