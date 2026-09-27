@@ -645,8 +645,8 @@ test("Arabic access renders right to left", async ({ page }) => {
   await expect(page.getByLabel("رقم الهاتف العراقي")).toBeVisible();
 });
 
-registerOwnedJourney("owner-submit", async ({ page }, testInfo) => {
-  test.setTimeout(60_000);
+registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
+  test.setTimeout(300_000);
   const fixture = await prepareOwnedAccessJourney("owner-submit", testInfo);
   await openOwnerApplication(page, "en", fixture.phone);
   expect(
@@ -671,6 +671,11 @@ registerOwnedJourney("owner-submit", async ({ page }, testInfo) => {
   await expect(page.getByLabel("Garden")).toBeChecked();
   await expect(page.getByLabel("Parking")).toBeChecked();
 
+  const originalIdentityBytes = Buffer.concat([
+    Buffer.from("%PDF-1.7\n"),
+    Buffer.alloc(1_099_980),
+    Buffer.from("\n%%EOF"),
+  ]);
   const evidence = [
     ["Identity evidence", reviewDocumentFilename],
     ["Authority-to-rent evidence", "authority.pdf"],
@@ -684,11 +689,7 @@ registerOwnedJourney("owner-submit", async ({ page }, testInfo) => {
       mimeType: "application/pdf",
       buffer:
         filename === reviewDocumentFilename
-          ? Buffer.concat([
-              Buffer.from("%PDF-1.7\n"),
-              Buffer.alloc(1_099_980),
-              Buffer.from("\n%%EOF"),
-            ])
+          ? originalIdentityBytes
           : Buffer.from("%PDF-1.7\nprivate-test-document\n%%EOF"),
     });
     await card.getByRole("button", { name: "Upload document" }).click();
@@ -709,6 +710,427 @@ registerOwnedJourney("owner-submit", async ({ page }, testInfo) => {
   await expect(page.getByRole("button", { name: /booking/i })).toHaveCount(0);
 
   await expect(page.getByRole("link", { name: /secure link/i })).toHaveCount(0);
+
+  assertIsolatedLocalAccessDatabase();
+  const users = await listAllAccessFixtureUsers(auditClient.auth.admin);
+  const ownedUser = findAccessFixtureUser(users, fixture.phone);
+  const ownerUserId = ownedUser?.id;
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!ownerUserId || !uuidPattern.test(ownerUserId)) {
+    throw new Error("Owned submitted user is missing or malformed");
+  }
+  const { createLocalSupabaseConcurrencyHarness } = createRequire(
+    import.meta.url,
+  )("../scripts/local-supabase-concurrency-harness.mjs") as {
+    createLocalSupabaseConcurrencyHarness(): {
+      guardDisposableLocalDatabase(): void;
+      runSql(sql: string): string;
+    };
+  };
+  const database = createLocalSupabaseConcurrencyHarness();
+  database.guardDisposableLocalDatabase();
+  const applications = JSON.parse(
+    database.runSql(`select coalesce(jsonb_agg(jsonb_build_object(
+      'id', id, 'owner_user_id', owner_user_id, 'status', status
+    )), '[]'::jsonb) from public.owner_applications
+    where owner_user_id = '${ownerUserId}'::uuid;`),
+  ) as { id: string; owner_user_id: string; status: string }[];
+  if (
+    applications.length !== 1 ||
+    applications[0].owner_user_id !== ownerUserId ||
+    applications[0].status !== "submitted" ||
+    !uuidPattern.test(applications[0].id)
+  ) {
+    throw new Error("Owned application was not submitted");
+  }
+  const application = applications[0];
+  const applicationId = application.id;
+  const documents = JSON.parse(
+    database.runSql(`select coalesce(jsonb_agg(jsonb_build_object(
+      'id', id, 'application_id', application_id, 'kind', kind,
+      'object_path', object_path, 'original_filename', original_filename,
+      'size_bytes', size_bytes
+    )), '[]'::jsonb) from public.owner_verification_documents
+    where application_id = '${applicationId}'::uuid;`),
+  ) as {
+    id: string;
+    application_id: string;
+    kind: string;
+    object_path: string;
+    original_filename: string;
+    size_bytes: number;
+  }[];
+  if (documents.length !== evidence.length) {
+    throw new Error("Owned verification documents are incomplete");
+  }
+  const identityDocument = documents.find((row) => row.kind === "identity");
+  const alternateDocument = documents.find(
+    (row) => row.kind === "authority_to_rent",
+  );
+  if (
+    !identityDocument?.id ||
+    !uuidPattern.test(identityDocument.id) ||
+    identityDocument.application_id !== applicationId ||
+    !identityDocument.object_path ||
+    identityDocument.original_filename !== reviewDocumentFilename ||
+    identityDocument.size_bytes !== originalIdentityBytes.length ||
+    !alternateDocument?.object_path ||
+    !uuidPattern.test(alternateDocument.id) ||
+    alternateDocument.application_id !== applicationId
+  ) {
+    throw new Error("Owned identity or alternate document is malformed");
+  }
+  const identityDocumentId = identityDocument.id;
+
+  const administratorEmail = `review-${ownerUserId}@rentcottage.test`;
+  const { data: administrator, error: createError } =
+    await auditClient.auth.admin.createUser({
+      email: administratorEmail,
+      password: "Local-test-password-2026",
+      email_confirm: true,
+    });
+  if (createError || !administrator.user?.id) {
+    throw new Error("Owned administrator creation failed", {
+      cause: createError,
+    });
+  }
+  const administratorId = administrator.user.id;
+  const provision = await auditClient.rpc("provision_platform_administrator", {
+    target_user_id: administratorId,
+  });
+  if (provision.error) throw provision.error;
+
+  const administratorContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    viewport: page.viewportSize() ?? undefined,
+  });
+  try {
+    const administratorPage = await administratorContext.newPage();
+    await administratorPage.goto("/en/administrator/access");
+    await administratorPage.getByLabel("Email").fill(administratorEmail);
+    await administratorPage
+      .getByLabel("Password")
+      .fill("Local-test-password-2026");
+    await administratorPage.getByRole("button", { name: "Continue" }).click();
+    const secret = await administratorPage
+      .getByTestId("mfa-secret")
+      .textContent();
+    if (!secret) throw new Error("Owned administrator MFA enrollment failed");
+    await administratorPage.getByLabel("Authenticator app code").fill(
+      new OTPAuth.TOTP({
+        secret: OTPAuth.Secret.fromBase32(secret),
+      }).generate(),
+    );
+    await administratorPage.getByRole("button", { name: "Verify" }).click();
+    await expect(
+      administratorPage.getByText(/Administrator access is ready/),
+    ).toBeVisible();
+
+    async function openOwnedIdentity(
+      locale: BrowserLocale,
+      filename: string,
+      objectPath: string,
+      expectedBytes: Buffer,
+      stage: string,
+    ) {
+      await administratorPage.goto(
+        `/${locale}/administrator/owner-applications/${applicationId}`,
+      );
+      await expect(administratorPage.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "en" ? "ltr" : "rtl",
+      );
+      const row = administratorPage
+        .locator(".administrator-review-documents li")
+        .filter({ hasText: filename });
+      await expect(row).toHaveCount(1);
+      const createLink = row.getByRole("button", {
+        name: browserFixtures[locale].review.createLink,
+      });
+      await tabTo(administratorPage, createLink);
+      await administratorPage.keyboard.press("Enter");
+      const link = row.getByRole("link", {
+        name: browserFixtures[locale].review.openDocument,
+      });
+      await expect(link).toBeVisible();
+      await administratorPage.screenshot({
+        path: testInfo.outputPath(`${locale}-owned-review-${stage}.png`),
+        fullPage: true,
+      });
+      const href = await link.getAttribute("href");
+      if (!href) throw new Error("Owned secure link has no URL");
+      const signedUrl = new URL(href, administratorPage.url());
+      expect(decodeURIComponent(signedUrl.pathname)).toContain(
+        `/owner-verification/${objectPath}`,
+      );
+
+      const { data: grant, error: grantError } = await auditClient
+        .from("owner_verification_document_access_grants")
+        .select(
+          "id, document_id, document_subject_id, actor_user_id, actor_subject_id, object_path, status, completed_at",
+        )
+        .eq("document_id", identityDocumentId)
+        .eq("actor_subject_id", administratorId)
+        .eq("object_path", objectPath)
+        .order("prepared_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (grantError || !grant?.id || !grant.completed_at) {
+        throw new Error("Owned document grant is missing", {
+          cause: grantError,
+        });
+      }
+      expect(grant).toMatchObject({
+        document_id: identityDocumentId,
+        document_subject_id: identityDocumentId,
+        actor_user_id: administratorId,
+        actor_subject_id: administratorId,
+        object_path: objectPath,
+        status: "completed",
+      });
+      const { data: accessAudit, error: auditError } = await auditClient
+        .from("owner_verification_document_audit")
+        .select(
+          "access_grant_id, document_id, actor_user_id, actor_subject_id, action, object_path, access_expires_at",
+        )
+        .eq("access_grant_id", grant.id)
+        .single();
+      if (auditError || !accessAudit?.access_expires_at) {
+        throw new Error("Owned document access audit is missing", {
+          cause: auditError,
+        });
+      }
+      expect(accessAudit).toMatchObject({
+        access_grant_id: grant.id,
+        document_id: identityDocumentId,
+        actor_user_id: administratorId,
+        actor_subject_id: administratorId,
+        action: "access_granted",
+        object_path: objectPath,
+      });
+      expect(
+        new Date(accessAudit.access_expires_at).getTime() -
+          new Date(grant.completed_at).getTime(),
+      ).toBe(60_000);
+
+      let resolveOpened!: (result: {
+        status: number;
+        contentType: string | undefined;
+        bytes: Buffer;
+      }) => void;
+      let rejectOpened!: (error: unknown) => void;
+      const openedResponse = new Promise<{
+        status: number;
+        contentType: string | undefined;
+        bytes: Buffer;
+      }>((resolve, reject) => {
+        resolveOpened = resolve;
+        rejectOpened = reject;
+      });
+      const timeout = setTimeout(
+        () =>
+          rejectOpened(new Error("Owned document navigation was not routed")),
+        15_000,
+      );
+      await administratorContext.route(signedUrl.href, async (route) => {
+        try {
+          expect(route.request().method()).toBe("GET");
+          expect(route.request().isNavigationRequest()).toBe(true);
+          expect(route.request().url()).toBe(signedUrl.href);
+          const response = await route.fetch();
+          const bytes = await response.body();
+          await route.fulfill({ response });
+          resolveOpened({
+            status: response.status(),
+            contentType: response.headers()["content-type"],
+            bytes,
+          });
+        } catch (error) {
+          rejectOpened(error);
+          await route.abort();
+        }
+      });
+      try {
+        const documentPage = administratorContext.waitForEvent("page", {
+          timeout: 15_000,
+        });
+        const opening = Promise.all([documentPage, openedResponse]);
+        await tabTo(administratorPage, link);
+        await administratorPage.keyboard.press("Enter");
+        const [openedPage, opened] = await opening;
+        expect(opened.status).toBe(200);
+        expect(opened.contentType).toContain("application/pdf");
+        expect(opened.bytes).toEqual(expectedBytes);
+        await openedPage.close();
+      } finally {
+        clearTimeout(timeout);
+        await administratorContext.unroute(signedUrl.href);
+      }
+      return signedUrl;
+    }
+
+    const submittedLink = await openOwnedIdentity(
+      "en",
+      reviewDocumentFilename,
+      identityDocument.object_path,
+      originalIdentityBytes,
+      "submitted",
+    );
+    const tamperedLink = new URL(submittedLink);
+    tamperedLink.pathname = tamperedLink.pathname.replace(
+      identityDocument.object_path,
+      alternateDocument.object_path,
+    );
+    if (tamperedLink.pathname === submittedLink.pathname) {
+      throw new Error("Owned signed-link object path could not be changed");
+    }
+    expect(
+      (await administratorPage.request.get(tamperedLink.href)).status(),
+    ).not.toBe(200);
+
+    await administratorPage.goto(
+      `/en/administrator/owner-applications/${applicationId}`,
+    );
+    await administratorPage
+      .getByRole("button", { name: "Start review" })
+      .click();
+    await expect(
+      administratorPage
+        .locator(
+          ".administrator-review-detail > .application-section .application-status",
+        )
+        .first(),
+    ).toHaveText("Under review");
+    await openOwnedIdentity(
+      "ar",
+      reviewDocumentFilename,
+      identityDocument.object_path,
+      originalIdentityBytes,
+      "under-review",
+    );
+
+    await administratorPage.goto(
+      `/en/administrator/owner-applications/${applicationId}`,
+    );
+    const informationRequest = administratorPage
+      .locator("form.review-action-card")
+      .filter({ hasText: "Request missing information" });
+    await informationRequest
+      .getByLabel("Reason")
+      .fill("Replace identity evidence.");
+    await informationRequest.getByLabel("Identity evidence").check();
+    await informationRequest
+      .getByRole("button", { name: "Request missing information" })
+      .click();
+    await expect(
+      administratorPage
+        .locator(
+          ".administrator-review-detail > .application-section .application-status",
+        )
+        .first(),
+    ).toHaveText("Needs information");
+    await administratorPage.reload();
+    const { count: grantsBeforeDenial, error: beforeDenialError } =
+      await auditClient
+        .from("owner_verification_document_access_grants")
+        .select("id", { count: "exact", head: true })
+        .eq("document_id", identityDocument.id)
+        .eq("actor_subject_id", administratorId);
+    if (beforeDenialError || grantsBeforeDenial === null) {
+      throw new Error("Owned grant count before denial is unavailable", {
+        cause: beforeDenialError,
+      });
+    }
+    const deniedRow = administratorPage
+      .locator(".administrator-review-documents li")
+      .filter({ hasText: reviewDocumentFilename });
+    await deniedRow
+      .getByRole("button", { name: browserFixtures.en.review.createLink })
+      .click();
+    await expect(
+      deniedRow.getByText(
+        "You do not have permission to access this private document.",
+      ),
+    ).toBeVisible();
+    await expect(
+      deniedRow.getByRole("link", {
+        name: browserFixtures.en.review.openDocument,
+      }),
+    ).toHaveCount(0);
+    const { count: grantsAfterDenial, error: afterDenialError } =
+      await auditClient
+        .from("owner_verification_document_access_grants")
+        .select("id", { count: "exact", head: true })
+        .eq("document_id", identityDocument.id)
+        .eq("actor_subject_id", administratorId);
+    if (afterDenialError || grantsAfterDenial === null) {
+      throw new Error("Owned grant count after denial is unavailable", {
+        cause: afterDenialError,
+      });
+    }
+    expect(grantsAfterDenial).toBe(grantsBeforeDenial);
+    await administratorPage.screenshot({
+      path: testInfo.outputPath("en-owned-review-needs-information.png"),
+      fullPage: true,
+    });
+
+    await page.reload();
+    await expect(
+      page.locator(".owner-review-status").getByText("Needs information"),
+    ).toBeVisible();
+    const replacementCard = page
+      .locator(".owner-response-card")
+      .getByRole("article", { name: "Identity evidence" });
+    const replacementBytes = Buffer.from(
+      "%PDF-1.7\nowned replacement identity\n%%EOF",
+    );
+    await replacementCard.locator('input[type="file"]').setInputFiles({
+      name: "replacement-identity.pdf",
+      mimeType: "application/pdf",
+      buffer: replacementBytes,
+    });
+    await replacementCard
+      .getByRole("button", { name: "Replace document" })
+      .click();
+    await expect(
+      replacementCard.getByText("replacement-identity.pdf"),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Send requested information" })
+      .click();
+    await expect(
+      page.locator(".owner-review-status").getByText("Under review"),
+    ).toBeVisible();
+    const replacements = JSON.parse(
+      database.runSql(`select coalesce(jsonb_agg(jsonb_build_object(
+        'id', id, 'application_id', application_id, 'kind', kind,
+        'object_path', object_path, 'original_filename', original_filename,
+        'size_bytes', size_bytes
+      )), '[]'::jsonb) from public.owner_verification_documents
+      where application_id = '${applicationId}'::uuid and kind = 'identity';`),
+    ) as typeof documents;
+    const replacement = replacements[0];
+    if (
+      replacements.length !== 1 ||
+      replacement?.id !== identityDocument.id ||
+      !replacement.object_path ||
+      replacement.original_filename !== "replacement-identity.pdf" ||
+      replacement.size_bytes !== replacementBytes.length
+    ) {
+      throw new Error("Owned replacement evidence is malformed");
+    }
+    expect(replacement.object_path).not.toBe(identityDocument.object_path);
+    await openOwnedIdentity(
+      "ckb",
+      "replacement-identity.pdf",
+      replacement.object_path,
+      replacementBytes,
+      "replacement-under-review",
+    );
+  } finally {
+    await administratorContext.close();
+  }
 });
 
 registerOwnedJourney("owner-layout", async ({ page }, testInfo) => {
