@@ -10,6 +10,7 @@ import { CottageProfileOverview } from "@/components/cottage-profile-overview";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
 import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
+import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 
 async function loadAdministratorCottages(
   cursor?: CottageProfileAdministratorCursor,
@@ -83,6 +84,9 @@ export default async function AdministratorCottagesPage({
         <div>
           <Link href={`/${locale}/administrator/payments`}>
             {administratorPaymentHistoryMessages[locale].title}
+          </Link>
+          <Link href={`/${locale}/administrator/records`}>
+            {administratorRecordsMessages[locale].records}
           </Link>
           <span>{copy.adminEyebrow}</span>
         </div>

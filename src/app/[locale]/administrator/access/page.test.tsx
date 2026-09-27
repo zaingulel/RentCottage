@@ -3,9 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ notFound: vi.fn() }));
 vi.mock("@/components/administrator-access-form", () => ({
-  AdministratorAccessForm: ({ returnTo }: { returnTo?: string }) => (
+  AdministratorAccessForm: ({
+    returnTo,
+    recordsHref,
+  }: {
+    returnTo?: string;
+    recordsHref?: string;
+  }) => (
     <output data-testid="administrator-access-form">
-      {returnTo ?? "no-return"}
+      {returnTo ?? "no-return"} {recordsHref}
     </output>
   ),
 }));
@@ -13,6 +19,17 @@ vi.mock("@/components/administrator-access-form", () => ({
 import AdministratorAccessPage from "./page";
 
 describe("AdministratorAccessPage", () => {
+  it("offers Records after administrator access", async () => {
+    render(
+      await AdministratorAccessPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+    expect(screen.getByTestId("administrator-access-form")).toHaveTextContent(
+      "/en/administrator/records",
+    );
+  });
   it.each(["en", "ar", "ckb"] as const)(
     "passes the safe same-locale %s moderation destination to the form",
     async (locale) => {

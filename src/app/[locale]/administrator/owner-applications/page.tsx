@@ -5,6 +5,7 @@ import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { OwnerApplicationReviewQueue } from "@/components/owner-application-review-queue";
 import { accessMessages } from "@/i18n/access-messages";
+import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { ownerApplicationReviewMessages } from "@/i18n/owner-application-review-messages";
 import { isLocale } from "@/i18n/routing";
 import {
@@ -101,6 +102,9 @@ export default async function OwnerApplicationReviewPage({
           <span>{copy.eyebrow}</span>
           <Link href={`/${locale}/administrator/cottages`}>
             {accessCopy.manageCottageProfiles}
+          </Link>
+          <Link href={`/${locale}/administrator/records`}>
+            {administratorRecordsMessages[locale].records}
           </Link>
         </nav>
       </header>
