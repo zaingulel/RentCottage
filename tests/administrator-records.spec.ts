@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
+import { SupabaseOwnerApplicationRepository } from "../src/owner-application/supabase-owner-application";
 
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
@@ -13,13 +14,25 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
-const { accessBrowserFixture } = createRequire(import.meta.url)(
-  "../scripts/lib/access-browser-fixtures.mjs",
-) as {
+const { accessBrowserFixture, createSubmittedReviewFixture } = createRequire(
+  import.meta.url,
+)("../scripts/lib/access-browser-fixtures.mjs") as {
   accessBrowserFixture(project: string): {
+    project: string;
+    exactAddress: string;
     reviewLegalName: string;
     reviewOwnerPhone: string;
+    reviewCottageName: string;
+    bookingOwnerPhone: string;
+    bookingLegalName: string;
+    bookingCottageName: string;
   };
+  createSubmittedReviewFixture(input: {
+    fixture: ReturnType<typeof accessBrowserFixture>;
+    privilegedClient: SupabaseClient;
+    publishableKey: string;
+    url: string;
+  }): Promise<void>;
 };
 const harness = createLocalSupabaseConcurrencyHarness();
 const password = "Local-test-password-2026";
@@ -27,6 +40,14 @@ let administratorEmail: string;
 let administratorId: string;
 let historicId: string;
 let remediationId: string;
+let reviewFixture: ReturnType<typeof accessBrowserFixture>;
+let reviewApplicationId: string;
+let reviewDocumentId: string;
+let reviewOwnerClient: SupabaseClient;
+let privilegedClient: SupabaseClient;
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function localUrl() {
   const url = process.env.SUPABASE_URL;
@@ -117,23 +138,77 @@ test.beforeAll(async ({}, testInfo) => {
     historic: "approved",
     remediation: "in_review",
   });
-  const privileged = createClient(url, process.env.SUPABASE_SECRET_KEY!, {
+  privilegedClient = createClient(url, process.env.SUPABASE_SECRET_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  administratorEmail = `records-${testInfo.project.name}-${randomUUID()}@rentcottage.test`;
-  const { data: created, error } = await privileged.auth.admin.createUser({
-    email: administratorEmail,
-    password,
-    email_confirm: true,
+  const project = testInfo.project.name;
+  const projectIndex = ["mobile", "desktop", "worker"].indexOf(project);
+  if (projectIndex < 0)
+    throw new Error(`Unknown administrator records project: ${project}`);
+  const projectLabel = `${project[0].toUpperCase()}${project.slice(1)}`;
+  reviewFixture = {
+    ...accessBrowserFixture(project),
+    reviewOwnerPhone: `+964759250000${projectIndex}`,
+    reviewLegalName: `${projectLabel} Administrator Records Review Fixture`,
+    reviewCottageName: `${projectLabel} Administrator Records Review Cottage`,
+  };
+  await createSubmittedReviewFixture({
+    fixture: reviewFixture,
+    privilegedClient,
+    publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY!,
+    url,
   });
+  reviewOwnerClient = createClient(url, process.env.SUPABASE_PUBLISHABLE_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const reviewSignedIn = await reviewOwnerClient.auth.signInWithPassword({
+    phone: reviewFixture.reviewOwnerPhone,
+    password,
+  });
+  if (reviewSignedIn.error || !reviewSignedIn.data.user)
+    throw new Error("Dedicated review owner sign-in failed", {
+      cause: reviewSignedIn.error,
+    });
+  const reviewApplication = await new SupabaseOwnerApplicationRepository(
+    reviewOwnerClient,
+    privilegedClient,
+  ).load();
+  expect(reviewApplication).not.toBeNull();
+  expect(reviewApplication?.ownerUserId).toBe(reviewSignedIn.data.user.id);
+  expect(reviewApplication?.status).toBe("submitted");
+  expect(reviewApplication?.legalName).toBe(reviewFixture.reviewLegalName);
+  expect(reviewApplication?.applicationId).toMatch(uuidPattern);
+  expect(reviewApplication?.documents.map(({ kind }) => kind).sort()).toEqual([
+    "authority_to_rent",
+    "identity",
+    "licensing_or_exemption",
+    "payout_account",
+  ]);
+  const identityDocument = reviewApplication?.documents.find(
+    ({ kind }) => kind === "identity",
+  );
+  expect(identityDocument?.id).toMatch(uuidPattern);
+  reviewApplicationId = reviewApplication!.applicationId;
+  reviewDocumentId = identityDocument!.id;
+  administratorEmail = `records-${testInfo.project.name}-${randomUUID()}@rentcottage.test`;
+  const { data: created, error } = await privilegedClient.auth.admin.createUser(
+    {
+      email: administratorEmail,
+      password,
+      email_confirm: true,
+    },
+  );
   if (error || !created.user)
     throw new Error("Fictional administrator creation failed", {
       cause: error,
     });
   administratorId = created.user.id;
-  const provision = await privileged.rpc("provision_platform_administrator", {
-    target_user_id: administratorId,
-  });
+  const provision = await privilegedClient.rpc(
+    "provision_platform_administrator",
+    {
+      target_user_id: administratorId,
+    },
+  );
   if (provision.error)
     throw new Error("Fictional administrator provisioning failed", {
       cause: provision.error,
@@ -144,7 +219,7 @@ test("an administrator discovers accounts and approval records with authoritativ
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
-  const fixture = accessBrowserFixture(testInfo.project.name);
+  const fixture = reviewFixture;
   const applications = count(
     "select count(*) from public.owner_applications where status in ('submitted','under_review');",
   );
@@ -315,12 +390,22 @@ test("an administrator discovers accounts and approval records with authoritativ
     .fill(fixture.reviewLegalName);
   await page.getByRole("button", { name: "Search records" }).click();
   await page.getByRole("link", { name: fixture.reviewLegalName }).click();
+  await expect(page).toHaveURL(new RegExp(reviewApplicationId));
   const documentRow = page
     .getByRole("listitem")
     .filter({ hasText: "Identity evidence" });
   await expect(
     documentRow.getByRole("link", { name: "Open secure document" }),
   ).toHaveCount(0);
+  const readyApplication = await new SupabaseOwnerApplicationRepository(
+    reviewOwnerClient,
+    privilegedClient,
+  ).load();
+  expect(readyApplication?.applicationId).toBe(reviewApplicationId);
+  expect(readyApplication?.status).toBe("submitted");
+  expect(
+    readyApplication?.documents.find(({ kind }) => kind === "identity")?.id,
+  ).toBe(reviewDocumentId);
   const accessedAfter = new Date(Date.now() - 5_000).toISOString();
   await documentRow.getByRole("button", { name: "Create secure link" }).focus();
   await page.keyboard.press("Enter");
@@ -329,17 +414,15 @@ test("an administrator discovers accounts and approval records with authoritativ
   const href = await link.getAttribute("href");
   if (!href)
     throw new Error("Secure document link missing after explicit action");
+  expect(href).not.toContain(fixture.reviewLegalName);
+  expect(href).not.toContain(fixture.reviewOwnerPhone);
   const response = await page.request.get(href);
   expect(response.status()).toBe(200);
   expect((await response.body()).subarray(0, 4).toString()).toBe("%PDF");
-  const privileged = createClient(
-    localUrl(),
-    process.env.SUPABASE_SECRET_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false } },
-  );
-  const audit = await privileged
+  const audit = await privilegedClient
     .from("owner_verification_document_audit")
-    .select("actor_subject_id,action,object_path")
+    .select("document_id,actor_subject_id,action,object_path")
+    .eq("document_id", reviewDocumentId)
     .eq("actor_subject_id", administratorId)
     .eq("action", "access_granted")
     .gte("occurred_at", accessedAfter)
@@ -347,6 +430,7 @@ test("an administrator discovers accounts and approval records with authoritativ
     .limit(1)
     .single();
   if (audit.error) throw audit.error;
+  expect(audit.data.document_id).toBe(reviewDocumentId);
   expect(audit.data.actor_subject_id).toBe(administratorId);
   expect(decodeURIComponent(new URL(href).pathname)).toContain(
     audit.data.object_path,
