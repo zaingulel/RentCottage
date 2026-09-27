@@ -865,6 +865,14 @@ export async function main(
       if (administratorRecordsUpgrade.status !== 0) {
         return administratorRecordsUpgrade.status;
       }
+      const ownerDocumentAccessUpgrade = await execute(
+        "node",
+        ["scripts/verify-owner-document-access-upgrade.mjs"],
+        { stdio: "inherit" },
+      );
+      if (ownerDocumentAccessUpgrade.status !== 0) {
+        return ownerDocumentAccessUpgrade.status;
+      }
       result = await execute(
         "npx",
         supabaseArguments(["supabase", "test", "db"]),

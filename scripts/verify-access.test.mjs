@@ -93,6 +93,7 @@ const databasePreflightCommands = [
   declaredSchemaDiffCommand,
   ["node", ["scripts/verify-customer-review-upgrade.mjs"]],
   ["node", ["scripts/verify-administrator-records-upgrade.mjs"]],
+  ["node", ["scripts/verify-owner-document-access-upgrade.mjs"]],
   ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
 ];
 const databaseCheckCommands = [
