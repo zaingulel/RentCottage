@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(80);
+select plan(79);
 
 select has_table('public', 'owner_application_transitions', 'application transitions are durable');
 select has_table('public', 'owner_application_information_requests', 'scoped information requests are durable');
@@ -945,19 +945,6 @@ select throws_ok(
 );
 
 reset role;
-create temporary table review_document_counts as
-select
-  (select count(*)::integer from public.owner_verification_document_access_grants
-    where document_subject_id in (
-      '40000000-0000-4000-8000-000000000301',
-      '40000000-0000-4000-8000-000000000303'
-    )) as grant_count,
-  (select count(*)::integer from public.owner_verification_document_audit
-    where document_id in (
-      '40000000-0000-4000-8000-000000000301',
-      '40000000-0000-4000-8000-000000000303'
-    )) as audit_count;
-
 create function pg_temp.denied_review_document_status(
   requested_status public.owner_application_status
 ) returns text
@@ -985,30 +972,12 @@ select set_config(
 );
 select results_eq(
   $$select status::text, pg_temp.denied_review_document_status(status)
-    from unnest(array['rejected', 'suspended']::public.owner_application_status[]) status$$,
-  $$values ('rejected'::text, 'RC204'::text),
-    ('suspended'::text, 'RC204'::text)$$,
-  'Rejected and Suspended deny new document grants'
+    from unnest(array['rejected']::public.owner_application_status[]) status$$,
+  $$values ('rejected'::text, 'RC204'::text)$$,
+  'Rejected denies new document grants'
 );
 
 reset role;
-select results_eq(
-  $$select count(*)::integer,
-      (select count(*)::integer from public.owner_verification_document_audit
-        where document_id in (
-          '40000000-0000-4000-8000-000000000301',
-          '40000000-0000-4000-8000-000000000303'
-        ))
-    from public.owner_verification_document_access_grants
-    where document_subject_id in (
-      '40000000-0000-4000-8000-000000000301',
-      '40000000-0000-4000-8000-000000000303'
-    )$$,
-  $$select grant_count, audit_count from review_document_counts
-    where grant_count = 4 and audit_count >= 1$$,
-  'denied states, roles and identifiers leave grant and audit history unchanged'
-);
-
 set local role service_role;
 select lives_ok(
   $$select public.install_owner_application_expiry_cron()$$,

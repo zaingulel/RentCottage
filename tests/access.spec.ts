@@ -3,11 +3,22 @@ import { createHmac } from "node:crypto";
 import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
-
 import {
   type OwnedAccessJourney,
   prepareOwnedAccessJourney,
 } from "../scripts/access-journey-playwright";
+
+const { uuidPattern } = createRequire(import.meta.url)(
+  "../scripts/lib/access-journey-fixtures.mjs",
+) as { uuidPattern: RegExp };
+const { createLocalSupabaseConcurrencyHarness } = createRequire(
+  import.meta.url,
+)("../scripts/local-supabase-concurrency-harness.mjs") as {
+  createLocalSupabaseConcurrencyHarness(): {
+    guardDisposableLocalDatabase(): void;
+    runSql(sql: string): string;
+  };
+};
 
 type BrowserLocale = "en" | "ar" | "ckb";
 
@@ -715,19 +726,9 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
   const users = await listAllAccessFixtureUsers(auditClient.auth.admin);
   const ownedUser = findAccessFixtureUser(users, fixture.phone);
   const ownerUserId = ownedUser?.id;
-  const uuidPattern =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!ownerUserId || !uuidPattern.test(ownerUserId)) {
     throw new Error("Owned submitted user is missing or malformed");
   }
-  const { createLocalSupabaseConcurrencyHarness } = createRequire(
-    import.meta.url,
-  )("../scripts/local-supabase-concurrency-harness.mjs") as {
-    createLocalSupabaseConcurrencyHarness(): {
-      guardDisposableLocalDatabase(): void;
-      runSql(sql: string): string;
-    };
-  };
   const database = createLocalSupabaseConcurrencyHarness();
   database.guardDisposableLocalDatabase();
   const applications = JSON.parse(
@@ -1996,9 +1997,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   expect(documentAudit.actor_user_id).toBe(actorUserId);
   expect(documentAudit.actor_subject_id).toBe(actorUserId);
   expect(documentAudit.action).toBe("access_granted");
-  expect(documentAudit.document_id).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-  );
+  expect(uuidPattern.test(documentAudit.document_id)).toBe(true);
   expect(decodeURIComponent(new URL(signedUrl).pathname)).toContain(
     `/owner-verification/${documentAudit.object_path}`,
   );
@@ -2718,17 +2717,9 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   const identity = users.filter((user) => findAccessFixtureUser([user], phone));
   expect(identity).toHaveLength(1);
   const userId = identity[0].id;
-  const { createLocalSupabaseConcurrencyHarness } = createRequire(
-    import.meta.url,
-  )("../scripts/local-supabase-concurrency-harness.mjs") as {
-    createLocalSupabaseConcurrencyHarness(): {
-      guardDisposableLocalDatabase(): void;
-      runSql(sql: string): string;
-    };
-  };
   const database = createLocalSupabaseConcurrencyHarness();
   database.guardDisposableLocalDatabase();
-  expect(userId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(uuidPattern.test(userId)).toBe(true);
   function accountContext() {
     return JSON.parse(
       database.runSql(`
