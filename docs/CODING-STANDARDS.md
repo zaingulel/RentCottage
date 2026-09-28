@@ -61,4 +61,3 @@ These requirements apply only when an agent-facing command is already part of th
   smallest representative positive and negative wire proofs so a wrapper that never calls the logic cannot pass.
 - Split a test file expected to dominate the suite's critical path by concern at birth. This is an advisory budget,
   not a wall-clock gate.
-- New harness machinery declares its recurring cost and a legitimate consolidation or retirement condition.

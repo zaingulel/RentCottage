@@ -211,7 +211,7 @@ included in ordinary push-to-merge delivery authority.
 |---|---|
 | generated artifacts | None |
 | visual verification | The applicable Next.js or Worker surface across desktop, mobile, right-to-left and accessibility states. |
-| fixtures | [docs/demo.md](docs/demo.md) |
+| fixtures | [Fixtures, preparation and cleanup](docs/TESTING-STRATEGY.md#fixtures-preparation-and-cleanup) in the testing strategy. There are no real-data fixtures: every test fixture is synthetic, created through the real production transitions in the disposable test database that section describes, and real behaviour is validated against those. The demo is not test data |
 | documentation routines | Inactive: the documentation sweep and its day-after triage, [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md), stay inactive until their external environment, hosted protection and schedule are separately authorised |
 
 Codex prompts before a browser run under `.codex/rules/playwright.rules`, pinned by
