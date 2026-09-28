@@ -24,6 +24,7 @@ import {
   requiredBaselineSteps,
   requiredExpensiveSteps,
   requiredDatabaseSteps,
+  requiredLightDatabaseSteps,
   requiredBrowserSteps,
   requiredCiSteps,
   git,
@@ -91,6 +92,7 @@ it.each(explicitNodeWorkflowEntries)(
     ).toEqual({
       browser: false,
       database: false,
+      bookingConcurrency: false,
       reason: `only approved workflow or prose changed: ${path}`,
     });
     for (const [oldMode, newMode, status] of [
@@ -101,6 +103,7 @@ it.each(explicitNodeWorkflowEntries)(
       expect(classifyChanges([{ path, oldMode, newMode, status }])).toEqual({
         browser: true,
         database: true,
+        bookingConcurrency: true,
         reason: `${path} is executable or has an executable-mode change`,
       });
     }
@@ -184,7 +187,7 @@ describe("repository verification command", () => {
           forced.calls.map(([command, commandArgs]) => [command, commandArgs]),
         ).toEqual(expected);
       }
-      write(repository, "src/runtime.ts", "export const value = 'dirty';\n");
+      write(repository, "tsconfig.json", "{ dirty }\n");
       const selected = runVerification(repository, { args: [mode] });
       expect(selected.status).toBe(0);
       expect(selected.calls.map(([command, args]) => [command, args])).toEqual(
@@ -992,7 +995,8 @@ describe("repository verification command", () => {
     expect(result.status).toBe(0);
     expect(result.calls.map(([command, args]) => [command, args])).toEqual([
       ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
+      ...requiredLightDatabaseSteps,
+      ...requiredBrowserSteps,
     ]);
   });
 
@@ -1080,6 +1084,11 @@ describe("repository verification command", () => {
       "tests/booking-request-display.spec.ts",
       "test('display', () => {});\n",
     ],
+    [
+      "a public runtime file",
+      "public/_headers",
+      "/assets/*\n  cache-control: no-cache\n",
+    ],
   ])(
     "selects browser evidence without database evidence for %s",
     (_label, path, contents) => {
@@ -1104,39 +1113,184 @@ describe("repository verification command", () => {
     },
   );
 
+  const fullRoute = [...requiredBaselineSteps, ...requiredExpensiveSteps];
+  const fullRouteWithoutConcurrency = [
+    ...requiredBaselineSteps,
+    ...requiredLightDatabaseSteps,
+    ...requiredBrowserSteps,
+  ];
+  it.each(
+    [
+      [
+        ["src/booking-request/booking-request-policy.ts"],
+        requiredBaselineSteps,
+        "skipped",
+      ],
+      [
+        ["supabase/tests/database/booking_quotes.test.sql"],
+        [...requiredBaselineSteps, ...requiredLightDatabaseSteps],
+        "skipped",
+      ],
+      [
+        ["supabase/schemas/40_policies.sql"],
+        [...requiredBaselineSteps, ...requiredLightDatabaseSteps],
+        "skipped",
+      ],
+      [
+        ["supabase/migrations/20260101000000_fixture.sql"],
+        [...requiredBaselineSteps, ...requiredLightDatabaseSteps],
+        "skipped",
+      ],
+      [
+        ["supabase/schemas/20_functions_booking.sql"],
+        [...requiredBaselineSteps, ...requiredDatabaseSteps],
+        "selected",
+      ],
+      [
+        ["scripts/verify-booking-refund-concurrency.mjs"],
+        [...requiredBaselineSteps, ...requiredDatabaseSteps],
+        "selected",
+      ],
+      [
+        ["src/components/booking-quote.tsx"],
+        [...requiredBaselineSteps, ...requiredBrowserSteps],
+        "skipped",
+      ],
+      [
+        ["src/app/[locale]/bookings/page.tsx"],
+        [...requiredBaselineSteps, ...requiredBrowserSteps],
+        "skipped",
+      ],
+      [
+        ["tests/access.spec.ts"],
+        [...requiredBaselineSteps, ...requiredBrowserSteps],
+        "skipped",
+      ],
+      [
+        [
+          "src/components/booking-quote.tsx",
+          "supabase/tests/database/booking_quotes.test.sql",
+        ],
+        [
+          ...requiredBaselineSteps,
+          ...requiredLightDatabaseSteps,
+          ...requiredBrowserSteps,
+        ],
+        "skipped",
+      ],
+      [["supabase/config.toml"], fullRoute, "selected"],
+      [
+        ["scripts/local-supabase-concurrency-harness.mjs"],
+        fullRoute,
+        "selected",
+      ],
+      [["tests/fixtures/payment-recovery-cleanup.mjs"], fullRoute, "selected"],
+      [["custom-worker.ts"], fullRouteWithoutConcurrency, "skipped"],
+      [
+        ["custom-worker.ts", "scripts/local-supabase-concurrency-harness.mjs"],
+        fullRoute,
+        "selected",
+      ],
+    ].map(([paths, ...rest]) => [paths.join(" and "), paths, ...rest]),
+  )("selects the route for %s", (_label, paths, steps, concurrency) => {
+    const repository = createRepository();
+    for (const path of paths) commit(repository, path, "fixture\n");
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      steps,
+    );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Booking and payment concurrency programs: ${concurrency}`,
+      ),
+    );
+  });
+
+  it("selects the route for package-lock.json", () => {
+    const repository = createRepository();
+    const lock = JSON.parse(
+      readFileSync(join(repository, "package-lock.json"), "utf8"),
+    );
+    lock.packages["node_modules/fixture"] = { version: "1.0.0" };
+    commit(repository, "package-lock.json", `${JSON.stringify(lock)}\n`);
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      fullRoute,
+    );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Booking and payment concurrency programs: selected",
+      ),
+    );
+  });
+
+  it("selects the route for src/reporting/new.ts", () => {
+    const repository = createRepository();
+    commit(repository, "src/reporting/new.ts", "export {};\n");
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(3);
+    expect(result.run).not.toHaveBeenCalled();
+    expect(result.stderr).toHaveBeenCalledWith(
+      expect.stringContaining("src/reporting/new.ts"),
+    );
+  });
+
   it.each([
-    ["runtime code", "src/runtime.ts", "export const value = 'changed';\n"],
-    ["a test", "src/runtime.test.ts", "throw new Error('fixture');\n"],
-    ["a dependency file", "package.json", "{}\n"],
-    ["root git ignore", ".gitignore", "node_modules/\n.demo/\n"],
-    ["root Prettier ignore", ".prettierignore", "node_modules\n"],
-    ["root Prettier config", ".prettierrc.json", "{}\n"],
+    [
+      "runtime code",
+      "custom-worker.ts",
+      "export const value = 'changed';\n",
+      fullRouteWithoutConcurrency,
+    ],
+    ["a dependency file", "package.json", "{}\n", fullRoute],
+    [
+      "root git ignore",
+      ".gitignore",
+      "node_modules/\n.demo/\n",
+      fullRouteWithoutConcurrency,
+    ],
+    [
+      "root Prettier ignore",
+      ".prettierignore",
+      "node_modules\n",
+      fullRouteWithoutConcurrency,
+    ],
+    [
+      "root Prettier config",
+      ".prettierrc.json",
+      "{}\n",
+      fullRouteWithoutConcurrency,
+    ],
     [
       "the selector itself",
       "scripts/verify.mjs",
       "export const changed = true;\n",
+      fullRoute,
     ],
     [
       "the selector tests",
       "scripts/verify.test.mjs",
       "export const changed = true;\n",
+      fullRoute,
     ],
-    [
-      "a public runtime file",
-      "public/_headers",
-      "/assets/*\n  cache-control: no-cache\n",
-    ],
-  ])("selects full verification for %s", (_label, path, contents) => {
+  ])("selects full verification for %s", (_label, path, contents, steps) => {
     const repository = createRepository();
     commit(repository, path, contents);
 
     const result = runVerification(repository);
 
     expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual([
-      ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
-    ]);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      steps,
+    );
     expect(result.stdout).toHaveBeenCalledWith(
       expect.stringContaining("Database verification: selected"),
     );
@@ -1182,7 +1336,7 @@ describe("repository verification command", () => {
   it("names only the unclassified path when a classified path also changed", () => {
     const repository = createRepository();
     commit(repository, "unknown-policy.fixture", "unclassified\n");
-    commit(repository, "src/runtime.ts", "export const value = 'changed';\n");
+    commit(repository, "custom-worker.ts", "export const value = 'changed';\n");
 
     const result = runVerification(repository);
 
@@ -1190,7 +1344,7 @@ describe("repository verification command", () => {
     expect(result.run).not.toHaveBeenCalled();
     const report = result.stderr.mock.calls.map(([line]) => line).join("\n");
     expect(report).toContain("unknown-policy.fixture");
-    expect(report).not.toContain("src/runtime.ts");
+    expect(report).not.toContain("custom-worker.ts");
     expect(report).toMatch(/1 changed path is not listed/);
   });
 
@@ -1306,6 +1460,11 @@ describe("repository verification command", () => {
       "test('fonts', () => {});\n",
     ],
     ["a font licence", "public/fonts/OFL-karla.txt", "licence text\n"],
+    [
+      "a domain test",
+      "src/booking-request/booking-request-policy.test.ts",
+      "throw new Error('fixture');\n",
+    ],
   ])("keeps %s on baseline evidence", (_label, path, contents) => {
     const repository = createRepository();
     commit(repository, path, contents);
@@ -1334,11 +1493,6 @@ describe("repository verification command", () => {
       "the access fixture users",
       "scripts/lib/access-fixture-users.mjs",
       "export const fixture = true;\n",
-    ],
-    [
-      "a migration",
-      "supabase/migrations/20260101000000_fixture.sql",
-      "-- sql\n",
     ],
   ])("keeps %s on full evidence", (_label, path, contents) => {
     const repository = createRepository();
@@ -1371,7 +1525,7 @@ describe("repository verification command", () => {
 
   it("keeps an earlier runtime commit visible after a documentation commit", () => {
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "export const value = 'changed';\n");
+    commit(repository, "tsconfig.json", "{ changed }\n");
     commit(repository, "AGENTS.md", "updated instructions\n");
 
     const result = runVerification(repository);
@@ -1384,18 +1538,14 @@ describe("repository verification command", () => {
 
   it("unions dirty, staged-cancelled, and untracked paths", () => {
     const cases = [
-      (repository) =>
-        write(repository, "src/runtime.ts", "export const value = 'dirty';\n"),
+      (repository) => write(repository, "tsconfig.json", "{ dirty }\n"),
       (repository) => {
-        write(repository, "src/runtime.ts", "export const value = 'staged';\n");
-        git(repository, ["add", "src/runtime.ts"]);
-        write(
-          repository,
-          "src/runtime.ts",
-          "export const value = 'initial';\n",
-        );
+        write(repository, "tsconfig.json", "{ staged }\n");
+        git(repository, ["add", "tsconfig.json"]);
+        write(repository, "tsconfig.json", "{}\n");
       },
-      (repository) => write(repository, "src/untracked.ts", "export {};\n"),
+      (repository) =>
+        write(repository, "scripts/verify-preview.mjs", "export {};\n"),
     ];
 
     for (const arrange of cases) {
@@ -1411,15 +1561,15 @@ describe("repository verification command", () => {
 
   it("uses both endpoints of deletions and renames", () => {
     const deletedRepository = createRepository();
-    git(deletedRepository, ["rm", "src/runtime.ts"]);
+    git(deletedRepository, ["rm", "tsconfig.json"]);
     git(deletedRepository, ["commit", "-m", "delete runtime"]);
     expect(runVerification(deletedRepository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
 
     const renamedRepository = createRepository();
-    mkdirSync(join(renamedRepository, "src"), { recursive: true });
-    git(renamedRepository, ["mv", "AGENTS.md", "src/new-agent-manual.md"]);
+    mkdirSync(join(renamedRepository, "scripts"));
+    git(renamedRepository, ["mv", "AGENTS.md", "scripts/verify-preview.mjs"]);
     git(renamedRepository, ["commit", "-m", "rename manual"]);
     expect(runVerification(renamedRepository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
@@ -1430,7 +1580,7 @@ describe("repository verification command", () => {
     const untrackedRepository = createRepository();
     mkdirSync(join(untrackedRepository, "docs/agents"), { recursive: true });
     symlinkSync(
-      "../../src/runtime.ts",
+      "../../custom-worker.ts",
       join(untrackedRepository, "docs/agents/domain.md"),
     );
     expect(runVerification(untrackedRepository).calls).toHaveLength(
@@ -1439,7 +1589,7 @@ describe("repository verification command", () => {
 
     const changedRepository = createRepository();
     rmSync(join(changedRepository, "AGENTS.md"));
-    symlinkSync("src/runtime.ts", join(changedRepository, "AGENTS.md"));
+    symlinkSync("custom-worker.ts", join(changedRepository, "AGENTS.md"));
     git(changedRepository, ["add", "AGENTS.md"]);
     expect(runVerification(changedRepository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
@@ -1479,7 +1629,7 @@ describe("repository verification command", () => {
   it("keeps mixed prose and runtime changes on full evidence", () => {
     const repository = createRepository();
     commit(repository, "docs/research/study.md", "# Study\n");
-    commit(repository, "src/runtime.ts", "export const value = 'changed';\n");
+    commit(repository, "tsconfig.json", "{ changed }\n");
 
     expect(runVerification(repository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
@@ -1526,18 +1676,22 @@ describe("repository verification command", () => {
       const originalBase = git(repository, ["rev-parse", "HEAD"]);
 
       git(repository, ["switch", "-c", "source", originalBase]);
-      commit(repository, "src/runtime.ts", "export const value = 'source';\n");
+      commit(
+        repository,
+        "custom-worker.ts",
+        "export const value = 'source';\n",
+      );
       const source = commit(repository, "AGENTS.md", "source instructions\n");
 
       git(repository, ["switch", "main"]);
-      commit(repository, "src/runtime.ts", "export const value = 'base';\n");
+      commit(repository, "custom-worker.ts", "export const value = 'base';\n");
       const base = git(repository, ["rev-parse", "HEAD"]);
       const merge = spawnSync("git", ["merge", "--no-ff", "source"], {
         cwd: repository,
         encoding: "utf8",
       });
       expect(merge.status).not.toBe(0);
-      write(repository, "src/runtime.ts", "export const value = 'base';\n");
+      write(repository, "custom-worker.ts", "export const value = 'base';\n");
       git(repository, ["add", "."]);
       git(repository, ["commit", "-m", "merge source"]);
 
@@ -1561,7 +1715,7 @@ describe("repository verification command", () => {
   );
 
   it.each([undefined, "--database", "--browser"])(
-    "skips Chromium and expensive checks for a docs-only CI merge: %s",
+    "keeps the CI quick path for a docs-only merge: %s",
     (mode) => {
       const repository = createRepository();
       const base = git(repository, ["rev-parse", "HEAD"]);
@@ -1588,6 +1742,38 @@ describe("repository verification command", () => {
     },
   );
 
+  it.each(
+    [
+      "src/booking-request/booking-request-policy.ts",
+      "src/booking-request/booking-request-policy.test.ts",
+    ].flatMap((path) =>
+      [undefined, "--database", "--browser"].map((mode) => [path, mode]),
+    ),
+  )("runs every check in CI for a product change: %s %s", (path, mode) => {
+    const repository = createRepository();
+    const base = git(repository, ["rev-parse", "HEAD"]);
+    const source = commit(repository, path, "export const value = true;\n");
+    git(repository, ["switch", "main"]);
+    git(repository, ["merge", "--no-ff", source]);
+
+    const result = runVerification(repository, {
+      args: mode ? [mode] : [],
+      environment: {
+        GITHUB_ACTIONS: "true",
+        VERIFY_BASE_SHA: base,
+        VERIFY_SOURCE_SHA: source,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      requiredCiSteps(mode),
+    );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining("continuous integration runs every check"),
+    );
+  });
+
   it.each([
     ["modification", undefined],
     ["addition", "--database"],
@@ -1604,10 +1790,14 @@ describe("repository verification command", () => {
       if (baseChange === "addition") {
         commit(repository, "src/base-only.ts", "export const base = true;\n");
       } else if (baseChange === "deletion") {
-        git(repository, ["rm", "src/runtime.ts"]);
+        git(repository, ["rm", "custom-worker.ts"]);
         git(repository, ["commit", "-m", "delete runtime on base"]);
       } else {
-        commit(repository, "src/runtime.ts", "export const value = 'base';\n");
+        commit(
+          repository,
+          "custom-worker.ts",
+          "export const value = 'base';\n",
+        );
       }
       const base = git(repository, ["rev-parse", "HEAD"]);
       git(repository, ["merge", "--no-ff", "source"]);
@@ -1639,7 +1829,7 @@ describe("repository verification command", () => {
       const source = commit(repository, "AGENTS.md", "source instructions\n");
       git(repository, ["switch", "main"]);
       git(repository, ["merge", "--no-ff", "--no-commit", source]);
-      write(repository, "src/runtime.ts", "export const value = 'merge';\n");
+      write(repository, "custom-worker.ts", "export const value = 'merge';\n");
       git(repository, ["add", "."]);
       git(repository, ["commit", "-m", "merge source"]);
 
@@ -1657,7 +1847,7 @@ describe("repository verification command", () => {
         requiredCiSteps(mode),
       );
       expect(result.stdout).toHaveBeenCalledWith(
-        expect.stringContaining("src/runtime.ts requires full evidence"),
+        expect.stringContaining("continuous integration runs every check"),
       );
     },
   );

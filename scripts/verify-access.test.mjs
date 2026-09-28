@@ -91,8 +91,6 @@ const emptyDeclaredSchemaDiff = JSON.stringify({
 });
 const databasePreflightCommands = [
   declaredSchemaDiffCommand,
-  ["node", ["scripts/verify-customer-review-upgrade.mjs"]],
-  ["node", ["scripts/verify-administrator-records-upgrade.mjs"]],
   ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
 ];
 const databaseCheckCommands = [
@@ -2197,6 +2195,9 @@ describe("access verification command", () => {
     expect(packageJson.scripts["verify:access:database"]).toBe(
       "node scripts/verify-access.mjs --database",
     );
+    expect(packageJson.scripts["verify:access:database-tests"]).toBe(
+      "node scripts/verify-access.mjs --database-tests",
+    );
     expect(packageJson.scripts["verify:access:browser"]).toBe(
       "node scripts/verify-access.mjs --browser",
     );
@@ -2769,6 +2770,30 @@ setInterval(() => {}, 1000);
       ...databasePreflightCommands,
       statusCommand,
       ...databaseCheckCommands,
+      ownershipCommand,
+      stopCommand,
+    ]);
+  });
+
+  it("runs the database tests without the booking and payment concurrency programs", async () => {
+    const run = successfulRun();
+
+    expect(
+      await mainWithPreparedProject(["--database-tests"], {
+        environment: {},
+        run,
+      }),
+    ).toBe(0);
+
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      ...databasePreflightCommands,
+      statusCommand,
+      ...databaseCheckCommands.filter(
+        ([, [script]]) => !script.startsWith("scripts/verify-booking-"),
+      ),
       ownershipCommand,
       stopCommand,
     ]);

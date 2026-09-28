@@ -14,6 +14,7 @@ import {
   requiredBaselineSteps,
   requiredExpensiveSteps,
   requiredDatabaseSteps,
+  requiredLightDatabaseSteps,
   requiredBrowserSteps,
   write,
   createRepository,
@@ -27,7 +28,7 @@ describe("repository verification command", () => {
   it("retains only authoritatively completed service groups", () => {
     for (const failure of ["verify:access", "build:worker", "test:browser"]) {
       const repository = createRepository();
-      commit(repository, "src/runtime.ts", "seed\n");
+      commit(repository, "tsconfig.json", "seed\n");
       const run = vi.fn((_command, args) => ({
         status: args[1] === failure ? 7 : 0,
       }));
@@ -46,7 +47,7 @@ describe("repository verification command", () => {
       ]);
     }
     const independentRepository = createRepository();
-    commit(independentRepository, "src/runtime.ts", "seed\n");
+    commit(independentRepository, "tsconfig.json", "seed\n");
     expect(
       localVerification(independentRepository, { args: ["--database"] }).status,
     ).toBe(0);
@@ -74,7 +75,7 @@ describe("repository verification command", () => {
       },
     ]) {
       const repository = createRepository();
-      commit(repository, "src/runtime.ts", "seed\n");
+      commit(repository, "tsconfig.json", "seed\n");
       const failed = localVerification(repository, {
         args: ["--database"],
         run: vi.fn(() => outcome),
@@ -85,11 +86,11 @@ describe("repository verification command", () => {
       ).toEqual(requiredDatabaseSteps);
     }
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "seed\n");
+    commit(repository, "tsconfig.json", "seed\n");
     localVerification(repository, {
       args: ["--database"],
       run: vi.fn(() => {
-        write(repository, "src/runtime.ts", "changed during execution\n");
+        write(repository, "tsconfig.json", "changed during execution\n");
         return { status: 0 };
       }),
     });
@@ -98,9 +99,40 @@ describe("repository verification command", () => {
     ).toEqual(requiredDatabaseSteps);
   }, 60000);
 
+  it("does not reuse light database evidence for a booking concurrency change", () => {
+    const repository = createRepository();
+    commit(
+      repository,
+      "supabase/tests/database/booking_quotes.test.sql",
+      "select 1;\n",
+    );
+    const light = localVerification(repository);
+    expect(light.status).toBe(0);
+    expect(commands(light)).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredLightDatabaseSteps,
+    ]);
+    commit(
+      repository,
+      "supabase/schemas/20_functions_booking.sql",
+      "-- booking\n",
+    );
+
+    const heavy = localVerification(repository);
+
+    expect(heavy.status).toBe(0);
+    expect(commands(heavy)).toEqual([
+      ...requiredBaselineSteps,
+      ...requiredDatabaseSteps,
+    ]);
+    const output = heavy.stdout.mock.calls.flat().join("\n");
+    expect(output).not.toContain("database: reused local evidence");
+    expect(output).toContain("database: executed fresh verification");
+  });
+
   it("retains completed forced-run evidence without reusing forced execution", () => {
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "seed\n");
+    commit(repository, "tsconfig.json", "seed\n");
     expect(localVerification(repository).status).toBe(0);
     const previousTokens = Object.fromEntries(
       ["database", "browser"].map((group) => [
@@ -149,7 +181,7 @@ describe("repository verification command", () => {
       ["browser", requiredBrowserSteps],
     ]) {
       const independentRepository = createRepository();
-      commit(independentRepository, "src/runtime.ts", "seed\n");
+      commit(independentRepository, "tsconfig.json", "seed\n");
       const forced = localVerification(independentRepository, {
         args: [`--${group}`, "--full"],
       });
@@ -171,7 +203,7 @@ describe("repository verification command", () => {
 
     for (const failure of ["verify:access", "build:worker", "test:browser"]) {
       const failedRepository = createRepository();
-      commit(failedRepository, "src/runtime.ts", "seed\n");
+      commit(failedRepository, "tsconfig.json", "seed\n");
       expect(localVerification(failedRepository).status).toBe(0);
       const forced = localVerification(failedRepository, {
         args: ["--full"],
@@ -258,7 +290,7 @@ describe("repository verification command", () => {
     ];
     for (const change of changes) {
       const repository = createRepository();
-      commit(repository, "src/runtime.ts", "seed\n");
+      commit(repository, "tsconfig.json", "seed\n");
       localVerification(repository, { args: ["--database"] });
       change(
         evidenceFile(repository, "success"),
@@ -269,7 +301,7 @@ describe("repository verification command", () => {
       ).toEqual(requiredDatabaseSteps);
     }
     const oversizedRepository = createRepository();
-    commit(oversizedRepository, "src/runtime.ts", "seed\n");
+    commit(oversizedRepository, "tsconfig.json", "seed\n");
     const oversized = localVerification(oversizedRepository, {
       args: ["--database"],
       captureRuntimeContract: () => ({
@@ -288,7 +320,7 @@ describe("repository verification command", () => {
       readFileSync(evidenceFile(oversizedRepository, "success")),
     ).toThrow();
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "seed\n");
+    commit(repository, "tsconfig.json", "seed\n");
     localVerification(repository, {
       args: ["--database"],
       run: vi.fn(() => {
@@ -315,7 +347,7 @@ describe("repository verification command", () => {
 
   it("requires durable invalidation before fresh local execution", () => {
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "seed\n");
+    commit(repository, "tsconfig.json", "seed\n");
     localVerification(repository, { args: ["--database"] });
     const marker = evidenceFile(repository, "attempt");
     const directory = dirname(marker);
@@ -443,7 +475,7 @@ describe("repository verification command", () => {
 
   it("keeps completion write failures separate from product outcomes", () => {
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "seed\n");
+    commit(repository, "tsconfig.json", "seed\n");
     localVerification(repository, { args: ["--database"] });
     const receipt = evidenceFile(repository, "success");
     const marker = evidenceFile(repository, "attempt");

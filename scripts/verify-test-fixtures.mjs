@@ -53,6 +53,10 @@ export const requiredDatabaseSteps = [
   ["npm", ["run", "verify:access:database"]],
 ];
 
+export const requiredLightDatabaseSteps = [
+  ["npm", ["run", "verify:access:database-tests"]],
+];
+
 export const requiredBrowserSteps = [
   ["npm", ["run", "verify:access:browser"]],
   ...requiredExpensiveSteps.slice(1),
@@ -138,7 +142,8 @@ export function createRepository() {
   git(repository, ["config", "user.email", "verify@example.test"]);
   write(repository, "AGENTS.md", "initial instructions\n");
   write(repository, ".gitignore", "node_modules/\n");
-  write(repository, "src/runtime.ts", "export const value = 'initial';\n");
+  write(repository, "custom-worker.ts", "export const value = 'initial';\n");
+  write(repository, "tsconfig.json", "{}\n");
   writeDependencyMetadata(repository);
   git(repository, ["add", "."]);
   git(repository, ["commit", "-m", "initial"]);
@@ -254,7 +259,7 @@ else fs.appendFileSync(${JSON.stringify(commandLog)}, JSON.stringify([name, ...a
       write(entry.directory, "Resources/locale.pak", "fixture-resource");
     }
   }
-  commit(repository, "src/runtime.ts", "seed\n");
+  commit(repository, "tsconfig.json", "seed\n");
   return {
     repository,
     tools,

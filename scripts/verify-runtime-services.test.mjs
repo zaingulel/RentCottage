@@ -61,7 +61,7 @@ else process.exit(result.status);
     expect(
       readFileSync(fixture.commandLog, "utf8").trim().split("\n"),
     ).toHaveLength(1);
-    write(fixture.repository, "src/runtime.ts", "stale source\n");
+    write(fixture.repository, "tsconfig.json", "stale source\n");
     const stale = child();
     expect(stale.status, stale.stderr).toBe(0);
     expect(stale.stdout).not.toContain("reused local evidence");
@@ -131,7 +131,7 @@ else process.exit(result.status);
     writeFileSync(fixture.daemon, JSON.stringify("changed-daemon"));
     expect(commands(execute())).toEqual(requiredDatabaseSteps);
     expect(commands(execute())).toEqual([]);
-    write(fixture.repository, "src/runtime.ts", "repair requiring execution\n");
+    write(fixture.repository, "tsconfig.json", "repair requiring execution\n");
     const changedDuring = execute(() =>
       writeImages([image(unrelated.Repository, unrelated.Tag, "d")]),
     );

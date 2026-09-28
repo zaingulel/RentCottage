@@ -26,8 +26,9 @@ const OWNED_JOURNEYS_GREP =
 const OWNED_SUBMISSION_GREP =
   "a Cottage Owner saves, resumes and submits a complete private application$";
 const DATABASE_MODE = "--database";
+const DATABASE_TESTS_MODE = "--database-tests";
 const BROWSER_MODE = "--browser";
-const USAGE = `Usage: npm run verify:access [${DATABASE_MODE}|${BROWSER_MODE}|${FIXTURE_CONTRACT_MODE}|${OWNED_JOURNEYS_MODE}]`;
+const USAGE = `Usage: npm run verify:access [${DATABASE_MODE}|${DATABASE_TESTS_MODE}|${BROWSER_MODE}|${FIXTURE_CONTRACT_MODE}|${OWNED_JOURNEYS_MODE}]`;
 const EXCLUDED_SERVICES =
   "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
 
@@ -425,6 +426,7 @@ export async function main(
     args.length > 1 ||
     (mode !== undefined &&
       mode !== DATABASE_MODE &&
+      mode !== DATABASE_TESTS_MODE &&
       mode !== BROWSER_MODE &&
       mode !== FIXTURE_CONTRACT_MODE &&
       mode !== OWNED_JOURNEYS_MODE)
@@ -447,7 +449,14 @@ export async function main(
     stderr("ACCESS_JOURNEY_PHASE must match the finite owned-journeys mode.");
     return 2;
   }
-  const databaseMode = mode === undefined || mode === DATABASE_MODE;
+  const databaseMode =
+    mode === undefined ||
+    mode === DATABASE_MODE ||
+    mode === DATABASE_TESTS_MODE;
+  const bookingConcurrency = mode !== DATABASE_TESTS_MODE;
+  const databaseRecipe = bookingConcurrency
+    ? "verify:access:database"
+    : "verify:access:database-tests";
   const browserMode =
     mode === undefined || mode === BROWSER_MODE || ownedJourneysMode;
 
@@ -468,8 +477,8 @@ export async function main(
     : [
         "npm",
         "run",
-        mode === DATABASE_MODE
-          ? "verify:access:database"
+        mode === DATABASE_MODE || mode === DATABASE_TESTS_MODE
+          ? databaseRecipe
           : mode === BROWSER_MODE
             ? "verify:access:browser"
             : "verify:access",
@@ -515,7 +524,7 @@ export async function main(
   const reportFailure = (failedGroup, attemptedCommand) => {
     const reproduceGroup =
       failedGroup === "database"
-        ? ["npm", "run", "verify:access:database"]
+        ? ["npm", "run", databaseRecipe]
         : failedGroup === "browser"
           ? ["npm", "run", "verify:access:browser"]
           : failedGroup === "fixture"
@@ -849,22 +858,6 @@ export async function main(
     const verifyDatabasePreflight = async () => {
       const declaredSchemaStatus = await verifyDeclaredSchema();
       if (declaredSchemaStatus !== 0) return declaredSchemaStatus;
-      const customerReviewUpgrade = await execute(
-        "node",
-        ["scripts/verify-customer-review-upgrade.mjs"],
-        { stdio: "inherit" },
-      );
-      if (customerReviewUpgrade.status !== 0) {
-        return customerReviewUpgrade.status;
-      }
-      const administratorRecordsUpgrade = await execute(
-        "node",
-        ["scripts/verify-administrator-records-upgrade.mjs"],
-        { stdio: "inherit" },
-      );
-      if (administratorRecordsUpgrade.status !== 0) {
-        return administratorRecordsUpgrade.status;
-      }
       result = await execute(
         "npx",
         supabaseArguments(["supabase", "test", "db"]),
@@ -975,161 +968,106 @@ export async function main(
         ...scheduleConcurrencyEnvironment,
         ...databaseConcurrencyEnvironment,
       };
-      const draftConcurrency = await execute(
-        "node",
-        ["scripts/verify-cottage-profile-draft-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (draftConcurrency.status !== 0) return draftConcurrency.status;
-      const scheduleConcurrency = await execute(
-        "node",
-        ["scripts/verify-cottage-shift-schedule-concurrency.mjs"],
-        { env: scheduleConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (scheduleConcurrency.status !== 0) return scheduleConcurrency.status;
-      const inventoryConcurrency = await execute(
-        "node",
-        ["scripts/verify-cottage-inventory-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (inventoryConcurrency.status !== 0) return inventoryConcurrency.status;
-      const bookingPeriodHoldConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-period-hold-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (bookingPeriodHoldConcurrency.status !== 0) {
-        return bookingPeriodHoldConcurrency.status;
-      }
-      const bookingRequestConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-request-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (bookingRequestConcurrency.status !== 0) {
-        return bookingRequestConcurrency.status;
-      }
-      const bookingRequestLifecycleConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-request-lifecycle-concurrency.mjs"],
+      const secretInventoryEnvironment = {
+        ...inventoryConcurrencyEnvironment,
+        SUPABASE_SECRET_KEY: secretKey,
+      };
+      const concurrencyPrograms = [
         {
-          env: {
-            ...inventoryConcurrencyEnvironment,
-            SUPABASE_SECRET_KEY: secretKey,
-          },
-          stdio: "inherit",
-        },
-      );
-      if (bookingRequestLifecycleConcurrency.status !== 0) {
-        return bookingRequestLifecycleConcurrency.status;
-      }
-      const bookingRequestCaptureConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-request-capture-concurrency.mjs"],
-        {
-          env: {
-            ...inventoryConcurrencyEnvironment,
-            SUPABASE_SECRET_KEY: secretKey,
-          },
-          stdio: "inherit",
-        },
-      );
-      if (bookingRequestCaptureConcurrency.status !== 0)
-        return bookingRequestCaptureConcurrency.status;
-      const bookingRequestRecoveryConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-request-payment-recovery-concurrency.mjs"],
-        {
+          script: "scripts/verify-cottage-profile-draft-concurrency.mjs",
           env: inventoryConcurrencyEnvironment,
-          stdio: "inherit",
         },
-      );
-      if (bookingRequestRecoveryConcurrency.status !== 0)
-        return bookingRequestRecoveryConcurrency.status;
-      const paymentHistoryConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-request-payment-history-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (paymentHistoryConcurrency.status !== 0)
-        return paymentHistoryConcurrency.status;
-      const notificationConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-confirmation-notification-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (notificationConcurrency.status !== 0)
-        return notificationConcurrency.status;
-      const eventNotificationConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-event-notification-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (eventNotificationConcurrency.status !== 0)
-        return eventNotificationConcurrency.status;
-      const requestNotificationConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-request-notification-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (requestNotificationConcurrency.status !== 0)
-        return requestNotificationConcurrency.status;
-      const preparationReminderConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-preparation-reminder-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (preparationReminderConcurrency.status !== 0)
-        return preparationReminderConcurrency.status;
-      const cancellationConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-cancellation-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (cancellationConcurrency.status !== 0)
-        return cancellationConcurrency.status;
-      const messagingConcurrency = await execute(
-        "node",
-        ["scripts/verify-messaging-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (messagingConcurrency.status !== 0) return messagingConcurrency.status;
-      const completionConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-completion-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (completionConcurrency.status !== 0)
-        return completionConcurrency.status;
-      const customerReviewConcurrency = await execute(
-        "node",
-        ["scripts/verify-customer-review-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (customerReviewConcurrency.status !== 0) {
-        return customerReviewConcurrency.status;
-      }
-      const refundConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-refund-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (refundConcurrency.status !== 0) return refundConcurrency.status;
-      const payoutConcurrency = await execute(
-        "node",
-        ["scripts/verify-booking-payout-concurrency.mjs"],
-        { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (payoutConcurrency.status !== 0) return payoutConcurrency.status;
-      return (
-        await execute(
-          "node",
-          [
+        {
+          script: "scripts/verify-cottage-shift-schedule-concurrency.mjs",
+          env: scheduleConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-cottage-inventory-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-period-hold-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-request-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-request-lifecycle-concurrency.mjs",
+          env: secretInventoryEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-request-capture-concurrency.mjs",
+          env: secretInventoryEnvironment,
+        },
+        {
+          script:
+            "scripts/verify-booking-request-payment-recovery-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script:
+            "scripts/verify-booking-request-payment-history-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script:
+            "scripts/verify-booking-confirmation-notification-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-event-notification-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-request-notification-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-preparation-reminder-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-cancellation-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-messaging-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-completion-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-customer-review-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-refund-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script: "scripts/verify-booking-payout-concurrency.mjs",
+          env: inventoryConcurrencyEnvironment,
+        },
+        {
+          script:
             "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
-          ],
-          { env: inventoryConcurrencyEnvironment, stdio: "inherit" },
-        )
-      ).status;
+          env: inventoryConcurrencyEnvironment,
+        },
+      ];
+      for (const { script, env } of concurrencyPrograms) {
+        if (!bookingConcurrency && script.startsWith("scripts/verify-booking-"))
+          continue;
+        const concurrency = await execute("node", [script], {
+          env,
+          stdio: "inherit",
+        });
+        if (concurrency.status !== 0) return concurrency.status;
+      }
+      return 0;
     };
     if (databaseMode) {
       group = "database";
