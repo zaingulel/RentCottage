@@ -9,7 +9,7 @@
 // either. Returns null when neither shell exists, so the caller can refuse loudly instead of spawning
 // a missing shell.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
@@ -53,4 +53,13 @@ export function posixShell({
   if (!execPath || !path.win32.isAbsolute(execPath)) return null;
   const besideGit = path.win32.resolve(execPath, '..', '..', '..', 'usr', 'bin', 'sh.exe');
   return exists(besideGit) ? besideGit : null;
+}
+
+// The located POSIX shell, null when there is none. On Windows it can be Git's bin\sh.exe, a launcher
+// that puts Git's own tool directories, real git included, ahead of the PATH it is given, which would
+// shadow the fixture's fake git; there the fixture runs the MSYS sh.exe behind it, which keeps PATH as given.
+export function fixtureShell() {
+  const shell = posixShell();
+  if (process.platform !== 'win32' || !shell) return shell;
+  return spawnSync(shell, ['-c', 'cygpath -w /usr/bin/sh.exe'], { encoding: 'utf8' }).stdout.trim();
 }

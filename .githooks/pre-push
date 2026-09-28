@@ -1,6 +1,8 @@
 #!/bin/sh
 # pre-push — run the gates that must not leave the machine unchecked.
 #
+#   * the product gate — a push to main runs `scripts/gates/pre-push-main <remote sha> <local sha>`
+#     first; a missing, non-executable, or refusing gate blocks it. Other branches never consult it.
 #   * eslint (~1s, no browser) — undefined reference, typo'd name, duplicate key.
 #   * the scripts/lib node:test suite — the guard scripts, board scripts, build identity,
 #     and the pre-commit hook. Runs unconditionally: editing .claude/agents/ or AGENTS.md alone
@@ -48,6 +50,17 @@ unset $(git rev-parse --local-env-vars) $git_trace_vars GIT_NAMESPACE NODE_TEST_
 
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
+
+# Git writes one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref to stdin.
+main_gate=scripts/gates/pre-push-main
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "refs/heads/main" ] || continue
+  if [ ! -x "$main_gate" ]; then
+    echo "pre-push: $main_gate is missing or not executable — push to main through a pull request instead." >&2
+    exit 1
+  fi
+  "$main_gate" "$remote_sha" "$local_sha" </dev/null || exit 1
+done
 
 if ! command -v npm >/dev/null 2>&1; then
   echo "pre-push: npm not found — skipping lint gate." >&2

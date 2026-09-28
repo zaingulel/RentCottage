@@ -7,7 +7,7 @@ and onto committed local gates, so a mistake is caught before it reaches a meter
 |---|---|---|
 | `pre-commit` | One guard, scoped to what is staged: Claude Markdown and Codex TOML agent definitions must parse (blocks silently-dropped agents). One advisory, never blocking: `scripts/doc-lint.mjs --staged` reports prose rot in staged documents and skills. Then the product gate: an executable `scripts/gates/pre-commit`, when present, runs on every commit, and its non-zero exit, or a gate file that is not executable, blocks the commit. | `git commit --no-verify` |
 | `pre-merge-commit` | Runs `pre-commit` on a merge that would auto-commit. A merge that auto-commits never runs `pre-commit`, so a merge driver that keeps one side of a generated artifact could otherwise commit it stale; this hook gives the product gate that case. | `git merge --no-verify` |
-| `pre-push` | `npm run lint` (~1 s, skipped with a warning when eslint is missing) and the `scripts/lib` node:test suite (invoked as `node --test` directly so a missing npm cannot bypass it; fails closed on a missing node). Opt into the full Playwright suite with `RUN_TESTS=1 git push`. | `git push --no-verify` |
+| `pre-push` | `npm run lint` (~1 s, skipped with a warning when eslint is missing) and the `scripts/lib` node:test suite (invoked as `node --test` directly so a missing npm cannot bypass it; fails closed on a missing node). Opt into the full Playwright suite with `RUN_TESTS=1 git push`. Before both, a push to `main` runs the product gate `scripts/gates/pre-push-main <remote sha> <local sha>`; a missing or non-executable gate, or its non-zero exit, blocks the push, and pushes to other branches never consult it. | `git push --no-verify` |
 
 ## Activation
 

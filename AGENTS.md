@@ -112,13 +112,17 @@ verification` row says.
 
 ## Publication and machinery
 
-Push only with owner authorisation, through a draft pull request. The documentation sweep and its day-after triage
+Push only with owner authorisation, through a draft pull request. A change every path of which the repository's
+`scripts/gates/pre-push-main` admits is instead pushed, on the same authorisation, as a fast-forward of `main` from
+the job worktree (`git push origin HEAD:main`), its commit carrying `Closes #<issue>`; no pull request opens and no
+workflow runs. A repository without that gate has no direct route. The documentation sweep and its day-after triage
 follow [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) when the
-Conventions table marks them active. New executable machinery in the workflow itself
-(a script, hook, gate, or workflow job; never product code or its tests) needs one of: a control failure a
-sentence here or in a skill could not prevent twice, the same measurable friction across three independent jobs,
-a required new runtime or provider integration, or externally imposed security or platform drift. Prefer a native
-feature over custom code, a hook over a script, and a sentence over a hook.
+Conventions table marks them active. New executable machinery in the workflow itself, including test scripts,
+harnesses, runners, and test-only tools (product code and ordinary tests added to existing suites are exempt),
+needs one of: a control failure a sentence here or in a skill could not prevent twice, the same measurable
+friction across three independent jobs, a required new runtime or provider integration, or externally imposed
+security or platform drift. Prefer a native feature over custom code, a hook over a script, and a sentence over
+a hook.
 
 ## Shared workflow adoption
 
