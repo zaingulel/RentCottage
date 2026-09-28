@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(59);
+select plan(79);
 
 select has_table('public', 'owner_application_transitions', 'application transitions are durable');
 select has_table('public', 'owner_application_information_requests', 'scoped information requests are durable');
@@ -205,6 +205,9 @@ set status = 'submitted', review_due_at = now() + interval '72 hours',
   review_paused_at = null
 where id = '20000000-0000-4000-8000-000000000301';
 
+create temporary table review_document_access (grant_data jsonb);
+grant select, insert on review_document_access to authenticated, service_role;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -227,6 +230,72 @@ select set_config(
 );
 
 select lives_ok(
+  $$insert into review_document_access
+    select public.prepare_owner_verification_document_access(
+      '40000000-0000-4000-8000-000000000301'
+    )$$,
+  'Submitted permits an attributed grant for original current evidence'
+);
+
+select results_eq(
+  $$select grant_data ->> 'object_path' from review_document_access$$,
+  array['owner/review/identity.pdf'::text],
+  'the original grant targets the owned identity path'
+);
+
+reset role;
+select results_eq(
+  $$select document_id::text, actor_user_id::text, actor_subject_id::text,
+      object_path, status::text
+    from public.owner_verification_document_access_grants
+    where id = (select (grant_data ->> 'grant_id')::uuid from review_document_access)$$,
+  $$values ('40000000-0000-4000-8000-000000000301'::text,
+    '00000000-0000-0000-0000-000000000304'::text,
+    '00000000-0000-0000-0000-000000000304'::text,
+    'owner/review/identity.pdf'::text, 'pending'::text)$$,
+  'preparation binds current object and administrator attribution'
+);
+
+set local role service_role;
+select lives_ok(
+  $$select public.complete_owner_verification_document_access(
+    (select (grant_data ->> 'grant_id')::uuid from review_document_access), 60
+  )$$,
+  'the trusted service completes the original 60-second access grant'
+);
+
+reset role;
+select results_eq(
+  $$select document_id::text, actor_user_id::text, object_path,
+      access_grant_id::text
+    from public.owner_verification_document_audit
+    where action = 'access_granted'
+      and access_grant_id = (select (grant_data ->> 'grant_id')::uuid
+        from review_document_access)$$,
+  $$select '40000000-0000-4000-8000-000000000301'::text,
+      '00000000-0000-0000-0000-000000000304'::text,
+      'owner/review/identity.pdf'::text, grant_data ->> 'grant_id'
+    from review_document_access$$,
+  'completion audits the exact original document, path, actor and grant'
+);
+
+select ok(
+  (select access_expires_at between occurred_at + interval '59 seconds'
+      and occurred_at + interval '61 seconds'
+    from public.owner_verification_document_audit
+    where access_grant_id = (select (grant_data ->> 'grant_id')::uuid
+      from review_document_access)),
+  'the completed link expires after 60 seconds'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  true
+);
+
+select lives_ok(
   $$select public.review_owner_application(
     '20000000-0000-4000-8000-000000000301', 1, 'start_review', null,
     '{}', '{}', null, null, null, '{}'::jsonb
@@ -240,6 +309,56 @@ select results_eq(
     where id = '20000000-0000-4000-8000-000000000301'$$,
   $$values ('under_review'::text, 2::bigint, interval '72 hours')$$,
   'submission owns one exact 72-hour elapsed review clock'
+);
+
+select results_eq(
+  $$select public.prepare_owner_verification_document_access(
+      '40000000-0000-4000-8000-000000000301'
+    ) ->> 'object_path'$$,
+  array['owner/review/identity.pdf'::text],
+  'review-stage document access follows current evidence'
+);
+
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(null)$$,
+  'RC204', null, 'a null document identifier cannot create a grant'
+);
+
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000399'
+  )$$,
+  'RC204', null, 'a nonexistent document identifier cannot create a grant'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal1"}',
+  true
+);
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000301'
+  )$$,
+  'RC204', null, 'an AAL1 administrator cannot prepare review-stage document access'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000301","role":"authenticated","aal":"aal2"}',
+  true
+);
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000301'
+  )$$,
+  'RC204', null, 'a Cottage Owner cannot prepare review-stage document access'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  true
 );
 
 select throws_ok(
@@ -332,6 +451,13 @@ select results_eq(
   'the exact unspent target is retained while paused'
 );
 
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000301'
+  )$$,
+  'RC204', null, 'Needs information denies new document grants'
+);
+
 select results_eq(
   $$select requested_fields, requested_document_kinds::text[]
     from public.owner_application_information_requests$$,
@@ -341,7 +467,8 @@ select results_eq(
 
 reset role;
 update public.owner_verification_documents
-set content_digest = repeat('b', 64), digest_source = 'sha256'
+set content_digest = repeat('b', 64), digest_source = 'sha256',
+  object_path = 'owner/review/licence-response.pdf'
 where application_id = '20000000-0000-4000-8000-000000000301'
   and kind = 'licensing_or_exemption';
 
@@ -425,10 +552,42 @@ select results_eq(
   'the same review target resumes from the exact pause point'
 );
 
+reset role;
+select results_eq(
+  $$select distinct object_path from public.owner_verification_document_versions
+    where document_id = '40000000-0000-4000-8000-000000000303'
+    order by object_path$$,
+  $$values ('owner/review/licence-response.pdf'::text),
+    ('owner/review/licence.pdf'::text)$$,
+  'the response retains the historical version and records its new current path'
+);
+
+create temporary table historical_review_document as
+select id from public.owner_verification_document_versions
+where document_id = '40000000-0000-4000-8000-000000000303'
+  and version = 1;
+grant select on historical_review_document to authenticated;
+
+set local role authenticated;
 select set_config(
   'request.jwt.claims',
   '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
   true
+);
+
+select results_eq(
+  $$select public.prepare_owner_verification_document_access(
+      '40000000-0000-4000-8000-000000000303'
+    ) ->> 'object_path'$$,
+  array['owner/review/licence-response.pdf'::text],
+  'a requested replacement response permits only the current licence path'
+);
+
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    (select id from historical_review_document)
+  )$$,
+  'RC204', null, 'a historical version identifier cannot prepare access'
 );
 
 select throws_ok(
@@ -479,6 +638,13 @@ select results_eq(
     where owner_applications.id = '20000000-0000-4000-8000-000000000301'$$,
   $$values ('approved'::text, 'approved'::text)$$,
   'approval synchronizes the account projection without publishing a cottage'
+);
+
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000303'
+  )$$,
+  'RC204', null, 'Approved denies new document grants'
 );
 
 select results_eq(
@@ -633,6 +799,24 @@ select results_eq(
   'expiry synchronizes the owner projection'
 );
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  true
+);
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000303'
+  )$$,
+  'RC204', null, 'Expired denies new document grants'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000301","role":"authenticated","aal":"aal1"}',
+  true
+);
+
 select results_eq(
   $$select status::text, requested_document_kinds::text[]
     from public.owner_application_renewal_work$$,
@@ -650,9 +834,17 @@ select results_eq(
 
 reset role;
 update public.owner_verification_documents
-set content_digest = repeat('c', 64), digest_source = 'sha256'
+set content_digest = repeat('c', 64), digest_source = 'sha256',
+  object_path = 'owner/review/licence-renewal.pdf'
 where application_id = '20000000-0000-4000-8000-000000000301'
   and kind = 'licensing_or_exemption';
+
+insert into storage.objects (bucket_id, name, owner_id, metadata)
+select public.owner_verification_bucket_name(), object_path,
+  '00000000-0000-0000-0000-000000000301',
+  jsonb_build_object('size', size_bytes, 'mimetype', media_type)
+from public.owner_verification_documents
+where id = '40000000-0000-4000-8000-000000000303';
 
 set local role authenticated;
 select set_config(
@@ -681,6 +873,14 @@ select set_config(
   'request.jwt.claims',
   '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
   true
+);
+
+select results_eq(
+  $$select public.prepare_owner_verification_document_access(
+      '40000000-0000-4000-8000-000000000303'
+    ) ->> 'object_path'$$,
+  array['owner/review/licence-renewal.pdf'::text],
+  'a renewal submission permits the latest current licence path'
 );
 
 select lives_ok(
@@ -737,6 +937,32 @@ select results_eq(
   'suspension blocks new business without conflating evidence expiry'
 );
 
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000303'
+  )$$,
+  'RC204', null, 'Suspended denies new document grants'
+);
+
+reset role;
+update public.owner_applications set status = 'rejected'
+where id = '20000000-0000-4000-8000-000000000301';
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
+  true
+);
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000303'
+  )$$,
+  'RC204', null,
+  'Rejected denies new document grants'
+);
+
+reset role;
 set local role service_role;
 select lives_ok(
   $$select public.install_owner_application_expiry_cron()$$,

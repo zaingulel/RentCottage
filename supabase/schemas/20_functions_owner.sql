@@ -370,7 +370,7 @@ begin
   join public.owner_applications
     on owner_applications.id = owner_verification_documents.application_id
   where owner_verification_documents.id = target_document_id
-    and owner_applications.status = 'submitted';
+    and owner_applications.status in ('submitted', 'under_review');
 
   if not found then
     raise exception 'Verification document access is denied'
