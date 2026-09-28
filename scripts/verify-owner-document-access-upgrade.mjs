@@ -39,7 +39,9 @@ if (!OWNER_DOCUMENT_UPGRADE_PROJECT_PATTERN.test(project)) {
 }
 const stateRoot =
   suppliedStateRoot ??
-  mkdtempSync(join(tmpdir(), "rentcottage-owner-document-upgrade-"));
+  realpathSync(
+    mkdtempSync(join(tmpdir(), "rentcottage-owner-document-upgrade-")),
+  );
 if (suppliedStateRoot) {
   if (
     !isAbsolute(suppliedStateRoot) ||

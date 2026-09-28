@@ -2408,6 +2408,70 @@ process.exit(0);
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
   });
+  it("owner document upgrade interruption reconciles its exact project: symlinked standalone temp directory", () => {
+    const fixtureRoot = mkdtempSync(
+      join(tmpdir(), "access-upgrade-symlinked-temp-"),
+    );
+    const actualTemp = join(fixtureRoot, "actual-temp");
+    const symlinkedTemp = join(fixtureRoot, "linked-temp");
+    const fakeBin = join(fixtureRoot, "bin");
+    mkdirSync(actualTemp);
+    mkdirSync(fakeBin);
+    symlinkSync(actualTemp, symlinkedTemp, "dir");
+    writeFileSync(join(fixtureRoot, "commands.log"), "");
+    const commandPath = join(fakeBin, "command.mjs");
+    writeFileSync(
+      commandPath,
+      `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+import { basename, join } from "node:path";
+const command = basename(process.argv[1]);
+const args = process.argv.slice(2);
+appendFileSync(join(process.env.ACCESS_SYMLINKED_TEMP_ROOT, "commands.log"),
+  JSON.stringify({ command, args, project: process.env.SUPABASE_PROJECT_ID, workdir: args.at(-1) }) + "\\n");
+if (command === "npx" && args[1] === "start") process.exit(19);
+process.exit(0);
+`,
+    );
+    chmodSync(commandPath, 0o755);
+    symlinkSync(commandPath, join(fakeBin, "docker"));
+    symlinkSync(commandPath, join(fakeBin, "npx"));
+    try {
+      const child = spawnSync(
+        process.execPath,
+        ["scripts/verify-owner-document-access-upgrade.mjs"],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            ACCESS_SYMLINKED_TEMP_ROOT: fixtureRoot,
+            OWNER_DOCUMENT_UPGRADE_STATE_ROOT: undefined,
+            OWNER_DOCUMENT_UPGRADE_PROJECT: undefined,
+            PATH: `${fakeBin}:${process.env.PATH}`,
+            TMPDIR: symlinkedTemp,
+          },
+          timeout: 10_000,
+        },
+      );
+      expect(child.status).toBe(1);
+      const commands = readFileSync(join(fixtureRoot, "commands.log"), "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
+      const startup = commands.find(
+        ({ command, args }) => command === "npx" && args[1] === "start",
+      );
+      expect(startup, child.stderr || child.stdout).toBeDefined();
+      expect(startup.workdir).toMatch(
+        new RegExp(`^${realpathSync(symlinkedTemp)}/rentcottage-owner-document-upgrade-[^/]+/project$`),
+      );
+      expect(startup.project).toMatch(/^rentcottage-[a-f0-9]{28}$/);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
   it("owner document upgrade interruption reconciles its exact project: rejects CLI-truncated supplied identity before Docker", () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), "access-upgrade-long-id-"));
     const stateRoot = join(fixtureRoot, "state");
