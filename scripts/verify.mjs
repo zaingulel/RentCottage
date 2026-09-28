@@ -549,10 +549,12 @@ function ciSelection(cwd, environment, stdout) {
   stdout(
     `CI Git comparison: merge base ${mergeBase}; base ${base}; source ${source}; merge ${merge}`,
   );
-  return classifyChanges([
-    ...diffChanges(cwd, [`${mergeBase}..${source}`]),
-    ...diffChanges(cwd, [`${base}..${merge}`]),
-  ]);
+  return {
+    browser: true,
+    database: true,
+    bookingConcurrency: true,
+    reason: "continuous integration runs every check",
+  };
 }
 
 function selectVerification(cwd, environment, stdout, stderr) {

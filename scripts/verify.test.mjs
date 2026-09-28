@@ -1561,7 +1561,7 @@ describe("repository verification command", () => {
   );
 
   it.each([undefined, "--database", "--browser"])(
-    "skips Chromium and expensive checks for a docs-only CI merge: %s",
+    "runs every check in CI for a docs-only merge: %s",
     (mode) => {
       const repository = createRepository();
       const base = git(repository, ["rev-parse", "HEAD"]);
@@ -1580,84 +1580,10 @@ describe("repository verification command", () => {
 
       expect(result.status).toBe(0);
       expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-        mode ? [] : requiredBaselineSteps,
-      );
-      expect(result.stdout).toHaveBeenCalledWith(
-        expect.stringContaining("Expensive verification: skipped"),
-      );
-    },
-  );
-
-  it.each([
-    ["modification", undefined],
-    ["addition", "--database"],
-    ["deletion", "--browser"],
-  ])(
-    "ignores an advanced-base-only runtime %s in CI: %s",
-    (baseChange, mode) => {
-      const repository = createRepository();
-      const originalBase = git(repository, ["rev-parse", "HEAD"]);
-
-      git(repository, ["switch", "-c", "source", originalBase]);
-      const source = commit(repository, "AGENTS.md", "source instructions\n");
-      git(repository, ["switch", "main"]);
-      if (baseChange === "addition") {
-        commit(repository, "src/base-only.ts", "export const base = true;\n");
-      } else if (baseChange === "deletion") {
-        git(repository, ["rm", "src/runtime.ts"]);
-        git(repository, ["commit", "-m", "delete runtime on base"]);
-      } else {
-        commit(repository, "src/runtime.ts", "export const value = 'base';\n");
-      }
-      const base = git(repository, ["rev-parse", "HEAD"]);
-      git(repository, ["merge", "--no-ff", "source"]);
-
-      const result = runVerification(repository, {
-        args: mode ? [mode] : [],
-        environment: {
-          GITHUB_ACTIONS: "true",
-          VERIFY_BASE_SHA: base,
-          VERIFY_SOURCE_SHA: source,
-        },
-      });
-
-      expect(result.status).toBe(0);
-      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-        mode ? [] : requiredBaselineSteps,
-      );
-      expect(result.stdout).toHaveBeenCalledWith(
-        expect.stringContaining("Expensive verification: skipped"),
-      );
-    },
-  );
-
-  it.each([undefined, "--database", "--browser"])(
-    "selects full CI evidence for a runtime change visible only in the merge result: %s",
-    (mode) => {
-      const repository = createRepository();
-      const base = git(repository, ["rev-parse", "HEAD"]);
-      const source = commit(repository, "AGENTS.md", "source instructions\n");
-      git(repository, ["switch", "main"]);
-      git(repository, ["merge", "--no-ff", "--no-commit", source]);
-      write(repository, "src/runtime.ts", "export const value = 'merge';\n");
-      git(repository, ["add", "."]);
-      git(repository, ["commit", "-m", "merge source"]);
-
-      const result = runVerification(repository, {
-        args: mode ? [mode] : [],
-        environment: {
-          GITHUB_ACTIONS: "true",
-          VERIFY_BASE_SHA: base,
-          VERIFY_SOURCE_SHA: source,
-        },
-      });
-
-      expect(result.status).toBe(0);
-      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
         requiredCiSteps(mode),
       );
       expect(result.stdout).toHaveBeenCalledWith(
-        expect.stringContaining("src/runtime.ts requires full evidence"),
+        expect.stringContaining("continuous integration runs every check"),
       );
     },
   );
