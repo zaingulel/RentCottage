@@ -5,13 +5,15 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 import { prepareIsolatedSupabaseWorkdir } from "./verify-access.mjs";
@@ -19,9 +21,23 @@ import { prepareIsolatedSupabaseWorkdir } from "./verify-access.mjs";
 const shippedMigration = "20260927094658_administrator_records.sql";
 const upgradeMigration = "20260927222958_owner_document_review_access.sql";
 const project = "rentcottage-owner-doc-upgrade";
-const stateRoot = mkdtempSync(
-  join(tmpdir(), "rentcottage-owner-document-upgrade-"),
-);
+const suppliedStateRoot = process.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT;
+const stateRoot =
+  suppliedStateRoot ??
+  mkdtempSync(join(tmpdir(), "rentcottage-owner-document-upgrade-"));
+if (suppliedStateRoot) {
+  if (
+    !isAbsolute(suppliedStateRoot) ||
+    resolve(suppliedStateRoot) !== suppliedStateRoot ||
+    realpathSync(suppliedStateRoot) !== suppliedStateRoot ||
+    !statSync(suppliedStateRoot).isDirectory() ||
+    readdirSync(suppliedStateRoot).length !== 0
+  ) {
+    throw new Error(
+      "Owner document upgrade state root must be an existing canonical empty directory.",
+    );
+  }
+}
 const dockerConfig = join(stateRoot, "docker");
 mkdirSync(dockerConfig);
 let assertions = 0;
@@ -276,7 +292,7 @@ commit;`);
         project,
       ]),
     );
-    rmSync(stateRoot, { recursive: true, force: true });
+    if (!suppliedStateRoot) rmSync(stateRoot, { recursive: true, force: true });
   } else {
     console.error(`Retained upgrade verifier state at ${stateRoot}.`);
   }
