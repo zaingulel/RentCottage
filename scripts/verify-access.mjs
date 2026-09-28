@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -35,6 +37,392 @@ const GRACEFUL_EXIT_LIMIT_MS = 5_000;
 const FORCED_EXIT_LIMIT_MS = 2_000;
 const MAX_CAPTURE_BYTES = 1024 * 1024;
 const CLEANUP_COMMAND_LIMIT_MS = 30_000;
+export const OWNER_DOCUMENT_UPGRADE_PROJECT_PATTERN =
+  /^rentcottage-[a-f0-9]{28}$/;
+
+export function makeOwnerDocumentUpgradeProject() {
+  return `rentcottage-${randomBytes(14).toString("hex")}`;
+}
+
+function ownerDocumentUpgradeNames(project) {
+  return {
+    volumes: new Set([
+      `supabase_db_${project}`,
+      `supabase_storage_${project}`,
+      `supabase_edge_runtime_${project}`,
+    ]),
+    network: `supabase_network_${project}`,
+  };
+}
+
+async function upgradeDocker(execute, args) {
+  const result = await execute("docker", args);
+  if (
+    result.error ||
+    result.status !== 0 ||
+    typeof result.stdout !== "string" ||
+    Buffer.byteLength(result.stdout) > MAX_CAPTURE_BYTES
+  ) {
+    throw new Error(
+      `Unable to complete owner document upgrade Docker inspection: docker ${args.join(" ")}.`,
+    );
+  }
+  return result.stdout;
+}
+
+function parseUpgradeLines(output, pattern, kind) {
+  return output
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(pattern);
+      if (!match)
+        throw new Error(`Unreadable owner document upgrade ${kind}: ${line}.`);
+      return match;
+    });
+}
+
+async function listOwnerDocumentUpgradeResources(project, workdir, execute) {
+  const resources = {
+    container: new Map(),
+    volume: new Map(),
+    network: new Map(),
+  };
+  const containerFormat = "{{.ID}}|{{.Names}}";
+  for (const filter of [
+    `label=com.supabase.cli.project=${project}`,
+    `name=_${project}`,
+    `label=com.supabase.cli.workdir=${workdir}`,
+  ]) {
+    const output = await upgradeDocker(execute, [
+      "ps",
+      "-a",
+      "--no-trunc",
+      "--filter",
+      filter,
+      "--format",
+      containerFormat,
+    ]);
+    for (const [, id, name] of parseUpgradeLines(
+      output,
+      /^([a-f0-9]{64})\|([^|\r\n]+)$/,
+      "container listing",
+    )) {
+      if (filter.startsWith("name=") && !name.endsWith(`_${project}`)) continue;
+      resources.container.set(id, name);
+    }
+  }
+  for (const filter of [
+    `label=com.supabase.cli.project=${project}`,
+    `name=_${project}`,
+    `label=com.supabase.cli.workdir=${workdir}`,
+  ]) {
+    const output = await upgradeDocker(execute, [
+      "volume",
+      "ls",
+      "--filter",
+      filter,
+      "--format",
+      "{{.Name}}",
+    ]);
+    for (const [, name] of parseUpgradeLines(
+      output,
+      /^([a-zA-Z0-9][a-zA-Z0-9_.-]*)$/,
+      "volume listing",
+    )) {
+      if (filter.startsWith("name=") && !name.endsWith(`_${project}`)) continue;
+      resources.volume.set(name, name);
+    }
+  }
+  for (const filter of [
+    `label=com.supabase.cli.project=${project}`,
+    `name=_${project}`,
+    `label=com.supabase.cli.workdir=${workdir}`,
+  ]) {
+    const output = await upgradeDocker(execute, [
+      "network",
+      "ls",
+      "--no-trunc",
+      "--filter",
+      filter,
+      "--format",
+      "{{.ID}}|{{.Name}}",
+    ]);
+    for (const [, id, name] of parseUpgradeLines(
+      output,
+      /^([a-f0-9]{64})\|([^|\r\n]+)$/,
+      "network listing",
+    )) {
+      if (filter.startsWith("name=") && !name.endsWith(`_${project}`)) continue;
+      resources.network.set(id, name);
+    }
+  }
+  return resources;
+}
+
+function upgradeResourceNames(resources) {
+  return Object.entries(resources).flatMap(([kind, items]) =>
+    [...items].map(([id, name]) => `${kind}:${name} (${id})`),
+  );
+}
+
+export async function admitOwnerDocumentUpgrade({
+  project,
+  stateRoot,
+  workdir,
+  execute,
+}) {
+  if (
+    !OWNER_DOCUMENT_UPGRADE_PROJECT_PATTERN.test(project) ||
+    workdir !== join(stateRoot, "project")
+  ) {
+    throw new Error("Invalid owner document upgrade project identity.");
+  }
+  const resources = await listOwnerDocumentUpgradeResources(
+    project,
+    workdir,
+    execute,
+  );
+  const collisions = upgradeResourceNames(resources);
+  if (collisions.length) {
+    throw new Error(
+      `Owner document upgrade namespace is already occupied: ${collisions.join(", ")}.`,
+    );
+  }
+  return { project, stateRoot, workdir };
+}
+
+async function inspectUpgradeResource(kind, id, execute) {
+  const args =
+    kind === "container"
+      ? ["container", "inspect", id, "--format", "{{json .}}"]
+      : kind === "volume"
+        ? ["volume", "inspect", id, "--format", "{{json .}}"]
+        : ["network", "inspect", id, "--format", "{{json .}}"];
+  const output = await upgradeDocker(execute, args);
+  let inspected;
+  try {
+    inspected = JSON.parse(output);
+  } catch {
+    throw new Error(
+      `Unreadable owner document upgrade ${kind} identity ${id}.`,
+    );
+  }
+  if (!inspected || typeof inspected !== "object" || Array.isArray(inspected)) {
+    throw new Error(
+      `Unreadable owner document upgrade ${kind} identity ${id}.`,
+    );
+  }
+  return inspected;
+}
+
+function classifyUpgradeResource(admission, kind, id, name, inspected) {
+  const { project, workdir } = admission;
+  const names = ownerDocumentUpgradeNames(project);
+  const labels =
+    kind === "container" ? inspected.Config?.Labels : inspected.Labels;
+  if (
+    labels !== null &&
+    (typeof labels !== "object" || Array.isArray(labels))
+  ) {
+    throw new Error(`Unreadable owner document upgrade ${kind} labels ${id}.`);
+  }
+  const projectLabel = labels?.["com.supabase.cli.project"];
+  const workdirLabel = labels?.["com.supabase.cli.workdir"];
+  if (projectLabel !== undefined && projectLabel !== project) {
+    throw new Error(
+      `Conflicting owner document upgrade ${kind} project label ${id}.`,
+    );
+  }
+  if (workdirLabel !== undefined && workdirLabel !== workdir) {
+    throw new Error(
+      `Conflicting owner document upgrade ${kind} workdir label ${id}.`,
+    );
+  }
+  const inspectedId = kind === "volume" ? inspected.Name : inspected.Id;
+  const inspectedName =
+    kind === "container" ? inspected.Name?.replace(/^\//, "") : inspected.Name;
+  const created = kind === "volume" ? inspected.CreatedAt : inspected.Created;
+  if (
+    inspectedId !== id ||
+    inspectedName !== name ||
+    typeof created !== "string" ||
+    !created ||
+    (kind !== "container" &&
+      (typeof inspected.Driver !== "string" || !inspected.Driver))
+  ) {
+    throw new Error(
+      `Changed or unreadable owner document upgrade ${kind} identity ${id}.`,
+    );
+  }
+  if (kind === "container") {
+    if (projectLabel !== project || workdirLabel !== workdir) {
+      throw new Error(`Unverified owner document upgrade container ${id}.`);
+    }
+  } else if (
+    kind === "volume" ? !names.volumes.has(name) : name !== names.network
+  ) {
+    throw new Error(`Unexpected owner document upgrade ${kind} name ${name}.`);
+  }
+  return { kind, id, name, created, driver: inspected.Driver ?? null, labels };
+}
+
+async function upgradeResourceAbsent(kind, id, execute) {
+  const args =
+    kind === "container"
+      ? [
+          "ps",
+          "-a",
+          "--no-trunc",
+          "--filter",
+          `id=${id}`,
+          "--format",
+          "{{.ID}}",
+        ]
+      : kind === "volume"
+        ? ["volume", "ls", "--filter", `name=${id}`, "--format", "{{.Name}}"]
+        : [
+            "network",
+            "ls",
+            "--no-trunc",
+            "--filter",
+            `id=${id}`,
+            "--format",
+            "{{.ID}}",
+          ];
+  const output = await upgradeDocker(execute, args);
+  const pattern =
+    kind === "volume" ? /^([a-zA-Z0-9][a-zA-Z0-9_.-]*)$/ : /^([a-f0-9]{64})$/;
+  return !parseUpgradeLines(output, pattern, `${kind} absence`).some(
+    ([, found]) => found === id,
+  );
+}
+
+async function inspectUpgradeSnapshot(admission, execute) {
+  const listed = await listOwnerDocumentUpgradeResources(
+    admission.project,
+    admission.workdir,
+    execute,
+  );
+  const owned = [];
+  const uncertain = [];
+  for (const [kind, items] of Object.entries(listed)) {
+    for (const [id, name] of items) {
+      try {
+        const inspected = await inspectUpgradeResource(kind, id, execute);
+        owned.push(
+          classifyUpgradeResource(admission, kind, id, name, inspected),
+        );
+      } catch (error) {
+        uncertain.push(`${kind}:${name} (${id}): ${error.message}`);
+      }
+    }
+  }
+  return { listed, owned, uncertain };
+}
+
+export async function cleanupOwnerDocumentUpgrade({
+  admission,
+  execute,
+  guardDatabase,
+}) {
+  let snapshot = await inspectUpgradeSnapshot(admission, execute);
+  if (snapshot.uncertain.length) {
+    const previous = snapshot.listed;
+    snapshot = await inspectUpgradeSnapshot(admission, execute);
+    for (const [kind, items] of Object.entries(previous)) {
+      for (const [id, name] of items) {
+        if (
+          !snapshot.listed[kind].has(id) &&
+          !(await upgradeResourceAbsent(kind, id, execute))
+        ) {
+          snapshot.uncertain.push(
+            `${kind}:${name} (${id}) remains outside selection`,
+          );
+        }
+      }
+    }
+  }
+  const failures = [...snapshot.uncertain];
+  const owned = snapshot.owned;
+  for (const resource of owned.filter(({ kind }) => kind === "container")) {
+    try {
+      const current = classifyUpgradeResource(
+        admission,
+        resource.kind,
+        resource.id,
+        resource.name,
+        await inspectUpgradeResource(resource.kind, resource.id, execute),
+      );
+      if (JSON.stringify(current) !== JSON.stringify(resource)) {
+        throw new Error(
+          `Changed owner document upgrade container ${resource.id}.`,
+        );
+      }
+      if (resource.name === `supabase_db_${admission.project}`)
+        await guardDatabase?.();
+      await upgradeDocker(execute, ["stop", resource.id]);
+      await upgradeDocker(execute, ["rm", resource.id]);
+    } catch (error) {
+      failures.push(
+        `container:${resource.name} (${resource.id}): ${error.message}`,
+      );
+    }
+  }
+  for (const resource of owned.filter(({ kind }) => kind === "volume")) {
+    try {
+      const current = classifyUpgradeResource(
+        admission,
+        resource.kind,
+        resource.id,
+        resource.name,
+        await inspectUpgradeResource(resource.kind, resource.id, execute),
+      );
+      if (JSON.stringify(current) !== JSON.stringify(resource)) {
+        throw new Error(
+          `Changed owner document upgrade volume ${resource.name}.`,
+        );
+      }
+      await upgradeDocker(execute, ["volume", "rm", resource.name]);
+    } catch (error) {
+      failures.push(`volume:${resource.name}: ${error.message}`);
+    }
+  }
+  for (const resource of owned.filter(({ kind }) => kind === "network")) {
+    try {
+      const current = classifyUpgradeResource(
+        admission,
+        resource.kind,
+        resource.id,
+        resource.name,
+        await inspectUpgradeResource(resource.kind, resource.id, execute),
+      );
+      if (JSON.stringify(current) !== JSON.stringify(resource)) {
+        throw new Error(
+          `Changed owner document upgrade network ${resource.id}.`,
+        );
+      }
+      await upgradeDocker(execute, ["network", "rm", resource.id]);
+    } catch (error) {
+      failures.push(
+        `network:${resource.name} (${resource.id}): ${error.message}`,
+      );
+    }
+  }
+  const remaining = upgradeResourceNames(
+    await listOwnerDocumentUpgradeResources(
+      admission.project,
+      admission.workdir,
+      execute,
+    ),
+  );
+  if (failures.length || remaining.length) {
+    throw new Error(
+      `Retained owner document upgrade resources: ${[...failures, ...remaining].join("; ")}.`,
+    );
+  }
+}
 
 function probeProcessGroup(group) {
   if (!Number.isInteger(group) || group <= 1) return false;
@@ -479,6 +867,7 @@ export async function main(
   const lifecycleStart = { startedAt: utcNow(), tick: monotonicNow() };
   let sharedSetupMs = 0;
   let checksMs = 0;
+  let earlyCleanupMs = 0;
   let lastAttemptedCommand = null;
   let group = "shared-setup";
   const startTiming = () => ({ startedAt: utcNow(), tick: monotonicNow() });
@@ -499,6 +888,8 @@ export async function main(
     const durationMs = monotonicNow() - start.tick;
     if (!inclusive && scope === "shared-setup") sharedSetupMs += durationMs;
     if (!inclusive && scope === "check") checksMs += durationMs;
+    if (!inclusive && scope === "shared-cleanup" && !cleaningUp)
+      earlyCleanupMs += durationMs;
     stdout(
       JSON.stringify({
         type: "access-phase",
@@ -763,7 +1154,9 @@ export async function main(
     }
   };
 
-  const upgradeProject = "rentcottage-owner-doc-upgrade";
+  let upgradeProject;
+  let ownerDocumentUpgradeAdmission;
+  let ownerDocumentUpgradeCleanup;
   const upgradeWorkdir = () => join(ownerDocumentUpgradeRoot, "project");
   const upgradeEnvironment = () => ({
     ...supabaseEnvironment,
@@ -771,191 +1164,55 @@ export async function main(
     SUPABASE_DB_CONTAINER: `supabase_db_${upgradeProject}`,
     SUPABASE_LOCAL_PROJECT: upgradeProject,
     SUPABASE_LOCAL_WORKDIR: upgradeWorkdir(),
+    SUPABASE_PROJECT_ID: upgradeProject,
   });
-  const upgradeDocker = async (args) => {
-    const result = await execute("docker", args, {
-      cleanup: true,
+  const upgradeCommand = (cleanup) => (command, commandArgs) =>
+    execute(command, commandArgs, {
+      cleanup,
       encoding: "utf8",
       env: upgradeEnvironment(),
       lifecycleLimit: cleanupCommandLimitMs,
       stdio: "pipe",
     });
-    if (result.status !== 0)
-      throw new Error(
-        `Unable to inspect owner document upgrade containers: docker ${args.join(" ")}.`,
-      );
-    return String(result.stdout ?? "");
-  };
-  const upgradeCandidates = async () => {
-    const format = "{{.ID}}|{{.Names}}";
-    const filters = [
-      `label=com.supabase.cli.project=${upgradeProject}`,
-      `name=_${upgradeProject}`,
-    ];
-    const candidates = new Map();
-    for (const filter of filters) {
-      const output = await upgradeDocker([
-        "ps",
-        "-a",
-        "--no-trunc",
-        "--filter",
-        filter,
-        "--format",
-        format,
-      ]);
-      for (const line of output.trim().split("\n").filter(Boolean)) {
-        const match = line.match(/^([a-f0-9]{64})\|([^|\r\n]+)$/);
-        if (!match)
-          throw new Error(
-            `Unreadable owner document upgrade container listing: ${line}.`,
-          );
-        if (
-          filter.startsWith("name=") &&
-          !match[2].endsWith(`_${upgradeProject}`)
-        )
-          continue;
-        candidates.set(match[1], match[2]);
-      }
-    }
-    return candidates;
-  };
-  const upgradeIdentifierAbsent = async (identifier) => {
-    const output = await upgradeDocker([
-      "ps",
-      "-a",
-      "--no-trunc",
-      "--filter",
-      `id=${identifier}`,
-      "--format",
-      "{{.ID}}",
-    ]);
-    const ids = output.trim().split("\n").filter(Boolean);
-    if (ids.some((id) => !/^[a-f0-9]{64}$/.test(id))) {
-      throw new Error(
-        `Unreadable owner document upgrade container identity for ${identifier}.`,
-      );
-    }
-    return !ids.includes(identifier);
-  };
-  const inspectUpgradeCandidates = async (candidates) => {
-    const uncertain = [];
-    let databasePresent = false;
-    for (const [identifier, name] of candidates) {
-      const result = await execute(
-        "docker",
-        [
-          "inspect",
-          identifier,
-          "--format",
-          '{{.Id}}|{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
-        ],
-        {
-          cleanup: true,
-          encoding: "utf8",
-          env: upgradeEnvironment(),
-          lifecycleLimit: cleanupCommandLimitMs,
-          stdio: "pipe",
-        },
-      );
-      if (result.status !== 0) {
-        uncertain.push(identifier);
-        continue;
-      }
-      const fields = String(result.stdout ?? "")
-        .trim()
-        .split("|");
-      if (fields.length !== 3 || fields[0] !== identifier) {
+  const reconcileOwnerDocumentUpgrade = () =>
+    (ownerDocumentUpgradeCleanup ??= (async () => {
+      if (
+        !ownerDocumentUpgradeAdmission ||
+        !existsSync(join(ownerDocumentUpgradeRoot, "startup-attempted"))
+      ) {
         throw new Error(
-          `Unreadable owner document upgrade container identity for ${identifier}.`,
+          "Owner document upgrade startup admission was not confirmed.",
         );
       }
-      if (fields[1] !== upgradeProject) {
+      if (
+        ownerDocumentUpgradeInvocation?.retentionError ||
+        (ownerDocumentUpgradeInvocation &&
+          (await processGroupExists(ownerDocumentUpgradeInvocation.group)))
+      ) {
         throw new Error(
-          `Owner document upgrade container ${identifier} has another project label.`,
+          "Owner document upgrade command group has not been confirmed exited.",
         );
       }
-      if (fields[2] !== upgradeWorkdir()) uncertain.push(identifier);
-      if (name === `supabase_db_${upgradeProject}`) databasePresent = true;
-    }
-    return { databasePresent, uncertain };
-  };
-  const reconcileOwnerDocumentUpgrade = async () => {
-    if (!ownerDocumentUpgradeRoot) return;
-    if (
-      ownerDocumentUpgradeInvocation?.retentionError ||
-      (ownerDocumentUpgradeInvocation &&
-        (await processGroupExists(ownerDocumentUpgradeInvocation.group)))
-    ) {
-      throw new Error(
-        "Owner document upgrade command group has not been confirmed exited.",
-      );
-    }
-    let previous;
-    let candidates;
-    let inspected;
-    for (let pass = 0; pass < 2; pass += 1) {
-      candidates = await upgradeCandidates();
-      if (previous) {
-        for (const identifier of previous.keys()) {
-          if (
-            !candidates.has(identifier) &&
-            !(await upgradeIdentifierAbsent(identifier))
-          ) {
-            throw new Error(
-              `Owner document upgrade container ${identifier} remains outside the project selection.`,
-            );
-          }
-        }
-      }
-      inspected = await inspectUpgradeCandidates(candidates);
-      if (inspected.uncertain.length === 0) break;
-      previous = candidates;
-      if (pass === 1) {
-        throw new Error(
-          `Owner document upgrade container ownership remains uncertain: ${inspected.uncertain.join(", ")}.`,
-        );
-      }
-    }
-    if (candidates.size > 0) {
-      if (inspected.databasePresent) {
-        await createLocalSupabaseConcurrencyHarness({
-          environment: upgradeEnvironment(),
-          workingDirectory: upgradeWorkdir(),
-        }).guardDisposableLocalDatabaseAsync((command, args, options) =>
-          runCommand(command, args, {
-            ...options,
-            env: upgradeEnvironment(),
-            lifecycleLimit: cleanupCommandLimitMs,
-          }),
-        );
-      }
-      const stopped = await execute(
-        "npx",
-        [
-          "supabase",
-          "stop",
-          "--no-backup",
-          "--project-id",
-          upgradeProject,
-          "--workdir",
-          upgradeWorkdir(),
-        ],
-        {
-          cleanup: true,
-          encoding: "utf8",
-          env: upgradeEnvironment(),
-          lifecycleLimit: cleanupCommandLimitMs,
-          stdio: "pipe",
-        },
-      );
-      if (stopped.status !== 0)
-        throw new Error("Owner document upgrade project stop failed.");
-      if ((await upgradeCandidates()).size !== 0) {
-        throw new Error("Owner document upgrade containers remain after stop.");
-      }
-    }
-    defaultRemoveTemp(ownerDocumentUpgradeRoot);
-  };
+      await cleanupOwnerDocumentUpgrade({
+        admission: ownerDocumentUpgradeAdmission,
+        execute: upgradeCommand(true),
+        guardDatabase: () =>
+          createLocalSupabaseConcurrencyHarness({
+            environment: upgradeEnvironment(),
+            workingDirectory: upgradeWorkdir(),
+          }).guardDisposableLocalDatabaseAsync((command, args, options) =>
+            runCommand(command, args, {
+              ...options,
+              env: upgradeEnvironment(),
+              lifecycleLimit: cleanupCommandLimitMs,
+            }),
+          ),
+      });
+      defaultRemoveTemp(ownerDocumentUpgradeRoot);
+    })().then(
+      () => null,
+      (error) => error,
+    ));
 
   const databaseConcurrencyEnvironment = {
     ...supabaseEnvironment,
@@ -1066,7 +1323,19 @@ export async function main(
       if (administratorRecordsUpgrade.status !== 0) {
         return administratorRecordsUpgrade.status;
       }
+      upgradeProject = makeOwnerDocumentUpgradeProject();
       ownerDocumentUpgradeRoot = makeUpgradeTemp(dockerConfig);
+      try {
+        ownerDocumentUpgradeAdmission = await admitOwnerDocumentUpgrade({
+          project: upgradeProject,
+          stateRoot: ownerDocumentUpgradeRoot,
+          workdir: upgradeWorkdir(),
+          execute: upgradeCommand(false),
+        });
+      } catch (error) {
+        stderr(`Owner document upgrade admission failed: ${error.message}`);
+        return 1;
+      }
       ownerDocumentUpgradeRunning = true;
       let ownerDocumentAccessUpgrade;
       try {
@@ -1077,6 +1346,8 @@ export async function main(
             env: {
               ...supabaseEnvironment,
               OWNER_DOCUMENT_UPGRADE_STATE_ROOT: ownerDocumentUpgradeRoot,
+              OWNER_DOCUMENT_UPGRADE_PROJECT: upgradeProject,
+              SUPABASE_PROJECT_ID: upgradeProject,
             },
             stdio: "inherit",
           },
@@ -1084,9 +1355,11 @@ export async function main(
       } finally {
         ownerDocumentUpgradeRunning = false;
       }
+      const upgradeCleanupError = await reconcileOwnerDocumentUpgrade();
       if (ownerDocumentAccessUpgrade.status !== 0) {
         return ownerDocumentAccessUpgrade.status;
       }
+      if (upgradeCleanupError) return 1;
       result = await execute(
         "npx",
         supabaseArguments(["supabase", "test", "db"]),
@@ -1556,9 +1829,8 @@ export async function main(
       lastAttemptedCommand = null;
       await interruptionCleanup;
       if (ownerDocumentUpgradeRoot) {
-        try {
-          await reconcileOwnerDocumentUpgrade();
-        } catch (error) {
+        const error = await reconcileOwnerDocumentUpgrade();
+        if (error) {
           retainedOwnerDocumentUpgrade = true;
           if (exitCode === 0) exitCode = 1;
           stderr(
@@ -1672,7 +1944,7 @@ export async function main(
       finishLifecycle(
         verificationThrew || failedCleanup ? 1 : exitCode,
         interruptedSignal,
-        cleanupReason ? null : observedCleanupMs,
+        cleanupReason ? null : earlyCleanupMs + observedCleanupMs,
         cleanupReason,
       );
     }

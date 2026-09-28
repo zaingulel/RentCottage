@@ -16,12 +16,27 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
-import { prepareIsolatedSupabaseWorkdir } from "./verify-access.mjs";
+import {
+  admitOwnerDocumentUpgrade,
+  cleanupOwnerDocumentUpgrade,
+  makeOwnerDocumentUpgradeProject,
+  OWNER_DOCUMENT_UPGRADE_PROJECT_PATTERN,
+  prepareIsolatedSupabaseWorkdir,
+} from "./verify-access.mjs";
 
 const shippedMigration = "20260927094658_administrator_records.sql";
 const upgradeMigration = "20260927222958_owner_document_review_access.sql";
-const project = "rentcottage-owner-doc-upgrade";
 const suppliedStateRoot = process.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT;
+const suppliedProject = process.env.OWNER_DOCUMENT_UPGRADE_PROJECT;
+if (Boolean(suppliedStateRoot) !== Boolean(suppliedProject)) {
+  throw new Error(
+    "Owner document upgrade state root and project must be supplied together.",
+  );
+}
+const project = suppliedProject ?? makeOwnerDocumentUpgradeProject();
+if (!OWNER_DOCUMENT_UPGRADE_PROJECT_PATTERN.test(project)) {
+  throw new Error("Invalid owner document upgrade project identity.");
+}
 const stateRoot =
   suppliedStateRoot ??
   mkdtempSync(join(tmpdir(), "rentcottage-owner-document-upgrade-"));
@@ -41,7 +56,8 @@ if (suppliedStateRoot) {
 const dockerConfig = join(stateRoot, "docker");
 mkdirSync(dockerConfig);
 let assertions = 0;
-let started = false;
+let admission;
+let startupAttempted = false;
 
 function check(actual, expected, message) {
   assert.deepEqual(actual, expected, message);
@@ -57,6 +73,7 @@ function run(command, args) {
       DOCKER_CONFIG: dockerConfig,
       DO_NOT_TRACK: "1",
       SUPABASE_TELEMETRY_DISABLED: "1",
+      SUPABASE_PROJECT_ID: project,
     },
     maxBuffer: 8 * 1024 * 1024,
   });
@@ -66,6 +83,22 @@ function run(command, args) {
       `${command} ${args.join(" ")} failed: ${result.stderr || result.stdout}`,
     );
   }
+}
+
+function executeDocker(command, args) {
+  return spawnSync(command, args, {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      DOCKER_CONFIG: dockerConfig,
+      DO_NOT_TRACK: "1",
+      SUPABASE_TELEMETRY_DISABLED: "1",
+      SUPABASE_PROJECT_ID: project,
+    },
+    maxBuffer: 1024 * 1024,
+    timeout: 30_000,
+  });
 }
 
 const workingDirectory = resolve(process.cwd());
@@ -101,6 +134,7 @@ const environment = {
   SUPABASE_DB_CONTAINER: `supabase_db_${project}`,
   SUPABASE_LOCAL_PROJECT: project,
   SUPABASE_LOCAL_WORKDIR: localWorkdir,
+  SUPABASE_PROJECT_ID: project,
 };
 const harness = createLocalSupabaseConcurrencyHarness({
   environment,
@@ -144,6 +178,14 @@ commit;`);
 }
 
 try {
+  admission = await admitOwnerDocumentUpgrade({
+    project,
+    stateRoot,
+    workdir: localWorkdir,
+    execute: executeDocker,
+  });
+  writeFileSync(join(stateRoot, "startup-attempted"), "yes");
+  startupAttempted = true;
   run(
     "npx",
     supabaseArguments([
@@ -154,7 +196,6 @@ try {
     ]),
   );
   harness.guardDisposableLocalDatabase();
-  started = true;
   check(
     harness.runSql(
       "select max(version) from supabase_migrations.schema_migrations;",
@@ -280,20 +321,21 @@ commit;`);
     `Owner document access upgrade verification passed (${assertions} assertions).`,
   );
 } finally {
-  if (started) {
-    harness.guardDisposableLocalDatabase();
-    run(
-      "npx",
-      supabaseArguments([
-        "supabase",
-        "stop",
-        "--no-backup",
-        "--project-id",
-        project,
-      ]),
-    );
-    if (!suppliedStateRoot) rmSync(stateRoot, { recursive: true, force: true });
-  } else {
+  if (!suppliedStateRoot && admission && startupAttempted) {
+    try {
+      await cleanupOwnerDocumentUpgrade({
+        admission,
+        execute: executeDocker,
+        guardDatabase: () => harness.guardDisposableLocalDatabase(),
+      });
+      rmSync(stateRoot, { recursive: true, force: true });
+    } catch (error) {
+      console.error(
+        `Retained upgrade verifier state at ${stateRoot}: ${error.message}`,
+      );
+      process.exitCode = 1;
+    }
+  } else if (!startupAttempted) {
     console.error(`Retained upgrade verifier state at ${stateRoot}.`);
   }
 }

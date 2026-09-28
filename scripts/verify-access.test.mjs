@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   readlinkSync,
   realpathSync,
   rmSync,
@@ -67,31 +68,31 @@ const stopCommand = [
     expect.any(String),
   ],
 ];
-const upgradeCleanupCommands = [
-  [
-    "docker",
+const upgradeInventoryCommands = [
+  ...["ps", "volume", "network"].flatMap((kind) =>
     [
-      "ps",
-      "-a",
-      "--no-trunc",
-      "--filter",
-      "label=com.supabase.cli.project=rentcottage-owner-doc-upgrade",
-      "--format",
-      "{{.ID}}|{{.Names}}",
-    ],
-  ],
-  [
-    "docker",
-    [
-      "ps",
-      "-a",
-      "--no-trunc",
-      "--filter",
-      "name=_rentcottage-owner-doc-upgrade",
-      "--format",
-      "{{.ID}}|{{.Names}}",
-    ],
-  ],
+      /^label=com\.supabase\.cli\.project=rentcottage-[a-f0-9]{28}$/,
+      /^name=_rentcottage-[a-f0-9]{28}$/,
+      /^label=com\.supabase\.cli\.workdir=.+\/project$/,
+    ].map((filter) => [
+      "docker",
+      [
+        ...(kind === "ps"
+          ? ["ps", "-a", "--no-trunc"]
+          : kind === "network"
+            ? ["network", "ls", "--no-trunc"]
+            : ["volume", "ls"]),
+        "--filter",
+        expect.stringMatching(filter),
+        "--format",
+        kind === "volume"
+          ? "{{.Name}}"
+          : kind === "ps"
+            ? "{{.ID}}|{{.Names}}"
+            : "{{.ID}}|{{.Name}}",
+      ],
+    ]),
+  ),
 ];
 const declaredSchemaDiffCommand = [
   "npx",
@@ -119,7 +120,10 @@ const databasePreflightCommands = [
   declaredSchemaDiffCommand,
   ["node", ["scripts/verify-customer-review-upgrade.mjs"]],
   ["node", ["scripts/verify-administrator-records-upgrade.mjs"]],
+  ...upgradeInventoryCommands,
   ["node", ["scripts/verify-owner-document-access-upgrade.mjs"]],
+  ...upgradeInventoryCommands,
+  ...upgradeInventoryCommands,
   ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
 ];
 const databaseCheckCommands = [
@@ -237,12 +241,30 @@ function ownedRun(
   { project = "rentcottage-verification", workdir } = {},
 ) {
   return vi.fn((command, args, options) => {
+    if (command === "docker" && args[0] !== "inspect") {
+      return { status: 0, stdout: "", stderr: "" };
+    }
     if (command === "docker" && args[0] === "inspect") {
       const ownedWorkdir =
         typeof workdir === "function"
           ? workdir()
           : (workdir ?? options.env.SUPABASE_LOCAL_WORKDIR);
       return { status: 0, stdout: `${project}|${ownedWorkdir}\n`, stderr: "" };
+    }
+    if (
+      command === "node" &&
+      args[0] === "scripts/verify-owner-document-access-upgrade.mjs"
+    ) {
+      mkdirSync(options.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT, {
+        recursive: true,
+      });
+      writeFileSync(
+        join(
+          options.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT,
+          "startup-attempted",
+        ),
+        "yes",
+      );
     }
     if (
       command === "npx" &&
@@ -2061,6 +2083,460 @@ describe("local Supabase concurrency harness", () => {
 });
 
 describe("access verification command", () => {
+  it.each([false, true])(
+    "owner document upgrade interruption reconciles its exact project: stranded volume and network, in use %s",
+    async (volumeInUse) => {
+      const parentRoot = mkdtempSync(
+        join(tmpdir(), "access-upgrade-resources-"),
+      );
+      const legacyVolume =
+        "supabase_edge_runtime_rentcottage-owner-doc-upgrade";
+      let volumePresent = false;
+      let networkPresent = false;
+      let upgradeProject;
+      let upgradeRoot;
+      const calls = [];
+      const run = vi.fn(async (command, args, options) => {
+        calls.push([command, args]);
+        if (command === "docker" && args[0] === "inspect") {
+          return {
+            status: 0,
+            stdout: `rentcottage-verification|${parentRoot}/project\n`,
+          };
+        }
+        if (command === "docker" && args[0] === "ps") {
+          return { status: 0, stdout: "" };
+        }
+        if (command === "docker" && args[0] === "volume" && args[1] === "ls") {
+          return {
+            status: 0,
+            stdout: volumePresent
+              ? `supabase_storage_${upgradeProject}\n${args.includes(`name=_${upgradeProject}`) ? `${legacyVolume}\n` : ""}`
+              : "",
+          };
+        }
+        if (
+          command === "docker" &&
+          args[0] === "volume" &&
+          args[1] === "inspect"
+        ) {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              Name: `supabase_storage_${upgradeProject}`,
+              CreatedAt: "2026-09-28T00:00:00Z",
+              Driver: "local",
+              Labels: { "com.supabase.cli.project": upgradeProject },
+            }),
+          };
+        }
+        if (command === "docker" && args[0] === "network" && args[1] === "ls") {
+          return {
+            status: 0,
+            stdout: networkPresent
+              ? `${"d".repeat(64)}|supabase_network_${upgradeProject}\n`
+              : "",
+          };
+        }
+        if (
+          command === "docker" &&
+          args[0] === "network" &&
+          args[1] === "inspect"
+        ) {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              Id: "d".repeat(64),
+              Name: `supabase_network_${upgradeProject}`,
+              Created: "2026-09-28T00:00:00Z",
+              Driver: "bridge",
+              Labels: { "com.supabase.cli.project": upgradeProject },
+            }),
+          };
+        }
+        if (command === "docker" && args[0] === "volume" && args[1] === "rm") {
+          if (volumeInUse) return { status: 5, stderr: "volume is in use" };
+          volumePresent = false;
+        }
+        if (command === "docker" && args[0] === "network" && args[1] === "rm")
+          networkPresent = false;
+        if (command === "npx" && args[1] === "db" && args[2] === "diff") {
+          return { status: 0, stdout: emptyDeclaredSchemaDiff };
+        }
+        if (
+          command === "node" &&
+          args[0] === "scripts/verify-owner-document-access-upgrade.mjs"
+        ) {
+          upgradeProject = options.env.OWNER_DOCUMENT_UPGRADE_PROJECT;
+          upgradeRoot = options.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT;
+          mkdirSync(upgradeRoot, { recursive: true });
+          writeFileSync(join(upgradeRoot, "startup-attempted"), "yes");
+          volumePresent = true;
+          networkPresent = true;
+          process.emit("SIGTERM");
+          return { status: 143 };
+        }
+        return { status: 0, stdout: "" };
+      });
+      try {
+        expect(
+          await mainWithPreparedProject(["--database"], {
+            makeTemp: () => parentRoot,
+            run,
+            stdout: vi.fn(),
+            stderr: vi.fn(),
+          }),
+        ).toBe(143);
+        expect(volumePresent).toBe(volumeInUse);
+        expect(networkPresent).toBe(false);
+        expect(existsSync(upgradeRoot)).toBe(volumeInUse);
+        expect(
+          calls.some(
+            ([command, args]) =>
+              command === "docker" &&
+              args[0] === "volume" &&
+              args[1] === "rm" &&
+              args[2] === legacyVolume,
+          ),
+        ).toBe(false);
+        expect(
+          calls.some(
+            ([command, args]) =>
+              command === "docker" && args[0] === "volume" && args[1] === "rm",
+          ),
+        ).toBe(true);
+        expect(
+          calls.some(
+            ([command, args]) =>
+              command === "docker" && args[0] === "network" && args[1] === "rm",
+          ),
+        ).toBe(true);
+      } finally {
+        rmSync(parentRoot, { recursive: true, force: true });
+      }
+    },
+  );
+  it("owner document upgrade interruption reconciles its exact project: supplied namespace collision refuses child startup", async () => {
+    const fixtureRoot = mkdtempSync(
+      join(tmpdir(), "access-upgrade-collision-"),
+    );
+    const stateRoot = join(fixtureRoot, "state");
+    const fakeBin = join(fixtureRoot, "bin");
+    mkdirSync(stateRoot);
+    mkdirSync(fakeBin);
+    const project = `rentcottage-${"f".repeat(28)}`;
+    const commandPath = join(fakeBin, "command.mjs");
+    writeFileSync(
+      commandPath,
+      `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+import { basename, join } from "node:path";
+const command = basename(process.argv[1]);
+const args = process.argv.slice(2);
+const root = process.env.ACCESS_UPGRADE_COLLISION_ROOT;
+appendFileSync(join(root, "commands.log"), command + " " + args.join(" ") + "\\n");
+if (command === "docker" && args[0] === "volume" && args[1] === "ls") {
+  process.stdout.write("supabase_storage_${project}\\n");
+}
+if (command === "docker" && args[0] === "network" && args[1] === "ls") {
+  process.stdout.write("${"e".repeat(64)}|supabase_network_${project}\\n");
+}
+process.exit(0);
+`,
+    );
+    chmodSync(commandPath, 0o755);
+    symlinkSync(commandPath, join(fakeBin, "docker"));
+    symlinkSync(commandPath, join(fakeBin, "npx"));
+    try {
+      const child = spawnSync(
+        process.execPath,
+        ["scripts/verify-owner-document-access-upgrade.mjs"],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            ACCESS_UPGRADE_COLLISION_ROOT: fixtureRoot,
+            OWNER_DOCUMENT_UPGRADE_PROJECT: project,
+            OWNER_DOCUMENT_UPGRADE_STATE_ROOT: stateRoot,
+            PATH: `${fakeBin}:${process.env.PATH}`,
+          },
+          timeout: 10_000,
+        },
+      );
+      expect(child.status).toBe(1);
+      expect(child.stderr).toContain("namespace is already occupied");
+      expect(existsSync(stateRoot)).toBe(true);
+      const commands = readFileSync(join(fixtureRoot, "commands.log"), "utf8");
+      expect(commands).not.toMatch(/^npx /m);
+      expect(commands).not.toMatch(/docker (?:stop|rm|volume rm|network rm)/);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+  it("owner document upgrade interruption reconciles its exact project: rejects CLI-truncated supplied identity before Docker", () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "access-upgrade-long-id-"));
+    const stateRoot = join(fixtureRoot, "state");
+    const fakeBin = join(fixtureRoot, "bin");
+    mkdirSync(stateRoot);
+    mkdirSync(fakeBin);
+    const commandPath = join(fakeBin, "command.mjs");
+    writeFileSync(
+      commandPath,
+      `#!${process.execPath}\nimport { writeFileSync } from "node:fs";\nwriteFileSync(process.env.ACCESS_LONG_ID_COMMAND, "called");\nprocess.exit(0);\n`,
+    );
+    chmodSync(commandPath, 0o755);
+    symlinkSync(commandPath, join(fakeBin, "docker"));
+    symlinkSync(commandPath, join(fakeBin, "npx"));
+    try {
+      const child = spawnSync(
+        process.execPath,
+        ["scripts/verify-owner-document-access-upgrade.mjs"],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            ACCESS_LONG_ID_COMMAND: join(fixtureRoot, "command-called"),
+            OWNER_DOCUMENT_UPGRADE_PROJECT: `rentcottage-owner-doc-upgrade-${"a".repeat(32)}`,
+            OWNER_DOCUMENT_UPGRADE_STATE_ROOT: stateRoot,
+            PATH: `${fakeBin}:${process.env.PATH}`,
+          },
+          timeout: 10_000,
+        },
+      );
+      expect(child.status).toBe(1);
+      expect(child.stderr).toContain(
+        "Invalid owner document upgrade project identity",
+      );
+      expect(existsSync(join(fixtureRoot, "command-called"))).toBe(false);
+      expect(readdirSync(stateRoot)).toEqual([]);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+  it("owner document upgrade interruption reconciles its exact project: workdir mismatch retains provider resources", async () => {
+    const parentRoot = mkdtempSync(join(tmpdir(), "access-upgrade-mismatch-"));
+    let childRoot;
+    let childProject;
+    let started = false;
+    const calls = [];
+    const diagnostics = [];
+    const wrongId = "e".repeat(64);
+    const run = vi.fn(async (command, args, options) => {
+      calls.push([command, args]);
+      if (command === "docker" && args[0] === "inspect") {
+        return {
+          status: 0,
+          stdout: `rentcottage-verification|${parentRoot}/project\n`,
+        };
+      }
+      if (command === "docker" && args[0] === "ps") {
+        return {
+          status: 0,
+          stdout:
+            started &&
+            args.includes(`label=com.supabase.cli.workdir=${childRoot}/project`)
+              ? `${wrongId}|supabase_db_rentcottage-other\n`
+              : "",
+        };
+      }
+      if (
+        command === "docker" &&
+        args[0] === "container" &&
+        args[1] === "inspect"
+      ) {
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            Id: wrongId,
+            Name: "/supabase_db_rentcottage-other",
+            Created: "2026-09-28T00:00:00Z",
+            Config: {
+              Labels: {
+                "com.supabase.cli.project": "rentcottage-other",
+                "com.supabase.cli.workdir": `${childRoot}/project`,
+              },
+            },
+          }),
+        };
+      }
+      if (
+        command === "docker" &&
+        ["volume", "network"].includes(args[0]) &&
+        args[1] === "ls"
+      ) {
+        return { status: 0, stdout: "" };
+      }
+      if (command === "npx" && args[1] === "db" && args[2] === "diff") {
+        return { status: 0, stdout: emptyDeclaredSchemaDiff };
+      }
+      if (
+        command === "node" &&
+        args[0] === "scripts/verify-owner-document-access-upgrade.mjs"
+      ) {
+        childRoot = options.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT;
+        childProject = options.env.OWNER_DOCUMENT_UPGRADE_PROJECT;
+        mkdirSync(childRoot, { recursive: true });
+        writeFileSync(join(childRoot, "startup-attempted"), "yes");
+        started = true;
+        process.emit("SIGTERM");
+        return { status: 143 };
+      }
+      return { status: 0, stdout: "" };
+    });
+    try {
+      expect(
+        await mainWithPreparedProject(["--database"], {
+          makeTemp: () => parentRoot,
+          run,
+          stdout: vi.fn(),
+          stderr: (message) => diagnostics.push(message),
+        }),
+      ).toBe(143);
+      expect(childProject).toMatch(/^rentcottage-[a-f0-9]{28}$/);
+      expect(existsSync(childRoot)).toBe(true);
+      expect(
+        calls.some(
+          ([command, args]) =>
+            command === "docker" && ["stop", "rm"].includes(args[0]),
+        ),
+      ).toBe(false);
+      expect(diagnostics.join("\n")).toContain(
+        "Retained owner document upgrade project",
+      );
+    } finally {
+      rmSync(parentRoot, { recursive: true, force: true });
+    }
+  });
+  it("owner document upgrade interruption reconciles its exact project: pins child commands against inherited project override", () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "access-upgrade-override-"));
+    const stateRoot = join(fixtureRoot, "state");
+    const fakeBin = join(fixtureRoot, "bin");
+    mkdirSync(stateRoot);
+    mkdirSync(fakeBin);
+    const project = `rentcottage-${"c".repeat(28)}`;
+    const commandPath = join(fakeBin, "command.mjs");
+    writeFileSync(
+      commandPath,
+      `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+import { basename, join } from "node:path";
+const command = basename(process.argv[1]);
+const args = process.argv.slice(2);
+appendFileSync(join(process.env.ACCESS_OVERRIDE_ROOT, "commands.log"),
+  command + " " + args.join(" ") + "|" + process.env.SUPABASE_PROJECT_ID + "\\n");
+if (command === "npx" && args[1] === "start") process.exit(7);
+process.exit(0);
+`,
+    );
+    chmodSync(commandPath, 0o755);
+    symlinkSync(commandPath, join(fakeBin, "docker"));
+    symlinkSync(commandPath, join(fakeBin, "npx"));
+    try {
+      const child = spawnSync(
+        process.execPath,
+        ["scripts/verify-owner-document-access-upgrade.mjs"],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            ACCESS_OVERRIDE_ROOT: fixtureRoot,
+            OWNER_DOCUMENT_UPGRADE_PROJECT: project,
+            OWNER_DOCUMENT_UPGRADE_STATE_ROOT: stateRoot,
+            SUPABASE_PROJECT_ID: "rentcottage-hostile-inherited",
+            PATH: `${fakeBin}:${process.env.PATH}`,
+          },
+          timeout: 10_000,
+        },
+      );
+      expect(child.status).toBe(1);
+      const lines = readFileSync(join(fixtureRoot, "commands.log"), "utf8")
+        .trim()
+        .split("\n");
+      expect(lines.some((line) => line.startsWith("npx supabase start "))).toBe(
+        true,
+      );
+      expect(lines.every((line) => line.endsWith(`|${project}`))).toBe(true);
+      expect(existsSync(stateRoot)).toBe(true);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+  it("owner document upgrade interruption reconciles its exact project: pins managed upgrade commands without altering parent identity", async () => {
+    const parentRoot = mkdtempSync(
+      join(tmpdir(), "access-upgrade-managed-override-"),
+    );
+    let project;
+    const calls = [];
+    const run = vi.fn(async (command, args, options) => {
+      calls.push([command, args, options.env]);
+      if (command === "docker" && args[0] === "inspect") {
+        return {
+          status: 0,
+          stdout: `rentcottage-verification|${parentRoot}/project\n`,
+        };
+      }
+      if (
+        command === "docker" &&
+        (args[0] === "ps" ||
+          (["volume", "network"].includes(args[0]) && args[1] === "ls"))
+      )
+        return { status: 0, stdout: "" };
+      if (command === "npx" && args[1] === "db" && args[2] === "diff") {
+        return { status: 0, stdout: emptyDeclaredSchemaDiff };
+      }
+      if (
+        command === "node" &&
+        args[0] === "scripts/verify-owner-document-access-upgrade.mjs"
+      ) {
+        project = options.env.OWNER_DOCUMENT_UPGRADE_PROJECT;
+        writeFileSync(
+          join(
+            options.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT,
+            "startup-attempted",
+          ),
+          "yes",
+        );
+        process.emit("SIGTERM");
+        return { status: 143 };
+      }
+      return { status: 0, stdout: "" };
+    });
+    try {
+      expect(
+        await mainWithPreparedProject(["--database"], {
+          environment: { SUPABASE_PROJECT_ID: "rentcottage-hostile-inherited" },
+          makeTemp: () => parentRoot,
+          makeUpgradeTemp: (root) =>
+            mkdtempSync(join(root, "owner-document-upgrade-")),
+          removeTemp: (path) => rmSync(path, { recursive: true, force: true }),
+          run,
+          stderr: vi.fn(),
+          stdout: vi.fn(),
+        }),
+      ).toBe(143);
+      expect(project).toMatch(/^rentcottage-[a-f0-9]{28}$/);
+      const childIndex = calls.findIndex(
+        ([command, args]) =>
+          command === "node" &&
+          args[0] === "scripts/verify-owner-document-access-upgrade.mjs",
+      );
+      expect(childIndex).toBeGreaterThan(0);
+      expect(calls[0][2].SUPABASE_PROJECT_ID).toBe(
+        "rentcottage-hostile-inherited",
+      );
+      expect(calls[childIndex][2].SUPABASE_PROJECT_ID).toBe(project);
+      for (const [command, args, environment] of calls.slice(childIndex + 1)) {
+        if (command === "docker" && args[0] !== "inspect") {
+          expect(environment.SUPABASE_PROJECT_ID).toBe(project);
+        }
+      }
+    } finally {
+      rmSync(parentRoot, { recursive: true, force: true });
+    }
+  });
   const realUpgradeProof =
     process.env.OWNER_DOCUMENT_UPGRADE_DOCKER_PROOF === "1" ? it : it.skip;
   realUpgradeProof.each(["SIGINT", "SIGTERM"])(
@@ -2080,17 +2556,18 @@ const command = basename(process.argv[1]);
 const args = process.argv.slice(2);
 const root = process.env.ACCESS_UPGRADE_DOCKER_ROOT;
 const childRoot = process.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT;
-const childProject = process.env.SUPABASE_LOCAL_PROJECT === "rentcottage-owner-doc-upgrade";
 if (command === "node") {
   if (args[0] === "scripts/verify-owner-document-access-upgrade.mjs") {
-    writeFileSync(join(root, "child.ready"), JSON.stringify({ pid: process.pid, root: childRoot }));
+    writeFileSync(join(root, "child.ready"), JSON.stringify({
+      pid: process.pid, root: childRoot, project: process.env.OWNER_DOCUMENT_UPGRADE_PROJECT,
+    }));
     const result = spawnSync(process.execPath, [resolve(args[0])], { env: process.env, stdio: "inherit" });
     process.exit(result.status ?? 1);
   }
   process.exit(0);
 }
 if (command === "npx") {
-  if (childRoot || args.includes("rentcottage-owner-doc-upgrade")) {
+  if (childRoot) {
     const result = spawnSync(join(dirname(process.execPath), "npx"), args, {
       env: { ...process.env, PATH: process.env.ACCESS_ORIGINAL_PATH }, encoding: "utf8",
     });
@@ -2104,7 +2581,7 @@ if (command === "npx") {
   process.exit(0);
 }
 if (command === "docker") {
-  if (!childProject && args[0] === "inspect" && args[1] === "supabase_db_rentcottage-verification") {
+  if (args[0] === "inspect" && args[1] === "supabase_db_rentcottage-verification") {
     process.stdout.write("rentcottage-verification|" + process.env.SUPABASE_LOCAL_WORKDIR + "\\n");
     process.exit(0);
   }
@@ -2128,6 +2605,29 @@ process.exit(1);
       }
       let wrapper;
       let childRoot;
+      let project;
+      const inventory = (filter, format) => {
+        const commands = [
+          ["ps", "-a", "--no-trunc", "--filter", filter, "--format", format],
+          ["volume", "ls", "--filter", filter, "--format", "{{.Name}}"],
+          [
+            "network",
+            "ls",
+            "--no-trunc",
+            "--filter",
+            filter,
+            "--format",
+            "{{.ID}}|{{.Name}}",
+          ],
+        ];
+        return commands.map((args) => {
+          const result = spawnSync("/usr/bin/docker", args, {
+            encoding: "utf8",
+          });
+          expect(result.status, result.stderr).toBe(0);
+          return result.stdout.trim();
+        });
+      };
       try {
         wrapper = spawn(
           process.execPath,
@@ -2138,6 +2638,7 @@ process.exit(1);
               ...process.env,
               ACCESS_ORIGINAL_PATH: process.env.PATH,
               ACCESS_UPGRADE_DOCKER_ROOT: root,
+              SUPABASE_PROJECT_ID: "rentcottage-hostile-inherited",
               PATH: `${fakeBin}:${process.env.PATH}`,
               TMPDIR: root,
             },
@@ -2151,52 +2652,60 @@ process.exit(1);
           "real upgrade SQL command readiness",
           120_000,
         );
-        childRoot = JSON.parse(
+        const ready = JSON.parse(
           readFileSync(join(root, "child.ready"), "utf8"),
-        ).root;
+        );
+        childRoot = ready.root;
+        project = ready.project;
+        expect(project).toMatch(/^rentcottage-[a-f0-9]{28}$/);
+        const database = spawnSync(
+          "/usr/bin/docker",
+          [
+            "inspect",
+            `supabase_db_${project}`,
+            "--format",
+            '{{.Id}}|{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+          ],
+          { encoding: "utf8" },
+        );
+        expect(database.status, database.stderr).toBe(0);
+        expect(database.stdout.trim()).toMatch(
+          new RegExp(`^[a-f0-9]{64}\\|${project}\\|${childRoot}/project$`),
+        );
+        expect(
+          inventory(
+            `label=com.supabase.cli.project=${project}`,
+            "{{.ID}}",
+          ).every(Boolean),
+        ).toBe(true);
         process.kill(wrapper.pid, signal);
         process.kill(wrapper.pid, signal);
         expect(
           await waitForChildExit(wrapper, "real upgrade wrapper", 30_000),
           stderr.join(""),
         ).toEqual({ code: signal === "SIGINT" ? 130 : 143, signal: null });
-        const remaining = spawnSync(
-          "/usr/bin/docker",
-          [
-            "ps",
-            "-a",
-            "--no-trunc",
-            "--filter",
-            "label=com.supabase.cli.project=rentcottage-owner-doc-upgrade",
-            "--format",
-            "{{.ID}}",
-          ],
-          { encoding: "utf8" },
-        );
-        expect(remaining.status, remaining.stderr).toBe(0);
-        expect(remaining.stdout.trim(), stderr.join("")).toBe("");
+        for (const filter of [
+          `label=com.supabase.cli.project=${project}`,
+          `name=_${project}`,
+          `label=com.supabase.cli.workdir=${childRoot}/project`,
+        ]) {
+          expect(inventory(filter, "{{.ID}}")).toEqual(["", "", ""]);
+        }
         expect(existsSync(childRoot)).toBe(false);
       } finally {
         if (wrapper && processIsAlive(wrapper.pid))
           process.kill(wrapper.pid, "SIGTERM");
-        const remaining = spawnSync(
-          "/usr/bin/docker",
-          [
-            "ps",
-            "-a",
-            "--no-trunc",
-            "--filter",
-            "label=com.supabase.cli.project=rentcottage-owner-doc-upgrade",
-            "--format",
+        if (
+          project &&
+          inventory(
+            `label=com.supabase.cli.project=${project}`,
             "{{.ID}}",
-          ],
-          { encoding: "utf8" },
-        );
-        if (remaining.status === 0 && !remaining.stdout.trim()) {
+          ).every((output) => !output)
+        ) {
           rmSync(root, { recursive: true, force: true });
         } else {
           console.error(
-            `Retained Docker proof state at ${root}; upgrade workdir ${childRoot ?? "unavailable"}.`,
+            `Retained Docker proof state at ${root}; upgrade project ${project ?? "unavailable"}, workdir ${childRoot ?? "unavailable"}.`,
           );
         }
       }
@@ -2223,6 +2732,8 @@ const args = process.argv.slice(2);
 const root = process.env.ACCESS_UPGRADE_PROCESS_ROOT;
 const childRoot = process.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT ??
   (existsSync(join(root, "child.ready")) ? JSON.parse(readFileSync(join(root, "child.ready"), "utf8")).root : undefined);
+const project = process.env.OWNER_DOCUMENT_UPGRADE_PROJECT ??
+  (existsSync(join(root, "child.ready")) ? JSON.parse(readFileSync(join(root, "child.ready"), "utf8")).project : undefined);
 const id = ${JSON.stringify(id)};
 const service = () => JSON.parse(readFileSync(join(root, "service.json"), "utf8"));
 const alive = () => existsSync(join(root, "service.json")) && !existsSync(join(root, "stopped"));
@@ -2232,12 +2743,20 @@ if (command === "docker") {
   } else if (args[0] === "ps") {
     if (alive()) {
       if (args.includes("{{.ID}}")) process.stdout.write(id + "\\n");
-      else process.stdout.write(id + "|supabase_db_rentcottage-owner-doc-upgrade\\n");
+      else process.stdout.write(id + "|supabase_db_" + project + "\\n");
     }
-  } else if (args[0] === "inspect" && args[1] === id) {
-    process.stdout.write(id + "|rentcottage-owner-doc-upgrade|" + childRoot + "/project\\n");
-  } else if (args[0] === "inspect" && args[1] === "supabase_db_rentcottage-owner-doc-upgrade") {
-    process.stdout.write("rentcottage-owner-doc-upgrade|" + childRoot + "/project\\n");
+  } else if (args[0] === "container" && args[1] === "inspect") {
+    process.stdout.write(JSON.stringify({ Id: id, Name: "/supabase_db_" + project,
+      Created: "2026-09-28T00:00:00Z",
+      Config: { Labels: { "com.supabase.cli.project": project, "com.supabase.cli.workdir": childRoot + "/project" } } }));
+  } else if (args[0] === "inspect" && args[1] === "supabase_db_" + project) {
+    process.stdout.write(project + "|" + childRoot + "/project\\n");
+  } else if (args[0] === "stop") {
+    appendFileSync(join(root, "stops.log"), "docker stop " + args[1] + "\\n");
+    writeFileSync(join(root, "stopped"), "yes");
+    process.kill(service().pid, "SIGTERM");
+  } else if (args[0] === "volume" && args[1] === "ls") {
+  } else if (args[0] === "network" && args[1] === "ls") {
   }
   process.exit(0);
 }
@@ -2245,10 +2764,6 @@ if (command === "npx") {
   if (args[1] === "db" && args[2] === "diff") process.stdout.write(${JSON.stringify(emptyDeclaredSchemaDiff)});
   if (args[1] === "stop") {
     appendFileSync(join(root, "stops.log"), args.join(" ") + "\\n");
-    if (args.includes("rentcottage-owner-doc-upgrade")) {
-      writeFileSync(join(root, "stopped"), "yes");
-      process.kill(service().pid, "SIGTERM");
-    }
   }
   process.exit(0);
 }
@@ -2259,7 +2774,8 @@ if (command === "node" && args[0] === "scripts/verify-owner-document-access-upgr
   });
   child.unref();
   writeFileSync(join(root, "service.json"), JSON.stringify({ pid: child.pid, token }));
-  writeFileSync(join(root, "child.ready"), JSON.stringify({ pid: process.pid, root: childRoot }));
+  writeFileSync(join(childRoot, "startup-attempted"), "yes");
+  writeFileSync(join(root, "child.ready"), JSON.stringify({ pid: process.pid, root: childRoot, project }));
   spawnSync(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 }
 process.exit(0);
@@ -2330,13 +2846,14 @@ process.exit(0);
           .trim()
           .split("\n");
         expect(
-          stops.filter((line) =>
-            line.includes("rentcottage-owner-doc-upgrade"),
-          ),
+          stops.filter((line) => line.startsWith("docker stop ")),
         ).toHaveLength(1);
         expect(
           stops.filter((line) => line.includes("rentcottage-verification")),
         ).toHaveLength(1);
+        expect(
+          stops.some((line) => line.includes(`--project-id ${child.project}`)),
+        ).toBe(false);
         expect(existsSync(child.root)).toBe(false);
       } finally {
         if (wrapper && processIsAlive(wrapper.pid))
@@ -2364,8 +2881,8 @@ process.exit(0);
     ["SIGINT", "owned partial startup", true],
     ["SIGTERM", "no containers", false],
     ["SIGTERM", "transient disappears", true],
-    ["SIGTERM", "transient persists", false],
-    ["SIGTERM", "transient escapes selection", false],
+    ["SIGTERM", "transient persists", true],
+    ["SIGTERM", "transient escapes selection", true],
     ["SIGTERM", "refresh fails", false],
     ["SIGTERM", "wrong workdir", false],
     ["SIGTERM", "malformed listing", false],
@@ -2386,6 +2903,8 @@ process.exit(0);
       const calls = [];
       const diagnostics = [];
       let childWorkdir;
+      let upgradeProject;
+      let resourcesCreated = false;
       let childContainer = !["no containers", "normal child cleanup"].includes(
         scenario,
       );
@@ -2396,6 +2915,7 @@ process.exit(0);
       const run = vi.fn(async (command, args, options) => {
         calls.push([command, args, options]);
         if (command === "docker" && args[0] === "ps") {
+          if (!resourcesCreated) return { status: 0, stdout: "" };
           if (
             scenario === "unreadable listing" ||
             (scenario === "refresh fails" && listPass > 0)
@@ -2417,8 +2937,8 @@ process.exit(0);
             return { status: 0, stdout: "invalid\n" };
           const candidateName =
             scenario === "owned partial startup"
-              ? "supabase_auth_rentcottage-owner-doc-upgrade"
-              : "supabase_db_rentcottage-owner-doc-upgrade";
+              ? `supabase_auth_${upgradeProject}`
+              : `supabase_db_${upgradeProject}`;
           const stable = childContainer ? `${ownedId}|${candidateName}\n` : "";
           const transient =
             childContainer &&
@@ -2446,21 +2966,49 @@ process.exit(0);
               stdout: `rentcottage-verification|${parentRoot}/project\n`,
             };
           }
-          if (args[1] === "supabase_db_rentcottage-owner-doc-upgrade") {
+          if (args[1] === `supabase_db_${upgradeProject}`) {
             return {
               status: 0,
-              stdout: `rentcottage-owner-doc-upgrade|${childWorkdir}\n`,
+              stdout: `${upgradeProject}|${childWorkdir}\n`,
             };
           }
+        }
+        if (
+          command === "docker" &&
+          args[0] === "container" &&
+          args[1] === "inspect"
+        ) {
           const workdir =
-            args[1] === transientId || scenario === "wrong workdir"
+            args[2] === transientId || scenario === "wrong workdir"
               ? "/tmp/another-job/project"
               : childWorkdir;
           return {
             status: 0,
-            stdout: `${args[1]}|rentcottage-owner-doc-upgrade|${workdir}\n`,
+            stdout: JSON.stringify({
+              Id: args[2],
+              Name:
+                args[2] === transientId
+                  ? "/supabase_vector_random"
+                  : scenario === "owned partial startup"
+                    ? `/supabase_auth_${upgradeProject}`
+                    : `/supabase_db_${upgradeProject}`,
+              Created: "2026-09-28T00:00:00Z",
+              Config: {
+                Labels:
+                  args[2] === transientId
+                    ? { "com.supabase.cli.project": upgradeProject }
+                    : {
+                        "com.supabase.cli.project": upgradeProject,
+                        "com.supabase.cli.workdir": workdir,
+                      },
+              },
+            }),
           };
         }
+        if (command === "docker" && args[0] === "volume" && args[1] === "ls")
+          return { status: 0, stdout: "" };
+        if (command === "docker" && args[0] === "network" && args[1] === "ls")
+          return { status: 0, stdout: "" };
         if (command === "npx" && args[1] === "db" && args[2] === "diff") {
           return { status: 0, stdout: emptyDeclaredSchemaDiff };
         }
@@ -2469,21 +3017,23 @@ process.exit(0);
           args[0] === "scripts/verify-owner-document-access-upgrade.mjs"
         ) {
           suppliedRoot = options.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT;
+          upgradeProject = options.env.OWNER_DOCUMENT_UPGRADE_PROJECT;
           expect(suppliedRoot).toBeTruthy();
+          expect(upgradeProject).toMatch(/^rentcottage-[a-f0-9]{28}$/);
           childWorkdir = join(suppliedRoot, "project");
+          resourcesCreated = true;
+          writeFileSync(join(suppliedRoot, "startup-attempted"), "yes");
           if (signal) {
             process.emit(signal);
             if (scenario === "repeated signal") process.emit(signal);
           }
           return { status: signal === "SIGINT" ? 130 : signal ? 143 : 12 };
         }
-        if (
-          command === "npx" &&
-          args[1] === "stop" &&
-          args.includes("rentcottage-owner-doc-upgrade")
-        ) {
+        if (command === "docker" && args[0] === "stop") {
           if (scenario === "failed stop") return { status: 6 };
           if (scenario === "signal during stop") process.emit(signal);
+        }
+        if (command === "docker" && args[0] === "rm") {
           childContainer = false;
         }
         return { status: 0, stdout: "" };
@@ -2501,9 +3051,7 @@ process.exit(0);
         expect(status).toBe(signal === "SIGINT" ? 130 : signal ? 143 : 12);
         const childStops = calls.filter(
           ([command, args]) =>
-            command === "npx" &&
-            args[1] === "stop" &&
-            args.includes("rentcottage-owner-doc-upgrade"),
+            command === "docker" && args[0] === "stop" && args[1] === ownedId,
         );
         expect(childStops).toHaveLength(
           expectedStop || scenario === "failed stop" ? 1 : 0,
@@ -2713,13 +3261,29 @@ process.exit(0);
     const sourcePath = join(process.cwd(), "supabase/config.toml");
     const sourceConfig = readFileSync(sourcePath, "utf8");
     const workdir = realpathSync(stateRoot) + "/project";
-    const run = vi.fn((command, args) => {
-      if (command === "docker")
+    const run = vi.fn((command, args, options) => {
+      if (command === "docker" && args[0] === "inspect")
         return {
           status: 0,
           stdout: `rentcottage-verification|${workdir}\n`,
           stderr: "",
         };
+      if (command === "docker") return { status: 0, stdout: "", stderr: "" };
+      if (
+        command === "node" &&
+        args[0] === "scripts/verify-owner-document-access-upgrade.mjs"
+      ) {
+        mkdirSync(options.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT, {
+          recursive: true,
+        });
+        writeFileSync(
+          join(
+            options.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT,
+            "startup-attempted",
+          ),
+          "yes",
+        );
+      }
       if (command === "npx" && args[1] === "start") {
         expect(existsSync(join(workdir, "supabase/config.toml"))).toBe(true);
         expect(
@@ -3273,7 +3837,6 @@ setInterval(() => {}, 1000);
       ...databasePreflightCommands,
       statusCommand,
       ...databaseCheckCommands,
-      ...upgradeCleanupCommands,
       ownershipCommand,
       stopCommand,
     ]);
@@ -3533,7 +4096,6 @@ setInterval(() => {}, 1000);
       statusCommand,
       ...databaseCheckCommands,
       ...browserCommands,
-      ...upgradeCleanupCommands,
       ownershipCommand,
       stopCommand,
     ]);
@@ -3569,7 +4131,7 @@ setInterval(() => {}, 1000);
       SUPABASE_TELEMETRY_DISABLED: "1",
     });
     const ownershipCalls = run.mock.calls.filter(
-      ([command]) => command === "docker",
+      ([command, args]) => command === "docker" && args[0] === "inspect",
     );
     expect(ownershipCalls).toHaveLength(2);
     for (const [, , options] of ownershipCalls) {
@@ -4307,12 +4869,6 @@ setInterval(() => {}, 1000);
       ).toBe(scenario.failure ? 9 : 1);
       expect(commands(run)).toEqual([
         ...scenario.before,
-        ...(scenario.before.some(
-          ([, args]) =>
-            args[0] === "scripts/verify-owner-document-access-upgrade.mjs",
-        )
-          ? upgradeCleanupCommands
-          : []),
         ownershipCommand,
         stopCommand,
       ]);
@@ -4350,7 +4906,14 @@ setInterval(() => {}, 1000);
         type: "access-lifecycle",
         inclusive: true,
         durationMs: 11 + commands(run).length * 7 + 3,
-        cleanupMs: 17,
+        cleanupMs:
+          17 +
+          (scenario.before.some(
+            ([, args]) =>
+              args[0] === "scripts/verify-owner-document-access-upgrade.mjs",
+          )
+            ? 2 * upgradeInventoryCommands.length * 7
+            : 0),
         cleanupReason: null,
         outcome: { type: "exit", status: scenario.failure ? 9 : 1 },
       });
