@@ -9,7 +9,7 @@ import {
   isBookingQuoteFingerprint,
   isPublicCottageSlug,
 } from "@/booking-quote/booking-quote";
-import { btrim } from "@/content/postgres-text";
+import { btrim, charLength } from "@/content/postgres-text";
 import {
   parseCottageDiscoveryQuery,
   type CottageDiscoveryQuery,
@@ -125,7 +125,7 @@ function inputFrom(
     customerName.length > 120 ||
     !isContactSafeBookingRequestText(customerName) ||
     (note !== null &&
-      (note.length > 500 || !isContactSafeBookingRequestText(note))) ||
+      (charLength(note) > 500 || !isContactSafeBookingRequestText(note))) ||
     !Number.isSafeInteger(input.partySize) ||
     (input.partySize as number) < 1 ||
     input.partySize !== query.guests ||

@@ -170,6 +170,16 @@ describe("Booking Request action boundary", () => {
     );
   });
 
+  it("accepts a 300-emoji Booking Note as the database counts it", async () => {
+    const bookingNote = "🏡".repeat(300);
+    await expect(
+      submitBookingRequest({ ...request, bookingNote }),
+    ).resolves.toEqual(expect.objectContaining({ status: "pending" }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingNote }),
+    );
+  });
+
   it.each([
     { customerName: "Ava +964 750 123 4567" },
     { bookingNote: "Call ٠٧٥٠ ١٢٣ ٤٥٦٧" },

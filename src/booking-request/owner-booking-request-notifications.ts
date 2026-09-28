@@ -4,6 +4,8 @@ import {
   validateQuotedItems,
   type BookingQuoteItem,
 } from "@/booking-quote/booking-quote";
+import { btrim, charLength } from "@/content/postgres-text";
+
 import { isContactSafeBookingRequestText } from "./booking-request-content";
 import {
   isBookingRequestPaymentStatus,
@@ -118,9 +120,9 @@ function notificationFrom(
     (notification.partySize as number) < 1 ||
     (notification.bookingNote !== null &&
       (typeof notification.bookingNote !== "string" ||
-        notification.bookingNote.length === 0 ||
-        notification.bookingNote.length > 500 ||
-        notification.bookingNote !== notification.bookingNote.trim() ||
+        charLength(notification.bookingNote) === 0 ||
+        charLength(notification.bookingNote) > 500 ||
+        notification.bookingNote !== btrim(notification.bookingNote) ||
         !isContactSafeBookingRequestText(notification.bookingNote))) ||
     typeof notification.cottageName !== "string" ||
     !notification.cottageName.trim() ||
