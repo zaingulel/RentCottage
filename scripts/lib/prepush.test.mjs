@@ -22,19 +22,10 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { posixShell } from './posix-shell.mjs';
+import { fixtureShell } from './posix-shell.mjs';
 
 const HOOK = resolve(dirname(fileURLToPath(import.meta.url)), '../../.githooks/pre-push');
 const NO_SHELL = 'a POSIX shell is required: install Git for Windows';
-
-// The located POSIX shell, null when there is none. On Windows it can be Git's bin\sh.exe, a launcher
-// that puts Git's own tool directories, real git included, ahead of the PATH it is given, which would
-// shadow the fixture's fake git; there the fixture runs the MSYS sh.exe behind it, which keeps PATH as given.
-function fixtureShell() {
-  const shell = posixShell();
-  if (process.platform !== 'win32' || !shell) return shell;
-  return spawnSync(shell, ['-c', 'cygpath -w /usr/bin/sh.exe'], { encoding: 'utf8' }).stdout.trim();
-}
 
 const SHELL = fixtureShell();
 
@@ -99,9 +90,17 @@ esac
       executable(eslint, '#!/bin/sh\nexit 0\n');
     }
 
-    const run = (extra = {}) => spawnSync(SHELL, [HOOK], {
+    if (options.gate !== undefined) {
+      const gate = join(repo, 'scripts', 'gates', 'pre-push-main');
+      mkdirSync(dirname(gate), { recursive: true });
+      executable(gate, `#!/bin/sh\nprintf 'gate\\t%s\\n' "$*" >> "$CALLS"\nexit ${options.gate}\n`);
+    }
+
+    // `input` is the ref lines Git writes to the hook's stdin, one per pushed ref.
+    const run = (extra = {}, input = '') => spawnSync(SHELL, [HOOK], {
       cwd,
       encoding: 'utf8',
+      input,
       env: {
         PATH: bin,
         REPO_ROOT: repo,
@@ -210,5 +209,48 @@ test('pre-push RUN_TESTS=1 retains the optional full-test invocation', () => {
       'node --test scripts/lib/*.test.mjs',
       'npm test',
     ]);
+  });
+});
+
+const LOCAL_SHA = '1111111111111111111111111111111111111111';
+const REMOTE_SHA = '2222222222222222222222222222222222222222';
+// Git's documented pre-push stdin line: <local ref> SP <local sha> SP <remote ref> SP <remote sha> LF.
+const refLine = (remoteRef) => `refs/heads/topic ${LOCAL_SHA} ${remoteRef} ${REMOTE_SHA}\n`;
+
+test('pre-push refuses a push to main without the product gate', () => {
+  withFixture({}, ({ recorded, run }) => {
+    const result = run({}, refLine('refs/heads/main'));
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /scripts\/gates\/pre-push-main/);
+    assert.match(result.stderr, /pull request/);
+    assert.deepEqual(recorded(), []);
+  });
+});
+
+test('pre-push refuses a push to main when the product gate refuses', () => {
+  withFixture({ gate: 1 }, ({ recorded, run }) => {
+    const result = run({}, refLine('refs/heads/main'));
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(recorded(), [`gate\t${REMOTE_SHA} ${LOCAL_SHA}`]);
+  });
+});
+
+test('pre-push proceeds when the product gate admits a push to main', () => {
+  withFixture({ gate: 0 }, ({ recorded, run }) => {
+    const result = run({}, refLine('refs/heads/main'));
+    assert.equal(result.status, 0, output(result));
+    assert.deepEqual(recorded().map((line) => line.split('\t').slice(0, 2).join(' ')), [
+      `gate ${REMOTE_SHA} ${LOCAL_SHA}`,
+      'npm run lint --silent',
+      'node --test scripts/lib/*.test.mjs',
+    ]);
+  });
+});
+
+test('pre-push never consults the product gate for other branches', () => {
+  withFixture({ gate: 1 }, ({ recorded, run }) => {
+    const result = run({}, refLine('refs/heads/job/1'));
+    assert.equal(result.status, 0, output(result));
+    assert.deepEqual(recorded().map((line) => line.split('\t')[0]), ['npm', 'node']);
   });
 });

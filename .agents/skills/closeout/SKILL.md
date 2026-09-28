@@ -12,7 +12,12 @@ process list; nothing is inferred from chat.
 1. **Confirm the merge.** `gh pr view <pr> --json state,mergedAt,mergeCommit` shows `MERGED`. If not, stop.
    Then check the body's review line against
    [the workflow manual's specification](../../../docs/AI-WORKFLOW.md#the-review-line): a missing line, or one
-   that does not meet it, is a workflow failure named in the report, never filled in from memory.
+   that does not meet it, is a workflow failure named in the report, never filled in from memory. When the job
+   took the direct route there is no pull request: confirm instead with `git fetch origin main` and
+   `git merge-base --is-ancestor <pushed sha> origin/main`, check the review line in the pushed commit's
+   message with `git log -1 --format=%B <pushed sha>`, never in chat, and confirm `git rev-parse <pushed
+   sha>^{tree}` equals the tree of the `head=` its message's convergence receipts name; a mismatch is a workflow
+   failure named in the report.
 2. **Issues.** `Closes #` in the body closed them at merge; confirm with `gh issue view <n> --json state`. An
    issue the pull request resolved but did not name is reported to the owner, never closed unasked: only the
    issues the approved body names are within this run's authorisation.

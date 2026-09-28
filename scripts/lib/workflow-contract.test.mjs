@@ -989,6 +989,7 @@ const ADOPTER_PATHS = {
   'scripts/gates/': 'optional product hook point, checked for presence',
   'scripts/gates/stop': 'optional product hook point, checked for presence',
   'scripts/gates/pre-commit': 'optional product hook point, checked for presence',
+  'scripts/gates/pre-push-main': 'optional product hook point, checked for presence',
 };
 const PATH_TOKEN = /[A-Za-z0-9_.@/*<>{}|$-]+/g;
 const PLACEHOLDER = /[*<>{}|$]/;

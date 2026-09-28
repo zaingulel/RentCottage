@@ -115,6 +115,7 @@ flowchart LR
     W[Work-pick] -->|owner picks one card| Build[plan, build, review]
     Build --> P[Push authorisation]
     P -->|one yes to the pull request body and screenshot| D[push, draft PR, review comments, repairs, rebase, ready, auto-merge, closeout]
+    P -->|qualifying change, same yes| DR2[direct push to main, no pull request or CI, closeout]
     Build -.->|outcome or trade-off changed| O[owner decides in plain language]
     O -.-> Build
 ```
@@ -144,11 +145,13 @@ flowchart TD
     VR --> RV[Fresh review of the final tree, repair, one pass scoped to the repair]
     RV --> PA[Push authorisation: card to Awaiting push, owner reads the PR body and screenshot]
     PA --> DR[Draft pull request, card to In review]
+    PA -->|every changed path qualifies| FF[Fast-forward push to main, no pull request or CI]
     DR -->|documents, code, agent instruction: no Greptile| RD[Marked ready: CI runs on the merge result]
     DR -->|sign-off tier: explicit Greptile request| GR[Review attempt settled, findings resolved]
     GR --> RD
     RD -->|required test and sweep-scope checks green| MG[GitHub auto-merge, squash, branch deleted]
     MG --> CO[Closeout: issue closed, card to Done, worktree removed]
+    FF --> CO
 ```
 
 The diagram is the whole path from a card to a merged commit. In words:
@@ -192,7 +195,8 @@ The diagram is the whole path from a card to a merged commit. In words:
   routines, when the Conventions table marks them active, are the one exception their manuals state: the sweep and
   its day-after triage each squash-merge
   their own pull request through the GitHub API tooling, and only once both required checks have succeeded on its
-  exact head.
+  exact head. A change every path of which `scripts/gates/pre-push-main` admits skips the pull request entirely,
+  pushed straight to `main` on the same push authorisation (`resume`, section 8).
 - **Closeout.** The moment the merge lands, the same session confirms it, moves the card, pulls main, and
   removes the branch and worktree. Rulings the owner made during the session go to the issue or the manual
   that owns the topic, never to a new document.
@@ -318,10 +322,12 @@ already-running runtime loaded or trusted that configuration. When the active ru
 the delivery report still names that limit.
 
 Everything else, including which reviewer runs, when to stop and replan, and what the pull request body must
-say, is a sentence in `AGENTS.md` or a skill. The bar for adding a new mechanism is stated in `AGENTS.md`
-under "Publication and machinery": a control failure a sentence could not prevent twice, the same friction
-across three independent jobs, a required new integration, or externally imposed drift. A native feature beats
-custom code, a hook beats a script, a sentence beats a hook.
+say, is a sentence in `AGENTS.md` or a skill. The bar for adding new executable machinery is stated in `AGENTS.md`
+under "Publication and machinery". It includes test scripts, harnesses, runners, and test-only tools; only product
+code and ordinary tests added to existing suites are exempt. New machinery needs one of: a control failure a
+sentence could not prevent twice, the same friction across three independent jobs, a required new runtime or
+provider integration, or externally imposed security or platform drift. Prefer a native feature over custom code,
+a hook over a script, and a sentence over a hook.
 
 ## The evidence bar
 

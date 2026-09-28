@@ -183,12 +183,28 @@ disjoint.
 
 Move the card to `Awaiting push`: `node scripts/board-move.mjs <issue> "Awaiting push"`. Fill
 `.github/pull_request_template.md` as the pull request body and show it to the owner with the screenshot.
-The owner's yes, or any instruction to push, covers every step of section 8: the push, the draft pull request,
-the `@greptileai` comments, repairs on the same branch, rebasing onto `main`, marking ready, and the auto-merge.
-Nothing in section 8 stops to ask again; a public comment there is delivery, not a new action. Push only after
-it.
+The owner still sees that same filled body in chat, with the review line at tier `document`; on the direct
+route section 8 describes, that shown body becomes the squash commit's message, since there is no pull request
+to hold it. The owner's yes, or any instruction to
+push, covers every step of section 8: the push, the draft pull request, the `@greptileai` comments, repairs on
+the same branch, rebasing onto `main`, marking ready, and the auto-merge. Nothing in section 8 stops to ask
+again; a public comment there is delivery, not a new action. Push only after it.
 
 ## 8. Deliver
+
+After the rebase in step 1, the session checks eligibility for the direct route: record `git rev-parse origin/main`
+as `<origin-main>` and `git rev-parse HEAD` as `<head>`, then run `scripts/gates/pre-push-main <origin-main>
+<head>`; exit 0 means every changed path qualifies for the direct route, exit 1 means the pull request route below.
+On the direct route: settle the convergence checks exactly as step 1 names on `<head>`, so their receipts carry
+`head=<head>`, and those receipts replace any the approved body quoted for an earlier head; nothing else in that
+body changes. Then squash the job with `git reset --soft <origin-main>` and `git commit` into one commit whose
+message is the pull-request title, a blank line, the same filled body shown to the owner with its review line and
+receipts so replaced, a blank line, `Closes #<issue>`, and the attribution lines. Before pushing, confirm `git
+rev-parse HEAD^{tree}` equals `git rev-parse <head>^{tree}`, so the pushed commit carries exactly the content the
+receipts checked; a mismatch stops the route and the checks are settled again. Then push with `git push origin
+HEAD:main`, whose pre-push hook re-runs the gate and refuses a non-qualifying path. The draft, Greptile, ready,
+auto-merge and merge-watch steps below are skipped, and `closeout` runs. A refusal from the gate means the pull
+request route, never a workaround.
 
 1. Rebase onto `origin/main`, then settle each convergence check the testing strategy names: reuse its latest
    worklog receipt for the same command when that receipt reads `exit 0`, its `head=` is exactly the current
