@@ -226,7 +226,7 @@ describe("repository verification command", () => {
     }
 
     const reuseRepository = createRepository();
-    commit(reuseRepository, "src/runtime.ts", "seed\n");
+    commit(reuseRepository, "custom-worker.ts", "seed\n");
     const head = git(reuseRepository, ["rev-parse", "HEAD"]);
     const base = git(reuseRepository, ["merge-base", "origin/main", "HEAD"]);
     const cold = localVerification(reuseRepository);
@@ -237,9 +237,9 @@ describe("repository verification command", () => {
     ]);
     expect(reports(cold)).toEqual([
       "Baseline verification: selected",
-      "Database verification: selected (src/runtime.ts requires full evidence)",
-      "Browser verification: selected (src/runtime.ts requires full evidence)",
-      "Expensive verification: selected (src/runtime.ts requires full evidence)",
+      "Database verification: selected (custom-worker.ts requires full evidence)",
+      "Browser verification: selected (custom-worker.ts requires full evidence)",
+      "Expensive verification: selected (custom-worker.ts requires full evidence)",
       "database: fresh local verification required (local evidence missing, stale or unavailable)",
       "browser: fresh local verification required (local evidence missing, stale or unavailable)",
       "database: executed fresh verification",
@@ -251,9 +251,9 @@ describe("repository verification command", () => {
     expect(commands(reused)).toEqual(requiredBaselineSteps);
     expect(reports(reused)).toEqual([
       "Baseline verification: selected",
-      "Database verification: selected (src/runtime.ts requires full evidence)",
-      "Browser verification: selected (src/runtime.ts requires full evidence)",
-      "Expensive verification: selected (src/runtime.ts requires full evidence)",
+      "Database verification: selected (custom-worker.ts requires full evidence)",
+      "Browser verification: selected (custom-worker.ts requires full evidence)",
+      "Expensive verification: selected (custom-worker.ts requires full evidence)",
       `database: reused local evidence from HEAD ${head}; base ${base}`,
       `browser: reused local evidence from HEAD ${head}; base ${base}`,
     ]);
@@ -467,7 +467,7 @@ describe("repository verification command", () => {
     };
     for (const retained of [false, true]) {
       const repository = createRepository();
-      commit(repository, "src/runtime.ts", "seed\n");
+      commit(repository, "custom-worker.ts", "seed\n");
       if (retained) expect(localVerification(repository).status).toBe(0);
       expect(markerState(repository) !== null).toBe(retained);
       for (const scenario of cases) assertPlan(repository, scenario);
@@ -485,7 +485,7 @@ describe("repository verification command", () => {
 
   it("reuses only unchanged local groups after classified repairs", () => {
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "export const value = 'seed';\n");
+    commit(repository, "custom-worker.ts", "export const value = 'seed';\n");
     expect(commands(localVerification(repository))).toEqual([
       ...requiredBaselineSteps,
       ...requiredExpensiveSteps,
@@ -502,7 +502,7 @@ describe("repository verification command", () => {
       ...requiredBaselineSteps,
       ...requiredBrowserSteps,
     ]);
-    write(repository, "src/runtime.ts", "export const value = 'repaired';\n");
+    write(repository, "custom-worker.ts", "export const value = 'repaired';\n");
     expect(commands(localVerification(repository))).toEqual([
       ...requiredBaselineSteps,
       ...requiredExpensiveSteps,
@@ -602,19 +602,21 @@ describe("repository verification command", () => {
   it("refuses stale source base and environment evidence", () => {
     const cases = [
       (repository) =>
-        commit(repository, "src/runtime.ts", "committed repair\n"),
+        commit(repository, "custom-worker.ts", "committed repair\n"),
       (repository) => {
-        write(repository, "src/runtime.ts", "staged repair\n");
-        git(repository, ["add", "src/runtime.ts"]);
-        write(repository, "src/runtime.ts", "seed\n");
+        write(repository, "custom-worker.ts", "staged repair\n");
+        git(repository, ["add", "custom-worker.ts"]);
+        write(repository, "custom-worker.ts", "seed\n");
       },
-      (repository) => write(repository, "src/runtime.ts", "unstaged repair\n"),
-      (repository) => write(repository, "src/new.ts", "untracked repair\n"),
-      (repository) => rmSync(join(repository, "src/runtime.ts")),
+      (repository) =>
+        write(repository, "custom-worker.ts", "unstaged repair\n"),
+      (repository) =>
+        write(repository, "open-next.config.ts", "untracked repair\n"),
+      (repository) => rmSync(join(repository, "custom-worker.ts")),
       (repository) =>
         renameSync(
-          join(repository, "src/runtime.ts"),
-          join(repository, "src/renamed.ts"),
+          join(repository, "custom-worker.ts"),
+          join(repository, "next.config.ts"),
         ),
       (repository) => {
         chmodSync(join(repository, "AGENTS.md"), 0o755);
@@ -650,7 +652,7 @@ describe("repository verification command", () => {
       (repository) => chmodSync(join(repository, "AGENTS.md"), 0o755),
       (repository) => {
         rmSync(join(repository, "AGENTS.md"));
-        symlinkSync("src/runtime.ts", join(repository, "AGENTS.md"));
+        symlinkSync("custom-worker.ts", join(repository, "AGENTS.md"));
       },
       (repository) => {
         const tree = git(repository, ["rev-parse", "origin/main^{tree}"]);
@@ -667,7 +669,7 @@ describe("repository verification command", () => {
     ];
     for (const change of cases) {
       const repository = createRepository();
-      commit(repository, "src/runtime.ts", "seed\n");
+      commit(repository, "custom-worker.ts", "seed\n");
       expect(
         localVerification(repository, { args: ["--database"] }).status,
       ).toBe(0);
@@ -685,8 +687,8 @@ describe("repository verification command", () => {
     repositories.push(externalDirectory);
     const externalSource = join(externalDirectory, "runtime.ts");
     writeFileSync(externalSource, "first external source");
-    rmSync(join(linkedRepository, "src/runtime.ts"));
-    symlinkSync(externalSource, join(linkedRepository, "src/runtime.ts"));
+    rmSync(join(linkedRepository, "custom-worker.ts"));
+    symlinkSync(externalSource, join(linkedRepository, "custom-worker.ts"));
     expect(
       localVerification(linkedRepository, { args: ["--database"] }).status,
     ).toBe(0);
@@ -703,7 +705,7 @@ describe("repository verification command", () => {
     );
 
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "seed\n");
+    commit(repository, "custom-worker.ts", "seed\n");
     localVerification(repository, {
       args: ["--database"],
       environment: { CONTRACT: "before" },
@@ -738,7 +740,7 @@ describe("repository verification command", () => {
 
   it("keeps forced hosted and planned verification honest", () => {
     const repository = createRepository();
-    commit(repository, "src/runtime.ts", "seed\n");
+    commit(repository, "custom-worker.ts", "seed\n");
     localVerification(repository);
     const marker = evidenceFile(repository, "attempt");
     const oldMarker = readFileSync(marker, "utf8");

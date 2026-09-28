@@ -60,11 +60,17 @@ const groupVerificationSteps = {
   ],
 };
 
-function serviceVerificationSteps(mode, database, browser) {
-  return mode === undefined && database && browser
+function databaseSteps(bookingConcurrency) {
+  return bookingConcurrency
+    ? groupVerificationSteps.database
+    : [["npm", ["run", "verify:access:database-tests"]]];
+}
+
+function serviceVerificationSteps(mode, database, browser, bookingConcurrency) {
+  return mode === undefined && database && browser && bookingConcurrency
     ? expensiveVerificationSteps
     : [
-        ...(database ? groupVerificationSteps.database : []),
+        ...(database ? databaseSteps(bookingConcurrency) : []),
         ...(browser ? groupVerificationSteps.browser : []),
       ];
 }
@@ -84,6 +90,13 @@ const accessCommandContracts = {
       reproduceGroup: ["npm", "run", "verify", "--", "--database", "--full"],
     },
   },
+  "verify:access:database-tests": {
+    groups: ["database"],
+    completedGroups: ["database"],
+    failureRecipe: {
+      reproduceGroup: ["npm", "run", "verify", "--", "--database"],
+    },
+  },
   "verify:access:browser": {
     groups: ["browser"],
     completedGroups: [],
@@ -100,14 +113,13 @@ const baselineOnlyPaths = new Set([
   "CONTEXT.md",
   "scripts/run-log.mjs",
   "scripts/lib/run-log.test.mjs",
-  // The self-hosted font unit test and the licences it reads. npm test proves both in
+  // The licences the self-hosted font unit test reads. npm test proves them in
   // baseline. The licences ship from public/ like any asset, but their text cannot
   // change a rendered page or the Worker's behaviour. The .woff2 files and fonts.css
   // do change rendering, so they stay on the browser route.
   "public/fonts/OFL-almarai.txt",
   "public/fonts/OFL-changa.txt",
   "public/fonts/OFL-karla.txt",
-  "src/app/fonts.test.ts",
   // The board, git-guard and agent-handoff toolkits. npm test proves these in baseline through the
   // node --test suite, except scripts/board-move.mjs, which is argv parsing over proved
   // helpers; their reach is GitHub, local Git or agent dispatch, never Supabase, the Worker or
@@ -216,27 +228,56 @@ function isBaselineOnlyPath(path) {
     /^\.claude\/skills\/[^/]+\/(?:.+\.md|agents\/openai\.yaml)$/i.test(path) ||
     /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
     /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
-    /^docs\/.+\.(?:avif|docx|gif|jpe?g|md|png|svg|webp)$/i.test(path)
+    /^docs\/.+\.(?:avif|docx|gif|jpe?g|md|png|svg|webp)$/i.test(path) ||
+    /^src\/.+\.test\.tsx?$/.test(path)
   );
 }
 
-const browserOnlyPaths = new Set([
-  "src/app/fonts.css",
-  "src/app/globals.css",
-  "tests/booking-request-display.spec.ts",
-  "tests/interaction-controls.spec.ts",
-  "tests/marketplace-shell.spec.ts",
-]);
+// Schema files holding the booking and payment Integrity Core. A change here, or to a booking
+// concurrency program, runs those programs; any other database input runs only the SQL tests.
+const bookingConcurrencySchemaPaths = new Set(
+  [
+    "00_extensions",
+    "01_types",
+    "10_tables_booking",
+    "20_functions_booking",
+    "20_functions_booking_completion",
+    "20_functions_booking_payout",
+    "20_functions_cancellation",
+    "20_functions_refund",
+    "30_constraints",
+    "31_indexes",
+    "32_triggers",
+  ].map((name) => `supabase/schemas/${name}.sql`),
+);
+
+function requiresBookingConcurrency(path) {
+  return (
+    bookingConcurrencySchemaPaths.has(path) ||
+    /^scripts\/verify-booking-[^/]+-concurrency\.mjs$/.test(path)
+  );
+}
+
+function requiresDatabaseEvidence(path) {
+  return /^supabase\/(?:schemas|migrations|tests|fixtures)\/.+$/.test(path);
+}
 
 function isBrowserOnlyPath(path) {
   return (
-    browserOnlyPaths.has(path) ||
-    /^public\/fonts\/[^/]+\.woff2$/i.test(path) ||
-    /^public\/uploads\/[^/]+\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(path)
+    path === "src/middleware.ts" ||
+    /^src\/(?:app|components|i18n|ci)\/.+$/.test(path) ||
+    /^(?:public|tests)\/.+$/.test(path) ||
+    /^playwright[^/]*\.config\.ts$/.test(path)
   );
 }
 
-const fullEvidenceRootPaths = new Set([
+function isBaselineSourcePath(path) {
+  return /^src\/(?:access|administrator-records|booking-quote|booking-request|config|content|cottage-discovery|cottage-inventory|cottage-profile|cottage-publication|cottage-shift-schedule|customer-review|messaging|notification|owner-application|payment|translation)\/.+$/.test(
+    path,
+  );
+}
+
+const fullEvidencePaths = new Set([
   ".gitattributes",
   ".gitignore",
   ".nvmrc",
@@ -250,6 +291,8 @@ const fullEvidenceRootPaths = new Set([
   "open-next.config.ts",
   "package-lock.json",
   "package.json",
+  "supabase/config.toml",
+  "tests/fixtures/payment-recovery-cleanup.mjs",
   "tsconfig.json",
   "vitest.config.ts",
   "vitest.setup.ts",
@@ -258,11 +301,7 @@ const fullEvidenceRootPaths = new Set([
 
 function requiresFullEvidence(path) {
   return (
-    fullEvidenceRootPaths.has(path) ||
-    /^(?:\.github\/workflows|public|scripts|src|supabase|tests|translation)\/.+$/.test(
-      path,
-    ) ||
-    /^playwright[^/]*\.config\.ts$/.test(path) ||
+    /^(?:\.github\/workflows|scripts|translation)\/.+$/.test(path) ||
     /^\.(?:env|dev\.vars)[^/]*\.example$/.test(path)
   );
 }
@@ -416,10 +455,17 @@ function nonExecutableRegularOrAbsent(mode) {
 
 export function classifyChanges(changes) {
   if (changes.length === 0) {
-    return { browser: false, database: false, reason: "no changed paths" };
+    return {
+      browser: false,
+      database: false,
+      bookingConcurrency: false,
+      reason: "no changed paths",
+    };
   }
 
   let browser = false;
+  let database = false;
+  let bookingConcurrency = false;
   let fullReason;
   const unclassified = new Set();
   for (const change of changes) {
@@ -444,10 +490,24 @@ export function classifyChanges(changes) {
       continue;
     }
     if (isBaselineOnlyPath(change.path)) continue;
+    if (fullEvidencePaths.has(change.path)) {
+      fullReason ??= `${change.path} requires full evidence`;
+      continue;
+    }
+    if (requiresBookingConcurrency(change.path)) {
+      database = true;
+      bookingConcurrency = true;
+      continue;
+    }
+    if (requiresDatabaseEvidence(change.path)) {
+      database = true;
+      continue;
+    }
     if (isBrowserOnlyPath(change.path)) {
       browser = true;
       continue;
     }
+    if (isBaselineSourcePath(change.path)) continue;
     if (requiresFullEvidence(change.path)) {
       fullReason ??= `${change.path} requires full evidence`;
       continue;
@@ -459,16 +519,30 @@ export function classifyChanges(changes) {
     return { unclassified: [...unclassified].sort() };
   }
   if (fullReason) {
-    return { browser: true, database: true, reason: fullReason };
+    return {
+      browser: true,
+      database: true,
+      bookingConcurrency: true,
+      reason: fullReason,
+    };
   }
 
-  const paths = [...new Set(changes.map(({ path }) => path))].sort();
+  const paths = [...new Set(changes.map(({ path }) => path))].sort().join(", ");
+  const selected = [
+    database &&
+      (bookingConcurrency
+        ? "database with booking and payment concurrency"
+        : "database"),
+    browser && "browser",
+  ].filter(Boolean);
   return {
     browser,
-    database: false,
-    reason: browser
-      ? `only reviewed presentation inputs changed: ${paths.join(", ")}`
-      : `only approved workflow or prose changed: ${paths.join(", ")}`,
+    database,
+    bookingConcurrency,
+    reason:
+      selected.length > 0
+        ? `changed paths select ${selected.join(" and ")} evidence: ${paths}`
+        : `only approved workflow or prose changed: ${paths}`,
   };
 }
 
@@ -570,6 +644,7 @@ function selectVerification(cwd, environment, stdout, stderr) {
     return {
       browser: true,
       database: true,
+      bookingConcurrency: true,
       reason: `classification unavailable: ${message}`,
     };
   }
@@ -815,7 +890,7 @@ function readPrivateJson(path) {
   }
 }
 
-function readLocalGroupEvidence(cwd, group, identity) {
+function readLocalGroupEvidence(cwd, group, commands, identity) {
   try {
     const record = readPrivateJson(evidencePath(cwd, group, "success"));
     const marker = readPrivateJson(evidencePath(cwd, group, "attempt"));
@@ -833,8 +908,7 @@ function readLocalGroupEvidence(cwd, group, identity) {
       !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(record.head) ||
       typeof record.base !== "string" ||
       !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(record.base) ||
-      record.commandDigest !==
-        digest(JSON.stringify(groupVerificationSteps[group])) ||
+      record.commandDigest !== digest(JSON.stringify(commands)) ||
       typeof record.completedAt !== "string" ||
       new Date(record.completedAt).toISOString() !== record.completedAt ||
       record.identity.inputDigest !== identity.inputDigest ||
@@ -920,7 +994,7 @@ function beginLocalGroupAttempt(cwd, group) {
   }
 }
 
-function completeLocalGroupAttempt(cwd, group, token, before, after) {
+function completeLocalGroupAttempt(cwd, group, commands, token, before, after) {
   if (
     !before.identity ||
     !after.identity ||
@@ -938,7 +1012,7 @@ function completeLocalGroupAttempt(cwd, group, token, before, after) {
       version: 1,
       group,
       token,
-      commandDigest: digest(JSON.stringify(groupVerificationSteps[group])),
+      commandDigest: digest(JSON.stringify(commands)),
       identity: after.identity,
       head: after.head,
       base: after.base,
@@ -1314,12 +1388,22 @@ export function main(
     );
     return 3;
   }
+  const forced = args.includes("--full");
   const selectedDatabase = mode === "--browser" ? false : selection.database;
   const selectedBrowser = mode === "--database" ? false : selection.browser;
+  const selectedBookingConcurrency =
+    selectedDatabase && (forced || selection.bookingConcurrency);
+  const selectedSteps = (group) =>
+    group === "database"
+      ? databaseSteps(selectedBookingConcurrency)
+      : groupVerificationSteps[group];
   const expensive = selectedDatabase || selectedBrowser;
   stdout(`Baseline verification: ${baseline ? "selected" : "unselected"}`);
   stdout(
     `Database verification: ${selectedDatabase ? "selected" : "skipped"} (${selection.reason})`,
+  );
+  stdout(
+    `Booking and payment concurrency programs: ${selectedBookingConcurrency ? "selected" : "skipped"} (${selection.reason})`,
   );
   stdout(
     `Browser verification: ${selectedBrowser ? "selected" : "skipped"} (${selection.reason})`,
@@ -1339,10 +1423,14 @@ export function main(
   const serviceStart = prefixSteps.length;
   let steps = [
     ...prefixSteps,
-    ...serviceVerificationSteps(mode, selectedDatabase, selectedBrowser),
+    ...serviceVerificationSteps(
+      mode,
+      selectedDatabase,
+      selectedBrowser,
+      selectedBookingConcurrency,
+    ),
   ];
   const local = !environment.CI && !environment.GITHUB_ACTIONS;
-  const forced = args.includes("--full");
   if (plan) {
     stdout(
       `Verification scope: ${mode === undefined ? "all groups" : mode.slice(2)}`,
@@ -1373,12 +1461,17 @@ export function main(
           cwd,
           verificationEnvironment,
           group,
-          groupVerificationSteps[group],
+          selectedSteps(group),
           captureRuntime,
         );
         const evidence =
           !forced && snapshots[group].identity
-            ? readLocalGroupEvidence(cwd, group, snapshots[group].identity)
+            ? readLocalGroupEvidence(
+                cwd,
+                group,
+                selectedSteps(group),
+                snapshots[group].identity,
+              )
             : { reuse: false };
         if (evidence.reuse) {
           stdout(
@@ -1409,7 +1502,12 @@ export function main(
       }
       steps = [
         ...prefixSteps,
-        ...serviceVerificationSteps(mode, fresh.database, fresh.browser),
+        ...serviceVerificationSteps(
+          mode,
+          fresh.database,
+          fresh.browser,
+          selectedBookingConcurrency,
+        ),
       ];
       if (index === steps.length) break;
     }
@@ -1493,13 +1591,14 @@ export function main(
           cwd,
           verificationEnvironment,
           group,
-          groupVerificationSteps[group],
+          selectedSteps(group),
           captureRuntime,
         );
         if (
           !completeLocalGroupAttempt(
             cwd,
             group,
+            selectedSteps(group),
             tokens[group],
             snapshots[group],
             after,
