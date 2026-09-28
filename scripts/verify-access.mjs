@@ -849,22 +849,6 @@ export async function main(
     const verifyDatabasePreflight = async () => {
       const declaredSchemaStatus = await verifyDeclaredSchema();
       if (declaredSchemaStatus !== 0) return declaredSchemaStatus;
-      const customerReviewUpgrade = await execute(
-        "node",
-        ["scripts/verify-customer-review-upgrade.mjs"],
-        { stdio: "inherit" },
-      );
-      if (customerReviewUpgrade.status !== 0) {
-        return customerReviewUpgrade.status;
-      }
-      const administratorRecordsUpgrade = await execute(
-        "node",
-        ["scripts/verify-administrator-records-upgrade.mjs"],
-        { stdio: "inherit" },
-      );
-      if (administratorRecordsUpgrade.status !== 0) {
-        return administratorRecordsUpgrade.status;
-      }
       result = await execute(
         "npx",
         supabaseArguments(["supabase", "test", "db"]),

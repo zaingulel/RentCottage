@@ -91,8 +91,6 @@ const emptyDeclaredSchemaDiff = JSON.stringify({
 });
 const databasePreflightCommands = [
   declaredSchemaDiffCommand,
-  ["node", ["scripts/verify-customer-review-upgrade.mjs"]],
-  ["node", ["scripts/verify-administrator-records-upgrade.mjs"]],
   ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
 ];
 const databaseCheckCommands = [
