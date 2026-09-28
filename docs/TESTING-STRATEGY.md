@@ -124,14 +124,17 @@ migrations statement by statement and refuse that lock. Install with `npm ci`, w
 
 Focused checks run while building and between review rounds, each through
 `node scripts/run-log.mjs <label words> -- <command>`; the `resume` skill owns the receipt and rerun mechanics.
-The full local check runs once before push: `node scripts/run-log.mjs convergence -- npm run verify`, which
-selects its route from the changed paths (`npm run verify -- --plan` prints that route without running it) and
-may reuse unchanged database or browser evidence; a receipt claimed as fresh full execution uses
-`npm run verify -- --full`. A further broad run needs a named reason: changed evidence, an invalidated
-environment or an investigated flake. A repair that touches only tests reruns the repaired test by title and
-never the full local check. Continuous integration runs the exhaustive route on the merge result once the pull
-request leaves draft: `npm run verify -- --baseline`, `--database` and `--browser` on separate runners, and the
-required `test` check passes only when all three succeed. The hosted preview is smoked with
+The full local check runs once before push: `node scripts/run-log.mjs convergence -- npm run verify`, which selects
+its route from the changed paths (`npm run verify -- --plan` prints that route without running it) and may reuse
+unchanged database or browser evidence; a receipt claimed as fresh full execution uses `npm run verify -- --full`.
+A TypeScript product change selects the baseline route; a database object the database group; a booking or payment
+Integrity Core object or concurrency program adds the booking and payment concurrency programs; presentation,
+Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
+`scripts/verify.mjs`. A further broad run needs a named reason: changed evidence, an invalidated environment or an
+investigated flake. A repair that touches only tests reruns the repaired test by title and never the full local
+check. Continuous integration runs the exhaustive route on the merge result once the pull request leaves draft:
+`npm run verify -- --baseline`, `--database` and `--browser` on separate runners, and the required `test` check
+passes only when all three succeed. The hosted preview is smoked with
 `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
 
 ## Reviewing tests
