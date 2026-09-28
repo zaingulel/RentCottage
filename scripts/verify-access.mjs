@@ -90,11 +90,12 @@ async function listOwnerDocumentUpgradeResources(project, workdir, execute) {
     network: new Map(),
   };
   const containerFormat = "{{.ID}}|{{.Names}}";
-  for (const filter of [
+  const filters = [
     `label=com.supabase.cli.project=${project}`,
     `name=_${project}`,
     `label=com.supabase.cli.workdir=${workdir}`,
-  ]) {
+  ];
+  for (const filter of filters) {
     const output = await upgradeDocker(execute, [
       "ps",
       "-a",
@@ -113,11 +114,7 @@ async function listOwnerDocumentUpgradeResources(project, workdir, execute) {
       resources.container.set(id, name);
     }
   }
-  for (const filter of [
-    `label=com.supabase.cli.project=${project}`,
-    `name=_${project}`,
-    `label=com.supabase.cli.workdir=${workdir}`,
-  ]) {
+  for (const filter of filters) {
     const output = await upgradeDocker(execute, [
       "volume",
       "ls",
@@ -135,11 +132,7 @@ async function listOwnerDocumentUpgradeResources(project, workdir, execute) {
       resources.volume.set(name, name);
     }
   }
-  for (const filter of [
-    `label=com.supabase.cli.project=${project}`,
-    `name=_${project}`,
-    `label=com.supabase.cli.workdir=${workdir}`,
-  ]) {
+  for (const filter of filters) {
     const output = await upgradeDocker(execute, [
       "network",
       "ls",
@@ -361,7 +354,7 @@ export async function cleanupOwnerDocumentUpgrade({
         );
       }
       if (resource.name === `supabase_db_${admission.project}`)
-        await guardDatabase?.();
+        await guardDatabase();
       await upgradeDocker(execute, ["stop", resource.id]);
       await upgradeDocker(execute, ["rm", resource.id]);
     } catch (error) {
