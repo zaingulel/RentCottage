@@ -10,11 +10,13 @@ receipt is recorded. A more specific product, domain or architecture decision wi
 
 A change adds its tests to the existing suites: Vitest files beside the code under `src/`, SQL tests under
 `supabase/tests/database/`, Playwright specifications under `tests/`, and the `node --test` suite under
-`scripts/lib/`. It never adds a test script, harness or runner, and no database migration needs its own upgrade
-program. Each row names the minimum evidence, the cheapest layer that catches the failure, and the ceiling
-beyond which further evidence needs a named reason. A mixed change takes every row it touches.
+`scripts/lib/`. A job never adds a test script, harness, runner or test-only tool on its own: that is workflow
+machinery, admitted only under [the manual's machinery rule](../AGENTS.md#publication-and-machinery). No database
+migration needs its own upgrade program. Each row names the minimum evidence, the evidence route (the cheapest
+layer that catches the failure), and the ceiling beyond which further evidence needs a named reason. A mixed
+change takes every row it touches.
 
-| Change type | Minimum evidence | Cheapest layer | Ceiling |
+| Change type | Minimum evidence | Evidence route | Ceiling |
 |---|---|---|---|
 | Copy, translation strings and presentation (labels, CSS, layout, right-to-left, accessibility) | The locale formatter or translation table test in Vitest where one exists, covering English, Arabic and Kurdish for a changed date or money display, plus direct inspection of the changed desktop, mobile, right-to-left and accessibility states | Vitest; the existing shell or display Playwright specification when only the rendered result can see the change | The browser group; no database evidence |
 | Product logic in TypeScript (prices, fees, deadlines, filters, state transitions, application-service outcomes) | Vitest at the domain function or application-service seam | Vitest | One existing Playwright journey when the change is user-visible |
