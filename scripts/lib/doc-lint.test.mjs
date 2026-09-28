@@ -26,6 +26,7 @@ import {
   pathExists,
   blankFencedBlocks,
   KNOWN_UNTRACKED,
+  OPTIONAL_PRODUCT_GATES,
   classifyDocLintPath,
   vendoredSkillNames,
 } from "./doc-lint.mjs";
@@ -297,6 +298,20 @@ test("pathExists: a path NESTED under a KNOWN_UNTRACKED directory resolves", () 
   const set = buildTrackedSet([]);
   assert.equal(pathExists(set, ".claude/worklog/job_314.md"), true);
   assert.equal(pathExists(set, ".worktrees/job-314/AGENTS.md"), true);
+});
+
+test("pathExists: every OPTIONAL_PRODUCT_GATES entry resolves even with an EMPTY tracked set", () => {
+  const set = buildTrackedSet([]);
+  for (const gate of OPTIONAL_PRODUCT_GATES) {
+    assert.equal(pathExists(set, gate), true, `${gate} must resolve`);
+  }
+});
+
+test("pathExists: KEY mutation guard — only the exact optional gate paths resolve, not anything under scripts/gates/", () => {
+  const set = buildTrackedSet([]);
+  assert.equal(pathExists(set, "scripts/gates/pre-push-mian"), false);
+  assert.equal(pathExists(set, "scripts/gates/other"), false);
+  assert.equal(pathExists(set, "scripts/gates/"), false);
 });
 
 test("pathExists: KEY mutation guard — a similarly-NAMED but different path is not swallowed by prefix matching", () => {

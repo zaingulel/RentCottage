@@ -48,7 +48,8 @@ const GIT_HISTORY_MARKER = "(git history)";
 // gitignored or build-generated, one comment each. Existence resolution is
 // git-tracked-set-only (see buildTrackedSet/pathExists below); a filesystem
 // existence check made local runs green and a fresh CI checkout red (the
-// PR #405 bug this fixes), so this allowlist is the ONLY escape hatch left.
+// PR #405 bug this fixes), so this allowlist and OPTIONAL_PRODUCT_GATES below
+// are the ONLY escape hatches left.
 export const KNOWN_UNTRACKED = [
   ".agent-evidence/", // local run receipts
   ".claude/worklog/", // branch-local human-readable run receipts
@@ -62,6 +63,14 @@ export const KNOWN_UNTRACKED = [
   "test-results/", // Playwright run artifacts
   "node_modules/", // deps
   ".worktrees/", // local worktree lanes
+];
+
+// Exact paths of the optional product gates the shared hooks consult: a
+// repository may have none, yet the shared manual it syncs still names them.
+export const OPTIONAL_PRODUCT_GATES = [
+  "scripts/gates/stop", // Stop hooks (verify-green.sh)
+  "scripts/gates/pre-commit", // .githooks/pre-commit
+  "scripts/gates/pre-push-main", // .githooks/pre-push, pushes to main only
 ];
 
 // ref resolves against KNOWN_UNTRACKED if it IS an entry (with or without its
@@ -93,12 +102,13 @@ export function buildTrackedSet(trackedFilePaths) {
 }
 
 // The ONE existence resolver: a ref exists if it's a tracked file, a tracked
-// directory prefix (with or without its own trailing slash), or resolves
-// under KNOWN_UNTRACKED. No filesystem check anywhere in this path — local
-// and a fresh CI checkout resolve identically by construction.
+// directory prefix (with or without its own trailing slash), resolves under
+// KNOWN_UNTRACKED, or exactly equals an OPTIONAL_PRODUCT_GATES entry. No
+// filesystem check anywhere in this path — local and a fresh CI checkout
+// resolve identically by construction.
 export function pathExists(trackedSet, ref) {
   if (trackedSet.has(ref) || trackedSet.has(`${ref}/`)) return true;
-  return isKnownUntracked(ref);
+  return isKnownUntracked(ref) || OPTIONAL_PRODUCT_GATES.includes(ref);
 }
 
 // Extract every backtick-quoted token from markdown text that looks like a
