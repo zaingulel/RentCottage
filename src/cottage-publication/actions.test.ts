@@ -194,6 +194,35 @@ describe("Cottage publication actions", () => {
     );
   });
 
+  it("accepts a 600-emoji translation report reason as the database counts it", async () => {
+    const reportTranslation = vi.fn().mockResolvedValue(undefined);
+    createRequestCottagePublication.mockResolvedValue({ reportTranslation });
+    const form = baseForm();
+    form.set("localizedRevisionId", "30000000-0000-4000-8000-000000000024");
+    form.set("reason", "🏡".repeat(600));
+
+    await reportCottageTranslationAction(form);
+
+    expect(reportTranslation).toHaveBeenCalledWith(
+      cycleId,
+      "30000000-0000-4000-8000-000000000024",
+      "🏡".repeat(600),
+    );
+  });
+
+  it("treats a line-break-only translation report reason as missing", async () => {
+    const reportTranslation = vi.fn().mockResolvedValue(undefined);
+    createRequestCottagePublication.mockResolvedValue({ reportTranslation });
+    const form = baseForm();
+    form.set("localizedRevisionId", "30000000-0000-4000-8000-000000000024");
+    form.set("reason", "\n");
+
+    await expect(reportCottageTranslationAction(form)).rejects.toThrow(
+      "Cottage publication action input is invalid",
+    );
+    expect(reportTranslation).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["targetLocale", "fr"],
     ["localizedRevisionId", "stale"],

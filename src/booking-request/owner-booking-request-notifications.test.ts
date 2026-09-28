@@ -108,6 +108,26 @@ describe("Owner Booking Request notifications", () => {
     );
   });
 
+  it.each([
+    [
+      "loads a Booking Note with a trailing newline as the database stores it",
+      "Garden seating.\n",
+    ],
+    [
+      "loads a 300-emoji Booking Note as the database counts it",
+      "🏡".repeat(300),
+    ],
+  ])("%s", async (_, bookingNote) => {
+    const stored = { ...notification, bookingNote };
+    const rpc = vi.fn().mockResolvedValue({ data: [stored], error: null });
+
+    await expect(
+      listOwnerBookingRequestNotifications({
+        rpc,
+      } as unknown as SupabaseClient),
+    ).resolves.toEqual([stored]);
+  });
+
   it("fails closed if provider or contact metadata leaks into the projection", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [{ ...notification, customerPhone: "+9647000000000" }],

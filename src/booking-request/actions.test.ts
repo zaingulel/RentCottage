@@ -158,6 +158,37 @@ describe("Booking Request action boundary", () => {
     );
   });
 
+  it("cleans stray line breaks off a Booking Note before submitting", async () => {
+    await expect(
+      submitBookingRequest({
+        ...request,
+        bookingNote: "Garden seating, please.\n",
+      }),
+    ).resolves.toEqual(expect.objectContaining({ status: "pending" }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingNote: "Garden seating, please." }),
+    );
+  });
+
+  it("treats a line-break-only Booking Note as no note", async () => {
+    await expect(
+      submitBookingRequest({ ...request, bookingNote: "\n\t" }),
+    ).resolves.toEqual(expect.objectContaining({ status: "pending" }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingNote: null }),
+    );
+  });
+
+  it("accepts a 300-emoji Booking Note as the database counts it", async () => {
+    const bookingNote = "🏡".repeat(300);
+    await expect(
+      submitBookingRequest({ ...request, bookingNote }),
+    ).resolves.toEqual(expect.objectContaining({ status: "pending" }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingNote }),
+    );
+  });
+
   it.each([
     { customerName: "Ava +964 750 123 4567" },
     { bookingNote: "Call ٠٧٥٠ ١٢٣ ٤٥٦٧" },

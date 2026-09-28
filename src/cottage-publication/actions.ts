@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { charLength } from "@/content/postgres-text";
 import { isLocale } from "@/i18n/routing";
 import {
   createRequestCottagePublication,
@@ -28,7 +29,8 @@ function invalid(): never {
 }
 
 function validText(value: string, maximum: number) {
-  return value.length >= 1 && value.length <= maximum;
+  const length = charLength(value);
+  return length >= 1 && length <= maximum;
 }
 
 function decision(formData: FormData): boolean | null {

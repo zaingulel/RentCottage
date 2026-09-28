@@ -7,7 +7,7 @@ export const searchKinds = [
 ] as const;
 export type AdministratorSearchKind = (typeof searchKinds)[number];
 export type AdministratorDetailKind = "account" | "approval";
-const statuses = {
+export const statuses = {
   customers: ["customer", "cottage_owner"],
   owners: ["prospective", "approved", "suspended", "expired"],
   cottages: ["draft", "submitted_for_content_approval", "abandoned"],
