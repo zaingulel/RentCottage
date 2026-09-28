@@ -1,6 +1,7 @@
 import type { PaymentOperationExecution } from "@/payment/payment-operation-execution";
 import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import type { Locale } from "@/i18n/routing";
+import { btrim, charLength } from "@/content/postgres-text";
 import {
   iqdToFils,
   type PaymentLifecycleSnapshot,
@@ -175,8 +176,8 @@ function validInput(input: SubmissionInput): boolean {
     input.customerName.length >= 2 &&
     input.customerName.length <= 120 &&
     isContactSafeBookingRequestText(input.customerName) &&
-    note === note.trim() &&
-    note.length <= 500 &&
+    note === btrim(note) &&
+    charLength(note) <= 500 &&
     isContactSafeBookingRequestText(note) &&
     Number.isSafeInteger(input.partySize) &&
     input.partySize > 0 &&

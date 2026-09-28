@@ -194,6 +194,38 @@ describe("Cottage publication actions", () => {
     );
   });
 
+  it("accepts a 600-emoji translation report reason as the database counts it", async () => {
+    const reportTranslation = vi.fn().mockResolvedValue(undefined);
+    createRequestCottagePublication.mockResolvedValue({ reportTranslation });
+    const form = baseForm();
+    form.set("localizedRevisionId", "30000000-0000-4000-8000-000000000024");
+    form.set("reason", "🏡".repeat(600));
+
+    await reportCottageTranslationAction(form);
+
+    expect(reportTranslation).toHaveBeenCalledWith(
+      cycleId,
+      "30000000-0000-4000-8000-000000000024",
+      "🏡".repeat(600),
+    );
+  });
+
+  it("keeps a newline-only translation report reason as the database trims it", async () => {
+    const reportTranslation = vi.fn().mockResolvedValue(undefined);
+    createRequestCottagePublication.mockResolvedValue({ reportTranslation });
+    const form = baseForm();
+    form.set("localizedRevisionId", "30000000-0000-4000-8000-000000000024");
+    form.set("reason", "\n");
+
+    await reportCottageTranslationAction(form);
+
+    expect(reportTranslation).toHaveBeenCalledWith(
+      cycleId,
+      "30000000-0000-4000-8000-000000000024",
+      "\n",
+    );
+  });
+
   it.each([
     ["targetLocale", "fr"],
     ["localizedRevisionId", "stale"],

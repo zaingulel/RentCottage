@@ -219,6 +219,29 @@ describe("BookingRequestSubmission", () => {
     expect(repository.savedSnapshots).toHaveLength(2);
   });
 
+  it("accepts a 300-emoji Booking Note as the database counts it", async () => {
+    const repository = repositoryReturning();
+    const prepare = vi.fn(repository.prepare);
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const submission = createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository: { ...repository, prepare },
+        paymentProvider: provider,
+      }),
+    );
+    const bookingNote = "🏡".repeat(300);
+
+    const result = await submission.submit({ ...input, bookingNote });
+
+    expect(result.status).not.toBe("invalid");
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingNote }),
+    );
+  });
+
   it("rehydrates an indeterminate Payment Authorization and reconciles it without another movement", async () => {
     const repository = repositoryReturning();
     const firstProvider = new PaymentSimulator({

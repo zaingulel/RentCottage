@@ -158,6 +158,18 @@ describe("Booking Request action boundary", () => {
     );
   });
 
+  it("keeps newline padding on a Booking Note as the database's btrim does", async () => {
+    await expect(
+      submitBookingRequest({
+        ...request,
+        bookingNote: "Garden seating, please.\n",
+      }),
+    ).resolves.toEqual(expect.objectContaining({ status: "pending" }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingNote: "Garden seating, please.\n" }),
+    );
+  });
+
   it.each([
     { customerName: "Ava +964 750 123 4567" },
     { bookingNote: "Call ٠٧٥٠ ١٢٣ ٤٥٦٧" },
