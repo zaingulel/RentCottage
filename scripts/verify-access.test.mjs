@@ -2083,6 +2083,140 @@ describe("local Supabase concurrency harness", () => {
 });
 
 describe("access verification command", () => {
+  it.each(["SIGINT", "SIGTERM"])(
+    "owner document upgrade interruption reconciles its exact project: first signal during cleanup %s",
+    async (signal) => {
+      const root = mkdtempSync(join(tmpdir(), "access-upgrade-first-signal-"));
+      const fakeBin = join(root, "bin");
+      mkdirSync(fakeBin);
+      const commandPath = join(fakeBin, "command.mjs");
+      writeFileSync(
+        commandPath,
+        `#!${process.execPath}
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+const command = basename(process.argv[1]);
+const args = process.argv.slice(2);
+const root = process.env.ACCESS_UPGRADE_FIRST_SIGNAL_ROOT;
+const project = process.env.OWNER_DOCUMENT_UPGRADE_PROJECT ?? process.env.SUPABASE_LOCAL_PROJECT;
+const childRoot = process.env.OWNER_DOCUMENT_UPGRADE_STATE_ROOT ??
+  (process.env.SUPABASE_LOCAL_WORKDIR ? dirname(process.env.SUPABASE_LOCAL_WORKDIR) : undefined);
+const id = "${"a".repeat(64)}";
+if (command === "node") {
+  if (args[0] === "scripts/verify-owner-document-access-upgrade.mjs") {
+    writeFileSync(join(childRoot, "startup-attempted"), "yes");
+    writeFileSync(join(root, "child-exited"), JSON.stringify({ root: childRoot, project }));
+  }
+  process.exit(0);
+}
+if (command === "npx") {
+  appendFileSync(join(root, "commands.log"), "npx " + args.join(" ") + "\\n");
+  if (args[1] === "db" && args[2] === "diff") process.stdout.write(${JSON.stringify(emptyDeclaredSchemaDiff)});
+  if (args[1] === "status") process.stdout.write(${JSON.stringify(localCredentials)});
+  process.exit(0);
+}
+if (command === "docker") {
+  appendFileSync(join(root, "commands.log"), "docker " + args.join(" ") + "\\n");
+  if (args[0] === "inspect") {
+    process.stdout.write("rentcottage-verification|" + process.env.SUPABASE_LOCAL_WORKDIR + "\\n");
+  } else if (args[0] === "ps") {
+    if (existsSync(join(root, "child-exited")) && !existsSync(join(root, "removed"))) {
+      process.stdout.write(id + "|supabase_auth_" + project + "\\n");
+    }
+  } else if (args[0] === "container" && args[1] === "inspect") {
+    process.stdout.write(JSON.stringify({
+      Id: id, Name: "/supabase_auth_" + project, Created: "2026-09-28T00:00:00Z",
+      Config: { Labels: {
+        "com.supabase.cli.project": project,
+        "com.supabase.cli.workdir": join(childRoot, "project"),
+      } },
+    }));
+  } else if (args[0] === "stop") {
+    process.on("SIGINT", () => { writeFileSync(join(root, "stop-interrupted"), "SIGINT"); process.exit(130); });
+    process.on("SIGTERM", () => { writeFileSync(join(root, "stop-interrupted"), "SIGTERM"); process.exit(143); });
+    writeFileSync(join(root, "stop-ready"), "yes");
+    await new Promise((resolve) => {
+      const wait = () => {
+        if (existsSync(join(root, "release-stop"))) {
+          writeFileSync(join(root, "stop-complete"), "yes");
+          resolve();
+        } else {
+          setTimeout(wait, 10);
+        }
+      };
+      wait();
+    });
+  } else if (args[0] === "rm") {
+    writeFileSync(join(root, "removed"), "yes");
+  }
+  process.exit(0);
+}
+process.exit(1);
+`,
+      );
+      chmodSync(commandPath, 0o755);
+      for (const command of ["node", "npx", "docker"])
+        symlinkSync(commandPath, join(fakeBin, command));
+      let wrapper;
+      try {
+        wrapper = spawn(
+          process.execPath,
+          [resolve(process.cwd(), "scripts/verify-access.mjs"), "--database"],
+          {
+            cwd: process.cwd(),
+            env: {
+              ...process.env,
+              ACCESS_UPGRADE_FIRST_SIGNAL_ROOT: root,
+              PATH: `${fakeBin}:${process.env.PATH}`,
+              TMPDIR: root,
+            },
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        );
+        const stderr = [];
+        wrapper.stderr.on("data", (chunk) => stderr.push(String(chunk)));
+        try {
+          await waitForCondition(
+            () => existsSync(join(root, "stop-ready")),
+            "first-signal cleanup stop readiness",
+            10_000,
+          );
+        } catch (error) {
+          throw new Error(
+            `${error.message}\n${stderr.join("")}\n${existsSync(join(root, "commands.log")) ? readFileSync(join(root, "commands.log"), "utf8") : "no commands"}`,
+          );
+        }
+        const child = JSON.parse(
+          readFileSync(join(root, "child-exited"), "utf8"),
+        );
+        process.kill(wrapper.pid, signal);
+        writeFileSync(join(root, "release-stop"), "yes");
+        expect(
+          await waitForChildExit(
+            wrapper,
+            "first-signal upgrade cleanup",
+            12_000,
+          ),
+          stderr.join(""),
+        ).toEqual({ code: signal === "SIGINT" ? 130 : 143, signal: null });
+        expect(existsSync(join(root, "stop-interrupted"))).toBe(false);
+        expect(existsSync(join(root, "stop-complete"))).toBe(true);
+        expect(
+          existsSync(join(root, "removed")),
+          `${stderr.join("")}\n${readFileSync(join(root, "commands.log"), "utf8")}`,
+        ).toBe(true);
+        expect(existsSync(child.root)).toBe(false);
+        const commands = readFileSync(join(root, "commands.log"), "utf8");
+        expect(commands.match(/docker stop /g)).toHaveLength(1);
+        expect(commands).not.toContain("npx supabase test db");
+      } finally {
+        if (wrapper && processIsAlive(wrapper.pid))
+          process.kill(wrapper.pid, "SIGTERM");
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    25_000,
+  );
   it.each([false, true])(
     "owner document upgrade interruption reconciles its exact project: stranded volume and network, in use %s",
     async (volumeInUse) => {

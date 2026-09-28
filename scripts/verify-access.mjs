@@ -1030,6 +1030,7 @@ export async function main(
   let activeInvocation;
   let interruptedSignal;
   let cleaningUp = false;
+  let reconcilingOwnerDocumentUpgrade = false;
   let interruptionCleanup = Promise.resolve();
   let ownerDocumentUpgradeRoot;
   let ownerDocumentUpgradeInvocation;
@@ -1047,7 +1048,7 @@ export async function main(
   const handleSignal = (signal) => {
     if (interruptedSignal) return;
     interruptedSignal = signal;
-    if (activeInvocation && !cleaningUp) {
+    if (activeInvocation && !cleaningUp && !reconcilingOwnerDocumentUpgrade) {
       interruptionCleanup = activeInvocation.stop(signal);
     }
   };
@@ -1355,7 +1356,13 @@ export async function main(
       } finally {
         ownerDocumentUpgradeRunning = false;
       }
-      const upgradeCleanupError = await reconcileOwnerDocumentUpgrade();
+      let upgradeCleanupError;
+      reconcilingOwnerDocumentUpgrade = true;
+      try {
+        upgradeCleanupError = await reconcileOwnerDocumentUpgrade();
+      } finally {
+        reconcilingOwnerDocumentUpgrade = false;
+      }
       if (ownerDocumentAccessUpgrade.status !== 0) {
         return ownerDocumentAccessUpgrade.status;
       }
