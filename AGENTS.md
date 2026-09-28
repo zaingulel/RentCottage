@@ -187,7 +187,7 @@ semantics. Competitors are interface prior art only and never override RentCotta
 |---|---|
 | plan-first | Authentication, authorization, payments, personal data, private owner-verification files, database migrations, Row Level Security, provider/Worker trust, destructive data changes, new user-facing behaviour with no settled design |
 | owner-directed | New product meaning and unsettled user-facing design: owner direction plus domain grounding |
-| sign-off | Authentication, authorization, payments, personal data, schema/migrations, Row Level Security, provider/Worker trust, the public/private data perimeter, and any other trust-boundary change; each needs explicit sign-off and a named anti-regression test |
+| sign-off | Authentication, authorization and Row Level Security, payments, provider/Worker trust, any change that widens access to private or personal data, and a migration that moves or deletes existing data; each needs explicit sign-off and a named anti-regression test. Any other schema change, such as adding a column a read-only screen shows, takes the ordinary cross-family review |
 | security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, an injection boundary, or a shared-workflow sync that changes agent permissions, hook registrations or hook scripts; privacy: [docs/product/rentcottage-mvp-prd.md](docs/product/rentcottage-mvp-prd.md#6-privacy-safety-and-moderation) |
 
 The standing security guarantees, in order of blast radius:

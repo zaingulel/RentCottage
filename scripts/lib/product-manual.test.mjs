@@ -93,10 +93,10 @@ test("product region keeps the visual verification surfaces", () => {
   );
 });
 
-test("product region keeps the sign-off trust-boundary catch-all", () => {
+test("product region keeps the narrowed sign-off row", () => {
   assertProductLine(
     "sign-off",
-    "| sign-off | Authentication, authorization, payments, personal data, schema/migrations, Row Level Security, provider/Worker trust, the public/private data perimeter, and any other trust-boundary change; each needs explicit sign-off and a named anti-regression test |",
+    "| sign-off | Authentication, authorization and Row Level Security, payments, provider/Worker trust, any change that widens access to private or personal data, and a migration that moves or deletes existing data; each needs explicit sign-off and a named anti-regression test. Any other schema change, such as adding a column a read-only screen shows, takes the ordinary cross-family review |",
   );
 });
 
