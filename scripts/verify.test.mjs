@@ -1715,13 +1715,123 @@ describe("repository verification command", () => {
   );
 
   it.each([undefined, "--database", "--browser"])(
-    "runs every check in CI for a docs-only merge: %s",
+    "keeps the CI quick path for a docs-only merge: %s",
     (mode) => {
       const repository = createRepository();
       const base = git(repository, ["rev-parse", "HEAD"]);
       const source = commit(repository, "AGENTS.md", "source instructions\n");
       git(repository, ["switch", "main"]);
       git(repository, ["merge", "--no-ff", source]);
+
+      const result = runVerification(repository, {
+        args: mode ? [mode] : [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_BASE_SHA: base,
+          VERIFY_SOURCE_SHA: source,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        mode ? [] : requiredBaselineSteps,
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("Expensive verification: skipped"),
+      );
+    },
+  );
+
+  it.each(
+    [
+      "src/booking-request/booking-request-policy.ts",
+      "src/booking-request/booking-request-policy.test.ts",
+    ].flatMap((path) =>
+      [undefined, "--database", "--browser"].map((mode) => [path, mode]),
+    ),
+  )("runs every check in CI for a product change: %s %s", (path, mode) => {
+    const repository = createRepository();
+    const base = git(repository, ["rev-parse", "HEAD"]);
+    const source = commit(repository, path, "export const value = true;\n");
+    git(repository, ["switch", "main"]);
+    git(repository, ["merge", "--no-ff", source]);
+
+    const result = runVerification(repository, {
+      args: mode ? [mode] : [],
+      environment: {
+        GITHUB_ACTIONS: "true",
+        VERIFY_BASE_SHA: base,
+        VERIFY_SOURCE_SHA: source,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      requiredCiSteps(mode),
+    );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining("continuous integration runs every check"),
+    );
+  });
+
+  it.each([
+    ["modification", undefined],
+    ["addition", "--database"],
+    ["deletion", "--browser"],
+  ])(
+    "ignores an advanced-base-only runtime %s in CI: %s",
+    (baseChange, mode) => {
+      const repository = createRepository();
+      const originalBase = git(repository, ["rev-parse", "HEAD"]);
+
+      git(repository, ["switch", "-c", "source", originalBase]);
+      const source = commit(repository, "AGENTS.md", "source instructions\n");
+      git(repository, ["switch", "main"]);
+      if (baseChange === "addition") {
+        commit(repository, "src/base-only.ts", "export const base = true;\n");
+      } else if (baseChange === "deletion") {
+        git(repository, ["rm", "custom-worker.ts"]);
+        git(repository, ["commit", "-m", "delete runtime on base"]);
+      } else {
+        commit(
+          repository,
+          "custom-worker.ts",
+          "export const value = 'base';\n",
+        );
+      }
+      const base = git(repository, ["rev-parse", "HEAD"]);
+      git(repository, ["merge", "--no-ff", "source"]);
+
+      const result = runVerification(repository, {
+        args: mode ? [mode] : [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_BASE_SHA: base,
+          VERIFY_SOURCE_SHA: source,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        mode ? [] : requiredBaselineSteps,
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("Expensive verification: skipped"),
+      );
+    },
+  );
+
+  it.each([undefined, "--database", "--browser"])(
+    "selects full CI evidence for a runtime change visible only in the merge result: %s",
+    (mode) => {
+      const repository = createRepository();
+      const base = git(repository, ["rev-parse", "HEAD"]);
+      const source = commit(repository, "AGENTS.md", "source instructions\n");
+      git(repository, ["switch", "main"]);
+      git(repository, ["merge", "--no-ff", "--no-commit", source]);
+      write(repository, "custom-worker.ts", "export const value = 'merge';\n");
+      git(repository, ["add", "."]);
+      git(repository, ["commit", "-m", "merge source"]);
 
       const result = runVerification(repository, {
         args: mode ? [mode] : [],

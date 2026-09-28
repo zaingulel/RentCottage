@@ -228,8 +228,7 @@ function isBaselineOnlyPath(path) {
     /^\.claude\/skills\/[^/]+\/(?:.+\.md|agents\/openai\.yaml)$/i.test(path) ||
     /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
     /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
-    /^docs\/.+\.(?:avif|docx|gif|jpe?g|md|png|svg|webp)$/i.test(path) ||
-    /^src\/.+\.test\.tsx?$/.test(path)
+    /^docs\/.+\.(?:avif|docx|gif|jpe?g|md|png|svg|webp)$/i.test(path)
   );
 }
 
@@ -525,6 +524,7 @@ export function classifyChanges(changes) {
       continue;
     }
     if (isBaselineOnlyPath(change.path)) continue;
+    if (/^src\/.+\.test\.tsx?$/.test(change.path)) continue;
     if (fullEvidencePaths.has(change.path)) {
       selectFullRoute(change.path, `${change.path} requires full evidence`);
       continue;
@@ -658,6 +658,24 @@ function ciSelection(cwd, environment, stdout) {
   stdout(
     `CI Git comparison: merge base ${mergeBase}; base ${base}; source ${source}; merge ${merge}`,
   );
+  const changes = [
+    ...diffChanges(cwd, [`${mergeBase}..${source}`]),
+    ...diffChanges(cwd, [`${base}..${merge}`]),
+  ];
+  const selection = classifyChanges(changes);
+  if (
+    !selection.unclassified &&
+    !selection.database &&
+    !selection.browser &&
+    changes.every(({ path }) => isBaselineOnlyPath(path))
+  ) {
+    return {
+      browser: false,
+      database: false,
+      bookingConcurrency: false,
+      reason: selection.reason,
+    };
+  }
   return {
     browser: true,
     database: true,
