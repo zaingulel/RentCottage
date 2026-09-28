@@ -87,7 +87,7 @@ const operations = [
   "confirmation",
   "invalidation",
 ];
-const states = [
+export const states = [
   "paid-confirmed",
   "cancelled",
   "indeterminate",
