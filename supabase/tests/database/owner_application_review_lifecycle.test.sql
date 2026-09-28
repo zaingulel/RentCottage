@@ -945,24 +945,8 @@ select throws_ok(
 );
 
 reset role;
-create function pg_temp.denied_review_document_status(
-  requested_status public.owner_application_status
-) returns text
-language plpgsql security definer set search_path = ''
-as $$
-begin
-  update public.owner_applications set status = requested_status
-  where id = '20000000-0000-4000-8000-000000000301';
-  begin
-    perform public.prepare_owner_verification_document_access(
-      '40000000-0000-4000-8000-000000000303'
-    );
-    return 'NO_ERROR';
-  exception when others then
-    return sqlstate;
-  end;
-end;
-$$;
+update public.owner_applications set status = 'rejected'
+where id = '20000000-0000-4000-8000-000000000301';
 
 set local role authenticated;
 select set_config(
@@ -970,10 +954,11 @@ select set_config(
   '{"sub":"00000000-0000-0000-0000-000000000304","role":"authenticated","aal":"aal2"}',
   true
 );
-select results_eq(
-  $$select status::text, pg_temp.denied_review_document_status(status)
-    from unnest(array['rejected']::public.owner_application_status[]) status$$,
-  $$values ('rejected'::text, 'RC204'::text)$$,
+select throws_ok(
+  $$select public.prepare_owner_verification_document_access(
+    '40000000-0000-4000-8000-000000000303'
+  )$$,
+  'RC204', null,
   'Rejected denies new document grants'
 );
 
