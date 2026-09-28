@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
@@ -2412,7 +2412,7 @@ process.exit(0);
     const fixtureRoot = mkdtempSync(
       join(tmpdir(), "access-upgrade-symlinked-temp-"),
     );
-    const actualTemp = join(fixtureRoot, "actual-temp");
+    const actualTemp = join(fixtureRoot, "actual[1]-temp");
     const symlinkedTemp = join(fixtureRoot, "linked-temp");
     const fakeBin = join(fixtureRoot, "bin");
     mkdirSync(actualTemp);
@@ -2464,8 +2464,12 @@ process.exit(0);
         ({ command, args }) => command === "npx" && args[1] === "start",
       );
       expect(startup, child.stderr || child.stdout).toBeDefined();
-      expect(startup.workdir).toMatch(
-        new RegExp(`^${realpathSync(symlinkedTemp)}/rentcottage-owner-document-upgrade-[^/]+/project$`),
+      expect(basename(startup.workdir)).toBe("project");
+      expect(dirname(dirname(startup.workdir))).toBe(
+        realpathSync(symlinkedTemp),
+      );
+      expect(basename(dirname(startup.workdir))).toMatch(
+        /^rentcottage-owner-document-upgrade-[^/]+$/,
       );
       expect(startup.project).toMatch(/^rentcottage-[a-f0-9]{28}$/);
     } finally {
