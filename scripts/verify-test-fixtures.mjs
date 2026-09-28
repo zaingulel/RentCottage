@@ -143,6 +143,7 @@ export function createRepository() {
   write(repository, "AGENTS.md", "initial instructions\n");
   write(repository, ".gitignore", "node_modules/\n");
   write(repository, "custom-worker.ts", "export const value = 'initial';\n");
+  write(repository, "tsconfig.json", "{}\n");
   writeDependencyMetadata(repository);
   git(repository, ["add", "."]);
   git(repository, ["commit", "-m", "initial"]);
@@ -258,7 +259,7 @@ else fs.appendFileSync(${JSON.stringify(commandLog)}, JSON.stringify([name, ...a
       write(entry.directory, "Resources/locale.pak", "fixture-resource");
     }
   }
-  commit(repository, "custom-worker.ts", "seed\n");
+  commit(repository, "tsconfig.json", "seed\n");
   return {
     repository,
     tools,

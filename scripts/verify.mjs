@@ -258,6 +258,31 @@ function requiresBookingConcurrency(path) {
   );
 }
 
+// Full-route paths no booking or payment concurrency program reads; anything not listed is a
+// concurrency input, so an unknown full-route path still runs the programs.
+const bookingConcurrencyNonInputPaths = new Set([
+  ".gitattributes",
+  ".gitignore",
+  ".prettierignore",
+  ".prettierrc.json",
+  "cloudflare-env.d.ts",
+  "custom-worker.ts",
+  "eslint.config.mjs",
+  "next-env.d.ts",
+  "next.config.ts",
+  "open-next.config.ts",
+  "vitest.config.ts",
+  "vitest.setup.ts",
+  "wrangler.jsonc",
+]);
+
+function isBookingConcurrencyNonInput(path) {
+  return (
+    bookingConcurrencyNonInputPaths.has(path) ||
+    /^(?:\.github\/workflows|translation)\/.+$/.test(path)
+  );
+}
+
 function requiresDatabaseEvidence(path) {
   return /^supabase\/(?:schemas|migrations|tests|fixtures)\/.+$/.test(path);
 }
@@ -467,6 +492,10 @@ export function classifyChanges(changes) {
   let database = false;
   let bookingConcurrency = false;
   let fullReason;
+  const selectFullRoute = (path, reason) => {
+    fullReason ??= reason;
+    if (!isBookingConcurrencyNonInput(path)) bookingConcurrency = true;
+  };
   const unclassified = new Set();
   for (const change of changes) {
     if (change.oldMode === "100755" || change.newMode === "100755") {
@@ -478,7 +507,10 @@ export function classifyChanges(changes) {
       ) {
         continue;
       }
-      fullReason ??= `${change.path} is executable or has an executable-mode change`;
+      selectFullRoute(
+        change.path,
+        `${change.path} is executable or has an executable-mode change`,
+      );
       continue;
     }
     if (
@@ -486,12 +518,15 @@ export function classifyChanges(changes) {
       !nonExecutableRegularOrAbsent(change.oldMode) ||
       !nonExecutableRegularOrAbsent(change.newMode)
     ) {
-      fullReason ??= `${change.path} has a symlink or file-type change`;
+      selectFullRoute(
+        change.path,
+        `${change.path} has a symlink or file-type change`,
+      );
       continue;
     }
     if (isBaselineOnlyPath(change.path)) continue;
     if (fullEvidencePaths.has(change.path)) {
-      fullReason ??= `${change.path} requires full evidence`;
+      selectFullRoute(change.path, `${change.path} requires full evidence`);
       continue;
     }
     if (requiresBookingConcurrency(change.path)) {
@@ -509,7 +544,7 @@ export function classifyChanges(changes) {
     }
     if (isBaselineSourcePath(change.path)) continue;
     if (requiresFullEvidence(change.path)) {
-      fullReason ??= `${change.path} requires full evidence`;
+      selectFullRoute(change.path, `${change.path} requires full evidence`);
       continue;
     }
     unclassified.add(change.path);
@@ -522,7 +557,7 @@ export function classifyChanges(changes) {
     return {
       browser: true,
       database: true,
-      bookingConcurrency: true,
+      bookingConcurrency,
       reason: fullReason,
     };
   }

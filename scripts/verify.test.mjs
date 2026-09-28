@@ -187,7 +187,7 @@ describe("repository verification command", () => {
           forced.calls.map(([command, commandArgs]) => [command, commandArgs]),
         ).toEqual(expected);
       }
-      write(repository, "custom-worker.ts", "export const value = 'dirty';\n");
+      write(repository, "tsconfig.json", "{ dirty }\n");
       const selected = runVerification(repository, { args: [mode] });
       expect(selected.status).toBe(0);
       expect(selected.calls.map(([command, args]) => [command, args])).toEqual(
@@ -995,7 +995,8 @@ describe("repository verification command", () => {
     expect(result.status).toBe(0);
     expect(result.calls.map(([command, args]) => [command, args])).toEqual([
       ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
+      ...requiredLightDatabaseSteps,
+      ...requiredBrowserSteps,
     ]);
   });
 
@@ -1113,6 +1114,11 @@ describe("repository verification command", () => {
   );
 
   const fullRoute = [...requiredBaselineSteps, ...requiredExpensiveSteps];
+  const fullRouteWithoutConcurrency = [
+    ...requiredBaselineSteps,
+    ...requiredLightDatabaseSteps,
+    ...requiredBrowserSteps,
+  ];
   it.each(
     [
       [
@@ -1179,6 +1185,12 @@ describe("repository verification command", () => {
         "selected",
       ],
       [["tests/fixtures/payment-recovery-cleanup.mjs"], fullRoute, "selected"],
+      [["custom-worker.ts"], fullRouteWithoutConcurrency, "skipped"],
+      [
+        ["custom-worker.ts", "scripts/local-supabase-concurrency-harness.mjs"],
+        fullRoute,
+        "selected",
+      ],
     ].map(([paths, ...rest]) => [paths.join(" and "), paths, ...rest]),
   )("selects the route for %s", (_label, paths, steps, concurrency) => {
     const repository = createRepository();
@@ -1197,6 +1209,27 @@ describe("repository verification command", () => {
     );
   });
 
+  it("selects the route for package-lock.json", () => {
+    const repository = createRepository();
+    const lock = JSON.parse(
+      readFileSync(join(repository, "package-lock.json"), "utf8"),
+    );
+    lock.packages["node_modules/fixture"] = { version: "1.0.0" };
+    commit(repository, "package-lock.json", `${JSON.stringify(lock)}\n`);
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      fullRoute,
+    );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Booking and payment concurrency programs: selected",
+      ),
+    );
+  });
+
   it("selects the route for src/reporting/new.ts", () => {
     const repository = createRepository();
     commit(repository, "src/reporting/new.ts", "export {};\n");
@@ -1211,32 +1244,53 @@ describe("repository verification command", () => {
   });
 
   it.each([
-    ["runtime code", "custom-worker.ts", "export const value = 'changed';\n"],
-    ["a dependency file", "package.json", "{}\n"],
-    ["root git ignore", ".gitignore", "node_modules/\n.demo/\n"],
-    ["root Prettier ignore", ".prettierignore", "node_modules\n"],
-    ["root Prettier config", ".prettierrc.json", "{}\n"],
+    [
+      "runtime code",
+      "custom-worker.ts",
+      "export const value = 'changed';\n",
+      fullRouteWithoutConcurrency,
+    ],
+    ["a dependency file", "package.json", "{}\n", fullRoute],
+    [
+      "root git ignore",
+      ".gitignore",
+      "node_modules/\n.demo/\n",
+      fullRouteWithoutConcurrency,
+    ],
+    [
+      "root Prettier ignore",
+      ".prettierignore",
+      "node_modules\n",
+      fullRouteWithoutConcurrency,
+    ],
+    [
+      "root Prettier config",
+      ".prettierrc.json",
+      "{}\n",
+      fullRouteWithoutConcurrency,
+    ],
     [
       "the selector itself",
       "scripts/verify.mjs",
       "export const changed = true;\n",
+      fullRoute,
     ],
     [
       "the selector tests",
       "scripts/verify.test.mjs",
       "export const changed = true;\n",
+      fullRoute,
     ],
-  ])("selects full verification for %s", (_label, path, contents) => {
+  ])("selects full verification for %s", (_label, path, contents, steps) => {
     const repository = createRepository();
     commit(repository, path, contents);
 
     const result = runVerification(repository);
 
     expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual([
-      ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
-    ]);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      steps,
+    );
     expect(result.stdout).toHaveBeenCalledWith(
       expect.stringContaining("Database verification: selected"),
     );
@@ -1471,7 +1525,7 @@ describe("repository verification command", () => {
 
   it("keeps an earlier runtime commit visible after a documentation commit", () => {
     const repository = createRepository();
-    commit(repository, "custom-worker.ts", "export const value = 'changed';\n");
+    commit(repository, "tsconfig.json", "{ changed }\n");
     commit(repository, "AGENTS.md", "updated instructions\n");
 
     const result = runVerification(repository);
@@ -1484,26 +1538,14 @@ describe("repository verification command", () => {
 
   it("unions dirty, staged-cancelled, and untracked paths", () => {
     const cases = [
-      (repository) =>
-        write(
-          repository,
-          "custom-worker.ts",
-          "export const value = 'dirty';\n",
-        ),
+      (repository) => write(repository, "tsconfig.json", "{ dirty }\n"),
       (repository) => {
-        write(
-          repository,
-          "custom-worker.ts",
-          "export const value = 'staged';\n",
-        );
-        git(repository, ["add", "custom-worker.ts"]);
-        write(
-          repository,
-          "custom-worker.ts",
-          "export const value = 'initial';\n",
-        );
+        write(repository, "tsconfig.json", "{ staged }\n");
+        git(repository, ["add", "tsconfig.json"]);
+        write(repository, "tsconfig.json", "{}\n");
       },
-      (repository) => write(repository, "open-next.config.ts", "export {};\n"),
+      (repository) =>
+        write(repository, "scripts/verify-preview.mjs", "export {};\n"),
     ];
 
     for (const arrange of cases) {
@@ -1519,14 +1561,15 @@ describe("repository verification command", () => {
 
   it("uses both endpoints of deletions and renames", () => {
     const deletedRepository = createRepository();
-    git(deletedRepository, ["rm", "custom-worker.ts"]);
+    git(deletedRepository, ["rm", "tsconfig.json"]);
     git(deletedRepository, ["commit", "-m", "delete runtime"]);
     expect(runVerification(deletedRepository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
 
     const renamedRepository = createRepository();
-    git(renamedRepository, ["mv", "AGENTS.md", "next.config.ts"]);
+    mkdirSync(join(renamedRepository, "scripts"));
+    git(renamedRepository, ["mv", "AGENTS.md", "scripts/verify-preview.mjs"]);
     git(renamedRepository, ["commit", "-m", "rename manual"]);
     expect(runVerification(renamedRepository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
@@ -1586,7 +1629,7 @@ describe("repository verification command", () => {
   it("keeps mixed prose and runtime changes on full evidence", () => {
     const repository = createRepository();
     commit(repository, "docs/research/study.md", "# Study\n");
-    commit(repository, "custom-worker.ts", "export const value = 'changed';\n");
+    commit(repository, "tsconfig.json", "{ changed }\n");
 
     expect(runVerification(repository).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
