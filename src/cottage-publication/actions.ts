@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { btrim, charLength } from "@/content/postgres-text";
+import { charLength } from "@/content/postgres-text";
 import { isLocale } from "@/i18n/routing";
 import {
   createRequestCottagePublication,
@@ -11,7 +11,7 @@ import {
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
-  return typeof value === "string" ? btrim(value) : "";
+  return typeof value === "string" ? value.trim() : "";
 }
 
 const uuidPattern =

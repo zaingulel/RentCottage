@@ -158,7 +158,7 @@ describe("Booking Request action boundary", () => {
     );
   });
 
-  it("keeps newline padding on a Booking Note as the database's btrim does", async () => {
+  it("cleans stray line breaks off a Booking Note before submitting", async () => {
     await expect(
       submitBookingRequest({
         ...request,
@@ -166,7 +166,16 @@ describe("Booking Request action boundary", () => {
       }),
     ).resolves.toEqual(expect.objectContaining({ status: "pending" }));
     expect(submit).toHaveBeenCalledWith(
-      expect.objectContaining({ bookingNote: "Garden seating, please.\n" }),
+      expect.objectContaining({ bookingNote: "Garden seating, please." }),
+    );
+  });
+
+  it("treats a line-break-only Booking Note as no note", async () => {
+    await expect(
+      submitBookingRequest({ ...request, bookingNote: "\n\t" }),
+    ).resolves.toEqual(expect.objectContaining({ status: "pending" }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ bookingNote: null }),
     );
   });
 

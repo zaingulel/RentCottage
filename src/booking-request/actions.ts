@@ -9,7 +9,7 @@ import {
   isBookingQuoteFingerprint,
   isPublicCottageSlug,
 } from "@/booking-quote/booking-quote";
-import { btrim, charLength } from "@/content/postgres-text";
+import { charLength } from "@/content/postgres-text";
 import {
   parseCottageDiscoveryQuery,
   type CottageDiscoveryQuery,
@@ -93,7 +93,7 @@ function inputFrom(
   const customerName =
     typeof input?.customerName === "string" ? input.customerName.trim() : "";
   const normalizedNote =
-    typeof input?.bookingNote === "string" ? btrim(input.bookingNote) : "";
+    typeof input?.bookingNote === "string" ? input.bookingNote.trim() : "";
   const note = normalizedNote === "" ? null : normalizedNote;
   const conversationId = input?.conversationId;
   const evidence = record(input?.acceptanceEvidence);
