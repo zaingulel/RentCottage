@@ -11,15 +11,18 @@ import { cottageProfileSourceLanguages } from "@/cottage-profile/cottage-profile
 import { verificationDocumentKinds } from "@/owner-application/owner-application";
 import { ownerApplicationStatuses } from "@/owner-application/owner-application-status";
 
-const declaredTypes = readFileSync(
-  resolve(process.cwd(), "supabase/schemas/01_types.sql"),
-  "utf8",
+function withoutLineComments(text: string) {
+  return text.replace(/--[^\n]*/g, "");
+}
+
+const declaredTypes = withoutLineComments(
+  readFileSync(resolve(process.cwd(), "supabase/schemas/01_types.sql"), "utf8"),
 );
 
-function enumValues(name: string) {
+function enumValues(name: string, schema = declaredTypes) {
   const declaration = new RegExp(
     `CREATE TYPE "public"\\."${name}" AS ENUM \\(([^)]*)\\)`,
-  ).exec(declaredTypes);
+  ).exec(schema);
   const values = [...(declaration?.[1] ?? "").matchAll(/'([^']*)'/g)].map(
     (match) => match[1],
   );
@@ -96,5 +99,12 @@ describe("Database enum types", () => {
     expect(() => enumValues("missing_enum_type")).toThrow(
       "Enum type missing_enum_type is not declared with values",
     );
+  });
+
+  it("ignores a value commented out of a declared enum", () => {
+    const schema = withoutLineComments(
+      `CREATE TYPE "public"."sample_state" AS ENUM (\n    'kept',\n    -- 'removed',\n    'also_kept'\n);`,
+    );
+    expect(enumValues("sample_state", schema)).toEqual(["kept", "also_kept"]);
   });
 });
