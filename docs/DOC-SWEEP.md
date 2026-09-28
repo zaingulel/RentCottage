@@ -69,17 +69,20 @@ it after the registry service is restored. That YAML is not enforcement proof. B
 the owner must separately configure a
 source-bound hosted `sweep-scope` protection with no administrator bypass and verify the setting live.
 
-The guard has five accepted gaps. GitHub keeps an anchor live after escaping a `<textarea>`, `<script>`, `<style>`,
-or `<title>` wrapper, while the parser treats the wrapper as a raw-text context. GitHub also closes a comment on
-`--!>`, while the parser misses an anchor after that spelling when the anchor opens its own block. The base tree can
-vouch for hostile-looking destinations that appear only in unrelated negative fixtures; non-exhaustive RentCottage
-examples include `https://evil.test/en/bookings`, `https://attacker.test/private`, and
-`https://attacker.example/prod-ref.supabase.co`. The check prints only a count for permitted newly rendered
-destinations; their individual records remain internal and unprinted. Finally, the added-line half deliberately
-refuses any character reference glued directly to an e-mail literal or host, whatever the reference decodes to, so
-some harmless prose is also refused. These gaps remain accepted rather than silently implied or repaired here; the
-normative follow-up is
-[Flowgauge issue #1362](https://github.com/zaingulel/flow-metrics-dashboard/issues/1362).
+The check closes the spellings on which it knows that parser and GitHub disagree, set out here; a disagreement not
+named here leaves it blind, and this sentence is the only control for it. Before it reads raw HTML, the check
+applies GitHub's own disallowed-raw-HTML filter, which escapes the leading `<` of the nine tags GitHub filters, and
+it refuses raw text or a CDATA comment that still hides a tag. It refuses `--!>` wherever raw HTML carries it,
+because HTML closes a comment there and the parser does not. It refuses any control character but tab on an added
+line, because GitHub reads a form feed or vertical tab inside a tag as a space where the parser reads text. The
+search that decides what the base tree vouches for excludes the guard's own sources and test code (`tests/` and
+`*.test.*` anywhere), so a spoof host a negative fixture names vouches for nothing, and a real host named only there
+fails closed.
+
+The guard has two accepted gaps. The check prints only a count for permitted newly rendered destinations; their
+individual records remain internal and unprinted. Finally, the added-line half deliberately refuses any character
+reference glued directly to an e-mail literal or host, whatever the reference decodes to, so some harmless prose is
+also refused. These gaps remain accepted rather than silently implied or repaired here.
 
 ## Activation prerequisites
 
