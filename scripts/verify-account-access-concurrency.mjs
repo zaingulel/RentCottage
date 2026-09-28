@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { build } from "esbuild";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
@@ -27,6 +31,7 @@ try {
   const auth = (userId) =>
     `set local role authenticated; select set_config('request.jwt.claim.sub','${userId}',true);`;
   let seeded = false;
+  let parseAccountContext;
   async function race(index, firstRole, secondRole) {
     const first = harness.startSession(
       `begin; set application_name='account_274_first'; ${auth(id(index))} select row_to_json(public.claim_marketplace_role('${firstRole}')); select 'ACCOUNT_FIRST_CLAIMED';`,
@@ -48,6 +53,16 @@ try {
       );
       assert.equal(context.user_id, id(index));
       assert.notEqual(context.role, "platform_administrator");
+      assert.deepEqual(
+        parseAccountContext(context),
+        context.role === "cottage_owner"
+          ? {
+              userId: context.user_id,
+              role: context.role,
+              approvalState: context.owner_approval_state,
+            }
+          : { userId: context.user_id, role: context.role },
+      );
     }
     const row = JSON.parse(
       harness.runSql(
@@ -60,7 +75,24 @@ try {
     ]);
   }
   let failure;
+  const temp = mkdtempSync(
+    join(tmpdir(), "rentcottage-account-context-parser-"),
+  );
   try {
+    await build({
+      entryPoints: [
+        new URL("../src/access/supabase-account-access.ts", import.meta.url)
+          .pathname,
+      ],
+      outfile: join(temp, "account-access.mjs"),
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      logLevel: "silent",
+    });
+    ({ parseAccountContext } = await import(
+      pathToFileURL(join(temp, "account-access.mjs"))
+    ));
     assert.equal(
       harness.runSql(
         `select count(*) from auth.users where id in (${[1, 2, 3, 4, 5, 6].map((i) => `'${id(i)}'`).join(",")});`,
@@ -147,6 +179,11 @@ try {
       } catch (error) {
         cleanupErrors.push(error);
       }
+    }
+    try {
+      rmSync(temp, { recursive: true, force: true });
+    } catch (error) {
+      cleanupErrors.push(error);
     }
     if (cleanupErrors.length)
       failure = new AggregateError(
