@@ -1,13 +1,27 @@
+import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const USAGE =
   "Usage: node scripts/verify-booking-request-scheduled-expiry.mjs --seed|--verify";
+const REQUEST_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 export function main(args, environment = process.env) {
   if (args.length !== 1 || (args[0] !== "--seed" && args[0] !== "--verify")) {
     console.error(USAGE);
     return 2;
   }
+
+  const workdir = environment.SUPABASE_LOCAL_WORKDIR;
+  if (
+    !workdir ||
+    !statSync(workdir, { throwIfNoEntry: false })?.isDirectory()
+  ) {
+    throw new Error(
+      "Scheduled expiry requires an existing local Supabase workdir.",
+    );
+  }
+  const identityFile = join(workdir, "scheduled-expiry-request-id");
 
   const harness = createLocalSupabaseConcurrencyHarness({ environment });
   harness.guardDisposableLocalDatabase();
@@ -26,15 +40,21 @@ export function main(args, environment = process.env) {
           response_deadline = base.created_at + interval '4 hours'
       from target, base
       where requests.id = target.id
+        and (select count(*) from target) = 1
       returning requests.id;
     `);
-    if (!/^[0-9a-f-]{36}$/i.test(requestId)) {
+    if (!REQUEST_ID_PATTERN.test(requestId)) {
       throw new Error("Expected exactly one pending booking request.");
     }
-    console.log("Scheduled expiry fixture is due.");
+    writeFileSync(identityFile, `${requestId}\n`);
+    console.log(`Scheduled expiry fixture ${requestId} is due.`);
     return 0;
   }
 
+  const requestId = readFileSync(identityFile, "utf8").trim();
+  if (!REQUEST_ID_PATTERN.test(requestId)) {
+    throw new Error("Scheduled expiry fixture ID is invalid.");
+  }
   const result = harness.runSql(`
     select concat_ws('|', requests.status, work.state, work.outcome,
       commitments.status, bool_and(not occupancies.active),
@@ -57,9 +77,10 @@ export function main(args, environment = process.env) {
     join public.payment_provider_operations provider
       on provider.payment_lifecycle_id = attempts.payment_lifecycle_id
       and provider.operation_kind = 'release'
-    where requests.status = 'expired'
+    where requests.id = '${requestId}'
+      and requests.status = 'expired'
       and work.outcome = 'expired'
-    group by requests.status, work.state, work.outcome, commitments.status,
+    group by requests.id, requests.status, work.state, work.outcome, commitments.status,
       attempts.payment_snapshot;
   `);
   const expected = "expired|complete|expired|released_hold|t|2|1|1|2";
