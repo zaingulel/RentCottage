@@ -173,6 +173,42 @@ test('a checkout that does not honour file modes takes the executable bit from t
   );
 });
 
+// A non-boolean value makes `git config --type=bool core.fileMode` exit 128, not the 1 an unset key gives.
+test('a failed core.fileMode lookup is refused, naming the lookup, never read as a checkout that honours file modes', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'factory-sync-modes-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, 'repo');
+  repository(root, CANONICAL_URL);
+  put(root, 'run.sh', 'hello\n');
+  commitAll(root);
+  git(root, 'config', 'core.fileMode', 'notabool');
+
+  assert.throws(() => verifyManifest(root, { entries: [{ path: 'run.sh', sha256: HELLO_SHA256 }] }), /core\.fileMode/);
+});
+
+// The index says executable and the disk does not, so only a read of the disk reports drift;
+// the global and system configuration are shut out so the lookup sees only the repository's unset value.
+test('an unset core.fileMode reads the executable bit from the disk', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'factory-sync-modes-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, 'repo');
+  repository(root, CANONICAL_URL);
+  put(root, 'run.sh', 'hello\n', 0o755);
+  commitAll(root);
+  git(root, 'update-index', '--chmod=+x', 'run.sh');
+  commitAll(root);
+  chmodSync(join(root, 'run.sh'), 0o644);
+  git(root, 'config', '--unset', 'core.fileMode');
+  assert.equal(indexMode(root, 'run.sh'), '100755');
+  const emptyGitConfig = join(base, 'empty-gitconfig');
+  writeFileSync(emptyGitConfig, '');
+
+  const drift = withEnv({ GIT_CONFIG_GLOBAL: emptyGitConfig, GIT_CONFIG_NOSYSTEM: '1' }, () =>
+    verifyManifest(root, { entries: [{ path: 'run.sh', sha256: HELLO_SHA256, executable: true }] }),
+  );
+  assert.deepEqual(drift, [{ path: 'run.sh', expected: 'executable', actual: 'not executable' }]);
+});
+
 test('a missing path is reported as missing', (t) => {
   const root = matchingTree(t);
   rmSync(join(root, 'docs'), { recursive: true });

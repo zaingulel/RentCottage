@@ -170,9 +170,13 @@ function kindOf(stat) {
   return stat.isFile() ? 'a regular file' : 'a special file';
 }
 
-// Whether root's checkout honours file modes; a tree outside any repository, or one with core.fileMode unset, does.
+// Whether root's checkout honours file modes; a tree outside any repository, or one with core.fileMode unset (git
+// config exits 1), does. Any other failed lookup is refused, never read as a checkout that honours file modes.
 function honoursFileModes(root) {
-  return git(root, 'config', '--type=bool', 'core.fileMode') !== 'false';
+  const run = spawnSync('git', ['-C', root, 'config', '--type=bool', 'core.fileMode'], { encoding: 'utf8', env: gitEnvironment() });
+  if (run.status === 0) return run.stdout.trim() !== 'false';
+  if (run.status === 1) return true;
+  throw new Error(`cannot read core.fileMode in ${root} (${run.error?.code ?? run.stderr.trim().split('\n')[0]})`);
 }
 
 // null where the disk holds the executable bit; otherwise each indexed path's git mode, keyed by path, since a
