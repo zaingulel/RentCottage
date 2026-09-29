@@ -969,17 +969,28 @@ test("a verified Customer double-submit creates one Pending request and one mini
         ),
       );
     const held = observeFailure();
-    harness.runSql(
-      paymentEvidenceSql +
-        `set role service_role;
-      with leased as (select public.lease_booking_request_capture_work('${failureId}',
-        '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result)
-      select pg_temp.capture_execute(result->'permit','failed') from leased;
-      reset role;
-      update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${failureId}';`,
+    const failureRecorded = JSON.parse(
+      harness.runSql(
+        paymentEvidenceSql +
+          `set role service_role;
+      with leased as materialized (
+        select public.lease_booking_request_capture_work('${failureId}',
+          '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result
+      ), executed as materialized (
+        select leased.result->'permit' permit,
+          pg_temp.capture_execute(leased.result->'permit','failed') result
+        from leased
+      )
+      select public.record_booking_request_capture_failure('${failureId}',
+        (permit->>'leaseGeneration')::bigint, (permit->>'leaseToken')::uuid,
+        jsonb_build_object('outcome',result->'outcome',
+          'providerRequestId',result->'providerRequestId',
+          'providerReference',result->'providerReference',
+          'retrySafe',result->'retrySafe')) from executed;`,
+      ),
     );
-    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
-    // Both existing pages must refresh from real Worker-persisted failure evidence.
+    expect(failureRecorded.status).toBe("payment-required");
+    // Both existing pages must refresh from the request's persisted failure evidence.
     await expect(page.getByRole("status")).toContainText("Payment Required", {
       timeout: 15000,
     });
@@ -1285,14 +1296,26 @@ test("a verified Customer double-submit creates one Pending request and one mini
     expect(expiryId).toMatch(/^[0-9a-f-]{36}$/);
     const identity =
       '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
-    harness.runSql(
-      paymentEvidenceSql +
-        `set role service_role;
-      with leased as (select public.lease_booking_request_capture_work('${expiryId}','${identity}') result)
-      select pg_temp.capture_execute(result->'permit','failed') from leased;
-      reset role;update public.booking_request_capture_work set lease_expires_at=clock_timestamp() where booking_request_id='${expiryId}';`,
+    const expiryFailureRecorded = JSON.parse(
+      harness.runSql(
+        paymentEvidenceSql +
+          `set role service_role;
+      with leased as materialized (
+        select public.lease_booking_request_capture_work('${expiryId}','${identity}') result
+      ), executed as materialized (
+        select leased.result->'permit' permit,
+          pg_temp.capture_execute(leased.result->'permit','failed') result
+        from leased
+      )
+      select public.record_booking_request_capture_failure('${expiryId}',
+        (permit->>'leaseGeneration')::bigint, (permit->>'leaseToken')::uuid,
+        jsonb_build_object('outcome',result->'outcome',
+          'providerRequestId',result->'providerRequestId',
+          'providerReference',result->'providerReference',
+          'retrySafe',result->'retrySafe')) from executed;`,
+      ),
     );
-    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+    expect(expiryFailureRecorded.status).toBe("payment-required");
     await expect(page.getByRole("status")).toContainText("Payment Required", {
       timeout: 15000,
     });
