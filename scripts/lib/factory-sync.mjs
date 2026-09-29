@@ -6,7 +6,9 @@
 //   { path, region: 'factory-shared', sha256 }   the text strictly between the file's two region marker lines
 //
 // Every path is relative, POSIX and free of `.`, `..` and empty segments, and is checked before any read.
-// Disk state is read with lstat, so a symlink or directory where a file is expected is drift, never followed.
+// Disk state is read with lstat, so a symlink or directory where a file is expected is drift, never followed. The
+// executable bit is read from the disk, except where the checkout does not honour file modes (core.fileMode false,
+// as on Windows), whose disk cannot hold that bit: there it is read from git's index.
 // No two paths name the same file on a case-insensitive or Unicode-normalising disk, and no path lies under another.
 // Every malformed input throws with a named cause.
 //
@@ -22,7 +24,9 @@
 // symlink, even one pointing inside the target, so every write lands at its manifest path and never through a
 // symlink; and each region file, in the commit and as a regular file in the target, carries well-formed region
 // markers. It then writes each file with the commit's bytes and mode and each region between the target's own markers, and records the commit's manifest, with the target's canonical, plus
-// `syncedFrom`, the fetched commit. Files the manifest no longer lists are left in place.
+// `syncedFrom`, the fetched commit. Files the manifest no longer lists are left in place. On a target that does not
+// honour file modes the sync stages the file entries it writes, because the index is the only place such a checkout
+// can hold the executable bit.
 //
 // checkLag compares this repository's manifest on disk with the canonical's manifest on main, never
 // the working-tree files (local file drift is the workflow contract test's job). It ignores `syncedFrom` and
@@ -166,10 +170,33 @@ function kindOf(stat) {
   return stat.isFile() ? 'a regular file' : 'a special file';
 }
 
+// Whether root's checkout honours file modes; a tree outside any repository, or one with core.fileMode unset, does.
+function honoursFileModes(root) {
+  return git(root, 'config', '--type=bool', 'core.fileMode') !== 'false';
+}
+
+// null where the disk holds the executable bit; otherwise each indexed path's git mode, keyed by path, since a
+// checkout that does not honour file modes, as on Windows, keeps that bit only in the index.
+function indexModes(root) {
+  if (honoursFileModes(root)) return null;
+  const listing = git(root, 'ls-files', '-s', '-z');
+  if (listing === null) throw new Error(`cannot read the index modes of ${root}, whose checkout does not honour file modes`);
+  return new Map(
+    listing
+      .split('\0')
+      .filter(Boolean)
+      .map((line) => {
+        const tab = line.indexOf('\t');
+        return [line.slice(tab + 1), line.slice(0, line.indexOf(' '))];
+      }),
+  );
+}
+
 // The entry's state on disk: { value } holding the file or region hash, plus, for a file entry,
-// whether the owner may execute it, which is what git records as mode 100755; or { problem } naming why no value
-// of the entry's kind exists at its path.
-export function entryState(root, entry) {
+// whether the owner may execute it, which is what git records as mode 100755, read from modes, the index modes,
+// where the checkout does not honour file modes (an unindexed path there is not executable); or { problem } naming
+// why no value of the entry's kind exists at its path.
+export function entryState(root, entry, modes = indexModes(root)) {
   const full = join(root, checkManifestPath(entry.path));
   let stat;
   try {
@@ -180,7 +207,8 @@ export function entryState(root, entry) {
   }
   if (!stat.isFile()) return { problem: `not a regular file (${kindOf(stat)})` };
   const value = valueOf(entry, readFileSync(full));
-  return 'region' in entry ? { value } : { value, executable: (stat.mode & 0o100) !== 0 };
+  if ('region' in entry) return { value };
+  return { value, executable: modes ? modes.get(entry.path) === '100755' : (stat.mode & 0o100) !== 0 };
 }
 
 const modeName = (executable) => (executable ? 'executable' : 'not executable');
@@ -193,8 +221,9 @@ function valueOf(entry, data) {
 // Every entry whose disk state differs from its record, as { path, expected, actual }; actual is the
 // disk value or the problem that stands in for it, or, for a file whose bytes match, its executable state.
 export function verifyManifest(root, manifest = readManifest(root)) {
+  const modes = indexModes(root);
   return manifest.entries.flatMap((entry) => {
-    const { value, problem, executable } = entryState(root, entry);
+    const { value, problem, executable } = entryState(root, entry, modes);
     if (value !== entry.sha256) return [{ path: entry.path, expected: entry.sha256, actual: value ?? problem }];
     if (executable === undefined || executable === (entry.executable === true)) return [];
     return [{ path: entry.path, expected: modeName(entry.executable), actual: modeName(executable) }];
@@ -204,8 +233,9 @@ export function verifyManifest(root, manifest = readManifest(root)) {
 // The manifest's entries in the same order, each re-recorded from disk; an entry with no value of its kind
 // on disk cannot be recorded and throws.
 export function computeEntries(root, manifest = readManifest(root)) {
+  const modes = indexModes(root);
   return manifest.entries.map((entry) => {
-    const { value, problem, executable } = entryState(root, entry);
+    const { value, problem, executable } = entryState(root, entry, modes);
     if (problem) throw new Error(`cannot record ${entry.path}: ${problem}`);
     if ('region' in entry) return { ...entry, sha256: value };
     return { path: entry.path, sha256: value, ...(executable ? { executable: true } : {}) };
@@ -313,9 +343,11 @@ function resolveCanonical(target, requested) {
 // to: a write below it would land away from the manifest path, possibly outside the target. Refuses a path whose
 // existing parent is a file, as a former shared symlink is on a checkout that writes symlinks as plain files.
 function checkContained(root, path) {
+  const parts = path.split('/');
   let dir = root;
-  for (const part of path.split('/').slice(0, -1)) {
-    dir = join(dir, part);
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    dir = join(dir, parts[i]);
+    const prefix = parts.slice(0, i + 1).join('/');
     let stat;
     try {
       stat = lstatSync(dir);
@@ -324,10 +356,10 @@ function checkContained(root, path) {
       throw error;
     }
     if (stat.isSymbolicLink()) {
-      throw new Error(`${path}: its parent ${dir} is a symlink, so a write there would not land at the manifest path and could land outside the target ${root}; if it is a former shared symlink, remove it first: git rm ${dir.slice(root.length + 1)}, commit, then sync`);
+      throw new Error(`${path}: its parent ${dir} is a symlink, so a write there would not land at the manifest path and could land outside the target ${root}; if it is a former shared symlink, remove it first: git rm ${prefix}, commit, then sync`);
     }
     if (!stat.isDirectory()) {
-      throw new Error(`${path}: its parent ${dir} is a file, not a directory, so the entry cannot be written there; if it is a former shared symlink checked out as a file, remove it first: git rm ${dir.slice(root.length + 1)}, commit, then sync`);
+      throw new Error(`${path}: its parent ${dir} is a file, not a directory, so the entry cannot be written there; if it is a former shared symlink checked out as a file, remove it first: git rm ${prefix}, commit, then sync`);
     }
   }
 }
@@ -443,6 +475,16 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
   }
   const record = { canonical, adopters: manifest.adopters, syncedFrom: fetched, entries: manifest.entries };
   writeRegular(join(root, MANIFEST_PATH), `${JSON.stringify(record, null, 2)}\n`, 0o644);
+  if (!honoursFileModes(root)) {
+    const files = manifest.entries.filter((entry) => !('region' in entry));
+    for (const executable of [true, false]) {
+      const paths = files.filter((entry) => (entry.executable === true) === executable).map(({ path }) => path);
+      const chmod = `--chmod=${executable ? '+x' : '-x'}`;
+      if (paths.length > 0 && git(root, '--literal-pathspecs', 'update-index', '--add', chmod, '--', ...paths) === null) {
+        throw new Error(`cannot record ${paths.join(', ')} as ${modeName(executable)} in the index of ${root}, whose checkout does not honour file modes`);
+      }
+    }
+  }
   return written;
 }
 

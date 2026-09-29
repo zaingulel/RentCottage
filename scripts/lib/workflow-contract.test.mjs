@@ -199,7 +199,9 @@ test('Git permits job branch deletion only after its linked worktree is removed'
     assert.match(`${refused.stdout}\n${refused.stderr}`, /checked out|worktree/i);
 
     const normalizedWorktree = realpathSync(worktree);
-    const worktreeEntry = new RegExp(`^worktree ${escapeRegExp(normalizedWorktree)}$`, 'm');
+    // Git for Windows prints worktree paths with forward slashes.
+    const listedWorktree = process.platform === 'win32' ? normalizedWorktree.replaceAll('\\', '/') : normalizedWorktree;
+    const worktreeEntry = new RegExp(`^worktree ${escapeRegExp(listedWorktree)}$`, 'm');
     const beforeRemoval = git(['worktree', 'list', '--porcelain']);
     assert.equal(beforeRemoval.status, 0);
     assert.match(beforeRemoval.stdout, worktreeEntry);
@@ -717,12 +719,13 @@ const FIXED_PRODUCT_DOCUMENTS = [
   'docs/README.md',
   'docs/CODING-STANDARDS.md',
   'docs/TESTING-STRATEGY.md',
+  'docs/DESIGN-SYSTEM.md',
   'docs/ISSUE-TRACKER.md',
   'docs/DOC-SWEEP.md',
   'docs/SWEEP-TRIAGE.md',
 ];
 
-test('the seven fixed product documents exist', () => {
+test('the fixed product documents exist', () => {
   const missing = FIXED_PRODUCT_DOCUMENTS.filter((path) => !existsSync(resolve(ROOT, path)));
   assert.deepEqual(missing, [], `the shared workflow points at these fixed product documents, which are missing: ${missing.join(', ')}`);
 });
@@ -748,7 +751,8 @@ test('npm install activates the git hooks through the prepare script', (t) => {
   const run = (command, ...args) => spawnSync(command, args, { cwd: root, encoding: 'utf8', env });
   assert.equal(run('git', 'init', '-q').status, 0);
   cpSync(resolve(ROOT, 'package.json'), join(root, 'package.json'));
-  const prepare = run('npm', 'run', 'prepare');
+  // On Windows npm is npm.cmd, which only a shell can start; the arguments are constants.
+  const prepare = spawnSync('npm', ['run', 'prepare'], { cwd: root, encoding: 'utf8', env, shell: process.platform === 'win32' });
   assert.equal(prepare.status, 0, prepare.stderr);
   assert.equal(
     run('git', 'config', '--get', 'core.hooksPath').stdout.trim(),

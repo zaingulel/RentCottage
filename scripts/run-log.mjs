@@ -9,6 +9,9 @@
 // the git state it ran against, so the evidence section of a pull request can quote lines a script
 // wrote rather than lines a model asserted. A command that could not be started at all is
 // logged as `spawn failed (<code>)` and exits 127, so it can never read as a red run.
+// On Windows a `.cmd` shim cannot start without a shell, so bare `npm`/`npx` are started through the
+// running Node and the npm CLI the first `npm.cmd`/`npx.cmd` on PATH would pick, the one under npm's
+// global prefix when it exists, else the one beside the shim; the receipt still records the command as written.
 // The state field `head=<H> tree=<T>` is sampled before and after the command: H is the commit, or
 // `<before>-><after>` when it moved; T is `clean` only when both samples were clean against a known
 // commit, `dirty` when either had changes (untracked files included), and `unknown` otherwise, so an
@@ -18,8 +21,8 @@
 // RUN_LOG_RERUN_REASON is explicit caller context, never inferred from the log.
 
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 
 const args = process.argv.slice(2);
 const separator = args.indexOf('--');
@@ -59,6 +62,27 @@ function renderState(before, after) {
   return `head=${head} tree=${tree}`;
 }
 
+// The argv actually spawned: on Windows bare npm/npx run npm's CLI as the first npm.cmd/npx.cmd on PATH does,
+// preferring the one under the global prefix the last line of its npm-prefix.js names, else the one beside it;
+// anything else, or no CLI in either place, is spawned unchanged.
+function spawnArgv(argv) {
+  const tool = argv[0].toLowerCase();
+  if (process.platform !== 'win32' || (tool !== 'npm' && tool !== 'npx')) return argv;
+  const cliPath = (base) => join(base, 'node_modules', 'npm', 'bin', `${tool}-cli.js`);
+  for (const entry of (process.env.PATH ?? '').split(delimiter)) {
+    const dir = entry.replace(/^"(.*)"$/, '$1');
+    if (!dir || !existsSync(join(dir, `${tool}.cmd`))) continue;
+    const prefixJs = join(dir, 'node_modules', 'npm', 'bin', 'npm-prefix.js');
+    if (existsSync(prefixJs)) {
+      const prefix = spawnSync(process.execPath, [prefixJs], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const line = prefix.error ? undefined : prefix.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).at(-1);
+      if (line && existsSync(cliPath(line))) return [process.execPath, cliPath(line), ...argv.slice(1)];
+    }
+    return existsSync(cliPath(dir)) ? [process.execPath, cliPath(dir), ...argv.slice(1)] : argv;
+  }
+  return argv;
+}
+
 function escapeReceiptField(value) {
   return JSON.stringify(value).replace(/[`|<>&\u007f-\u009f\u2028\u2029]/g,
     (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
@@ -69,10 +93,11 @@ const root = git(['rev-parse', '--show-toplevel'])?.trim() || process.cwd();
 const dir = join(root, '.claude', 'worklog');
 const logFile = join(dir, `${branch.replace(/[^A-Za-z0-9._-]+/g, '_')}.md`);
 
+const [file, ...fileArgs] = spawnArgv(command);
 const before = snapshot();
 const started = new Date().toISOString();
 const startedTick = process.hrtime.bigint();
-const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', shell: false });
+const result = spawnSync(file, fileArgs, { stdio: 'inherit', shell: false });
 const elapsedMs = Number(process.hrtime.bigint() - startedTick) / 1e6;
 const completed = new Date().toISOString();
 let outcome;

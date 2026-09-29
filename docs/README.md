@@ -13,6 +13,7 @@ each document is set out in [DOC-SWEEP.md](DOC-SWEEP.md); the day-after triage i
 | [CONTEXT.md](../CONTEXT.md) | explanation | The glossary of canonical marketplace terms. |
 | [AI-WORKFLOW.md](AI-WORKFLOW.md) | explanation | How the software factory that builds RentCottage fits together and why it is shaped this way. |
 | [CODING-STANDARDS.md](CODING-STANDARDS.md) | instruction | How first-party code is written. |
+| [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) | instruction | How the user interface is built: tokens, tolerated literals and the component patterns new work reuses. |
 | [demo.md](demo.md) | instruction | How to start, present, record and recover the local MVP demonstration, and what it shows is delivered. |
 | [DOC-SWEEP.md](DOC-SWEEP.md) | instruction | The bounded contract for the documentation sweep and what it may edit. |
 | [ISSUE-TRACKER.md](ISSUE-TRACKER.md) | instruction | The tracker and triage vocabulary the vendored intake skills expect: how issues land on GitHub and the board. |

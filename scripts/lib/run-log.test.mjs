@@ -4,11 +4,13 @@
 // outcomes must be distinguishable: a real exit code, a signal, and a command that never started.
 // Mutation: collapse the spawn-failure branch back to `exit 1` and the third case goes red.
 // Each receipt also records the commit and working-tree state; an unknown state never reads as clean.
+// On Windows bare npm/npx start npm's CLI beside the first npm.cmd/npx.cmd on PATH; remove that resolution and the npm/npx subtest goes red there with spawn failed.
+// As the shim does, a CLI under the global prefix npm-prefix.js prints wins; always use the CLI beside the shim and the prefix subtest goes red.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -16,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), '../run-log.mjs');
 const TEST_ENV = { ...process.env };
 delete TEST_ENV.RUN_LOG_RERUN_REASON;
+const NO_POSIX_SIGNALS = process.platform === 'win32' && 'POSIX signals and /bin/sh do not exist on Windows; a killed child exits 1 there';
 
 function withRepo(fn) {
   const repo = mkdtempSync(join(realpathSync(tmpdir()), 'run-log-'));
@@ -29,6 +32,57 @@ function withRepo(fn) {
 
 function run(repo, args, { env = TEST_ENV, nodeArgs = [] } = {}) {
   return spawnSync(process.execPath, [...nodeArgs, SCRIPT, ...args], { cwd: repo, encoding: 'utf8', env });
+}
+
+// A fake CLI that records which tool ran with which argv, then exits with the given code.
+function fakeCli(tool, code) {
+  return `require('node:fs').writeFileSync(process.env.FAKE_NPM_MARKER, JSON.stringify({ tool: ${JSON.stringify(tool)}, argv: process.argv.slice(2) }));\nprocess.exit(${code});\n`;
+}
+
+// A fake npm install whose CLI scripts exit 7. With `prefix`, its npm-prefix.js prints a junk line and then that
+// directory, since the shim takes the last line.
+function withFakeNpm(fn, { cli = true, prefix } = {}) {
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'run-log-npm-'));
+  try {
+    const bin = join(dir, 'node_modules', 'npm', 'bin');
+    mkdirSync(bin, { recursive: true });
+    if (prefix) writeFileSync(join(bin, 'npm-prefix.js'), `console.log('junk');\nconsole.log(${JSON.stringify(prefix)});\n`);
+    for (const tool of ['npm', 'npx']) {
+      writeFileSync(join(dir, `${tool}.cmd`), '@exit /b 99\r\n');
+      const script = join(bin, `${tool}-cli.js`);
+      if (cli) writeFileSync(script, fakeCli(tool, 7));
+      if (process.platform !== 'win32') {
+        writeFileSync(join(dir, tool), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`);
+        chmodSync(join(dir, tool), 0o755);
+      }
+    }
+    fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// A fake global prefix whose CLI scripts, when present, record the tool as `prefix-<tool>` and exit 9.
+function withFakePrefix(fn, { cli = true } = {}) {
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'run-log-prefix-'));
+  try {
+    const bin = join(dir, 'node_modules', 'npm', 'bin');
+    mkdirSync(bin, { recursive: true });
+    if (cli) for (const tool of ['npm', 'npx']) writeFileSync(join(bin, `${tool}-cli.js`), fakeCli(`prefix-${tool}`, 9));
+    fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// PATH replaced whatever its case, since Windows environment names are case-insensitive.
+function envWithPath(path, extra = {}) {
+  const env = Object.fromEntries(Object.entries(TEST_ENV).filter(([key]) => key.toUpperCase() !== 'PATH'));
+  return { ...env, ...extra, PATH: path };
+}
+
+function detachedReceipt(repo) {
+  return receiptFields(readFileSync(join(repo, '.claude', 'worklog', 'detached.md'), 'utf8').trimEnd().split('\n').at(-1));
 }
 
 const IDENTITY = ['-c', 'user.name=run-log-test', '-c', 'user.email=run-log@example.invalid'];
@@ -99,7 +153,7 @@ test('command receipt contract', async (t) => {
         { command: [process.execPath, '-e', 'process.exit(3)'], status: 3, signal: null, outcome: 'exit 3' },
         { command: [process.execPath, '-e', 'process.kill(process.pid, "SIGKILL")'], status: null, signal: 'SIGKILL', outcome: 'killed by SIGKILL' },
         { command: ['definitely-not-a-command-xyz'], status: 127, signal: null, outcome: 'spawn failed (ENOENT)' },
-      ];
+      ].filter(({ signal }) => !(NO_POSIX_SIGNALS && signal));
       for (const { command, status, signal, outcome } of cases) {
         const result = run(repo, ['deterministic clock', '--', ...command], { nodeArgs });
         assert.equal(result.status, status, result.stderr);
@@ -175,6 +229,73 @@ test('command receipt contract', async (t) => {
     });
   });
 
+  await t.test('bare npm and npx start npm\'s CLI, propagate its exit code, and record the command as written', () => {
+    withRepo((repo) => {
+      withFakeNpm((npmDir) => {
+        const marker = join(repo, 'npm-marker.json');
+        for (const command of [['npm', 'run', 'lint'], ['npx', '--version']]) {
+          const r = run(repo, ['package manager', '--', ...command], { env: envWithPath(npmDir, { FAKE_NPM_MARKER: marker }) });
+          assert.equal(r.status, 7, r.stderr);
+          assert.deepEqual(JSON.parse(readFileSync(marker, 'utf8')), { tool: command[0], argv: command.slice(1) });
+          const receipt = detachedReceipt(repo);
+          assert.deepEqual(receipt.command, command);
+          assert.equal(receipt.outcome, 'exit 7');
+          assert.equal(receipt.state, 'head=unknown tree=unknown');
+        }
+      });
+    });
+  });
+
+  await t.test('bare npm and npx start the CLI under the global prefix when it exists, as the shim does', {
+    skip: process.platform !== 'win32' && 'npm.cmd resolution exists only on Windows',
+  }, () => {
+    withRepo((repo) => {
+      withFakePrefix((prefix) => {
+        withFakeNpm((npmDir) => {
+          const marker = join(repo, 'npm-marker.json');
+          for (const command of [['npm', 'run', 'lint'], ['npx', '--version']]) {
+            const r = run(repo, ['prefix cli', '--', ...command], { env: envWithPath(npmDir, { FAKE_NPM_MARKER: marker }) });
+            assert.equal(r.status, 9, r.stderr);
+            assert.deepEqual(JSON.parse(readFileSync(marker, 'utf8')), { tool: `prefix-${command[0]}`, argv: command.slice(1) });
+            const receipt = detachedReceipt(repo);
+            assert.deepEqual(receipt.command, command);
+            assert.equal(receipt.outcome, 'exit 9');
+          }
+        }, { prefix });
+      });
+    });
+  });
+
+  await t.test('a global prefix without an npm CLI leaves npm on the CLI beside the shim', {
+    skip: process.platform !== 'win32' && 'npm.cmd resolution exists only on Windows',
+  }, () => {
+    withRepo((repo) => {
+      withFakePrefix((prefix) => {
+        withFakeNpm((npmDir) => {
+          const marker = join(repo, 'npm-marker.json');
+          const r = run(repo, ['prefix without cli', '--', 'npm', 'run', 'lint'], { env: envWithPath(npmDir, { FAKE_NPM_MARKER: marker }) });
+          assert.equal(r.status, 7, r.stderr);
+          assert.deepEqual(JSON.parse(readFileSync(marker, 'utf8')), { tool: 'npm', argv: ['run', 'lint'] });
+          assert.equal(detachedReceipt(repo).outcome, 'exit 7');
+        }, { prefix });
+      }, { cli: false });
+    });
+  });
+
+  await t.test('npm with an npm.cmd but no npm CLI beside it is still a spawn failure', {
+    skip: process.platform !== 'win32' && 'npm.cmd resolution exists only on Windows',
+  }, () => {
+    withRepo((repo) => {
+      withFakeNpm((npmDir) => {
+        const r = run(repo, ['no npm cli', '--', 'npm', 'run', 'lint'], { env: envWithPath(npmDir) });
+        assert.equal(r.status, 127, r.stderr);
+        const receipt = detachedReceipt(repo);
+        assert.equal(receipt.outcome, 'spawn failed (ENOENT)');
+        assert.deepEqual(receipt.command, ['npm', 'run', 'lint']);
+      }, { cli: false });
+    });
+  });
+
   await t.test('a command that cannot be started is logged as a spawn failure, never as a red run', () => {
     withRepo((repo) => {
       const r = run(repo, ['typo', '--', 'definitely-not-a-command-xyz', '--flag']);
@@ -187,7 +308,7 @@ test('command receipt contract', async (t) => {
     });
   });
 
-  await t.test('a child signal is logged and re-raised with shell status 137', () => {
+  await t.test('a child signal is logged and re-raised with shell status 137', { skip: NO_POSIX_SIGNALS }, () => {
     withRepo((repo) => {
       const result = spawnSync('/bin/sh', [
         '-c',
@@ -229,13 +350,18 @@ test('command receipt contract', async (t) => {
     });
   });
 
-  await t.test('a receipt-write failure cannot replace the child exit or signal result', () => {
+  await t.test('a receipt-write failure cannot replace the child exit result', () => {
     withRepo((repo) => {
       writeFileSync(join(repo, '.claude'), 'blocks the receipt directory');
       const red = run(repo, ['red without receipt', '--', process.execPath, '-e', 'process.exit(3)']);
       assert.equal(red.status, 3, red.stderr);
       assert.match(red.stderr, /run-log: could not write receipt/);
+    });
+  });
 
+  await t.test('a receipt-write failure cannot replace the child signal result', { skip: NO_POSIX_SIGNALS }, () => {
+    withRepo((repo) => {
+      writeFileSync(join(repo, '.claude'), 'blocks the receipt directory');
       const signalled = spawnSync('/bin/sh', [
         '-c',
         '"$1" "$2" signal-without-receipt -- "$1" -e \'process.kill(process.pid, "SIGKILL")\'; exit $?',

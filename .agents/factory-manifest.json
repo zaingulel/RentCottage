@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "1f58b30fd12f7c0a4c71c398c3a7686f7c93b51d",
+  "syncedFrom": "d1ca516225194cbee2af505f81db836c0b8c85f8",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -267,19 +267,19 @@
     },
     {
       "path": ".claude/agents/architect.md",
-      "sha256": "f315713f5e7fe98b4775fb17db28994516e4a5ba912aca7e21dffc4688301fb7"
+      "sha256": "254098b8790ca8c407514f92aa4d3cb16578fb1ecf574f349201795dbf1a7126"
     },
     {
       "path": ".claude/agents/builder-lite.md",
-      "sha256": "eb64e31a9240f78fd2a12fa551e7b26b7a433adba2fbb7240537b0bedc54124c"
+      "sha256": "5e4c819690804fd08d46107df1032809bedc6e526425d1533634f8dbfbcf68d9"
     },
     {
       "path": ".claude/agents/builder-max.md",
-      "sha256": "8661d02bc5c1bf6501e2b3f20e7eab8f228bb0899a541009c5b28319378a2198"
+      "sha256": "9c79c4dd4913227837b323bcd1544d88fea9f61fc4e04333d9463d24254b4f39"
     },
     {
       "path": ".claude/agents/builder.md",
-      "sha256": "8f45d68b018fb0d19ceab78f67d2210a7a3c4d27459979bb42160658af946aa6"
+      "sha256": "b571fe373ee88598cc274894be9fa9a74d3eea841de6d00bdb826febefcbabb6"
     },
     {
       "path": ".claude/agents/explorer.md",
@@ -291,11 +291,11 @@
     },
     {
       "path": ".claude/agents/plan-reviewer.md",
-      "sha256": "aa0508a06092902d3e7e67e1da200f6e59bf10fb797d0ccbfec7a3c24a10b290"
+      "sha256": "0e1e0ec1422835cd99512e3ce8b534ca28926dbb3ea9bd0b07e6d566227778b7"
     },
     {
       "path": ".claude/agents/reviewer.md",
-      "sha256": "2d6bdb566729ca7a232de3aeb5dc09fde1e8ac7450a858a7dd07a721025c3808"
+      "sha256": "b26746aff5e59972cbd0a9a8b8b59f21327695902ebba35d3d6935f9db5d9b1e"
     },
     {
       "path": ".claude/agents/security-reviewer.md",
@@ -479,19 +479,19 @@
     },
     {
       "path": ".codex/agents/architect.toml",
-      "sha256": "80b91a58c64dd5aab8c1189e921562cdb0482a8baa86b636dcc971647bce2470"
+      "sha256": "dda85c3aa4124b66d8a3f317dcd04d82a2c23810bf0dc9b7561ca71510b2a6b1"
     },
     {
       "path": ".codex/agents/builder-lite.toml",
-      "sha256": "aedb813cf7b888ee13b425c6dbbcf0fae7bc49d2f5279085dd64dc2753acbea3"
+      "sha256": "03c219aa17d5d66d74301b36124e9fafcd181843ee61207928051396cd8e6025"
     },
     {
       "path": ".codex/agents/builder-max.toml",
-      "sha256": "32fd013f76e2d587ab58dec67a25d2cb5e755b2e242b49192fc83cea775ca237"
+      "sha256": "554dc85c8261fdb7624e3af52b266685bd482f0c8d01c36f49e539cb774257c5"
     },
     {
       "path": ".codex/agents/builder.toml",
-      "sha256": "5861374eae00ab72764b2cfe573b968628a5e889afb5718e6b1f59ce6873fabb"
+      "sha256": "b56df732eba65e94b52ca226bcc792558335b5c0f435598c3e3ab90a2f1d75cf"
     },
     {
       "path": ".codex/agents/explorer.toml",
@@ -503,11 +503,11 @@
     },
     {
       "path": ".codex/agents/plan-reviewer.toml",
-      "sha256": "72621e87b9a86f4917e20931d6ef19b63557ecb08a406e3fed386409e00583d6"
+      "sha256": "cea2d8ba6a7d6bf9a89fa84137f70e1c018dce6da648052730653e93ff958f61"
     },
     {
       "path": ".codex/agents/reviewer.toml",
-      "sha256": "c55ba973bc6fa5359c4530a7ac9f6daa755f94b5a5f8b0c1418f7970d24e6cbc"
+      "sha256": "44471f88532fac4872ee5c5ad82555f7ff70da2c9cb889a0c222456190e3d6a4"
     },
     {
       "path": ".codex/agents/security-reviewer.toml",
@@ -575,7 +575,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "77d9d3c0f20be5615a91ff3c41d5014aba9afdf40a679ed40e2129ff645f5c78"
+      "sha256": "7914dbb711f3b4ca413f6b750962641d468c45c08bf134b93116555ddf694977"
     },
     {
       "path": "CLAUDE.md",
@@ -700,11 +700,11 @@
     },
     {
       "path": "scripts/lib/factory-sync.mjs",
-      "sha256": "24ee0b2dd6fc1881ffc299af302e4119b1018730a10a0718b16e1c8d2ee23940"
+      "sha256": "5e498267fb9daa085c80665818adac09ca4ca57180e881c45c29b6c2436796f0"
     },
     {
       "path": "scripts/lib/factory-sync.test.mjs",
-      "sha256": "1cf229cf9942bfc4505a98b2a62e0ee412d0d7a5535cfcb9fa273ddc2070285a"
+      "sha256": "001b5d59037ee072b1384a5a0f678f6e1a500a3b068a94cbe1a7f10e0e9e88e9"
     },
     {
       "path": "scripts/lib/fake-gh.mjs",
@@ -760,7 +760,7 @@
     },
     {
       "path": "scripts/lib/run-log.test.mjs",
-      "sha256": "cf13d77988e7ec830dce49797c832c8013071e1f2020ba1fdd8ce72defd2acac"
+      "sha256": "cf2d4606255c675d59fcec51963090779aab2a354f8bedd2d19226d86ca34006"
     },
     {
       "path": "scripts/lib/settings-policy.test.mjs",
@@ -776,7 +776,7 @@
     },
     {
       "path": "scripts/lib/sweep-scope.test.mjs",
-      "sha256": "1272fe0b112c57241c8104fa5b5bbf01758562b8a25978a89f9e41f842a189c9"
+      "sha256": "34549849e331212de6cb6b6b079f2b0c314f20c31cde0ca0131300da8f0c7600"
     },
     {
       "path": "scripts/lib/test-output-filter.mjs",
@@ -800,7 +800,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "c76e41ce849b245f18aa6fb3a4ffb65389186d3770f21657e1b9610f3dd58540"
+      "sha256": "a6dc26cfb3265aa2a2453857947af311a6d6c6e3fdc9f8ec63dcb55f72ce177e"
     },
     {
       "path": "scripts/merge-watch.mjs",
@@ -808,7 +808,7 @@
     },
     {
       "path": "scripts/run-log.mjs",
-      "sha256": "aa83f6f5147ec248a057908172c43ccc7a96f66a7fbfa6eca3745e89c2412247"
+      "sha256": "e6b5f364b4be903809d116e189e7f211d35fad780140552efc9bbaccdb12726b"
     },
     {
       "path": "scripts/sweep-scope-check.mjs",

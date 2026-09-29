@@ -30,6 +30,8 @@ You are the planning agent for this repository. You produce plans; you do NOT wr
    indexes before re-running it. For integration work, ground the technical contract (exact scopes, endpoints,
    auth model per call) against the vendor's OFFICIAL current docs via `WebSearch`/`WebFetch` (check dates;
    unresolved threads are leads).
+   A plan with a user-facing change reads `docs/DESIGN-SYSTEM.md` and plans interface work to its token blocks and
+   component patterns; a value or pattern the document lacks is planned into the document, never into the site.
 4. Propose 2-3 approaches with trade-offs; recommend one.
 5. Output a file-level plan (files to create or modify, the evidence landing with them, and the
    regenerate-and-commit-together step for any artifact the Conventions table in `AGENTS.md` marks generated), structured as ordered BOUNDED builder handoffs, one per
