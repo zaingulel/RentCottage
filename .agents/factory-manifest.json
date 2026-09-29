@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "d1ca516225194cbee2af505f81db836c0b8c85f8",
+  "syncedFrom": "ffb32fd2196692377ffdd054f219a04d4e1ed2d8",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -700,11 +700,11 @@
     },
     {
       "path": "scripts/lib/factory-sync.mjs",
-      "sha256": "5e498267fb9daa085c80665818adac09ca4ca57180e881c45c29b6c2436796f0"
+      "sha256": "7528df348f7a0af3c137e3dd8b801b842bde2aad1147fd88fc9bc57112a71e57"
     },
     {
       "path": "scripts/lib/factory-sync.test.mjs",
-      "sha256": "001b5d59037ee072b1384a5a0f678f6e1a500a3b068a94cbe1a7f10e0e9e88e9"
+      "sha256": "ced627673a07982de54baba1ca853a865358c26e83961fdd170baae71c9987a4"
     },
     {
       "path": "scripts/lib/fake-gh.mjs",
