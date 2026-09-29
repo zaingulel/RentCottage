@@ -1212,7 +1212,14 @@ export async function main(
                 "--workers=1",
                 "--output=playwright-report/access-next",
               ];
-        if (partition === "next") nextArgs.push(`--shard=${shard}`);
+        if (partition === "next") {
+          const listed = await execute("npx", [...nextArgs, "--list"], {
+            env: browserEnvironment,
+            stdio: "inherit",
+          });
+          if (listed.status !== 0) return listed.status;
+          nextArgs.push(`--shard=${shard}`);
+        }
         const browser = await execute("npx", nextArgs, {
           env: browserEnvironment,
           stdio: "inherit",
@@ -1280,7 +1287,14 @@ export async function main(
               "--workers=1",
               "--output=playwright-report/access-worker",
             ];
-        if (partition === "worker") workerArgs.push(`--shard=${shard}`);
+        if (partition === "worker") {
+          const listed = await execute("npx", [...workerArgs, "--list"], {
+            env: workerEnvironment,
+            stdio: "inherit",
+          });
+          if (listed.status !== 0) return listed.status;
+          workerArgs.push(`--shard=${shard}`);
+        }
         const workerBrowser = await execute("npx", workerArgs, {
           env: workerEnvironment,
           stdio: "inherit",

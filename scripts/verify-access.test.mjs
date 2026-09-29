@@ -2917,7 +2917,9 @@ setInterval(() => {}, 1000);
       const run = successfulRun();
       const removeTemp = vi.fn();
       const output = vi.fn();
-      const prepareProject = vi.fn(({ stateRoot }) => join(stateRoot, "project"));
+      const prepareProject = vi.fn(({ stateRoot }) =>
+        join(stateRoot, "project"),
+      );
       expect(
         await mainWithPreparedProject([mode], {
           environment: {
@@ -3040,11 +3042,13 @@ setInterval(() => {}, 1000);
       expect(observed.get(`next:${shard}`)).toEqual([
         statusCommand,
         ...browserCommands.slice(0, 2),
+        ["npx", [...browserCommands[2][1], "--list"]],
         ["npx", [...browserCommands[2][1], `--shard=${shard}`]],
       ]);
       expect(observed.get(`worker:${shard}`)).toEqual([
         statusCommand,
         ...browserCommands.slice(3, 6),
+        ["npx", [...browserCommands[6][1], "--list"]],
         ["npx", [...browserCommands[6][1], `--shard=${shard}`]],
       ]);
     }
@@ -3105,6 +3109,59 @@ setInterval(() => {}, 1000);
       expect(commands(run).some(([, args]) => args.at(-1) === "--verify")).toBe(
         false,
       );
+    }
+  });
+
+  it("rejects empty hosted journey selections before sharding and cleans up", async () => {
+    for (const partition of ["next", "worker"]) {
+      for (const shard of ["1/2", "2/2"]) {
+        const run = ownedRun((command, args) => ({
+          status:
+            command === "npx" &&
+            args[0] === "playwright" &&
+            args.includes("--list")
+              ? 1
+              : 0,
+          stdout:
+            command === "npx" &&
+            args.slice(0, 4).join(" ") === "supabase status -o json"
+              ? localCredentials
+              : "",
+        }));
+        const removeTemp = vi.fn();
+        const stdout = vi.fn();
+        expect(
+          await mainWithPreparedProject(["--browser"], {
+            environment: {
+              GITHUB_ACTIONS: "true",
+              VERIFY_CI_PARTITION: partition,
+              VERIFY_CI_SHARD: shard,
+            },
+            makeTemp: () => "/tmp/empty-hosted-journeys",
+            removeTemp,
+            run,
+            stdout,
+          }),
+        ).toBe(1);
+        const listed = commands(run).filter(
+          ([command, args]) => command === "npx" && args.includes("--list"),
+        );
+        const journey =
+          partition === "next" ? browserCommands[2] : browserCommands[6];
+        expect(listed).toEqual([["npx", [...journey[1], "--list"]]]);
+        expect(
+          commands(run).some(([, args]) => args.includes(`--shard=${shard}`)),
+        ).toBe(false);
+        expect(commands(run).at(-2)).toEqual(ownershipCommand);
+        expect(commands(run).at(-1)).toEqual(stopCommand);
+        expect(removeTemp).toHaveBeenCalledWith("/tmp/empty-hosted-journeys");
+        expect(stdout).toHaveBeenCalledWith(
+          expect.stringContaining('"type":"verification-failure"'),
+        );
+        expect(stdout).toHaveBeenCalledWith(
+          expect.stringContaining('"--list"'),
+        );
+      }
     }
   });
 
