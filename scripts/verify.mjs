@@ -66,7 +66,21 @@ function databaseSteps(bookingConcurrency) {
     : [["npm", ["run", "verify:access:database-tests"]]];
 }
 
-function serviceVerificationSteps(mode, database, browser, bookingConcurrency) {
+function serviceVerificationSteps(
+  mode,
+  database,
+  browser,
+  bookingConcurrency,
+  partition,
+) {
+  if (partition) {
+    if (database) return groupVerificationSteps.database;
+    if (browser)
+      return partition === "shell-smoke"
+        ? expensiveVerificationSteps.slice(1)
+        : [groupVerificationSteps.browser[0]];
+    return [];
+  }
   return mode === undefined && database && browser && bookingConcurrency
     ? expensiveVerificationSteps
     : [
@@ -1421,6 +1435,55 @@ export function main(
 
   const mode = modes[0];
   const plan = args.includes("--plan");
+  const partition = environment.VERIFY_CI_PARTITION;
+  const shard = environment.VERIFY_CI_SHARD;
+  if (partition !== undefined || shard !== undefined) {
+    if (environment.GITHUB_ACTIONS !== "true") {
+      stderr(
+        "VERIFY_CI_PARTITION and VERIFY_CI_SHARD require GITHUB_ACTIONS=true.",
+      );
+      return 2;
+    }
+    if (
+      args.includes("--full") ||
+      !partition ||
+      (mode === "--database" &&
+        ![
+          "database-core",
+          "booking-request",
+          "booking-capture",
+          "payment-required-expiry",
+        ].includes(partition)) ||
+      (mode === "--browser" &&
+        !["next", "worker", "scheduled", "shell-smoke"].includes(partition)) ||
+      (mode !== "--database" && mode !== "--browser")
+    ) {
+      stderr(
+        "VERIFY_CI_PARTITION requires an explicit matching --database or --browser mode without --full.",
+      );
+      return 2;
+    }
+    if (
+      (["next", "worker"].includes(partition) &&
+        !["1/2", "2/2"].includes(shard)) ||
+      (!["next", "worker"].includes(partition) &&
+        shard !== undefined &&
+        shard !== "")
+    ) {
+      stderr(
+        "VERIFY_CI_SHARD must be 1/2 or 2/2 for next or worker, and absent for other partitions.",
+      );
+      return 2;
+    }
+    stdout(
+      JSON.stringify({
+        type: "verification-partition",
+        evidence: "partial",
+        partition,
+        shard: shard || null,
+      }),
+    );
+  }
   const baseline = mode === undefined || mode === "--baseline";
   const browser = mode === undefined || mode === "--browser";
   const verificationEnvironment = { ...environment, ...testEnvironment };
@@ -1481,6 +1544,7 @@ export function main(
       selectedDatabase,
       selectedBrowser,
       selectedBookingConcurrency,
+      partition,
     ),
   ];
   const local = !environment.CI && !environment.GITHUB_ACTIONS;
@@ -1560,6 +1624,7 @@ export function main(
           fresh.database,
           fresh.browser,
           selectedBookingConcurrency,
+          partition,
         ),
       ];
       if (index === steps.length) break;
