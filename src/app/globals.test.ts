@@ -16,11 +16,37 @@ const stylesheets = readdirSync(sourceDirectory, { recursive: true })
     ),
   }));
 
+const globalsFile = join("app", "globals.css");
 const rootBlockPattern = /:root\s*\{[^}]*\}/;
 const rootBlock =
   stylesheets
-    .find(({ file }) => file === join("app", "globals.css"))
+    .find(({ file }) => file === globalsFile)
     ?.source.match(rootBlockPattern)?.[0] ?? "";
+
+const tolerated = new Set([
+  "transparent",
+  "currentcolor",
+  "inherit",
+  "initial",
+  "unset",
+  "revert",
+]);
+const probe = document.createElement("span");
+
+function blank(text: string) {
+  return text.replace(/[^\n]/g, " ");
+}
+
+function isNamedColour(word: string) {
+  const lower = word.toLowerCase();
+  const property = lower.replace(/-([a-z])/g, (_, letter) =>
+    letter.toUpperCase(),
+  );
+  if (tolerated.has(lower) || property in probe.style) return false;
+  probe.style.color = "";
+  probe.style.color = word;
+  return probe.style.color !== "";
+}
 
 function lineOf(source: string, index: number) {
   return source.slice(0, index).split("\n").length;
@@ -29,16 +55,29 @@ function lineOf(source: string, index: number) {
 describe("stylesheet colour tokens", () => {
   it("keeps every stylesheet colour in the :root token block", () => {
     const hits = stylesheets.flatMap(({ file, source }) => {
-      const rest = source
-        .replace(rootBlockPattern, (block) => block.replace(/[^\n]/g, " "))
-        .replace(/box-shadow:(?!\s*0 0 0 )[^;]+;/g, (shadow) =>
-          shadow.replace(/[^\n]/g, " "),
-        );
-      return [
-        ...rest.matchAll(
-          /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(|:\s*(?:white|black)\s*;/gi,
-        ),
+      const rest = (
+        file === globalsFile ? source.replace(rootBlockPattern, blank) : source
+      ).replace(/box-shadow:(?!\s*0 0 0 )[^;]+;/g, blank);
+      const literals = [
+        ...rest.matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi),
       ].map((match) => `${file}:${lineOf(rest, match.index)} ${match[0]}`);
+      const named = [...rest.matchAll(/[\w-]+\s*:([^;{}]*)(?=[;}])/g)].flatMap(
+        (declaration) => {
+          const value = declaration[1].replace(
+            /var\([^()]*\)|url\([^)]*\)|"[^"]*"|'[^']*'/g,
+            blank,
+          );
+          const start =
+            declaration.index + declaration[0].length - value.length;
+          return [...value.matchAll(/(?<![\w#.-])[a-z][\w-]*/gi)]
+            .filter(([word]) => isNamedColour(word))
+            .map(
+              (match) =>
+                `${file}:${lineOf(rest, start + match.index)} ${match[0]}`,
+            );
+        },
+      );
+      return [...literals, ...named];
     });
 
     expect(rootBlock).not.toBe("");
