@@ -587,7 +587,10 @@ test("working-tree CLI excludes unstaged tracked deletions from scans and path r
 test(
   "working-tree CLI fails loudly when an existing tracked document cannot be read",
   {
-    skip: process.getuid?.() === 0,
+    skip:
+      (process.platform === "win32" &&
+        "Windows ignores chmod, so a tracked document cannot be made unreadable") ||
+      process.getuid?.() === 0,
   },
   () => {
     const root = makeDocLintFixture({
