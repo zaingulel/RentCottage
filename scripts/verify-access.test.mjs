@@ -2900,6 +2900,294 @@ setInterval(() => {}, 1000);
     ]);
   });
 
+  it("partitions hosted checks without losing setup, coverage or cleanup", async () => {
+    const cases = [
+      ["--database", "database-core"],
+      ["--database", "booking-request"],
+      ["--database", "booking-capture"],
+      ["--database", "payment-required-expiry"],
+      ["--browser", "next", "1/2"],
+      ["--browser", "next", "2/2"],
+      ["--browser", "worker", "1/2"],
+      ["--browser", "worker", "2/2"],
+      ["--browser", "scheduled"],
+    ];
+    const observed = new Map();
+    for (const [mode, partition, shard] of cases) {
+      const run = successfulRun();
+      const removeTemp = vi.fn();
+      const output = vi.fn();
+      const prepareProject = vi.fn(({ stateRoot }) => join(stateRoot, "project"));
+      expect(
+        await mainWithPreparedProject([mode], {
+          environment: {
+            GITHUB_ACTIONS: "true",
+            VERIFY_CI_PARTITION: partition,
+            ...(shard ? { VERIFY_CI_SHARD: shard } : {}),
+          },
+          makeTemp: () => "/tmp/access-partition",
+          prepareProject,
+          removeTemp,
+          run,
+          stdout: output,
+        }),
+      ).toBe(0);
+      const actual = commands(run);
+      expect(actual.slice(0, 3)).toEqual([
+        startCommand,
+        ownershipCommand,
+        resetCommand,
+      ]);
+      expect(actual.at(-2)).toEqual(ownershipCommand);
+      expect(actual.at(-1)).toEqual(stopCommand);
+      expect(prepareProject).toHaveBeenCalledWith({
+        localProject: "rentcottage-verification",
+        stateRoot: "/tmp/access-partition",
+        workingDirectory: process.cwd(),
+      });
+      expect(removeTemp).toHaveBeenCalledWith("/tmp/access-partition");
+      expect(
+        output.mock.calls.some(([line]) => {
+          const record = JSON.parse(line);
+          return (
+            record.type === "access-partition" &&
+            record.evidence === "partial" &&
+            record.partition === partition &&
+            record.shard === (shard ?? null)
+          );
+        }),
+      ).toBe(true);
+      const playwright = run.mock.calls.find(
+        ([, args]) =>
+          args[0] === "playwright" &&
+          args.includes("tests/booking-request-access.spec.ts"),
+      );
+      if (playwright) {
+        expect(playwright[2].env.PLAYWRIGHT_SERVER).toBe(
+          partition === "worker" ? "worker" : "next",
+        );
+        expect(playwright[2].env.NEXTJS_ENV).toBe("test");
+      }
+      const selectedProgram = run.mock.calls.find(
+        ([, args]) =>
+          args[0] === "scripts/verify-booking-request-capture-concurrency.mjs",
+      );
+      if (selectedProgram) {
+        expect(selectedProgram[2].env.SUPABASE_SECRET_KEY).toBe("local-secret");
+      }
+      for (const [, args, options] of run.mock.calls) {
+        if (args[0] === "supabase") {
+          expect(args.slice(-2)).toEqual([
+            "--workdir",
+            "/tmp/access-partition/project",
+          ]);
+        }
+        if (
+          args[0] === "playwright" ||
+          args[0] === "scripts/prepare-access-test.mjs"
+        ) {
+          expect(options.stdio).toBe("inherit");
+        }
+      }
+      observed.set(`${partition}:${shard ?? ""}`, actual.slice(3, -2));
+    }
+
+    const mobileFixture = [
+      "node",
+      ["scripts/prepare-access-test.mjs", "create", "mobile"],
+    ];
+    const longPrograms = new Map([
+      ["booking-request", "scripts/verify-booking-request-concurrency.mjs"],
+      [
+        "booking-capture",
+        "scripts/verify-booking-request-capture-concurrency.mjs",
+      ],
+      [
+        "payment-required-expiry",
+        "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+      ],
+    ]);
+    expect(observed.get("database-core:")).toEqual([
+      ...databasePreflightCommands,
+      statusCommand,
+      ...databaseCheckCommands.filter(
+        ([, args]) => ![...longPrograms.values()].includes(args[0]),
+      ),
+    ]);
+    for (const [partition, script] of longPrograms) {
+      expect(observed.get(`${partition}:`)).toEqual([
+        statusCommand,
+        mobileFixture,
+        ["node", [script]],
+      ]);
+    }
+    const databaseUnion = [
+      ...observed
+        .get("database-core:")
+        .slice(databasePreflightCommands.length + 1),
+      ...[...longPrograms.keys()].map((partition) =>
+        observed.get(`${partition}:`).at(-1),
+      ),
+    ];
+    expect(databaseUnion).toHaveLength(databaseCheckCommands.length);
+    expect(
+      new Set(databaseUnion.map((entry) => JSON.stringify(entry))),
+    ).toEqual(
+      new Set(databaseCheckCommands.map((entry) => JSON.stringify(entry))),
+    );
+
+    for (const shard of ["1/2", "2/2"]) {
+      expect(observed.get(`next:${shard}`)).toEqual([
+        statusCommand,
+        ...browserCommands.slice(0, 2),
+        ["npx", [...browserCommands[2][1], `--shard=${shard}`]],
+      ]);
+      expect(observed.get(`worker:${shard}`)).toEqual([
+        statusCommand,
+        ...browserCommands.slice(3, 6),
+        ["npx", [...browserCommands[6][1], `--shard=${shard}`]],
+      ]);
+    }
+    expect(observed.get("scheduled:")).toEqual([
+      statusCommand,
+      ["node", ["scripts/prepare-access-test.mjs", "create", "desktop"]],
+      ["node", ["scripts/prepare-access-test.mjs", "validate", "desktop"]],
+      [
+        "npx",
+        [
+          "playwright",
+          "test",
+          "tests/booking-request-access.spec.ts",
+          "--project=desktop",
+          "--workers=1",
+          "--grep",
+          "a verified Customer double-submit creates one Pending request and one minimal owner notice",
+          "--output=playwright-report/scheduled-prerequisite-next",
+        ],
+      ],
+      ...browserCommands.slice(3, 6),
+      ...browserCommands.slice(7),
+    ]);
+    for (const [mode, partition, failedScript] of [
+      [
+        "--database",
+        "booking-capture",
+        "scripts/verify-booking-request-capture-concurrency.mjs",
+      ],
+      [
+        "--browser",
+        "scheduled",
+        "scripts/verify-booking-request-scheduled-expiry.mjs",
+      ],
+    ]) {
+      const run = ownedRun((command, args) => ({
+        status: args[0] === failedScript ? 7 : 0,
+        stdout:
+          command === "npx" &&
+          args.slice(0, 4).join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      }));
+      expect(
+        await mainWithPreparedProject([mode], {
+          environment: {
+            GITHUB_ACTIONS: "true",
+            VERIFY_CI_PARTITION: partition,
+          },
+          run,
+          stderr: vi.fn(),
+        }),
+      ).toBe(7);
+      expect(commands(run).at(-1)).toEqual(stopCommand);
+      expect(commands(run).some(([, args]) => args[0] === failedScript)).toBe(
+        true,
+      );
+      expect(commands(run).some(([, args]) => args.at(-1) === "--verify")).toBe(
+        false,
+      );
+    }
+  });
+
+  it("rejects invalid hosted partition controls before side effects", async () => {
+    const cases = [
+      {
+        args: ["--browser"],
+        env: { VERIFY_CI_PARTITION: "next", VERIFY_CI_SHARD: "1/2" },
+        reason: "GITHUB_ACTIONS",
+      },
+      {
+        args: [],
+        env: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "next",
+          VERIFY_CI_SHARD: "1/2",
+        },
+        reason: "VERIFY_CI_PARTITION",
+      },
+      {
+        args: ["--browser"],
+        env: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "next",
+          VERIFY_CI_SHARD: "0/2",
+        },
+        reason: "VERIFY_CI_SHARD",
+      },
+      {
+        args: ["--browser"],
+        env: { GITHUB_ACTIONS: "true", VERIFY_CI_PARTITION: "next" },
+        reason: "VERIFY_CI_SHARD",
+      },
+      {
+        args: ["--browser"],
+        env: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "scheduled",
+          VERIFY_CI_SHARD: "1/2",
+        },
+        reason: "VERIFY_CI_SHARD",
+      },
+      {
+        args: ["--database"],
+        env: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "next",
+          VERIFY_CI_SHARD: "1/2",
+        },
+        reason: "VERIFY_CI_PARTITION",
+      },
+      {
+        args: ["--browser"],
+        env: { GITHUB_ACTIONS: "true", VERIFY_CI_PARTITION: "unknown" },
+        reason: "VERIFY_CI_PARTITION",
+      },
+      {
+        args: ["--browser"],
+        env: { GITHUB_ACTIONS: "true", VERIFY_CI_SHARD: "1/2" },
+        reason: "VERIFY_CI_PARTITION",
+      },
+    ];
+    for (const { args, env, reason } of cases) {
+      const makeTemp = vi.fn();
+      const prepareProject = vi.fn();
+      const run = vi.fn();
+      const stderr = vi.fn();
+      expect(
+        await main(args, {
+          environment: env,
+          makeTemp,
+          prepareProject,
+          run,
+          stderr,
+        }),
+      ).toBe(2);
+      expect(stderr.mock.calls.flat().join("\n")).toContain(reason);
+      expect(makeTemp).not.toHaveBeenCalled();
+      expect(prepareProject).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+    }
+  });
+
   it("refuses to reset, modify, browse, or stop a foreign local project", async () => {
     const run = vi.fn((command, args) => ({
       status: 0,
