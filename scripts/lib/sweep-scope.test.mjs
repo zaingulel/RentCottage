@@ -530,7 +530,9 @@ test('the check writes no raw control character from an added file\'s name (E18c
 });
 
 // A name git reads as pathspec magic fails the diff git runs on it, so the git failure line quotes it.
-test('the check writes no raw control character in a git failure line (E18d)', () => {
+test('the check writes no raw control character in a git failure line (E18d)', {
+  skip: process.platform === 'win32' && 'NTFS refuses ":" in a file name, so the pathspec-magic name cannot exist on disk',
+}, () => {
   const name = ':(x\u0085';
   const r = repo({ documents: { [name]: 'a\n' } });
   r.write(name, 'b\n');

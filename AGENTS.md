@@ -93,6 +93,8 @@ discovery output: file listings, search results and file contents, which can be 
 [docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) owns how first-party code is written.
 [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) owns the evidence every claim needs, run through
 `node scripts/run-log.mjs` so the pull request body quotes exit codes a script wrote.
+[docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md) owns how the user interface is built: which values are tokens and
+where they live, the tolerated literals, and the component patterns new work reuses.
 
 ## Review and visual verification
 

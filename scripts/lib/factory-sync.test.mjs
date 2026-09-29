@@ -13,7 +13,9 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  copyFileSync,
   cpSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -22,13 +24,34 @@ import {
   readlinkSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkLag, checkManifestPath, computeEntries, fetchMain, readManifest, syncInto, verifyManifest } from './factory-sync.mjs';
+import { gitExecutable } from './posix-shell.mjs';
+
+// Whether this machine lets an unprivileged process create a file symlink. Only Windows without Developer Mode or
+// administrator rights refuses, with EPERM; any other failure, and any failure elsewhere, is thrown.
+function fileSymlinksAvailable() {
+  const dir = mkdtempSync(join(tmpdir(), 'factory-sync-probe-'));
+  try {
+    writeFileSync(join(dir, 'target'), '');
+    symlinkSync('target', join(dir, 'link'), 'file');
+    return true;
+  } catch (error) {
+    if (process.platform === 'win32' && error.code === 'EPERM') return false;
+    throw error;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const FILE_SYMLINKS = fileSymlinksAvailable();
+const NEEDS_FILE_SYMLINK = { skip: !FILE_SYMLINKS && 'creating a file symlink on Windows needs Developer Mode or administrator rights' };
 
 // Computed by `printf 'hello\n' | shasum -a 256`, never by the code under test.
 const HELLO_SHA256 = '5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03';
@@ -80,7 +103,7 @@ test('one changed byte in a file entry is reported', (t) => {
   assert.notEqual(mismatch.actual, HELLO_SHA256);
 });
 
-test('a file replaced by a symlink is reported, even when the link resolves to identical bytes', (t) => {
+test('a file replaced by a symlink is reported, even when the link resolves to identical bytes', NEEDS_FILE_SYMLINK, (t) => {
   const root = matchingTree(t);
   writeFileSync(join(root, 'b.txt'), 'hello\n');
   rmSync(join(root, 'docs', 'a.txt'));
@@ -91,7 +114,7 @@ test('a file replaced by a symlink is reported, even when the link resolves to i
   assert.match(mismatch.actual, /not a regular file/);
 });
 
-test('a file entry whose executable bit differs from its record is reported', (t) => {
+test('a file entry whose executable bit differs from its record is reported', { skip: process.platform === 'win32' && 'the executable bit does not exist on Windows; the index-backed path is proven by "a checkout that does not honour file modes takes the executable bit from the index, not the disk"' }, (t) => {
   const root = matchingTree(t);
   put(root, 'run.sh', 'hello\n', 0o755);
   writeManifest(root, [
@@ -107,7 +130,7 @@ test('a file entry whose executable bit differs from its record is reported', (t
   ]);
 });
 
-test('recording a file entry marks it executable only when the file is', (t) => {
+test('recording a file entry marks it executable only when the file is', { skip: process.platform === 'win32' && 'the executable bit does not exist on Windows; the index-backed path is proven by "a checkout that does not honour file modes takes the executable bit from the index, not the disk"' }, (t) => {
   const root = matchingTree(t);
   put(root, 'run.sh', 'hello\n', 0o755);
   const entries = [
@@ -118,6 +141,36 @@ test('recording a file entry marks it executable only when the file is', (t) => 
     { path: 'docs/a.txt', sha256: HELLO_SHA256 },
     { path: 'run.sh', sha256: HELLO_SHA256, executable: true },
   ]);
+});
+
+// The disk modes are the opposite of the index modes, so only a read of the index passes on every platform.
+test('a checkout that does not honour file modes takes the executable bit from the index, not the disk', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'factory-sync-modes-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, 'repo');
+  repository(root, CANONICAL_URL);
+  put(root, 'docs/a.txt', 'hello\n', 0o755);
+  put(root, 'run.sh', 'hello\n', 0o644);
+  commitAll(root);
+  git(root, 'config', 'core.fileMode', 'false');
+  git(root, 'update-index', '--chmod=-x', 'docs/a.txt');
+  git(root, 'update-index', '--chmod=+x', 'run.sh');
+  commitAll(root);
+
+  const entries = [
+    { path: 'docs/a.txt', sha256: HELLO_SHA256 },
+    { path: 'run.sh', sha256: HELLO_SHA256, executable: true },
+  ];
+  assert.deepEqual(verifyManifest(root, { entries }), []);
+  assert.deepEqual(
+    computeEntries(root, {
+      entries: [
+        { path: 'docs/a.txt', sha256: ZERO_SHA256, executable: true },
+        { path: 'run.sh', sha256: ZERO_SHA256 },
+      ],
+    }),
+    entries,
+  );
 });
 
 test('a missing path is reported as missing', (t) => {
@@ -304,15 +357,22 @@ function commitAll(root) {
   git(root, 'commit', '-q', '--allow-empty', '-m', 'fixture');
 }
 
+// The git mode root's index records for path.
+const indexMode = (root, path) => git(root, 'ls-files', '-s', '--', path).split(' ')[0];
+
 function put(root, path, content, mode = 0o644) {
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), content);
   chmodSync(join(root, path), mode);
 }
 
+// On Windows a link to a directory is a junction, which needs no privilege and holds an absolute target.
 function link(root, path, text) {
-  mkdirSync(dirname(join(root, path)), { recursive: true });
-  symlinkSync(text, join(root, path));
+  const full = join(root, path);
+  mkdirSync(dirname(full), { recursive: true });
+  const destination = resolve(dirname(full), text);
+  if (process.platform === 'win32' && statSync(destination, { throwIfNoEntry: false })?.isDirectory()) symlinkSync(destination, full, 'junction');
+  else symlinkSync(text, full);
 }
 
 function repository(root, origin) {
@@ -346,11 +406,16 @@ function syncFixture(t) {
   put(source, 'AGENTS.md', `# Canonical manual\n${START}\nshared v2\n${END}\n## Canonical rules\n`);
   put(source, 'docs/a.txt', 'hello v2\n');
   put(source, 'scripts/run.sh', '#!/bin/sh\necho v2\n', 0o755);
+  // The index carries the executable bit where the checkout ignores file modes, as on Windows.
+  git(source, 'update-index', '--add', '--chmod=+x', 'scripts/run.sh');
   recordSource(source, SOURCE_ENTRIES);
 
   repository(target, ADOPTER_URL);
   put(target, 'AGENTS.md', `# Adopter manual\n${START}\nshared v1\n${END}\n## Adopter rules\n`);
-  link(target, 'docs/a.txt', '../../outside/secret.txt');
+  // Where file symlinks are refused the shared file starts as a regular file, so the "was a symlink" half of the
+  // first sync test is exercised only where file symlinks exist.
+  if (FILE_SYMLINKS) link(target, 'docs/a.txt', '../../outside/secret.txt');
+  else put(target, 'docs/a.txt', 'outside\n');
   put(target, 'scripts/run.sh', '#!/bin/sh\necho v1\n');
   put(target, MANIFEST, JSON.stringify({ canonical: CANONICAL, adopters: [], entries: [] }));
   commitAll(target);
@@ -395,9 +460,11 @@ test('a sync writes every shared file and region into the adopter and records th
   assert.equal(readFileSync(at('AGENTS.md'), 'utf8'), `# Adopter manual\n${START}\nshared v2\n${END}\n## Adopter rules\n`);
   assert.ok(lstatSync(at('docs/a.txt')).isFile(), 'a shared file that was a symlink must become a regular file');
   assert.equal(readFileSync(at('docs/a.txt'), 'utf8'), 'hello v2\n');
-  assert.equal(lstatSync(at('docs/a.txt')).mode & 0o777, 0o644);
+  if (process.platform === 'win32') assert.equal(indexMode(fixture.target, 'docs/a.txt'), '100644');
+  else assert.equal(lstatSync(at('docs/a.txt')).mode & 0o777, 0o644);
   assert.equal(readFileSync(at('scripts/run.sh'), 'utf8'), '#!/bin/sh\necho v2\n');
-  assert.equal(lstatSync(at('scripts/run.sh')).mode & 0o777, 0o755, 'the executable bit must follow the source');
+  if (process.platform === 'win32') assert.equal(indexMode(fixture.target, 'scripts/run.sh'), '100755', 'the executable bit must follow the source');
+  else assert.equal(lstatSync(at('scripts/run.sh')).mode & 0o777, 0o755, 'the executable bit must follow the source');
   assert.deepEqual(snapshot(fixture.outside), outsideBefore, 'the file the old symlink pointed at must be untouched');
 
   const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
@@ -438,7 +505,7 @@ test('a file entry whose parent in the target is a symlink to a directory inside
   recordSource(fixture.source, [...SOURCE_ENTRIES, { path: 'alias/x.txt', sha256: ZERO_SHA256 }]);
   link(fixture.target, 'alias', 'docs');
   commitAll(fixture.target);
-  assertRefused(fixture, /alias\/x\.txt: its parent .*\/alias is a symlink/);
+  assertRefused(fixture, /alias\/x\.txt: its parent .*[\\/]alias is a symlink/);
   assert.equal(lstatSync(join(fixture.target, 'docs', 'x.txt'), { throwIfNoEntry: false }), undefined, 'nothing may land at the symlink destination');
 });
 
@@ -452,7 +519,7 @@ test('a file entry under a symlinked directory in the target is refused, naming 
   commitAll(fixture.target);
   assertRefused(
     fixture,
-    /\.claude\/skills\/x\/SKILL\.md: its parent .*\/\.claude\/skills\/x is a symlink, .*remove it first: git rm \.claude\/skills\/x, commit, then sync$/,
+    /\.claude\/skills\/x\/SKILL\.md: its parent .*[\\/]\.claude[\\/]skills[\\/]x is a symlink, .*remove it first: git rm \.claude\/skills\/x, commit, then sync$/,
   );
 });
 
@@ -465,7 +532,7 @@ test('a file entry whose parent is a regular file in the target is refused, nami
   commitAll(fixture.target);
   assertRefused(
     fixture,
-    /\.claude\/skills\/x\/SKILL\.md: its parent .*\/\.claude\/skills\/x is a file, not a directory, .*remove it first: git rm \.claude\/skills\/x, commit, then sync$/,
+    /\.claude\/skills\/x\/SKILL\.md: its parent .*[\\/]\.claude[\\/]skills[\\/]x is a file, not a directory, .*remove it first: git rm \.claude\/skills\/x, commit, then sync$/,
   );
 });
 
@@ -563,7 +630,7 @@ for (const [name, manual] of [
   });
 }
 
-test('a target AGENTS.md that is a symlink is refused, even to a manual with well-formed markers', (t) => {
+test('a target AGENTS.md that is a symlink is refused, even to a manual with well-formed markers', NEEDS_FILE_SYMLINK, (t) => {
   const fixture = syncFixture(t);
   put(fixture.outside, 'manual.md', `# Outside manual\n${START}\nshared v1\n${END}\n`);
   rmSync(join(fixture.target, 'AGENTS.md'));
@@ -579,13 +646,29 @@ test('a sync gives each file its committed mode, whatever the mode in the source
   chmodSync(join(fixture.source, 'docs', 'a.txt'), 0o755);
   assert.equal(git(fixture.source, 'status', '--porcelain'), '', 'the mode change must be invisible to git status');
   fixture.sync();
-  assert.equal(lstatSync(join(fixture.target, 'scripts', 'run.sh')).mode & 0o777, 0o755);
-  assert.equal(lstatSync(join(fixture.target, 'docs', 'a.txt')).mode & 0o777, 0o644);
+  if (process.platform === 'win32') {
+    assert.equal(indexMode(fixture.target, 'scripts/run.sh'), '100755');
+    assert.equal(indexMode(fixture.target, 'docs/a.txt'), '100644');
+  } else {
+    assert.equal(lstatSync(join(fixture.target, 'scripts', 'run.sh')).mode & 0o777, 0o755);
+    assert.equal(lstatSync(join(fixture.target, 'docs', 'a.txt')).mode & 0o777, 0o644);
+  }
+});
+
+test('a target that does not honour file modes gets each file\'s committed mode in its index', (t) => {
+  const fixture = syncFixture(t);
+  git(fixture.target, 'config', 'core.fileMode', 'false');
+  assert.equal(indexMode(fixture.target, 'scripts/run.sh'), '100644', 'the target must start with its script not executable in its index');
+  fixture.sync();
+  assert.equal(indexMode(fixture.target, 'scripts/run.sh'), '100755');
+  assert.equal(indexMode(fixture.target, 'docs/a.txt'), '100644');
 });
 
 test('a source commit whose file mode differs from its manifest is refused, naming the path', (t) => {
   const fixture = syncFixture(t);
+  // The index carries the mode where the checkout ignores it; the chmod stops git add restoring it where it does not.
   chmodSync(join(fixture.source, 'scripts', 'run.sh'), 0o644);
+  git(fixture.source, 'update-index', '--chmod=-x', 'scripts/run.sh');
   commitAll(fixture.source);
   assertRefused(fixture, /the source does not match its own manifest at scripts\/run\.sh in its commit/);
 });
@@ -689,7 +772,7 @@ test('an inherited GIT_DIR cannot redirect the sync to another repository', (t) 
   const fixture = syncFixture(t);
   const hostile = { GIT_DIR: 'hostile.git' };
   cpSync(join(fixture.source, '.git'), join(fixture.source, hostile.GIT_DIR), { recursive: true });
-  symlinkSync('.git', join(fixture.target, hostile.GIT_DIR));
+  link(fixture.target, hostile.GIT_DIR, '.git');
   withEnv(hostile, () => {
     tamper(fixture.source);
     git(fixture.source, 'add', '--', 'scripts/run.sh', MANIFEST);
@@ -866,17 +949,32 @@ test('--check with any other argument prints the usage for all three modes and e
   assert.match(run.stderr, /^usage: node scripts\/factory-sync\.mjs --write \| --check \| --from <source>/);
 });
 
+// The environment with PATH replaced. Windows names are case-insensitive, so any other spelling of PATH is dropped
+// rather than left to compete with it.
+function withPath(path) {
+  const env = { ...process.env };
+  if (process.platform === 'win32') for (const name of Object.keys(env)) if (name.toUpperCase() === 'PATH') delete env[name];
+  return { ...env, PATH: path };
+}
+
 test('--check without gh on the PATH reports the sync state unknown and exits 2', (t) => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'factory-sync-check-')));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, 'adopter');
   repository(root, ADOPTER_URL);
   put(root, MANIFEST, JSON.stringify(LAG_MANIFEST));
-  // A PATH holding git alone, so the check reaches the fetch and gh is the only thing missing.
-  const bin = join(base, 'bin');
-  mkdirSync(bin);
-  symlinkSync(spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim(), join(bin, 'git'));
-  const run = spawnSync(process.execPath, [CLI, '--check'], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: bin } });
+  // A PATH holding git alone, so the check reaches the fetch and gh is the only thing missing. On Windows that is
+  // git's own directory, since a file symlink to git.exe needs privilege.
+  let bin;
+  if (process.platform === 'win32') {
+    bin = dirname(gitExecutable());
+    assert.ok(!existsSync(join(bin, 'gh.exe')), `${bin} must not hold gh.exe`);
+  } else {
+    bin = join(base, 'bin');
+    mkdirSync(bin);
+    symlinkSync(spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim(), join(bin, 'git'));
+  }
+  const run = spawnSync(process.execPath, [CLI, '--check'], { cwd: root, encoding: 'utf8', env: withPath(bin) });
   assert.equal(run.status, 2, run.stderr);
   assert.match(run.stderr, /^factory-sync: sync state unknown: cannot fetch example-owner\/example-repo main's .*\(gh is not installed\)$/m);
 });
@@ -895,32 +993,37 @@ const contentsCall = (canonical) => [
 
 // Runs --check in root with a fake gh first on the PATH. The fake logs every call's arguments and answers only the
 // contents call for canonical's manifest, printing manifestText; any other call exits 1. Returns the run and the
-// logged calls.
+// logged calls. Windows runs no shebang script, so there gh.exe is a copy of node that a preload turns into the fake;
+// node takes the first argument as its script, so the preload reads it back from process.argv[1].
 function checkWithFakeGh(t, root, canonical, manifestText) {
   const bin = realpathSync(mkdtempSync(join(tmpdir(), 'factory-sync-gh-')));
   t.after(() => rmSync(bin, { recursive: true, force: true }));
   const [calls, answer] = [join(bin, 'calls'), join(bin, 'answer')];
   writeFileSync(answer, manifestText);
-  put(
-    bin,
-    'gh',
-    `#!/usr/bin/env node
-const { appendFileSync, readFileSync } = require('node:fs');
-const args = process.argv.slice(2);
-appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
+  const imports = "const { appendFileSync, readFileSync } = require('node:fs');\n";
+  const body = `appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
 if (JSON.stringify(args) !== ${JSON.stringify(JSON.stringify(contentsCall(canonical)))}) {
   process.stderr.write('unexpected gh call\\n');
   process.exit(1);
 }
 process.stdout.write(readFileSync(${JSON.stringify(answer)}, 'utf8'));
+`;
+  const env = withPath(`${bin}${delimiter}${process.env.PATH}`);
+  if (process.platform === 'win32') {
+    copyFileSync(process.execPath, join(bin, 'gh.exe'));
+    const preload = join(bin, 'fake-gh.cjs');
+    writeFileSync(
+      preload,
+      `${imports}const { basename } = require('node:path');
+if (basename(process.execPath).toLowerCase() === 'gh.exe') {
+const args = [basename(process.argv[1]), ...process.argv.slice(2)];
+${body}process.exit(0);
+}
 `,
-    0o755,
-  );
-  const run = spawnSync(process.execPath, [CLI, '--check'], {
-    cwd: root,
-    encoding: 'utf8',
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
-  });
+    );
+    env.NODE_OPTIONS = [process.env.NODE_OPTIONS, `--require ${JSON.stringify(preload)}`].filter(Boolean).join(' ');
+  } else put(bin, 'gh', `#!/usr/bin/env node\n${imports}const args = process.argv.slice(2);\n${body}`, 0o755);
+  const run = spawnSync(process.execPath, [CLI, '--check'], { cwd: root, encoding: 'utf8', env });
   const logged = readFileSync(calls, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
   return { run, calls: logged };
 }

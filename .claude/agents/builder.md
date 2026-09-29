@@ -42,6 +42,9 @@ Rules:
   stops and reports; its line count never stops it.
 - Remove orphans your change creates (unused imports/vars/functions). No dead code, no leftover scaffolding.
 - Write code to `docs/CODING-STANDARDS.md`; never reformat or bypass what those standards protect.
+- Write interface code to `docs/DESIGN-SYSTEM.md`: every value comes from its token blocks and every control reuses
+  the component pattern it names; a value or pattern it lacks is added there in the same change, never invented at
+  the site.
 - If the plan proves wrong, under-specified, or harder than anticipated, STOP and report instead of improvising
   — especially on a `plan-first` or `sign-off` seam. A mechanical choice the plan already bounds is yours to make.
 - Convergence mutation proof is the ORCHESTRATOR's job, never yours. Run red-before-implementation only for

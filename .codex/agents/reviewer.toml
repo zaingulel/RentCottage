@@ -41,6 +41,8 @@ Lenses:
 5. **Constraints**: every Hard constraint and Architecture seam the manual names still holds; any artifact the
    Conventions table in `AGENTS.md` marks generated is regenerated and committed with its source; a surface in the
    `plan-first` or `sign-off` row of the Surfaces table in `AGENTS.md` is untouched or independently validated.
+   An interface change is judged against `docs/DESIGN-SYSTEM.md`: a raw value where a token exists, or a value or
+   component pattern written at the site instead of added there, is a `constraint` finding.
 6. **Evidence**: for every coherent claim in the diff, name the construction mode `docs/TESTING-STRATEGY.md`
    requires, then check the delivered observer, independent oracle, executed mutation (red then green in the
    branch work log), and focused evidence meet it. A test that stays green when the change is reverted is a
