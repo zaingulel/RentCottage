@@ -274,10 +274,23 @@ describe("Owner Application review queue", () => {
       screen.getByRole("link", { name: "Open secure document" }),
     ).toHaveAttribute("href", "https://storage.test/first-expiring");
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    expect(
+      screen.getByRole("link", { name: "Open secure document" }),
+    ).toHaveAttribute("href", "https://storage.test/first-expiring");
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
     expect(screen.getByRole("alert")).toHaveTextContent(
       "This secure link has expired.",
     );
+    expect(
+      screen.queryByRole("link", { name: "Open secure document" }),
+    ).toBeNull();
 
     fireEvent.submit(form);
     await act(async () => {});
