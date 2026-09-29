@@ -983,10 +983,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       )
       select public.record_booking_request_capture_failure('${failureId}',
         (permit->>'leaseGeneration')::bigint, (permit->>'leaseToken')::uuid,
-        jsonb_build_object('outcome',result->'outcome',
-          'providerRequestId',result->'providerRequestId',
-          'providerReference',result->'providerReference',
-          'retrySafe',result->'retrySafe')) from executed;`,
+        result) from executed;`,
       ),
     );
     expect(failureRecorded.status).toBe("payment-required");
@@ -1309,10 +1306,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       )
       select public.record_booking_request_capture_failure('${expiryId}',
         (permit->>'leaseGeneration')::bigint, (permit->>'leaseToken')::uuid,
-        jsonb_build_object('outcome',result->'outcome',
-          'providerRequestId',result->'providerRequestId',
-          'providerReference',result->'providerReference',
-          'retrySafe',result->'retrySafe')) from executed;`,
+        result) from executed;`,
       ),
     );
     expect(expiryFailureRecorded.status).toBe("payment-required");

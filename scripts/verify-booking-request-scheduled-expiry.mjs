@@ -4,6 +4,7 @@ import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurre
 
 const USAGE =
   "Usage: node scripts/verify-booking-request-scheduled-expiry.mjs --seed|--verify";
+const REQUEST_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 export function main(args, environment = process.env) {
   if (args.length !== 1 || (args[0] !== "--seed" && args[0] !== "--verify")) {
@@ -26,8 +27,6 @@ export function main(args, environment = process.env) {
         select requests.id
         from public.booking_requests requests
         where requests.status = 'pending'
-        order by requests.created_at, requests.id
-        limit 1
       ), base as (
         select clock_timestamp() - interval '5 hours' as created_at
       )
@@ -36,10 +35,11 @@ export function main(args, environment = process.env) {
           response_deadline = base.created_at + interval '4 hours'
       from target, base
       where requests.id = target.id
+        and (select count(*) from target) = 1
       returning requests.id;
     `);
-    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId)) {
-      throw new Error("Expected one pending booking request ID.");
+    if (!REQUEST_ID_PATTERN.test(requestId)) {
+      throw new Error("Expected exactly one pending booking request.");
     }
     writeFileSync(identityFile, `${requestId}\n`);
     console.log(`Scheduled expiry fixture ${requestId} is due.`);
@@ -47,7 +47,7 @@ export function main(args, environment = process.env) {
   }
 
   const requestId = readFileSync(identityFile, "utf8").trim();
-  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId)) {
+  if (!REQUEST_ID_PATTERN.test(requestId)) {
     throw new Error("Scheduled expiry fixture ID is invalid.");
   }
   const result = harness.runSql(`
