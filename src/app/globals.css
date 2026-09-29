@@ -9,6 +9,89 @@
   --green: #22402f;
   --gold: #c68a45;
   --line: rgb(34 64 47 / 16%);
+
+  /* Surfaces */
+  --surface-field: #fffef9;
+  --surface-bright: #fff;
+  --surface-notice: #fff7e8;
+  --surface-raised: #fffdf7;
+  --surface-placeholder: #e9dfcc;
+  --surface-footer: #f0e9db;
+  --surface-verification: #f0e6d4;
+  --surface-submit: #f7f1e5;
+  --surface-lattice: #efe7d6;
+  --surface-preview-label: rgb(255 252 245 / 90%);
+  --surface-panel: #f8faf8;
+  --surface-panel-row: #f4f7f4;
+  --surface-policy: #eef6ef;
+  --surface-message-customer: #eef7f1;
+  --surface-message-owner: #f7f2e8;
+
+  /* Ink */
+  --ink-soft: rgb(38 36 31 / 76%);
+  --ink-panel: #18352b;
+  --ink-panel-note: #4b6158;
+  --ink-translation: #675129;
+  --ink-on-green: #f6f1e3;
+  --ink-on-green-bright: #fff;
+  --ink-on-dark: #f7f1e1;
+  --ink-on-dark-soft: rgb(247 241 225 / 88%);
+  --ink-on-dark-muted: rgb(247 241 225 / 72%);
+  --ink-on-progress: #f9f3e7;
+  --ink-on-progress-soft: rgb(249 243 231 / 76%);
+  --ink-on-progress-note: #f7d8af;
+  --ink-on-trusted: #f2f1ea;
+  --ink-on-trusted-soft: rgb(242 241 234 / 78%);
+
+  /* Lines and accents */
+  --line-on-dark: rgb(247 241 225 / 22%);
+  --line-on-dark-strong: rgb(247 241 225 / 45%);
+  --line-on-progress: rgb(255 255 255 / 16%);
+  --line-on-trusted: rgb(244 238 226 / 20%);
+  --surface-on-trusted: rgb(244 238 226 / 7%);
+  --line-menu: rgb(34 64 47 / 28%);
+  --line-messaging: #d7dfd5;
+  --line-panel: #d5ddd7;
+  --line-records: #b9b9b9;
+  --accent-policy: #386954;
+
+  /* Brand tints */
+  --green-tint: rgb(34 64 47 / 8%);
+  --gold-tint: rgb(198 138 69 / 12%);
+  --gold-tint-strong: rgb(198 138 69 / 15%);
+
+  /* Shade over hero imagery */
+  --shade: rgb(22 19 13 / 82%);
+  --shade-mid: rgb(22 19 13 / 42%);
+  --shade-soft: rgb(22 19 13 / 12%);
+  --shade-menu: rgb(22 19 13 / 38%);
+
+  /* Status */
+  --error: #a33425;
+  --error-text: #9b2727;
+  --error-text-strong: #7f241a;
+  --error-ring: rgb(163 52 37 / 12%);
+  --success-text: #2f734b;
+  --focus-ring: rgb(198 138 69 / 14%);
+  --action-pressed: rgb(34 64 47 / 10%);
+  --status-draft-bg: rgb(255 255 255 / 10%);
+  --status-submitted-bg: #f0c383;
+  --status-submitted-text: #283a2d;
+  --status-rejected-bg: #fff0e8;
+  --status-rejected-text: #8a3216;
+  --status-review-bg: #eef3ff;
+  --status-review-text: #264b8c;
+  --status-approved-bg: #e7f6ec;
+  --status-approved-text: #176638;
+  --status-profile-bg: #eef3ef;
+  --status-confirmed-bg: #e9f5ee;
+  --status-confirmed-text: #175c36;
+  --status-earnings-bg: #e6eee8;
+  --status-attention-bg: #fff0d7;
+  --status-attention-text: #623d00;
+  --status-eligible-bg: #dff1e5;
+  --status-eligible-text: #164d2d;
+
   --display: "Changa", sans-serif;
   --body: "Karla", "Almarai", sans-serif;
 }
@@ -69,7 +152,7 @@ textarea {
 .action-primary {
   min-height: 2.75rem;
   background: var(--green);
-  color: #f6f1e3;
+  color: var(--ink-on-green);
 }
 
 .action-secondary {
@@ -87,7 +170,7 @@ textarea {
 
 .action-toggle[aria-pressed="true"] {
   border-color: var(--green);
-  background: rgb(34 64 47 / 10%);
+  background: var(--action-pressed);
   box-shadow: inset 0 0 0 1px var(--green);
   color: var(--green);
 }
@@ -136,7 +219,7 @@ textarea {
 
 .form-control:focus-visible {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgb(198 138 69 / 14%);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .action:disabled {
@@ -157,7 +240,7 @@ textarea {
   min-height: 2.75rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: #fffef9;
+  background: var(--surface-field);
   padding: 0.7rem 0.85rem;
   outline: 2px solid transparent;
   outline-offset: 2px;
@@ -183,8 +266,8 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .form-control[aria-invalid="true"] {
-  border-color: #a33425;
-  box-shadow: 0 0 0 2px rgb(163 52 37 / 12%);
+  border-color: var(--error);
+  box-shadow: 0 0 0 2px var(--error-ring);
 }
 
 .action-feedback {
@@ -201,18 +284,18 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .action-feedback-success {
-  color: #2f734b;
+  color: var(--success-text);
 }
 
 .action-feedback-error {
-  color: #9b2727;
+  color: var(--error-text);
 }
 
 .owner-application-page {
   min-height: 100dvh;
   padding-block-end: 5rem;
   background:
-    radial-gradient(circle at 8% 8%, rgb(198 138 69 / 12%), transparent 28rem),
+    radial-gradient(circle at 8% 8%, var(--gold-tint), transparent 28rem),
     var(--background);
 }
 
@@ -259,7 +342,7 @@ input[type="file"].form-control::file-selector-button {
   border: 1px solid var(--line);
   border-radius: 1.25rem;
   background: var(--green);
-  color: #f9f3e7;
+  color: var(--ink-on-progress);
   box-shadow: 0 1.25rem 3rem rgb(34 64 47 / 12%);
 }
 
@@ -271,15 +354,15 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .application-progress-card > p {
-  color: rgb(249 243 231 / 76%);
+  color: var(--ink-on-progress-soft);
   line-height: 1.55;
 }
 
 .application-progress-card .application-privacy-note {
   margin-block-start: 1.2rem;
   padding-block-start: 1.2rem;
-  border-block-start: 1px solid rgb(255 255 255 / 16%);
-  color: #f7d8af;
+  border-block-start: 1px solid var(--line-on-progress);
+  color: var(--ink-on-progress-note);
   font-size: 0.82rem;
 }
 
@@ -294,12 +377,12 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .application-status-draft {
-  background: rgb(255 255 255 / 10%);
+  background: var(--status-draft-bg);
 }
 
 .application-status-submitted {
-  background: #f0c383;
-  color: #283a2d;
+  background: var(--status-submitted-bg);
+  color: var(--status-submitted-text);
 }
 
 .application-workspace {
@@ -390,8 +473,8 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .amenities-fieldset[aria-invalid="true"] .amenity-options label {
-  border-color: #a33425;
-  box-shadow: 0 0 0 2px rgb(163 52 37 / 12%);
+  border-color: var(--error);
+  box-shadow: 0 0 0 2px var(--error-ring);
 }
 
 .application-fields small,
@@ -427,7 +510,7 @@ input[type="file"].form-control::file-selector-button {
   gap: 0.45rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #fffef9;
+  background: var(--surface-field);
   padding: 0.5rem 0.72rem;
   font-size: 0.78rem;
 }
@@ -439,7 +522,7 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .verification-section {
-  background: #f0e6d4;
+  background: var(--surface-verification);
 }
 
 .application-notice {
@@ -507,13 +590,13 @@ input[type="file"].form-control::file-selector-button {
 .application-submit-card {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  background: #f7f1e5;
+  background: var(--surface-submit);
 }
 
 .application-missing {
-  border-inline-start: 3px solid #a33425;
+  border-inline-start: 3px solid var(--error);
   padding-inline-start: 0.85rem;
-  color: #7f241a;
+  color: var(--error-text-strong);
 }
 
 .application-missing strong {
@@ -526,7 +609,7 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .field-error {
-  color: #9b2727;
+  color: var(--error-text);
   font-weight: 700;
 }
 
@@ -612,7 +695,7 @@ input[type="file"].form-control::file-selector-button {
   border-radius: 999px;
   background: var(--green);
   padding: 0.75rem 1rem;
-  color: white;
+  color: var(--ink-on-green-bright);
   font-weight: 700;
   text-decoration: none;
 }
@@ -723,7 +806,7 @@ a {
   min-height: 70vh;
   display: flex;
   align-items: flex-end;
-  color: #f7f1e1;
+  color: var(--ink-on-dark);
 }
 
 .retreat-hero-image {
@@ -735,9 +818,9 @@ a {
   inset: 0;
   background: linear-gradient(
     to top,
-    rgb(22 19 13 / 82%),
-    rgb(22 19 13 / 12%) 58%,
-    rgb(22 19 13 / 42%)
+    var(--shade),
+    var(--shade-soft) 58%,
+    var(--shade-mid)
   );
 }
 
@@ -803,7 +886,7 @@ a {
 
 .language-links a[aria-current="page"] {
   background: var(--green);
-  color: #f6f1e3;
+  color: var(--ink-on-green);
 }
 
 .results-intro {
@@ -874,7 +957,7 @@ a {
 .result-image {
   position: relative;
   aspect-ratio: 4 / 3;
-  background: #e9dfcc;
+  background: var(--surface-placeholder);
 }
 
 .result-image img {
@@ -908,7 +991,7 @@ a {
 .verified-chip {
   display: inline-flex;
   border-radius: 999px;
-  background: rgb(34 64 47 / 8%);
+  background: var(--green-tint);
   padding: 0.3rem 0.55rem;
   color: var(--green);
   font-size: 0.72rem;
@@ -995,7 +1078,7 @@ a {
   min-height: 11rem;
   overflow: hidden;
   border-radius: 0.9rem;
-  background: #e9dfcc;
+  background: var(--surface-placeholder);
 }
 
 .profile-gallery .profile-main-image {
@@ -1177,7 +1260,7 @@ html[lang="ckb"] .booking-summary strong {
   margin: 0;
   padding: 0.8rem;
   border-radius: 0.75rem;
-  background: rgb(198 138 69 / 12%);
+  background: var(--gold-tint);
   color: var(--muted);
   font-size: 0.85rem;
   line-height: 1.6;
@@ -1239,7 +1322,7 @@ html[lang="ckb"] .booking-summary strong {
   padding: 1.4rem;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  background: rgb(34 64 47 / 8%);
+  background: var(--green-tint);
   color: var(--green);
   font-weight: 700;
 }
@@ -1280,7 +1363,7 @@ html[lang="ckb"] .booking-summary strong {
 .retreat-copy p {
   max-width: 46ch;
   margin: 0;
-  color: rgb(247 241 225 / 88%);
+  color: var(--ink-on-dark-soft);
   font-size: 1.05rem;
   line-height: 1.65;
 }
@@ -1347,7 +1430,7 @@ html[lang="ckb"] .booking-summary strong {
   border: 1px solid var(--line);
   border-radius: 0.75rem;
   padding: 0.6rem 0.7rem;
-  background: #fffef9;
+  background: var(--surface-field);
 }
 
 .booking-period-filter > [role="group"] > span {
@@ -1478,7 +1561,7 @@ html[lang="ckb"] .booking-summary strong {
   width: 9rem;
   height: 3rem;
   opacity: 0.55;
-  background-color: #efe7d6;
+  background-color: var(--surface-lattice);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='42' height='42' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%2322402F' stroke-width='1.3' opacity='0.3'%3E%3Cpath d='M28 2 54 28 28 54 2 28Z'/%3E%3Cpath d='M28 13 43 28 28 43 13 28Z'/%3E%3C/g%3E%3C/svg%3E");
 }
 
@@ -1493,7 +1576,7 @@ html[lang="ckb"] .booking-summary strong {
   min-height: 15rem;
   overflow: hidden;
   border-radius: 1rem;
-  background: #e9dfcc;
+  background: var(--surface-placeholder);
 }
 
 .preview-grid img {
@@ -1513,7 +1596,7 @@ html[lang="ckb"] .booking-summary strong {
   inset-block-end: 0.8rem;
   width: fit-content;
   border-radius: 999px;
-  background: rgb(255 252 245 / 90%);
+  background: var(--surface-preview-label);
   padding: 0.4rem 0.75rem;
   color: var(--green);
   font-size: 0.78rem;
@@ -1527,7 +1610,7 @@ html[lang="ckb"] .booking-summary strong {
   overflow: hidden;
   border-radius: 1.5rem;
   background: var(--green);
-  color: #f2f1ea;
+  color: var(--ink-on-trusted);
 }
 
 .trusted-photo {
@@ -1544,12 +1627,12 @@ html[lang="ckb"] .booking-summary strong {
 }
 
 .trusted-copy h2 {
-  color: #f2f1ea;
+  color: var(--ink-on-trusted);
 }
 
 .trusted-copy > p:nth-child(3) {
   margin-block: 0.8rem 1.5rem;
-  color: rgb(242 241 234 / 78%);
+  color: var(--ink-on-trusted-soft);
   line-height: 1.7;
 }
 
@@ -1566,9 +1649,9 @@ html[lang="ckb"] .booking-summary strong {
   align-items: flex-start;
   gap: 0.75rem;
   padding: 0.85rem 1rem;
-  border: 1px solid rgb(244 238 226 / 20%);
+  border: 1px solid var(--line-on-trusted);
   border-radius: 0.85rem;
-  background: rgb(244 238 226 / 7%);
+  background: var(--surface-on-trusted);
 }
 
 .trusted-copy li b {
@@ -1577,7 +1660,7 @@ html[lang="ckb"] .booking-summary strong {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #f4eee2;
+  background: var(--background);
   color: var(--green);
   font-size: 0.78rem;
 }
@@ -1713,18 +1796,18 @@ a:focus-visible {
 .application-status-expired,
 .application-status-suspended,
 .application-status-rejected {
-  background: #fff0e8;
-  color: #8a3216;
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
 }
 
 .application-status-under_review {
-  background: #eef3ff;
-  color: #264b8c;
+  background: var(--status-review-bg);
+  color: var(--status-review-text);
 }
 
 .application-status-approved {
-  background: #e7f6ec;
-  color: #176638;
+  background: var(--status-approved-bg);
+  color: var(--status-approved-text);
 }
 
 @media (max-width: 700px) {
@@ -1829,7 +1912,7 @@ a:focus-visible {
   border: 1px solid var(--green);
   border-radius: 0.75rem;
   background: var(--green);
-  color: #fff;
+  color: var(--ink-on-green-bright);
   padding: 0.65rem 1rem;
   font: inherit;
   font-weight: 700;
@@ -1870,13 +1953,13 @@ a:focus-visible {
 .cottage-profile-status {
   width: fit-content;
   border-radius: 999px;
-  background: #eef3ef;
+  background: var(--status-profile-bg);
   padding: 0.35rem 0.65rem;
 }
 
 .cottage-profile-status.submitted_for_content_approval {
-  background: #eef3ff;
-  color: #264b8c;
+  background: var(--status-review-bg);
+  color: var(--status-review-text);
 }
 
 .cottage-profile-overview button,
@@ -1886,7 +1969,7 @@ a:focus-visible {
   border: 1px solid var(--green);
   border-radius: 0.75rem;
   background: var(--green);
-  color: #fff;
+  color: var(--ink-on-green-bright);
   padding: 0.65rem 1rem;
   font: inherit;
   font-weight: 700;
@@ -1959,7 +2042,7 @@ a:focus-visible {
   inline-size: 100%;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: #fff;
+  background: var(--surface-bright);
   color: var(--ink);
   padding: 0.75rem;
   font: inherit;
@@ -2003,7 +2086,7 @@ a:focus-visible {
   align-content: start;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  background: #fffef9;
+  background: var(--surface-field);
   padding: 1rem;
 }
 
@@ -2025,7 +2108,7 @@ a:focus-visible {
   min-block-size: 2.75rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: #fff;
+  background: var(--surface-bright);
   padding: 0.7rem;
 }
 
@@ -2041,7 +2124,7 @@ a:focus-visible {
   justify-content: space-between;
   gap: 0.75rem;
   border-inline-start: 0.3rem solid var(--gold);
-  background: #fff7e8;
+  background: var(--surface-notice);
   padding: 0.9rem 1rem;
 }
 
@@ -2096,7 +2179,7 @@ a:focus-visible {
   align-content: start;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  background: #fffef9;
+  background: var(--surface-field);
   padding: 1rem;
 }
 
@@ -2121,7 +2204,7 @@ a:focus-visible {
   min-block-size: 2.75rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: #fff;
+  background: var(--surface-bright);
   padding: 0.7rem;
 }
 
@@ -2191,7 +2274,7 @@ a:focus-visible {
 .cottage-pricing-availability-notice {
   margin: 0;
   border-inline-start: 0.3rem solid var(--gold);
-  background: #fff7e8;
+  background: var(--surface-notice);
   padding: 0.9rem 1rem;
   color: var(--muted);
   line-height: 1.5;
@@ -2237,7 +2320,7 @@ a:focus-visible {
 
 .private-location-warning {
   border-inline-start: 0.3rem solid var(--gold);
-  background: #fff7e8;
+  background: var(--surface-notice);
   padding: 0.85rem 1rem;
 }
 
@@ -2354,7 +2437,7 @@ a:focus-visible {
   margin-block-end: 1rem;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  background: #fffef9;
+  background: var(--surface-field);
   padding: clamp(1rem, 3vw, 1.5rem);
 }
 
@@ -2445,7 +2528,7 @@ a:focus-visible {
 
 .quote-notice {
   border-inline-start: 0.3rem solid var(--gold);
-  background: #fff7e8;
+  background: var(--surface-notice);
   padding: 0.85rem 1rem;
 }
 
@@ -2455,7 +2538,7 @@ a:focus-visible {
   margin-block-end: 1rem;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  background: #fffef9;
+  background: var(--surface-field);
   padding: clamp(1rem, 3vw, 1.5rem);
 }
 
@@ -2509,7 +2592,7 @@ a:focus-visible {
 .booking-request-warning {
   border-inline-start: 0.3rem solid var(--gold);
   border-radius: 0.5rem;
-  background: #fff7e8;
+  background: var(--surface-notice);
   padding: 0.85rem 1rem;
 }
 
@@ -2525,7 +2608,7 @@ a:focus-visible {
 }
 
 .booking-request-receipt {
-  background: rgb(34 64 47 / 8%);
+  background: var(--green-tint);
 }
 
 .booking-request-receipt dl {
@@ -2588,7 +2671,7 @@ a:focus-visible {
 
 .owner-booking-request-card > header > span {
   border-radius: 999px;
-  background: rgb(198 138 69 / 15%);
+  background: var(--gold-tint-strong);
   padding: 0.25rem 0.6rem;
   color: var(--gold);
   font-size: 0.8rem;
@@ -2625,9 +2708,9 @@ a:focus-visible {
   width: min(100%, 52rem);
   margin-inline: auto;
   padding: clamp(1.25rem, 4vw, 2.5rem);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 1.25rem;
-  background: var(--surface, #fff);
+  background: var(--surface-bright);
 }
 
 .confirmed-booking-details > header,
@@ -2713,9 +2796,9 @@ a:focus-visible {
   width: min(100%, 48rem);
   margin-inline: auto;
   padding: clamp(1.25rem, 4vw, 2.5rem);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 1.25rem;
-  background: var(--surface, #fff);
+  background: var(--surface-bright);
 }
 
 .customer-booking-request-status dl > div {
@@ -2725,7 +2808,7 @@ a:focus-visible {
 }
 
 .customer-booking-request-status dt {
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .customer-booking-request-status dd {
@@ -2740,8 +2823,8 @@ a:focus-visible {
   width: fit-content;
   padding: 0.35rem 0.7rem;
   border-radius: 999px;
-  background: #e9f5ee;
-  color: #175c36;
+  background: var(--status-confirmed-bg);
+  color: var(--status-confirmed-text);
   font-weight: 700;
 }
 
@@ -2797,7 +2880,7 @@ a:focus-visible {
 .site-header {
   z-index: 40;
   background: transparent;
-  color: #f7f1e1;
+  color: var(--ink-on-dark);
   transition:
     background 220ms ease,
     box-shadow 220ms ease;
@@ -2810,7 +2893,7 @@ a:focus-visible {
 }
 
 .site-header-solid {
-  background: #fffdf7;
+  background: var(--surface-raised);
   color: var(--ink);
   border-block-end: 1px solid var(--line);
 }
@@ -2856,7 +2939,7 @@ a:focus-visible {
 }
 
 .site-brand span {
-  color: rgb(247 241 225 / 72%);
+  color: var(--ink-on-dark-muted);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -2879,20 +2962,20 @@ a:focus-visible {
 }
 
 .site-header:not(.site-header-solid) .language-links {
-  border-color: rgb(247 241 225 / 22%);
-  background: rgb(22 19 13 / 38%);
+  border-color: var(--line-on-dark);
+  background: var(--shade-menu);
   backdrop-filter: blur(0.7rem);
 }
 
 .site-header:not(.site-header-solid) .language-links a[aria-current="page"] {
-  background: #f7f1e1;
+  background: var(--ink-on-dark);
   color: var(--ink);
 }
 
 .site-header-rule {
   width: 1px;
   height: 1.5rem;
-  background: rgb(247 241 225 / 22%);
+  background: var(--line-on-dark);
 }
 
 .site-header-solid .site-header-rule {
@@ -2911,7 +2994,7 @@ a:focus-visible {
   min-height: 2.5rem;
   display: inline-flex;
   align-items: center;
-  border: 1px solid rgb(247 241 225 / 45%);
+  border: 1px solid var(--line-on-dark-strong);
   border-radius: 999px;
   padding-inline: 1rem;
   font-size: 0.92rem;
@@ -2921,7 +3004,7 @@ a:focus-visible {
 
 .site-header-solid .account-navigation > a,
 .site-header-solid .account-navigation summary {
-  border-color: rgb(34 64 47 / 28%);
+  border-color: var(--line-menu);
   color: var(--green);
 }
 
@@ -2947,7 +3030,7 @@ a:focus-visible {
   padding: 0.5rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: #fffdf7;
+  background: var(--surface-raised);
   box-shadow: 0 0.5rem 1.5rem rgb(34 64 47 / 12%);
   color: var(--ink);
 }
@@ -2969,7 +3052,7 @@ a:focus-visible {
 .site-footer {
   margin-block-start: 5rem;
   border-block-start: 1px solid var(--line);
-  background: #f0e9db;
+  background: var(--surface-footer);
 }
 
 .site-footer-grid,
@@ -3007,7 +3090,7 @@ a:focus-visible {
 
 .site-footer-grid nav > a {
   width: fit-content;
-  color: rgb(38 36 31 / 76%);
+  color: var(--ink-soft);
   font-size: 0.92rem;
   text-decoration: none;
 }
@@ -3057,8 +3140,8 @@ a:focus-visible {
   width: min(100%, 52rem);
   margin-inline: auto;
   padding: clamp(1rem, 3vw, 2rem);
-  background: #fffdf7;
-  border: 1px solid #d7dfd5;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-messaging);
   border-radius: 1rem;
 }
 
@@ -3075,7 +3158,7 @@ a:focus-visible {
   display: grid;
   gap: 0.35rem;
   padding: 1rem;
-  border: 1px solid #d7dfd5;
+  border: 1px solid var(--line-messaging);
   border-radius: 0.8rem;
   overflow-wrap: anywhere;
 }
@@ -3087,16 +3170,16 @@ a:focus-visible {
 
 .message-customer article {
   margin-inline-start: min(12%, 5rem);
-  background: #eef7f1;
+  background: var(--surface-message-customer);
 }
 
 .message-cottage_owner article {
   margin-inline-end: min(12%, 5rem);
-  background: #f7f2e8;
+  background: var(--surface-message-owner);
 }
 
 .translation-label {
-  color: #675129;
+  color: var(--ink-translation);
   font-size: 0.85rem;
   font-weight: 700;
 }

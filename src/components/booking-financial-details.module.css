@@ -3,10 +3,10 @@
   gap: 1.4rem;
   margin-block: 1.5rem;
   padding: clamp(1rem, 3vw, 2rem);
-  border: 1px solid #d5ddd7;
+  border: 1px solid var(--line-panel);
   border-radius: 1rem;
-  background: #fff;
-  color: #18352b;
+  background: var(--surface-bright);
+  color: var(--ink-panel);
   overflow-wrap: anywhere;
 }
 .panel h1,
@@ -30,7 +30,7 @@
   display: grid;
   gap: 0.3rem;
   padding: 0.85rem;
-  background: #f4f7f4;
+  background: var(--surface-panel-row);
   border-radius: 0.6rem;
 }
 .summary dt {
@@ -45,14 +45,14 @@
   display: grid;
   gap: 0.55rem;
   padding: 1rem;
-  border-inline-start: 0.25rem solid #386954;
-  background: #eef6ef;
+  border-inline-start: 0.25rem solid var(--accent-policy);
+  background: var(--surface-policy);
 }
 .form {
   display: grid;
   gap: 1rem;
   padding-block: 1.2rem;
-  border-block-start: 1px solid #d5ddd7;
+  border-block-start: 1px solid var(--line-panel);
 }
 .form label {
   display: grid;
@@ -79,7 +79,7 @@
   display: grid;
   gap: 0.7rem;
   padding: 1rem;
-  border: 1px solid #d5ddd7;
+  border: 1px solid var(--line-panel);
   border-radius: 0.7rem;
 }
 .notice {

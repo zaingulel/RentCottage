@@ -3,9 +3,9 @@
   gap: 0.875rem;
   min-inline-size: 0;
   padding: clamp(1rem, 3vw, 1.5rem);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 1rem;
-  background: var(--surface, #fff);
+  background: var(--surface-bright);
   overflow-wrap: anywhere;
 }
 
@@ -30,9 +30,9 @@
 
 .card {
   padding: clamp(1rem, 3vw, 1.5rem);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 1rem;
-  background: var(--surface, #fff);
+  background: var(--surface-bright);
 }
 
 .cardHeader {
@@ -83,7 +83,7 @@
   align-items: center;
   gap: 0.35rem;
   padding: 0.45rem 0.65rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 0.6rem;
 }
 

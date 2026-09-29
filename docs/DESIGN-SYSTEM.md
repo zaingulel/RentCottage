@@ -7,12 +7,19 @@ the code keeps them.
 
 ## Values live in the token block
 
-- The only token block is `:root` in [globals.css](../src/app/globals.css). It holds the colours `--background`,
-  `--card`, `--ink`, `--muted`, `--green`, `--gold` and `--line`, the font families `--display` and `--body`, and
-  `color-scheme: light`. There is no Tailwind and no theme object.
+- The only token block is `:root` in [globals.css](../src/app/globals.css). It holds every interface colour: the
+  base palette `--background`, `--card`, `--ink`, `--muted`, `--green`, `--gold` and `--line`, then the groups
+  Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
+  families `--display` and `--body`, and `color-scheme: light`. There is no Tailwind and no theme object.
 - Interface colours and font families come from these tokens through `var(--…)`.
+  [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside `:root` other than in an elevation
+  shadow, and on a custom property a stylesheet uses that `:root` does not declare.
 - A colour or font a change needs that the block lacks is added to `:root` in the same change, named for its role
-  (what it is for, not what it looks like).
+  (what it is for, not what it looks like). Two roles may share a value, each with its own token; one role never
+  has two tokens.
+- A translucent variant of a colour is its own token written as `rgb(r g b / a%)`. `color-mix()` and relative colour
+  syntax are not used: they are newer than the browsers Next.js supports (Chrome, Edge and Firefox 111, Safari
+  16.4).
 - Styling lives in global classes in `src/app/globals.css`. A few feature components keep a CSS module beside
   them: `support.module.css` for the support page, and `administrator-payment-history`, `administrator-records`,
   `booking-financial-details`, `customer-reviews` and `owner-booking-earnings` in `src/components/`. A change
@@ -25,8 +32,9 @@ A stylesheet may write these as literals:
 - `0`, hairline `1px` borders, `50%` and `999px` for circles and pills.
 - Percentages and `fr` or flex sizing in layout.
 - `currentColor` and `transparent`.
-- Radius, shadow, stacking order and breakpoint values, until #435 settles their scale. New work reuses a value
-  already in use rather than inventing one.
+- Radius, stacking order and breakpoint values, and elevation `box-shadow` values including their colours, until
+  #435 settles their scale. New work reuses a value already in use rather than inventing one.
+- A focus ring written as a `box-shadow` that starts `0 0 0` is not an elevation shadow: its colour is a token.
 
 Anything else is a token.
 
@@ -86,6 +94,6 @@ Anything else is a token.
 
 These are known gaps, not standards to copy.
 
-- #434: repeated colour literals, such as the error red, the success green and the CSS-module colours, are not yet
-  tokens.
+- #442: several near-identical colours are separate tokens, such as four error reds and several success greens;
+  which of them are one role is not yet decided.
 - #435: there is no shared scale for radius, shadow, stacking order or breakpoints.

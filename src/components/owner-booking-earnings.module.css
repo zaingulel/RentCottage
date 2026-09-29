@@ -4,10 +4,10 @@
   gap: 0.85rem;
   min-width: 0;
   padding: 1rem;
-  border: 1px solid #d5ddd7;
+  border: 1px solid var(--line-panel);
   border-radius: 0.8rem;
-  background: #f8faf8;
-  color: #18352b;
+  background: var(--surface-panel);
+  color: var(--ink-panel);
   overflow-wrap: anywhere;
 }
 
@@ -30,20 +30,20 @@
 .status {
   padding: 0.35rem 0.65rem;
   border-radius: 999px;
-  background: #e6eee8;
+  background: var(--status-earnings-bg);
   font-size: 0.9rem;
 }
 
 .status[data-status="blocked"],
 .status[data-status="attention"] {
-  background: #fff0d7;
-  color: #623d00;
+  background: var(--status-attention-bg);
+  color: var(--status-attention-text);
 }
 
 .status[data-status="paid"],
 .status[data-status="eligible"] {
-  background: #dff1e5;
-  color: #164d2d;
+  background: var(--status-eligible-bg);
+  color: var(--status-eligible-text);
 }
 
 .amounts {
@@ -59,12 +59,12 @@
   min-width: 0;
   padding: 0.65rem;
   border-radius: 0.55rem;
-  background: #fff;
+  background: var(--surface-bright);
 }
 
 .amounts dt,
 .note {
-  color: #4b6158;
+  color: var(--ink-panel-note);
   font-size: 0.86rem;
 }
 

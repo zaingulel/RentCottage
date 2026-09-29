@@ -24,7 +24,7 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: 1rem;
   padding: 1.25rem;
-  border: 1px solid var(--border, #b9b9b9);
+  border: 1px solid var(--line-records);
   border-radius: 0.75rem;
 }
 
@@ -65,7 +65,7 @@
 .card {
   min-width: 0;
   padding: 1.25rem;
-  border: 1px solid var(--border, #b9b9b9);
+  border: 1px solid var(--line-records);
   border-radius: 0.75rem;
   overflow-wrap: anywhere;
 }
