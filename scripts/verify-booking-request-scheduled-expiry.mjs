@@ -13,8 +13,13 @@ export function main(args, environment = process.env) {
   }
 
   const workdir = environment.SUPABASE_LOCAL_WORKDIR;
-  if (!workdir || !statSync(workdir, { throwIfNoEntry: false })?.isDirectory()) {
-    throw new Error("Scheduled expiry requires an existing local Supabase workdir.");
+  if (
+    !workdir ||
+    !statSync(workdir, { throwIfNoEntry: false })?.isDirectory()
+  ) {
+    throw new Error(
+      "Scheduled expiry requires an existing local Supabase workdir.",
+    );
   }
   const identityFile = join(workdir, "scheduled-expiry-request-id");
 
