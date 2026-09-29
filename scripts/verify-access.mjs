@@ -1300,6 +1300,26 @@ export async function main(
         if (workerBrowser.status !== 0) return workerBrowser.status;
       }
       if (ownedJourneysMode || partition === "worker") return 0;
+      if (partition === "scheduled") {
+        // Deliver the request notice before the expiry seed ages its deadline.
+        const scheduledWorkerPrerequisite = await execute(
+          "npx",
+          [
+            "playwright",
+            "test",
+            "tests/booking-request-access.spec.ts",
+            "--project=worker",
+            "--config=playwright.worker-prebuilt.config.ts",
+            "--workers=1",
+            "--grep",
+            "a verified Customer double-submit creates one Pending request and one minimal owner notice$",
+            "--output=playwright-report/scheduled-prerequisite-worker",
+          ],
+          { env: workerEnvironment, stdio: "inherit" },
+        );
+        if (scheduledWorkerPrerequisite.status !== 0)
+          return scheduledWorkerPrerequisite.status;
+      }
       const scheduledExpirySeed = await execute(
         "node",
         ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],

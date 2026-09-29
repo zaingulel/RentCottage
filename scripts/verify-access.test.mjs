@@ -3052,6 +3052,20 @@ setInterval(() => {}, 1000);
         ["npx", [...browserCommands[6][1], `--shard=${shard}`]],
       ]);
     }
+    const scheduledWorkerPrerequisite = [
+      "npx",
+      [
+        "playwright",
+        "test",
+        "tests/booking-request-access.spec.ts",
+        "--project=worker",
+        "--config=playwright.worker-prebuilt.config.ts",
+        "--workers=1",
+        "--grep",
+        "a verified Customer double-submit creates one Pending request and one minimal owner notice$",
+        "--output=playwright-report/scheduled-prerequisite-worker",
+      ],
+    ];
     expect(observed.get("scheduled:")).toEqual([
       statusCommand,
       ["node", ["scripts/prepare-access-test.mjs", "create", "desktop"]],
@@ -3070,8 +3084,70 @@ setInterval(() => {}, 1000);
         ],
       ],
       ...browserCommands.slice(3, 6),
+      scheduledWorkerPrerequisite,
       ...browserCommands.slice(7),
     ]);
+    const scheduledRun = successfulRun();
+    expect(
+      await mainWithPreparedProject(["--browser"], {
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "scheduled",
+        },
+        run: scheduledRun,
+      }),
+    ).toBe(0);
+    const scheduledCalls = scheduledRun.mock.calls;
+    const workerBuild = scheduledCalls.find(
+      ([command, args]) => command === "npm" && args[1] === "build:worker",
+    );
+    const workerPrerequisite = scheduledCalls.find(
+      ([command, args]) =>
+        command === scheduledWorkerPrerequisite[0] &&
+        JSON.stringify(args) === JSON.stringify(scheduledWorkerPrerequisite[1]),
+    );
+    expect(workerPrerequisite?.[2].env).toEqual(workerBuild?.[2].env);
+    expect(workerPrerequisite?.[2].stdio).toBe("inherit");
+    const failedPrerequisiteRun = ownedRun((command, args) => ({
+      status:
+        command === scheduledWorkerPrerequisite[0] &&
+        JSON.stringify(args) === JSON.stringify(scheduledWorkerPrerequisite[1])
+          ? 7
+          : 0,
+      stdout:
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
+          ? localCredentials
+          : "",
+    }));
+    const removeFailedPrerequisiteTemp = vi.fn();
+    expect(
+      await mainWithPreparedProject(["--browser"], {
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "scheduled",
+        },
+        makeTemp: () => "/tmp/access-scheduled-prerequisite",
+        removeTemp: removeFailedPrerequisiteTemp,
+        run: failedPrerequisiteRun,
+        stderr: vi.fn(),
+      }),
+    ).toBe(7);
+    expect(commands(failedPrerequisiteRun).at(-3)).toEqual(
+      scheduledWorkerPrerequisite,
+    );
+    expect(commands(failedPrerequisiteRun).at(-2)).toEqual(ownershipCommand);
+    expect(commands(failedPrerequisiteRun).at(-1)).toEqual(stopCommand);
+    expect(removeFailedPrerequisiteTemp).toHaveBeenCalledWith(
+      "/tmp/access-scheduled-prerequisite",
+    );
+    expect(
+      commands(failedPrerequisiteRun).some(
+        ([, args]) =>
+          args[0] === "scripts/verify-booking-request-scheduled-expiry.mjs" ||
+          args.includes("tests/worker-scheduled-expiry.spec.ts"),
+      ),
+    ).toBe(false);
     for (const [mode, partition, failedScript] of [
       [
         "--database",
