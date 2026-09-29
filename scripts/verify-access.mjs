@@ -1149,6 +1149,14 @@ export async function main(
       if (readinessStatus !== 0) return readinessStatus;
     }
     const verifyBrowserJourneys = async () => {
+      const browserEnvironment = {
+        ...databaseConcurrencyEnvironment,
+        ...accessEnvironment,
+        APP_ENVIRONMENT: "test",
+        NEXTJS_ENV: "test",
+        SUPABASE_PROJECT_REF: "local-test",
+        PLAYWRIGHT_SERVER: "next",
+      };
       if (!partition || partition === "next" || partition === "scheduled") {
         const fixtures =
           partition === "scheduled" ? ["desktop"] : ["mobile", "desktop"];
@@ -1160,16 +1168,6 @@ export async function main(
           );
           if (prepared.status !== 0) return prepared.status;
         }
-      }
-      const browserEnvironment = {
-        ...databaseConcurrencyEnvironment,
-        ...accessEnvironment,
-        APP_ENVIRONMENT: "test",
-        NEXTJS_ENV: "test",
-        SUPABASE_PROJECT_REF: "local-test",
-        PLAYWRIGHT_SERVER: "next",
-      };
-      if (!partition || partition === "next" || partition === "scheduled") {
         const nextArgs = ownedJourneysMode
           ? [
               "playwright",
