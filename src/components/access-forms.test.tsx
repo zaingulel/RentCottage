@@ -292,7 +292,8 @@ describe("access forms", () => {
         status: "enrollment_required",
         factorId: "factor-1",
         challengeId: "challenge-1",
-        qrCode: "data:image/png;base64,AA==",
+        qrCode:
+          'data:image/svg+xml;utf-8,<?xml version="1.0"?>\n<svg width="21" height="21" xmlns="http://www.w3.org/2000/svg"></svg>\n',
         secret: "SECRET",
       },
     ],
@@ -311,6 +312,9 @@ describe("access forms", () => {
       const codeField = await screen.findByLabelText("Authenticator app code");
       if (name === "enrollment") {
         expect(screen.getByTestId("mfa-secret")).toHaveTextContent("SECRET");
+        expect(
+          screen.getByRole("img", { name: "Authenticator app setup code" }),
+        ).toBeInTheDocument();
       }
 
       document.addEventListener("submit", submitSpy);

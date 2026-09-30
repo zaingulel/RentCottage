@@ -160,7 +160,7 @@ export function AdministratorAccessForm({
           <p>{mfa.qrCode ? copy.mfaSetup : copy.mfaChallenge}</p>
           {mfa.qrCode && (
             <Image
-              src={mfa.qrCode}
+              src={mfa.qrCode.trimEnd()}
               alt={copy.mfaQrAlt}
               width={192}
               height={192}
