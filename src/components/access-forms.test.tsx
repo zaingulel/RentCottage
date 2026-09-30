@@ -198,6 +198,37 @@ describe("access forms", () => {
     expect(signIn).toBeEnabled();
   });
 
+  it.each(["Email", "Password"])(
+    "submits administrator credentials once with Enter in the %s field",
+    async (field) => {
+      signInAdministrator.mockResolvedValue({ status: "invalid_sign_in" });
+      const submitSpy = vi.fn();
+      document.addEventListener("submit", submitSpy);
+      try {
+        const user = userEvent.setup();
+        render(<AdministratorAccessForm locale="en" />);
+
+        await user.type(screen.getByLabelText("Email"), "admin@example.com");
+        await user.type(screen.getByLabelText("Password"), "password");
+        await user.click(screen.getByLabelText(field));
+        await user.keyboard("{Enter}");
+
+        expect(signInAdministrator).toHaveBeenCalledTimes(1);
+        expect(signInAdministrator).toHaveBeenCalledWith({
+          email: "admin@example.com",
+          password: "password",
+        });
+        expect(submitSpy).toHaveBeenCalledTimes(1);
+        expect(submitSpy.mock.calls[0][0].defaultPrevented).toBe(true);
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "The sign-in is invalid or this is not an administrator account.",
+        );
+      } finally {
+        document.removeEventListener("submit", submitSpy);
+      }
+    },
+  );
+
   it("suppresses repeated administrator MFA verification while preserving invalid-code mapping", async () => {
     signInAdministrator.mockResolvedValue({
       status: "challenge_required",

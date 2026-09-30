@@ -985,6 +985,11 @@ a {
   gap: 0.35rem;
 }
 
+.access-panel form {
+  display: grid;
+  gap: inherit;
+}
+
 .standalone-access {
   width: min(34rem, calc(100% - 2rem));
   margin: 4rem auto;

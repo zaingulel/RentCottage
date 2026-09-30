@@ -105,7 +105,14 @@ export function AdministratorAccessForm({
   return (
     <section className="access-panel" aria-live="polite">
       {!mfa && !complete && (
-        <>
+        // The email and password inputs stay unnamed: a name would put the value
+        // in the URL on any native (pre-hydration) submission.
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void signIn();
+          }}
+        >
           <label>
             <span>{copy.email}</span>
             <FormControl
@@ -129,13 +136,12 @@ export function AdministratorAccessForm({
           <ActionButton
             kind="primary"
             width="full"
-            type="button"
+            type="submit"
             pending={pending}
-            onClick={signIn}
           >
             {copy.signIn}
           </ActionButton>
-        </>
+        </form>
       )}
       {mfa && !complete && (
         <>
