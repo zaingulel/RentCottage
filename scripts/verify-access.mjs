@@ -1006,7 +1006,13 @@ export async function main(
       }
       const createDraftConcurrencyFixture = await execute(
         "node",
-        ["scripts/prepare-access-test.mjs", "create", "mobile"],
+        [
+          "scripts/prepare-access-test.mjs",
+          "create",
+          "mobile",
+          // The cross-Cottage observer needs both published fixtures.
+          ...(partition === "booking-request" ? ["worker"] : []),
+        ],
         { env: accessEnvironment, stdio: "inherit" },
       );
       if (createDraftConcurrencyFixture.status !== 0) {

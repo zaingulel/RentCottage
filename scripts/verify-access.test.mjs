@@ -2977,6 +2977,27 @@ setInterval(() => {}, 1000);
       if (selectedProgram) {
         expect(selectedProgram[2].env.SUPABASE_SECRET_KEY).toBe("local-secret");
       }
+      if (partition === "booking-request") {
+        const preparation = run.mock.calls.find(
+          ([command, args]) =>
+            command === "node" &&
+            args.join(" ") ===
+              "scripts/prepare-access-test.mjs create mobile worker",
+        );
+        expect(preparation?.[2].env).toMatchObject({
+          APP_ENVIRONMENT: "test",
+          SUPABASE_URL: "http://127.0.0.1:54331",
+          SUPABASE_PUBLISHABLE_KEY: "local-publishable",
+          SUPABASE_SECRET_KEY: "local-secret",
+        });
+        expect(preparation?.[2].stdio).toBe("inherit");
+        const concurrency = run.mock.calls.find(
+          ([command, args]) =>
+            command === "node" &&
+            args[0] === "scripts/verify-booking-request-concurrency.mjs",
+        );
+        expect(concurrency?.[2].env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+      }
       for (const [, args, options] of run.mock.calls) {
         if (args[0] === "supabase") {
           expect(args.slice(-2)).toEqual([
@@ -2997,6 +3018,10 @@ setInterval(() => {}, 1000);
     const mobileFixture = [
       "node",
       ["scripts/prepare-access-test.mjs", "create", "mobile"],
+    ];
+    const bookingRequestFixture = [
+      "node",
+      ["scripts/prepare-access-test.mjs", "create", "mobile", "worker"],
     ];
     const longPrograms = new Map([
       ["booking-request", "scripts/verify-booking-request-concurrency.mjs"],
@@ -3019,10 +3044,54 @@ setInterval(() => {}, 1000);
     for (const [partition, script] of longPrograms) {
       expect(observed.get(`${partition}:`)).toEqual([
         statusCommand,
-        mobileFixture,
+        partition === "booking-request" ? bookingRequestFixture : mobileFixture,
         ["node", [script]],
       ]);
     }
+    const failedBookingRequestPreparation = ownedRun((command, args) => ({
+      status:
+        command === "node" &&
+        args.join(" ") ===
+          "scripts/prepare-access-test.mjs create mobile worker"
+          ? 7
+          : 0,
+      stdout:
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
+          ? localCredentials
+          : "",
+    }));
+    const removeFailedBookingRequestTemp = vi.fn();
+    expect(
+      await mainWithPreparedProject(["--database"], {
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "booking-request",
+        },
+        makeTemp: () => "/tmp/access-booking-request-prerequisite",
+        removeTemp: removeFailedBookingRequestTemp,
+        run: failedBookingRequestPreparation,
+        stderr: vi.fn(),
+      }),
+    ).toBe(7);
+    expect(commands(failedBookingRequestPreparation).at(-3)).toEqual(
+      bookingRequestFixture,
+    );
+    expect(commands(failedBookingRequestPreparation).at(-2)).toEqual(
+      ownershipCommand,
+    );
+    expect(commands(failedBookingRequestPreparation).at(-1)).toEqual(
+      stopCommand,
+    );
+    expect(removeFailedBookingRequestTemp).toHaveBeenCalledWith(
+      "/tmp/access-booking-request-prerequisite",
+    );
+    expect(
+      commands(failedBookingRequestPreparation).some(
+        ([, args]) =>
+          args[0] === "scripts/verify-booking-request-concurrency.mjs",
+      ),
+    ).toBe(false);
     const databaseUnion = [
       ...observed
         .get("database-core:")
