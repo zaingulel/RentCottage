@@ -111,8 +111,10 @@ export function AdministratorAccessForm({
       {!mfa && !complete && (
         // The email and password inputs, like the MFA code input below, stay
         // unnamed: a name would put the value in the URL on any native
-        // (pre-hydration) submission.
+        // (pre-hydration) submission. noValidate keeps a malformed email on
+        // the server sign-in mapping instead of a native browser bubble.
         <form
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             void signIn();
