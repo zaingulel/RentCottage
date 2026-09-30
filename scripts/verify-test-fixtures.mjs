@@ -9,6 +9,7 @@ import { main } from "./verify.mjs";
 
 export const requiredBaselineSteps = [
   ["npm", ["run", "audit:production"]],
+  ["npm", ["run", "audit:shipped-dev"]],
   ["npm", ["run", "format:check"]],
   ["npm", ["run", "lint"]],
   ["npm", ["run", "typecheck"]],

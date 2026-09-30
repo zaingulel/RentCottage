@@ -676,7 +676,7 @@ describe("repository verification command", () => {
       });
       expect(records[1]).toEqual({
         type: "verification-phase",
-        command: ["npm", "run", "format:check"],
+        command: ["npm", "run", "audit:shipped-dev"],
         startedAt: "2026-09-26T10:00:01.000Z",
         completedAt: "2026-09-26T10:00:02.000Z",
         durationMs: 37,
