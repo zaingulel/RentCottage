@@ -277,6 +277,33 @@ describe("access forms", () => {
     expect(continueButton).toBeEnabled();
   });
 
+  it("keeps administrator credentials and codes out of native form submissions", async () => {
+    signInAdministrator.mockResolvedValue({
+      status: "challenge_required",
+      factorId: "factor-1",
+      challengeId: "challenge-1",
+    });
+    const user = userEvent.setup();
+    render(<AdministratorAccessForm locale="en" />);
+
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password");
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    expect([...new FormData(continueButton.closest("form")!).keys()]).toEqual(
+      [],
+    );
+
+    await user.click(continueButton);
+    await user.type(
+      await screen.findByLabelText("Authenticator app code"),
+      "123456",
+    );
+    const verifyForm = screen
+      .getByRole("button", { name: "Verify" })
+      .closest("form")!;
+    expect([...new FormData(verifyForm).keys()]).toEqual([]);
+  });
+
   it.each([
     [
       "challenge",
