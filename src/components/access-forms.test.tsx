@@ -229,6 +229,68 @@ describe("access forms", () => {
     },
   );
 
+  it.each([
+    [
+      "challenge",
+      {
+        status: "challenge_required",
+        factorId: "factor-1",
+        challengeId: "challenge-1",
+      },
+    ],
+    [
+      "enrollment",
+      {
+        status: "enrollment_required",
+        factorId: "factor-1",
+        challengeId: "challenge-1",
+        qrCode: "data:image/png;base64,AA==",
+        secret: "SECRET",
+      },
+    ],
+  ])(
+    "submits the %s administrator MFA step once with Enter in the code field",
+    async (name, signInResult) => {
+      signInAdministrator.mockResolvedValue(signInResult);
+      verifyAdministrator.mockResolvedValue({ status: "invalid_code" });
+      const submitSpy = vi.fn();
+      const user = userEvent.setup();
+      render(<AdministratorAccessForm locale="en" />);
+
+      await user.type(screen.getByLabelText("Email"), "admin@example.com");
+      await user.type(screen.getByLabelText("Password"), "password");
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      const codeField = await screen.findByLabelText("Authenticator app code");
+      if (name === "enrollment") {
+        expect(screen.getByTestId("mfa-secret")).toHaveTextContent("SECRET");
+      }
+
+      document.addEventListener("submit", submitSpy);
+      try {
+        await user.type(codeField, "123456");
+        await user.keyboard("{Enter}");
+
+        expect(verifyAdministrator).toHaveBeenCalledTimes(1);
+        expect(verifyAdministrator).toHaveBeenCalledWith({
+          factorId: "factor-1",
+          challengeId: "challenge-1",
+          code: "123456",
+        });
+        expect(signInAdministrator).toHaveBeenCalledTimes(1);
+        expect(submitSpy).toHaveBeenCalledTimes(1);
+        expect(submitSpy.mock.calls[0][0].defaultPrevented).toBe(true);
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "The verification code could not be confirmed.",
+        );
+        expect(screen.getByLabelText("Authenticator app code")).toBeVisible();
+        expect(replace).not.toHaveBeenCalled();
+        expect(refresh).not.toHaveBeenCalled();
+      } finally {
+        document.removeEventListener("submit", submitSpy);
+      }
+    },
+  );
+
   it("suppresses repeated administrator MFA verification while preserving invalid-code mapping", async () => {
     signInAdministrator.mockResolvedValue({
       status: "challenge_required",
