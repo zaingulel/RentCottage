@@ -105,6 +105,14 @@ A handoff to a builder is a filled copy of `.claude/templates/builder-handoff.md
 copy of `.agents/templates/planner-handoff.md`. Each names the claim, the construction mode, the exact
 focused verification command, and the stop condition. A builder never runs the full suite and never commits.
 
+Every seat that plans, designs, builds or reviews code reads `docs/CODING-STANDARDS.md` before it starts, and every
+plan follows it, the orchestrator's short plan for a card with no architect included. The standards are more than a
+builder's style guide: they also set what a test or tool may cost, and that choice is made in the plan. A builder
+cannot change a plan once it arrives, so a standard read only by the builder and the reviewer reaches the work after
+the design it governs is fixed, and a review finding then costs a replan. That happened in an adopter, where an
+architect set a test design and the plan-reviewer passed it without either having seen the cost rules. Only the
+`explorer`, which locates code and judges nothing, is exempt.
+
 ## The two owner gates
 
 The owner reads pull request descriptions and screenshots, not diffs. The workflow therefore puts exactly two
@@ -182,8 +190,8 @@ The diagram is the whole path from a card to a merged commit. In words:
   declares the substitution and how the unavailability was established; an undeclared substitution is a skip. Sign-off
   surfaces (the Surfaces table's `sign-off` row), and any diff where material
   uncertainty remains after that pass, get the same cross-family pass and then an explicit Greptile request on the
-  finished draft, every thread fixed or dismissed with a reason before the draft is marked ready. `security-reviewer`
-  runs only when a change widens a surface in the Surfaces table's `security review` row. `.greptile/config.json` disables automatic reviews; labels are metadata.
+  finished draft, every thread fixed, set aside by the owner, or dismissed as false with a reason before the draft
+  is marked ready. `security-reviewer` runs only when a change widens a surface in the Surfaces table's `security review` row. `.greptile/config.json` disables automatic reviews; labels are metadata.
   The `resume` skill owns the tiers, the allowance lookup, the request, current-commit completion evidence, finding
   disposition, that cross-family substitution route and Greptile's own documented best-effort provider-unavailability
   exception. Repairs and rebases stay in draft and receive the applicable local evidence and, when required, a new
@@ -277,11 +285,11 @@ Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1 greptil
 | Field | Value |
 |---|---|
 | `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill assigned. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution |
-| `rounds` | Reviewer passes over the tree, at least 1: the fresh review, each pass scoped to a repair, each `security-reviewer` pass, and each Greptile review of a commit count one each |
+| `rounds` | Reviewer passes over the tree, at least 1: the fresh review, each pass scoped to a repair, each `security-reviewer` pass, and each Greptile review of a commit count one each; a pass counts once it records its verdict, zero findings included |
 | `raised` | Findings reported across every round, Greptile's included, a finding reported more than once counted once; in a self-review, the findings the session records in the Review section. A candidate the reviewer discarded itself is not one |
 | `fixed` | Raised findings repaired in this pull request |
 | `dismissed` | Raised findings judged false and dismissed with a reason |
-| `deferred` | True findings not fixed here, each carried to a follow-up card or set aside by the owner, as the Review section names |
+| `deferred` | True findings not fixed here, each carried to a follow-up card or set aside by the owner because every fix costs more than it is worth, as the Review section names |
 | `greptile_rounds` | Greptile reviews of a commit, a share of `rounds` and already counted in it |
 | `greptile_raised` | Findings Greptile reported, a share of `raised` and already counted in it |
 | `greptile_true` | Greptile findings fixed or deferred rather than dismissed as false, a share of `greptile_raised` |
@@ -322,12 +330,16 @@ already-running runtime loaded or trusted that configuration. When the active ru
 the delivery report still names that limit.
 
 Everything else, including which reviewer runs, when to stop and replan, and what the pull request body must
-say, is a sentence in `AGENTS.md` or a skill. The bar for adding new executable machinery is stated in `AGENTS.md`
-under "Publication and machinery". It includes test scripts, harnesses, runners, and test-only tools; only product
-code and ordinary tests added to existing suites are exempt. New machinery needs one of: a control failure a
-sentence could not prevent twice, the same friction across three independent jobs, a required new runtime or
-provider integration, or externally imposed security or platform drift. Prefer a native feature over custom code,
-a hook over a script, and a sentence over a hook.
+say, is a sentence in `AGENTS.md` or a skill. The bar for executable machinery is stated in `AGENTS.md` under
+"Publication and machinery", the one home for how machinery enters, grows and leaves. It includes test scripts,
+harnesses, runners, and test-only tools; only product code and ordinary tests added to existing suites are exempt. New
+machinery needs one of: a control failure a sentence could not prevent twice, the same friction across three independent
+jobs, a required new runtime or provider integration, or externally imposed security or platform drift; the friction
+route is open only to a card whose What to build names the friction and what doing less was tried first, and growth
+inside existing machinery meets the same bar. Prefer a native feature over custom code, a hook over a script, and a
+sentence over a hook. Rewriting, shrinking or deleting existing code, tests or tooling is always allowed when it is the
+right change, the manual's rule says when a job deletes machinery, and the `resume` intake reports the tooling's size
+now and thirty days ago so growth is seen, never gated.
 
 ## The evidence bar
 
@@ -339,9 +351,10 @@ a hook over a script, and a sentence over a hook.
 | `evidence-required` | The default for new or changed behaviour or policy | New or strengthened evidence in the same change, order flexible |
 | `preservation` | No observable behaviour changed and the protected contract is untouched | The existing regression net named, nothing new |
 
-Unless the mode is `preservation`, each claim also gets one executed mutation: the fix is reverted or the
-guard removed, the focused test goes red, the change is restored, the test goes green, and all four exit
-codes land in the run log. A test that stays green when the feature breaks is not evidence.
+Unless the mode is `preservation`, each claim also gets one executed mutation per behaviour, a list of inputs
+the code handles the same way being one behaviour: the fix is reverted or the guard removed, the focused test
+goes red, the change is restored, the test goes green, and all four exit codes land in the run log. A test that
+stays green when the feature breaks is not evidence.
 
 CI runs the suites `docs/TESTING-STRATEGY.md` names. CI runs from the merge result, not the branch head, so it
 tests what would land.
@@ -389,7 +402,7 @@ The transferable core is compact:
 3. One worktree and one draft pull request per issue; the platform's own auto-merge as the only merge.
 4. Seats with narrow charters, bounded handoffs through a template, and judgment settled in the plan rather than
    absorbed by the session.
-5. One construction mode and one executed mutation per claim, with exit codes recorded by a script.
+5. One construction mode per claim and one executed mutation per behaviour, with exit codes recorded by a script.
 6. A fresh review of the final tree, independent for code, then an external reviewer on the draft, then CI on ready.
 7. A board, git, and documentation as three distinct stores, reconciled rather than assumed consistent.
 8. Evidence limits as visible as evidence successes.

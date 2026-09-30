@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -441,6 +441,27 @@ test('the factory never gates on line counts, ends review loops in one more roun
     assert.match(seat, /never a line estimate/, `${path} must scope without a line estimate`);
     assert.match(seat, /[Nn]ever propose a split for size/, `${path} must never propose a split for size`);
   }
+});
+
+test('every seat that plans, designs, builds or reviews code names the coding standards', () => {
+  // The explorer locates code and judges nothing, so it alone need not read the standards.
+  const LOCATE_ONLY_SEATS = ['explorer'];
+  const STANDARDS_PATH = /docs\/CODING-STANDARDS\.md(?![\w./-])/;
+  const missing = [];
+  for (const [dir, extension] of [['.claude/agents', '.md'], ['.codex/agents', '.toml']]) {
+    const seats = readdirSync(resolve(ROOT, dir))
+      .filter((name) => name.endsWith(extension))
+      .map((name) => name.slice(0, -extension.length));
+    assert.ok(seats.length > 0, `${dir} must hold at least one seat charter`);
+    for (const exempt of LOCATE_ONLY_SEATS) {
+      assert.ok(seats.includes(exempt), `the exempt seat ${exempt} must exist in ${dir}`);
+    }
+    for (const seat of seats.filter((name) => !LOCATE_ONLY_SEATS.includes(name))) {
+      const path = `${dir}/${seat}${extension}`;
+      if (!STANDARDS_PATH.test(readFileSync(resolve(ROOT, path), 'utf8'))) missing.push(path);
+    }
+  }
+  assert.deepEqual(missing, [], `these seat charters must name docs/CODING-STANDARDS.md: ${missing.join(', ')}`);
 });
 
 test('a Codex session waits on helpers with one long timeout and the deliver step watches checks with one waiting command', () => {

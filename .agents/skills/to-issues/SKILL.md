@@ -137,7 +137,10 @@ What's missing or broken, in one or two sentences.
 
 ## What to build
 
-The end-to-end behaviour of this slice; name the seam it runs through without pinning a file path.
+The end-to-end behaviour of this slice; name the seam it runs through without pinning a file path. A slice
+admitting workflow machinery through the friction route, new or added to existing machinery, names the friction
+here and what doing less was tried first: fewer checks, deleted work, or a native feature (`AGENTS.md`,
+Publication and machinery, which also names the cards that list the machinery they keep).
 
 ## Acceptance criteria
 

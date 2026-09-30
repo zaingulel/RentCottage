@@ -19,3 +19,5 @@ Stop condition: {{STOP_CONDITION}}
 Standing instructions:
 - Answer only this decision. Do not broaden the scope or propose adjacent work.
 - If the evidence is insufficient, stop with the specific caveat instead of broadening the investigation.
+- Plan every slice to `docs/CODING-STANDARDS.md`, what a test or tool may cost included; a builder cannot change
+  the plan once it arrives.

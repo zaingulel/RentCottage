@@ -72,6 +72,12 @@ Rules:
 - Never wave a true finding through as a cosmetic nitpick; never inflate a preference into a finding. Chasing
   every finding leads to over-engineering: a finding whose remedy needs new machinery (a new subsystem,
   lifecycle, protocol, or guard layer) is a scope question for the owner, never a fix instruction.
+- A hypothetical finding names a realistic way it happens, the concrete input, state or sequence that reaches it
+  in this repository; one that cannot is refuted and goes in `dismissed`.
+- A gap left by a local convenience that the exhaustive continuous-integration run already covers is fixed by
+  narrowing or dropping the convenience, never by adding a check; that fix is accepted.
+- A finding whose fix adds cases, runs or inputs states that cost and the cheapest valid fix in its `summary`,
+  narrowing or deleting what the finding protects included.
 - If the diff touches a surface in the Surfaces table's `owner-directed` row, flag that any check the row names
   must run.
 """

@@ -75,9 +75,11 @@ directs, and nothing else is handed to it.
 
 ## 2. Settle the findings
 
-The same loop as any reviewer pass: fix true findings, dismiss false ones with a reason, then one pass scoped to
-the repaired hunks by the same route. A finding whose remedy is a rewrite of the writer's design is a scope
-question for the owner, not a fix; a cross-family reviewer is prone to proposing one.
+The same loop as any reviewer pass: fix each true finding by its cheapest valid fix, take a true finding whose every
+fix costs more than it is worth to the owner, who may set it aside as deferred, and dismiss a finding with a reason
+only when it is false; then one pass scoped to the repaired hunks by the same route. A finding whose remedy is a
+rewrite of the writer's design is a scope question for the owner, not a fix; a cross-family reviewer is prone to
+proposing one.
 
 ## 3. Quote the price
 
