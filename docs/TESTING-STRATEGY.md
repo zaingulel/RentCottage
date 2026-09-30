@@ -127,8 +127,8 @@ migrations statement by statement and refuse that lock. Install with `npm ci`, w
 Focused checks run while building and between review rounds, each through
 `node scripts/run-log.mjs <label words> -- <command>`; the `resume` skill owns the receipt and rerun mechanics.
 The full local check runs once before push: `node scripts/run-log.mjs convergence -- npm run verify`, which selects
-its route from the changed paths (`npm run verify -- --plan` prints that route without running it) and may reuse
-unchanged database or browser evidence; a receipt claimed as fresh full execution uses `npm run verify -- --full`.
+its route from the changed paths (`npm run verify -- --plan` prints that route without running it) and runs every
+selected group; `npm run verify -- --full` runs every group regardless of the changed paths.
 A TypeScript product change selects the baseline route; a database object the database group; a booking or payment
 Integrity Core object or concurrency program adds the booking and payment concurrency programs; presentation,
 Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
