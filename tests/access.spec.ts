@@ -2476,10 +2476,50 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     page.getByRole("button", { name: "Send Booking Request" }),
   ).toHaveCount(0);
   const customerPhone = journeyPhone(testInfo.project.name, ["0", "9", "9"]);
-  await page.getByLabel("Iraqi phone number").fill(customerPhone);
-  await page.getByRole("button", { name: "Send verification code" }).click();
-  await page.getByLabel("Verification code").fill("123456");
-  await page.getByRole("button", { name: "Verify", exact: true }).click();
+  const englishRequest = new URL(page.url());
+  const requestSlug = englishRequest.pathname.split("/").at(-1);
+  const signIn = page
+    .getByRole("banner")
+    .getByRole("link", { name: "Sign in", exact: true });
+  await expect(signIn).toHaveAttribute(
+    "href",
+    /^\/en\/access\?returnTo=%2Fen%2Frequest%2F/,
+  );
+  await signIn.click();
+  await expect(page).toHaveURL(/\/en\/access\?returnTo=%2Fen%2Frequest%2F/);
+  // The layout header can briefly keep the previous route's links; wait for
+  // the access page's own Sorani link before switching language.
+  const soraniAccess = page
+    .getByRole("banner")
+    .getByRole("link", { name: "کوردی" });
+  await expect(soraniAccess).toHaveAttribute(
+    "href",
+    /^\/ckb\/access\?returnTo=%2Fckb%2Frequest%2F/,
+  );
+  await soraniAccess.click();
+  await expect(page).toHaveURL(/\/ckb\/access\?returnTo=%2Fckb%2Frequest%2F/);
+  await page.getByLabel("ژمارە تەلەفۆنی عێراقی").fill(customerPhone);
+  await page.getByRole("button", { name: "کۆدی پشتڕاستکردنەوە بنێرە" }).click();
+  await page.getByLabel("کۆدی پشتڕاستکردنەوە").fill("123456");
+  await page.getByRole("button", { name: "پشتڕاست بکەرەوە" }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === `/ckb/request/${requestSlug}` &&
+      url.search === englishRequest.search,
+  );
+  await expect(
+    page.getByRole("heading", { name: "داواکاری حجز بنێرە" }),
+  ).toBeVisible();
+  const englishLink = page
+    .getByRole("banner")
+    .getByRole("link", { name: "English" });
+  await expect(englishLink).toHaveAttribute("href", /^\/en\/request\//);
+  await englishLink.click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === englishRequest.pathname &&
+      url.search === englishRequest.search,
+  );
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
   ).toBeVisible();
