@@ -40,7 +40,7 @@
     "mdast-util-from-markdown": "2.0.3",
     "mdast-util-gfm": "3.1.0",
     "micromark-extension-gfm": "3.0.0",
-    "next": "16.3.4",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "0.0.1"
@@ -56,7 +56,7 @@
     "@types/react-dom": "19.2.3",
     "esbuild": "0.27.7",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.3.8",
     "jsdom": "29.0.1",
     "otpauth": "^9.5.1",
     "prettier": "3.8.2",
