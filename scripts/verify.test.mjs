@@ -196,6 +196,28 @@ describe("repository verification command", () => {
     },
   );
 
+  it.each(["--database", "--browser"])(
+    "runs the selected %s group again on an unchanged local rerun",
+    (mode) => {
+      const repository = createRepository();
+      write(repository, "tsconfig.json", "{ dirty }\n");
+      const expected =
+        mode === "--database"
+          ? [["npm", ["run", "verify:access:database"]]]
+          : [
+              ["npm", ["run", "verify:access:browser"]],
+              ...requiredExpensiveSteps.slice(1),
+            ];
+      for (let run = 0; run < 2; run += 1) {
+        const result = runVerification(repository, { args: [mode] });
+        expect(result.status).toBe(0);
+        expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+          expected,
+        );
+      }
+    },
+  );
+
   it.each([
     ["--database", "--browser"],
     ["--baseline", "--browser"],
