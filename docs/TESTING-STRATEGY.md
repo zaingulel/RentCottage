@@ -39,10 +39,11 @@ change takes every row it touches.
   not targets.
 - Keep the oracle independent: expected values come from requirements, `CONTEXT.md`, a hand-worked example, a
   provider contract or a known-good fixture, never a copy of the production calculation.
-- Each changed rule is proven by one executed mutation at the cheapest layer that catches it: break the
-  implementation, run the focused test with runner retries disabled (`--retries=0` for Playwright, `--retry=0`
-  for Vitest) and see red, restore it and see green, both through `scripts/run-log.mjs`. Do not repeat it per
-  assertion, edge case or repair. `preservation` claims invent none.
+- Each changed behaviour is proven by one executed mutation at the cheapest layer that catches it, a list of inputs
+  the code handles the same way being one behaviour: break the implementation, run the focused test with runner
+  retries disabled (`--retries=0` for Playwright, `--retry=0` for Vitest) and see red, restore it and see green,
+  both through `scripts/run-log.mjs`. Do not repeat it per assertion, input, edge case or repair. `preservation`
+  claims invent none.
 - A security, privacy, authorization or money-changing invariant needs a named anti-regression test in the same
   change.
 - Schema, policy, constraint, trigger, concurrency and migration claims need real disposable PostgreSQL evidence;
@@ -144,13 +145,13 @@ run nothing. The hosted preview is smoked with
 
 ## Reviewing tests
 
-Review of test code asks three questions and no others: does it catch the failure (its mutation went red), is
-its expected result derived independently of the code under test, and does it leak a secret or personal data.
-Any other observation about a test is not a finding.
+Review of test code asks four questions: does it catch the failure (its mutation went red), is its expected
+result derived independently of the code under test, does it leak a secret or personal data, and is it worth its
+run time and upkeep against the failure it prevents. A test that fails the fourth is a finding, and its fix may be
+narrowing or deleting the test.
 
 ## What this authority does not do
 
 It sets no coverage target or test quota, imposes no universal red-green-refactor sequence, adds no wall-clock
-gate, starts no rewrite or deletion programme, and describes no verification machinery internals:
-`scripts/verify.mjs`, `scripts/verify-access.mjs` and `scripts/run-log.mjs` own their own output and record
-contracts through their tests under `scripts/lib/`.
+gate, and describes no verification machinery internals: `scripts/verify.mjs`, `scripts/verify-access.mjs` and
+`scripts/run-log.mjs` own their own output and record contracts through their tests under `scripts/lib/`.

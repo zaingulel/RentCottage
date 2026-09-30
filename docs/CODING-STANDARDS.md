@@ -61,3 +61,5 @@ These requirements apply only when an agent-facing command is already part of th
   smallest representative positive and negative wire proofs so a wrapper that never calls the logic cannot pass.
 - Split a test file expected to dominate the suite's critical path by concern at birth. This is an advisory budget,
   not a wall-clock gate.
+- Test machinery enters and leaves, including when a job deletes it, under
+  [the manual's machinery rule](../AGENTS.md#publication-and-machinery).
