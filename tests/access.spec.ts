@@ -1620,12 +1620,12 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("Local-test-password-2026");
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Password").press("Enter");
   const secret = await page.getByTestId("mfa-secret").textContent();
   if (!secret) throw new Error("MFA enrollment returned no secret");
   const failedAttemptedAfter = new Date().toISOString();
   await page.getByLabel("Authenticator app code").fill("12");
-  await page.getByRole("button", { name: "Verify" }).click();
+  await page.getByLabel("Authenticator app code").press("Enter");
   await expect(page.getByText(/code could not be confirmed/)).toBeVisible();
   const failedAudit = await currentAudit(
     actorUserId,
@@ -1639,7 +1639,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     secret: OTPAuth.Secret.fromBase32(secret),
   }).generate();
   await page.getByLabel("Authenticator app code").fill(code);
-  await page.getByRole("button", { name: "Verify" }).click();
+  await page.getByLabel("Authenticator app code").press("Enter");
 
   await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
   const audit = await currentAudit(

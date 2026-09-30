@@ -198,6 +198,178 @@ describe("access forms", () => {
     expect(signIn).toBeEnabled();
   });
 
+  it.each(["Email", "Password"])(
+    "submits administrator credentials once with Enter in the %s field",
+    async (field) => {
+      signInAdministrator.mockResolvedValue({ status: "invalid_sign_in" });
+      const submitSpy = vi.fn();
+      document.addEventListener("submit", submitSpy);
+      try {
+        const user = userEvent.setup();
+        render(<AdministratorAccessForm locale="en" />);
+
+        await user.type(screen.getByLabelText("Email"), "admin@example.com");
+        await user.type(screen.getByLabelText("Password"), "password");
+        await user.click(screen.getByLabelText(field));
+        await user.keyboard("{Enter}");
+
+        expect(signInAdministrator).toHaveBeenCalledTimes(1);
+        expect(signInAdministrator).toHaveBeenCalledWith({
+          email: "admin@example.com",
+          password: "password",
+        });
+        expect(submitSpy).toHaveBeenCalledTimes(1);
+        expect(submitSpy.mock.calls[0][0].defaultPrevented).toBe(true);
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "The sign-in is invalid or this is not an administrator account.",
+        );
+      } finally {
+        document.removeEventListener("submit", submitSpy);
+      }
+    },
+  );
+
+  it("keeps a malformed administrator email on the existing sign-in error path with Enter", async () => {
+    signInAdministrator.mockResolvedValue({ status: "invalid_sign_in" });
+    const user = userEvent.setup();
+    render(<AdministratorAccessForm locale="en" />);
+
+    await user.type(screen.getByLabelText("Email"), "admin");
+    await user.type(screen.getByLabelText("Password"), "password");
+    await user.keyboard("{Enter}");
+
+    expect(signInAdministrator).toHaveBeenCalledTimes(1);
+    expect(signInAdministrator).toHaveBeenCalledWith({
+      email: "admin",
+      password: "password",
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The sign-in is invalid or this is not an administrator account.",
+    );
+  });
+
+  it("runs one administrator sign-in for a burst of Enter and click", async () => {
+    let resolveSignIn!: (value: { status: "invalid_sign_in" }) => void;
+    signInAdministrator.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSignIn = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    render(<AdministratorAccessForm locale="en" />);
+
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password");
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    const form = continueButton.closest("form")!;
+    act(() => {
+      form.requestSubmit();
+      form.requestSubmit();
+      continueButton.click();
+    });
+
+    expect(signInAdministrator).toHaveBeenCalledTimes(1);
+    expect(continueButton).toBeDisabled();
+    expect(continueButton).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => resolveSignIn({ status: "invalid_sign_in" }));
+
+    expect(continueButton).toBeEnabled();
+  });
+
+  it("keeps administrator credentials and codes out of native form submissions", async () => {
+    signInAdministrator.mockResolvedValue({
+      status: "challenge_required",
+      factorId: "factor-1",
+      challengeId: "challenge-1",
+    });
+    const user = userEvent.setup();
+    render(<AdministratorAccessForm locale="en" />);
+
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password");
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    expect([...new FormData(continueButton.closest("form")!).keys()]).toEqual(
+      [],
+    );
+
+    await user.click(continueButton);
+    await user.type(
+      await screen.findByLabelText("Authenticator app code"),
+      "123456",
+    );
+    const verifyForm = screen
+      .getByRole("button", { name: "Verify" })
+      .closest("form")!;
+    expect([...new FormData(verifyForm).keys()]).toEqual([]);
+  });
+
+  it.each([
+    [
+      "challenge",
+      {
+        status: "challenge_required",
+        factorId: "factor-1",
+        challengeId: "challenge-1",
+      },
+    ],
+    [
+      "enrollment",
+      {
+        status: "enrollment_required",
+        factorId: "factor-1",
+        challengeId: "challenge-1",
+        qrCode:
+          'data:image/svg+xml;utf-8,<?xml version="1.0"?>\n<svg width="21" height="21" xmlns="http://www.w3.org/2000/svg"></svg>\n',
+        secret: "SECRET",
+      },
+    ],
+  ])(
+    "submits the %s administrator MFA step once with Enter in the code field",
+    async (name, signInResult) => {
+      signInAdministrator.mockResolvedValue(signInResult);
+      verifyAdministrator.mockResolvedValue({ status: "invalid_code" });
+      const submitSpy = vi.fn();
+      const user = userEvent.setup();
+      render(<AdministratorAccessForm locale="en" />);
+
+      await user.type(screen.getByLabelText("Email"), "admin@example.com");
+      await user.type(screen.getByLabelText("Password"), "password");
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      const codeField = await screen.findByLabelText("Authenticator app code");
+      if (name === "enrollment") {
+        expect(screen.getByTestId("mfa-secret")).toHaveTextContent("SECRET");
+        expect(
+          screen.getByRole("img", { name: "Authenticator app setup code" }),
+        ).toBeInTheDocument();
+      }
+
+      document.addEventListener("submit", submitSpy);
+      try {
+        await user.type(codeField, "123456");
+        await user.keyboard("{Enter}");
+
+        expect(verifyAdministrator).toHaveBeenCalledTimes(1);
+        expect(verifyAdministrator).toHaveBeenCalledWith({
+          factorId: "factor-1",
+          challengeId: "challenge-1",
+          code: "123456",
+        });
+        expect(signInAdministrator).toHaveBeenCalledTimes(1);
+        expect(submitSpy).toHaveBeenCalledTimes(1);
+        expect(submitSpy.mock.calls[0][0].defaultPrevented).toBe(true);
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "The verification code could not be confirmed.",
+        );
+        expect(screen.getByLabelText("Authenticator app code")).toBeVisible();
+        expect(replace).not.toHaveBeenCalled();
+        expect(refresh).not.toHaveBeenCalled();
+      } finally {
+        document.removeEventListener("submit", submitSpy);
+      }
+    },
+  );
+
   it("suppresses repeated administrator MFA verification while preserving invalid-code mapping", async () => {
     signInAdministrator.mockResolvedValue({
       status: "challenge_required",
@@ -236,6 +408,45 @@ describe("access forms", () => {
     expect(verify).toBeEnabled();
     expect(replace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("runs one administrator verification for a burst of Enter and click", async () => {
+    signInAdministrator.mockResolvedValue({
+      status: "challenge_required",
+      factorId: "factor-1",
+      challengeId: "challenge-1",
+    });
+    let resolveVerification!: (value: { status: "invalid_code" }) => void;
+    verifyAdministrator.mockReturnValue(
+      new Promise((resolve) => {
+        resolveVerification = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    render(<AdministratorAccessForm locale="en" />);
+
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.type(
+      await screen.findByLabelText("Authenticator app code"),
+      "123456",
+    );
+    const verify = screen.getByRole("button", { name: "Verify" });
+    const form = verify.closest("form")!;
+    act(() => {
+      form.requestSubmit();
+      form.requestSubmit();
+      verify.click();
+    });
+
+    expect(verifyAdministrator).toHaveBeenCalledTimes(1);
+    expect(verify).toBeDisabled();
+    expect(verify).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => resolveVerification({ status: "invalid_code" }));
+
+    expect(verify).toBeEnabled();
   });
 
   it("returns to administrator credentials after an unavailable MFA result", async () => {

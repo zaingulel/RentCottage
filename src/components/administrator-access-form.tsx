@@ -80,7 +80,11 @@ export function AdministratorAccessForm({
     if (!mfa) return;
     setMessage("");
     const result = await run(() =>
-      verifyPlatformAdministratorMfa({ ...mfa, code }),
+      verifyPlatformAdministratorMfa({
+        factorId: mfa.factorId,
+        challengeId: mfa.challengeId,
+        code,
+      }),
     );
     if (!result) return;
     if (result.status === "authenticated") {
@@ -105,7 +109,17 @@ export function AdministratorAccessForm({
   return (
     <section className="access-panel" aria-live="polite">
       {!mfa && !complete && (
-        <>
+        // The email and password inputs, like the MFA code input below, stay
+        // unnamed: a name would put the value in the URL on any native
+        // (pre-hydration) submission. noValidate keeps a malformed email on
+        // the server sign-in mapping instead of a native browser bubble.
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void signIn();
+          }}
+        >
           <label>
             <span>{copy.email}</span>
             <FormControl
@@ -129,20 +143,24 @@ export function AdministratorAccessForm({
           <ActionButton
             kind="primary"
             width="full"
-            type="button"
+            type="submit"
             pending={pending}
-            onClick={signIn}
           >
             {copy.signIn}
           </ActionButton>
-        </>
+        </form>
       )}
       {mfa && !complete && (
-        <>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void verifyMfa();
+          }}
+        >
           <p>{mfa.qrCode ? copy.mfaSetup : copy.mfaChallenge}</p>
           {mfa.qrCode && (
             <Image
-              src={mfa.qrCode}
+              src={mfa.qrCode.trimEnd()}
               alt={copy.mfaQrAlt}
               width={192}
               height={192}
@@ -163,13 +181,12 @@ export function AdministratorAccessForm({
           <ActionButton
             kind="primary"
             width="full"
-            type="button"
+            type="submit"
             pending={pending}
-            onClick={verifyMfa}
           >
             {copy.verify}
           </ActionButton>
-        </>
+        </form>
       )}
       {message && (
         <ActionFeedback kind={complete ? "success" : "error"}>
