@@ -193,6 +193,11 @@ describe("repository verification command", () => {
       expect(selected.calls.map(([command, args]) => [command, args])).toEqual(
         expected,
       );
+      const rerun = runVerification(repository, { args: [mode] });
+      expect(rerun.status).toBe(0);
+      expect(rerun.calls.map(([command, args]) => [command, args])).toEqual(
+        expected,
+      );
     },
   );
 
