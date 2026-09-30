@@ -54,8 +54,9 @@ export function SiteFooter({
           <div className="language-links">
             <LocaleLinkList
               locale={locale}
-              path={path}
-              queryString={queryString}
+              hrefFor={(target) =>
+                `/${target}${path}${queryString ? `?${queryString}` : ""}`
+              }
             />
           </div>
         </div>

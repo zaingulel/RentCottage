@@ -87,6 +87,18 @@ export function accountAccessHref(locale: Locale, returnTo: unknown) {
   return `/${locale}/access?returnTo=${encodeURIComponent(safeReturnDestination(locale, returnTo))}`;
 }
 
+export function accessLanguageHref(
+  locale: Locale,
+  target: Locale,
+  returnTo: unknown,
+) {
+  const destination = safeReturnDestination(locale, returnTo);
+  return accountAccessHref(
+    target,
+    `/${target}${destination.slice(locale.length + 1)}`,
+  );
+}
+
 export function safeAdministratorReturnDestination(
   locale: Locale,
   value: unknown,

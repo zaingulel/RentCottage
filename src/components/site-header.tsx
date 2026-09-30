@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { signOutAccount } from "@/access/actions";
 import type { AccountContext } from "@/access/account-access";
-import { accountAccessHref } from "@/access/return-destination";
+import {
+  accessLanguageHref,
+  accountAccessHref,
+} from "@/access/return-destination";
 import { accessMessages } from "@/i18n/access-messages";
 import { messages } from "@/i18n/messages";
 import { isLocale, type Locale } from "@/i18n/routing";
@@ -40,10 +43,13 @@ export function SiteHeader({
   account: NavigationAccount;
 }) {
   const pathname = usePathname();
-  const query = useSearchParams().toString();
+  const searchParams = useSearchParams();
+  const query = searchParams.toString();
   const pathLocale = pathname.split("/")[1];
   const locale = isLocale(pathLocale) ? pathLocale : initialLocale;
   const landing = pathname === `/${locale}`;
+  const accessPage = pathname === `/${locale}/access`;
+  const returnToValues = searchParams.getAll("returnTo");
   const [condensed, setCondensed] = useState(false);
   useEffect(() => {
     if (!landing) return;
@@ -72,8 +78,17 @@ export function SiteHeader({
         <div className="site-header-controls">
           <LocaleLinks
             locale={locale}
-            path={pathname.slice(locale.length + 1)}
-            queryString={query}
+            hrefFor={(target) =>
+              accessPage
+                ? accessLanguageHref(
+                    locale,
+                    target,
+                    returnToValues.length === 1
+                      ? returnToValues[0]
+                      : returnToValues,
+                  )
+                : `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
+            }
           />
           <span className="site-header-rule" aria-hidden="true" />
           <nav
