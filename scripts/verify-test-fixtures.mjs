@@ -1,12 +1,5 @@
 import { spawnSync } from "node:child_process";
-import {
-  cpSync,
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -170,7 +163,6 @@ export function runVerification(repository, options = {}) {
     cwd: repository,
     environment: options.environment ?? {},
     run: options.run ?? run,
-    captureRuntimeContract: options.captureRuntimeContract,
     stderr,
     stdout,
   });
@@ -182,103 +174,3 @@ afterEach(() => {
     rmSync(repository, { recursive: true, force: true });
   }
 });
-
-export function runtimeFixture() {
-  return { digest: "a".repeat(64), dockerReferences: [] };
-}
-
-export function localVerification(repository, options = {}) {
-  return runVerification(repository, {
-    captureRuntimeContract: runtimeFixture,
-    ...options,
-  });
-}
-
-export function productionFixture({ browsers = false } = {}) {
-  const repository = createRepository();
-  const tools = mkdtempSync(join(tmpdir(), "rentcottage-native-"));
-  repositories.push(tools);
-  const bin = join(tools, "bin");
-  mkdirSync(bin);
-  for (const name of ["node", "git"]) {
-    const actual =
-      name === "node"
-        ? process.execPath
-        : spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
-    symlinkSync(actual, join(bin, name));
-  }
-  const images = join(tools, "images.json");
-  const daemon = join(tools, "daemon.json");
-  const commandLog = join(tools, "commands.jsonl");
-  writeFileSync(images, "");
-  writeFileSync(daemon, JSON.stringify("fixture-daemon"));
-  const npmConfig = {
-    userconfig: join(tools, "user.npmrc"),
-    globalconfig: join(tools, "global.npmrc"),
-  };
-  const launcher = `#!/usr/bin/env node
-const fs = require('node:fs');
-const args = process.argv.slice(2);
-const name = require('node:path').basename(process.argv[1]);
-if (name === 'docker') {
-  if (args[0] === 'version') console.log(JSON.stringify({ Client: { Version: 'fixture-client' }, Server: { Version: 'fixture-server' } }));
-  else if (args[0] === 'info') console.log(fs.readFileSync(${JSON.stringify(daemon)}, 'utf8'));
-  else if (args[0] === 'context') console.log('fixture-context');
-  else if (args[0] === 'image') process.stdout.write(fs.readFileSync(${JSON.stringify(images)}, 'utf8'));
-  else process.exitCode = 2;
-} else if (args[0] === 'config') console.log(${JSON.stringify(JSON.stringify(npmConfig))});
-else fs.appendFileSync(${JSON.stringify(commandLog)}, JSON.stringify([name, ...args]) + '\\n');
-`;
-  for (const name of ["npm", "npx", "docker"]) {
-    writeFileSync(join(bin, name), launcher, { mode: 0o755 });
-  }
-  const environment = { PATH: bin, HOME: tools };
-  let distributions;
-  if (browsers) {
-    cpSync(
-      join(ROOT, "node_modules/playwright-core"),
-      join(repository, "node_modules/playwright-core"),
-      { recursive: true },
-    );
-    const browserRoot = join(tools, "browsers");
-    environment.PLAYWRIGHT_BROWSERS_PATH = browserRoot;
-    const resolveDistributions = spawnSync(
-      process.execPath,
-      [
-        "-e",
-        `const {createRequire}=require('node:module');const requireHere=createRequire(process.cwd()+'/package.json');const {registry}=requireHere('playwright-core/lib/coreBundle');console.log(JSON.stringify(['chromium','chromium-headless-shell'].map(name=>{const entry=registry.registry.findExecutable(name);return {name,directory:entry.directory,executable:entry.executablePath()}})));`,
-      ],
-      { cwd: repository, env: environment, encoding: "utf8" },
-    );
-    if (resolveDistributions.status !== 0)
-      throw new Error(resolveDistributions.stderr);
-    distributions = JSON.parse(resolveDistributions.stdout);
-    for (const entry of distributions) {
-      mkdirSync(dirname(entry.executable), { recursive: true });
-      writeFileSync(entry.executable, "fixture-launcher", { mode: 0o755 });
-      write(entry.directory, "Resources/locale.pak", "fixture-resource");
-    }
-  }
-  commit(repository, "tsconfig.json", "seed\n");
-  return {
-    repository,
-    tools,
-    images,
-    daemon,
-    commandLog,
-    environment,
-    distributions,
-  };
-}
-
-export function evidenceFile(repository, suffix, group = "database") {
-  return join(
-    git(repository, ["rev-parse", "--absolute-git-dir"]),
-    "rentcottage-verification",
-    `${group}.${suffix}.json`,
-  );
-}
-
-export function commands(result) {
-  return result.run.mock.calls.map(([command, args]) => [command, args]);
-}
