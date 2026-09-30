@@ -88,6 +88,38 @@ describe("shared site header", () => {
       "/ar",
     );
   });
+  it("translates the access page return destination in each language link", () => {
+    location.pathname = "/en/access";
+    location.query =
+      "returnTo=%2Fen%2Frequest%2Friver-house%3Ffrom%3D2101-01-01%26to%3D2101-01-01%26guests%3D4%26selection%3D2101-01-01%253Ashift%253A1";
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    expect(screen.getByRole("link", { name: "العربية" })).toHaveAttribute(
+      "href",
+      "/ar/access?returnTo=%2Far%2Frequest%2Friver-house%3Ffrom%3D2101-01-01%26to%3D2101-01-01%26guests%3D4%26selection%3D2101-01-01%253Ashift%253A1",
+    );
+    expect(screen.getByRole("link", { name: "کوردی" })).toHaveAttribute(
+      "href",
+      "/ckb/access?returnTo=%2Fckb%2Frequest%2Friver-house%3Ffrom%3D2101-01-01%26to%3D2101-01-01%26guests%3D4%26selection%3D2101-01-01%253Ashift%253A1",
+    );
+  });
+  it("falls back to bookings in access page language links for an unsafe destination", () => {
+    location.pathname = "/en/access";
+    location.query = "returnTo=https%3A%2F%2Fevil.test%2Fen%2Fbookings";
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    expect(screen.getByRole("link", { name: "العربية" })).toHaveAttribute(
+      "href",
+      "/ar/access?returnTo=%2Far%2Fbookings",
+    );
+  });
+  it("keeps the raw query in administrator access language links", () => {
+    location.pathname = "/en/administrator/access";
+    location.query = "returnTo=%2Fen%2Fadministrator%2Freviews";
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    expect(screen.getByRole("link", { name: "العربية" })).toHaveAttribute(
+      "href",
+      "/ar/administrator/access?returnTo=%2Fen%2Fadministrator%2Freviews",
+    );
+  });
   it("renders the landing header transparent and condenses it after scrolling", () => {
     render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
     const header = screen.getByRole("banner");

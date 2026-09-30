@@ -5,18 +5,16 @@ import { locales, type Locale } from "@/i18n/routing";
 
 export function LocaleLinkList({
   locale,
-  path,
-  queryString,
+  hrefFor,
 }: {
   locale: Locale;
-  path: string;
-  queryString: string;
+  hrefFor: (target: Locale) => string;
 }) {
   return locales.map((option) => (
     <Link
       key={option}
       aria-current={option === locale ? "page" : undefined}
-      href={`/${option}${path}${queryString ? `?${queryString}` : ""}`}
+      href={hrefFor(option)}
     >
       {messages[option].languageName}
     </Link>
@@ -25,8 +23,7 @@ export function LocaleLinkList({
 
 export function LocaleLinks(props: {
   locale: Locale;
-  path: string;
-  queryString: string;
+  hrefFor: (target: Locale) => string;
 }) {
   return (
     <nav

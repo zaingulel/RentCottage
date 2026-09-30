@@ -9,7 +9,12 @@ describe("LocaleLinks", () => {
     ["ckb", "زمان"],
     ["en", "Language"],
   ] as const)("uses the localized navigation name for %s", (locale, label) => {
-    render(<LocaleLinks locale={locale} path="/results" queryString="" />);
+    render(
+      <LocaleLinks
+        locale={locale}
+        hrefFor={(target) => `/${target}/results`}
+      />,
+    );
     expect(screen.getByRole("navigation", { name: label })).toBeVisible();
   });
 });
