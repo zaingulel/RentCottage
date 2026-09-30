@@ -1360,6 +1360,11 @@ html[lang="ckb"] .booking-summary strong {
   text-wrap: balance;
 }
 
+/* Arabic-script glyphs in the display face descend below the tight headline line box, so the gap scales with the headline size. */
+[dir="rtl"] .retreat-copy h1 {
+  margin-block-end: 0.5em;
+}
+
 .retreat-copy p {
   max-width: 46ch;
   margin: 0;

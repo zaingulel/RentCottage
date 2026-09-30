@@ -329,3 +329,53 @@ test("sign-in preserves the permitted search selection in every language", async
     await expect(page.locator('input[autocomplete="tel"]')).toBeVisible();
   }
 });
+
+test("keeps the hero subtitle clear of the headline's lowest letters in every language", async ({
+  page,
+}) => {
+  for (const locale of ["ar", "ckb", "en"]) {
+    await page.goto(`/${locale}`);
+    const { clearance, subtitleFontSize } = await page.evaluate(async () => {
+      const context = document.createElement("canvas").getContext("2d")!;
+      const measure = async (selector: string) => {
+        const element = document.querySelector(selector)!;
+        const style = getComputedStyle(element);
+        const text = element.textContent ?? "";
+        const font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        await document.fonts.load(font, text);
+        context.font = font;
+        const metrics = context.measureText(text);
+        const lineHeight = parseFloat(style.lineHeight);
+        const half =
+          (lineHeight -
+            (metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent)) /
+          2;
+        return {
+          rect: element.getBoundingClientRect(),
+          metrics,
+          lineHeight,
+          half,
+          fontSize: parseFloat(style.fontSize),
+        };
+      };
+      const headline = await measure(".retreat-copy h1");
+      const subtitle = await measure(".retreat-copy p");
+      const headlineInkBottom =
+        headline.rect.bottom -
+        headline.lineHeight +
+        headline.half +
+        headline.metrics.fontBoundingBoxAscent +
+        headline.metrics.actualBoundingBoxDescent;
+      const subtitleInkTop =
+        subtitle.rect.top +
+        subtitle.half +
+        subtitle.metrics.fontBoundingBoxAscent -
+        subtitle.metrics.actualBoundingBoxAscent;
+      return {
+        clearance: subtitleInkTop - headlineInkBottom,
+        subtitleFontSize: subtitle.fontSize,
+      };
+    });
+    expect(clearance, locale).toBeGreaterThanOrEqual(subtitleFontSize / 2);
+  }
+});
