@@ -10,7 +10,8 @@ the code keeps them.
 - The only token block is `:root` in [globals.css](../src/app/globals.css). It holds every interface colour: the
   base palette `--background`, `--card`, `--ink`, `--muted`, `--green`, `--gold` and `--line`, then the groups
   Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
-  families `--display` and `--body`, and `color-scheme: light`. There is no Tailwind and no theme object.
+  families `--display` and `--body`, the right-to-left hero headline gap `--hero-headline-gap-rtl`, and
+  `color-scheme: light`. There is no Tailwind and no theme object.
 - Interface colours and font families come from these tokens through `var(--…)`.
   [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside `:root` other than in an elevation
   shadow, and on a custom property a stylesheet uses that `:root` does not declare.

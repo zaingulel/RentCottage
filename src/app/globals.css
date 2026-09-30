@@ -94,6 +94,8 @@
 
   --display: "Changa", sans-serif;
   --body: "Karla", "Almarai", sans-serif;
+
+  --hero-headline-gap-rtl: 0.5em;
 }
 
 * {
@@ -1362,7 +1364,7 @@ html[lang="ckb"] .booking-summary strong {
 
 /* Arabic-script glyphs in the display face descend below the tight headline line box, so the gap scales with the headline size. */
 [dir="rtl"] .retreat-copy h1 {
-  margin-block-end: 0.5em;
+  margin-block-end: var(--hero-headline-gap-rtl);
 }
 
 .retreat-copy p {
