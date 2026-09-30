@@ -36,6 +36,16 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        partition:
+          [
+            database-core,
+            booking-request,
+            booking-capture,
+            payment-required-expiry,
+          ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -50,12 +60,27 @@ jobs:
       - env:
           VERIFY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           VERIFY_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          VERIFY_CI_PARTITION: ${{ matrix.partition }}
         run: npm run verify -- --database
 
   browser:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - partition: next
+            shard: 1/2
+          - partition: next
+            shard: 2/2
+          - partition: worker
+            shard: 1/2
+          - partition: worker
+            shard: 2/2
+          - partition: scheduled
+          - partition: shell-smoke
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -70,6 +95,8 @@ jobs:
       - env:
           VERIFY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           VERIFY_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          VERIFY_CI_PARTITION: ${{ matrix.partition }}
+          VERIFY_CI_SHARD: ${{ matrix.shard }}
         run: npm run verify -- --browser
 
   test:

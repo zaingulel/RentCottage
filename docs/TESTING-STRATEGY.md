@@ -134,10 +134,12 @@ Integrity Core object or concurrency program adds the booking and payment concur
 Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
 `scripts/verify.mjs`. A further broad run needs a named reason: changed evidence, an invalidated environment or an
 investigated flake. A repair that touches only tests reruns the repaired test by title and never the full local
-check. Continuous integration runs `npm run verify -- --baseline`, `--database` and `--browser` on separate runners
-against the merge result once the pull request leaves draft, and the required `test` check passes only when all
-three succeed; the database and browser runs select every check, except for a change touching only documentation or
-workflow instructions, where they run nothing. The hosted preview is smoked with
+check. Continuous integration runs `npm run verify -- --baseline` and native `--database` and `--browser` matrices
+against the merge result once the pull request leaves draft. The database matrix runs four independent portions;
+the browser matrix runs two Next.js shards, two Worker shards, the scheduled checks and the shell smoke checks.
+The required `test` check passes only when the baseline and every matrix portion succeed. The database and browser
+matrices select every check, except for a change touching only documentation or workflow instructions, where they
+run nothing. The hosted preview is smoked with
 `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
 
 ## Reviewing tests

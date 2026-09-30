@@ -33,6 +33,13 @@ type Workflow = {
       environment?: string;
       name?: string;
       permissions?: Record<string, unknown>;
+      strategy?: {
+        "fail-fast"?: boolean;
+        matrix?: {
+          partition?: string[];
+          include?: { partition: string; shard?: string }[];
+        };
+      };
       steps?: Step[];
     }
   >;
@@ -161,6 +168,12 @@ describe("pull-request CI", () => {
           env: {
             VERIFY_BASE_SHA: "${{ github.event.pull_request.base.sha }}",
             VERIFY_SOURCE_SHA: "${{ github.event.pull_request.head.sha }}",
+            ...(mode === "database" || mode === "browser"
+              ? { VERIFY_CI_PARTITION: "${{ matrix.partition }}" }
+              : {}),
+            ...(mode === "browser"
+              ? { VERIFY_CI_SHARD: "${{ matrix.shard }}" }
+              : {}),
           },
           run: `npm run verify -- --${mode}`,
         }),
@@ -174,6 +187,48 @@ describe("pull-request CI", () => {
       expect(source).not.toContain("${{ secrets.");
     },
   );
+
+  it("runs every hosted partition through native matrices", () => {
+    const { workflow } = loadWorkflow();
+    const database = workflow.jobs?.database;
+    const browser = workflow.jobs?.browser;
+    expect(workflow.jobs?.baseline.strategy).toBeUndefined();
+    expect(database?.strategy).toEqual({
+      "fail-fast": false,
+      matrix: {
+        partition: [
+          "database-core",
+          "booking-request",
+          "booking-capture",
+          "payment-required-expiry",
+        ],
+      },
+    });
+    expect(browser?.strategy).toEqual({
+      "fail-fast": false,
+      matrix: {
+        include: [
+          { partition: "next", shard: "1/2" },
+          { partition: "next", shard: "2/2" },
+          { partition: "worker", shard: "1/2" },
+          { partition: "worker", shard: "2/2" },
+          { partition: "scheduled" },
+          { partition: "shell-smoke" },
+        ],
+      },
+    });
+    for (const job of [database, browser]) {
+      expect(job?.needs).toBeUndefined();
+      expect(job?.strategy).not.toHaveProperty("continue-on-error");
+      expect(job?.strategy).not.toHaveProperty("max-parallel");
+      expect(job).not.toHaveProperty("continue-on-error");
+    }
+    expect(workflow.jobs?.test.needs).toEqual([
+      "baseline",
+      "database",
+      "browser",
+    ]);
+  });
 
   // The budget sits far above the work: this asserts which exit status each combination
   // produces, never how fast a subprocess returns, so load must not be able to fail it

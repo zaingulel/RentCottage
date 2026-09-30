@@ -1714,6 +1714,185 @@ describe("repository verification command", () => {
     },
   );
 
+  it("preserves hosted partitions, source selection and local isolation", () => {
+    const rows = [
+      ...[
+        "database-core",
+        "booking-request",
+        "booking-capture",
+        "payment-required-expiry",
+      ].map((partition) => ({ mode: "--database", partition })),
+      ...["next", "worker"].flatMap((partition) =>
+        ["1/2", "2/2"].map((shard) => ({
+          mode: "--browser",
+          partition,
+          shard,
+        })),
+      ),
+      { mode: "--browser", partition: "scheduled" },
+      { mode: "--browser", partition: "shell-smoke" },
+    ];
+    const code = createRepository();
+    const codeBase = git(code, ["rev-parse", "HEAD"]);
+    const codeSource = commit(
+      code,
+      "src/booking-request/policy.ts",
+      "export const value = true;\n",
+    );
+    git(code, ["switch", "main"]);
+    git(code, ["merge", "--no-ff", codeSource]);
+    const docs = createRepository();
+    const docsBase = git(docs, ["rev-parse", "HEAD"]);
+    const docsSource = commit(docs, "AGENTS.md", "source instructions\n");
+    git(docs, ["switch", "main"]);
+    git(docs, ["merge", "--no-ff", docsSource]);
+    const chromium = [
+      "npx",
+      ["playwright", "install", "--with-deps", "chromium"],
+    ];
+    for (const { mode, partition, shard } of rows) {
+      const controls = {
+        GITHUB_ACTIONS: "true",
+        VERIFY_CI_PARTITION: partition,
+        VERIFY_CI_SHARD: shard ?? "",
+      };
+      const expected =
+        mode === "--database"
+          ? requiredDatabaseSteps
+          : [
+              chromium,
+              ...(partition === "shell-smoke"
+                ? requiredExpensiveSteps.slice(1)
+                : [requiredBrowserSteps[0]]),
+            ];
+      for (const [repository, base, source, selected] of [
+        [code, codeBase, codeSource, true],
+        [docs, docsBase, docsSource, false],
+        [code, codeBase, "0".repeat(40), true],
+      ]) {
+        const result = runVerification(repository, {
+          args: [mode],
+          environment: {
+            ...controls,
+            VERIFY_BASE_SHA: base,
+            VERIFY_SOURCE_SHA: source,
+          },
+        });
+        expect(result.status).toBe(0);
+        expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+          selected ? expected : [],
+        );
+        expect(result.stdout).toHaveBeenCalledWith(
+          JSON.stringify({
+            type: "verification-partition",
+            evidence: "partial",
+            partition,
+            shard: shard || null,
+          }),
+        );
+        if (selected) {
+          expect(
+            result.calls.every(
+              ([, , env]) =>
+                env.VERIFY_CI_PARTITION === partition &&
+                env.VERIFY_CI_SHARD === (shard ?? ""),
+            ),
+          ).toBe(true);
+        }
+      }
+    }
+    for (const { args, environment, reason } of [
+      {
+        args: ["--browser"],
+        environment: { VERIFY_CI_PARTITION: "next", VERIFY_CI_SHARD: "1/2" },
+        reason: "GITHUB_ACTIONS=true",
+      },
+      {
+        args: ["--browser"],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "next",
+          VERIFY_CI_SHARD: "0/2",
+        },
+        reason: "VERIFY_CI_SHARD",
+      },
+      {
+        args: ["--browser"],
+        environment: { GITHUB_ACTIONS: "true", VERIFY_CI_PARTITION: "next" },
+        reason: "VERIFY_CI_SHARD",
+      },
+      {
+        args: ["--browser"],
+        environment: { GITHUB_ACTIONS: "true", VERIFY_CI_PARTITION: "unknown" },
+        reason: "VERIFY_CI_PARTITION",
+      },
+      {
+        args: ["--browser"],
+        environment: { GITHUB_ACTIONS: "true", VERIFY_CI_SHARD: "1/2" },
+        reason: "VERIFY_CI_PARTITION",
+      },
+      {
+        args: ["--browser"],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "scheduled",
+          VERIFY_CI_SHARD: "1/2",
+        },
+        reason: "VERIFY_CI_SHARD",
+      },
+      {
+        args: ["--database"],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "next",
+          VERIFY_CI_SHARD: "1/2",
+        },
+        reason: "VERIFY_CI_PARTITION",
+      },
+      {
+        args: [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "next",
+          VERIFY_CI_SHARD: "1/2",
+        },
+        reason: "VERIFY_CI_PARTITION",
+      },
+      {
+        args: ["--baseline"],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "next",
+          VERIFY_CI_SHARD: "1/2",
+        },
+        reason: "VERIFY_CI_PARTITION",
+      },
+      {
+        args: ["--browser", "--full"],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "next",
+          VERIFY_CI_SHARD: "1/2",
+        },
+        reason: "--full",
+      },
+    ]) {
+      const result = runVerification("/missing-git-evidence", {
+        args,
+        environment,
+      });
+      expect(result.status).toBe(2);
+      expect(result.run).not.toHaveBeenCalled();
+      expect(result.stdout).not.toHaveBeenCalled();
+      expect(result.stderr).toHaveBeenCalledWith(
+        expect.stringContaining(reason),
+      );
+    }
+    const local = runVerification(docs, { args: ["--browser"] });
+    expect(local.status).toBe(0);
+    expect(local.calls).toEqual([]);
+  }, 30_000);
+
   it.each([undefined, "--database", "--browser"])(
     "keeps the CI quick path for a docs-only merge: %s",
     (mode) => {

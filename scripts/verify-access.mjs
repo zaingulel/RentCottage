@@ -459,6 +459,54 @@ export async function main(
     : "verify:access:database-tests";
   const browserMode =
     mode === undefined || mode === BROWSER_MODE || ownedJourneysMode;
+  const partition = environment.VERIFY_CI_PARTITION;
+  const shard = environment.VERIFY_CI_SHARD;
+  if (partition !== undefined || shard !== undefined) {
+    const databasePartitions = [
+      "database-core",
+      "booking-request",
+      "booking-capture",
+      "payment-required-expiry",
+    ];
+    const browserPartitions = ["next", "worker", "scheduled"];
+    if (environment.GITHUB_ACTIONS !== "true") {
+      stderr(
+        "VERIFY_CI_PARTITION and VERIFY_CI_SHARD require GITHUB_ACTIONS=true.",
+      );
+      return 2;
+    }
+    if (
+      !partition ||
+      (mode === DATABASE_MODE && !databasePartitions.includes(partition)) ||
+      (mode === BROWSER_MODE && !browserPartitions.includes(partition)) ||
+      (mode !== DATABASE_MODE && mode !== BROWSER_MODE)
+    ) {
+      stderr(
+        "VERIFY_CI_PARTITION must match an explicit --database or --browser mode.",
+      );
+      return 2;
+    }
+    if (
+      (["next", "worker"].includes(partition) &&
+        !["1/2", "2/2"].includes(shard)) ||
+      (!["next", "worker"].includes(partition) &&
+        shard !== undefined &&
+        shard !== "")
+    ) {
+      stderr(
+        "VERIFY_CI_SHARD must be 1/2 or 2/2 for next or worker, and absent for other partitions.",
+      );
+      return 2;
+    }
+    stdout(
+      JSON.stringify({
+        type: "access-partition",
+        evidence: "partial",
+        partition,
+        shard: shard || null,
+      }),
+    );
+  }
 
   const localProject =
     environment.SUPABASE_LOCAL_PROJECT ?? "rentcottage-verification";
@@ -864,7 +912,7 @@ export async function main(
       );
       return result.status;
     };
-    if (databaseMode) {
+    if (databaseMode && (!partition || partition === "database-core")) {
       group = "database";
       const preflightStatus = await verifyDatabasePreflight();
       if (preflightStatus !== 0) return preflightStatus;
@@ -946,17 +994,25 @@ export async function main(
     }
 
     const verifyDatabaseChecks = async () => {
-      const fixtureContractStatus = await verifyFixtureContract();
-      if (fixtureContractStatus !== 0) return fixtureContractStatus;
-      const accountConcurrency = await execute(
-        "node",
-        ["scripts/verify-account-access-concurrency.mjs"],
-        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (accountConcurrency.status !== 0) return accountConcurrency.status;
+      if (!partition || partition === "database-core") {
+        const fixtureContractStatus = await verifyFixtureContract();
+        if (fixtureContractStatus !== 0) return fixtureContractStatus;
+        const accountConcurrency = await execute(
+          "node",
+          ["scripts/verify-account-access-concurrency.mjs"],
+          { env: databaseConcurrencyEnvironment, stdio: "inherit" },
+        );
+        if (accountConcurrency.status !== 0) return accountConcurrency.status;
+      }
       const createDraftConcurrencyFixture = await execute(
         "node",
-        ["scripts/prepare-access-test.mjs", "create", "mobile"],
+        [
+          "scripts/prepare-access-test.mjs",
+          "create",
+          "mobile",
+          // The cross-Cottage observer needs both published fixtures.
+          ...(partition === "booking-request" ? ["worker"] : []),
+        ],
         { env: accessEnvironment, stdio: "inherit" },
       );
       if (createDraftConcurrencyFixture.status !== 0) {
@@ -1061,6 +1117,25 @@ export async function main(
       for (const { script, env } of concurrencyPrograms) {
         if (!bookingConcurrency && script.startsWith("scripts/verify-booking-"))
           continue;
+        if (partition) {
+          const selectedScript = {
+            "booking-request": "scripts/verify-booking-request-concurrency.mjs",
+            "booking-capture":
+              "scripts/verify-booking-request-capture-concurrency.mjs",
+            "payment-required-expiry":
+              "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+          }[partition];
+          if (
+            selectedScript
+              ? script !== selectedScript
+              : [
+                  "scripts/verify-booking-request-concurrency.mjs",
+                  "scripts/verify-booking-request-capture-concurrency.mjs",
+                  "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+                ].includes(script)
+          )
+            continue;
+        }
         const concurrency = await execute("node", [script], {
           env,
           stdio: "inherit",
@@ -1080,26 +1155,6 @@ export async function main(
       if (readinessStatus !== 0) return readinessStatus;
     }
     const verifyBrowserJourneys = async () => {
-      const createNextFixtures = await execute(
-        "node",
-        ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"],
-        {
-          env: accessEnvironment,
-          stdio: "inherit",
-        },
-      );
-      if (createNextFixtures.status !== 0) return createNextFixtures.status;
-      const validateNextFixtures = await execute(
-        "node",
-        ["scripts/prepare-access-test.mjs", "validate", "mobile", "desktop"],
-        {
-          env: accessEnvironment,
-          stdio: "inherit",
-        },
-      );
-      if (validateNextFixtures.status !== 0) {
-        return validateNextFixtures.status;
-      }
       const browserEnvironment = {
         ...databaseConcurrencyEnvironment,
         ...accessEnvironment,
@@ -1108,9 +1163,18 @@ export async function main(
         SUPABASE_PROJECT_REF: "local-test",
         PLAYWRIGHT_SERVER: "next",
       };
-      const browser = await execute(
-        "npx",
-        ownedJourneysMode
+      if (!partition || partition === "next" || partition === "scheduled") {
+        const fixtures =
+          partition === "scheduled" ? ["desktop"] : ["mobile", "desktop"];
+        for (const action of ["create", "validate"]) {
+          const prepared = await execute(
+            "node",
+            ["scripts/prepare-access-test.mjs", action, ...fixtures],
+            { env: accessEnvironment, stdio: "inherit" },
+          );
+          if (prepared.status !== 0) return prepared.status;
+        }
+        const nextArgs = ownedJourneysMode
           ? [
               "playwright",
               "test",
@@ -1125,25 +1189,48 @@ export async function main(
                 : OWNED_JOURNEYS_GREP,
               `--output=playwright-report/owned-next-${phase}`,
             ]
-          : [
-              "playwright",
-              "test",
-              "tests/access.spec.ts",
-              "tests/booking-request-access.spec.ts",
-              "tests/administrator-payment-history.spec.ts",
-              "tests/administrator-records.spec.ts",
-              "tests/booking-history.spec.ts",
-              "tests/request-notification-details.spec.ts",
-              "tests/messaging.spec.ts",
-              "tests/customer-reviews.spec.ts",
-              "--project=mobile",
-              "--project=desktop",
-              "--workers=1",
-              "--output=playwright-report/access-next",
-            ],
-        { env: browserEnvironment, stdio: "inherit" },
-      );
-      if (browser.status !== 0) return browser.status;
+          : partition === "scheduled"
+            ? [
+                "playwright",
+                "test",
+                "tests/booking-request-access.spec.ts",
+                "--project=desktop",
+                "--workers=1",
+                "--grep",
+                "a verified Customer double-submit creates one Pending request and one minimal owner notice",
+                "--output=playwright-report/scheduled-prerequisite-next",
+              ]
+            : [
+                "playwright",
+                "test",
+                "tests/access.spec.ts",
+                "tests/booking-request-access.spec.ts",
+                "tests/administrator-payment-history.spec.ts",
+                "tests/administrator-records.spec.ts",
+                "tests/booking-history.spec.ts",
+                "tests/request-notification-details.spec.ts",
+                "tests/messaging.spec.ts",
+                "tests/customer-reviews.spec.ts",
+                "--project=mobile",
+                "--project=desktop",
+                "--workers=1",
+                "--output=playwright-report/access-next",
+              ];
+        if (partition === "next") {
+          const listed = await execute("npx", [...nextArgs, "--list"], {
+            env: browserEnvironment,
+            stdio: "inherit",
+          });
+          if (listed.status !== 0) return listed.status;
+          nextArgs.push(`--shard=${shard}`);
+        }
+        const browser = await execute("npx", nextArgs, {
+          env: browserEnvironment,
+          stdio: "inherit",
+        });
+        if (browser.status !== 0) return browser.status;
+      }
+      if (partition === "next") return 0;
 
       const createWorkerFixtures = await execute(
         "node",
@@ -1173,9 +1260,8 @@ export async function main(
       });
       if (workerBuild.status !== 0) return workerBuild.status;
 
-      const workerBrowser = await execute(
-        "npx",
-        ownedJourneysMode
+      if (partition !== "scheduled") {
+        const workerArgs = ownedJourneysMode
           ? [
               "playwright",
               "test",
@@ -1204,14 +1290,42 @@ export async function main(
               "--config=playwright.worker-prebuilt.config.ts",
               "--workers=1",
               "--output=playwright-report/access-worker",
-            ],
-        {
+            ];
+        if (partition === "worker") {
+          const listed = await execute("npx", [...workerArgs, "--list"], {
+            env: workerEnvironment,
+            stdio: "inherit",
+          });
+          if (listed.status !== 0) return listed.status;
+          workerArgs.push(`--shard=${shard}`);
+        }
+        const workerBrowser = await execute("npx", workerArgs, {
           env: workerEnvironment,
           stdio: "inherit",
-        },
-      );
-      if (workerBrowser.status !== 0) return workerBrowser.status;
-      if (ownedJourneysMode) return 0;
+        });
+        if (workerBrowser.status !== 0) return workerBrowser.status;
+      }
+      if (ownedJourneysMode || partition === "worker") return 0;
+      if (partition === "scheduled") {
+        // Deliver the request notice before the expiry seed ages its deadline.
+        const scheduledWorkerPrerequisite = await execute(
+          "npx",
+          [
+            "playwright",
+            "test",
+            "tests/booking-request-access.spec.ts",
+            "--project=worker",
+            "--config=playwright.worker-prebuilt.config.ts",
+            "--workers=1",
+            "--grep",
+            "a verified Customer double-submit creates one Pending request and one minimal owner notice$",
+            "--output=playwright-report/scheduled-prerequisite-worker",
+          ],
+          { env: workerEnvironment, stdio: "inherit" },
+        );
+        if (scheduledWorkerPrerequisite.status !== 0)
+          return scheduledWorkerPrerequisite.status;
+      }
       const scheduledExpirySeed = await execute(
         "node",
         ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
