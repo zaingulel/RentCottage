@@ -237,6 +237,19 @@ describe("shipped development-package audit", () => {
         audited: true,
         message: /severe/,
       },
+      {
+        name: "an entry whose nodes is not an array",
+        input: {
+          report: audit({
+            "@opennextjs/cloudflare": entry("@opennextjs/cloudflare", null, [
+              ADAPTER_ADVISORY,
+            ]),
+            wrangler: entry("wrangler", ["node_modules/wrangler"], []),
+          }),
+        },
+        audited: true,
+        message: /@opennextjs\/cloudflare/,
+      },
     ];
     for (const { name, input, audited, message } of cases) {
       await t.test(name, () => {

@@ -108,9 +108,13 @@ export function main(
   }
 
   const findings = [];
-  for (const { nodes, via } of Object.values(report.vulnerabilities)) {
+  for (const [name, { nodes, via }] of Object.entries(report.vulnerabilities)) {
+    if (!Array.isArray(nodes) || !Array.isArray(via)) {
+      stderr(`npm audit entry "${name}" has no nodes or via array.`);
+      return 2;
+    }
     const shippedPaths = SHIPPED_DEV_PACKAGE_PATHS.filter((path) =>
-      nodes?.includes(path),
+      nodes.includes(path),
     );
     if (shippedPaths.length === 0) continue;
     // String `via` entries name vulnerable dependencies; only objects are advisories on this package.
