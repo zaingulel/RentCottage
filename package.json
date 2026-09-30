@@ -11,6 +11,7 @@
     "build:worker": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare preview",
     "audit:production": "npm audit --omit=dev --audit-level=moderate",
+    "audit:shipped-dev": "node scripts/audit-shipped-dev-packages.mjs",
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "lint:docs": "node scripts/doc-lint.mjs",
