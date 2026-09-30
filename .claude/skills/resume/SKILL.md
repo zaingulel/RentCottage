@@ -36,6 +36,16 @@ available, report board freshness unavailable rather than presenting stale local
   one advisory line: exit 0 is in sync; exit 1 is lag, naming the paths it lists, which one sync job clears at
   once, resolving every sync card its run carries (`AGENTS.md`, Shared workflow adoption); exit 2 is lag unknown
   with its stated cause, never reported as in sync. The result never blocks work-pick.
+- Report in one advisory line, with no threshold, the size of the workflow tooling (scripts, tools and hooks, their
+  tests counted apart) and its time-limit declarations, each a test or suite setting its own time limit on one line,
+  at the recorded `origin/main` commit and at the newest `main` commit at least 30 days old,
+  `git rev-list -1 --before=30.days.ago origin/main` (`AGENTS.md`, Publication and machinery). For each of the two
+  commits `<rev>`, size prints tooling files, tooling lines, test files and test lines:
+  `git grep -c -e '^' <rev> -- scripts tools .claude/hooks .codex/hooks .githooks | awk -F: '{ if ($(NF-1) ~ /\.test\./) { tf++; tl+=$NF } else { f++; l+=$NF } } END { print f+0, l+0, tf+0, tl+0 }'`
+  and the declaration count is
+  `git grep -c -E 'test\.setTimeout\(|test\.slow\(|describe\.configure\(\{[^}]*timeout|^[[:space:]]*(test|it|describe)\([^;]*\{[[:space:]]*timeout:' <rev> -- tests scripts tools | awk -F: '{ s+=$NF } END { print s+0 }'`.
+  A directory absent from a tree counts zero. When `rev-list` prints nothing or `git cat-file -e <rev>` fails, that
+  commit's half is reported unavailable, never as zero.
 - A branch with an open draft pull request is unfinished work. Read its body: the "Not done" section says
   where to pick up.
 - The board output for planned work. Prefer `Ready` work matching the owner's latest objective;
@@ -119,6 +129,12 @@ disjoint.
 - Plan-first surfaces are the Surfaces table's `plan-first` row. They get an `architect` plan and one read-only
   `plan-reviewer` pass before any build. Any other card with design choices still open after work-pick gets an
   `architect` plan. Everything else gets a short plan in the pull request body.
+- Every plan follows `docs/CODING-STANDARDS.md`, the session's own short plan for a card without an architect
+  included, because a builder cannot change a plan once it arrives.
+- Every plan, the architect's and the session's own short plan alike, first considers doing less or a native feature,
+  then weighs a mechanism's recurring run time and upkeep against the failure it prevents, states that cost for any
+  new or extended test or tooling, and names existing machinery the change makes unnecessary. The build-seat choice
+  keeps its own rule: cost and latency break only equal-reliability ties.
 - Every `architect` dispatch is a filled copy of `.agents/templates/planner-handoff.md`.
 - A plan names its scope: the files each slice changes and the claim each slice proves, never a line estimate.
   Size is the owner's judgment before work-pick, through the `to-issues` size signals; after work-pick no seat
@@ -140,7 +156,7 @@ disjoint.
   no authorisation; only the push does. Commit green work before any stop, handoff, replan or split proposal as
   well, so nothing green waits uncommitted in the worktree.
 - Wrap every executed check in `node scripts/run-log.mjs <label words> -- <command>` (plain unquoted label,
-  then a bare `--`) so the exit code is recorded by a script, not asserted: focused tests, the one executed mutation per claim (red, restore, green), lint,
+  then a bare `--`) so the exit code is recorded by a script, not asserted: focused tests, the one executed mutation per behaviour (red, restore, green), lint,
   and the convergence checks `docs/TESTING-STRATEGY.md` names. The log lives at `.claude/worklog/<branch>.md`.
   On every agent-initiated rerun, supply a nonblank diagnosed reason through `RUN_LOG_RERUN_REASON`; for example,
   `RUN_LOG_RERUN_REASON='Changed the failing assertion' node scripts/run-log.mjs focused -- npm run lint`.
@@ -174,9 +190,11 @@ disjoint.
   sign-off surface is sign-off tier. `security-reviewer` only when a change widens a surface in the Surfaces
   table's `security review` row. The pull request body names the tier
   and one sentence why; a Greptile review not requested on tier grounds is neither `UNAVAILABLE` nor a clean
-  review. Fix true findings, dismiss false ones with a reason, then one pass scoped to the repaired hunks and
-  what they can break, by the same reviewer with its context intact or by the session. No further pass when a
-  repair adds no factual claim. Record the review in the pull request body's review line, in the format
+  review. Fix each true finding by the cheapest valid fix it names. A true finding whose every fix costs more than
+  it is worth goes to the owner as a plain-language decision, and the owner may set it aside as deferred; a finding
+  is dismissed, with a reason, only when it is false. Then one pass scoped to the repaired hunks and what they can
+  break, by the same reviewer with its context intact or by the session. No further pass when a repair adds no
+  factual claim. Record the review in the pull request body's review line, in the format
   [the workflow manual](../../../docs/AI-WORKFLOW.md#the-review-line) specifies.
 
 ## 7. Push authorisation (owner gate two)
@@ -225,8 +243,9 @@ request route, never a workaround.
    the exact requested head as `Last reviewed commit`, and the `Greptile Review` check turning green is a second
    signal; its heading is an image, so a watcher keys on that footer, never on heading text. Fix true findings,
    complete focused tests and the applicable scoped local repair review before pushing, reply with the fix commit,
-   resolve the thread, and dismiss false findings with evidence. Update the review line's Greptile fields after
-   each Greptile review; a pull request Greptile never reviewed, because its tier requests no Greptile review or
+   resolve the thread, take a true finding whose every fix costs more than it is worth to the owner as section 6
+   says, and dismiss false findings with evidence. Update the review line's Greptile fields after each Greptile
+   review; a pull request Greptile never reviewed, because its tier requests no Greptile review or
    every attempt was `UNAVAILABLE`, records `greptile_rounds=0`. For the new head, request
    `@greptileai review this draft again: <what changed> in <commit>`. A re-review can edit the existing summary and
    raise its `Reviews (N)` footer; check the reviewed commit, not just the count or a new comment. `UNAVAILABLE`

@@ -45,6 +45,8 @@ Rules:
   the site.
 - If the plan proves wrong, under-specified, or harder than anticipated, STOP and report instead of improvising
   — especially on a `plan-first` or `sign-off` seam. A mechanical choice the plan already bounds is yours to make.
+- Raising a time limit, adding a retry, or adding runs or cases the plan does not name is improvising, however green
+  it would make the slice: STOP and report the slow or failing check instead.
 - Convergence mutation proof is the ORCHESTRATOR's job, never yours. Run red-before-implementation only for
   `strict-tdd`; never run a revert / `git stash` / worktree cycle to re-prove your own evidence (a cap cut-off
   mid-cycle ships the mutated source).

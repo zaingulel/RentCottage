@@ -90,9 +90,10 @@ discovery output: file listings, search results and file contents, which can be 
 
 ## Coding standards and the executed test bar
 
-[docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) owns how first-party code is written.
-[docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) owns the evidence every claim needs, run through
-`node scripts/run-log.mjs` so the pull request body quotes exit codes a script wrote.
+[docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) owns how first-party code is written, and every seat that
+plans, designs, builds or reviews code reads it before it starts; only the `explorer`, which locates code and judges
+nothing, is exempt. [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) owns the evidence every claim needs, run
+through `node scripts/run-log.mjs` so the pull request body quotes exit codes a script wrote.
 [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md) owns how the user interface is built: which values are tokens and
 where they live, the tolerated literals, and the component patterns new work reuses.
 
@@ -103,8 +104,8 @@ itself for documents; for code and agent instruction, the `reviewer` charter run
 write the diff (`cross-review`), with the skill's route when that family's seat is unavailable; `security-reviewer`
 only when a change widens a surface in the Surfaces table's `security review` row. Greptile is metered from one
 pool shared by the canonical repository and every adopter the manifest lists; each repository sends only its own Surfaces `sign-off` row. It
-reviews a draft only for the sign-off tier, every thread fixed or dismissed with a reason before the draft is
-marked ready. The `resume` skill owns the tiers, the allowance lookup, the cross-family substitution route when the other family's seat cannot be
+reviews a draft only for the sign-off tier, every thread fixed, set aside by the owner, or dismissed as false with
+a reason before the draft is marked ready. The `resume` skill owns the tiers, the allowance lookup, the cross-family substitution route when the other family's seat cannot be
 reached, and Greptile's own best-effort provider-unavailability exception; `.greptile/config.json` disables automatic
 reviews so marking ready starts CI without requesting another Greptile review.
 
@@ -119,12 +120,20 @@ Push only with owner authorisation, through a draft pull request. A change every
 the job worktree (`git push origin HEAD:main`), its commit carrying `Closes #<issue>`; no pull request opens and no
 workflow runs. A repository without that gate has no direct route. The documentation sweep and its day-after triage
 follow [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) when the
-Conventions table marks them active. New executable machinery in the workflow itself, including test scripts,
-harnesses, runners, and test-only tools (product code and ordinary tests added to existing suites are exempt),
-needs one of: a control failure a sentence here or in a skill could not prevent twice, the same measurable
-friction across three independent jobs, a required new runtime or provider integration, or externally imposed
-security or platform drift. Prefer a native feature over custom code, a hook over a script, and a sentence over
-a hook.
+Conventions table marks them active. New executable machinery in the workflow itself, including test scripts, harnesses,
+runners, and test-only tools (product code and ordinary tests added to existing suites are exempt), needs one of: a
+control failure a sentence here or in a skill could not prevent twice, the same measurable friction across three
+independent jobs, a required new runtime or provider integration, or externally imposed security or platform drift. The
+friction route admits machinery only after the card's What to build names the friction and what doing less was tried
+first: fewer checks, deleted work, or a native feature. A store, cache, capture, retry, route, tracked input or repeated
+run added to existing machinery meets the same bar as new machinery. Prefer a native feature over custom code, a hook
+over a script, and a sentence over a hook. Rewriting, shrinking or deleting existing code, tests or tooling is always
+allowed when it is the right change for speed or quality, planned and reviewed like any other change, with the owner
+gates and exact-target approval for destructive actions unchanged; no standard, strategy, skill or charter may forbid
+it. This rule is the one home for how machinery leaves: a job that removes a friction another way deletes the machinery
+that friction admitted, and a card that rewrites a testing strategy, a coding standard or this manual's workflow text
+lists the machinery it keeps and settles keep, shrink or delete for each. The `resume` intake reports the tooling's size
+so growth is seen, never gated.
 
 ## Shared workflow adoption
 
