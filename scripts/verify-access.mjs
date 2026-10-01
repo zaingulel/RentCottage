@@ -1163,13 +1163,11 @@ export async function main(
         SUPABASE_PROJECT_REF: "local-test",
         PLAYWRIGHT_SERVER: "next",
       };
-      if (!partition || partition === "next" || partition === "scheduled") {
-        const fixtures =
-          partition === "scheduled" ? ["desktop"] : ["mobile", "desktop"];
+      if (!partition || partition === "next") {
         for (const action of ["create", "validate"]) {
           const prepared = await execute(
             "node",
-            ["scripts/prepare-access-test.mjs", action, ...fixtures],
+            ["scripts/prepare-access-test.mjs", action, "mobile", "desktop"],
             { env: accessEnvironment, stdio: "inherit" },
           );
           if (prepared.status !== 0) return prepared.status;
@@ -1189,33 +1187,22 @@ export async function main(
                 : OWNED_JOURNEYS_GREP,
               `--output=playwright-report/owned-next-${phase}`,
             ]
-          : partition === "scheduled"
-            ? [
-                "playwright",
-                "test",
-                "tests/booking-request-access.spec.ts",
-                "--project=desktop",
-                "--workers=1",
-                "--grep",
-                "a verified Customer double-submit creates one Pending request and one minimal owner notice",
-                "--output=playwright-report/scheduled-prerequisite-next",
-              ]
-            : [
-                "playwright",
-                "test",
-                "tests/access.spec.ts",
-                "tests/booking-request-access.spec.ts",
-                "tests/administrator-payment-history.spec.ts",
-                "tests/administrator-records.spec.ts",
-                "tests/booking-history.spec.ts",
-                "tests/request-notification-details.spec.ts",
-                "tests/messaging.spec.ts",
-                "tests/customer-reviews.spec.ts",
-                "--project=mobile",
-                "--project=desktop",
-                "--workers=1",
-                "--output=playwright-report/access-next",
-              ];
+          : [
+              "playwright",
+              "test",
+              "tests/access.spec.ts",
+              "tests/booking-request-access.spec.ts",
+              "tests/administrator-payment-history.spec.ts",
+              "tests/administrator-records.spec.ts",
+              "tests/booking-history.spec.ts",
+              "tests/request-notification-details.spec.ts",
+              "tests/messaging.spec.ts",
+              "tests/customer-reviews.spec.ts",
+              "--project=mobile",
+              "--project=desktop",
+              "--workers=1",
+              "--output=playwright-report/access-next",
+            ];
         if (partition === "next") {
           const listed = await execute("npx", [...nextArgs, "--list"], {
             env: browserEnvironment,
@@ -1306,26 +1293,6 @@ export async function main(
         if (workerBrowser.status !== 0) return workerBrowser.status;
       }
       if (ownedJourneysMode || partition === "worker") return 0;
-      if (partition === "scheduled") {
-        // Deliver the request notice before the expiry seed ages its deadline.
-        const scheduledWorkerPrerequisite = await execute(
-          "npx",
-          [
-            "playwright",
-            "test",
-            "tests/booking-request-access.spec.ts",
-            "--project=worker",
-            "--config=playwright.worker-prebuilt.config.ts",
-            "--workers=1",
-            "--grep",
-            "a verified Customer double-submit creates one Pending request and one minimal owner notice$",
-            "--output=playwright-report/scheduled-prerequisite-worker",
-          ],
-          { env: workerEnvironment, stdio: "inherit" },
-        );
-        if (scheduledWorkerPrerequisite.status !== 0)
-          return scheduledWorkerPrerequisite.status;
-      }
       const scheduledExpirySeed = await execute(
         "node",
         ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],

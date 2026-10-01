@@ -425,8 +425,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
       fullPage: true,
     });
     await expect(page.getByText("Withdrawn", { exact: true })).toBeVisible();
-    const scheduledExpiryReference = await submitAnotherRequest("en");
-    await page.goto(`/en/booking-requests/${scheduledExpiryReference}`);
+    const resubmittedReference = await submitAnotherRequest("en");
+    await page.goto(`/en/booking-requests/${resubmittedReference}`);
     await expect(page.getByText("Pending", { exact: true })).toBeVisible();
   } else if (testInfo.project.name === "worker") {
     await page.goto(`/en/booking-requests/${requestReference}`);
