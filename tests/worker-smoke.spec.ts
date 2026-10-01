@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test } from "@playwright/test";
 
 test("serves the trilingual shell and health response from the Worker", async ({
@@ -31,4 +34,59 @@ test("serves the trilingual shell and health response from the Worker", async ({
   await expect(
     page.getByRole("heading", { name: "بيتٌ في الريف، لكم وحدكم" }),
   ).toBeVisible();
+});
+
+test("refuses a Server Action posted to the Worker from a foreign origin", async ({
+  baseURL,
+  request,
+}) => {
+  if (!baseURL) throw new Error("Missing browser origin");
+  // The action identifier changes with every build, so it comes from the build's own manifest.
+  const manifest = JSON.parse(
+    readFileSync(
+      join(process.cwd(), ".next/server/server-reference-manifest.json"),
+      "utf8",
+    ),
+  ) as { node: Record<string, { exportedName: string; filename: string }> };
+  const identifiers = Object.entries(manifest.node)
+    .filter(
+      ([, action]) =>
+        action.exportedName === "requestPhoneAccess" &&
+        action.filename === "src/access/actions.ts",
+    )
+    .map(([identifier]) => identifier);
+  expect(identifiers).toHaveLength(1);
+
+  const postAction = (origin: Record<string, string>) =>
+    request.post("/en/access", {
+      headers: {
+        "Next-Action": identifiers[0],
+        "Content-Type": "text/plain;charset=UTF-8",
+        Accept: "text/x-component",
+        ...origin,
+      },
+      data: '["not-a-phone"]',
+    });
+
+  const ownOrigin = await postAction({ Origin: new URL(baseURL).origin });
+  expect(ownOrigin.status()).toBe(200);
+  await expect(ownOrigin.text()).resolves.toContain(
+    '{"status":"invalid_phone"}',
+  );
+
+  const foreignOrigins: Record<string, string>[] = [
+    { Origin: "https://attacker.example" },
+    {
+      Origin: "https://attacker.example",
+      "X-Forwarded-Host": "attacker.example",
+    },
+  ];
+  for (const foreignOrigin of foreignOrigins) {
+    const refused = await postAction(foreignOrigin);
+    expect(refused.status()).toBe(500);
+    const body = await refused.text();
+    // Digest of Next.js error E80, "Invalid Server Actions request.", raised by the origin check.
+    expect(body).toContain('@E80"');
+    expect(body).not.toContain("invalid_phone");
+  }
 });
