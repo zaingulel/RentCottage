@@ -244,7 +244,7 @@ describe("repository verification command", () => {
       const installs = result.calls.filter(([command]) => command === "npx");
       expect(installs.map(([command, args]) => [command, args])).toEqual(
         mode === "--browser"
-          ? [["npx", ["playwright", "install", "--with-deps", "chromium"]]]
+          ? [["npx", ["playwright", "install", "chromium"]]]
           : [],
       );
     },
@@ -415,10 +415,7 @@ describe("repository verification command", () => {
     ];
     const browserRecipe = ["npm", "run", "verify", "--", "--browser", "--full"];
     const combinedRecipe = ["npm", "run", "verify", "--", "--full"];
-    const chromium = [
-      "npx",
-      ["playwright", "install", "--with-deps", "chromium"],
-    ];
+    const chromium = ["npx", ["playwright", "install", "chromium"]];
     const scenarios = [
       ...requiredBaselineSteps.map((failedStep) => ({
         args: ["--baseline"],
@@ -1768,10 +1765,7 @@ describe("repository verification command", () => {
     const docsSource = commit(docs, "AGENTS.md", "source instructions\n");
     git(docs, ["switch", "main"]);
     git(docs, ["merge", "--no-ff", docsSource]);
-    const chromium = [
-      "npx",
-      ["playwright", "install", "--with-deps", "chromium"],
-    ];
+    const chromium = ["npx", ["playwright", "install", "chromium"]];
     for (const { mode, partition, shard } of rows) {
       const controls = {
         GITHUB_ACTIONS: "true",
@@ -2114,7 +2108,7 @@ describe("repository verification command", () => {
 
     expect(result.run).not.toHaveBeenCalled();
     expect(result.stdout).toHaveBeenCalledWith(
-      'Planned command: ["npx","playwright","install","--with-deps","chromium"]',
+      'Planned command: ["npx","playwright","install","chromium"]',
     );
   });
 
