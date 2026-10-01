@@ -45,7 +45,6 @@ const explicitNodeWorkflowEntries = [
 
 const currentRegularAgentDefinitions = globSync(
   [
-    ".agents/roles/*.md",
     ".agents/skills/*/SKILL.md",
     ".agents/templates/*.md",
     ".claude/agents/*.md",
@@ -754,11 +753,6 @@ describe("repository verification command", () => {
       "sandbox_mode = 'workspace-write'\n",
     ],
     [
-      "a future role definition",
-      ".agents/roles/release-captain.md",
-      "# Release captain\n",
-    ],
-    [
       "arbitrary native skill metadata",
       ".agents/skills/future-publisher/agents/openai.yaml",
       "interface:\n  display_name: Future Publisher\n",
@@ -944,7 +938,6 @@ describe("repository verification command", () => {
     const repository = createRepository();
     const paths = [
       ...currentRegularAgentDefinitions,
-      ".agents/roles/future-role.md",
       ".agents/skills/future-skill/SKILL.md",
       ".agents/templates/future-template.md",
       ".claude/agents/future-agent.md",
@@ -1416,8 +1409,8 @@ describe("repository verification command", () => {
 
   it.each([
     ["an asset", "docs/product/assets/runtime.json", "{}\n"],
-    ["an agent script", ".agents/roles/runtime.mjs", "export {};\n"],
-    ["an agent config", ".agents/roles/runtime.json", "{}\n"],
+    ["an agent script", ".agents/templates/runtime.mjs", "export {};\n"],
+    ["an agent config", ".agents/templates/runtime.json", "{}\n"],
     [
       "an agent TypeScript file",
       ".agents/skills/tool/runtime.ts",
@@ -1429,7 +1422,11 @@ describe("repository verification command", () => {
       "interface:\n  display_name: Nested Fixture\n",
     ],
     ["a docs script", "docs/research/runtime.js", "export {};\n"],
-    ["a category lookalike", ".agents-copy/roles/reviewer.md", "# Lookalike\n"],
+    [
+      "a category lookalike",
+      ".agents-copy/templates/reviewer.md",
+      "# Lookalike\n",
+    ],
     ["a docs lookalike", "docs-copy/research/study.md", "# Lookalike\n"],
   ])("refuses to treat %s as approved prose", (_label, path, contents) => {
     const repository = createRepository();
@@ -1619,18 +1616,18 @@ describe("repository verification command", () => {
     "rejects %s executable agent prose",
     (state) => {
       const repository = createRepository();
-      const path = ".agents/roles/future-role.md";
-      write(repository, path, "# Future role\n");
+      const path = ".agents/templates/future-template.md";
+      write(repository, path, "# Future template\n");
       if (state !== "untracked") {
         git(repository, ["add", path]);
-        git(repository, ["commit", "-m", "non-executable role"]);
+        git(repository, ["commit", "-m", "non-executable template"]);
       }
       chmodSync(join(repository, path), 0o755);
       if (state === "committed" || state === "staged") {
         git(repository, ["add", path]);
       }
       if (state === "committed") {
-        git(repository, ["commit", "-m", "executable role"]);
+        git(repository, ["commit", "-m", "executable template"]);
       }
 
       const result = runVerification(repository);
