@@ -96,16 +96,14 @@ for (const fixture of localeFixtures) {
   });
 }
 
-test("desktop CKB invalid-search actions have current pixel evidence", async ({
+test("desktop CKB invalid search offers a new search", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/ckb/results?period=full-day&guests=4");
-  await page.getByRole("link", { name: "گەڕانێکی نوێ دەست پێ بکە" }).focus();
-  await page.screenshot({
-    path: testInfo.outputPath("ckb-results-actions.png"),
-    fullPage: true,
-  });
+  await expect(
+    page.getByRole("link", { name: "گەڕانێکی نوێ دەست پێ بکە" }),
+  ).toHaveAttribute("href", "/ckb");
 });
 
 test("mobile CKB fictional booking request stays disconnected", async ({
