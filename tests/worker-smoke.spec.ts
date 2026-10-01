@@ -74,13 +74,14 @@ test("refuses a Server Action posted to the Worker from a foreign origin", async
     '{"status":"invalid_phone"}',
   );
 
-  for (const foreignOrigin of [
+  const foreignOrigins: Record<string, string>[] = [
     { Origin: "https://attacker.example" },
     {
       Origin: "https://attacker.example",
       "X-Forwarded-Host": "attacker.example",
     },
-  ]) {
+  ];
+  for (const foreignOrigin of foreignOrigins) {
     const refused = await postAction(foreignOrigin);
     expect(refused.status()).toBe(500);
     const body = await refused.text();
