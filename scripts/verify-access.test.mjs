@@ -3166,6 +3166,50 @@ setInterval(() => {}, 1000);
     }
   });
 
+  it("runs the final scheduled expiry check after a failed scheduled test and keeps the test failure authoritative", async () => {
+    for (const verifyStatus of [0, 7]) {
+      const run = ownedRun((command, args) => ({
+        status: args.includes("tests/worker-scheduled-expiry.spec.ts")
+          ? 5
+          : args.at(-1) === "--verify"
+            ? verifyStatus
+            : 0,
+        stdout:
+          command === "npx" &&
+          args.slice(0, 4).join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      }));
+      const lines = [];
+      expect(
+        await mainWithPreparedProject(["--browser"], {
+          environment: {
+            GITHUB_ACTIONS: "true",
+            VERIFY_CI_PARTITION: "scheduled",
+          },
+          run,
+          stderr: vi.fn(),
+          stdout: (line) => lines.push(JSON.parse(line)),
+        }),
+      ).toBe(5);
+      expect(commands(run).slice(-4)).toEqual([
+        browserCommands.at(-2),
+        browserCommands.at(-1),
+        ownershipCommand,
+        stopCommand,
+      ]);
+      expect(
+        lines.filter((line) => line.type === "verification-failure"),
+      ).toEqual([
+        {
+          type: "verification-failure",
+          attemptedCommand: ["npx", ...browserCommands.at(-2)[1]],
+          reproduceGroup: ["npm", "run", "verify:access:browser"],
+        },
+      ]);
+    }
+  });
+
   it("rejects empty hosted journey selections before sharding and cleans up", async () => {
     for (const partition of ["next", "worker"]) {
       for (const shard of ["1/2", "2/2"]) {
