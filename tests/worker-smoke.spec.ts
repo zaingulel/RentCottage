@@ -36,6 +36,25 @@ test("serves the trilingual shell and health response from the Worker", async ({
   ).toBeVisible();
 });
 
+test("redirects the root address on the Worker to the Arabic home page", async ({
+  baseURL,
+  page,
+  request,
+}) => {
+  if (!baseURL) throw new Error("Missing browser origin");
+  const arabicHome = new URL("/ar", baseURL).href;
+
+  const root = await request.get("/", { maxRedirects: 0 });
+  expect(root.status()).toBe(307);
+  expect(new URL(root.headers().location, baseURL).href).toBe(arabicHome);
+
+  await page.goto("/");
+  await expect(page).toHaveURL(arabicHome);
+  await expect(
+    page.getByRole("heading", { name: "بيتٌ في الريف، لكم وحدكم" }),
+  ).toBeVisible();
+});
+
 test("refuses a Server Action posted to the Worker from a foreign origin", async ({
   baseURL,
   request,
