@@ -182,7 +182,6 @@ const browserCommands = [
       "--output=playwright-report/access-worker",
     ],
   ],
-  ["node", ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"]],
   [
     "npx",
     [
@@ -3160,9 +3159,50 @@ setInterval(() => {}, 1000);
       expect(commands(run).some(([, args]) => args[0] === failedScript)).toBe(
         true,
       );
-      expect(commands(run).some(([, args]) => args.at(-1) === "--verify")).toBe(
-        false,
-      );
+    }
+  });
+
+  it("runs the final scheduled expiry check after a failed scheduled test and keeps the test failure authoritative", async () => {
+    for (const verifyStatus of [0, 7]) {
+      const run = ownedRun((command, args) => ({
+        status: args.includes("tests/worker-scheduled-expiry.spec.ts")
+          ? 5
+          : args.at(-1) === "--verify"
+            ? verifyStatus
+            : 0,
+        stdout:
+          command === "npx" &&
+          args.slice(0, 4).join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      }));
+      const lines = [];
+      expect(
+        await mainWithPreparedProject(["--browser"], {
+          environment: {
+            GITHUB_ACTIONS: "true",
+            VERIFY_CI_PARTITION: "scheduled",
+          },
+          run,
+          stderr: vi.fn(),
+          stdout: (line) => lines.push(JSON.parse(line)),
+        }),
+      ).toBe(5);
+      expect(commands(run).slice(-4)).toEqual([
+        browserCommands.at(-2),
+        browserCommands.at(-1),
+        ownershipCommand,
+        stopCommand,
+      ]);
+      expect(
+        lines.filter((line) => line.type === "verification-failure"),
+      ).toEqual([
+        {
+          type: "verification-failure",
+          attemptedCommand: ["npx", ...browserCommands.at(-2)[1]],
+          reproduceGroup: ["npm", "run", "verify:access:browser"],
+        },
+      ]);
     }
   });
 
@@ -3514,10 +3554,6 @@ setInterval(() => {}, 1000);
 
     for (const [command, args] of [
       ["node", ["scripts/verify-account-access-concurrency.mjs"]],
-      [
-        "node",
-        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
-      ],
       [
         "node",
         ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],

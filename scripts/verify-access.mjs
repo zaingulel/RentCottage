@@ -1293,39 +1293,34 @@ export async function main(
         if (workerBrowser.status !== 0) return workerBrowser.status;
       }
       if (ownedJourneysMode || partition === "worker") return 0;
-      const scheduledExpirySeed = await execute(
-        "node",
-        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
-        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (scheduledExpirySeed.status !== 0) return scheduledExpirySeed.status;
-      const scheduledExpiry = await execute(
-        "npx",
-        [
-          "playwright",
-          "test",
-          "tests/worker-scheduled-expiry.spec.ts",
-          "tests/worker-scheduled-capture.spec.ts",
-          "tests/worker-scheduled-refund.spec.ts",
-          "tests/worker-scheduled-completion.spec.ts",
-          "tests/worker-scheduled-reminder.spec.ts",
-          "tests/worker-scheduled-request-notification.spec.ts",
-          "--project=worker",
-          "--config=playwright.worker-prebuilt.config.ts",
-          "--workers=1",
-          "--output=playwright-report/scheduled-expiry-worker",
-        ],
-        {
-          env: workerEnvironment,
-          stdio: "inherit",
-        },
-      );
-      if (scheduledExpiry.status !== 0) return scheduledExpiry.status;
+      const scheduledExpiryArgs = [
+        "playwright",
+        "test",
+        "tests/worker-scheduled-expiry.spec.ts",
+        "tests/worker-scheduled-capture.spec.ts",
+        "tests/worker-scheduled-refund.spec.ts",
+        "tests/worker-scheduled-completion.spec.ts",
+        "tests/worker-scheduled-reminder.spec.ts",
+        "tests/worker-scheduled-request-notification.spec.ts",
+        "--project=worker",
+        "--config=playwright.worker-prebuilt.config.ts",
+        "--workers=1",
+        "--output=playwright-report/scheduled-expiry-worker",
+      ];
+      const scheduledExpiry = await execute("npx", scheduledExpiryArgs, {
+        env: workerEnvironment,
+        stdio: "inherit",
+      });
+      // The exactly-once check reports even after a failed scheduled test; the test failure stays authoritative.
       const scheduledExpiryVerify = await execute(
         "node",
         ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
         { env: databaseConcurrencyEnvironment, stdio: "inherit" },
       );
+      if (scheduledExpiry.status !== 0) {
+        lastAttemptedCommand = ["npx", ...scheduledExpiryArgs];
+        return scheduledExpiry.status;
+      }
       if (scheduledExpiryVerify.status !== 0) {
         return scheduledExpiryVerify.status;
       }

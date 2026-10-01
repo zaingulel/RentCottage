@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -13,16 +13,32 @@ import {
   test,
 } from "./fixtures/scheduled-expiry";
 
-test("the test Worker expires due booking requests exactly once", async ({
-  baseURL,
-}) => {
-  for (let invocation = 0; invocation < 2; invocation += 1) {
-    const response = await triggerScheduled(
-      baseURL,
-      "/__scheduled?format=json&cron=%2A%20%2A%20%2A%20%2A%20%2A",
-    );
-    expect(response.ok).toBe(true);
-  }
+function scheduledExpiryCheck(step: "--seed" | "--verify"): number | null {
+  return spawnSync(
+    process.execPath,
+    ["scripts/verify-booking-request-scheduled-expiry.mjs", step],
+    { stdio: "inherit" },
+  ).status;
+}
+
+test.describe(() => {
+  // The request can be prepared only once per database, so a retry could never pass.
+  test.describe.configure({ retries: 0 });
+
+  test("the test Worker expires due booking requests exactly once", async ({
+    baseURL,
+  }) => {
+    // The request becomes due inside this test so no earlier tick can expire it.
+    expect(scheduledExpiryCheck("--seed")).toBe(0);
+    for (let invocation = 0; invocation < 2; invocation += 1) {
+      const response = await triggerScheduled(
+        baseURL,
+        "/__scheduled?format=json&cron=%2A%20%2A%20%2A%20%2A%20%2A",
+      );
+      expect(response.ok).toBe(true);
+    }
+    expect(scheduledExpiryCheck("--verify")).toBe(0);
+  });
 });
 
 type ChildExit = {
