@@ -29,8 +29,8 @@ creates one.
 | `type:bug` | A defect or regression |
 | `type:docs` | A change to documentation or instruction prose only |
 
-GitHub's default `bug`, `enhancement` and `question` labels are not types; an issue carrying one still needs its
-`type:` label.
+GitHub's default `bug`, `enhancement` and `question` labels do not replace the `type:` label; an issue carrying
+one still needs its `type:` label.
 
 ## Pull requests as a triage surface
 
