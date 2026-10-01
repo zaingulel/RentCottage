@@ -78,9 +78,9 @@ test("internal action links preserve client-side navigation", async ({
 });
 
 for (const fixture of localeFixtures) {
-  test(`${fixture.locale} keeps direction, resilient discovery and current control pixels`, async ({
+  test(`${fixture.locale} keeps direction and resilient discovery`, async ({
     page,
-  }, testInfo) => {
+  }) => {
     await page.goto(`/${fixture.locale}`);
     await expect(page.locator("html")).toHaveAttribute(
       "dir",
@@ -93,20 +93,6 @@ for (const fixture of localeFixtures) {
     await expect(page.locator("p[role='alert']")).toHaveText(
       fixture.unavailable,
     );
-    const english = page
-      .getByRole("banner")
-      .getByRole("link", { name: "English" });
-    await english.hover();
-    await page.screenshot({
-      path: testInfo.outputPath(`${fixture.locale}-marketplace-hover.png`),
-      fullPage: true,
-    });
-
-    await english.focus();
-    await page.screenshot({
-      path: testInfo.outputPath(`${fixture.locale}-marketplace-focus.png`),
-      fullPage: true,
-    });
   });
 }
 
@@ -122,84 +108,10 @@ test("desktop CKB invalid-search actions have current pixel evidence", async ({
   });
 });
 
-test("mobile EN resilient discovery has current pixel evidence", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "mobile");
-  await page.goto("/en");
-  await expect(page.locator("p[role='alert']")).toHaveText(
-    "Search choices could not be loaded right now.",
-  );
-  await page.screenshot({
-    path: testInfo.outputPath("en-resilient-discovery.png"),
-    fullPage: true,
-  });
-});
-
 test("mobile CKB fictional booking request stays disconnected", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
   const response = await page.goto("/ckb/request/garden-house");
   expect(response?.status()).toBe(404);
-});
-
-test("desktop AR owner access focus has current pixel evidence", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop");
-  await page.goto("/ar/owner/access");
-  await page.locator('input[type="tel"]').focus();
-  await page.screenshot({
-    path: testInfo.outputPath("ar-owner-access-focus.png"),
-    fullPage: true,
-  });
-});
-
-test("desktop EN administrator access has current pixel evidence", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop");
-  await page.goto("/en/administrator/access");
-  await page.screenshot({
-    path: testInfo.outputPath("en-administrator-access.png"),
-    fullPage: true,
-  });
-});
-
-test("visual-only synthetic pending and file-control fixture", async ({
-  page,
-}, testInfo) => {
-  // Application hydration must not replace manually inserted visual-only DOM.
-  await page.route("**/*", (route) =>
-    route.request().resourceType() === "script"
-      ? route.abort()
-      : route.continue(),
-  );
-  await page.goto("/en/administrator/access");
-  await page.evaluate(() => {
-    const panel = document.querySelector(".access-panel");
-    if (!panel) throw new Error("Access panel is unavailable");
-    const label = document.createElement("label");
-    label.textContent = "Synthetic verification file";
-    const input = document.createElement("input");
-    input.type = "file";
-    input.className = "form-control";
-    input.setAttribute("aria-label", "Synthetic verification file");
-    label.appendChild(input);
-    panel.appendChild(label);
-  });
-  await page.getByRole("button", { name: "Continue" }).evaluate((element) => {
-    element.setAttribute("aria-busy", "true");
-    (element as HTMLButtonElement).disabled = true;
-  });
-
-  await expect(page.getByLabel("Synthetic verification file")).toHaveAttribute(
-    "type",
-    "file",
-  );
-  await page.screenshot({
-    path: testInfo.outputPath("visual-only-synthetic-pending-file.png"),
-    fullPage: true,
-  });
 });

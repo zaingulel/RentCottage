@@ -98,10 +98,6 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
       await page.locator("html").evaluate((element) => element.clientWidth),
     );
 
-    await page.screenshot({
-      path: `test-results/owner-sign-in-${testInfo.project.name}-${locale}.png`,
-      fullPage: true,
-    });
     await page.keyboard.press("Tab");
     await expect(header.getByRole("link", { name: copy.brand })).toBeFocused();
     for (const language of ["العربية", "کوردی", "English"]) {
@@ -129,19 +125,11 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
     await page.keyboard.press("Tab");
     await expect(ownerLink).toBeFocused();
     await expect(ownerLink).toHaveCSS("outline-style", "solid");
-    await page.screenshot({
-      path: `test-results/owner-sign-in-${testInfo.project.name}-${locale}-focused.png`,
-      fullPage: true,
-    });
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(copy.href);
     await expect(
       page.getByRole("heading", { name: copy.heading }),
     ).toBeVisible();
-    await page.screenshot({
-      path: `test-results/shared-access-${testInfo.project.name}-${locale}.png`,
-      fullPage: true,
-    });
   }
 
   if (testInfo.project.name === "mobile") {
@@ -153,10 +141,6 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
         document: document.documentElement.scrollWidth,
       }));
       expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
-      await page.screenshot({
-        path: `test-results/owner-sign-in-mobile-320-${locale}.png`,
-        fullPage: true,
-      });
       await expect(
         page
           .getByRole("banner")
@@ -241,12 +225,6 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
     await expect(page.getByRole("main").locator("form")).toHaveCount(0);
     await expect(page.getByRole("main").getByRole("textbox")).toHaveCount(0);
     await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath(
-        `support-${testInfo.project.name}-${locale}.png`,
-      ),
-      fullPage: true,
-    });
     const language = page.getByRole("navigation", { name: labels.language });
     const nextLocale = locale === "en" ? "ar" : locale === "ar" ? "ckb" : "en";
     await language
@@ -294,10 +272,6 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
           ),
         )
         .toBeLessThanOrEqual(0);
-      await page.screenshot({
-        path: testInfo.outputPath(`support-mobile-320-${locale}.png`),
-        fullPage: true,
-      });
     }
   }
 });
