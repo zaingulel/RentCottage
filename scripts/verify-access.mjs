@@ -1293,12 +1293,6 @@ export async function main(
         if (workerBrowser.status !== 0) return workerBrowser.status;
       }
       if (ownedJourneysMode || partition === "worker") return 0;
-      const scheduledExpirySeed = await execute(
-        "node",
-        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
-        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (scheduledExpirySeed.status !== 0) return scheduledExpirySeed.status;
       const scheduledExpiryArgs = [
         "playwright",
         "test",

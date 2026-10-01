@@ -182,7 +182,6 @@ const browserCommands = [
       "--output=playwright-report/access-worker",
     ],
   ],
-  ["node", ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"]],
   [
     "npx",
     [
@@ -3160,9 +3159,6 @@ setInterval(() => {}, 1000);
       expect(commands(run).some(([, args]) => args[0] === failedScript)).toBe(
         true,
       );
-      expect(commands(run).some(([, args]) => args.at(-1) === "--verify")).toBe(
-        false,
-      );
     }
   });
 
@@ -3558,10 +3554,6 @@ setInterval(() => {}, 1000);
 
     for (const [command, args] of [
       ["node", ["scripts/verify-account-access-concurrency.mjs"]],
-      [
-        "node",
-        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--seed"],
-      ],
       [
         "node",
         ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
