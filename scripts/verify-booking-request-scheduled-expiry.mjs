@@ -46,7 +46,7 @@ declare prepared_request_id uuid; declare request_notice public.booking_notifica
 declare lease jsonb; declare binding jsonb; declare delivery jsonb; declare effect_id uuid; declare due_request_id uuid;
 declare identity jsonb := '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
 begin
-  select profiles.id as profile_id, profiles.current_shift_schedule_id as schedule_id, shifts.id as shift_id,
+  select profiles.current_shift_schedule_id as schedule_id, shifts.id as shift_id,
       listings.public_slug as slug, shifts.position as shift_position, current_date + 30 as service_day
     into strict cottage
     from public.cottage_marketplace_listings listings
