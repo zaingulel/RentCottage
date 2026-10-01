@@ -64,10 +64,7 @@ const lockedDependencyVersions = {
 };
 
 export function requiredCiSteps(mode) {
-  const chromium = [
-    "npx",
-    ["playwright", "install", "--with-deps", "chromium"],
-  ];
+  const chromium = ["npx", ["playwright", "install", "chromium"]];
   if (mode === "--database")
     return [["npm", ["run", "verify:access:database"]]];
   if (mode === "--browser")

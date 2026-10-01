@@ -818,7 +818,7 @@ export function main(
 
   const preparation =
     browser && selectedBrowser && environment.GITHUB_ACTIONS === "true"
-      ? [["npx", ["playwright", "install", "--with-deps", "chromium"]]]
+      ? [["npx", ["playwright", "install", "chromium"]]]
       : [];
   const prefixSteps = [
     ...(baseline ? baselineVerificationSteps : []),
