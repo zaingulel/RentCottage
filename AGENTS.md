@@ -22,12 +22,15 @@ active, divergent or uncertain checkout is preserved.
 Each job gets one worktree and the session starts inside it, never a worktree inside another job worktree; the
 `resume` skill says where it lives on each runtime.
 
-The session that talks to the owner coordinates: it plans the cards that need no architect, hands every edit to
-a builder seat, settles reviews, and delivers; it never builds. Residual judgment that would make a handoff
-unreliable is resolved in the plan or the slice is split smaller. The costliest model of each family, Fable on
-Claude and Astra on Codex, is reached only through the `architect`, `oracle` and `security-reviewer` seats; the
-session and the builders run on the tier below. Every subagent is one of the named seats above, dispatched by its
-seat name; a generic, default or unnamed role is never dispatched.
+The session that talks to the owner coordinates: it plans the cards that need no architect, hands every edit to a
+builder seat, settles reviews, and delivers; it never builds. Residual judgment that would make a handoff
+unreliable is resolved in the plan or the slice is split smaller. In every session, job or not, discovery wider
+than a couple of files goes to the `explorer` seat, so its conclusion reaches the main thread and its file dumps do
+not. The costliest Claude model, Fable, is reached only through the `oracle` and `security-reviewer` seats, and the
+costliest Codex model, Astra, only through the
+`architect`, `oracle` and `security-reviewer` seats; the session and the builders run on the tier below. Every
+subagent is one of the named seats above, dispatched by its seat name; a generic, default or unnamed role is never
+dispatched.
 
 A Codex session waiting on a helper calls `wait_agent` with `timeout_ms: 3600000`, the maximum: the call returns
 the moment a helper finishes, so a shorter timeout only adds wake-ups, and the session never sleeps and checks in a

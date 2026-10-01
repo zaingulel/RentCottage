@@ -90,10 +90,16 @@ esac
       executable(eslint, '#!/bin/sh\nexit 0\n');
     }
 
+    const gate = join(repo, 'scripts', 'gates', 'pre-push-main');
     if (options.gate !== undefined) {
-      const gate = join(repo, 'scripts', 'gates', 'pre-push-main');
       mkdirSync(dirname(gate), { recursive: true });
       executable(gate, `#!/bin/sh\nprintf 'gate\\t%s\\n' "$*" >> "$CALLS"\nexit ${options.gate}\n`);
+    }
+
+    if (options.gateExecutable === false) {
+      mkdirSync(dirname(gate), { recursive: true });
+      // No shebang: Git for Windows judges `-x` by shebang or extension, not by mode.
+      writeFileSync(gate, `printf 'gate\\t%s\\n' "$*" >> "$CALLS"\n`, { mode: 0o644 });
     }
 
     // `input` is the ref lines Git writes to the hook's stdin, one per pushed ref.
@@ -252,5 +258,23 @@ test('pre-push never consults the product gate for other branches', () => {
     const result = run({}, refLine('refs/heads/job/1'));
     assert.equal(result.status, 0, output(result));
     assert.deepEqual(recorded().map((line) => line.split('\t')[0]), ['npm', 'node']);
+  });
+});
+
+test('pre-push consults the product gate for a main ref on any stdin line', () => {
+  withFixture({ gate: 1 }, ({ recorded, run }) => {
+    const result = run({}, `${refLine('refs/heads/job/1')}${refLine('refs/heads/main')}`);
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(recorded(), [`gate\t${REMOTE_SHA} ${LOCAL_SHA}`]);
+  });
+});
+
+test('pre-push refuses a push to main when the product gate is not executable', () => {
+  withFixture({ gateExecutable: false }, ({ recorded, run }) => {
+    const result = run({}, refLine('refs/heads/main'));
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /scripts\/gates\/pre-push-main/);
+    assert.match(result.stderr, /missing or not executable/);
+    assert.deepEqual(recorded(), []);
   });
 });

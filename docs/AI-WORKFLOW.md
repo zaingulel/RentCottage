@@ -68,8 +68,9 @@ Codex at the repository root on each affected platform.
 
 The session that talks to the owner is the orchestrator. It plans the cards that need no architect, delegates
 every edit to a builder seat, reviews, and delivers; it never builds. Each seat has a narrow charter and no more
-tools than the charter needs. The costliest model of each family, Fable on Claude and Astra on Codex, sits only
-in the `architect`, `oracle` and `security-reviewer` seats; the session and the builders run on the tier below.
+tools than the charter needs. The costliest Claude model, Fable, sits only in the `oracle` and
+`security-reviewer` seats, and the costliest Codex model, Astra, only in the `architect`, `oracle` and
+`security-reviewer` seats; the session and the builders run on the tier below.
 
 | Seat | Job | Writes code? |
 |---|---|---|
@@ -100,6 +101,12 @@ flowchart LR
 
 The diagram shows who hands what to whom: the orchestrator is the only seat that talks to every other seat,
 builders receive one slice at a time, and the reviewers report findings back rather than fixing them.
+
+The plan review of a plan-first card runs the `plan-reviewer` charter on the Codex seat, Sol at extra-high effort,
+on both runtimes. A Claude session reaches it through the `cross-review` skill, which runs that charter through
+the Codex command line, read-only, with the card and the plan inlined because that sandbox has no network; a
+Codex session dispatches its own seat. When the Codex seat cannot be reached, the Claude `plan-reviewer` seat,
+Opus at high effort, reviews instead, and the pull request body says so.
 
 A handoff to a builder is a filled copy of `.claude/templates/builder-handoff.md`; to the architect, a filled
 copy of `.agents/templates/planner-handoff.md`. Each names the claim, the construction mode, the exact

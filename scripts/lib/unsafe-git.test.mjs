@@ -10,7 +10,8 @@ import { join, resolve, sep } from 'node:path';
 import { blockReason } from './unsafe-git.mjs';
 
 const REASON_CREATE = "gh pr create without --draft skips the draft review: open it as a draft (--draft/-d) so Greptile reviews it before CI runs";
-const REASON_MERGE = 'gh pr merge without --auto merges whatever the checks say (an admin token is not bound by branch protection); use `gh pr merge --auto --squash <pr>` so GitHub merges only once the required test check is green';
+const REASON_MERGE = 'gh pr merge: only the delivery form `gh pr merge --auto --squash --delete-branch <number>`, alone in its command segment, is allowed; --auto lets GitHub merge once the required test check is green, and because the allow list runs that prefix unprompted anything else in the segment (--admin, a reordered or missing flag, a quoted, substituted or variable word, a wrapper) is refused';
+const REASON_READY = 'gh pr ready: only `gh pr ready <number>` and `gh pr ready <number> --undo`, alone in their command segment, are allowed; the allow list runs that prefix unprompted, so anything else in the segment (a quoted, substituted or variable word, a redirection, a wrapper) is refused';
 const REASON_COMMIT_NO_VERIFY = 'git commit --no-verify skips the pre-commit gates';
 const REASON_PUSH_NO_VERIFY = 'git push --no-verify skips the lint pre-push gate';
 const REASON_PUSH_FORCE = 'git push --force is unsafe (use --force-with-lease for a rebase)';
@@ -71,14 +72,14 @@ test('gh pr create and gh pr merge tolerate -R/--repo in both positions', () => 
   assert.equal(blockReason('gh --repo owner/repo pr merge 406'), REASON_MERGE);
   assert.equal(blockReason('gh pr --repo owner/repo merge 406'), REASON_MERGE);
   assert.equal(blockReason('gh --repo=owner/repo pr merge 406'), REASON_MERGE);
-  // the option must not swallow the draft/auto escape
+  // the option must not swallow the draft escape, and on a merge it is refused whatever follows
   assert.equal(blockReason('gh -R owner/repo pr create --draft --title x'), '');
-  assert.equal(blockReason('gh --repo owner/repo pr merge --auto 406'), '');
+  assert.equal(blockReason('gh --repo owner/repo pr merge --auto 406'), REASON_MERGE);
 });
 
 // ── gh pr merge ─────────────────────────────────────────────────────────────
 
-test('gh pr merge without --auto is blocked, bare, path-qualified, assignment-led, or chained', () => {
+test('gh pr merge outside the delivery form is blocked, bare, path-qualified, assignment-led, or chained', () => {
   const blocked = [
     'gh pr merge 493 --squash',
     'Gh pr merge 493 --squash',
@@ -96,10 +97,99 @@ test('gh pr merge without --auto is blocked, bare, path-qualified, assignment-le
   assert.equal(blockReason('git commit -m "use gh pr merge only through the wrapper"'), '');
   assert.equal(blockReason('gh pr view 493'), '');
   assert.equal(blockReason('gh pr checks 493'), '');
-  // Auto-merge is the supported form: GitHub merges only when the required check is green.
-  assert.equal(blockReason('gh pr merge --auto --squash 493'), '');
-  assert.equal(blockReason('gh pr merge 493 --auto --squash --delete-branch'), '');
-  assert.equal(blockReason('gh --repo someone/example-repository pr merge --auto 493'), '');
+  // The one allowed form is the delivery form: GitHub merges only when the required check is green.
+  assert.equal(blockReason('gh pr merge --auto --squash --delete-branch 493'), '');
+  assert.equal(blockReason('gh pr merge --auto --squash 493'), REASON_MERGE);
+  assert.equal(blockReason('gh pr merge 493 --auto --squash --delete-branch'), REASON_MERGE);
+  assert.equal(blockReason('gh --repo someone/example-repository pr merge --auto 493'), REASON_MERGE);
+});
+
+// The allow list runs the `gh pr ready` and delivery `gh pr merge` prefixes unprompted, so these two
+// rules are the bound on what those prefixes admit: a segment they cannot fully read is refused.
+test('ANTI-REGRESSION: only the exact delivery merge and ready forms pass; every other gh pr merge or gh pr ready form is refused', () => {
+  for (const command of [
+    'gh pr merge --auto --squash --delete-branch 493',
+    'gh pr ready 493',
+    'gh pr ready 493 --undo',
+    'gh pr ready --undo 406',
+    'gh pr ready 493 && gh pr merge --auto --squash --delete-branch 493',
+    'echo "gh pr merge --admin 493"',
+    // Pinned residual: the allow rule does not match a shell wrapper, so this still prompts.
+    "sh -c 'gh pr merge --admin 493'",
+    // Data stays data: a heredoc body, a quoted span with no substitution or with one that invokes
+    // neither, a single-quoted span, and a house-form body carried by a heredoc inside "$(…)".
+    'cat <<EOF\ngh pr merge --admin 1\nEOF',
+    'git commit -m "say $(date): use gh pr view"',
+    "echo 'run $(gh pr merge --admin 1) never'",
+    // Only the substituted text runs: a mention elsewhere in the same span is literal.
+    'git commit -m "ran $(date); then use gh pr merge --auto to deliver"',
+    'gh pr create --draft --body "regenerated with $(date); then gh pr merge --auto --squash --delete-branch 5"',
+    'git commit -m "$(printf x); see gh pr ready --undo"',
+    'git commit -m "`date` then gh pr merge x `date`"',
+    "git commit -m \"$(cat <<'EOF'\nuse `gh pr merge --auto --squash --delete-branch 5` to deliver\nEOF\n)\"",
+    "gh pr create --draft --body \"$(cat <<'EOF'\nuse `gh pr merge --auto --squash --delete-branch 5` to deliver\nEOF\n)\"",
+    // A comment or arithmetic before a delivery form hides nothing and refuses nothing.
+    'echo hi # a comment\ngh pr ready 493',
+    'echo $((1 << 3))\ngh pr merge --auto --squash --delete-branch 493',
+    'echo "$#"',
+  ]) assert.equal(blockReason(command), '', command);
+
+  for (const command of [
+    'gh pr merge --auto --squash --delete-branch 493 --admin',
+    'gh pr merge --auto --squash --delete-branch --admin 493',
+    'gh pr merge 493 --auto --squash --delete-branch',
+    'gh pr merge --auto --squash 493',
+    'gh pr merge --auto --merge --delete-branch 493',
+    'gh pr merge --auto --squash --delete-branch',
+    'gh pr merge --auto --squash --delete-branch 493 494',
+    'gh pr merge --auto --squash --delete-branch "493"',
+    'gh pr merge --auto --squash --delete-branch $PR',
+    'gh pr merge --auto --squash --delete-branch $(cat n)',
+    'gh pr merge --auto --squash --delete-branch 493 "--admin"',
+    'gh pr merge --auto --squash --delete-branch 493 >/dev/null',
+    'gh pr merge --auto --squash --delete-branch 493 # note',
+    'gh -R o/r pr merge --auto --squash --delete-branch 493',
+    'GH_TOKEN=x gh pr merge --auto --squash --delete-branch 493',
+    'timeout 30 gh pr merge --auto --squash --delete-branch 493 --admin',
+    'nohup gh pr merge --admin 493',
+    'xargs gh pr merge --admin',
+    'echo $(gh pr merge --admin 493)',
+    'Gh pr merge --auto --squash --delete-branch 493',
+    '/usr/local/bin/gh pr merge --auto --squash --delete-branch 493',
+    // A lone `&` separates commands with or without a following space.
+    'pwd &gh pr merge --auto --squash --delete-branch 493 -R o/r',
+    'echo &gh pr merge --auto --squash --delete-branch 1 --admin',
+    // A `<<word` or a quote character in a comment or in arithmetic opens no pairing.
+    'echo hi # <<pwd\ngh pr merge --auto --squash --delete-branch 1 --admin\npwd',
+    'echo $((1 << pwd))\ngh pr merge --auto --squash --delete-branch 1 --admin\npwd',
+    "echo hi # don't\ngh pr merge --admin 1\necho 'x'",
+    // A command substitution runs inside double quotes.
+    'gh pr ready 493 && echo "$(gh pr merge --admin 493)"',
+    'echo "`gh pr merge --admin 493`"',
+    'echo "$( cd x && gh pr merge --admin 493)"',
+    'echo "$(echo $(date) && gh pr merge --admin 493)"',
+    'echo "$( (cd x) ; gh pr merge --admin 493)"',
+    // Quote removal makes a quoted command word the word itself.
+    'gh pr "merge" --auto --squash --delete-branch 493 --admin',
+    "gh 'pr' merge 493",
+    '"gh" pr merge 493',
+  ]) assert.equal(blockReason(command), REASON_MERGE, command);
+
+  for (const command of [
+    'gh pr ready',
+    'gh pr ready 493 "$(gh pr merge --admin 493)"',
+    'gh pr ready $(cat n)',
+    'gh pr ready 493 >/dev/null',
+    'gh -R o/r pr ready 493',
+    'timeout 30 gh pr ready 493',
+    'gh pr ready 493 494',
+    'pwd |&gh pr ready 493 -R o/r',
+    'node scripts/board.mjs &gh pr ready 493 --repo o/r',
+    'node scripts/board.mjs # <<pwd\ngh pr ready 1 -R o/r\npwd',
+    'gh pr "ready" 493 -R o/r',
+    'echo "$(gh pr ready 493 -R o/r)"',
+    'echo "see `gh pr ready 493 -R o/r` now"',
+  ]) assert.equal(blockReason(command), REASON_READY, command);
 });
 
 // ── git commit / push --no-verify ───────────────────────────────────────────
@@ -201,7 +291,7 @@ test('a path-qualified git or gh anchors every rule', () => {
   assert.equal(blockReason('/usr/bin/git push --force'), REASON_PUSH_FORCE);
   assert.equal(blockReason('/usr/local/bin/git filter-branch --tree-filter x'), REASON_FILTER_BRANCH);
   assert.equal(blockReason('/usr/local/bin/gh pr create --draft --title x'), '');
-  assert.equal(blockReason('/usr/local/bin/gh pr merge --auto 406'), '');
+  assert.equal(blockReason('/usr/local/bin/gh pr merge --auto 406'), REASON_MERGE);
   assert.equal(blockReason('echo "/usr/bin/env gh pr merge 1"'), '');
 });
 
@@ -241,7 +331,7 @@ test('a capitalised git or gh name is refused exactly as the lowercase form', ()
   // the escape flags are matched exactly as before: a capitalised name does not loosen them
   assert.equal(blockReason('Git push --force-with-lease'), '');
   assert.equal(blockReason('GH pr create --draft --title x'), '');
-  assert.equal(blockReason('GH pr merge --auto 493'), '');
+  assert.equal(blockReason('GH pr merge --auto 493'), REASON_MERGE);
   // the root-checkout rule anchors on the same name; `CD` is not a relocation, so the walk stays put
   const inRoot = { cwd: '/root', isRootCheckout: (dir) => dir === '/root', platform: process.platform };
   assert.equal(blockReason('Git checkout -b job/1188', inRoot), blockReason('git checkout -b job/1188', inRoot));
@@ -310,17 +400,15 @@ test('deheredoc removes only a real heredoc body', () => {
   ];
   for (const [command, reason] of quotedNewlineArgv) assert.equal(blockReason(command), reason, command);
 
-  // Pinned residual: the operator recogniser does not know shell arithmetic, so `$((1 << 3))` opens
-  // a pairing on `3` and a later bare `3` line strips everything between. Pinned as the CURRENT
-  // over-strip ALLOW so a future narrowing shows up here as a red test.
-  assert.equal(blockReason('echo $((1 << 3))\ngit push --force\n3'), '');
-  // Without that terminator line nothing is stripped and the live command still blocks.
+  // A `<<` inside shell arithmetic is a shift and opens no pairing, so a later bare `3` line strips
+  // nothing and the push stays live.
+  assert.equal(blockReason('echo $((1 << 3))\ngit push --force\n3'), REASON_PUSH_FORCE);
   assert.equal(blockReason('echo $((1 << 3))\ngit push --force'), REASON_PUSH_FORCE);
 
   // Operator-line argv is live: a real `--draft` after the operator satisfies the create rule, and a
-  // real `--undo` after it is the ready rule's escape.
+  // heredoc operator inside a `gh pr ready` segment is a redirection the ready rule refuses.
   assert.equal(blockReason('gh pr create --title x <<EOF --draft\nbody\nEOF'), '');
-  assert.equal(blockReason('gh pr ready 1 <<EOF --undo\nbody\nEOF'), '');
+  assert.equal(blockReason('gh pr ready 1 <<EOF --undo\nbody\nEOF'), REASON_READY);
   // Two heredocs on one line: A's body then B's, both inert, even when body B is a bare gated command.
   assert.equal(blockReason('cat <<A <<B\nprose\nA\ngit push --force\nB'), '');
 

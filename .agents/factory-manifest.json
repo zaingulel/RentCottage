@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "7f5ed01b6e466b045baebff8fcb13a1381305a25",
+  "syncedFrom": "13a8d5e17de7063d06babecdfbf2999d4dd20a73",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -27,7 +27,7 @@
     },
     {
       "path": ".agents/skills/cross-review/SKILL.md",
-      "sha256": "8bfd9de96bfd5aff991a8e7b36fa82a198b86038423855f0bd486db1b589af8b"
+      "sha256": "01f80d6fa97e9e5b4b6eef7d84981218a1b426dfb67a6cce904e11636151bac0"
     },
     {
       "path": ".agents/skills/diagnosing-bugs/SKILL.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "7782d75e3c22d391baf064f78fec367095f8a12e6a7123eda6470323e9785cbb"
+      "sha256": "18567730d59ef0bcfb66d9e2826593634e556a521234347e41af15bbba318d4d"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -267,7 +267,7 @@
     },
     {
       "path": ".claude/agents/architect.md",
-      "sha256": "3f65da81593dad6cd6cfd7214ae7138207fdc2da2bc095defcd13a0bc7c62bdc"
+      "sha256": "5d20032c7c1055542d89e9d1681068e762d21df59d1d760166daf854c25039de"
     },
     {
       "path": ".claude/agents/builder-lite.md",
@@ -327,7 +327,7 @@
     },
     {
       "path": ".claude/settings.json",
-      "sha256": "8f56bfc0d5162966fdfc1ea2e3a4edeb81a2dd42f94f10da099f533ad70c0244"
+      "sha256": "8ae234167cc0d3a9b79c9edd49aa6b3e9072ddf0ec12ef8c3ed60f6308b6922d"
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
@@ -351,7 +351,7 @@
     },
     {
       "path": ".claude/skills/cross-review/SKILL.md",
-      "sha256": "8bfd9de96bfd5aff991a8e7b36fa82a198b86038423855f0bd486db1b589af8b"
+      "sha256": "01f80d6fa97e9e5b4b6eef7d84981218a1b426dfb67a6cce904e11636151bac0"
     },
     {
       "path": ".claude/skills/diagnosing-bugs/SKILL.md",
@@ -443,7 +443,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "7782d75e3c22d391baf064f78fec367095f8a12e6a7123eda6470323e9785cbb"
+      "sha256": "18567730d59ef0bcfb66d9e2826593634e556a521234347e41af15bbba318d4d"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -503,7 +503,7 @@
     },
     {
       "path": ".codex/agents/plan-reviewer.toml",
-      "sha256": "e7e1990481755b06ddc271f0c15bffba71170e32b5e5980049ec3cff2a751883"
+      "sha256": "359d8be17b2426b978062bb2e853560797d7b280564fadeaf3b7845819626074"
     },
     {
       "path": ".codex/agents/reviewer.toml",
@@ -575,7 +575,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "2022db9a7ac4212514eea63b22ab6dae1f9808c8cf73d68da0719475dc8832cb"
+      "sha256": "4dddb8b9f8c494ce9989681beb9240116bd843bd0f94ba3fdc896c13e4a397f2"
     },
     {
       "path": "CLAUDE.md",
@@ -583,7 +583,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "134455ed7ae2e9586b0a484815b32abee2fcc6e082da570f12317eb08fb59a32"
+      "sha256": "ec674b723dd1cc6ebc64e230844c17f115131b4d98bdbf21f37d9742b30694ae"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -756,7 +756,7 @@
     },
     {
       "path": "scripts/lib/prepush.test.mjs",
-      "sha256": "a2fe98428ab9217efe031f73bfc091fe0c4c2286d840c175f9ee6e8effcb99fb"
+      "sha256": "cea40b8b3592bd49c355b6023bdde1f17c2c60331755cf8d66991a68f55d1b20"
     },
     {
       "path": "scripts/lib/run-log.test.mjs",
@@ -764,7 +764,7 @@
     },
     {
       "path": "scripts/lib/settings-policy.test.mjs",
-      "sha256": "803d947629b685f4873b2381722fa24e25d3c880cd530d3fc5c81c93d849cbe6"
+      "sha256": "dcdd85534a13bb9039d6bad1f14064fb4b3348b8a83e0d8f4aa567fe7d4d08d4"
     },
     {
       "path": "scripts/lib/sweep-scope-corpus.mjs",
@@ -788,11 +788,11 @@
     },
     {
       "path": "scripts/lib/unsafe-git.mjs",
-      "sha256": "cdce5047cb4ce0311336c0fa99e49052e085e9867d7c63b3856ee93c54ca1275"
+      "sha256": "ee53271878d3436a78668161b169cc192436ca4dc24560666e0af08c1d4cf31d"
     },
     {
       "path": "scripts/lib/unsafe-git.test.mjs",
-      "sha256": "a051ca0fec8a87aedff579b34093fe7b9e6ee6fb0f11e89e0c3d5637a760aa6a"
+      "sha256": "af33f6a4d556e91739f62d71c35fff2a29df6df28bfb3847e762e8bde3d1ad91"
     },
     {
       "path": "scripts/lib/verify-green.test.mjs",
