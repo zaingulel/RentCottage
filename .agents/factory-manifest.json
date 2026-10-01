@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "52f3f92ffda612f7a68baf12a1a9496488acdda6",
+  "syncedFrom": "7f5ed01b6e466b045baebff8fcb13a1381305a25",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "790cf7e4eabba2ca68ef5b9d87996b62bffb2163b2158bd6ab5e2a3583df6b8c"
+      "sha256": "7782d75e3c22d391baf064f78fec367095f8a12e6a7123eda6470323e9785cbb"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -443,7 +443,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "790cf7e4eabba2ca68ef5b9d87996b62bffb2163b2158bd6ab5e2a3583df6b8c"
+      "sha256": "7782d75e3c22d391baf064f78fec367095f8a12e6a7123eda6470323e9785cbb"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -487,11 +487,11 @@
     },
     {
       "path": ".codex/agents/builder-max.toml",
-      "sha256": "4e8ab916021c93f356250fbb62765ef1fd73ed745287a10d07ba0310c6b3d13d"
+      "sha256": "6cb6acf359bcf814dfe38075182dcfbf0d95d7ac88cf9de6032c032aec2469f5"
     },
     {
       "path": ".codex/agents/builder.toml",
-      "sha256": "6ee5115924665e6014eb07b9fb9f8a588c5a82a1df9f8cec99fe5d6abf0b4385"
+      "sha256": "14ea21a9804efc4d81e123aaa4c694ecdb8081bd2cf128b062057dc4f83f9e44"
     },
     {
       "path": ".codex/agents/explorer.toml",
@@ -503,11 +503,11 @@
     },
     {
       "path": ".codex/agents/plan-reviewer.toml",
-      "sha256": "b51fb89e160c96f6fa05160940cfd9b6fdc18ab6b36b6f20fc98ec7728e34166"
+      "sha256": "e7e1990481755b06ddc271f0c15bffba71170e32b5e5980049ec3cff2a751883"
     },
     {
       "path": ".codex/agents/reviewer.toml",
-      "sha256": "5dec263c9bacde4dba4eb36d348763fff91840937fbdf2cac560e76414bc3a8a"
+      "sha256": "f03c9c77e6fc72af7d42f4532150c837e75b78d7b4c41ba0685f763c560469e2"
     },
     {
       "path": ".codex/agents/security-reviewer.toml",
@@ -583,7 +583,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "e4b53f7ffd5789bd7a8916e14cbd91cbca502ceaf121885b0f1a217d1b096009"
+      "sha256": "134455ed7ae2e9586b0a484815b32abee2fcc6e082da570f12317eb08fb59a32"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -664,11 +664,11 @@
     },
     {
       "path": "scripts/lib/cli-flags.mjs",
-      "sha256": "659f620a3ddf5aa5425868236e06b68f97e0ff82d5e57cd31145850267731501"
+      "sha256": "3cc8e59b65511c9c52b6c2d9dd6fc39a2f177d6cdf7d3f0e3294ed9a55b4da6b"
     },
     {
       "path": "scripts/lib/cli-flags.test.mjs",
-      "sha256": "e588c466b05b3d48e58c20606c4a52272eeba144c9cc8d14c07d648cdb4332c6"
+      "sha256": "6c7fb14a3372143d7572508993e31f8bc1d2fd1cb5895c016c3cd2796a7a1868"
     },
     {
       "path": "scripts/lib/codex-hook-adapters.mjs",
