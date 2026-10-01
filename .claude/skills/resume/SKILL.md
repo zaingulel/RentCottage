@@ -43,7 +43,7 @@ available, report board freshness unavailable rather than presenting stale local
   commits `<rev>`, size prints tooling files, tooling lines, test files and test lines:
   `git grep -c -e '^' <rev> -- scripts tools .claude/hooks .codex/hooks .githooks | awk -F: '{ if ($(NF-1) ~ /\.test\./) { tf++; tl+=$NF } else { f++; l+=$NF } } END { print f+0, l+0, tf+0, tl+0 }'`
   and the declaration count is
-  `git grep -c -E 'test\.setTimeout\(|test\.slow\(|describe\.configure\(\{[^}]*timeout|^[[:space:]]*(test|it|describe)\([^;]*\{[[:space:]]*timeout:' <rev> -- tests scripts tools | awk -F: '{ s+=$NF } END { print s+0 }'`.
+  `git grep -c -E 'test\.setTimeout\(|test\.slow\(|[Ii]nfo(\(\))?\.(setTimeout|slow)\(|describe\.configure\(\{[^}]*timeout|^[[:space:]]*(test|it|describe)\([^;]*\{[[:space:]]*timeout:' <rev> -- tests scripts tools | awk -F: '{ s+=$NF } END { print s+0 }'`.
   A directory absent from a tree counts zero. When `rev-list` prints nothing or `git cat-file -e <rev>` fails, that
   commit's half is reported unavailable, never as zero.
 - A branch with an open draft pull request is unfinished work. Read its body: the "Not done" section says

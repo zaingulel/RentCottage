@@ -109,9 +109,8 @@ Every seat that plans, designs, builds or reviews code reads `docs/CODING-STANDA
 plan follows it, the orchestrator's short plan for a card with no architect included. The standards are more than a
 builder's style guide: they also set what a test or tool may cost, and that choice is made in the plan. A builder
 cannot change a plan once it arrives, so a standard read only by the builder and the reviewer reaches the work after
-the design it governs is fixed, and a review finding then costs a replan. That happened in an adopter, where an
-architect set a test design and the plan-reviewer passed it without either having seen the cost rules. Only the
-`explorer`, which locates code and judges nothing, is exempt.
+the design it governs is fixed, and a review finding then costs a replan. Only the `explorer`, which locates code and
+judges nothing, is exempt.
 
 ## The two owner gates
 

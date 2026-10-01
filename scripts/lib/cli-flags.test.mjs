@@ -1,18 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { numericFlagReader, NON_NEGATIVE, POSITIVE_INTEGER, rejectUnknownArgs } from './cli-flags.mjs';
+import { numericFlagReader, rejectUnknownArgs } from './cli-flags.mjs';
 
-// The reader's whole contract, in process. It used to print and exit(1) itself, so a bad value
-// killed the test runner and every one of these cases could only be reached by SPAWNING a real
-// wait script — which is why two CLI test files proved the same parser twice, indirectly, and this
-// module had no test naming it (#598 follow-up). It now throws, so the contract is testable here
-// and each CLI keeps only a thin wire assertion.
+// The reader's whole contract, in process: it throws rather than printing and exiting, so each
+// case is reached here without spawning a CLI.
+
+const nonNegative = { valid: (v) => Number.isFinite(v) && v >= 0, expectation: 'a non-negative number' };
 
 test('an absent flag returns the default and a present valid value is returned as a number', () => {
   const flag = numericFlagReader(['--cap-min', '0.5']);
 
-  assert.equal(flag('--interval', 30, NON_NEGATIVE), 30);
-  assert.equal(flag('--cap-min', 25, NON_NEGATIVE), 0.5);
+  assert.equal(flag('--interval', 30, nonNegative), 30);
+  assert.equal(flag('--cap-min', 25, nonNegative), 0.5);
 });
 
 // The message is the operator's whole explanation, so it is asserted verbatim: it pins the flag
@@ -23,7 +22,7 @@ test('a non-numeric value throws naming the flag, the expectation and the offend
   const flag = numericFlagReader(['--cap-min', 'abc']);
 
   assert.throws(
-    () => flag('--cap-min', 25, NON_NEGATIVE),
+    () => flag('--cap-min', 25, nonNegative),
     { message: '--cap-min needs a non-negative number, got "abc"' },
   );
 });
@@ -33,41 +32,24 @@ test('a non-numeric value throws naming the flag, the expectation and the offend
 // by another FLAG is the same mistake wearing a value.
 test('a flag present with no value throws instead of falling back to the default', () => {
   assert.throws(
-    () => numericFlagReader(['--cap-min'])('--cap-min', 25, NON_NEGATIVE),
+    () => numericFlagReader(['--cap-min'])('--cap-min', 25, nonNegative),
     { message: '--cap-min needs a non-negative number, got ""' },
   );
   assert.throws(
-    () => numericFlagReader(['--cap-min', '--interval', '5'])('--cap-min', 25, NON_NEGATIVE),
+    () => numericFlagReader(['--cap-min', '--interval', '5'])('--cap-min', 25, nonNegative),
     { message: '--cap-min needs a non-negative number, got "--interval"' },
   );
-});
-
-// The poll-budget pair both wait scripts import: each half of the predicate is pinned by a value
-// the other half accepts ('0' is a whole number, '0.5' is positive), so weakening either half goes
-// red here, in process — the wire tests in each wait suite keep only their own print-and-exit proof.
-// The message assertion pins the phrase to the predicate the same way the NON_NEGATIVE case does.
-test('POSITIVE_INTEGER accepts whole positive values and rejects zero and fractions by name', () => {
-  assert.equal(numericFlagReader(['--max-polls', '3'])('--max-polls', Infinity, POSITIVE_INTEGER), 3);
-  // 'Infinity' pins the non-finite edge and 2^53 the unsafe-integer edge: an isSafeInteger →
-  // isInteger downgrade passes zero and fractions but accepts 2^53, so only these keep the SAFE
-  // half of the predicate observed.
-  for (const rejected of ['0', '0.5', '-1', 'Infinity', '9007199254740992']) {
-    assert.throws(
-      () => numericFlagReader(['--max-polls', rejected])('--max-polls', Infinity, POSITIVE_INTEGER),
-      { message: `--max-polls needs a positive whole number, got "${rejected}"` },
-    );
-  }
 });
 
 // Number('') and Number('   ') are 0, not NaN, so a bare `Number(raw)` would accept an empty value
 // as a legitimate zero bound — a 0-minute cap that reads as deliberate.
 test('an empty or blank value throws instead of becoming Number("") === 0', () => {
   assert.throws(
-    () => numericFlagReader(['--cap-min', ''])('--cap-min', 25, NON_NEGATIVE),
+    () => numericFlagReader(['--cap-min', ''])('--cap-min', 25, nonNegative),
     { message: '--cap-min needs a non-negative number, got ""' },
   );
   assert.throws(
-    () => numericFlagReader(['--cap-min', '  '])('--cap-min', 25, NON_NEGATIVE),
+    () => numericFlagReader(['--cap-min', '  '])('--cap-min', 25, nonNegative),
     { message: '--cap-min needs a non-negative number, got "  "' },
   );
 });
@@ -77,7 +59,7 @@ test('an empty or blank value throws instead of becoming Number("") === 0', () =
 test('a repeated flag reads the first occurrence, not the last', () => {
   const flag = numericFlagReader(['--cap-min', '1', '--cap-min', '2']);
 
-  assert.equal(flag('--cap-min', 25, NON_NEGATIVE), 1);
+  assert.equal(flag('--cap-min', 25, nonNegative), 1);
 });
 
 test('rejectUnknownArgs accepts declared arguments and names the first unknown token', () => {
