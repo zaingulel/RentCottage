@@ -1,8 +1,8 @@
 ---
 name: architect
 description: Plan a substantial change before any code is written — approach, grounding, surface assessment, file-level plan. Use for new user-facing behaviour or anything touching the `plan-first` row of the Surfaces table in `AGENTS.md`.
-model: fable
-effort: high
+model: opus
+effort: xhigh
 maxTurns: 90
 permissionMode: plan
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch

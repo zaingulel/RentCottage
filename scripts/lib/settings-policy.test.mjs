@@ -1,8 +1,10 @@
 // settings-policy.test.mjs — the agent-shell permission policy in .claude/settings.json.
 //
 // The allow list is a security policy: every entry runs without a prompt. It must stay the
-// three read-mostly board scripts and the read-only merge watch, and the hook set must stay
-// exactly the guards this repository documents. A widening lands red here instead of green
+// three read-mostly board scripts, the read-only merge watch, and the two delivery commands,
+// `gh pr ready` and `gh pr merge --auto --squash --delete-branch`, whose prefixes the merge and
+// ready rules in scripts/lib/unsafe-git.mjs bound to the exact delivery forms, and the hook set
+// must stay exactly the guards this repository documents. A widening lands red here instead of green
 // (security review on #1122).
 
 import { test } from 'node:test';
@@ -15,12 +17,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const settings = JSON.parse(readFileSync(resolve(ROOT, '.claude/settings.json'), 'utf8'));
 const codexHooks = JSON.parse(readFileSync(resolve(ROOT, '.codex/hooks.json'), 'utf8'));
 
-test('only the board scripts and the merge watch are auto-approved, and nothing is denied by omission', () => {
+test('only the board scripts, the merge watch and the two delivery commands are auto-approved, and nothing is denied by omission', () => {
   assert.deepEqual(settings.permissions.allow, [
     'Bash(node scripts/board.mjs *)',
     'Bash(node scripts/board-move.mjs *)',
     'Bash(node scripts/board-add.mjs *)',
     'Bash(node scripts/merge-watch.mjs *)',
+    'Bash(gh pr ready *)',
+    'Bash(gh pr merge --auto --squash --delete-branch *)',
   ]);
   assert.equal(settings.permissions.deny, undefined);
 });

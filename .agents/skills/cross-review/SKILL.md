@@ -1,6 +1,6 @@
 ---
 name: cross-review
-description: The fresh reviewer pass for a code diff, run by the model family that did not write it, the Codex reviewer seat from a Claude session and the Claude reviewer seat from a Codex session, dispatched as configured, with its usage quoted in the pull request body.
+description: The fresh reviewer pass for a code diff, run by the model family that did not write it, the Codex reviewer seat from a Claude session and the Claude reviewer seat from a Codex session, dispatched as configured, with its usage quoted in the pull request body; and the plan review of a plan-first card, run on the Codex plan-reviewer seat before any build.
 ---
 
 # cross-review
@@ -8,6 +8,9 @@ description: The fresh reviewer pass for a code diff, run by the model family th
 The `resume` skill's review step for the code and sign-off tiers. A writer's own family shares its blind spots,
 so the `reviewer` charter runs on the other family. Both seats carry the same charter; this skill chooses which
 one and how to call it. Plain single commands from the job worktree, read-only, nothing wrapped.
+
+Section 4 carries the other review this skill reaches: the plan review the `resume` skill's Plan step names, run
+on the Codex `plan-reviewer` seat before any build.
 
 ## 1. Dispatch the other family's seat as configured
 
@@ -87,3 +90,87 @@ Copy the usage into the pull request body's Review section as raw fields, never 
 counted twice: for Codex, the `turn.completed` event's `usage` in `events.jsonl` (`input_tokens`,
 `cached_input_tokens`, `output_tokens`, `reasoning_output_tokens`); for Claude, `usage` and `total_cost_usd` in
 `result.json`. A run that fails is reported as failed, never as zero cost.
+
+## 4. Review a plan before the build
+
+The `resume` skill's Plan step sends a plan-first card's fixed plan to the Codex `plan-reviewer` seat,
+`.codex/agents/plan-reviewer.toml`, on both runtimes, and owns what happens when that seat cannot be reached.
+Its settings are read from the seat file and passed unchanged, as in section 1.
+
+**From a Claude session**: plain `codex exec` again. The sandbox has no network, so the prompt carries the
+charter, the card and the whole plan. The charter writes its findings to an assigned file, which the sandbox
+cannot do, so the request assigns none and asks for the JSON object as the final message. `<plan>` is the plan
+file's absolute path and `<out>` is as in section 1. Each step is one command.
+
+1. Read the plan reviewer's `model` and `model_reasoning_effort`, `<model>` and `<effort>`, at run time:
+
+   ```sh
+   grep -E '^(model|model_reasoning_effort) = ' .codex/agents/plan-reviewer.toml
+   ```
+
+2. Start the prompt file with the charter:
+
+   ```sh
+   sed -n '/^developer_instructions = """/,/^"""/p' .codex/agents/plan-reviewer.toml | sed '1d;$d' > <out>/prompt.md
+   ```
+
+3. Append the review request:
+
+   ```sh
+   printf '\nReview the fixed plan for issue #<issue>. Its card, which is your issue snapshot, follows, and the
+   plan follows the card under the heading PLAN UNDER REVIEW. The sandbox has no network and cannot write a file,
+   so use these copies instead of gh, take no output path, and return the JSON object as your final message,
+   followed by the closing line your charter names.\n\n' >> <out>/prompt.md
+   ```
+
+4. Append the card with the command of section 1, step 5, unchanged.
+
+5. Append the plan heading:
+
+   ```sh
+   printf '\n\n# PLAN UNDER REVIEW\n\n' >> <out>/prompt.md
+   ```
+
+6. Append the plan:
+
+   ```sh
+   cat <plan> >> <out>/prompt.md
+   ```
+
+7. Run the plan reviewer:
+
+   ```sh
+   codex exec -m <model> -c model_reasoning_effort=<effort> \
+     -s read-only --skip-git-repo-check --ephemeral --json -o <out>/plan-review.md -C . - \
+     < <out>/prompt.md > <out>/plan-events.jsonl
+   ```
+
+`<out>/plan-review.md` holds the review: the JSON object, then the charter's closing line. A run that exits
+non-zero, or whose last message lacks that closing line, produced no review and is never read as a clean one. It
+is unavailability only when its error output or `<out>/plan-events.jsonl` shows a cause the Plan step names; any
+other failed or capped run is diagnosed and run again.
+
+**From a Codex session**: the seat is this family's own, so dispatch `plan-reviewer` as configured, with the plan
+file's path and the card in the dispatch, asking for the JSON object as the final message because the seat's
+read-only sandbox cannot write its findings file.
+
+**The fallback**, once the Plan step's unavailability rule is met: the Claude `plan-reviewer` seat,
+`.claude/agents/plan-reviewer.md`, as configured. A Claude session dispatches its own seat, with the plan file's
+path, the card and an output path in the dispatch. A Codex session calls the seat by name, as section 1 calls the
+Claude reviewer. It has no shell, so the card is written to a file first:
+
+```sh
+gh issue view <issue> --json title,body,comments \
+  --jq '"# \(.title)\n\n\(.body)\n\n## Comments\n\n" + (.comments | map(.body) | join("\n\n---\n\n"))' > <out>/card.md
+```
+
+```sh
+claude -p --agent plan-reviewer --permission-mode plan --output-format json \
+  "Review the fixed plan at <plan> for issue #<issue>, whose issue snapshot is the file <out>/card.md. Take no output path and return the JSON object as your final message, followed by the closing line your charter names." > <out>/plan-result.json
+```
+
+Quote the review in the pull request body's Review section, below the review line: the seat that reviewed the
+plan, the number of findings at each severity, and its usage. A command-line run's usage is quoted as section 3
+says, from `<out>/plan-events.jsonl` for Codex or `<out>/plan-result.json` for Claude. A natively dispatched
+seat writes neither file: quote the usage the runtime reports for that dispatch, or say that it reported none.
+A plan review is no round of the review line, which counts passes over the tree.

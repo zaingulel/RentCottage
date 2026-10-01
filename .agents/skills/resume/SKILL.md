@@ -127,8 +127,17 @@ disjoint.
 ## 4. Plan
 
 - Plan-first surfaces are the Surfaces table's `plan-first` row. They get an `architect` plan and one read-only
-  `plan-reviewer` pass before any build. Any other card with design choices still open after work-pick gets an
+  plan review before any build. Any other card with design choices still open after work-pick gets an
   `architect` plan. Everything else gets a short plan in the pull request body.
+- The plan review runs the `plan-reviewer` charter on the Codex seat, Sol at extra-high effort, on both runtimes.
+  A Claude session reaches it through `cross-review` section 4, which runs that charter through the Codex command
+  line, read-only, with the card and the plan inlined; a Codex session dispatches its own seat. When the Codex
+  seat cannot be reached, its provider out of usage, unauthenticated or failing, the plan does not wait: the
+  Claude `plan-reviewer` seat, Opus at high effort, reviews instead by the fallback route of that section, and the
+  pull request body records which seat reviewed the plan, that Codex was unavailable and how that was established,
+  and that the Sol extra-high plan review was therefore not met. As in section 6, that recording is the whole of
+  the exception: a substitution the body does not declare is a skip. A plan review that failed or was capped for
+  any other reason is run again, never substituted.
 - Every plan follows `docs/CODING-STANDARDS.md`, the session's own short plan for a card without an architect
   included, because a builder cannot change a plan once it arrives.
 - Every plan, the architect's and the session's own short plan alike, first considers doing less or a native feature,
@@ -143,8 +152,6 @@ disjoint.
   session never narrows such a plan inline or merges slices to fit. A card that came out of a split is never split
   again on a session's own judgment; only the owner starts another split. A parser, state machine, or general
   framework the outcome did not name is a scope change and goes back to the owner before it is built.
-- Discovery wider than a couple of files, while planning or building, goes to the `explorer` seat, so its
-  conclusion reaches the main thread and its file dumps do not.
 - Every coherent claim gets one construction mode from `docs/TESTING-STRATEGY.md`.
 
 ## 5. Build
@@ -203,16 +210,22 @@ Move the card to `Awaiting push`: `node scripts/board-move.mjs <issue> "Awaiting
 `.github/pull_request_template.md` as the pull request body and show it to the owner with the screenshot.
 The owner still sees that same filled body in chat, with the review line at tier `document`; on the direct
 route section 8 describes, that shown body becomes the squash commit's message, since there is no pull request
-to hold it. The owner's yes, or any instruction to
-push, covers every step of section 8: the push, the draft pull request, the `@greptileai` comments, repairs on
-the same branch, rebasing onto `main`, marking ready, and the auto-merge. Nothing in section 8 stops to ask
-again; a public comment there is delivery, not a new action. Push only after it.
+to hold it. The job's own `Closes #<issue>` line is the only closing word in a pull request body or a
+direct-route commit message: GitHub closes, as completed, any issue whose link follows close, fix or resolve in any
+tense, another repository's `owner/repo#N` included. Every other mention, such as a covered sync card or the
+canonical repository's card for a deferred finding, keeps those words from directly before its link. The owner's
+yes, or any instruction to push, covers every step of section 8: the push, the draft pull request, the
+`@greptileai` comments, repairs on the same branch, rebasing onto `main`, marking ready, and the auto-merge. Nothing
+in section 8 stops to ask again; a public comment there is delivery, not a new action. Push only after it.
 
 ## 8. Deliver
 
 After the rebase in step 1, the session checks eligibility for the direct route: record `git rev-parse origin/main`
-as `<origin-main>` and `git rev-parse HEAD` as `<head>`, then run `scripts/gates/pre-push-main <origin-main>
-<head>`; exit 0 means every changed path qualifies for the direct route, exit 1 means the pull request route below.
+as `<origin-main>` and `git rev-parse HEAD` as `<head>`, then check the gate with `test -x
+scripts/gates/pre-push-main`. A repository where that gate is missing or not executable has no direct route: the gate
+is not run and the job takes the pull request route below. Otherwise run `scripts/gates/pre-push-main <origin-main>
+<head>`; exit 0 means every changed path qualifies for the direct route, any other exit means the pull request route
+below.
 On the direct route: settle the convergence checks exactly as step 1 names on `<head>`, so their receipts carry
 `head=<head>`, and those receipts replace any the approved body quoted for an earlier head; nothing else in that
 body changes. Then squash the job with `git reset --soft <origin-main>` and `git commit` into one commit whose

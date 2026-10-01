@@ -2,14 +2,18 @@
 // .codex/hooks/block-unsafe-git.mjs (the PreToolUse(Bash) guards). Extracted so the rules get unit
 // test coverage; each hook stays a thin stdin/stderr/exit-code shell around blockReason().
 //
-// Six plain rules, judged on the actual command segments of an agent's shell call:
+// Eight plain rules, judged on the actual command segments of an agent's shell call:
 //   git commit --no-verify   -> skips the pre-commit gates
 //   git push --no-verify     -> skips the lint pre-push hook
 //   git push --force / -f    -> unsafe overwrite (--force-with-lease is ALLOWED)
 //   git filter-branch        -> history rewrite
 //   gh pr create (no --draft)-> skips the draft review before the metered suite
-//   gh pr merge (no --auto)  -> an admin token merges regardless of checks; --auto lets GitHub
-//                                merge only once the required test check is green
+//   gh pr merge              -> only `gh pr merge --auto --squash --delete-branch <number>`, alone
+//                                in its segment, is allowed: an admin token merges regardless of
+//                                checks, and --auto lets GitHub merge only once the required test
+//                                check is green
+//   gh pr ready              -> only `gh pr ready <number>`, with or without --undo, alone in its
+//                                segment, is allowed
 //   git commit / checkout / switch / branch <new> / merge (not --ff-only) / cherry-pick / revert /
 //   rebase / am in the root checkout
 //                            -> the root is the integration checkout: it stays on main and
@@ -26,6 +30,20 @@
 // accident-catcher for an agent's own plainly written tool calls, not a security boundary.
 // Server-side branch protection is the boundary, and a manual command in your own terminal is not
 // a tool call, so your escape hatch survives.
+// The `gh pr merge` and `gh pr ready` rules are the exception: the allow rules in
+// `.claude/settings.json` run those prefixes unprompted, so these two rules bound what the prefixes
+// admit and fail closed on any segment that invokes either and that they cannot fully read (a
+// quoted word, a variable, a command substitution, a redirection, a wrapper, an assignment prefix,
+// -R/--repo, a path-qualified or capitalised `gh`). They also read four shapes the other rules
+// leave alone: an invocation glued to a lone `&` or `|&`, one that follows a shell comment or
+// arithmetic holding a `<<word` or a quote character, one in a command substitution inside a
+// double-quoted span, and one whose `gh`, `pr`, `merge` or `ready` word is quoted. Residuals, none
+// of which matches the two `gh` allow rules: a `sh -c` or other wrapper string is not looked
+// inside, a substitution that carries a heredoc inside double quotes is not read, and a quoted
+// capitalised or path-qualified name and a partly quoted or backslash-escaped command word are not
+// unquoted, and a `$(…)` inside double quotes whose closing `)` is hidden by a nested quote, a
+// `case` pattern or an unbalanced literal `)` is read only to that early `)`, so an invocation
+// after it is not seen.
 // Executable names (git, gh) are matched case-insensitively: this repository lives on a
 // case-insensitive volume, so `Git push --force` runs the real binary. Only the name is widened;
 // subcommands and flags stay exact (`git COMMIT` is not a command, `-F` is not `-f`), and `cd` stays
@@ -48,24 +66,40 @@ export function blockReason(cmd, checkout) {
   // so an apostrophe in a body cannot poison it, and it queues the operators on one line so
   // `cat <<A <<B` consumes A's body then B's. The terminator test tolerates surrounding blanks and a
   // trailing \r, because a body left visible is the false-block this pass exists to prevent.
+  // A shell comment keeps its `#` and loses its text up to the newline, and a `<<` between `((` and
+  // `))` is an arithmetic shift, so neither opens a pairing or a quoted span.
   // Not modelled, named rather than hidden: a backslash-continued operator line, a `<<\EOF`
-  // delimiter, shell arithmetic (`$((1 << 3))` opens a pairing on `3`), a shell comment, and a
-  // heredoc inside "$(…)", which the shell re-parses and this scan does not re-enter.
+  // delimiter, and a heredoc inside "$(…)", which the shell re-parses and this scan does not
+  // re-enter.
   const HEREDOC_OPERATOR = /^<<-?[ \t]*(['"]?)(\w+)\1/;
   const deheredoc = (() => {
     let out = '';
     let index = 0;
     let inSingle = false;
     let inDouble = false;
+    let inArithmetic = false;
     let pending = [];
     while (index < cmd.length) {
       const ch = cmd[index];
       if (ch === "'" && !inDouble) { inSingle = !inSingle; out += ch; index += 1; continue; }
       if (ch === '"' && !inSingle) { inDouble = !inDouble; out += ch; index += 1; continue; }
+      const unquoted = !inSingle && !inDouble;
+      if (unquoted && ch === '#' && (index === 0 || /[\s;&|(]/.test(cmd[index - 1]))) {
+        const lineEnd = cmd.indexOf('\n', index);
+        out += ch;
+        index = lineEnd === -1 ? cmd.length : lineEnd;
+        continue;
+      }
+      if (unquoted && (ch === '(' || ch === ')') && cmd[index + 1] === ch) {
+        inArithmetic = ch === '(';
+        out += ch + ch;
+        index += 2;
+        continue;
+      }
       if (
         ch === '<' && cmd[index + 1] === '<'
         && cmd[index + 2] !== '<' && cmd[index - 1] !== '<'
-        && !inSingle && !inDouble
+        && unquoted && !inArithmetic
       ) {
         const operator = HEREDOC_OPERATOR.exec(cmd.slice(index));
         if (operator) {
@@ -88,6 +122,19 @@ export function blockReason(cmd, checkout) {
     }
     return out;
   })();
+  // Every rule anchors on the git or gh invocation, path-qualified or bare, after any leading
+  // variable assignments (`GIT_AUTHOR_NAME=x git commit`, `GH_TOKEN=x gh pr merge`).
+  const EXEC_PATH = String.raw`(?:\S*\/)?`;
+  // -R/--repo is inherited by `gh pr`, so it is valid before `pr` or before the subcommand.
+  const GH_REPO_OPT = String.raw`(?:-R\S+|--repo=\S+|(?:-R|--repo)\s+\S+)\s+`;
+  const GH_EXEC = String.raw`${EXEC_PATH}${ci('gh')}`;
+  // Merge and ready are detected anywhere in the segment (after a wrapper, glued to a lone `&`,
+  // inside an unquoted `$(` or backticks), then the whole segment, before assignment stripping, must
+  // be the delivery form.
+  const GH_PR_MERGE = new RegExp(String.raw`(?:^|[\s(\`&])${GH_EXEC}\s+(?:${GH_REPO_OPT})*pr\s+(?:${GH_REPO_OPT})*merge\b`);
+  const GH_PR_READY = new RegExp(String.raw`(?:^|[\s(\`&])${GH_EXEC}\s+(?:${GH_REPO_OPT})*pr\s+(?:${GH_REPO_OPT})*ready\b`);
+  const REASON_MERGE = "gh pr merge: only the delivery form `gh pr merge --auto --squash --delete-branch <number>`, alone in its command segment, is allowed; --auto lets GitHub merge once the required test check is green, and because the allow list runs that prefix unprompted anything else in the segment (--admin, a reordered or missing flag, a quoted, substituted or variable word, a wrapper) is refused";
+  const REASON_READY = "gh pr ready: only `gh pr ready <number>` and `gh pr ready <number> --undo`, alone in their command segment, are allowed; the allow list runs that prefix unprompted, so anything else in the segment (a quoted, substituted or variable word, a redirection, a wrapper) is refused";
   // Blank every quoted span ONCE, before any splitting or matching. A quoted mention is data
   // (`git commit -m "mentions --no-verify"`, a PR body citing `--draft`), and blanking a quoted
   // newline keeps a multi-line body from stranding a later `--draft` in its own segment. `[^"]` and
@@ -97,28 +144,52 @@ export function blockReason(cmd, checkout) {
   // for relocate(). Planted inside the one pass so quote pairing stays the blanker's own: a separate
   // scan once paired an apostrophe inside a double-quoted span with a later single quote and
   // swallowed live argv (pinned by test).
+  // Two readings serve the merge and ready rules alone. Quote removal makes `"merge"` the word
+  // `merge`, so a quoted span that is exactly one of their four command words is unquoted first; no
+  // other quoted word is, because a quoted `--draft` or `--force` is data. And a double-quoted span
+  // runs only what its `$(…)`, read to the matching `)`, or its backtick pair holds, so a merge or
+  // ready invocation in that substituted text is live and its reason is kept for the end of the
+  // segment walk, while the rest of the span stays data; a span carrying a heredoc operator is a
+  // message body and is left as data.
+  let substitutedReason = '';
   const quotedPaths = [];
-  const sanitized = deheredoc.replace(/'[^']*'|"[^"]*"/g, (span, offset, whole) => (
-    /(?:^|[\s;&|(])(?:cd|-C)[ \t]+$/.test(whole.slice(0, offset)) && /^(?:[\s;&|)]|$)/.test(whole.slice(offset + span.length))
+  const sanitized = deheredoc.replace(/(['"])(gh|pr|merge|ready)\1/g, '$2').replace(/'[^']*'|"[^"]*"/g, (span, offset, whole) => {
+    if (span[0] === '"' && !span.includes('<<')) {
+      const body = span.slice(1, -1);
+      for (let index = 0; index < body.length; index += 1) {
+        const backtick = body[index] === '`';
+        if (!backtick && !body.startsWith('$(', index)) continue;
+        const start = index + (backtick ? 1 : 2);
+        let end = start;
+        if (backtick) {
+          end = body.indexOf('`', start);
+          if (end === -1) end = body.length;
+        } else {
+          for (let depth = 1; end < body.length; end += 1) {
+            if (body[end] === '(') depth += 1;
+            else if (body[end] === ')' && (depth -= 1) === 0) break;
+          }
+        }
+        const text = body.slice(start, end);
+        substitutedReason ||= (GH_PR_MERGE.test(text) && REASON_MERGE) || (GH_PR_READY.test(text) && REASON_READY) || '';
+        index = end;
+      }
+    }
+    return /(?:^|[\s;&|(])(?:cd|-C)[ \t]+$/.test(whole.slice(0, offset)) && /^(?:[\s;&|)]|$)/.test(whole.slice(offset + span.length))
       ? `␀${quotedPaths.push(span.slice(1, -1)) - 1}␀`
-      : '""'
-  ));
-  // Every rule anchors on the git or gh invocation, path-qualified or bare, after any leading
-  // variable assignments (`GIT_AUTHOR_NAME=x git commit`, `GH_TOKEN=x gh pr merge`).
-  const EXEC_PATH = String.raw`(?:\S*\/)?`;
+      : '""';
+  });
   const GIT_OPT_WITH_ARG = String.raw`(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)\s+\S+\s+`;
   const GIT_EXEC = String.raw`${EXEC_PATH}${ci('git')}`;
   const GIT_INVOCATION_PREFIX = String.raw`^${GIT_EXEC}\s+(?:${GIT_OPT_WITH_ARG}|-\S+\s+)*`;
   const GIT_COMMIT = new RegExp(String.raw`${GIT_INVOCATION_PREFIX}commit\b`);
   const GIT_PUSH = new RegExp(String.raw`${GIT_INVOCATION_PREFIX}push\b`);
   const GIT_FILTER_BRANCH = new RegExp(String.raw`${GIT_INVOCATION_PREFIX}filter-branch\b`);
-  // -R/--repo is inherited by `gh pr`, so it is valid before `pr` or before the subcommand.
-  const GH_REPO_OPT = String.raw`(?:-R\S+|--repo=\S+|(?:-R|--repo)\s+\S+)\s+`;
-  const GH_EXEC = String.raw`${EXEC_PATH}${ci('gh')}`;
-  const GH_PR_MERGE = new RegExp(String.raw`^${GH_EXEC}\s+(?:${GH_REPO_OPT})*pr\s+(?:${GH_REPO_OPT})*merge\b`);
   const GH_PR_CREATE = new RegExp(String.raw`^${GH_EXEC}\s+(?:${GH_REPO_OPT})*pr\s+(?:${GH_REPO_OPT})*create\b`);
+  const DELIVERY_MERGE = /^gh pr merge --auto --squash --delete-branch \d+$/;
+  const DELIVERY_READY = /^gh pr ready (?:\d+(?: --undo)?|--undo \d+)$/;
   const NO_VERIFY = /(?:^|\s)--no-verify(?:\s|=|$)/;
-  const ruleReason = (s) => {
+  const ruleReason = (s, raw) => {
     if (GIT_COMMIT.test(s) && NO_VERIFY.test(s)) {
       return "git commit --no-verify skips the pre-commit gates";
     }
@@ -134,9 +205,13 @@ export function blockReason(cmd, checkout) {
     if (GH_PR_CREATE.test(s) && !/(?:^|\s)(?:--draft|-d)(?:\s|$)/.test(s)) {
       return "gh pr create without --draft skips the draft review: open it as a draft (--draft/-d) so Greptile reviews it before CI runs";
     }
-    // Auto-merge is GitHub's own wait-for-green: the agent's owner-authorised merge is queued, never forced.
-    if (GH_PR_MERGE.test(s) && !/(?:^|\s)--auto(?:\s|=|$)/.test(s)) {
-      return "gh pr merge without --auto merges whatever the checks say (an admin token is not bound by branch protection); use `gh pr merge --auto --squash <pr>` so GitHub merges only once the required test check is green";
+    // Auto-merge is GitHub's own wait-for-green: the agent's owner-authorised merge is queued, never
+    // forced. The allow list runs these two prefixes unprompted, so only the exact forms pass.
+    if (GH_PR_MERGE.test(s) && !DELIVERY_MERGE.test(raw)) {
+      return REASON_MERGE;
+    }
+    if (GH_PR_READY.test(s) && !DELIVERY_READY.test(raw)) {
+      return REASON_READY;
     }
     return '';
   };
@@ -221,15 +296,16 @@ export function blockReason(cmd, checkout) {
   // or ran in a pipeline subshell that moved nothing (`|`). First match wins.
   const parts = sanitized.split(/(\|\||&&|[;\n|])/);
   for (let index = 0; index < parts.length; index += 2) {
-    const s = parts[index].trim().replace(/^(?:\w+=\S*\s+)+/, '');
+    const raw = parts[index].trim();
+    const s = raw.replace(/^(?:\w+=\S*\s+)+/, '');
     const after = parts[index + 1] ?? '';
     const relocation = CD_SEGMENT.exec(s);
     if (relocation && after !== '|') {
       const moved = dirs.map((dir) => relocate(dir, relocation[1]));
       dirs = [...new Set(after === '&&' ? moved : [...dirs, ...moved])];
     }
-    const hit = rootCheckoutReason(s) || ruleReason(s);
+    const hit = rootCheckoutReason(s) || ruleReason(s, raw);
     if (hit) return hit;
   }
-  return '';
+  return substitutedReason;
 }
