@@ -6,7 +6,7 @@ GitHub Issues, native dependencies, and [Project 4](https://github.com/users/zai
 
 ## Conventions
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
+- **Create an issue**: `gh issue create --title "..." --label "type:<epic|feature|task|bug|docs>" --body "..."`. Use a heredoc for multi-line bodies.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
@@ -14,6 +14,23 @@ GitHub Issues, native dependencies, and [Project 4](https://github.com/users/zai
 - **Close**: `gh issue close <number> --comment "..."`
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
+
+## Type labels
+
+Every issue carries exactly one `type:` label, the vocabulary Flowgauge uses, so Flowgauge's Breakdown by type can
+place every item on this board. Labels come only from the repository's existing set (`gh label list`); a skill never
+creates one.
+
+| Label | Issue shape |
+|---|---|
+| `type:epic` | A parent that exists to wrap native sub-issues |
+| `type:feature` | A new user-facing capability, standalone or a child of an epic |
+| `type:task` | A bounded unit of work that adds no user-facing capability: a proof, a chore, research, tooling or a sync |
+| `type:bug` | A defect or regression |
+| `type:docs` | A change to documentation or instruction prose only |
+
+GitHub's default `bug`, `enhancement` and `question` labels are not types; an issue carrying one still needs its
+`type:` label.
 
 ## Pull requests as a triage surface
 
@@ -31,7 +48,7 @@ GitHub shares one number space across issues and PRs, so a bare `#42` may be eit
 
 Publication is complete only when all applicable tracker surfaces agree:
 
-1. Create each GitHub issue with its approved title, detailed acceptance criteria, and configured labels.
+1. Create each GitHub issue with its approved title, detailed acceptance criteria, and its one `type:` label.
 2. Add its approved native GitHub dependency edges.
 3. Add the issue to Project 4 and set its approved `Workstream` and dependency-safe `Status`.
 4. Re-read each issue body, its native dependencies and parent relationship, Project membership, and Project fields from GitHub after the writes, and compare every surface with the approved proposal. Never verify from the request payload or cached local mapping.
