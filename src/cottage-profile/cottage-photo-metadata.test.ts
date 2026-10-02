@@ -165,6 +165,33 @@ describe("Cottage photo metadata removal", () => {
     },
   );
 
+  it.each([
+    [
+      "a JFIF block holding a 1x1 thumbnail and then text",
+      // Version 1.02, dots per inch, 72 by 72, a 1x1 thumbnail of 3 bytes.
+      `ffe000284a46494600010201004800480101a1b2c3${textHex("GPS Null Island 0N 0E")}`,
+      "ffe000104a46494600010201004800480000",
+    ],
+    [
+      "an Adobe block holding text after its colour transform",
+      // Version 100, flags 0x8000 and 0x0000, transform 1.
+      `ffee002341646f626500648000000001${textHex("GPS Null Island 0N 0E")}`,
+      "ffee000e41646f626500648000000001",
+    ],
+  ])(
+    "keeps only the standard fields of a JPEG header block: %s",
+    (_name, block, kept) => {
+      const cleaned = removeCottagePhotoMetadata(
+        fromHex(wrapped(block)),
+        "image/jpeg",
+      );
+
+      if (cleaned.kind !== "cleaned") throw new Error(cleaned.kind);
+      expect(hex(cleaned.bytes)).toBe(wrapped(kept));
+      expect(Buffer.from(cleaned.bytes).includes("Null Island")).toBe(false);
+    },
+  );
+
   it("removes location, device and capture metadata from a PNG and keeps its picture data and orientation", () => {
     const standardColour = pngChunk("sRGB", "00");
     const photo = fromHex(
@@ -346,6 +373,16 @@ describe("Cottage photo metadata removal", () => {
     [
       "an orientation entry holding two values",
       wrapped(exifApp1("4d4d002a0000000800010112000300000002000600060000")),
+      "image/jpeg",
+    ],
+    [
+      "a JFIF block too short for its standard fields",
+      wrapped("ffe0000f4a464946000102010048004800"),
+      "image/jpeg",
+    ],
+    [
+      "an Adobe block too short for its standard fields",
+      wrapped("ffee000d41646f6265006480000000"),
       "image/jpeg",
     ],
     [

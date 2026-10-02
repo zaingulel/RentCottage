@@ -60,12 +60,13 @@ function startsWith(segment: Uint8Array, identifier: string): boolean {
 function keepsJpegSegment(marker: number, segment: Uint8Array): boolean {
   if (marker === 0xfe) return false;
   if (marker < 0xe0 || marker > 0xef) return true;
-  return (
-    (marker === 0xe0 && startsWith(segment, "JFIF\0")) ||
-    (marker === 0xe2 && startsWith(segment, "ICC_PROFILE\0")) ||
-    (marker === 0xee && startsWith(segment, "Adobe"))
-  );
+  return marker === 0xe2 && startsWith(segment, "ICC_PROFILE\0");
 }
+
+// The JFIF and Adobe header blocks are rewritten to their standard 14 and 12 payload bytes.
+const jfifApp0Header = Uint8Array.of(0xff, 0xe0, 0x00, 0x10);
+const jfifNoThumbnail = Uint8Array.of(0x00, 0x00);
+const adobeApp14Header = Uint8Array.of(0xff, 0xee, 0x00, 0x0e);
 
 // Stuffed FF 00, restart markers and fill bytes are entropy-coded data, not the next segment.
 function nextJpegMarker(bytes: Uint8Array, from: number): number {
@@ -116,6 +117,17 @@ function writeCleanedJpeg(
         write(cleaned, jpegExifPrefix);
         write(cleaned, orientationTiff(orientation));
       }
+    } else if (marker === 0xe0 && startsWith(segment, "JFIF\0")) {
+      if (length < 16) return "unreadable";
+      // Identifier, version, units and densities; the thumbnail and anything after it are dropped.
+      write(cleaned, jfifApp0Header);
+      write(cleaned, segment.subarray(4, 16));
+      write(cleaned, jfifNoThumbnail);
+    } else if (marker === 0xee && startsWith(segment, "Adobe")) {
+      if (length < 14) return "unreadable";
+      // Identifier, version, both flag words and the colour transform.
+      write(cleaned, adobeApp14Header);
+      write(cleaned, segment.subarray(4, 16));
     } else if (keepsJpegSegment(marker, segment)) {
       write(cleaned, segment);
     }
@@ -279,8 +291,8 @@ export function removeCottagePhotoMetadata(
   bytes: Uint8Array,
   mediaType: string,
 ): CottagePhotoMetadataRemoval {
-  // Every other write copies a disjoint range of the input, and at most one orientation block is written,
-  // the PNG eXIf chunk being the longest.
+  // Every other write is no longer than the disjoint range of the input it replaces, and at most one
+  // orientation block is written, the PNG eXIf chunk being the longest.
   const cleaned = {
     bytes: new Uint8Array(bytes.length + pngExifChunkLength),
     written: 0,
