@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createHmac } from "node:crypto";
 import { createRequire } from "node:module";
+import { crc32 } from "node:zlib";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -253,6 +254,38 @@ const auditClient = createClient(
   process.env.SUPABASE_SECRET_KEY ?? "",
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
+
+const cleanCottagePhoto = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
+
+function pngChunk(type: string, data: Buffer) {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const typeAndData = Buffer.concat([Buffer.from(type, "latin1"), data]);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(crc32(typeAndData));
+  return Buffer.concat([length, typeAndData, checksum]);
+}
+
+const endOfPngHeader = 33;
+const locatedCottagePhoto = Buffer.concat([
+  cleanCottagePhoto.subarray(0, endOfPngHeader),
+  pngChunk(
+    "eXIf",
+    Buffer.from(
+      "4d4d002a00000008000201120003000000010001000088250004000000010000002600000000000400010002000000024e00000000020005000000030000005c00030002000000024500000000040005000000030000007400000000" +
+        "0000000000000001".repeat(6),
+      "hex",
+    ),
+  ),
+  pngChunk(
+    "tEXt",
+    Buffer.from("Comment\0Fictional location: Null Island 0N 0E", "latin1"),
+  ),
+  cleanCottagePhoto.subarray(endOfPngHeader),
+]);
 
 function assertIsolatedLocalAccessDatabase() {
   const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
@@ -1458,14 +1491,10 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await expect(page.getByLabel("Shift 2 name")).toHaveValue("Evening");
   await expect(page.getByText("08:00 → 02:00 (next day)")).toBeVisible();
 
-  const privatePng = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-    "base64",
-  );
   await page.getByLabel("Choose cottage photo").setInputFiles({
     name: "shaqlawa-orchard-cottage.png",
     mimeType: "image/png",
-    buffer: privatePng,
+    buffer: locatedCottagePhoto,
   });
   await page.getByRole("button", { name: "Upload photo" }).click();
   await expect(page.getByText("Photo uploaded.")).toBeVisible();
@@ -1481,6 +1510,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   const previewResponse = await page.request.get(privatePreviewUrl);
   expect(previewResponse.status()).toBe(200);
   expect(previewResponse.headers()["content-type"]).toContain("image/png");
+  expect(await previewResponse.body()).toEqual(cleanCottagePhoto);
 
   await page.reload();
   await expect(page.getByLabel("Source language")).toHaveValue("en");
@@ -1614,6 +1644,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
 
 test("a Platform Administrator reaches access only after authenticator MFA", async ({
   page,
+  request,
 }, testInfo) => {
   test.setTimeout(180_000);
   const reviewFixture = accessBrowserFixture(testInfo.project.name);
@@ -1798,20 +1829,25 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     if (publicationError) throw publicationError;
     const { data: publicationMedia, error: mediaError } = await auditClient
       .from("cottage_publication_media")
-      .select("opaque_id")
+      .select("opaque_id,object_path")
       .eq("publication_id", publication.id)
       .single();
     if (mediaError) throw mediaError;
+    const { error: locatedUploadError } = await auditClient.storage
+      .from("cottage-profile-photos")
+      .upload(publicationMedia.object_path, locatedCottagePhoto, {
+        contentType: "image/png",
+        upsert: true,
+      });
+    if (locatedUploadError) throw locatedUploadError;
     const opaqueId = publicationMedia.opaque_id;
-    const media = await page.request.get(`/api/cottage-media/${opaqueId}`);
+    const media = await request.get(`/api/cottage-media/${opaqueId}`);
     expect(media.status()).toBe(200);
     expect(media.headers()["content-type"]).toContain("image/png");
     expect(media.headers()["cache-control"]).toContain("private");
     expect(media.headers()["cache-control"]).toContain("no-store");
     expect(media.headers().location).toBeUndefined();
-    expect((await media.body()).subarray(0, 8)).toEqual(
-      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    );
+    expect(await media.body()).toEqual(cleanCottagePhoto);
 
     const { data: publishedArabic, error: publishedArabicError } =
       await auditClient
