@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { readExactPoint, type ExactPoint } from "@/cottage-profile/exact-point";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
@@ -101,14 +101,26 @@ export function CottageLocationFields({
     kind: "idle",
   });
   const latestRequest = useRef(0);
+  const fields = useRef<HTMLDivElement>(null);
   const reading = readExactPoint(latitudeText, longitudeText);
   const invalid = reading.kind !== "empty" && reading.kind !== "valid";
 
-  // A request in flight when the owner edits is abandoned: its result must not replace what they typed.
+  // A request in flight when the owner edits or submits is abandoned: its result must not replace what they typed or sent.
   function clearDeviceLocation() {
     latestRequest.current += 1;
     setDeviceLocation({ kind: "idle" });
   }
+
+  useEffect(() => {
+    const form = fields.current?.closest("form");
+    if (!form) return;
+    function abandonOnSubmit() {
+      latestRequest.current += 1;
+      setDeviceLocation({ kind: "idle" });
+    }
+    form.addEventListener("submit", abandonOnSubmit);
+    return () => form.removeEventListener("submit", abandonOnSubmit);
+  }, []);
 
   function requestDeviceLocation() {
     if (!navigator.geolocation) {
@@ -141,7 +153,7 @@ export function CottageLocationFields({
   }
 
   return (
-    <div className="exact-point-fields">
+    <div ref={fields} className="exact-point-fields">
       <div className="cottage-profile-coordinate-grid">
         <label>
           {copy.latitude}

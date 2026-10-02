@@ -325,4 +325,42 @@ describe("Cottage location fields", () => {
     expect(screen.getByLabelText("Latitude")).toHaveValue("36.5");
     expect(screen.getByRole("button", { name: deviceButton })).toBeEnabled();
   });
+
+  it("discards the result of a request still in flight when the form is submitted", () => {
+    const getCurrentPosition = vi.fn<Geolocation["getCurrentPosition"]>();
+    replaceGeolocation(getCurrentPosition);
+    render(
+      <form aria-label="Cottage profile">
+        <CottageLocationFields
+          locale="en"
+          savedLatitude={null}
+          savedLongitude={null}
+        />
+      </form>,
+    );
+    type("Latitude", "36.5");
+    type("Longitude", "44.4");
+    fireEvent.click(screen.getByLabelText(confirmation));
+
+    fireEvent.click(screen.getByRole("button", { name: deviceButton }));
+    fireEvent.submit(screen.getByRole("form", { name: "Cottage profile" }));
+
+    expect(
+      screen.queryByRole("status", { name: "Device location" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: deviceButton })).toBeEnabled();
+
+    act(() =>
+      getCurrentPosition.mock.calls[0][0]({
+        coords: { latitude: 36.4083334, longitude: 44.3858336, accuracy: 12 },
+      } as GeolocationPosition),
+    );
+
+    expect(screen.getByLabelText("Latitude")).toHaveValue("36.5");
+    expect(screen.getByLabelText("Longitude")).toHaveValue("44.4");
+    expect(screen.getByLabelText(confirmation)).toBeChecked();
+    expect(
+      screen.queryByRole("status", { name: "Device location" }),
+    ).toBeNull();
+  });
 });
