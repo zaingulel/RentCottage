@@ -2,7 +2,14 @@ export type CottagePhotoMetadataRemoval =
   | { kind: "cleaned"; bytes: Uint8Array<ArrayBuffer> }
   | { kind: "unreadable" };
 
-type KeptParts = Uint8Array[] | "unreadable";
+type CleanedLength = number | "unreadable";
+
+type CleanedPhoto = { bytes: Uint8Array<ArrayBuffer>; written: number };
+
+function write(cleaned: CleanedPhoto, part: Uint8Array): void {
+  cleaned.bytes.set(part, cleaned.written);
+  cleaned.written += part.length;
+}
 
 const jpegExifPrefix = Uint8Array.of(
   ...[0xff, 0xe1, 0x00, 0x22, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00],
@@ -74,10 +81,13 @@ function nextJpegMarker(bytes: Uint8Array, from: number): number {
   return -1;
 }
 
-function keptJpegParts(bytes: Uint8Array): KeptParts {
+function writeCleanedJpeg(
+  bytes: Uint8Array,
+  cleaned: CleanedPhoto,
+): CleanedLength {
   if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return "unreadable";
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const kept = [bytes.subarray(0, 2)];
+  write(cleaned, bytes.subarray(0, 2));
   let exifSeen = false;
   let position = 2;
   while (bytes[position] === 0xff) {
@@ -87,8 +97,8 @@ function keptJpegParts(bytes: Uint8Array): KeptParts {
       continue;
     }
     if (marker === 0xd9) {
-      kept.push(bytes.subarray(position, position + 2));
-      return kept;
+      write(cleaned, bytes.subarray(position, position + 2));
+      return cleaned.written;
     }
     // Markers that carry no length cannot stand where a segment is required.
     const hasLength =
@@ -102,16 +112,18 @@ function keptJpegParts(bytes: Uint8Array): KeptParts {
       exifSeen = true;
       const orientation = readExifOrientation(segment.subarray(10));
       if (orientation === "unreadable") return "unreadable";
-      if (orientation !== "none")
-        kept.push(jpegExifPrefix, orientationTiff(orientation));
+      if (orientation !== "none") {
+        write(cleaned, jpegExifPrefix);
+        write(cleaned, orientationTiff(orientation));
+      }
     } else if (keepsJpegSegment(marker, segment)) {
-      kept.push(segment);
+      write(cleaned, segment);
     }
     position = end;
     if (marker === 0xda) {
       const next = nextJpegMarker(bytes, position);
       if (next === -1) return "unreadable";
-      kept.push(bytes.subarray(position, next));
+      write(cleaned, bytes.subarray(position, next));
       position = next;
     }
   }
@@ -137,19 +149,24 @@ function pngChecksum(bytes: Uint8Array): number {
   return ~checksum >>> 0;
 }
 
+const pngExifChunkLength = 38;
+
 function pngExifChunk(orientation: number): Uint8Array {
-  const chunk = new Uint8Array(38);
+  const chunk = new Uint8Array(pngExifChunkLength);
   chunk.set([0x00, 0x00, 0x00, 0x1a, 0x65, 0x58, 0x49, 0x66]);
   chunk.set(orientationTiff(orientation), 8);
   new DataView(chunk.buffer).setUint32(34, pngChecksum(chunk.subarray(4, 34)));
   return chunk;
 }
 
-function keptPngParts(bytes: Uint8Array): KeptParts {
+function writeCleanedPng(
+  bytes: Uint8Array,
+  cleaned: CleanedPhoto,
+): CleanedLength {
   if (!pngSignature.every((byte, index) => bytes[index] === byte))
     return "unreadable";
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const kept = [bytes.subarray(0, 8)];
+  write(cleaned, bytes.subarray(0, 8));
   let exifSeen = false;
   let position = 8;
   // A chunk is a length, a type, the data and a checksum; the checksum is copied, not verified.
@@ -160,8 +177,8 @@ function keptPngParts(bytes: Uint8Array): KeptParts {
       ...bytes.subarray(position + 4, position + 8),
     );
     if (keptPngChunkTypes.has(type)) {
-      kept.push(bytes.subarray(position, end));
-      if (type === "IEND") return kept;
+      write(cleaned, bytes.subarray(position, end));
+      if (type === "IEND") return cleaned.written;
     } else if ((view.getUint8(position + 4) & 0x20) === 0) {
       // An upper-case first letter marks a chunk the picture cannot be decoded without.
       return "unreadable";
@@ -171,16 +188,16 @@ function keptPngParts(bytes: Uint8Array): KeptParts {
         bytes.subarray(position + 8, end - 4),
       );
       if (orientation === "unreadable") return "unreadable";
-      if (orientation !== "none") kept.push(pngExifChunk(orientation));
+      if (orientation !== "none") write(cleaned, pngExifChunk(orientation));
     }
     position = end;
   }
   return "unreadable";
 }
 
-// VP8X is kept too, as a copy whose flags are rewritten.
+// VP8X flags are rewritten in the cleaned photo once the walk knows which metadata stays.
 const keptWebpChunkTypes = new Set([
-  ...["ICCP", "ANIM", "ANMF", "ALPH", "VP8 ", "VP8L"],
+  ...["VP8X", "ICCP", "ANIM", "ANMF", "ALPH", "VP8 ", "VP8L"],
 ]);
 
 // The chunk code EXIF and the little-endian size of the 26-byte orientation TIFF.
@@ -192,7 +209,10 @@ function fourCharacterCode(bytes: Uint8Array, position: number): string {
   return String.fromCharCode(...bytes.subarray(position, position + 4));
 }
 
-function keptWebpParts(bytes: Uint8Array): KeptParts {
+function writeCleanedWebp(
+  bytes: Uint8Array,
+  cleaned: CleanedPhoto,
+): CleanedLength {
   if (
     fourCharacterCode(bytes, 0) !== "RIFF" ||
     fourCharacterCode(bytes, 8) !== "WEBP"
@@ -202,10 +222,7 @@ function keptWebpParts(bytes: Uint8Array): KeptParts {
   const riffSize = view.getUint32(4, true);
   const containerEnd = riffSize + 8;
   if (riffSize < 4 || containerEnd > bytes.length) return "unreadable";
-  // The header and the VP8X chunks are copies, because the cleaned size and flags are written into them.
-  const header = bytes.slice(0, 12);
-  const extendedHeaders: Uint8Array[] = [];
-  const kept: Uint8Array[] = [header];
+  write(cleaned, bytes.subarray(0, 12));
   let exifSeen = false;
   // The XMP flag (0x04) always goes; the EXIF flag (0x08) goes unless an orientation is carried.
   let clearedFlags = 0x0c;
@@ -217,12 +234,8 @@ function keptWebpParts(bytes: Uint8Array): KeptParts {
     const end = position + 8 + size + (size % 2);
     if (end > containerEnd) return "unreadable";
     const code = fourCharacterCode(bytes, position);
-    if (code === "VP8X") {
-      const extendedHeader = bytes.slice(position, end);
-      extendedHeaders.push(extendedHeader);
-      kept.push(extendedHeader);
-    } else if (keptWebpChunkTypes.has(code)) {
-      kept.push(bytes.subarray(position, end));
+    if (keptWebpChunkTypes.has(code)) {
+      write(cleaned, bytes.subarray(position, end));
     } else if (code === "EXIF" && !exifSeen) {
       exifSeen = true;
       const payload = bytes.subarray(position + 4, position + 8 + size);
@@ -232,24 +245,33 @@ function keptWebpParts(bytes: Uint8Array): KeptParts {
       );
       if (orientation === "unreadable") return "unreadable";
       if (orientation !== "none") {
-        kept.push(webpExifHeader, orientationTiff(orientation));
+        write(cleaned, webpExifHeader);
+        write(cleaned, orientationTiff(orientation));
         clearedFlags = 0x04;
       }
     }
     position = end;
   }
-  // Writing the flags of a VP8X chunk too short to hold them changes nothing.
-  for (const extendedHeader of extendedHeaders)
-    extendedHeader[8] &= ~clearedFlags;
-  const cleanedLength = kept.reduce((total, part) => total + part.length, 0);
-  new DataView(header.buffer).setUint32(4, cleanedLength - 8, true);
-  return kept;
+  const cleanedView = new DataView(cleaned.bytes.buffer);
+  // The cleaned chunks are walked again to find each VP8X; one too short to hold the flags keeps its bytes.
+  for (let at = 12; at < cleaned.written; ) {
+    const size = cleanedView.getUint32(at + 4, true);
+    if (size > 0 && fourCharacterCode(cleaned.bytes, at) === "VP8X")
+      cleaned.bytes[at + 8] &= ~clearedFlags;
+    at += 8 + size + (size % 2);
+  }
+  cleanedView.setUint32(4, cleaned.written - 8, true);
+  return cleaned.written;
 }
 
-function keptParts(bytes: Uint8Array, mediaType: string): KeptParts {
-  if (mediaType === "image/jpeg") return keptJpegParts(bytes);
-  if (mediaType === "image/png") return keptPngParts(bytes);
-  if (mediaType === "image/webp") return keptWebpParts(bytes);
+function writeCleanedPhoto(
+  bytes: Uint8Array,
+  mediaType: string,
+  cleaned: CleanedPhoto,
+): CleanedLength {
+  if (mediaType === "image/jpeg") return writeCleanedJpeg(bytes, cleaned);
+  if (mediaType === "image/png") return writeCleanedPng(bytes, cleaned);
+  if (mediaType === "image/webp") return writeCleanedWebp(bytes, cleaned);
   return "unreadable";
 }
 
@@ -257,15 +279,14 @@ export function removeCottagePhotoMetadata(
   bytes: Uint8Array,
   mediaType: string,
 ): CottagePhotoMetadataRemoval {
-  const kept = keptParts(bytes, mediaType);
-  if (kept === "unreadable") return { kind: "unreadable" };
-  const cleaned = new Uint8Array(
-    kept.reduce((total, part) => total + part.length, 0),
-  );
-  let offset = 0;
-  for (const part of kept) {
-    cleaned.set(part, offset);
-    offset += part.length;
-  }
-  return { kind: "cleaned", bytes: cleaned };
+  // Every other write copies a disjoint range of the input, and at most one orientation block is written,
+  // the PNG eXIf chunk being the longest.
+  const cleaned = {
+    bytes: new Uint8Array(bytes.length + pngExifChunkLength),
+    written: 0,
+  };
+  const written = writeCleanedPhoto(bytes, mediaType, cleaned);
+  if (written === "unreadable") return { kind: "unreadable" };
+  // A copy of exactly the cleaned bytes, because the media route sends the whole underlying buffer.
+  return { kind: "cleaned", bytes: cleaned.bytes.slice(0, written) };
 }
