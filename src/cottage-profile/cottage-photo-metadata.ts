@@ -207,10 +207,8 @@ function writeCleanedPng(
   return "unreadable";
 }
 
-// VP8X flags are rewritten in the cleaned photo once the walk knows which metadata stays.
-const keptWebpChunkTypes = new Set([
-  ...["VP8X", "ICCP", "ANIM", "ANMF", "ALPH", "VP8 ", "VP8L"],
-]);
+const webpPictureChunkTypes = new Set(["ALPH", "VP8 ", "VP8L"]);
+const keptWebpChunkTypes = new Set(["ICCP", "ANIM", ...webpPictureChunkTypes]);
 
 // The chunk code EXIF and the little-endian size of the 26-byte orientation TIFF.
 const webpExifHeader = Uint8Array.of(
@@ -219,6 +217,34 @@ const webpExifHeader = Uint8Array.of(
 
 function fourCharacterCode(bytes: Uint8Array, position: number): string {
   return String.fromCharCode(...bytes.subarray(position, position + 4));
+}
+
+// A frame is a 16-byte header then sub-chunks framed like top-level chunks; only its picture is kept.
+function writeCleanedWebpFrame(
+  bytes: Uint8Array,
+  view: DataView,
+  position: number,
+  payloadEnd: number,
+  cleaned: CleanedPhoto,
+): CleanedLength {
+  if (position + 24 > payloadEnd) return "unreadable";
+  const sizeAt = cleaned.written + 4;
+  write(cleaned, bytes.subarray(position, position + 24));
+  for (let at = position + 24; at < payloadEnd; ) {
+    if (at + 8 > payloadEnd) return "unreadable";
+    const size = view.getUint32(at + 4, true);
+    const end = at + 8 + size + (size % 2);
+    if (end > payloadEnd) return "unreadable";
+    if (webpPictureChunkTypes.has(fourCharacterCode(bytes, at)))
+      write(cleaned, bytes.subarray(at, end));
+    at = end;
+  }
+  new DataView(cleaned.bytes.buffer).setUint32(
+    sizeAt,
+    cleaned.written - sizeAt - 4,
+    true,
+  );
+  return cleaned.written;
 }
 
 function writeCleanedWebp(
@@ -238,6 +264,8 @@ function writeCleanedWebp(
   let exifSeen = false;
   // The XMP flag (0x04) always goes; the EXIF flag (0x08) goes unless an orientation is carried.
   let clearedFlags = 0x0c;
+  // VP8X flags are rewritten in the cleaned photo once the walk knows which metadata stays.
+  let extendedHeaderAt: number | undefined;
   let position = 12;
   while (position < containerEnd) {
     if (position + 8 > containerEnd) return "unreadable";
@@ -246,7 +274,19 @@ function writeCleanedWebp(
     const end = position + 8 + size + (size % 2);
     if (end > containerEnd) return "unreadable";
     const code = fourCharacterCode(bytes, position);
-    if (keptWebpChunkTypes.has(code)) {
+    if (code === "VP8X") {
+      // The extended header has a fixed 10-byte payload and appears once.
+      if (extendedHeaderAt !== undefined || size !== 10) return "unreadable";
+      extendedHeaderAt = cleaned.written;
+      write(cleaned, bytes.subarray(position, end));
+    } else if (code === "ANMF") {
+      const payloadEnd = position + 8 + size;
+      if (
+        writeCleanedWebpFrame(bytes, view, position, payloadEnd, cleaned) ===
+        "unreadable"
+      )
+        return "unreadable";
+    } else if (keptWebpChunkTypes.has(code)) {
       write(cleaned, bytes.subarray(position, end));
     } else if (code === "EXIF" && !exifSeen) {
       exifSeen = true;
@@ -264,15 +304,9 @@ function writeCleanedWebp(
     }
     position = end;
   }
-  const cleanedView = new DataView(cleaned.bytes.buffer);
-  // The cleaned chunks are walked again to find each VP8X; one too short to hold the flags keeps its bytes.
-  for (let at = 12; at < cleaned.written; ) {
-    const size = cleanedView.getUint32(at + 4, true);
-    if (size > 0 && fourCharacterCode(cleaned.bytes, at) === "VP8X")
-      cleaned.bytes[at + 8] &= ~clearedFlags;
-    at += 8 + size + (size % 2);
-  }
-  cleanedView.setUint32(4, cleaned.written - 8, true);
+  if (extendedHeaderAt !== undefined)
+    cleaned.bytes[extendedHeaderAt + 8] &= ~clearedFlags;
+  new DataView(cleaned.bytes.buffer).setUint32(4, cleaned.written - 8, true);
   return cleaned.written;
 }
 

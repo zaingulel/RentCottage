@@ -310,6 +310,37 @@ describe("Cottage photo metadata removal", () => {
     },
   );
 
+  it("removes metadata nested in a WebP animation frame and keeps the frame's picture", () => {
+    const place = textHex("Null Island 0N 0E");
+    const photo = fromHex(
+      webp(
+        extendedHeader("02") +
+          webpChunk("ANIM", "ffffffff0000") +
+          webpChunk(
+            "ANMF",
+            // X and Y offsets, width and height less one, a 100 ms duration, then the frame flags.
+            "00000000000000000000000064000000" +
+              webpChunk("XMP ", place) +
+              webpChunk("VP8L", "2f00000010") +
+              webpChunk("GPS ", place),
+          ),
+      ),
+    );
+    // 4 for the WEBP code, then chunks of 18, 14 and 38 bytes; the frame keeps its header and a padded VP8L.
+    const expected =
+      "524946464a00000057454250" +
+      "565038580a00000002000000000000000000" +
+      "414e494d06000000ffffffff0000" +
+      "414e4d461e00000000000000000000000000000064000000" +
+      "5650384c050000002f0000001000";
+
+    const cleaned = removeCottagePhotoMetadata(photo, "image/webp");
+
+    if (cleaned.kind !== "cleaned") throw new Error(cleaned.kind);
+    expect(hex(cleaned.bytes)).toBe(expected);
+    expect(Buffer.from(cleaned.bytes).includes("Null Island")).toBe(false);
+  });
+
   it("returns a WebP container that holds no chunks unchanged", () => {
     const container = fromHex("524946460400000057454250");
 
@@ -472,6 +503,24 @@ describe("Cottage photo metadata removal", () => {
       webp(
         pictureChunk +
           webpChunk("EXIF", "4d4d002a0000000800010112000400000001000000060000"),
+      ),
+    ],
+    [
+      "a second extended header",
+      webp(extendedHeader("00") + extendedHeader("00") + pictureChunk),
+    ],
+    [
+      "an extended header of 9 bytes",
+      webp(`565038580900000000000000000000000000${pictureChunk}`),
+    ],
+    [
+      "an animation frame shorter than its 16-byte header",
+      webp(`${extendedHeader("02")}414e4d460f000000${"00".repeat(16)}`),
+    ],
+    [
+      "an animation frame whose sub-chunk runs past the frame",
+      webp(
+        `${extendedHeader("02")}414e4d461c000000${"00".repeat(16)}5650384c060000002f000000`,
       ),
     ],
   ])("refuses a WebP it cannot read: %s", (_name, photo) => {
