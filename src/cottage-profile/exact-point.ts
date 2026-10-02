@@ -29,8 +29,8 @@ function normalised(text: string): string {
     .trim();
 }
 
-function sixDecimals(value: string): number {
-  return Math.round(Number(value) * 1_000_000) / 1_000_000;
+function sixDecimals(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function within(
@@ -71,16 +71,23 @@ export function readExactPoint(
     pair = [latitudeMatch[1], longitudeMatch[1]];
   }
 
-  const first = sixDecimals(pair[0]);
-  const second = sixDecimals(pair[1]);
+  // The bounds judge the number as entered: rounding first would pull a value just outside inward.
+  const first = Number(pair[0]);
+  const second = Number(pair[1]);
   const { latitude, longitude } = supportedCoordinateBounds;
   if (within(first, latitude) && within(second, longitude)) {
-    return { kind: "valid", point: { latitude: first, longitude: second } };
+    return {
+      kind: "valid",
+      point: { latitude: sixDecimals(first), longitude: sixDecimals(second) },
+    };
   }
   if (within(first, longitude) && within(second, latitude)) {
     return {
       kind: "swapped",
-      corrected: { latitude: second, longitude: first },
+      corrected: {
+        latitude: sixDecimals(second),
+        longitude: sixDecimals(first),
+      },
     };
   }
   return { kind: "outside-bounds" };

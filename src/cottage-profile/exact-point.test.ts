@@ -83,6 +83,30 @@ const readings: [string, string, string, ExactPointReading][] = [
   ["a latitude just above the bounds", "37.400001", "49.2", outsideBounds],
   ["a longitude just below the bounds", "29.0", "38.699999", outsideBounds],
   ["a longitude just above the bounds", "37.4", "49.200001", outsideBounds],
+  [
+    "a latitude that only rounds up to the minimum",
+    "28.9999996",
+    "38.7",
+    outsideBounds,
+  ],
+  [
+    "a latitude that only rounds down to the maximum",
+    "37.4000004",
+    "49.2",
+    outsideBounds,
+  ],
+  [
+    "a longitude that only rounds up to the minimum",
+    "29.0",
+    "38.6999996",
+    outsideBounds,
+  ],
+  [
+    "a longitude that only rounds down to the maximum",
+    "37.4",
+    "49.2000004",
+    outsideBounds,
+  ],
   ["only a latitude", "36.408333", "", { kind: "incomplete" }],
   ["only a longitude", "", "44.385834", { kind: "incomplete" }],
   [
