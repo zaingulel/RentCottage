@@ -2154,8 +2154,16 @@ test("failed administrator sign-in gives no privileged access", async ({
 
 test("anonymous discovery uses live approved inventory and preserves its query", async ({
   page,
+  baseURL,
 }, testInfo) => {
   assertIsolatedLocalAccessDatabase();
+  const requestedOrigins = new Set<string>();
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.protocol !== "data:" && url.protocol !== "blob:") {
+      requestedOrigins.add(url.origin);
+    }
+  });
   const ownerPhoneByProject: Record<string, string> = {
     mobile: "+9647510000000",
     desktop: "+9647510000001",
@@ -2177,7 +2185,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   const { data: profiles, error: profilesError } = await fixtureOwner
     .from("owner_application_cottage_profiles")
     .select(
-      "id,current_publication_id,current_shift_schedule_id,exact_address,private_directions",
+      "id,current_publication_id,current_shift_schedule_id,exact_address,exact_latitude,exact_longitude,private_directions",
     )
     .not("current_publication_id", "is", null)
     .order("updated_at", { ascending: false });
@@ -2250,6 +2258,8 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       slug: `cottage-${profile.id.replaceAll("-", "")}`,
       profileId: profile.id,
       exactAddress: profile.exact_address,
+      exactLatitude: profile.exact_latitude,
+      exactLongitude: profile.exact_longitude,
       privateDirections: profile.private_directions,
       scheduleId: profile.current_shift_schedule_id,
     };
@@ -2260,20 +2270,28 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     typeof fixture!.exactAddress !== "string" ||
     fixture!.exactAddress.trim() === "" ||
     typeof fixture!.privateDirections !== "string" ||
-    fixture!.privateDirections.trim() === ""
+    fixture!.privateDirections.trim() === "" ||
+    typeof fixture!.exactLatitude !== "number" ||
+    typeof fixture!.exactLongitude !== "number"
   ) {
     throw new Error(
-      "Published Cottage Profile fixture needs private address and directions",
+      "Published Cottage Profile fixture needs private address, directions and coordinates",
     );
   }
-  const exactAddress = fixture!.exactAddress;
-  const privateDirections = fixture!.privateDirections;
+  const privateValues = [
+    fixture!.exactAddress,
+    fixture!.privateDirections,
+    String(fixture!.exactLatitude),
+    String(fixture!.exactLongitude),
+  ];
   const expectPrivateValuesAbsent = async () => {
-    await expect(page.locator("body")).not.toContainText(exactAddress);
-    await expect(page.locator("body")).not.toContainText(privateDirections);
+    for (const privateValue of privateValues) {
+      await expect(page.locator("body")).not.toContainText(privateValue);
+    }
     const serializedPage = await page.content();
-    expect(serializedPage).not.toContain(exactAddress);
-    expect(serializedPage).not.toContain(privateDirections);
+    for (const privateValue of privateValues) {
+      expect(serializedPage).not.toContain(privateValue);
+    }
   };
   const waitForFonts = () =>
     page.evaluate(async () => {
@@ -2729,6 +2747,13 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     path: testInfo.outputPath("public-cottage-profile-unavailable.png"),
     fullPage: true,
   });
+  expect(
+    [...requestedOrigins].filter(
+      (origin) =>
+        origin !== new URL(baseURL ?? "invalid:").origin &&
+        origin !== new URL(process.env.SUPABASE_URL ?? "invalid:").origin,
+    ),
+  ).toEqual([]);
 });
 
 registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
