@@ -99,6 +99,7 @@ const password = "Local-test-password-2026";
 const administratorReturnLocales = [
   {
     locale: "en",
+    languageName: "English",
     direction: "ltr",
     accessTitle: "Platform Administrator access",
     email: "Email",
@@ -114,6 +115,7 @@ const administratorReturnLocales = [
   },
   {
     locale: "ar",
+    languageName: "العربية",
     direction: "rtl",
     accessTitle: "دخول مسؤول المنصة",
     email: "البريد الإلكتروني",
@@ -129,6 +131,7 @@ const administratorReturnLocales = [
   },
   {
     locale: "ckb",
+    languageName: "کوردی",
     direction: "rtl",
     accessTitle: "چوونەژوورەوەی بەڕێوەبەری پلاتفۆرم",
     email: "ئیمەیڵ",
@@ -1020,9 +1023,9 @@ test.describe("administrator review return", () => {
     });
   });
 
-  for (const copy of administratorReturnLocales) {
+  for (const [index, copy] of administratorReturnLocales.entries()) {
     for (const entry of ["signed-out", "aal1"] as const) {
-      test(`${copy.locale} ${entry} administrator review return preserves locale and MFA`, async ({
+      test(`${copy.locale} ${entry} administrator review return keeps the chosen language and MFA`, async ({
         page,
       }, testInfo) => {
         test.setTimeout(testInfo.project.name === "worker" ? 240_000 : 120_000);
@@ -1034,7 +1037,21 @@ test.describe("administrator review return", () => {
         await page.context().clearCookies();
 
         if (entry === "signed-out") {
-          await page.goto(queuePath);
+          const origin =
+            administratorReturnLocales[
+              (index + administratorReturnLocales.length - 1) %
+                administratorReturnLocales.length
+            ];
+          await page.goto(`/${origin.locale}/administrator/reviews`);
+          await expect(page).toHaveURL(
+            `/${origin.locale}/administrator/access?returnTo=${encodeURIComponent(`/${origin.locale}/administrator/reviews`)}`,
+          );
+          await expectAdministratorEmailAccess(page, origin);
+          const languageLink = page
+            .getByRole("banner")
+            .getByRole("link", { name: copy.languageName, exact: true });
+          await expect(languageLink).toHaveAttribute("href", accessPath);
+          await languageLink.click();
           await expect(page).toHaveURL(accessPath);
           await expectAdministratorEmailAccess(page, copy);
         } else {
