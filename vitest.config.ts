@@ -4,7 +4,12 @@ import { defaultExclude, defineConfig } from "vitest/config";
 // New or renamed tests stay in the jsdom project until they receive the same review.
 const domainNodeTests = [
   "scripts/local-supabase-concurrency-harness.test.mjs",
+  "scripts/verify-access-cleanup.test.mjs",
+  "scripts/verify-access-command-output.test.mjs",
   "scripts/verify-access-interruption.test.mjs",
+  "scripts/verify-access-modes.test.mjs",
+  "scripts/verify-access-ownership.test.mjs",
+  "scripts/verify-access-partition.test.mjs",
   "scripts/verify-access-retention.test.mjs",
   "scripts/verify.test.mjs",
   "src/access/account-access.test.ts",

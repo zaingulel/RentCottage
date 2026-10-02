@@ -1,0 +1,1028 @@
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+import { describe, expect, it, vi } from "vitest";
+
+import { main } from "./verify-access.mjs";
+import {
+  browserCommands,
+  commands,
+  databaseCheckCommands,
+  databasePreflightCommands,
+  declaredSchemaDiffCommand,
+  localCredentials,
+  mainWithPreparedProject,
+  ownedRun,
+  ownershipCommand,
+  resetCommand,
+  startCommand,
+  statusCommand,
+  stopCommand,
+  successfulRun,
+} from "./verify-access-command-doubles.mjs";
+
+describe("access verification command", () => {
+  it("declares homogeneous concurrency checks serial without changing their command order", () => {
+    const checks = [
+      "verify-account-access-concurrency",
+      "verify-cottage-profile-draft-concurrency",
+      "verify-cottage-shift-schedule-concurrency",
+      "verify-cottage-inventory-concurrency",
+      "verify-booking-period-hold-concurrency",
+      "verify-booking-request-lifecycle-concurrency",
+      "verify-booking-confirmation-notification-concurrency",
+      "verify-booking-preparation-reminder-concurrency",
+      "verify-booking-cancellation-concurrency",
+      "verify-messaging-concurrency",
+      "verify-booking-completion-concurrency",
+      "verify-customer-review-concurrency",
+      "verify-booking-refund-concurrency",
+    ];
+    for (const check of checks) {
+      const source = readFileSync(`scripts/${check}.mjs`, "utf8");
+      expect(source, check).toMatch(
+        new RegExp(
+          `timing: \\s*\\{\\s*check: \\s*"${check}",\\s*isolation: \\s*"serial",?\\s*\\}`,
+        ),
+      );
+    }
+  });
+
+  it("exposes stable standalone database and browser aliases", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+
+    expect(packageJson.scripts["verify:access"]).toBe(
+      "node scripts/verify-access.mjs",
+    );
+    expect(packageJson.scripts["verify:access:database"]).toBe(
+      "node scripts/verify-access.mjs --database",
+    );
+    expect(packageJson.scripts["verify:access:database-tests"]).toBe(
+      "node scripts/verify-access.mjs --database-tests",
+    );
+    expect(packageJson.scripts["verify:access:browser"]).toBe(
+      "node scripts/verify-access.mjs --browser",
+    );
+  });
+
+  it("rejects arguments before starting Docker or Supabase", async () => {
+    const run = vi.fn();
+    const stderr = vi.fn();
+
+    expect(await mainWithPreparedProject(["unexpected"], { run, stderr })).toBe(
+      2,
+    );
+    expect(run).not.toHaveBeenCalled();
+
+    expect(
+      await mainWithPreparedProject(["--database", "--browser"], {
+        run,
+        stderr,
+      }),
+    ).toBe(2);
+    expect(
+      await mainWithPreparedProject(["--database", "--database"], {
+        run,
+        stderr,
+      }),
+    ).toBe(2);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("loads reused messaging cancellation templates before rejecting invalid database identity", () => {
+    const result = spawnSync(
+      process.execPath,
+      [resolve(process.cwd(), "scripts/verify-messaging-concurrency.mjs")],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          SUPABASE_LOCAL_PROJECT: "invalid",
+          SUPABASE_DB_CONTAINER: "invalid",
+          PATH: "",
+        },
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "The guarded local Supabase database identity is invalid.",
+    );
+    expect(result.stderr).not.toMatch(
+      /Missing .*template|Duplicate .*template|unresolved interpolation/,
+    );
+    const summaries = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((record) => record.type === "concurrency-summary");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      check: "verify-messaging-concurrency",
+      isolation: "serial",
+      outcome: "failed",
+      executionMs: null,
+      cleanupMs: null,
+      phaseReasons: {
+        execution: "Phase was not reached.",
+        cleanup: "Phase was not reached.",
+      },
+    });
+    expect(Number.isFinite(summaries[0].setupMs)).toBe(true);
+    expect(summaries[0].setupMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it.each(["forward", "reverse", "retry-proof", undefined])(
+    "runs only the finite owned journey vectors for phase %s after real readiness",
+    async (suppliedPhase) => {
+      const phase = suppliedPhase ?? "forward";
+      const run = successfulRun();
+      const environment =
+        suppliedPhase === undefined
+          ? {}
+          : { ACCESS_JOURNEY_PHASE: suppliedPhase };
+      expect(
+        await mainWithPreparedProject(["--owned-journeys"], {
+          environment,
+          run,
+        }),
+      ).toBe(0);
+      const grep =
+        phase === "retry-proof"
+          ? "a Cottage Owner saves, resumes and submits a complete private application$"
+          : "(?:shared sign-in from the homepage returns a prospective owner to their private application|a Cottage Owner saves, resumes and submits a complete private application|Owner Application keeps evidence controls aligned and accessible in every locale|one account returns to customer bookings, enrolls explicitly and signs out only this device)$";
+      const retries = phase === "retry-proof" ? "--retries=1" : "--retries=0";
+      expect(commands(run)).toEqual([
+        startCommand,
+        ownershipCommand,
+        resetCommand,
+        statusCommand,
+        ...databaseCheckCommands.slice(0, 2),
+        ...browserCommands.slice(0, 2),
+        [
+          "npx",
+          [
+            "playwright",
+            "test",
+            "tests/access.spec.ts",
+            "--project=mobile",
+            "--project=desktop",
+            "--workers=1",
+            retries,
+            "--grep",
+            grep,
+            `--output=playwright-report/owned-next-${phase}`,
+          ],
+        ],
+        ...browserCommands.slice(3, 6),
+        [
+          "npx",
+          [
+            "playwright",
+            "test",
+            "tests/access.spec.ts",
+            "--project=worker",
+            "--config=playwright.worker-prebuilt.config.ts",
+            "--workers=1",
+            retries,
+            "--grep",
+            grep,
+            `--output=playwright-report/owned-worker-${phase}`,
+          ],
+        ],
+        ownershipCommand,
+        stopCommand,
+      ]);
+      for (const [, args, options] of run.mock.calls) {
+        expect(options.env.ACCESS_JOURNEY_PHASE).toBe(
+          args[0] === "scripts/verify-access-fixture-contract.mjs" ||
+            args.includes("--config=scripts/access-journey-fixture.config.ts")
+            ? "boundary"
+            : phase,
+        );
+      }
+      const build = run.mock.calls.find(([command]) => command === "npm");
+      const worker = run.mock.calls.find(([, args]) =>
+        args.includes("--project=worker"),
+      );
+      expect(worker[2].env).toEqual(build[2].env);
+      expect(run.mock.calls.indexOf(build)).toBeLessThan(
+        run.mock.calls.indexOf(worker),
+      );
+    },
+  );
+
+  it.each([
+    { args: ["--owned-journeys"], phase: "ordinary" },
+    { args: ["--owned-journeys"], phase: "boundary" },
+    { args: ["--owned-journeys"], phase: "unknown" },
+    { args: ["--owned-journeys"], phase: "" },
+    { args: [], phase: "forward" },
+    { args: ["--browser"], phase: "reverse" },
+    { args: ["--database"], phase: "retry-proof" },
+    { args: ["--fixture-contract"], phase: "forward" },
+  ])(
+    "rejects phase $phase for $args before creating state or running commands",
+    async ({ args, phase }) => {
+      const makeTemp = vi.fn();
+      const prepareProject = vi.fn();
+      const run = vi.fn();
+      expect(
+        await main(args, {
+          environment: { ACCESS_JOURNEY_PHASE: phase },
+          makeTemp,
+          prepareProject,
+          run,
+          stderr: vi.fn(),
+        }),
+      ).toBe(2);
+      expect(makeTemp).not.toHaveBeenCalled();
+      expect(prepareProject).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["readiness", "worker build"])(
+    "propagates failed owned %s without running its consumers",
+    async (stage) => {
+      const run = ownedRun((command, args) => ({
+        status:
+          (stage === "readiness" &&
+            args.includes(
+              "--config=scripts/access-journey-fixture.config.ts",
+            )) ||
+          (stage === "worker build" && command === "npm")
+            ? 7
+            : 0,
+        stdout:
+          args.slice(0, 4).join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      }));
+      const removeTemp = vi.fn();
+      expect(
+        await mainWithPreparedProject(["--owned-journeys"], {
+          environment: {},
+          makeTemp: () => "/tmp/access-docker",
+          removeTemp,
+          run,
+        }),
+      ).toBe(7);
+      expect(
+        run.mock.calls.some(([, args]) => args.includes("--project=worker")),
+      ).toBe(false);
+      if (stage === "readiness") {
+        expect(
+          run.mock.calls.some(([, args]) => args.includes("--project=mobile")),
+        ).toBe(false);
+      }
+      expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
+      expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+    },
+  );
+
+  it("runs complete database evidence without browser work", async () => {
+    const run = successfulRun();
+
+    expect(
+      await mainWithPreparedProject(["--database"], { environment: {}, run }),
+    ).toBe(0);
+
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      ...databasePreflightCommands,
+      statusCommand,
+      ...databaseCheckCommands,
+      ownershipCommand,
+      stopCommand,
+    ]);
+  });
+
+  it("runs the database tests without the booking and payment concurrency programs", async () => {
+    const run = successfulRun();
+
+    expect(
+      await mainWithPreparedProject(["--database-tests"], {
+        environment: {},
+        run,
+      }),
+    ).toBe(0);
+
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      ...databasePreflightCommands,
+      statusCommand,
+      ...databaseCheckCommands.filter(
+        ([, [script]]) => !script.startsWith("scripts/verify-booking-"),
+      ),
+      ownershipCommand,
+      stopCommand,
+    ]);
+  });
+
+  it.each([
+    {
+      name: "a non-empty declared schema diff",
+      stdout: JSON.stringify({
+        diff: "ALTER TABLE public.booking_requests DROP COLUMN party_size;",
+        dropStatements: [],
+      }),
+      diagnostic: "ALTER TABLE public.booking_requests DROP COLUMN party_size;",
+    },
+    {
+      name: "an unreadable declared schema diff",
+      stdout: "not json",
+      diagnostic: "unreadable declared schema diff",
+    },
+  ])(
+    "fails database evidence on $name before running SQL tests and cleans up",
+    async ({ stdout, diagnostic }) => {
+      const errors = vi.fn();
+      const run = ownedRun((command, args) => ({
+        status: 0,
+        stdout:
+          command === "npx" &&
+          args.slice(0, 6).join(" ") ===
+            "supabase db diff --local --output-format json"
+            ? stdout
+            : command === "npx" &&
+                args.slice(0, 4).join(" ") === "supabase status -o json"
+              ? localCredentials
+              : "",
+      }));
+
+      expect(
+        await mainWithPreparedProject(["--database"], {
+          environment: {},
+          run,
+          stderr: errors,
+        }),
+      ).toBe(1);
+
+      expect(commands(run)).toEqual([
+        startCommand,
+        ownershipCommand,
+        resetCommand,
+        declaredSchemaDiffCommand,
+        ownershipCommand,
+        stopCommand,
+      ]);
+      expect(errors.mock.calls.flat().join("\n")).toContain(diagnostic);
+    },
+  );
+
+  it.each([{ mode: [] }, { mode: ["--database"] }])(
+    "propagates Capture concurrency failure in mode $mode and cleans up",
+    async ({ mode }) => {
+      const run = ownedRun((command, args) => ({
+        status:
+          command === "node" &&
+          args[0] === "scripts/verify-booking-request-capture-concurrency.mjs"
+            ? 7
+            : 0,
+        stdout:
+          command === "npx" &&
+          args.slice(0, 4).join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      }));
+      expect(
+        await mainWithPreparedProject(mode, {
+          environment: {},
+          run,
+          stderr: vi.fn(),
+        }),
+      ).toBe(7);
+      expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
+      expect(
+        run.mock.calls.some(
+          ([, args]) =>
+            args[0] === "playwright" && args.includes("--project=mobile"),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("runs complete browser evidence from fresh fixtures without database checks", async () => {
+    const run = successfulRun();
+
+    expect(
+      await mainWithPreparedProject(["--browser"], { environment: {}, run }),
+    ).toBe(0);
+
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      statusCommand,
+      ...browserCommands,
+      ownershipCommand,
+      stopCommand,
+    ]);
+  });
+
+  it("runs the final scheduled expiry check after a failed scheduled test and keeps the test failure authoritative", async () => {
+    for (const verifyStatus of [0, 7]) {
+      const run = ownedRun((command, args) => ({
+        status: args.includes("tests/worker-scheduled-expiry.spec.ts")
+          ? 5
+          : args.at(-1) === "--verify"
+            ? verifyStatus
+            : 0,
+        stdout:
+          command === "npx" &&
+          args.slice(0, 4).join(" ") === "supabase status -o json"
+            ? localCredentials
+            : "",
+      }));
+      const lines = [];
+      expect(
+        await mainWithPreparedProject(["--browser"], {
+          environment: {
+            GITHUB_ACTIONS: "true",
+            VERIFY_CI_PARTITION: "scheduled",
+          },
+          run,
+          stderr: vi.fn(),
+          stdout: (line) => lines.push(JSON.parse(line)),
+        }),
+      ).toBe(5);
+      expect(commands(run).slice(-4)).toEqual([
+        browserCommands.at(-2),
+        browserCommands.at(-1),
+        ownershipCommand,
+        stopCommand,
+      ]);
+      expect(
+        lines.filter((line) => line.type === "verification-failure"),
+      ).toEqual([
+        {
+          type: "verification-failure",
+          attemptedCommand: ["npx", ...browserCommands.at(-2)[1]],
+          reproduceGroup: ["npm", "run", "verify:access:browser"],
+        },
+      ]);
+    }
+  });
+
+  it("runs only the public Worker fixture contract in focused disposable mode", async () => {
+    const run = ownedRun((command, args) => ({
+      status: 0,
+      stdout:
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
+          ? localCredentials
+          : "",
+    }));
+    const removeTemp = vi.fn();
+
+    expect(
+      await mainWithPreparedProject(["--fixture-contract"], {
+        environment: {},
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp,
+        run,
+      }),
+    ).toBe(0);
+
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      statusCommand,
+      ...databaseCheckCommands.slice(0, 2),
+      ownershipCommand,
+      stopCommand,
+    ]);
+    expect(run.mock.calls[4][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+    });
+    expect(run.mock.calls[5][2].env).toMatchObject({
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+    });
+    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+  });
+
+  it("runs database and browser evidence with local credentials then stops", async () => {
+    const run = ownedRun((command, args) => ({
+      status: 0,
+      stdout:
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
+          ? localCredentials
+          : "",
+    }));
+    const removeTemp = vi.fn();
+
+    expect(
+      await mainWithPreparedProject([], {
+        environment: {
+          EXISTING: "kept",
+          SUPABASE_URL: "http://127.0.0.1:59999",
+          SUPABASE_PUBLISHABLE_KEY: "stale-publishable",
+          SUPABASE_SECRET_KEY: "inherited-secret",
+        },
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp,
+        run,
+      }),
+    ).toBe(0);
+
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      ...databasePreflightCommands,
+      statusCommand,
+      ...databaseCheckCommands,
+      ...browserCommands,
+      ownershipCommand,
+      stopCommand,
+    ]);
+    const optionsFor = (command, args) => {
+      const calls = run.mock.calls.filter(
+        ([actualCommand, actualArgs]) =>
+          actualCommand === command &&
+          actualArgs.length === args.length &&
+          actualArgs.every((argument, index) => argument === args[index]),
+      );
+      expect(calls, `${command} ${args.join(" ")}`).toHaveLength(1);
+      return calls[0][2];
+    };
+    const localEnvironment = {
+      EXISTING: "kept",
+      APP_ENVIRONMENT: "test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+      SUPABASE_PUBLISHABLE_KEY: "local-publishable",
+      SUPABASE_SECRET_KEY: "local-secret",
+      PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
+      SUPABASE_TELEMETRY_DISABLED: "1",
+      DO_NOT_TRACK: "1",
+    };
+    const databaseIdentity = {
+      SUPABASE_DB_CONTAINER: "supabase_db_rentcottage-verification",
+      SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
+    };
+    // Startup remains the first public command, as asserted by the full sequence above.
+    expect(run.mock.calls[0][2].env).toMatchObject({
+      DOCKER_CONFIG: "/tmp/access-docker",
+      DO_NOT_TRACK: "1",
+      EXISTING: "kept",
+      SUPABASE_TELEMETRY_DISABLED: "1",
+    });
+    const ownershipCalls = run.mock.calls.filter(
+      ([command]) => command === "docker",
+    );
+    expect(ownershipCalls).toHaveLength(2);
+    for (const [, , options] of ownershipCalls) {
+      expect(options).toMatchObject({
+        encoding: "utf8",
+        env: {
+          ACCESS_JOURNEY_PHASE: "ordinary",
+          DOCKER_CONFIG: "/tmp/access-docker",
+          DO_NOT_TRACK: "1",
+          EXISTING: "kept",
+          ...databaseIdentity,
+          SUPABASE_TELEMETRY_DISABLED: "1",
+        },
+        maxBuffer: 1024 * 1024,
+      });
+      expect(options).toHaveProperty("input", undefined);
+      expect(options.env).not.toHaveProperty("SUPABASE_URL");
+      expect(options.env).not.toHaveProperty("SUPABASE_PUBLISHABLE_KEY");
+      expect(options.env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    }
+    expect(
+      optionsFor("node", ["scripts/verify-access-fixture-contract.mjs"]).env,
+    ).toMatchObject({ ...localEnvironment, ...databaseIdentity });
+
+    for (const [command, args] of [
+      ["node", ["scripts/verify-account-access-concurrency.mjs"]],
+      [
+        "node",
+        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
+      ],
+    ]) {
+      const { env } = optionsFor(command, args);
+      expect(env).toMatchObject(databaseIdentity);
+      expect(env).not.toHaveProperty("SUPABASE_URL");
+      expect(env).not.toHaveProperty("SUPABASE_PUBLISHABLE_KEY");
+      expect(env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    }
+    for (const script of [
+      "verify-cottage-profile-draft-concurrency",
+      "verify-cottage-inventory-concurrency",
+      "verify-booking-period-hold-concurrency",
+      "verify-booking-request-concurrency",
+      "verify-booking-request-payment-recovery-concurrency",
+      "verify-booking-request-payment-history-concurrency",
+      "verify-booking-confirmation-notification-concurrency",
+      "verify-booking-event-notification-concurrency",
+      "verify-booking-request-notification-concurrency",
+      "verify-booking-preparation-reminder-concurrency",
+      "verify-booking-cancellation-concurrency",
+      "verify-messaging-concurrency",
+      "verify-booking-completion-concurrency",
+      "verify-booking-refund-concurrency",
+      "verify-booking-payout-concurrency",
+      "verify-booking-request-payment-required-expiry-concurrency",
+    ]) {
+      const { env } = optionsFor("node", [`scripts/${script}.mjs`]);
+      expect(env).toMatchObject({
+        ...databaseIdentity,
+        SUPABASE_URL: localEnvironment.SUPABASE_URL,
+        SUPABASE_PUBLISHABLE_KEY: localEnvironment.SUPABASE_PUBLISHABLE_KEY,
+      });
+      expect(env).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    }
+    const scheduleEnvironment = optionsFor("node", [
+      "scripts/verify-cottage-shift-schedule-concurrency.mjs",
+    ]).env;
+    expect(scheduleEnvironment).toMatchObject({
+      SUPABASE_URL: localEnvironment.SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY: localEnvironment.SUPABASE_PUBLISHABLE_KEY,
+    });
+    expect(scheduleEnvironment).not.toHaveProperty("SUPABASE_SECRET_KEY");
+    for (const script of [
+      "verify-booking-request-lifecycle-concurrency",
+      "verify-booking-request-capture-concurrency",
+    ]) {
+      expect(optionsFor("node", [`scripts/${script}.mjs`]).env).toMatchObject({
+        ...localEnvironment,
+        ...databaseIdentity,
+      });
+    }
+    expect(
+      optionsFor("node", [
+        "scripts/prepare-access-test.mjs",
+        "create",
+        "mobile",
+      ]).env,
+    ).toMatchObject(localEnvironment);
+    for (const [command, args] of browserCommands) {
+      if (args[0] === "scripts/prepare-access-test.mjs") {
+        expect(optionsFor(command, args).env).toMatchObject(localEnvironment);
+      } else if (command === "npm" || args[0] === "playwright") {
+        expect(optionsFor(command, args).env).toMatchObject({
+          ...localEnvironment,
+          ...databaseIdentity,
+          NEXTJS_ENV: "test",
+          SUPABASE_PROJECT_REF: "local-test",
+          PLAYWRIGHT_SERVER: args.includes("--project=mobile")
+            ? "next"
+            : "worker",
+        });
+      }
+    }
+    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+  });
+
+  it.each([
+    { status: 7 },
+    { status: null, signal: "SIGTERM" },
+    { status: null, error: new Error("build unavailable") },
+  ])(
+    "blocks prebuilt Worker journeys on a failed build and still cleans up: %j",
+    async (failure) => {
+      const removeTemp = vi.fn();
+      const run = ownedRun((command, args) => {
+        if (command === "npm" && args.join(" ") === "run build:worker")
+          return failure;
+        return {
+          status: 0,
+          stdout:
+            args.slice(0, 4).join(" ") === "supabase status -o json"
+              ? localCredentials
+              : "",
+        };
+      });
+      expect(
+        await mainWithPreparedProject(["--browser"], {
+          environment: {},
+          makeTemp: () => "/tmp/access-docker",
+          removeTemp,
+          run,
+          stderr: vi.fn(),
+        }),
+      ).toBe(failure.status ?? 1);
+      expect(
+        run.mock.calls.some(([, args]) =>
+          args.includes("--config=playwright.worker-prebuilt.config.ts"),
+        ),
+      ).toBe(false);
+      expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
+      expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+    },
+  );
+
+  it("builds Worker access and scheduled expiry once with the same real local bindings", async () => {
+    const run = successfulRun();
+    expect(
+      await mainWithPreparedProject(["--browser"], { environment: {}, run }),
+    ).toBe(0);
+    const builds = run.mock.calls.filter(([command]) => command === "npm");
+    const workers = run.mock.calls.filter(([, args]) =>
+      args.includes("--project=worker"),
+    );
+    expect(builds).toHaveLength(1);
+    expect(builds[0].slice(0, 2)).toEqual(["npm", ["run", "build:worker"]]);
+    expect(workers).toHaveLength(2);
+    for (const worker of workers) {
+      expect(worker[1]).toContain(
+        "--config=playwright.worker-prebuilt.config.ts",
+      );
+      expect(worker[2].env).toEqual(builds[0][2].env);
+      expect(run.mock.calls.indexOf(builds[0])).toBeLessThan(
+        run.mock.calls.indexOf(worker),
+      );
+    }
+    expect(builds[0][2].env).toMatchObject({
+      SUPABASE_SECRET_KEY: "local-secret",
+      NEXTJS_ENV: "test",
+      PLAYWRIGHT_SERVER: "worker",
+    });
+  });
+
+  it("creates the mobile Cottage Owner identity before its concurrency proof", async () => {
+    let mobileIdentityCreated = false;
+    const run = ownedRun((command, args) => {
+      const invocation = [command, ...args].join(" ");
+      if (invocation === "node scripts/prepare-access-test.mjs create mobile") {
+        mobileIdentityCreated = true;
+      }
+      return {
+        status:
+          invocation ===
+            "node scripts/verify-cottage-profile-draft-concurrency.mjs" &&
+          !mobileIdentityCreated
+            ? 9
+            : 0,
+        stdout: invocation.startsWith("npx supabase status -o json ")
+          ? localCredentials
+          : "",
+      };
+    });
+
+    expect(await mainWithPreparedProject([], { environment: {}, run })).toBe(0);
+    expect(mobileIdentityCreated).toBe(true);
+  });
+
+  it("blocks Worker journeys when browser fixture validation fails and still cleans up", async () => {
+    const removeTemp = vi.fn();
+    const run = ownedRun((command, args) => ({
+      status:
+        command === "node" &&
+        args.join(" ") === "scripts/prepare-access-test.mjs validate worker"
+          ? 7
+          : 0,
+      stdout:
+        command === "npx" &&
+        args.slice(0, 4).join(" ") === "supabase status -o json"
+          ? localCredentials
+          : "",
+    }));
+
+    expect(
+      await mainWithPreparedProject(["--browser"], {
+        environment: {},
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp,
+        run,
+      }),
+    ).toBe(7);
+    expect(
+      run.mock.calls.some(
+        ([command, args]) =>
+          command === "npx" &&
+          args.includes("playwright") &&
+          args.includes("--project=worker"),
+      ),
+    ).toBe(false);
+    expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
+    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+  });
+
+  it("reports shared access phase costs and the authoritative failing child group", async () => {
+    const captureCommand = [
+      "node",
+      "scripts/verify-booking-request-capture-concurrency.mjs",
+    ];
+    const nextCommand = [browserCommands[2][0], ...browserCommands[2][1]];
+    const fixtureCommand = [
+      "node",
+      "scripts/verify-access-fixture-contract.mjs",
+    ];
+    const scenarios = [
+      {
+        args: [],
+        failure: captureCommand,
+        recipe: ["npm", "run", "verify:access:database"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+          ...databaseCheckCommands.slice(0, 11),
+        ],
+      },
+      {
+        args: [],
+        failure: nextCommand,
+        recipe: ["npm", "run", "verify:access:browser"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+          ...databaseCheckCommands,
+          ...browserCommands.slice(0, 3),
+        ],
+      },
+      {
+        args: ["--fixture-contract"],
+        failure: fixtureCommand,
+        recipe: ["node", "scripts/verify-access.mjs", "--fixture-contract"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          statusCommand,
+          databaseCheckCommands[0],
+        ],
+      },
+      {
+        args: [],
+        credentials: "secret-invalid-json",
+        recipe: ["npm", "run", "verify:access"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+        ],
+      },
+      {
+        args: [],
+        credentials: JSON.stringify({
+          API_URL: {},
+          PUBLISHABLE_KEY: [],
+          SECRET_KEY: true,
+        }),
+        recipe: ["npm", "run", "verify:access"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          ...databasePreflightCommands,
+          statusCommand,
+        ],
+      },
+      {
+        args: [],
+        schema: "secret-schema-invalid-json",
+        recipe: ["npm", "run", "verify:access:database"],
+        before: [
+          startCommand,
+          ownershipCommand,
+          resetCommand,
+          declaredSchemaDiffCommand,
+        ],
+      },
+      {
+        args: ["--browser"],
+        failure: ["npx", "supabase", "db", "reset", "--local"],
+        prefix: true,
+        recipe: ["npm", "run", "verify:access:browser"],
+        before: [startCommand, ownershipCommand, resetCommand],
+      },
+    ];
+    for (const scenario of scenarios) {
+      let tick = 100;
+      const timestamp = () =>
+        new Date(Date.UTC(2026, 0, 1) + tick).toISOString();
+      const lines = [];
+      const baseRun = successfulRun();
+      const run = vi.fn((command, args, options) => {
+        // Advance time in actual work, including ownership inspections.
+        tick += 7;
+        const vector = [command, ...args];
+        if (
+          scenario.failure &&
+          (scenario.prefix
+            ? vector.slice(0, scenario.failure.length).join("|") ===
+              scenario.failure.join("|")
+            : vector.join("|") === scenario.failure.join("|"))
+        )
+          return { status: 9 };
+        if (args[1] === "status" && scenario.credentials !== undefined)
+          return { status: 0, stdout: scenario.credentials };
+        if (
+          args[1] === "db" &&
+          args[2] === "diff" &&
+          scenario.schema !== undefined
+        )
+          return { status: 0, stdout: scenario.schema };
+        return baseRun(command, args, options);
+      });
+      expect(
+        await mainWithPreparedProject(scenario.args, {
+          environment: { HIDDEN_VALUE: "hidden-environment-value" },
+          makeTemp: () => "/tmp/access-timing",
+          prepareProject: ({ stateRoot }) => {
+            tick += 11;
+            return join(stateRoot, "project");
+          },
+          removeTemp: () => {
+            tick += 3;
+          },
+          run,
+          stderr: vi.fn(),
+          stdout: (line) => lines.push(JSON.parse(line)),
+          monotonicNow: () => tick,
+          utcNow: timestamp,
+        }),
+      ).toBe(scenario.failure ? 9 : 1);
+      expect(commands(run)).toEqual([
+        ...scenario.before,
+        ownershipCommand,
+        stopCommand,
+      ]);
+      const records = lines.filter((line) => line.type === "access-phase");
+      expect(records[0]).toMatchObject({
+        name: "project-preparation",
+        command: null,
+        scope: "shared-setup",
+        durationMs: 11,
+        inclusive: false,
+        startedAt: "2026-01-01T00:00:00.100Z",
+        completedAt: "2026-01-01T00:00:00.111Z",
+      });
+      const commandRecords = records.filter((line) => line.command !== null);
+      expect(
+        commandRecords.map((line) => [line.command[0], line.command.slice(1)]),
+      ).toEqual(commands(run));
+      for (const record of commandRecords) {
+        expect(record.durationMs).toBe(7);
+        expect(
+          Date.parse(record.completedAt) - Date.parse(record.startedAt),
+        ).toBe(7);
+      }
+      expect(
+        lines.filter((line) => line.type === "verification-failure"),
+      ).toEqual([
+        {
+          type: "verification-failure",
+          attemptedCommand: commandRecords.at(-3).command,
+          reproduceGroup: scenario.recipe,
+        },
+      ]);
+      const summary = lines.at(-1);
+      expect(summary).toMatchObject({
+        type: "access-lifecycle",
+        inclusive: true,
+        durationMs: 11 + commands(run).length * 7 + 3,
+        cleanupMs: 17,
+        cleanupReason: null,
+        outcome: { type: "exit", status: scenario.failure ? 9 : 1 },
+      });
+      expect(summary.sharedSetupMs).toBe(
+        records
+          .filter((line) => line.scope === "shared-setup")
+          .reduce((sum, line) => sum + line.durationMs, 0),
+      );
+      expect(summary.checksMs).toBe(
+        records
+          .filter((line) => line.scope === "check")
+          .reduce((sum, line) => sum + line.durationMs, 0),
+      );
+      expect(summary.sharedSetupMs + summary.checksMs + summary.cleanupMs).toBe(
+        summary.durationMs,
+      );
+      expect(JSON.stringify(lines)).not.toMatch(
+        /hidden-environment-value|local-secret|local-publishable|secret-invalid-json|secret-schema-invalid-json/,
+      );
+      if (scenario.failure)
+        expect(commandRecords.at(-3).outcome).toEqual({
+          type: "exit",
+          status: 9,
+        });
+    }
+  });
+});
