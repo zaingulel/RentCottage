@@ -34,7 +34,7 @@ const en = {
   back: "Back to cottages",
   editorTitle: "Cottage Profile",
   completion:
-    "Complete every field and add 1–12 ready photos before submission.",
+    "Complete every required field and add 1–12 ready photos before submission.",
   publicDetails: "Public working-copy details",
   privateLocation: "Private arrival details",
   privateWarning:
@@ -44,7 +44,7 @@ const en = {
   approximateLocation: "Approximate public location",
   approximateLocationHelp:
     "Area only, in words. Never put coordinates or the exact address here; this text is public.",
-  exactAddress: "Exact private address",
+  exactAddress: "Exact private address (optional)",
   latitude: "Latitude",
   longitude: "Longitude",
   pointCheck: "Exact point check",
@@ -158,7 +158,8 @@ const ar: Copy = {
   administratorAccessAction: "أكمل دخول المسؤول",
   back: "العودة إلى الأكواخ",
   editorTitle: "ملف الكوخ",
-  completion: "أكمل جميع الحقول وأضف من 1 إلى 12 صورة جاهزة قبل الإرسال.",
+  completion:
+    "أكمل جميع الحقول المطلوبة وأضف من 1 إلى 12 صورة جاهزة قبل الإرسال.",
   publicDetails: "تفاصيل نسخة العمل العامة",
   privateLocation: "تفاصيل الوصول الخاصة",
   privateWarning:
@@ -168,7 +169,7 @@ const ar: Copy = {
   approximateLocation: "الموقع العام التقريبي",
   approximateLocationHelp:
     "المنطقة فقط، بالكلمات. لا تضع الإحداثيات أو العنوان الدقيق هنا؛ هذا النص عام.",
-  exactAddress: "العنوان الخاص الدقيق",
+  exactAddress: "العنوان الخاص الدقيق (اختياري)",
   latitude: "خط العرض",
   longitude: "خط الطول",
   pointCheck: "التحقق من النقطة الدقيقة",
@@ -281,7 +282,7 @@ const ckb: Copy = {
   back: "گەڕانەوە بۆ کۆتێجەکان",
   editorTitle: "پرۆفایلی کۆتێج",
   completion:
-    "هەموو خانەکان پڕ بکەوە و 1 تا 12 وێنەی ئامادە زیاد بکە پێش ناردن.",
+    "هەموو خانە پێویستەکان پڕ بکەوە و 1 تا 12 وێنەی ئامادە زیاد بکە پێش ناردن.",
   publicDetails: "وردەکارییە گشتییەکانی کۆپی کار",
   privateLocation: "وردەکارییە تایبەتەکانی گەیشتن",
   privateWarning:
@@ -291,7 +292,7 @@ const ckb: Copy = {
   approximateLocation: "شوێنی گشتی نزیکەیی",
   approximateLocationHelp:
     "تەنها ناوچە، بە وشە. هەرگیز کۆئۆردینات یان ناونیشانی ورد لێرە مەنووسە؛ ئەم دەقە گشتییە.",
-  exactAddress: "ناونیشانی وردی تایبەت",
+  exactAddress: "ناونیشانی وردی تایبەت (ئارەزوومەندانە)",
   latitude: "پانی جوگرافی",
   longitude: "درێژی جوگرافی",
   pointCheck: "پشکنینی خاڵی ورد",

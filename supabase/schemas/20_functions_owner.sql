@@ -231,7 +231,6 @@ begin
   if profile.name is null then missing := array_append(missing, 'cottage_name'); end if;
   if profile.governorate is null then missing := array_append(missing, 'governorate'); end if;
   if profile.approximate_location is null then missing := array_append(missing, 'approximate_location'); end if;
-  if profile.exact_address is null then missing := array_append(missing, 'exact_address'); end if;
   if profile.capacity is null then missing := array_append(missing, 'capacity'); end if;
   if profile.bedrooms is null then missing := array_append(missing, 'bedrooms'); end if;
   if profile.bathrooms is null then missing := array_append(missing, 'bathrooms'); end if;

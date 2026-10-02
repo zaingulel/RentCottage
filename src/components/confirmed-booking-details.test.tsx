@@ -155,6 +155,22 @@ describe("confirmed booking details", () => {
       ).not.toBeInTheDocument();
     },
   );
+  it("does not mark practical details incomplete when only the address is absent", () => {
+    render(
+      <ConfirmedBookingDetails
+        locale="en"
+        access={{ ...base, exactAddress: null }}
+        notification={pending}
+        navigation={null}
+      />,
+    );
+    expect(
+      screen.queryByRole("status", {
+        name: "Some practical access or contact details are unavailable.",
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Turn after the fictional bridge")).toBeVisible();
+  });
   it.each([
     [
       "en",

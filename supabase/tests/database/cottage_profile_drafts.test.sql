@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(98);
+select plan(99);
 
 insert into auth.users (
   id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at
@@ -583,7 +583,31 @@ select results_eq(
 
 reset role;
 update public.owner_application_cottage_profiles
-set amenities = array['garden', 'parking', 'wifi']
+set amenities = array['garden', 'parking', 'wifi'],
+  exact_address = null,
+  exact_latitude = null,
+  exact_longitude = null
+where application_id = '20000000-0000-4000-8000-000000000701';
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000701","role":"authenticated","aal":"aal1"}',
+  true
+);
+
+select throws_ok(
+  $$select public.submit_cottage_profile_for_content_approval(
+    (select id from public.owner_application_cottage_profiles
+      where application_id = '20000000-0000-4000-8000-000000000701'),
+    2
+  )$$,
+  'RC203', null,
+  'submission requires the private exact point'
+);
+
+reset role;
+update public.owner_application_cottage_profiles
+set exact_latitude = 36.408333, exact_longitude = 44.385834
 where application_id = '20000000-0000-4000-8000-000000000701';
 set local role authenticated;
 select set_config(
@@ -598,7 +622,7 @@ select lives_ok(
       where application_id = '20000000-0000-4000-8000-000000000701'),
     2
   )$$,
-  'a complete owned draft with a ready stored photo submits atomically'
+  'a complete owned draft without an exact address submits atomically'
 );
 
 select results_eq(
@@ -657,6 +681,9 @@ select throws_ok(
   'RC208', null,
   'submitted Cottage Profile source cannot be mutated'
 );
+update public.owner_application_cottage_profiles
+set exact_address = 'Private exact address'
+where application_id = '20000000-0000-4000-8000-000000000701';
 
 set local role authenticated;
 select set_config(

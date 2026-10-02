@@ -65,9 +65,9 @@ describe("Cottage Profile editor", () => {
     expect(screen.getByLabelText("Approximate public location")).toHaveValue(
       "Near Shaqlawa",
     );
-    expect(screen.getByLabelText("Exact private address")).toHaveValue(
-      "Private exact address",
-    );
+    expect(
+      screen.getByLabelText("Exact private address (optional)"),
+    ).toHaveValue("Private exact address");
     expect(screen.getByLabelText("Latitude")).toHaveValue("36.408333");
     expect(screen.getByLabelText("Longitude")).toHaveValue("44.385834");
     expect(

@@ -140,7 +140,6 @@ export function ConfirmedBookingDetails({
 }) {
   const c = messages[locale];
   const practicalDetailsIncomplete =
-    access.exactAddress === null ||
     access.privateDirections === null ||
     access.mapPin === null ||
     access.customerPhone === null ||

@@ -816,7 +816,6 @@ CREATE OR REPLACE FUNCTION "public"."cottage_profile_required_data_is_complete"(
       and profiles.name is not null
       and profiles.governorate is not null
       and profiles.approximate_location is not null
-      and profiles.exact_address is not null
       and profiles.exact_latitude is not null
       and profiles.exact_longitude is not null
       and profiles.private_directions is not null

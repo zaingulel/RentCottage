@@ -377,6 +377,10 @@ cross join (
 ) as required(kind)
 where applications.owner_user_id = '00000000-0000-0000-0000-000000000101';
 
+update public.owner_application_cottage_profiles
+set exact_address = null
+where owner_user_id = '00000000-0000-0000-0000-000000000101';
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
