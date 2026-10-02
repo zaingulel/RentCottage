@@ -17,6 +17,10 @@ export type ExactPointReading =
 const coordinatePattern =
   /^([+-]?\d{1,3}(?:\.\d{1,15})?)(?:(?:\s*[,،]\s*|\s+)([+-]?\d{1,3}(?:\.\d{1,15})?))?$/;
 
+// A whole text that is two decimal numbers, whatever their values, punctuation or precision.
+const bareCoordinatePairPattern =
+  /^(?:[([]\s*)?[+-]?\d+(?:\.\d+)?(?:\s*°)?(?:\s*[,،;/|]\s*|\s+)[+-]?\d+(?:\.\d+)?(?:\s*°)?(?:\s*[)\]])?(?:\s*\.)?$/;
+
 function normalised(text: string): string {
   return text
     .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
@@ -83,6 +87,5 @@ export function readExactPoint(
 }
 
 export function readsAsCoordinatePair(text: string): boolean {
-  const { kind } = readExactPoint(text, "");
-  return kind === "valid" || kind === "swapped" || kind === "outside-bounds";
+  return bareCoordinatePairPattern.test(normalised(text));
 }

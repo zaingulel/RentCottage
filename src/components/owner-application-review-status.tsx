@@ -58,7 +58,10 @@ function RequestedField({
   locale: Locale;
 }) {
   const copy = ownerApplicationMessages[locale];
-  const label = copy.missing[field] ?? field;
+  const label =
+    field === "exact_address"
+      ? copy.exactAddress
+      : (copy.missing[field] ?? field);
   const value = valueFor(application, field);
   if (field === "amenities") {
     return (
@@ -121,7 +124,7 @@ function RequestedField({
                 ? "number"
                 : "text"
             }
-            required
+            required={field !== "exact_address"}
           />
         )}
       </label>

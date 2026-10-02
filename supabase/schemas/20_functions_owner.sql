@@ -1135,7 +1135,9 @@ begin
         'exact_address', 'description', 'house_rules'
       ) then
         jsonb_typeof(supplied.value) is distinct from 'string'
-        or char_length(btrim(supplied.value #>> '{}')) not between 1 and case supplied.key
+        or char_length(btrim(supplied.value #>> '{}'))
+          not between case supplied.key when 'exact_address' then 0 else 1 end
+          and case supplied.key
           when 'legal_name' then 120
           when 'cottage_name' then 120
           when 'governorate' then 120

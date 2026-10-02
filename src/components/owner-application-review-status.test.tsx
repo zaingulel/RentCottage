@@ -79,9 +79,9 @@ describe("Owner Application review status", () => {
         "Provide the renewed licence and confirm the private address.",
       ),
     ).toBeVisible();
-    expect(screen.getByLabelText("Exact private address")).toHaveValue(
-      "Private road",
-    );
+    expect(
+      screen.getByLabelText("Exact private address (optional)"),
+    ).toHaveValue("Private road");
     expect(screen.queryByLabelText("Legal name")).toBeNull();
     const evidence = screen
       .getByText("Licence or exemption evidence")
@@ -95,6 +95,28 @@ describe("Owner Application review status", () => {
     expect(
       screen.getByRole("button", { name: "Send requested information" }),
     ).toBeVisible();
+  });
+
+  it("lets the owner leave a requested exact address blank and requires other requested text", () => {
+    render(
+      <OwnerApplicationReviewStatus
+        locale="en"
+        application={application}
+        review={{
+          ...review,
+          activeRequest: {
+            reason: "Confirm the address and the governorate.",
+            requestedFields: ["exact_address", "governorate"],
+            requestedDocumentKinds: [],
+          },
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByLabelText("Exact private address (optional)"),
+    ).not.toBeRequired();
+    expect(screen.getByLabelText("Governorate")).toBeRequired();
   });
 
   it("renders the approved, rejected, expired and suspended states explicitly", () => {

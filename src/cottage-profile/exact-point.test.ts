@@ -114,17 +114,26 @@ describe("readExactPoint", () => {
 });
 
 describe("readsAsCoordinatePair", () => {
-  it.each(["36.408333, 44.385834", "٣٦.٤٠٨٣٣٣, ٤٤.٣٨٥٨٣٤"])(
-    "reads %s as a coordinate pair",
-    (text) => {
-      expect(readsAsCoordinatePair(text)).toBe(true);
-    },
-  );
+  it.each([
+    "36.408333, 44.385834",
+    "٣٦.٤٠٨٣٣٣, ٤٤.٣٨٥٨٣٤",
+    "(36.408333, 44.385834)",
+    "36.408333; 44.385834",
+    "36.408333, 44.385834.",
+    "36.408333°, 44.385834°",
+    "36.408333/44.385834",
+    "36.4083333333333333, 44.3858343333333333",
+  ])("reads %s as a coordinate pair", (text) => {
+    expect(readsAsCoordinatePair(text)).toBe(true);
+  });
 
-  it.each(["Shaqlawa countryside", "44"])(
-    "does not read %s as a coordinate pair",
-    (text) => {
-      expect(readsAsCoordinatePair(text)).toBe(false);
-    },
-  );
+  it.each([
+    "Shaqlawa countryside",
+    "44",
+    "Near Shaqlawa",
+    "Shaqlawa, 12 km north of Erbil",
+    "36",
+  ])("does not read %s as a coordinate pair", (text) => {
+    expect(readsAsCoordinatePair(text)).toBe(false);
+  });
 });

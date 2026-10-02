@@ -281,7 +281,6 @@ function parseResponseFieldValue(
     cottage_name: 120,
     governorate: 120,
     approximate_location: 240,
-    exact_address: 240,
     description: 2000,
     house_rules: 1500,
   };
@@ -293,10 +292,18 @@ function parseResponseFieldValue(
     }
     return bounded;
   }
-  if (field === "company_name" || field === "exemption_basis") {
+  const optionalTextMaximums: Partial<
+    Record<OwnerApplicationResponseField, number>
+  > = {
+    company_name: 120,
+    exact_address: 240,
+    exemption_basis: 1000,
+  };
+  const optionalMaximum = optionalTextMaximums[field];
+  if (optionalMaximum !== undefined) {
     if (typeof value !== "string") invalid();
     const normalized = value.trim();
-    if (normalized.length > (field === "company_name" ? 120 : 1000)) invalid();
+    if (normalized.length > optionalMaximum) invalid();
     return normalized;
   }
   if (field === "licensing_basis") {

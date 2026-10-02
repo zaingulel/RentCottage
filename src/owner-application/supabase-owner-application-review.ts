@@ -247,7 +247,7 @@ export async function loadOwnerApplicationReviewDetail(
       name: requiredText(profile.name),
       governorate: requiredText(profile.governorate),
       approximateLocation: requiredText(profile.approximate_location),
-      exactAddress: requiredText(profile.exact_address),
+      exactAddress: optionalText(profile.exact_address),
       capacity: integerOrNull(profile.capacity),
       bedrooms: integerOrNull(profile.bedrooms),
       bathrooms: integerOrNull(profile.bathrooms),
