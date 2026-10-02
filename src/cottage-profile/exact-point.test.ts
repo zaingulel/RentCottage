@@ -107,6 +107,42 @@ const readings: [string, string, string, ExactPointReading][] = [
     "49.2000004",
     outsideBounds,
   ],
+  [
+    "a latitude too precise to tell from the minimum",
+    "28.999999999999999",
+    "38.7",
+    unreadable,
+  ],
+  [
+    "a latitude too precise to tell from the maximum",
+    "37.400000000000001",
+    "49.2",
+    unreadable,
+  ],
+  [
+    "a longitude too precise to tell from the maximum",
+    "37.4",
+    "49.200000000000001",
+    unreadable,
+  ],
+  [
+    "a longitude too precise to tell from the minimum",
+    "29.0",
+    "38.699999999999999",
+    unreadable,
+  ],
+  [
+    "a fourteen-decimal latitude just below the minimum",
+    "28.99999999999999",
+    "38.7",
+    outsideBounds,
+  ],
+  [
+    "a fourteen-decimal latitude just above the minimum",
+    "29.00000000000001",
+    "38.7",
+    { kind: "valid", point: { latitude: 29, longitude: 38.7 } },
+  ],
   ["only a latitude", "36.408333", "", { kind: "incomplete" }],
   ["only a longitude", "", "44.385834", { kind: "incomplete" }],
   [

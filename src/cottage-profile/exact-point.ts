@@ -15,7 +15,7 @@ export type ExactPointReading =
 
 // One decimal-degrees number, or two separated by a comma or whitespace.
 const coordinatePattern =
-  /^([+-]?\d{1,3}(?:\.\d{1,15})?)(?:(?:\s*[,،]\s*|\s+)([+-]?\d{1,3}(?:\.\d{1,15})?))?$/;
+  /^([+-]?\d{1,3}(?:\.\d{1,14})?)(?:(?:\s*[,،]\s*|\s+)([+-]?\d{1,3}(?:\.\d{1,14})?))?$/;
 
 // A whole text that is two decimal numbers, whatever their values, punctuation or precision.
 const bareCoordinatePairPattern =
