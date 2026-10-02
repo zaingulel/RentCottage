@@ -215,7 +215,7 @@ const baselineExecutablePaths = new Set([
 function isBaselineOnlyPath(path) {
   return (
     baselineOnlyPaths.has(path) ||
-    /^\.agents\/(?:roles|skills|templates)\/.+\.md$/i.test(path) ||
+    /^\.agents\/(?:skills|templates)\/.+\.md$/i.test(path) ||
     /^\.agents\/skills\/[^/]+\/agents\/openai\.yaml$/i.test(path) ||
     /^\.agents\/upstream\/mattpocock-skills\/(?:LICENSE|.+\.(?:md|yaml))$/i.test(
       path,

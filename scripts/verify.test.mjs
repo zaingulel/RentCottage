@@ -45,7 +45,6 @@ const explicitNodeWorkflowEntries = [
 
 const currentRegularAgentDefinitions = globSync(
   [
-    ".agents/roles/*.md",
     ".agents/skills/*/SKILL.md",
     ".agents/templates/*.md",
     ".claude/agents/*.md",
@@ -747,294 +746,354 @@ describe("repository verification command", () => {
     );
   });
 
+  const added = (path) => ({
+    path,
+    oldMode: "000000",
+    newMode: "100644",
+    status: "A",
+  });
+  const routes = {
+    baseline: { browser: false, database: false, bookingConcurrency: false },
+    database: { browser: false, database: true, bookingConcurrency: false },
+    "database with concurrency": {
+      browser: false,
+      database: true,
+      bookingConcurrency: true,
+    },
+    browser: { browser: true, database: false, bookingConcurrency: false },
+    "full without concurrency": {
+      browser: true,
+      database: true,
+      bookingConcurrency: false,
+    },
+    full: { browser: true, database: true, bookingConcurrency: true },
+  };
+
+  // The changed path alone decides the route, so these rows need no repository;
+  // "selects the route for %s" proves each route's commands end to end.
   it.each([
-    [
-      "builder-max runtime",
-      ".codex/agents/builder-max.toml",
-      "sandbox_mode = 'workspace-write'\n",
-    ],
-    [
-      "a future role definition",
-      ".agents/roles/release-captain.md",
-      "# Release captain\n",
-    ],
+    ["builder-max runtime", [".codex/agents/builder-max.toml"], "baseline"],
     [
       "arbitrary native skill metadata",
-      ".agents/skills/future-publisher/agents/openai.yaml",
-      "interface:\n  display_name: Future Publisher\n",
+      [".agents/skills/future-publisher/agents/openai.yaml"],
+      "baseline",
     ],
-    [
-      "reviewer runtime",
-      ".codex/agents/reviewer.toml",
-      "sandbox_mode = 'workspace-write'\n",
-    ],
+    ["reviewer runtime", [".codex/agents/reviewer.toml"], "baseline"],
     [
       "security reviewer runtime",
-      ".codex/agents/security-reviewer.toml",
-      "sandbox_mode = 'workspace-write'\n",
+      [".codex/agents/security-reviewer.toml"],
+      "baseline",
     ],
-    ["run logger", "scripts/run-log.mjs", "export const fixture = true;\n"],
-    [
-      "run logger test",
-      "scripts/lib/run-log.test.mjs",
-      "export const fixture = true;\n",
-    ],
+    ["run logger", ["scripts/run-log.mjs"], "baseline"],
+    ["run logger test", ["scripts/lib/run-log.test.mjs"], "baseline"],
     [
       "Claude handoff hook",
-      ".claude/hooks/check-builder-handoff.mjs",
-      "export const fixture = true;\n",
+      [".claude/hooks/check-builder-handoff.mjs"],
+      "baseline",
     ],
-    ["Claude hook registration", ".claude/settings.json", "{}\n"],
-    ["Codex hook registration", ".codex/hooks.json", "{}\n"],
+    ["Claude hook registration", [".claude/settings.json"], "baseline"],
+    ["Codex hook registration", [".codex/hooks.json"], "baseline"],
     [
       "Codex handoff hook",
-      ".codex/hooks/check-builder-handoff.mjs",
-      "export const fixture = true;\n",
+      [".codex/hooks/check-builder-handoff.mjs"],
+      "baseline",
     ],
     [
       "Codex handoff adapter",
-      "scripts/lib/codex-hook-adapters.mjs",
-      "export const fixture = true;\n",
+      ["scripts/lib/codex-hook-adapters.mjs"],
+      "baseline",
     ],
     [
       "Codex handoff adapter test",
-      "scripts/lib/codex-hook-adapters.test.mjs",
-      "export const fixture = true;\n",
+      ["scripts/lib/codex-hook-adapters.test.mjs"],
+      "baseline",
     ],
-    [
-      "shared handoff validator",
-      "scripts/lib/handoff-check.mjs",
-      "export const fixture = true;\n",
-    ],
+    ["shared handoff validator", ["scripts/lib/handoff-check.mjs"], "baseline"],
     [
       "shared handoff validator test",
-      "scripts/lib/handoff-check.test.mjs",
-      "export const fixture = true;\n",
+      ["scripts/lib/handoff-check.test.mjs"],
+      "baseline",
     ],
-    ["documentation checker", "scripts/doc-lint.mjs", "export {};\n"],
-    [
-      "documentation checker library",
-      "scripts/lib/doc-lint.mjs",
-      "export {};\n",
-    ],
+    ["documentation checker", ["scripts/doc-lint.mjs"], "baseline"],
+    ["documentation checker library", ["scripts/lib/doc-lint.mjs"], "baseline"],
     [
       "documentation checker tests",
-      "scripts/lib/doc-lint.test.mjs",
-      "export {};\n",
+      ["scripts/lib/doc-lint.test.mjs"],
+      "baseline",
     ],
     [
       "documentation link checker",
-      "scripts/lib/doc-lint-links.mjs",
-      "export {};\n",
+      ["scripts/lib/doc-lint-links.mjs"],
+      "baseline",
     ],
     [
       "documentation citation checker",
-      "scripts/lib/doc-lint-citations.mjs",
-      "export {};\n",
+      ["scripts/lib/doc-lint-citations.mjs"],
+      "baseline",
     ],
-    ["agent validator", "scripts/lib/check-agents.mjs", "export {};\n"],
+    ["agent validator", ["scripts/lib/check-agents.mjs"], "baseline"],
     [
       "agent validator tests",
-      "scripts/lib/check-agents.test.mjs",
-      "export {};\n",
+      ["scripts/lib/check-agents.test.mjs"],
+      "baseline",
     ],
-    ["output filter", "scripts/lib/test-output-filter.mjs", "export {};\n"],
+    ["output filter", ["scripts/lib/test-output-filter.mjs"], "baseline"],
     [
       "output filter tests",
-      "scripts/lib/test-output-filter.test.mjs",
-      "export {};\n",
+      ["scripts/lib/test-output-filter.test.mjs"],
+      "baseline",
     ],
-    ["settings policy", "scripts/lib/settings-policy.test.mjs", "export {};\n"],
-    ["pre-commit contract", "scripts/lib/precommit.test.mjs", "export {};\n"],
-    ["pre-push contract", "scripts/lib/prepush.test.mjs", "export {};\n"],
+    ["settings policy", ["scripts/lib/settings-policy.test.mjs"], "baseline"],
+    ["pre-commit contract", ["scripts/lib/precommit.test.mjs"], "baseline"],
+    ["pre-push contract", ["scripts/lib/prepush.test.mjs"], "baseline"],
     [
       "verify-green contract",
-      "scripts/lib/verify-green.test.mjs",
-      "export {};\n",
+      ["scripts/lib/verify-green.test.mjs"],
+      "baseline",
     ],
-    ["sweep scope entry", "scripts/sweep-scope-check.mjs", "export {};\n"],
-    [
-      "sweep scope corpus",
-      "scripts/lib/sweep-scope-corpus.mjs",
-      "export const PASS_ROWS = [];\n",
-    ],
-    ["sweep scope library", "scripts/lib/sweep-scope.mjs", "export {};\n"],
-    ["sweep scope tests", "scripts/lib/sweep-scope.test.mjs", "export {};\n"],
+    ["sweep scope entry", ["scripts/sweep-scope-check.mjs"], "baseline"],
+    ["sweep scope corpus", ["scripts/lib/sweep-scope-corpus.mjs"], "baseline"],
+    ["sweep scope library", ["scripts/lib/sweep-scope.mjs"], "baseline"],
+    ["sweep scope tests", ["scripts/lib/sweep-scope.test.mjs"], "baseline"],
     [
       "sweep workflow contract",
-      "scripts/lib/sweep-scope-workflow.test.mjs",
-      "export {};\n",
+      ["scripts/lib/sweep-scope-workflow.test.mjs"],
+      "baseline",
     ],
     [
       "workflow contract",
-      "scripts/lib/workflow-contract.test.mjs",
-      "export {};\n",
+      ["scripts/lib/workflow-contract.test.mjs"],
+      "baseline",
     ],
-    ["issue publisher", "scripts/verify-issue-publish.mjs", "export {};\n"],
-    [
-      "issue publisher library",
-      "scripts/lib/issue-publish.mjs",
-      "export {};\n",
-    ],
+    ["issue publisher", ["scripts/verify-issue-publish.mjs"], "baseline"],
+    ["issue publisher library", ["scripts/lib/issue-publish.mjs"], "baseline"],
     [
       "board portability contract",
-      "scripts/lib/board-portability.test.mjs",
-      "export {};\n",
+      ["scripts/lib/board-portability.test.mjs"],
+      "baseline",
     ],
-    ["Claude Git guard", ".claude/hooks/block-unsafe-git.mjs", "export {};\n"],
+    ["Claude Git guard", [".claude/hooks/block-unsafe-git.mjs"], "baseline"],
     [
       "Claude output hook",
-      ".claude/hooks/filter-test-output.mjs",
-      "export {};\n",
+      [".claude/hooks/filter-test-output.mjs"],
+      "baseline",
     ],
     [
       "Claude output runner",
-      ".claude/hooks/test-output-filter-run.mjs",
-      "export {};\n",
+      [".claude/hooks/test-output-filter-run.mjs"],
+      "baseline",
     ],
-    ["Claude green wrapper", ".claude/hooks/verify-green.sh", "exit 0\n"],
-    ["Codex Git guard", ".codex/hooks/block-unsafe-git.mjs", "export {};\n"],
-    ["Codex green wrapper", ".codex/hooks/verify-green.sh", "exit 0\n"],
-    [
-      "Codex browser rule",
-      ".codex/rules/playwright.rules",
-      'prefix_rule(pattern=["npx"]);\n',
-    ],
-    ["native hook manual", ".githooks/README.md", "# Hooks\n"],
-    ["shared workflow manifest", ".agents/factory-manifest.json", "{}\n"],
-    ["merge watch entry", "scripts/merge-watch.mjs", "export {};\n"],
-    ["merge watch library", "scripts/lib/merge-watch.mjs", "export {};\n"],
-    ["merge watch tests", "scripts/lib/merge-watch.test.mjs", "export {};\n"],
-    ["shared workflow sync entry", "scripts/factory-sync.mjs", "export {};\n"],
+    ["Claude green wrapper", [".claude/hooks/verify-green.sh"], "baseline"],
+    ["Codex Git guard", [".codex/hooks/block-unsafe-git.mjs"], "baseline"],
+    ["Codex green wrapper", [".codex/hooks/verify-green.sh"], "baseline"],
+    ["Codex browser rule", [".codex/rules/playwright.rules"], "baseline"],
+    ["native hook manual", [".githooks/README.md"], "baseline"],
+    ["shared workflow manifest", [".agents/factory-manifest.json"], "baseline"],
+    ["merge watch entry", ["scripts/merge-watch.mjs"], "baseline"],
+    ["merge watch library", ["scripts/lib/merge-watch.mjs"], "baseline"],
+    ["merge watch tests", ["scripts/lib/merge-watch.test.mjs"], "baseline"],
+    ["shared workflow sync entry", ["scripts/factory-sync.mjs"], "baseline"],
     [
       "shared workflow sync library",
-      "scripts/lib/factory-sync.mjs",
-      "export {};\n",
+      ["scripts/lib/factory-sync.mjs"],
+      "baseline",
     ],
     [
       "shared workflow sync tests",
-      "scripts/lib/factory-sync.test.mjs",
-      "export {};\n",
+      ["scripts/lib/factory-sync.test.mjs"],
+      "baseline",
     ],
     [
       "Codex browser rule test",
-      "scripts/lib/codex-browser-policy.test.mjs",
-      "export {};\n",
+      ["scripts/lib/codex-browser-policy.test.mjs"],
+      "baseline",
     ],
     [
       "product manual contract test",
-      "scripts/lib/product-manual.test.mjs",
-      "export {};\n",
+      ["scripts/lib/product-manual.test.mjs"],
+      "baseline",
     ],
-  ])(
-    "keeps reviewed workflow-only %s on baseline evidence",
-    (_label, path, contents) => {
-      const repository = createRepository();
-      commit(repository, path, contents);
+    [
+      "vendored skill prose",
+      [".agents/upstream/mattpocock-skills/example/SKILL.md"],
+      "baseline",
+    ],
+    [
+      "vendored skill metadata",
+      [".agents/upstream/mattpocock-skills/example/agents/openai.yaml"],
+      "baseline",
+    ],
+    [
+      "vendored licence",
+      [".agents/upstream/mattpocock-skills/LICENSE"],
+      "baseline",
+    ],
+    ["copied workflow file", [".claude/skills/example/SKILL.md"], "baseline"],
+    [
+      "copied workflow file",
+      [".claude/skills/example/references/guide.md"],
+      "baseline",
+    ],
+    [
+      "copied workflow file",
+      [".claude/skills/example/agents/openai.yaml"],
+      "baseline",
+    ],
+    ["copied workflow file", [".claude/hooks/.gitattributes"], "baseline"],
+    ["copied workflow file", [".codex/hooks/.gitattributes"], "baseline"],
+    ["copied workflow file", [".githooks/.gitattributes"], "baseline"],
+    ["copied workflow file", [".codex/hooks/verify-green.mjs"], "baseline"],
+    ["root LF checkout policy", [".gitattributes"], "full without concurrency"],
+    ["research prose", ["docs/research/future-study.md"], "baseline"],
+    ["retained document", ["docs/discovery/future-decisions.docx"], "baseline"],
+    [
+      "documentation illustration",
+      ["docs/product/assets/future-map.png"],
+      "baseline",
+    ],
+    ["global presentation CSS", ["src/app/globals.css"], "browser"],
+    ["bundled image", ["public/uploads/hero.png"], "browser"],
+    ["self-hosted font stylesheet", ["src/app/fonts.css"], "browser"],
+    ["self-hosted font file", ["public/fonts/karla-latin.woff2"], "browser"],
+    ["shell journey", ["tests/marketplace-shell.spec.ts"], "browser"],
+    ["interaction journey", ["tests/interaction-controls.spec.ts"], "browser"],
+    [
+      "booking display journey",
+      ["tests/booking-request-display.spec.ts"],
+      "browser",
+    ],
+    ["a public runtime file", ["public/_headers"], "browser"],
+    [
+      "a domain module",
+      ["src/booking-request/booking-request-policy.ts"],
+      "baseline",
+    ],
+    [
+      "a database test",
+      ["supabase/tests/database/booking_quotes.test.sql"],
+      "database",
+    ],
+    ["a policy declaration", ["supabase/schemas/40_policies.sql"], "database"],
+    [
+      "a migration",
+      ["supabase/migrations/20260101000000_fixture.sql"],
+      "database",
+    ],
+    [
+      "a booking function declaration",
+      ["supabase/schemas/20_functions_booking.sql"],
+      "database with concurrency",
+    ],
+    [
+      "a concurrency program",
+      ["scripts/verify-booking-refund-concurrency.mjs"],
+      "database with concurrency",
+    ],
+    ["a component", ["src/components/booking-quote.tsx"], "browser"],
+    ["a page", ["src/app/[locale]/bookings/page.tsx"], "browser"],
+    ["a browser journey", ["tests/access.spec.ts"], "browser"],
+    [
+      "a component and a database test",
+      [
+        "src/components/booking-quote.tsx",
+        "supabase/tests/database/booking_quotes.test.sql",
+      ],
+      "full without concurrency",
+    ],
+    ["the Supabase configuration", ["supabase/config.toml"], "full"],
+    [
+      "the concurrency harness",
+      ["scripts/local-supabase-concurrency-harness.mjs"],
+      "full",
+    ],
+    [
+      "a journey fixture",
+      ["tests/fixtures/payment-recovery-cleanup.mjs"],
+      "full",
+    ],
+    ["runtime code", ["custom-worker.ts"], "full without concurrency"],
+    [
+      "runtime code and the concurrency harness",
+      ["custom-worker.ts", "scripts/local-supabase-concurrency-harness.mjs"],
+      "full",
+    ],
+    ["the dependency lockfile", ["package-lock.json"], "full"],
+    ["a dependency file", ["package.json"], "full"],
+    ["root git ignore", [".gitignore"], "full without concurrency"],
+    ["root Prettier ignore", [".prettierignore"], "full without concurrency"],
+    ["root Prettier config", [".prettierrc.json"], "full without concurrency"],
+    ["the selector itself", ["scripts/verify.mjs"], "full"],
+    ["the selector tests", ["scripts/verify.test.mjs"], "full"],
+    ["board configuration", ["scripts/lib/board-config.mjs"], "baseline"],
+    ["a board test", ["scripts/lib/board-rules.test.mjs"], "baseline"],
+    [
+      "the end-to-end board CLI test",
+      ["scripts/lib/board-cli.test.mjs"],
+      "baseline",
+    ],
+    ["the board command", ["scripts/board.mjs"], "baseline"],
+    ["the board-add command", ["scripts/board-add.mjs"], "baseline"],
+    ["the board-move command", ["scripts/board-move.mjs"], "baseline"],
+    ["the self-hosted font test", ["src/app/fonts.test.ts"], "baseline"],
+    ["a font licence", ["public/fonts/OFL-karla.txt"], "baseline"],
+    [
+      "a domain test",
+      ["src/booking-request/booking-request-policy.test.ts"],
+      "baseline",
+    ],
+    [
+      "the browser fixtures",
+      ["scripts/lib/access-browser-fixtures.mjs"],
+      "full",
+    ],
+    [
+      "the access fixture users",
+      ["scripts/lib/access-fixture-users.mjs"],
+      "full",
+    ],
+  ])("routes %s %j to the %s route", (_label, paths, route) => {
+    expect(classifyChanges(paths.map(added))).toMatchObject(routes[route]);
+  });
 
-      const result = runVerification(repository);
-
-      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-        requiredBaselineSteps,
-      );
-    },
-  );
+  it.each([
+    [
+      "executable copied skill input",
+      [".claude/skills/example/scripts/runtime.mjs"],
+    ],
+    [
+      "executable copied skill input",
+      [".claude/skills/example/fixtures/worker/agents/openai.yaml"],
+    ],
+    ["an unlisted source module", ["src/reporting/new.ts"]],
+    ["an asset", ["docs/product/assets/runtime.json"]],
+    ["an agent script", [".agents/templates/runtime.mjs"]],
+    ["an agent config", [".agents/templates/runtime.json"]],
+    ["an agent TypeScript file", [".agents/skills/tool/runtime.ts"]],
+    [
+      "nested native skill metadata",
+      [".agents/skills/future-publisher/fixtures/worker/agents/openai.yaml"],
+    ],
+    ["a docs script", ["docs/research/runtime.js"]],
+    ["a category lookalike", [".agents-copy/templates/reviewer.md"]],
+    ["a docs lookalike", ["docs-copy/research/study.md"]],
+  ])("leaves %s %j unlisted", (_label, paths) => {
+    expect(classifyChanges(paths.map(added))).toEqual({
+      unclassified: [...paths].sort(),
+    });
+  });
 
   it("keeps every current regular agent definition and future names on baseline evidence", () => {
-    const repository = createRepository();
     const paths = [
       ...currentRegularAgentDefinitions,
-      ".agents/roles/future-role.md",
       ".agents/skills/future-skill/SKILL.md",
       ".agents/templates/future-template.md",
       ".claude/agents/future-agent.md",
       ".claude/templates/future-template.md",
       ".codex/agents/future-agent.toml",
     ];
-    for (const path of paths)
-      write(repository, path, `definition for ${path}\n`);
-    git(repository, ["add", "."]);
-    git(repository, ["commit", "-m", "agent definitions"]);
 
-    const result = runVerification(repository);
-
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-      requiredBaselineSteps,
-    );
+    expect(classifyChanges(paths.map(added))).toMatchObject(routes.baseline);
   });
-
-  it.each([
-    [
-      "vendored skill prose",
-      ".agents/upstream/mattpocock-skills/example/SKILL.md",
-    ],
-    [
-      "vendored skill metadata",
-      ".agents/upstream/mattpocock-skills/example/agents/openai.yaml",
-    ],
-    ["vendored licence", ".agents/upstream/mattpocock-skills/LICENSE"],
-  ])("keeps %s on baseline evidence", (_label, path) => {
-    const repository = createRepository();
-    commit(repository, path, "vendored fixture\n");
-
-    expect(
-      runVerification(repository).calls.map(([command, args]) => [
-        command,
-        args,
-      ]),
-    ).toEqual(requiredBaselineSteps);
-  });
-
-  it.each([
-    ".claude/skills/example/SKILL.md",
-    ".claude/skills/example/references/guide.md",
-    ".claude/skills/example/agents/openai.yaml",
-    ".claude/hooks/.gitattributes",
-    ".codex/hooks/.gitattributes",
-    ".githooks/.gitattributes",
-    ".codex/hooks/verify-green.mjs",
-  ])("keeps copied workflow file %s on baseline evidence", (path) => {
-    const repository = createRepository();
-    commit(repository, path, "copied workflow fixture\n");
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-      requiredBaselineSteps,
-    );
-  });
-
-  it("requires full evidence for root LF checkout policy", () => {
-    const repository = createRepository();
-    commit(repository, ".gitattributes", "* text=auto eol=lf\n");
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual([
-      ...requiredBaselineSteps,
-      ...requiredLightDatabaseSteps,
-      ...requiredBrowserSteps,
-    ]);
-  });
-
-  it.each([
-    ".claude/skills/example/scripts/runtime.mjs",
-    ".claude/skills/example/fixtures/worker/agents/openai.yaml",
-  ])(
-    "does not classify executable copied skill input as baseline: %s",
-    (path) => {
-      const repository = createRepository();
-      commit(repository, path, "export {};\n");
-
-      const result = runVerification(repository);
-
-      expect(result.status).toBe(3);
-      expect(result.run).not.toHaveBeenCalled();
-      expect(result.stderr).toHaveBeenCalledWith(expect.stringContaining(path));
-    },
-  );
 
   it.each([
     ".githooks/pre-commit",
@@ -1044,91 +1103,11 @@ describe("repository verification command", () => {
   ])(
     "keeps the named executable workflow entry %s on baseline evidence",
     (path) => {
-      const repository = createRepository();
-      write(repository, path, "#!/bin/sh\nexit 0\n");
-      chmodSync(join(repository, path), 0o755);
-      git(repository, ["add", path]);
-      git(repository, ["commit", "-m", "workflow entry"]);
-
       expect(
-        runVerification(repository).calls.map(([command, args]) => [
-          command,
-          args,
+        classifyChanges([
+          { path, oldMode: "000000", newMode: "100755", status: "A" },
         ]),
-      ).toEqual(requiredBaselineSteps);
-    },
-  );
-
-  it.each([
-    ["research prose", "docs/research/future-study.md"],
-    ["retained document", "docs/discovery/future-decisions.docx"],
-    ["documentation illustration", "docs/product/assets/future-map.png"],
-  ])("keeps %s on baseline evidence", (_label, path) => {
-    const repository = createRepository();
-    commit(repository, path, "fixture\n");
-
-    expect(
-      runVerification(repository).calls.map(([command, args]) => [
-        command,
-        args,
-      ]),
-    ).toEqual(requiredBaselineSteps);
-  });
-
-  it.each([
-    [
-      "global presentation CSS",
-      "src/app/globals.css",
-      "body { color: black; }\n",
-    ],
-    ["bundled image", "public/uploads/hero.png", "image bytes\n"],
-    [
-      "self-hosted font stylesheet",
-      "src/app/fonts.css",
-      '@font-face { font-family: "Karla"; }\n',
-    ],
-    ["self-hosted font file", "public/fonts/karla-latin.woff2", "font bytes\n"],
-    [
-      "shell journey",
-      "tests/marketplace-shell.spec.ts",
-      "test('shell', () => {});\n",
-    ],
-    [
-      "interaction journey",
-      "tests/interaction-controls.spec.ts",
-      "test('controls', () => {});\n",
-    ],
-    [
-      "booking display journey",
-      "tests/booking-request-display.spec.ts",
-      "test('display', () => {});\n",
-    ],
-    [
-      "a public runtime file",
-      "public/_headers",
-      "/assets/*\n  cache-control: no-cache\n",
-    ],
-  ])(
-    "selects browser evidence without database evidence for %s",
-    (_label, path, contents) => {
-      const repository = createRepository();
-      commit(repository, path, contents);
-
-      const result = runVerification(repository);
-
-      expect(result.calls.map(([command, args]) => [command, args])).toEqual([
-        ...requiredBaselineSteps,
-        ...requiredBrowserSteps,
-      ]);
-      expect(
-        result.calls.map(([command, args]) => [command, args]),
-      ).not.toEqual(expect.arrayContaining(requiredDatabaseSteps));
-      expect(result.stdout).toHaveBeenCalledWith(
-        expect.stringContaining("Database verification: skipped"),
-      );
-      expect(result.stdout).toHaveBeenCalledWith(
-        expect.stringContaining("Browser verification: selected"),
-      );
+      ).toMatchObject(routes.baseline);
     },
   );
 
@@ -1144,45 +1123,28 @@ describe("repository verification command", () => {
         ["src/booking-request/booking-request-policy.ts"],
         requiredBaselineSteps,
         "skipped",
+        "skipped",
+        "skipped",
       ],
       [
         ["supabase/tests/database/booking_quotes.test.sql"],
         [...requiredBaselineSteps, ...requiredLightDatabaseSteps],
+        "selected",
         "skipped",
-      ],
-      [
-        ["supabase/schemas/40_policies.sql"],
-        [...requiredBaselineSteps, ...requiredLightDatabaseSteps],
-        "skipped",
-      ],
-      [
-        ["supabase/migrations/20260101000000_fixture.sql"],
-        [...requiredBaselineSteps, ...requiredLightDatabaseSteps],
         "skipped",
       ],
       [
         ["supabase/schemas/20_functions_booking.sql"],
         [...requiredBaselineSteps, ...requiredDatabaseSteps],
         "selected",
-      ],
-      [
-        ["scripts/verify-booking-refund-concurrency.mjs"],
-        [...requiredBaselineSteps, ...requiredDatabaseSteps],
+        "skipped",
         "selected",
       ],
       [
         ["src/components/booking-quote.tsx"],
         [...requiredBaselineSteps, ...requiredBrowserSteps],
         "skipped",
-      ],
-      [
-        ["src/app/[locale]/bookings/page.tsx"],
-        [...requiredBaselineSteps, ...requiredBrowserSteps],
-        "skipped",
-      ],
-      [
-        ["tests/access.spec.ts"],
-        [...requiredBaselineSteps, ...requiredBrowserSteps],
+        "selected",
         "skipped",
       ],
       [
@@ -1195,128 +1157,44 @@ describe("repository verification command", () => {
           ...requiredLightDatabaseSteps,
           ...requiredBrowserSteps,
         ],
+        "selected",
+        "selected",
         "skipped",
       ],
-      [["supabase/config.toml"], fullRoute, "selected"],
+      [["supabase/config.toml"], fullRoute, "selected", "selected", "selected"],
       [
-        ["scripts/local-supabase-concurrency-harness.mjs"],
-        fullRoute,
+        ["custom-worker.ts"],
+        fullRouteWithoutConcurrency,
         "selected",
-      ],
-      [["tests/fixtures/payment-recovery-cleanup.mjs"], fullRoute, "selected"],
-      [["custom-worker.ts"], fullRouteWithoutConcurrency, "skipped"],
-      [
-        ["custom-worker.ts", "scripts/local-supabase-concurrency-harness.mjs"],
-        fullRoute,
         "selected",
+        "skipped",
       ],
     ].map(([paths, ...rest]) => [paths.join(" and "), paths, ...rest]),
-  )("selects the route for %s", (_label, paths, steps, concurrency) => {
-    const repository = createRepository();
-    for (const path of paths) commit(repository, path, "fixture\n");
+  )(
+    "selects the route for %s",
+    (_label, paths, steps, database, browser, concurrency) => {
+      const repository = createRepository();
+      for (const path of paths) commit(repository, path, "fixture\n");
 
-    const result = runVerification(repository);
+      const result = runVerification(repository);
 
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-      steps,
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining(
-        `Booking and payment concurrency programs: ${concurrency}`,
-      ),
-    );
-  });
-
-  it("selects the route for package-lock.json", () => {
-    const repository = createRepository();
-    const lock = JSON.parse(
-      readFileSync(join(repository, "package-lock.json"), "utf8"),
-    );
-    lock.packages["node_modules/fixture"] = { version: "1.0.0" };
-    commit(repository, "package-lock.json", `${JSON.stringify(lock)}\n`);
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-      fullRoute,
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "Booking and payment concurrency programs: selected",
-      ),
-    );
-  });
-
-  it("selects the route for src/reporting/new.ts", () => {
-    const repository = createRepository();
-    commit(repository, "src/reporting/new.ts", "export {};\n");
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(3);
-    expect(result.run).not.toHaveBeenCalled();
-    expect(result.stderr).toHaveBeenCalledWith(
-      expect.stringContaining("src/reporting/new.ts"),
-    );
-  });
-
-  it.each([
-    [
-      "runtime code",
-      "custom-worker.ts",
-      "export const value = 'changed';\n",
-      fullRouteWithoutConcurrency,
-    ],
-    ["a dependency file", "package.json", "{}\n", fullRoute],
-    [
-      "root git ignore",
-      ".gitignore",
-      "node_modules/\n.demo/\n",
-      fullRouteWithoutConcurrency,
-    ],
-    [
-      "root Prettier ignore",
-      ".prettierignore",
-      "node_modules\n",
-      fullRouteWithoutConcurrency,
-    ],
-    [
-      "root Prettier config",
-      ".prettierrc.json",
-      "{}\n",
-      fullRouteWithoutConcurrency,
-    ],
-    [
-      "the selector itself",
-      "scripts/verify.mjs",
-      "export const changed = true;\n",
-      fullRoute,
-    ],
-    [
-      "the selector tests",
-      "scripts/verify.test.mjs",
-      "export const changed = true;\n",
-      fullRoute,
-    ],
-  ])("selects full verification for %s", (_label, path, contents, steps) => {
-    const repository = createRepository();
-    commit(repository, path, contents);
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-      steps,
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining("Database verification: selected"),
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining("Browser verification: selected"),
-    );
-  });
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        steps,
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining(`Database verification: ${database}`),
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining(`Browser verification: ${browser}`),
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `Booking and payment concurrency programs: ${concurrency}`,
+        ),
+      );
+    },
+  );
 
   it("stops without running anything when a changed path is unclassified", () => {
     const repository = createRepository();
@@ -1414,118 +1292,6 @@ describe("repository verification command", () => {
     },
   );
 
-  it.each([
-    ["an asset", "docs/product/assets/runtime.json", "{}\n"],
-    ["an agent script", ".agents/roles/runtime.mjs", "export {};\n"],
-    ["an agent config", ".agents/roles/runtime.json", "{}\n"],
-    [
-      "an agent TypeScript file",
-      ".agents/skills/tool/runtime.ts",
-      "export {};\n",
-    ],
-    [
-      "nested native skill metadata",
-      ".agents/skills/future-publisher/fixtures/worker/agents/openai.yaml",
-      "interface:\n  display_name: Nested Fixture\n",
-    ],
-    ["a docs script", "docs/research/runtime.js", "export {};\n"],
-    ["a category lookalike", ".agents-copy/roles/reviewer.md", "# Lookalike\n"],
-    ["a docs lookalike", "docs-copy/research/study.md", "# Lookalike\n"],
-  ])("refuses to treat %s as approved prose", (_label, path, contents) => {
-    const repository = createRepository();
-    commit(repository, path, contents);
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(3);
-    expect(result.run).not.toHaveBeenCalled();
-    expect(result.stderr).toHaveBeenCalledWith(expect.stringContaining(path));
-  });
-
-  it.each([
-    [
-      "board configuration",
-      "scripts/lib/board-config.mjs",
-      "export const BOARD_PROJECT_NUMBER = 4;\n",
-    ],
-    [
-      "a board test",
-      "scripts/lib/board-rules.test.mjs",
-      "export const fixture = true;\n",
-    ],
-    [
-      "the end-to-end board CLI test",
-      "scripts/lib/board-cli.test.mjs",
-      "export const fixture = true;\n",
-    ],
-    [
-      "the board command",
-      "scripts/board.mjs",
-      "export const main = () => 0;\n",
-    ],
-    [
-      "the board-add command",
-      "scripts/board-add.mjs",
-      "export const main = () => 0;\n",
-    ],
-    [
-      "the board-move command",
-      "scripts/board-move.mjs",
-      "export const main = () => 0;\n",
-    ],
-    [
-      "the self-hosted font test",
-      "src/app/fonts.test.ts",
-      "test('fonts', () => {});\n",
-    ],
-    ["a font licence", "public/fonts/OFL-karla.txt", "licence text\n"],
-    [
-      "a domain test",
-      "src/booking-request/booking-request-policy.test.ts",
-      "throw new Error('fixture');\n",
-    ],
-  ])("keeps %s on baseline evidence", (_label, path, contents) => {
-    const repository = createRepository();
-    commit(repository, path, contents);
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-      requiredBaselineSteps,
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining("Database verification: skipped"),
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining("Browser verification: skipped"),
-    );
-  });
-
-  it.each([
-    [
-      "the browser fixtures",
-      "scripts/lib/access-browser-fixtures.mjs",
-      "export const fixture = true;\n",
-    ],
-    [
-      "the access fixture users",
-      "scripts/lib/access-fixture-users.mjs",
-      "export const fixture = true;\n",
-    ],
-  ])("keeps %s on full evidence", (_label, path, contents) => {
-    const repository = createRepository();
-    commit(repository, path, contents);
-
-    const result = runVerification(repository);
-
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual([
-      ...requiredBaselineSteps,
-      ...requiredExpensiveSteps,
-    ]);
-  });
-
   it("lets --full bypass documentation selection", () => {
     const repository = createRepository();
     commit(repository, "AGENTS.md", "updated instructions\n");
@@ -1619,18 +1385,18 @@ describe("repository verification command", () => {
     "rejects %s executable agent prose",
     (state) => {
       const repository = createRepository();
-      const path = ".agents/roles/future-role.md";
-      write(repository, path, "# Future role\n");
+      const path = ".agents/templates/future-template.md";
+      write(repository, path, "# Future template\n");
       if (state !== "untracked") {
         git(repository, ["add", path]);
-        git(repository, ["commit", "-m", "non-executable role"]);
+        git(repository, ["commit", "-m", "non-executable template"]);
       }
       chmodSync(join(repository, path), 0o755);
       if (state === "committed" || state === "staged") {
         git(repository, ["add", path]);
       }
       if (state === "committed") {
-        git(repository, ["commit", "-m", "executable role"]);
+        git(repository, ["commit", "-m", "executable template"]);
       }
 
       const result = runVerification(repository);
