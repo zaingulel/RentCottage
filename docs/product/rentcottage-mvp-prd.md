@@ -126,6 +126,7 @@ RentCottage will not run its own customer wallet or directly improvise custody o
 ## 6. Privacy, safety and moderation
 
 - Browsing shows only an approximate location. Exact directions and direct contact information appear after payment.
+- Published cottage photos carry no embedded location, device or capture data, except the colour profile, which is kept so colours display correctly and may name a colour space or device model. RentCottage removes the rest before a photo is stored and again before it is shown publicly, and refuses a photo it cannot clean.
 - Owner identity, ownership and licence documents are private, access-controlled and never used for automatic translation.
 - Authorised verification administrators may open only current Owner Verification Documents while an Owner Application is Submitted or Under review, including after review starts or replacement evidence is submitted. Other application states and historical document versions do not permit new access. Access requires administrator multi-factor authentication, a short-lived signed link, and an attributed audit record.
 - AI-translated dynamic content is labelled, the original remains available and is shown if translation fails, and users can report poor or inappropriate translations for further review. Static interface text is translated and reviewed by people before launch.
