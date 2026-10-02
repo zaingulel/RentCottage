@@ -118,11 +118,77 @@ function keptJpegParts(bytes: Uint8Array): KeptParts {
   return "unreadable";
 }
 
+const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+const keptPngChunkTypes = new Set(
+  "IHDR PLTE IDAT IEND tRNS gAMA cHRM sRGB iCCP cICP mDCV cLLI sBIT bKGD pHYs acTL fcTL fdAT".split(
+    " ",
+  ),
+);
+
+// The CRC-32 a PNG chunk carries, taken over its type and data.
+function pngChecksum(bytes: Uint8Array): number {
+  let checksum = 0xffffffff;
+  for (const byte of bytes) {
+    checksum ^= byte;
+    for (let bit = 0; bit < 8; bit += 1)
+      checksum = checksum & 1 ? (checksum >>> 1) ^ 0xedb88320 : checksum >>> 1;
+  }
+  return ~checksum >>> 0;
+}
+
+function pngExifChunk(orientation: number): Uint8Array {
+  const chunk = new Uint8Array(38);
+  chunk.set([0x00, 0x00, 0x00, 0x1a, 0x65, 0x58, 0x49, 0x66]);
+  chunk.set(orientationTiff(orientation), 8);
+  new DataView(chunk.buffer).setUint32(34, pngChecksum(chunk.subarray(4, 34)));
+  return chunk;
+}
+
+function keptPngParts(bytes: Uint8Array): KeptParts {
+  if (!pngSignature.every((byte, index) => bytes[index] === byte))
+    return "unreadable";
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const kept = [bytes.subarray(0, 8)];
+  let exifSeen = false;
+  let position = 8;
+  // A chunk is a length, a type, the data and a checksum; the checksum is copied, not verified.
+  while (position + 12 <= bytes.length) {
+    const end = position + 12 + view.getUint32(position);
+    if (end > bytes.length) return "unreadable";
+    const type = String.fromCharCode(
+      ...bytes.subarray(position + 4, position + 8),
+    );
+    if (keptPngChunkTypes.has(type)) {
+      kept.push(bytes.subarray(position, end));
+      if (type === "IEND") return kept;
+    } else if ((view.getUint8(position + 4) & 0x20) === 0) {
+      // An upper-case first letter marks a chunk the picture cannot be decoded without.
+      return "unreadable";
+    } else if (type === "eXIf" && !exifSeen) {
+      exifSeen = true;
+      const orientation = readExifOrientation(
+        bytes.subarray(position + 8, end - 4),
+      );
+      if (orientation === "unreadable") return "unreadable";
+      if (orientation !== "none") kept.push(pngExifChunk(orientation));
+    }
+    position = end;
+  }
+  return "unreadable";
+}
+
+function keptParts(bytes: Uint8Array, mediaType: string): KeptParts {
+  if (mediaType === "image/jpeg") return keptJpegParts(bytes);
+  if (mediaType === "image/png") return keptPngParts(bytes);
+  return "unreadable";
+}
+
 export function removeCottagePhotoMetadata(
   bytes: Uint8Array,
   mediaType: string,
 ): CottagePhotoMetadataRemoval {
-  const kept = mediaType === "image/jpeg" ? keptJpegParts(bytes) : "unreadable";
+  const kept = keptParts(bytes, mediaType);
   if (kept === "unreadable") return { kind: "unreadable" };
   const cleaned = new Uint8Array(
     kept.reduce((total, part) => total + part.length, 0),
