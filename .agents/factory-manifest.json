@@ -3,7 +3,7 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "13a8d5e17de7063d06babecdfbf2999d4dd20a73",
+  "syncedFrom": "dec9770d3ce6230eedebe8aa8f8afbc679925606",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -283,7 +283,7 @@
     },
     {
       "path": ".claude/agents/explorer.md",
-      "sha256": "718408092ce7c93e098fb12c5c25f876fe340c31529562e1f813d6e0be528aa5"
+      "sha256": "f74261a4633de9b7b3f04e0492bd91caeb5caa9a8aea7954b8a92a06eca94797"
     },
     {
       "path": ".claude/agents/oracle.md",

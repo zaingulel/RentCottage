@@ -3,7 +3,7 @@ name: explorer
 description: Fast, read-only code DISCOVERY — locate files, "where is X", list usages, trace a definition; reads whose result you can eyeball for completeness. It LOCATES code and does not judge it — audits that turn on judgment belong to `reviewer`.
 model: sonnet
 effort: low
-maxTurns: 20
+maxTurns: 40
 permissionMode: plan
 tools: Read, Glob, Grep, Bash
 color: blue
