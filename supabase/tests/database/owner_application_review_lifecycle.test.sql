@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(79);
+select plan(82);
 
 select has_table('public', 'owner_application_transitions', 'application transitions are durable');
 select has_table('public', 'owner_application_information_requests', 'scoped information requests are durable');
@@ -436,7 +436,7 @@ select set_config(
 select lives_ok(
   $$select public.review_owner_application(
     '20000000-0000-4000-8000-000000000301', 2, 'request_information',
-    'Provide the renewed licence.', array['exact_address', 'capacity', 'amenities'],
+    'Provide the renewed licence.', array['exact_address', 'governorate', 'approximate_location', 'capacity', 'amenities'],
     array['licensing_or_exemption']::public.owner_verification_document_kind[],
     null, null, null, '{}'::jsonb
   )$$,
@@ -461,7 +461,7 @@ select throws_ok(
 select results_eq(
   $$select requested_fields, requested_document_kinds::text[]
     from public.owner_application_information_requests$$,
-  $$values (array['exact_address', 'capacity', 'amenities']::text[], array['licensing_or_exemption']::text[])$$,
+  $$values (array['exact_address', 'governorate', 'approximate_location', 'capacity', 'amenities']::text[], array['licensing_or_exemption']::text[])$$,
   'the request records only the information RentCottage needs'
 );
 
@@ -502,7 +502,7 @@ select throws_ok(
 
 select throws_ok(
   $$select public.respond_to_owner_application_request(
-    3, '{"exact_address":"", "capacity":8, "amenities":["wifi"]}'::jsonb,
+    3, '{"exact_address":"Renewed private address", "governorate":" ", "approximate_location":"Shaqlawa hills", "capacity":8, "amenities":["wifi"]}'::jsonb,
     array['licensing_or_exemption']::public.owner_verification_document_kind[]
   )$$,
   'RC422', null, 'an empty requested text value cannot resume review'
@@ -510,7 +510,7 @@ select throws_ok(
 
 select throws_ok(
   $$select public.respond_to_owner_application_request(
-    3, '{"exact_address":"Renewed private address", "capacity":"eight", "amenities":["wifi"]}'::jsonb,
+    3, '{"exact_address":"Renewed private address", "governorate":"Erbil", "approximate_location":"Shaqlawa hills", "capacity":"eight", "amenities":["wifi"]}'::jsonb,
     array['licensing_or_exemption']::public.owner_verification_document_kind[]
   )$$,
   'RC422', null, 'a malformed requested numeric value cannot resume review'
@@ -518,10 +518,19 @@ select throws_ok(
 
 select throws_ok(
   $$select public.respond_to_owner_application_request(
-    3, '{"exact_address":"Renewed private address", "capacity":8, "amenities":{"wifi":true}}'::jsonb,
+    3, '{"exact_address":"Renewed private address", "governorate":"Erbil", "approximate_location":"Shaqlawa hills", "capacity":8, "amenities":{"wifi":true}}'::jsonb,
     array['licensing_or_exemption']::public.owner_verification_document_kind[]
   )$$,
   'RC422', null, 'a malformed requested JSON value cannot resume review'
+);
+
+select throws_ok(
+  $$select public.respond_to_owner_application_request(
+    3, '{"exact_address":"Renewed private address", "governorate":"Erbil", "approximate_location":"36.408333, 44.385834", "capacity":8, "amenities":["wifi"]}'::jsonb,
+    array['licensing_or_exemption']::public.owner_verification_document_kind[]
+  )$$,
+  'RC422', 'A requested field value is invalid',
+  'the information response refuses a bare coordinate pair as the Approximate Location'
 );
 
 select results_eq(
@@ -538,10 +547,26 @@ select results_eq(
 
 select lives_ok(
   $$select public.respond_to_owner_application_request(
-    3, '{"exact_address":"Renewed private address", "capacity":8, "amenities":["wifi"]}'::jsonb,
+    3, '{"exact_address":" ", "governorate":"Erbil", "approximate_location":"Shaqlawa, 12 km north of Erbil", "capacity":8, "amenities":["wifi"]}'::jsonb,
     array['licensing_or_exemption']::public.owner_verification_document_kind[]
   )$$,
-  'the applicant can answer exactly the requested fields and evidence'
+  'the applicant can answer exactly the requested fields and evidence, leaving the exact address blank'
+);
+
+select results_eq(
+  $$select exact_address, amenities
+    from public.owner_application_cottage_profiles
+    where application_id = '20000000-0000-4000-8000-000000000301'$$,
+  $$values (null::text, array['wifi']::text[])$$,
+  'a blank exact address response is stored as no address beside the other answers'
+);
+
+select results_eq(
+  $$select approximate_location
+    from public.owner_application_cottage_profiles
+    where application_id = '20000000-0000-4000-8000-000000000301'$$,
+  array['Shaqlawa, 12 km north of Erbil'::text],
+  'the information response stores area words that contain a number as the Approximate Location'
 );
 
 select results_eq(

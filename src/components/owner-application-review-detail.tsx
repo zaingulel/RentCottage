@@ -138,7 +138,7 @@ export function OwnerApplicationReviewDetailView({
           </div>
           <div>
             <dt>{copy.exactAddress}</dt>
-            <dd>{detail.cottage.exactAddress}</dd>
+            <dd>{detail.cottage.exactAddress || copy.notProvided}</dd>
           </div>
           <div>
             <dt>{ownerCopy.capacity}</dt>

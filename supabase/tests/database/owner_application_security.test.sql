@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(63);
+select plan(65);
 
 select has_table(
   'public',
@@ -135,6 +135,36 @@ select throws_ok(
   '23514',
   null,
   'unknown direct-RPC amenities are rejected'
+);
+
+select throws_ok(
+  $$select public.save_owner_application(
+    'individual',
+    'Zana Kareem',
+    null,
+    'licence',
+    null,
+    'Garden House',
+    'Erbil',
+    '36.408333, 44.385834',
+    'Near the eastern orchard road',
+    8,
+    3,
+    2,
+    array['garden', 'parking'],
+    'A quiet family cottage surrounded by fruit trees.',
+    'Families only. No amplified music after 10pm.'
+  )$$,
+  '23514',
+  'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_approximate_location_not_coordinate_pair"',
+  'the application save refuses a bare coordinate pair as the Approximate Location'
+);
+
+select ok(
+  not has_function_privilege('anon', 'public.reads_as_coordinate_pair(text)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.reads_as_coordinate_pair(text)', 'EXECUTE')
+    and not has_function_privilege('service_role', 'public.reads_as_coordinate_pair(text)', 'EXECUTE'),
+  'API roles cannot call the coordinate pair predicate directly'
 );
 
 select throws_ok(
@@ -376,6 +406,10 @@ cross join (
     ('payout_account')
 ) as required(kind)
 where applications.owner_user_id = '00000000-0000-0000-0000-000000000101';
+
+update public.owner_application_cottage_profiles
+set exact_address = null
+where owner_user_id = '00000000-0000-0000-0000-000000000101';
 
 set local role authenticated;
 select set_config(

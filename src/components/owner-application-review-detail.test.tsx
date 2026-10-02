@@ -112,6 +112,21 @@ describe("Owner Application review detail", () => {
     expect(screen.getAllByText("Not provided")).toHaveLength(3);
   });
 
+  it("shows the placeholder for an application without an exact address", () => {
+    render(
+      <OwnerApplicationReviewDetailView
+        locale="en"
+        detail={{
+          ...detail,
+          cottage: { ...detail.cottage, exactAddress: "" },
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Private road")).not.toBeInTheDocument();
+    expect(screen.getByText("Not provided")).toBeVisible();
+  });
+
   it("keeps lifecycle transition order explicit in a right-to-left locale", () => {
     const { container } = render(
       <OwnerApplicationReviewDetailView

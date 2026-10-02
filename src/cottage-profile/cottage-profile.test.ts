@@ -674,4 +674,61 @@ describe("Cottage Profile", () => {
       }),
     ).resolves.toEqual({ status: "conflict" });
   });
+
+  it.each([
+    ["a pair in two boxes", "36.408333", "44.385834"],
+    ["a pair pasted into the latitude box", "36.408333, 44.385834", ""],
+  ])(
+    "stores the exact point from %s",
+    async (_name, exactLatitude, exactLongitude) => {
+      const { cottageProfile } = setup();
+
+      await expect(
+        cottageProfile.saveOwnerDraft(profileId, 1, {
+          exactLatitude,
+          exactLongitude,
+        }),
+      ).resolves.toMatchObject({
+        status: "saved",
+        profile: { exactLatitude: 36.408333, exactLongitude: 44.385834 },
+      });
+    },
+  );
+
+  it("rejects a reversed exact point on both coordinate fields without swapping it", async () => {
+    const { cottageProfile, repository } = setup();
+    const update = vi.spyOn(repository, "updateOwner");
+
+    await expect(
+      cottageProfile.saveOwnerDraft(profileId, 1, {
+        exactLatitude: "44.385834",
+        exactLongitude: "36.408333",
+      }),
+    ).resolves.toEqual({
+      status: "invalid",
+      fields: ["exactLatitude", "exactLongitude"],
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a coordinate pair in the public approximate location and accepts an area in words", async () => {
+    const { cottageProfile, repository } = setup();
+    const update = vi.spyOn(repository, "updateOwner");
+
+    await expect(
+      cottageProfile.saveOwnerDraft(profileId, 1, {
+        approximateLocation: "36.408333, 44.385834",
+      }),
+    ).resolves.toEqual({ status: "invalid", fields: ["approximateLocation"] });
+    expect(update).not.toHaveBeenCalled();
+
+    await expect(
+      cottageProfile.saveOwnerDraft(profileId, 1, {
+        approximateLocation: "Shaqlawa countryside",
+      }),
+    ).resolves.toMatchObject({
+      status: "saved",
+      profile: { approximateLocation: "Shaqlawa countryside" },
+    });
+  });
 });

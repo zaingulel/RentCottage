@@ -54,6 +54,12 @@ Anything else is a token.
   flight and supplies the `pending` state the buttons show.
 - Site chrome is `site-header.tsx`, `site-footer.tsx` and `marketplace-shell.tsx` in `src/components/`; the
   language selector is `locale-links.tsx`.
+- Read back and confirm: [cottage-location-fields.tsx](../src/components/cottage-location-fields.tsx) is the
+  pattern for a value the interface cannot show and a mistake in which is costly. The entry is read back in words
+  in a `role="status"` element named by `aria-label`, with its numbers in `<bdi dir="ltr">`; a problem is a
+  `.field-error` message there and `aria-invalid` on the fields; a correction is offered as an `ActionButton` and
+  never applied unasked; and a native `required` checkbox, shown only for a valid reading and unticked by any
+  edit, confirms it before the form submits.
 - A new button, link-styled action, form field or submit feedback reuses these. A pattern they lack is added
   there, not built inside a feature component.
 

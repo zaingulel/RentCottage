@@ -126,6 +126,7 @@ begin
   if cycle.name is null or cycle.governorate is null or cycle.approximate_location is null
     or cycle.capacity is null or cycle.bedrooms is null or cycle.bathrooms is null
     or cardinality(cycle.amenities) < 1 then raise exception 'Reviewed public Cottage Profile fields are incomplete' using errcode = 'RC203'; end if;
+  if public.reads_as_coordinate_pair(cycle.approximate_location) then raise exception 'Reviewed Approximate Location reads as a coordinate pair' using errcode = 'RC203'; end if;
   if (select count(*) from public.cottage_profile_localized_heads where review_cycle_id = cycle.id) <> 3 then raise exception 'All three localized heads are required' using errcode = 'RC203'; end if;
   if (select count(distinct revisions.locale)
       from public.cottage_profile_localized_revisions revisions
@@ -816,7 +817,6 @@ CREATE OR REPLACE FUNCTION "public"."cottage_profile_required_data_is_complete"(
       and profiles.name is not null
       and profiles.governorate is not null
       and profiles.approximate_location is not null
-      and profiles.exact_address is not null
       and profiles.exact_latitude is not null
       and profiles.exact_longitude is not null
       and profiles.private_directions is not null
@@ -1793,6 +1793,19 @@ CREATE OR REPLACE FUNCTION "public"."public_cottage_unit_is_available_without_au
 $$;
 
 ALTER FUNCTION "public"."public_cottage_unit_is_available_without_authorization_claim"("target_schedule_revision_id" "uuid", "target_unit_kind" "public"."cottage_inventory_unit_kind", "target_unit_id" "uuid", "target_service_day" "date") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."reads_as_coordinate_pair"("target_value" "text") RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO ''
+    AS $_$
+  -- Twin of readsAsCoordinatePair in src/cottage-profile/exact-point.ts; every set is spelled as code points so no locale widens it.
+  select btrim(regexp_replace(
+    target_value,
+    '[\t\n\v\f\r\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]', ' ', 'g'
+  )) ~ '^(?:[([] *)?[+-]?[0-9\u0660-\u0669\u06F0-\u06F9]+(?:[.\u066B][0-9\u0660-\u0669\u06F0-\u06F9]+)?(?: *\u00B0)?(?: *[,\u060C;/|] *| +)[+-]?[0-9\u0660-\u0669\u06F0-\u06F9]+(?:[.\u066B][0-9\u0660-\u0669\u06F0-\u06F9]+)?(?: *\u00B0)?(?: *[])])?(?: *[.\u066B])?$';
+$_$;
+
+ALTER FUNCTION "public"."reads_as_coordinate_pair"("target_value" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."record_cottage_translation_usage"("target_reservation_id" "uuid", "actual_input_tokens" bigint, "actual_output_tokens" bigint, "actual_total_tokens" bigint, "actual_microusd" bigint) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER

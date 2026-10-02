@@ -411,6 +411,7 @@ export function OwnerApplicationForm({
                     invalid={invalidFields.has("approximateLocation")}
                     message={copy.invalidField}
                   />
+                  <small>{copy.approximateLocationHelp}</small>
                 </label>
                 <label>
                   {copy.exactAddress}

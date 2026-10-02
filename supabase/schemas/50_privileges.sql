@@ -1488,3 +1488,5 @@ GRANT EXECUTE ON FUNCTION public.hide_customer_review(uuid,text) TO authenticate
 
 REVOKE ALL ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.reads_as_coordinate_pair(text) FROM PUBLIC,anon,authenticated,service_role;

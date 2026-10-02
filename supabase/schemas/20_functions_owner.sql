@@ -231,7 +231,6 @@ begin
   if profile.name is null then missing := array_append(missing, 'cottage_name'); end if;
   if profile.governorate is null then missing := array_append(missing, 'governorate'); end if;
   if profile.approximate_location is null then missing := array_append(missing, 'approximate_location'); end if;
-  if profile.exact_address is null then missing := array_append(missing, 'exact_address'); end if;
   if profile.capacity is null then missing := array_append(missing, 'capacity'); end if;
   if profile.bedrooms is null then missing := array_append(missing, 'bedrooms'); end if;
   if profile.bathrooms is null then missing := array_append(missing, 'bathrooms'); end if;
@@ -1136,7 +1135,9 @@ begin
         'exact_address', 'description', 'house_rules'
       ) then
         jsonb_typeof(supplied.value) is distinct from 'string'
-        or char_length(btrim(supplied.value #>> '{}')) not between 1 and case supplied.key
+        or char_length(btrim(supplied.value #>> '{}'))
+          not between case supplied.key when 'exact_address' then 0 else 1 end
+          and case supplied.key
           when 'legal_name' then 120
           when 'cottage_name' then 120
           when 'governorate' then 120
@@ -1145,6 +1146,8 @@ begin
           when 'description' then 2000
           when 'house_rules' then 1500
         end
+        or (supplied.key = 'approximate_location'
+          and public.reads_as_coordinate_pair(supplied.value #>> '{}'))
       when supplied.key in ('company_name', 'exemption_basis') then
         jsonb_typeof(supplied.value) is distinct from 'string'
         or char_length(btrim(supplied.value #>> '{}')) > case supplied.key

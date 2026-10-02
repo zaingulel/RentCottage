@@ -29,7 +29,7 @@ describe("request-scoped confirmed booking access", () => {
     vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
     vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
     createClient.mockResolvedValue({ authenticated: true });
-    getAccess.mockResolvedValue({ receiptId: "receipt-35" });
+    getAccess.mockResolvedValue({ receiptId: "receipt-35", mapPin: null });
   });
 
   it("keeps paid details available before notification work exists", async () => {
@@ -46,7 +46,7 @@ describe("request-scoped confirmed booking access", () => {
     await expect(
       loadConfirmedBookingAccess("RC-REQ-AAAAAAAAAAAAAAAA"),
     ).resolves.toEqual({
-      access: { receiptId: "receipt-35" },
+      access: { receiptId: "receipt-35", mapPin: null },
       notification: {
         receiptId: "receipt-35",
         state: "unavailable",
@@ -56,6 +56,25 @@ describe("request-scoped confirmed booking access", () => {
         suppressedAt: null,
         historical: false,
       },
+      navigation: null,
     });
+  });
+
+  it("hands paid participants simulated navigation only when a map pin is released", async () => {
+    getStatus.mockResolvedValue({ receiptId: "receipt-35", state: "pending" });
+    getAccess.mockResolvedValueOnce({
+      receiptId: "receipt-35",
+      mapPin: { latitude: 33.315241, longitude: 44.366067 },
+    });
+
+    await expect(
+      loadConfirmedBookingAccess("RC-REQ-AAAAAAAAAAAAAAAA"),
+    ).resolves.toMatchObject({ navigation: { kind: "simulated" } });
+
+    getAccess.mockResolvedValueOnce({ receiptId: "receipt-35", mapPin: null });
+
+    await expect(
+      loadConfirmedBookingAccess("RC-REQ-AAAAAAAAAAAAAAAA"),
+    ).resolves.toMatchObject({ navigation: null });
   });
 });

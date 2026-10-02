@@ -127,6 +127,48 @@ describe("Supabase Owner Application review adapter", () => {
     },
   );
 
+  it("reads an application submitted without an exact address", async () => {
+    const tableQueries = {
+      owner_applications: queryResult({
+        id: "20000000-0000-4000-8000-000000000001",
+        version: 2,
+        status: "submitted",
+        submitted_at: "2026-08-16T12:00:00.000Z",
+        review_due_at: "2026-08-19T12:00:00.000Z",
+        applicant_kind: "individual",
+        legal_name: "Private owner",
+        company_name: null,
+        licensing_basis: "licence",
+        exemption_basis: null,
+      }),
+      owner_application_cottage_profiles: queryResult({
+        name: "Garden House",
+        governorate: "Erbil",
+        approximate_location: "Shaqlawa",
+        exact_address: null,
+        capacity: 8,
+        bedrooms: 3,
+        bathrooms: 2,
+        amenities: [],
+        description: "Description",
+        house_rules: "Rules",
+      }),
+      owner_verification_documents: queryResult([]),
+      owner_application_information_requests: queryResult(null),
+      owner_application_transitions: queryResult([]),
+    };
+    const from = vi.fn(
+      (table: keyof typeof tableQueries) => tableQueries[table],
+    );
+
+    const detail = await loadOwnerApplicationReviewDetail(
+      { from } as unknown as SupabaseClient,
+      "20000000-0000-4000-8000-000000000001",
+    );
+
+    expect(detail?.cottage.exactAddress).toBe("");
+  });
+
   it("loads owner request scope through the safe RPC without selecting the base table", async () => {
     const renewal = queryResult(null);
     const notices = queryResult([]);

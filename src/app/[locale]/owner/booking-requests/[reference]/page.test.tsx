@@ -53,7 +53,10 @@ const params = (locale: string) =>
   Promise.resolve({ locale, reference: "RC-REQ-AAAAAAAAAAAAAAAA" });
 beforeEach(() => {
   vi.clearAllMocks();
-  confirmed.mockResolvedValue({ access: { actorRole: "cottage_owner" } });
+  confirmed.mockResolvedValue({
+    access: { actorRole: "cottage_owner" },
+    navigation: null,
+  });
   financial.mockResolvedValue({
     cancellation: null,
     lifecycle: { status: "confirmed" },
@@ -134,7 +137,10 @@ it("replaces an unpaid request with its authoritative payment status", async () 
   ).toHaveTextContent("The Customer’s automatic payment failed");
 });
 it("keeps participant role isolation", async () => {
-  confirmed.mockResolvedValue({ access: { actorRole: "customer" } });
+  confirmed.mockResolvedValue({
+    access: { actorRole: "customer" },
+    navigation: null,
+  });
   render(await Page({ params: params("en") }));
   expect(screen.getByRole("alert")).toHaveTextContent("Access recovery");
   expect(screen.queryByRole("heading")).not.toBeInTheDocument();

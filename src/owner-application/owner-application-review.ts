@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { readsAsCoordinatePair } from "@/cottage-profile/exact-point";
 import {
   verificationDocumentKinds,
   type OwnerLicensingBasis,
@@ -280,16 +281,29 @@ function parseResponseFieldValue(
     cottage_name: 120,
     governorate: 120,
     approximate_location: 240,
-    exact_address: 240,
     description: 2000,
     house_rules: 1500,
   };
   const requiredMaximum = requiredTextMaximums[field];
-  if (requiredMaximum !== undefined) return boundedText(value, requiredMaximum);
-  if (field === "company_name" || field === "exemption_basis") {
+  if (requiredMaximum !== undefined) {
+    const bounded = boundedText(value, requiredMaximum);
+    if (field === "approximate_location" && readsAsCoordinatePair(bounded)) {
+      invalid();
+    }
+    return bounded;
+  }
+  const optionalTextMaximums: Partial<
+    Record<OwnerApplicationResponseField, number>
+  > = {
+    company_name: 120,
+    exact_address: 240,
+    exemption_basis: 1000,
+  };
+  const optionalMaximum = optionalTextMaximums[field];
+  if (optionalMaximum !== undefined) {
     if (typeof value !== "string") invalid();
     const normalized = value.trim();
-    if (normalized.length > (field === "company_name" ? 120 : 1000)) invalid();
+    if (normalized.length > optionalMaximum) invalid();
     return normalized;
   }
   if (field === "licensing_basis") {

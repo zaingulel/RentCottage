@@ -1,3 +1,4 @@
+import { readsAsCoordinatePair } from "@/cottage-profile/exact-point";
 import type { OwnerApplicationStatus } from "./owner-application-status";
 
 export {
@@ -228,6 +229,9 @@ function parseDraft(
   }
   for (const [field, maximum] of Object.entries(maximumLengths)) {
     if (text(input[field]).length > maximum) invalid.push(field);
+  }
+  if (readsAsCoordinatePair(text(input.approximateLocation))) {
+    invalid.push("approximateLocation");
   }
 
   if (invalid.length > 0) return { status: "invalid", fields: invalid };

@@ -1,5 +1,5 @@
 begin;
-select plan(44);
+select plan(50);
 
 select has_function(
   'public',
@@ -190,6 +190,44 @@ select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003503
 set local role authenticated;
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'an authenticated non-participant receives no private facts');
 select is(jsonb_array_length(public.list_booking_history('customer'))::text, '0', 'an authenticated non-participant has no history rows');
+reset role;
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003502', true);
+set session_replication_role = replica;
+update public.booking_requests set status = 'pending' where id = '60000000-0000-4000-8000-000000003501';
+set session_replication_role = origin;
+set local role authenticated;
+select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'a pending request releases no private location');
+reset role;
+set session_replication_role = replica;
+update public.booking_requests set status = 'processing' where id = '60000000-0000-4000-8000-000000003501';
+set session_replication_role = origin;
+set local role authenticated;
+select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'a processing request releases no private location');
+reset role;
+set session_replication_role = replica;
+update public.booking_requests set status = 'declined' where id = '60000000-0000-4000-8000-000000003501';
+set session_replication_role = origin;
+set local role authenticated;
+select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'a declined request releases no private location');
+reset role;
+set session_replication_role = replica;
+update public.booking_requests set status = 'withdrawn' where id = '60000000-0000-4000-8000-000000003501';
+set session_replication_role = origin;
+set local role authenticated;
+select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'a withdrawn request releases no private location');
+reset role;
+set session_replication_role = replica;
+update public.booking_requests set status = 'expired' where id = '60000000-0000-4000-8000-000000003501';
+set session_replication_role = origin;
+set local role authenticated;
+select is(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'an expired request releases no private location');
+reset role;
+set session_replication_role = replica;
+update public.booking_requests set status = 'accepted' where id = '60000000-0000-4000-8000-000000003501';
+set session_replication_role = origin;
+set local role authenticated;
+select isnt(public.get_confirmed_booking_access('RC-REQ-0000000000003501'), null, 'the accepted paid request releases the private location again');
 reset role;
 
 set session_replication_role = replica;

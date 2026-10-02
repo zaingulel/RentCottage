@@ -217,7 +217,10 @@ describe("authenticated Customer Booking Request page", () => {
 });
 
 it("keeps confirmed booking details visible and shows authoritative review eligibility", async () => {
-  loadConfirmed.mockResolvedValue({ access: { actorRole: "customer" } });
+  loadConfirmed.mockResolvedValue({
+    access: { actorRole: "customer" },
+    navigation: null,
+  });
   loadFinancial.mockResolvedValue({ lifecycle: { status: "completed" } });
   loadReview.mockResolvedValue({
     status: "eligible",

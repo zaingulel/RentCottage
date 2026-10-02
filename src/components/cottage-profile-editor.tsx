@@ -23,6 +23,8 @@ import {
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 
+import { CottageLocationFields } from "./cottage-location-fields";
+
 const idle: CottageProfileActionState = { status: "idle" };
 const idlePreview: CottagePhotoPreviewState = { status: "idle" };
 
@@ -208,9 +210,13 @@ export function CottageProfileEditor({
             {copy.approximateLocation}
             <input
               name="approximateLocation"
+              aria-describedby="cottage-profile-approximate-location-help"
               defaultValue={profile.approximateLocation}
             />
           </label>
+          <p id="cottage-profile-approximate-location-help">
+            {copy.approximateLocationHelp}
+          </p>
           <div className="cottage-profile-number-grid">
             <label>
               {copy.capacity}
@@ -274,30 +280,11 @@ export function CottageProfileEditor({
             {copy.exactAddress}
             <input name="exactAddress" defaultValue={profile.exactAddress} />
           </label>
-          <div className="cottage-profile-coordinate-grid">
-            <label>
-              {copy.latitude}
-              <input
-                name="exactLatitude"
-                type="number"
-                min="-90"
-                max="90"
-                step="0.000001"
-                defaultValue={profile.exactLatitude ?? ""}
-              />
-            </label>
-            <label>
-              {copy.longitude}
-              <input
-                name="exactLongitude"
-                type="number"
-                min="-180"
-                max="180"
-                step="0.000001"
-                defaultValue={profile.exactLongitude ?? ""}
-              />
-            </label>
-          </div>
+          <CottageLocationFields
+            locale={locale}
+            savedLatitude={profile.exactLatitude}
+            savedLongitude={profile.exactLongitude}
+          />
           <label>
             {copy.privateDirections}
             <textarea

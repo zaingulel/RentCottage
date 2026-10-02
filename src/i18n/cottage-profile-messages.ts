@@ -34,7 +34,7 @@ const en = {
   back: "Back to cottages",
   editorTitle: "Cottage Profile",
   completion:
-    "Complete every field and add 1–12 ready photos before submission.",
+    "Complete every required field and add 1–12 ready photos before submission.",
   publicDetails: "Public working-copy details",
   privateLocation: "Private arrival details",
   privateWarning:
@@ -42,9 +42,37 @@ const en = {
   cottageName: "Cottage name",
   governorate: "Governorate",
   approximateLocation: "Approximate public location",
-  exactAddress: "Exact private address",
+  approximateLocationHelp:
+    "Area only, in words. Never put coordinates or the exact address here; this text is public.",
+  exactAddress: "Exact private address (optional)",
   latitude: "Latitude",
   longitude: "Longitude",
+  pointCheck: "Exact point check",
+  pointValid:
+    "Latitude {latitude} north, longitude {longitude} east. These numbers are within the supported area. No map is connected, so check them against the pin in your own maps app.",
+  pointOutside:
+    "These numbers are outside the supported area (latitude 29.0 to 37.4, longitude 38.7 to 49.2). Check them and try again.",
+  pointReversed:
+    "These numbers look reversed: the latitude box holds a longitude and the longitude box holds a latitude.",
+  pointSwap: "Swap the two numbers",
+  pointDecimal:
+    "Enter both as decimal numbers, such as 36.408333 and 44.385834.",
+  pointConfirm: "I checked this point is the cottage",
+  deviceLocationUse: "Use this device's location",
+  deviceLocationStatus: "Device location",
+  deviceLocationFinding: "Finding this device's location…",
+  deviceLocationProposed:
+    "This is where this device is now, accurate to about {metres} metres. It may be your home, not the cottage. Check the numbers before confirming.",
+  deviceLocationRough:
+    "This reading is rough. Type the numbers from a maps app instead if you can.",
+  deviceLocationDenied:
+    "Location permission was refused. You can still type or paste the numbers.",
+  deviceLocationUnavailable:
+    "This device could not find its location. You can still type or paste the numbers.",
+  deviceLocationTimedOut:
+    "Finding the location took too long. Try again outdoors, or type or paste the numbers.",
+  deviceLocationUnsupported:
+    "This browser cannot share its location. Type or paste the numbers.",
   privateDirections: "Private directions",
   capacity: "Guest capacity",
   bedrooms: "Bedrooms",
@@ -130,7 +158,8 @@ const ar: Copy = {
   administratorAccessAction: "أكمل دخول المسؤول",
   back: "العودة إلى الأكواخ",
   editorTitle: "ملف الكوخ",
-  completion: "أكمل جميع الحقول وأضف من 1 إلى 12 صورة جاهزة قبل الإرسال.",
+  completion:
+    "أكمل جميع الحقول المطلوبة وأضف من 1 إلى 12 صورة جاهزة قبل الإرسال.",
   publicDetails: "تفاصيل نسخة العمل العامة",
   privateLocation: "تفاصيل الوصول الخاصة",
   privateWarning:
@@ -138,9 +167,36 @@ const ar: Copy = {
   cottageName: "اسم الكوخ",
   governorate: "المحافظة",
   approximateLocation: "الموقع العام التقريبي",
-  exactAddress: "العنوان الخاص الدقيق",
+  approximateLocationHelp:
+    "المنطقة فقط، بالكلمات. لا تضع الإحداثيات أو العنوان الدقيق هنا؛ هذا النص عام.",
+  exactAddress: "العنوان الخاص الدقيق (اختياري)",
   latitude: "خط العرض",
   longitude: "خط الطول",
+  pointCheck: "التحقق من النقطة الدقيقة",
+  pointValid:
+    "خط العرض {latitude} شمالاً، خط الطول {longitude} شرقاً. هذه الأرقام ضمن المنطقة المدعومة. لا توجد خريطة متصلة، لذا طابقها مع الدبوس في تطبيق الخرائط لديك.",
+  pointOutside:
+    "هذه الأرقام خارج المنطقة المدعومة (خط العرض من 29.0 إلى 37.4، وخط الطول من 38.7 إلى 49.2). تحقق منها وحاول مرة أخرى.",
+  pointReversed:
+    "يبدو أن الرقمين معكوسان: خانة خط العرض تحتوي على خط طول وخانة خط الطول تحتوي على خط عرض.",
+  pointSwap: "تبديل الرقمين",
+  pointDecimal: "أدخل الرقمين بصيغة عشرية، مثل 36.408333 و 44.385834.",
+  pointConfirm: "تحققت من أن هذه النقطة هي الكوخ",
+  deviceLocationUse: "استخدم موقع هذا الجهاز",
+  deviceLocationStatus: "موقع الجهاز",
+  deviceLocationFinding: "جارٍ تحديد موقع هذا الجهاز…",
+  deviceLocationProposed:
+    "هذا هو مكان هذا الجهاز الآن، بدقة تقارب {metres} متراً. قد يكون منزلك وليس الكوخ. تحقق من الأرقام قبل التأكيد.",
+  deviceLocationRough:
+    "هذه القراءة تقريبية. إن أمكن، اكتب الأرقام من تطبيق خرائط بدلاً من ذلك.",
+  deviceLocationDenied:
+    "رُفض إذن الموقع. ما زال بإمكانك كتابة الأرقام أو لصقها.",
+  deviceLocationUnavailable:
+    "تعذّر على هذا الجهاز تحديد موقعه. ما زال بإمكانك كتابة الأرقام أو لصقها.",
+  deviceLocationTimedOut:
+    "استغرق تحديد الموقع وقتاً طويلاً. حاول مرة أخرى في مكان مفتوح، أو اكتب الأرقام أو الصقها.",
+  deviceLocationUnsupported:
+    "لا يستطيع هذا المتصفح مشاركة موقعه. اكتب الأرقام أو الصقها.",
   privateDirections: "اتجاهات الوصول الخاصة",
   capacity: "سعة الضيوف",
   bedrooms: "غرف النوم",
@@ -226,7 +282,7 @@ const ckb: Copy = {
   back: "گەڕانەوە بۆ کۆتێجەکان",
   editorTitle: "پرۆفایلی کۆتێج",
   completion:
-    "هەموو خانەکان پڕ بکەوە و 1 تا 12 وێنەی ئامادە زیاد بکە پێش ناردن.",
+    "هەموو خانە پێویستەکان پڕ بکەوە و 1 تا 12 وێنەی ئامادە زیاد بکە پێش ناردن.",
   publicDetails: "وردەکارییە گشتییەکانی کۆپی کار",
   privateLocation: "وردەکارییە تایبەتەکانی گەیشتن",
   privateWarning:
@@ -234,9 +290,37 @@ const ckb: Copy = {
   cottageName: "ناوی کۆتێج",
   governorate: "پارێزگا",
   approximateLocation: "شوێنی گشتی نزیکەیی",
-  exactAddress: "ناونیشانی وردی تایبەت",
+  approximateLocationHelp:
+    "تەنها ناوچە، بە وشە. هەرگیز کۆئۆردینات یان ناونیشانی ورد لێرە مەنووسە؛ ئەم دەقە گشتییە.",
+  exactAddress: "ناونیشانی وردی تایبەت (ئارەزوومەندانە)",
   latitude: "پانی جوگرافی",
   longitude: "درێژی جوگرافی",
+  pointCheck: "پشکنینی خاڵی ورد",
+  pointValid:
+    "پانی جوگرافی {latitude} باکوور، درێژی جوگرافی {longitude} ڕۆژهەڵات. ئەم ژمارانە لە ناو ناوچەی پشتگیریکراودان. هیچ نەخشەیەک نەبەستراوەتەوە، بۆیە لەگەڵ نیشانەکەی ناو ئەپی نەخشەکەت بەراوردیان بکە.",
+  pointOutside:
+    "ئەم ژمارانە لە دەرەوەی ناوچەی پشتگیریکراون (پانی جوگرافی لە 29.0 تا 37.4، درێژی جوگرافی لە 38.7 تا 49.2). پشکنینیان بکە و دووبارە هەوڵ بدەوە.",
+  pointReversed:
+    "وا دیارە دوو ژمارەکە پێچەوانەن: خانەی پانی جوگرافی درێژی جوگرافی تێدایە و خانەی درێژی جوگرافی پانی جوگرافی تێدایە.",
+  pointSwap: "گۆڕینەوەی دوو ژمارەکە",
+  pointDecimal:
+    "هەردوو ژمارەکە بە شێوەی دەیی بنووسە، وەک 36.408333 و 44.385834.",
+  pointConfirm: "پشکنیم کە ئەم خاڵە کۆتێجەکەیە",
+  deviceLocationUse: "شوێنی ئەم ئامێرە بەکاربهێنە",
+  deviceLocationStatus: "شوێنی ئامێر",
+  deviceLocationFinding: "شوێنی ئەم ئامێرە دەدۆزرێتەوە…",
+  deviceLocationProposed:
+    "ئەمە ئەو شوێنەیە کە ئەم ئامێرە ئێستا لێیەتی، بە وردیی نزیکەی {metres} مەتر. لەوانەیە ماڵەکەت بێت، نەک کۆتێجەکە. پێش پشتڕاستکردنەوە ژمارەکان بپشکنە.",
+  deviceLocationRough:
+    "ئەم خوێندنەوەیە نزیکەییە. ئەگەر دەتوانیت، لەبری ئەوە ژمارەکان لە ئەپێکی نەخشەوە بنووسە.",
+  deviceLocationDenied:
+    "مۆڵەتی شوێن ڕەتکرایەوە. هێشتا دەتوانیت ژمارەکان بنووسیت یان بیانلکێنیت.",
+  deviceLocationUnavailable:
+    "ئەم ئامێرە نەیتوانی شوێنەکەی بدۆزێتەوە. هێشتا دەتوانیت ژمارەکان بنووسیت یان بیانلکێنیت.",
+  deviceLocationTimedOut:
+    "دۆزینەوەی شوێنەکە زۆری خایاند. لە دەرەوە دووبارە هەوڵ بدەوە، یان ژمارەکان بنووسە یان بیانلکێنە.",
+  deviceLocationUnsupported:
+    "ئەم وێبگەڕە ناتوانێت شوێنەکەی هاوبەش بکات. ژمارەکان بنووسە یان بیانلکێنە.",
   privateDirections: "ڕێنمایی تایبەتی گەیشتن",
   capacity: "ژمارەی میوان",
   bedrooms: "ژووری نوستن",

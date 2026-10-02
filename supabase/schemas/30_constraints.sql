@@ -17,6 +17,9 @@ ALTER TABLE ONLY "public"."booking_requests"
 ALTER TABLE ONLY "public"."booking_request_release_work"
     ADD CONSTRAINT "booking_request_release_work_decline_note_check" CHECK ((("decline_note" IS NULL) OR (("decline_note" = "btrim"("decline_note")) AND (("char_length"("decline_note") >= 1) AND ("char_length"("decline_note") <= 500)) AND "public"."booking_request_content_is_safe"("decline_note"))));
 
+ALTER TABLE ONLY "public"."owner_application_cottage_profiles"
+    ADD CONSTRAINT "cottage_profile_approximate_location_not_coordinate_pair" CHECK ((NOT "public"."reads_as_coordinate_pair"("approximate_location")));
+
 ALTER TABLE ONLY "public"."account_contexts"
     ADD CONSTRAINT "account_contexts_pkey" PRIMARY KEY ("user_id");
 

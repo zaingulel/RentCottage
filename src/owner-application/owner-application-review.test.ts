@@ -309,6 +309,83 @@ describe("Owner Application review boundary", () => {
     });
   });
 
+  it("accepts a blank exact address and still requires every other requested text", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        application_id: "20000000-0000-4000-8000-000000000001",
+        status: "under_review",
+        version: 6,
+        occurred_at: "2026-08-16T12:00:00.000Z",
+        review_due_at: "2026-08-19T12:00:00.000Z",
+      },
+      error: null,
+    });
+    const client = { rpc } as unknown as SupabaseClient;
+
+    for (const field of [
+      "legal_name",
+      "cottage_name",
+      "governorate",
+      "approximate_location",
+      "description",
+      "house_rules",
+    ]) {
+      await expect(
+        executeOwnerApplicationInformationResponse(client, {
+          expectedVersion: 5,
+          fieldValues: { [field]: " " },
+          confirmedDocumentKinds: [],
+        }),
+      ).rejects.toThrow("Owner Application review command is invalid");
+    }
+    expect(rpc).not.toHaveBeenCalled();
+
+    await executeOwnerApplicationInformationResponse(client, {
+      expectedVersion: 5,
+      fieldValues: { exact_address: " " },
+      confirmedDocumentKinds: [],
+    });
+    expect(rpc).toHaveBeenCalledWith("respond_to_owner_application_request", {
+      expected_version: 5,
+      requested_field_values: { exact_address: "" },
+      confirmed_document_kinds: [],
+    });
+  });
+
+  it("rejects a coordinate pair in the public approximate area and accepts an area in words", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        application_id: "20000000-0000-4000-8000-000000000001",
+        status: "under_review",
+        version: 6,
+        occurred_at: "2026-08-16T12:00:00.000Z",
+        review_due_at: "2026-08-19T12:00:00.000Z",
+      },
+      error: null,
+    });
+    const client = { rpc } as unknown as SupabaseClient;
+
+    await expect(
+      executeOwnerApplicationInformationResponse(client, {
+        expectedVersion: 5,
+        fieldValues: { approximate_location: "36.408333, 44.385834" },
+        confirmedDocumentKinds: [],
+      }),
+    ).rejects.toThrow("Owner Application review command is invalid");
+    expect(rpc).not.toHaveBeenCalled();
+
+    await executeOwnerApplicationInformationResponse(client, {
+      expectedVersion: 5,
+      fieldValues: { approximate_location: "Shaqlawa countryside" },
+      confirmedDocumentKinds: [],
+    });
+    expect(rpc).toHaveBeenCalledWith("respond_to_owner_application_request", {
+      expected_version: 5,
+      requested_field_values: { approximate_location: "Shaqlawa countryside" },
+      confirmed_document_kinds: [],
+    });
+  });
+
   it("rejects an empty renewal scope before the provider call", async () => {
     const rpc = vi.fn();
 
