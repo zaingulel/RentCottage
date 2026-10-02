@@ -1,3 +1,5 @@
+import { readExactPoint } from "./exact-point";
+
 export const cottageProfileAmenities = [
   "garden",
   "parking",
@@ -233,16 +235,13 @@ function parseDraftValues(
   for (const [field, maximum] of Object.entries(cottageProfileMaximumLengths)) {
     if (text(input[field]).length > maximum) invalid.push(field);
   }
-  const exactLatitude = optionalNumber(
-    input.exactLatitude,
-    cottageProfileNumberRanges.exactLatitude.minimum,
-    cottageProfileNumberRanges.exactLatitude.maximum,
+  const exactPoint = readExactPoint(
+    String(input.exactLatitude ?? ""),
+    String(input.exactLongitude ?? ""),
   );
-  const exactLongitude = optionalNumber(
-    input.exactLongitude,
-    cottageProfileNumberRanges.exactLongitude.minimum,
-    cottageProfileNumberRanges.exactLongitude.maximum,
-  );
+  if (exactPoint.kind !== "empty" && exactPoint.kind !== "valid") {
+    invalid.push("exactLatitude", "exactLongitude");
+  }
   const capacity = optionalNumber(
     input.capacity,
     cottageProfileNumberRanges.capacity.minimum,
@@ -262,16 +261,11 @@ function parseDraftValues(
     true,
   );
   for (const [field, parsed] of Object.entries({
-    exactLatitude,
-    exactLongitude,
     capacity,
     bedrooms,
     bathrooms,
   })) {
     if (!parsed.valid) invalid.push(field);
-  }
-  if ((exactLatitude.value === null) !== (exactLongitude.value === null)) {
-    invalid.push("exactLatitude", "exactLongitude");
   }
   const amenities = Array.isArray(input.amenities)
     ? [...new Set(input.amenities.map(text).filter(Boolean))]
@@ -300,8 +294,10 @@ function parseDraftValues(
       governorate: text(input.governorate),
       approximateLocation: text(input.approximateLocation),
       exactAddress: text(input.exactAddress),
-      exactLatitude: exactLatitude.value,
-      exactLongitude: exactLongitude.value,
+      exactLatitude:
+        exactPoint.kind === "valid" ? exactPoint.point.latitude : null,
+      exactLongitude:
+        exactPoint.kind === "valid" ? exactPoint.point.longitude : null,
       privateDirections: text(input.privateDirections),
       capacity: capacity.value,
       bedrooms: bedrooms.value,
