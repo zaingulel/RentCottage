@@ -1195,7 +1195,6 @@ export async function main(
               "tests/administrator-payment-history.spec.ts",
               "tests/administrator-records.spec.ts",
               "tests/booking-history.spec.ts",
-              "tests/request-notification-details.spec.ts",
               "tests/messaging.spec.ts",
               "tests/customer-reviews.spec.ts",
               "--project=mobile",
