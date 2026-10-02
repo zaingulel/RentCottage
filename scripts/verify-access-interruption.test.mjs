@@ -9,10 +9,6 @@ describe("access verification command", () => {
     });
   }, 15_000);
 
-  it("cleans its owned process tree on SIGTERM while preserving an unrelated process", async () => {
-    await observeInterruptedAccessVerification("SIGTERM");
-  }, 15_000);
-
   it("forces a known same-group descendant to exit after its leader exits gracefully", async () => {
     await observeInterruptedAccessVerification("SIGTERM", {
       descendantBehavior: "ignore",

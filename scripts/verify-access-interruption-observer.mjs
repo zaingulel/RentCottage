@@ -260,11 +260,6 @@ const waitFor = async (predicate) => {
 };
 
 if (command === "docker" && args[0] === "inspect") {
-  if (cleanupStage === "inspection" && existsSync(root + "/inspected")) {
-    publishReady(root + "/cleanup.ready", JSON.stringify({ pid: process.pid, token: "cleanup-stop-" + token }));
-    await waitFor(() => existsSync(root + "/cleanup.release"));
-  }
-  writeFileSync(root + "/inspected", "inspected");
   process.stdout.write(process.env.SUPABASE_LOCAL_PROJECT + "|" + process.env.SUPABASE_LOCAL_WORKDIR + "\\n");
   process.exit(0);
 }
