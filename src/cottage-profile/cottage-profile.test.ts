@@ -326,6 +326,49 @@ describe("Cottage Profile", () => {
     });
   });
 
+  it("stores an uploaded photo only after removing its embedded metadata and records the cleaned size", async () => {
+    const { cottageProfile, repository, storage } = setup();
+    const prepare = vi.spyOn(repository, "preparePhotoUpload");
+    const upload = vi.spyOn(storage, "upload");
+    const fromHex = (text: string) => new Uint8Array(Buffer.from(text, "hex"));
+    // A fictional location: Null Island (0N 0E), orientation 6, as a 140-byte big-endian TIFF.
+    const locatedTiff =
+      "4d4d002a00000008000201120003000000010006000088250004000000010000002600000000" +
+      "000400010002000000024e00000000020005000000030000005c0003000200000002450000000004000500000003000000740000" +
+      "0000" +
+      "0000000000000001".repeat(6);
+    const bytes = fromHex(`ffd8ffe10094457869660000${locatedTiff}ffd9`);
+
+    const result = await cottageProfile.uploadPhoto(profileId, {
+      name: "shaqlawa-cottage.jpg",
+      type: "image/jpeg",
+      size: bytes.byteLength,
+      bytes,
+    });
+
+    expect(result).toEqual({
+      status: "uploaded",
+      photoId: "71000000-0000-4000-8000-000000000001",
+    });
+    expect(prepare).toHaveBeenCalledWith({
+      profileId,
+      originalFilename: "shaqlawa-cottage.jpg",
+      mediaType: "image/jpeg",
+      sizeBytes: 40,
+    });
+    expect(upload).toHaveBeenCalledWith(
+      `${ownerUserId}/${profileId}/72000000-0000-4000-8000-000000000001.webp`,
+      {
+        name: "shaqlawa-cottage.jpg",
+        type: "image/jpeg",
+        size: 40,
+        bytes: fromHex(
+          "ffd8ffe100224578696600004d4d002a00000008000101120003000000010006000000000000ffd9",
+        ),
+      },
+    );
+  });
+
   it.each([
     ["invalid magic bytes", 12, new Uint8Array(12)],
     [
@@ -333,6 +376,13 @@ describe("Cottage Profile", () => {
       13,
       new Uint8Array([
         0x52, 0x49, 0x46, 0x46, 0x04, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+      ]),
+    ],
+    [
+      "an unreadable container",
+      12,
+      new Uint8Array([
+        0x52, 0x49, 0x46, 0x46, 0xff, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
       ]),
     ],
   ])("rejects %s before preparing private storage", async (_, size, bytes) => {
