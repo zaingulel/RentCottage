@@ -64,6 +64,30 @@ const imageHeader = pngChunk("IHDR", "00000001000000010802000000");
 const imageData = pngChunk("IDAT", "789c6260f8cfc000000301010018dd8db0");
 const imageEnd = pngChunk("IEND", "");
 
+const littleEndianSize = (size: number) =>
+  Buffer.from(Uint32Array.of(size).buffer).toString("hex");
+// A four-character code, a little-endian size, the payload, and a pad byte after an odd-sized payload.
+const webpChunk = (code: string, payload: string) =>
+  textHex(code) +
+  littleEndianSize(payload.length / 2) +
+  payload +
+  ((payload.length / 2) % 2 === 1 ? "00" : "");
+// The RIFF size counts everything after it: the WEBP code and the chunks.
+const webpHeader = (riffSize: number) =>
+  `52494646${littleEndianSize(riffSize)}57454250`;
+
+// The first payload byte holds the flags: 0x20 colour profile, 0x08 EXIF, 0x04 XMP.
+const extendedHeader = (flags: string) =>
+  webpChunk("VP8X", `${flags}000000000000000000`);
+// Five payload bytes, so the chunk ends in a pad byte.
+const colourProfileChunk = webpChunk("ICCP", "a1b2c3d4e5");
+// Lossy picture data, which the cleaner copies and never reads.
+const pictureChunk = webpChunk("VP8 ", "9d012a0100010002");
+const carriedExifChunk = (value: number) =>
+  `455849461a000000${orientationOnlyTiff(value)}`;
+// An input container, whose RIFF size is taken from the chunks it is given.
+const webp = (chunks: string) => webpHeader(4 + chunks.length / 2) + chunks;
+
 describe("Cottage photo metadata removal", () => {
   it("removes location, device and capture metadata from a JPEG and keeps its picture data and orientation", () => {
     const photo = fromHex(
@@ -204,6 +228,73 @@ describe("Cottage photo metadata removal", () => {
     },
   );
 
+  it("removes location, device and capture metadata from a WebP and keeps its picture data and orientation", () => {
+    const chunks =
+      extendedHeader("2c") +
+      colourProfileChunk +
+      pictureChunk +
+      // Some writers put the JPEG identifier before the TIFF.
+      webpChunk("EXIF", textHex("Exif\0\0") + locatedTiff) +
+      // Only the first EXIF chunk is read, so a later one may hold anything.
+      webpChunk("EXIF", "ffff") +
+      webpChunk("XMP ", textHex("<x:xmpmeta>Null Island</x>")) +
+      webpChunk("ABCD", textHex("Taken at Null Island 0N 0E"));
+    const original = webp(chunks) + trailingVideo;
+    const photo = fromHex(original);
+    // 4 for the WEBP code, then chunks of 18, 14, 16 and 34 bytes.
+    const expected =
+      webpHeader(86) +
+      extendedHeader("28") +
+      colourProfileChunk +
+      pictureChunk +
+      carriedExifChunk(6);
+
+    const cleaned = removeCottagePhotoMetadata(photo, "image/webp");
+
+    if (cleaned.kind !== "cleaned") throw new Error(cleaned.kind);
+    expect(hex(cleaned.bytes)).toBe(expected);
+    // A caller sends the buffer, so it must hold the cleaned bytes and nothing else.
+    expect(hex(new Uint8Array(cleaned.bytes.buffer))).toBe(expected);
+    expect(hex(photo)).toBe(original);
+
+    const again = removeCottagePhotoMetadata(cleaned.bytes, "image/webp");
+
+    if (again.kind !== "cleaned") throw new Error(again.kind);
+    expect(hex(new Uint8Array(again.bytes.buffer))).toBe(expected);
+    expect(again.bytes.buffer).not.toBe(cleaned.bytes.buffer);
+  });
+
+  it.each([
+    ["the upright value 1", webpChunk("EXIF", orientationOnlyTiff(1))],
+    ["no EXIF chunk", ""],
+  ])(
+    "carries no orientation from a WebP that is not rotated and clears its EXIF flag: %s",
+    (_name, exifChunk) => {
+      const cleaned = removeCottagePhotoMetadata(
+        fromHex(webp(extendedHeader("2c") + pictureChunk + exifChunk)),
+        "image/webp",
+      );
+
+      if (cleaned.kind !== "cleaned") throw new Error(cleaned.kind);
+      // 4 for the WEBP code, then chunks of 18 and 16 bytes.
+      expect(hex(cleaned.bytes)).toBe(
+        webpHeader(38) + extendedHeader("20") + pictureChunk,
+      );
+    },
+  );
+
+  it("returns a WebP container that holds no chunks unchanged", () => {
+    const container = fromHex("524946460400000057454250");
+
+    const cleaned = removeCottagePhotoMetadata(container, "image/webp");
+
+    if (cleaned.kind !== "cleaned") throw new Error(cleaned.kind);
+    expect(hex(new Uint8Array(cleaned.bytes.buffer))).toBe(
+      "524946460400000057454250",
+    );
+    expect(cleaned.bytes.buffer).not.toBe(container.buffer);
+  });
+
   it.each([
     ["a missing start marker", "00d8ffd9", "image/jpeg"],
     ["no bytes at all", "", "image/jpeg"],
@@ -312,6 +403,42 @@ describe("Cottage photo metadata removal", () => {
     ],
   ])("refuses a PNG it cannot read: %s", (_name, photo) => {
     expect(removeCottagePhotoMetadata(fromHex(photo), "image/png")).toEqual({
+      kind: "unreadable",
+    });
+  });
+
+  it.each([
+    ["a wrong RIFF signature", "524946580400000057454250"],
+    ["a wrong WEBP signature", "524946460400000057454251"],
+    ["fewer bytes than a header", "5249464604000000"],
+    ["a RIFF size beyond the bytes", "52494646ff00000057454250"],
+    ["a RIFF size below 4", "524946460300000057454250"],
+    [
+      "a chunk running past the container end",
+      `${webpHeader(20)}56503820ff000000a1b2c3d4e5f6a7b8`,
+    ],
+    [
+      "an odd-sized chunk whose pad byte lies past the container end",
+      `${webpHeader(13)}5650382001000000a1`,
+    ],
+    ["a chunk header cut off", `${webpHeader(8)}56503820`],
+    [
+      "an EXIF chunk cut off inside its TIFF header",
+      webp(pictureChunk + webpChunk("EXIF", "4d4d002a0000")),
+    ],
+    [
+      "an EXIF first directory placed past the chunk",
+      webp(pictureChunk + webpChunk("EXIF", "4d4d002a000000ff0000")),
+    ],
+    [
+      "an orientation entry that is not a SHORT",
+      webp(
+        pictureChunk +
+          webpChunk("EXIF", "4d4d002a0000000800010112000400000001000000060000"),
+      ),
+    ],
+  ])("refuses a WebP it cannot read: %s", (_name, photo) => {
+    expect(removeCottagePhotoMetadata(fromHex(photo), "image/webp")).toEqual({
       kind: "unreadable",
     });
   });

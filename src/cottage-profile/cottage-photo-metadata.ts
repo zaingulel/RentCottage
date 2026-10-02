@@ -178,9 +178,78 @@ function keptPngParts(bytes: Uint8Array): KeptParts {
   return "unreadable";
 }
 
+// VP8X is kept too, as a copy whose flags are rewritten.
+const keptWebpChunkTypes = new Set([
+  ...["ICCP", "ANIM", "ANMF", "ALPH", "VP8 ", "VP8L"],
+]);
+
+// The chunk code EXIF and the little-endian size of the 26-byte orientation TIFF.
+const webpExifHeader = Uint8Array.of(
+  ...[0x45, 0x58, 0x49, 0x46, 0x1a, 0x00, 0x00, 0x00],
+);
+
+function fourCharacterCode(bytes: Uint8Array, position: number): string {
+  return String.fromCharCode(...bytes.subarray(position, position + 4));
+}
+
+function keptWebpParts(bytes: Uint8Array): KeptParts {
+  if (
+    fourCharacterCode(bytes, 0) !== "RIFF" ||
+    fourCharacterCode(bytes, 8) !== "WEBP"
+  )
+    return "unreadable";
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const riffSize = view.getUint32(4, true);
+  const containerEnd = riffSize + 8;
+  if (riffSize < 4 || containerEnd > bytes.length) return "unreadable";
+  // The header and the VP8X chunks are copies, because the cleaned size and flags are written into them.
+  const header = bytes.slice(0, 12);
+  const extendedHeaders: Uint8Array[] = [];
+  const kept: Uint8Array[] = [header];
+  let exifSeen = false;
+  // The XMP flag (0x04) always goes; the EXIF flag (0x08) goes unless an orientation is carried.
+  let clearedFlags = 0x0c;
+  let position = 12;
+  while (position < containerEnd) {
+    if (position + 8 > containerEnd) return "unreadable";
+    const size = view.getUint32(position + 4, true);
+    // An odd-sized payload is followed by one pad byte.
+    const end = position + 8 + size + (size % 2);
+    if (end > containerEnd) return "unreadable";
+    const code = fourCharacterCode(bytes, position);
+    if (code === "VP8X") {
+      const extendedHeader = bytes.slice(position, end);
+      extendedHeaders.push(extendedHeader);
+      kept.push(extendedHeader);
+    } else if (keptWebpChunkTypes.has(code)) {
+      kept.push(bytes.subarray(position, end));
+    } else if (code === "EXIF" && !exifSeen) {
+      exifSeen = true;
+      const payload = bytes.subarray(position + 4, position + 8 + size);
+      // Some writers put the JPEG identifier before the TIFF.
+      const orientation = readExifOrientation(
+        payload.subarray(startsWith(payload, "Exif\0\0") ? 10 : 4),
+      );
+      if (orientation === "unreadable") return "unreadable";
+      if (orientation !== "none") {
+        kept.push(webpExifHeader, orientationTiff(orientation));
+        clearedFlags = 0x04;
+      }
+    }
+    position = end;
+  }
+  // Writing the flags of a VP8X chunk too short to hold them changes nothing.
+  for (const extendedHeader of extendedHeaders)
+    extendedHeader[8] &= ~clearedFlags;
+  const cleanedLength = kept.reduce((total, part) => total + part.length, 0);
+  new DataView(header.buffer).setUint32(4, cleanedLength - 8, true);
+  return kept;
+}
+
 function keptParts(bytes: Uint8Array, mediaType: string): KeptParts {
   if (mediaType === "image/jpeg") return keptJpegParts(bytes);
   if (mediaType === "image/png") return keptPngParts(bytes);
+  if (mediaType === "image/webp") return keptWebpParts(bytes);
   return "unreadable";
 }
 
