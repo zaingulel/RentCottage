@@ -68,8 +68,8 @@ describe("Cottage Profile editor", () => {
     expect(screen.getByLabelText("Exact private address")).toHaveValue(
       "Private exact address",
     );
-    expect(screen.getByLabelText("Latitude")).toHaveValue(36.408333);
-    expect(screen.getByLabelText("Longitude")).toHaveValue(44.385834);
+    expect(screen.getByLabelText("Latitude")).toHaveValue("36.408333");
+    expect(screen.getByLabelText("Longitude")).toHaveValue("44.385834");
     expect(
       screen.getByText(
         "Exact address, coordinates and directions stay private and are never shown in the public listing.",
@@ -196,7 +196,7 @@ describe("Cottage Profile editor", () => {
       );
 
       await waitFor(() =>
-        expect(screen.getByRole("status")).toHaveTextContent(message),
+        expect(screen.getByText(message)).toHaveAttribute("role", "status"),
       );
     },
   );

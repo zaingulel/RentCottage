@@ -47,6 +47,17 @@ const en = {
   exactAddress: "Exact private address",
   latitude: "Latitude",
   longitude: "Longitude",
+  pointCheck: "Exact point check",
+  pointValid:
+    "Latitude {latitude} north, longitude {longitude} east. These numbers are within the supported area. No map is connected, so check them against the pin in your own maps app.",
+  pointOutside:
+    "These numbers are outside the supported area (latitude 29.0 to 37.4, longitude 38.7 to 49.2). Check them and try again.",
+  pointReversed:
+    "These numbers look reversed: the latitude box holds a longitude and the longitude box holds a latitude.",
+  pointSwap: "Swap the two numbers",
+  pointDecimal:
+    "Enter both as decimal numbers, such as 36.408333 and 44.385834.",
+  pointConfirm: "I checked this point is the cottage",
   privateDirections: "Private directions",
   capacity: "Guest capacity",
   bedrooms: "Bedrooms",
@@ -145,6 +156,16 @@ const ar: Copy = {
   exactAddress: "العنوان الخاص الدقيق",
   latitude: "خط العرض",
   longitude: "خط الطول",
+  pointCheck: "التحقق من النقطة الدقيقة",
+  pointValid:
+    "خط العرض {latitude} شمالاً، خط الطول {longitude} شرقاً. هذه الأرقام ضمن المنطقة المدعومة. لا توجد خريطة متصلة، لذا طابقها مع الدبوس في تطبيق الخرائط لديك.",
+  pointOutside:
+    "هذه الأرقام خارج المنطقة المدعومة (خط العرض من 29.0 إلى 37.4، وخط الطول من 38.7 إلى 49.2). تحقق منها وحاول مرة أخرى.",
+  pointReversed:
+    "يبدو أن الرقمين معكوسان: خانة خط العرض تحتوي على خط طول وخانة خط الطول تحتوي على خط عرض.",
+  pointSwap: "تبديل الرقمين",
+  pointDecimal: "أدخل الرقمين بصيغة عشرية، مثل 36.408333 و 44.385834.",
+  pointConfirm: "تحققت من أن هذه النقطة هي الكوخ",
   privateDirections: "اتجاهات الوصول الخاصة",
   capacity: "سعة الضيوف",
   bedrooms: "غرف النوم",
@@ -243,6 +264,17 @@ const ckb: Copy = {
   exactAddress: "ناونیشانی وردی تایبەت",
   latitude: "پانی جوگرافی",
   longitude: "درێژی جوگرافی",
+  pointCheck: "پشکنینی خاڵی ورد",
+  pointValid:
+    "پانی جوگرافی {latitude} باکوور، درێژی جوگرافی {longitude} ڕۆژهەڵات. ئەم ژمارانە لە ناو ناوچەی پشتگیریکراودان. هیچ نەخشەیەک نەبەستراوەتەوە، بۆیە لەگەڵ نیشانەکەی ناو ئەپی نەخشەکەت بەراوردیان بکە.",
+  pointOutside:
+    "ئەم ژمارانە لە دەرەوەی ناوچەی پشتگیریکراون (پانی جوگرافی لە 29.0 تا 37.4، درێژی جوگرافی لە 38.7 تا 49.2). پشکنینیان بکە و دووبارە هەوڵ بدەوە.",
+  pointReversed:
+    "وا دیارە دوو ژمارەکە پێچەوانەن: خانەی پانی جوگرافی درێژی جوگرافی تێدایە و خانەی درێژی جوگرافی پانی جوگرافی تێدایە.",
+  pointSwap: "گۆڕینەوەی دوو ژمارەکە",
+  pointDecimal:
+    "هەردوو ژمارەکە بە شێوەی دەیی بنووسە، وەک 36.408333 و 44.385834.",
+  pointConfirm: "پشکنیم کە ئەم خاڵە کۆتێجەکەیە",
   privateDirections: "ڕێنمایی تایبەتی گەیشتن",
   capacity: "ژمارەی میوان",
   bedrooms: "ژووری نوستن",

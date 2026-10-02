@@ -1413,6 +1413,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page.getByLabel("Bathrooms").fill("3");
   await page.getByLabel("Latitude").fill("36.408333");
   await page.getByLabel("Longitude").fill("44.385834");
+  await page.getByLabel("I checked this point is the cottage").check();
   await page
     .getByLabel("Private directions")
     .fill("Continue past the orchard gate.");
@@ -1425,7 +1426,9 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     .getByLabel("Source House Rules")
     .fill("Respect neighbours and leave the cottage tidy.");
   await page.getByRole("button", { name: "Save private draft" }).click();
-  await expect(page.getByRole("status")).toContainText("Private draft saved.");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Private draft saved." }),
+  ).toBeVisible();
 
   await page.getByLabel("Shift 1 name").fill("Morning");
   await page.getByLabel("Shift 1 start time").fill("08:00");
@@ -1683,9 +1686,9 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(page.getByText("Abandoned", { exact: true })).toBeVisible();
   await reason.fill("Browser lifecycle restoration proof");
   await restore.click();
-  await expect(page.getByRole("status")).toContainText(
-    "Cottage Profile restored.",
-  );
+  await expect(
+    page.getByRole("status").filter({ hasText: "Cottage Profile restored." }),
+  ).toBeVisible();
   await expect(page.getByText("Private draft", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Abandon draft" }),

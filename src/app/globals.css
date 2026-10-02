@@ -2015,6 +2015,7 @@ a:focus-visible {
 
 .cottage-profile-form,
 .cottage-profile-form > fieldset,
+.exact-point-fields,
 .cottage-profile-photos,
 .cottage-profile-source-revision,
 .cottage-photo-upload-form,
@@ -2317,7 +2318,8 @@ a:focus-visible {
   padding: 0;
 }
 
-.amenity-grid label {
+.amenity-grid label,
+.cottage-profile-form .exact-point-confirmation {
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -2326,8 +2328,13 @@ a:focus-visible {
   padding: 0.65rem;
 }
 
-.amenity-grid input {
+.amenity-grid input,
+.exact-point-confirmation input {
   inline-size: auto;
+}
+
+.exact-point-check p {
+  margin: 0;
 }
 
 .private-location-warning {
