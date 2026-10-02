@@ -103,14 +103,16 @@ where they live, the tolerated literals, and the component patterns new work reu
 ## Review and visual verification
 
 One fresh review of the final tree before the pull request opens, by the tier the `resume` skill defines: the session
-itself for documents; for code and agent instruction, the `reviewer` charter run by the model family that did not
-write the diff (`cross-review`), with the skill's route when that family's seat is unavailable; `security-reviewer`
-only when a change widens a surface in the Surfaces table's `security review` row. Greptile is metered from one
-pool shared by the canonical repository and every adopter the manifest lists; each repository sends only its own Surfaces `sign-off` row. It
-reviews a draft only for the sign-off tier, every thread fixed, set aside by the owner, or dismissed as false with
-a reason before the draft is marked ready. The `resume` skill owns the tiers, the allowance lookup, the cross-family substitution route when the other family's seat cannot be
-reached, and Greptile's own best-effort provider-unavailability exception; `.greptile/config.json` disables automatic
-reviews so marking ready starts CI without requesting another Greptile review.
+itself for documents and for a setting-only seat change, which alters only a seat's model, effort or turn-limit setting
+lines and the manifest hash that follows them; for code and agent instruction, every other seat-file change included,
+the `reviewer` charter run by the model family that did not write the diff (`cross-review`), with the skill's route when
+that family's seat is unavailable; `security-reviewer` only when a change widens a surface in the Surfaces table's
+`security review` row. Greptile is metered from one pool shared by the canonical repository and every adopter the
+manifest lists; each repository sends only its own Surfaces `sign-off` row. It reviews a draft only for the sign-off
+tier, every thread fixed, set aside by the owner, or dismissed as false with a reason before the draft is marked ready.
+The `resume` skill owns the tiers, the allowance lookup, the cross-family substitution route when the other family's
+seat cannot be reached, and Greptile's own best-effort provider-unavailability exception; `.greptile/config.json`
+disables automatic reviews so marking ready starts CI without requesting another Greptile review.
 
 Visual work is complete only after the changed interaction has been driven and a current screenshot displayed
 inline in chat; push authorisation waits for that image. Drive visual work as the Conventions table's `visual
@@ -118,11 +120,12 @@ verification` row says.
 
 ## Publication and machinery
 
-Push only with owner authorisation, through a draft pull request. A change every path of which the repository's
-`scripts/gates/pre-push-main` admits is instead pushed, on the same authorisation, as a fast-forward of `main` from
-the job worktree (`git push origin HEAD:main`), its commit carrying `Closes #<issue>`; no pull request opens and no
-workflow runs. A repository without that gate has no direct route. The documentation sweep and its day-after triage
-follow [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) when the
+Push only with owner authorisation, through a draft pull request. A change the repository's
+`scripts/gates/pre-push-main` admits whole is instead pushed, on the same authorisation, as a fast-forward of `main`
+from the job worktree (`git push origin HEAD:main`), its commit carrying `Closes #<issue>`; no pull request opens and no
+workflow runs. The gate alone decides what qualifies: documentation by its path and, where the gate judges changed
+lines, a setting-only seat change. A repository without that gate has no direct route. The documentation sweep and its
+day-after triage follow [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) when the
 Conventions table marks them active. New executable machinery in the workflow itself, including test scripts, harnesses,
 runners, and test-only tools (product code and ordinary tests added to existing suites are exempt), needs one of: a
 control failure a sentence here or in a skill could not prevent twice, the same measurable friction across three
@@ -150,14 +153,18 @@ merge-base --is-ancestor` shows its canonical merge commit is an ancestor of the
 and its acceptance criteria hold in the adopter; the job's pull request body lists each covered card with that
 evidence. After the merge, the job's own card closes as completed and closeout closes each covered card as not
 planned, with a comment naming the card that did the sync and quoting its evidence. A card whose change merged after
-the run, or whose evidence the job cannot show, stays open. The change stays partial until every adopter's sync lands.
-A shared file edited without its manifest hash following fails the contract test; `node scripts/factory-sync.mjs
---write` refreshes the hashes, and only in the canonical repository. Shared files are real files, never symlinks,
-since a symlink reaches a Windows checkout as plain text: a skill is written in `.agents/skills/` and copied whole to
-`.claude/skills/`, and each hook directory carries its own `.gitattributes` so hooks keep LF endings wherever line
-endings are converted; the contract test fails on a symlink, a copy that differs from its source, or a missing rule. A
-git hook's run permission is its committed file mode. An intentional adopter exception needs owner agreement and lives
-outside the shared files. `resume` reports at intake whether this repository lags the canonical copy.
+the run, or whose evidence the job cannot show, stays open. The change stays partial until every adopter's sync lands. A
+Claude Code session started in the root checkout keeps that checkout's git guard after it enters a job worktree, while
+it reads the permission allow list from the worktree, so a change that widens the allow list is its own card, started
+only once the guard change that bounds it is on `main` in the root checkout of the canonical repository and, through its
+sync card, of every adopter. A shared file edited without its manifest hash following fails the contract test; `node
+scripts/factory-sync.mjs --write` refreshes the hashes, and only in the canonical repository. Shared files are real
+files, never symlinks, since a symlink reaches a Windows checkout as plain text: a skill is written in `.agents/skills/`
+and copied whole to `.claude/skills/`, and each hook directory carries its own `.gitattributes` so hooks keep LF endings
+wherever line endings are converted; the contract test fails on a symlink, a copy that differs from its source, or a
+missing rule. A git hook's run permission is its committed file mode. An intentional adopter exception needs owner
+agreement and lives outside the shared files. `resume` reports at intake whether this repository lags the canonical
+copy.
 
 <!-- factory-shared:end -->
 

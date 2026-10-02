@@ -3,11 +3,11 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "dec9770d3ce6230eedebe8aa8f8afbc679925606",
+  "syncedFrom": "274563bd07abd38f42821bf5ffd692544badc131",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "a9615d18f0abad78ecd99e588d227eedafca97f0cab6fe59803eef779b9e3ff3"
+      "sha256": "a2798baceeee08e98b3ec427211fd402770924f5d8df531fce921ce862747407"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "18567730d59ef0bcfb66d9e2826593634e556a521234347e41af15bbba318d4d"
+      "sha256": "8123a5a294d855934a80587eabbd962cbff08416875044ad838aa0d69b91328f"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -331,7 +331,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "a9615d18f0abad78ecd99e588d227eedafca97f0cab6fe59803eef779b9e3ff3"
+      "sha256": "a2798baceeee08e98b3ec427211fd402770924f5d8df531fce921ce862747407"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -443,7 +443,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "18567730d59ef0bcfb66d9e2826593634e556a521234347e41af15bbba318d4d"
+      "sha256": "8123a5a294d855934a80587eabbd962cbff08416875044ad838aa0d69b91328f"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -575,7 +575,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "4dddb8b9f8c494ce9989681beb9240116bd843bd0f94ba3fdc896c13e4a397f2"
+      "sha256": "23da45daf35beb6309e2930d291d1a81a8d69057325d055bfbbd413a56ded22c"
     },
     {
       "path": "CLAUDE.md",
@@ -583,7 +583,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "ec674b723dd1cc6ebc64e230844c17f115131b4d98bdbf21f37d9742b30694ae"
+      "sha256": "033f661bc59ebed7605b3e21c781f7ccabd4e33dc495c0e692507c740d907d5a"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -648,11 +648,11 @@
     },
     {
       "path": "scripts/lib/check-agents.mjs",
-      "sha256": "e9ea2e1aa9db71a335343383417deb0e0dd6a55401b7c657250a7bf6bb264552"
+      "sha256": "e193008617a952dd68dff96b32179da1e528be6b648a2d4f3f039f3cc9b3c10b"
     },
     {
       "path": "scripts/lib/check-agents.test.mjs",
-      "sha256": "5a1f8daedda0d37c7f1f3907685278516c4b83fa561532affd0f659432054755"
+      "sha256": "1bb4d2de468703703101987c740179ab9688dc3c67f092be76acdd10477525ea"
     },
     {
       "path": "scripts/lib/checkout-context.mjs",
@@ -752,7 +752,7 @@
     },
     {
       "path": "scripts/lib/precommit.test.mjs",
-      "sha256": "e8615a351ccdb17da0c8650f2b9a950a4503594d81351e72c7e58760628974ee"
+      "sha256": "9bf54a4c54a003452842ea5890ee9dffa594c36a4c76983e41cb0577245d807d"
     },
     {
       "path": "scripts/lib/prepush.test.mjs",
@@ -788,11 +788,11 @@
     },
     {
       "path": "scripts/lib/unsafe-git.mjs",
-      "sha256": "ee53271878d3436a78668161b169cc192436ca4dc24560666e0af08c1d4cf31d"
+      "sha256": "ff5cec59e054c4eabcd62074c692ecde1bec38350396b6e447388dc971065bde"
     },
     {
       "path": "scripts/lib/unsafe-git.test.mjs",
-      "sha256": "af33f6a4d556e91739f62d71c35fff2a29df6df28bfb3847e762e8bde3d1ad91"
+      "sha256": "7dd09333e3c5cc64437e1f21e1f357eb383af1a47d83c96dc5f6af20c5d2a163"
     },
     {
       "path": "scripts/lib/verify-green.test.mjs",

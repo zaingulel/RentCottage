@@ -15,9 +15,10 @@
 //   `initialPrompt` key (it never reaches a subagent — the opening instruction belongs in the body).
 //   Codex TOML: the restricted project format — simple quoted string fields plus one
 //   opened-and-closed `developer_instructions = """ ... """` block; `name` matches the
-//   filename.
+//   filename; `model` from the known set.
 //   Default CLI run: the Claude and Codex reviewer charters match, the skill sigil aside.
-// Model, effort, and turn caps are each agent file's own decision and are not pinned here.
+// Which seat carries which model, effort or turn cap is not decided here: the seats the
+// costliest models may sit on and the 90-turn caps are pinned in check-agents.test.mjs.
 //
 // Pure logic exported for scripts/lib/check-agents.test.mjs; CLI at bottom.
 
@@ -26,6 +27,7 @@ import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const KNOWN_MODELS = ['opus', 'sonnet', 'haiku', 'fable', 'inherit'];
+const KNOWN_CODEX_MODELS = ['gpt-6-astra', 'gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna'];
 const KNOWN_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const KNOWN_SANDBOX_MODES = ['read-only', 'workspace-write'];
 const REQUIRED_KEYS = ['name', 'description'];
@@ -155,6 +157,9 @@ export function checkCodexAgentSource(filename, source) {
   const expectedName = basename(filename, '.toml');
   if (fields.name && fields.name !== expectedName) {
     problems.push(`${filename}: name \`${fields.name}\` != filename \`${expectedName}\` — the agent registers under a name nothing references`);
+  }
+  if (fields.model && !KNOWN_CODEX_MODELS.includes(fields.model)) {
+    problems.push(`${filename}: unknown model \`${fields.model}\` (known: ${KNOWN_CODEX_MODELS.join(', ')})`);
   }
   if (fields.model_reasoning_effort && !KNOWN_EFFORTS.includes(fields.model_reasoning_effort)) {
     problems.push(`${filename}: unknown model_reasoning_effort \`${fields.model_reasoning_effort}\` (known: ${KNOWN_EFFORTS.join(', ')})`);

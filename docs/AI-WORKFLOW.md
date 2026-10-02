@@ -188,29 +188,32 @@ The diagram is the whole path from a card to a merged commit. In words:
 - **Verification before review.** Visual work is driven as the Conventions table's `visual verification` row says
   and a current screenshot is shown in chat; any further gate the Surfaces table names runs here.
 - **Review in two layers.** One fresh review of the final tree before the pull request opens, by tier. Documents
-  (`docs/`, the root readme, `CONTEXT.md`) are reviewed by the session itself; the owner is their reader. Code and agent
-  instruction, the manual, the rules, the skills and the seat files included, get the `reviewer` charter run by the
-  model family that did not write the diff, dispatched through the `cross-review` skill: the Codex seat from a Claude
-  session, the Claude seat from a Codex session, because a writer's own family shares its blind spots. When that
-  family's seat cannot be reached, the pass runs on the writing family's own seat instead and the pull request body
-  declares the substitution and how the unavailability was established; an undeclared substitution is a skip. Sign-off
-  surfaces (the Surfaces table's `sign-off` row), and any diff where material
-  uncertainty remains after that pass, get the same cross-family pass and then an explicit Greptile request on the
-  finished draft, every thread fixed, set aside by the owner, or dismissed as false with a reason before the draft
-  is marked ready. `security-reviewer` runs only when a change widens a surface in the Surfaces table's `security review` row. `.greptile/config.json` disables automatic reviews; labels are metadata.
-  The `resume` skill owns the tiers, the allowance lookup, the request, current-commit completion evidence, finding
-  disposition, that cross-family substitution route and Greptile's own documented best-effort provider-unavailability
-  exception. Repairs and rebases stay in draft and receive the applicable local evidence and, when required, a new
-  Greptile attempt before CI. When two repair rounds still produce true findings, the `resume` skill's Build section
-  decides between one more round and an owner decision.
+  (`docs/`, the root readme, `CONTEXT.md`) are reviewed by the session itself; the owner is their reader. A setting-only
+  seat change, one that alters only a seat's model, effort or turn-limit setting lines and the manifest hash that
+  follows them, gets the same session review, because the owner chose the setting and no instruction changed; the
+  `resume` skill defines the case. Code and agent instruction, the manual, the rules, the skills and every other
+  seat-file change included, get the `reviewer` charter run by the model family that did not write the diff, dispatched
+  through the `cross-review` skill: the Codex seat from a Claude session, the Claude seat from a Codex session, because
+  a writer's own family shares its blind spots. When that family's seat cannot be reached, the pass runs on the writing
+  family's own seat instead and the pull request body declares the substitution and how the unavailability was
+  established; an undeclared substitution is a skip. Sign-off surfaces (the Surfaces table's `sign-off` row), and any
+  diff where material uncertainty remains after that pass, get the same cross-family pass and then an explicit Greptile
+  request on the finished draft, every thread fixed, set aside by the owner, or dismissed as false with a reason before
+  the draft is marked ready. `security-reviewer` runs only when a change widens a surface in the Surfaces table's
+  `security review` row. `.greptile/config.json` disables automatic reviews; labels are metadata. The `resume` skill
+  owns the tiers, the allowance lookup, the request, current-commit completion evidence, finding disposition, that
+  cross-family substitution route and Greptile's own documented best-effort provider-unavailability exception. Repairs
+  and rebases stay in draft and receive the applicable local evidence and, when required, a new Greptile attempt before
+  CI. When two repair rounds still produce true findings, the `resume` skill's Build section decides between one more
+  round and an owner decision.
 - **Delivery by GitHub.** Marking the pull request ready after any required review attempt settles starts continuous
-  integration. An unchanged-commit CI retry needs no further Greptile review. The merge is always queued as a GitHub auto-merge, which GitHub completes
-  only when the required `test` and `sweep-scope` checks are green; no agent merges directly. The two documentation
-  routines, when the Conventions table marks them active, are the one exception their manuals state: the sweep and
-  its day-after triage each squash-merge
-  their own pull request through the GitHub API tooling, and only once both required checks have succeeded on its
-  exact head. A change every path of which `scripts/gates/pre-push-main` admits skips the pull request entirely,
-  pushed straight to `main` on the same push authorisation (`resume`, section 8).
+  integration. An unchanged-commit CI retry needs no further Greptile review. The merge is always queued as a GitHub
+  auto-merge, which GitHub completes only when the required `test` and `sweep-scope` checks are green; no agent merges
+  directly. The two documentation routines, when the Conventions table marks them active, are the one exception their
+  manuals state: the sweep and its day-after triage each squash-merge their own pull request through the GitHub API
+  tooling, and only once both required checks have succeeded on its exact head. A change `scripts/gates/pre-push-main`
+  admits whole, qualifying documentation and, where the gate judges changed lines, a setting-only seat change, skips the
+  pull request entirely, pushed straight to `main` on the same push authorisation (`resume`, section 8).
 - **Closeout.** The moment the merge lands, the same session confirms it, moves the card, pulls main, and
   removes the branch and worktree. Rulings the owner made during the session go to the issue or the manual
   that owns the topic, never to a new document.

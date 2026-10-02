@@ -73,7 +73,7 @@ function armAgentDefinitions(repo) {
   mkdirSync(join(repo, '.claude', 'agents'), { recursive: true });
   mkdirSync(join(repo, '.codex', 'agents'), { recursive: true });
   writeFileSync(join(repo, '.claude', 'agents', 'reviewer.md'), '---\nname: reviewer\ndescription: "Fixture reviewer"\nmodel: opus\n---\nReview.\n');
-  writeFileSync(join(repo, '.codex', 'agents', 'reviewer.toml'), 'name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nReview.\n"""\n');
+  writeFileSync(join(repo, '.codex', 'agents', 'reviewer.toml'), 'name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-6-luna"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nReview.\n"""\n');
   git(repo, ['add', '-A']);
   git(repo, ['-c', 'user.email=test@test.dev', '-c', 'user.name=Test', 'commit', '-q', '-m', 'arm agents']);
 }
@@ -132,7 +132,7 @@ test('pre-commit: the agent guard validates the STAGED charters, not the working
     const repo = initBaseRepo(root);
     armAgentDefinitions(repo);
     const claudeHarder = '---\nname: reviewer\ndescription: "Fixture reviewer"\nmodel: opus\n---\nReview harder.\n';
-    const codex = (body) => `name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\n${body}\n"""\n`;
+    const codex = (body) => `name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-6-luna"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\n${body}\n"""\n`;
 
     writeFileSync(join(repo, '.claude', 'agents', 'reviewer.md'), claudeHarder);
     git(repo, ['add', '.claude/agents/reviewer.md']);
@@ -266,7 +266,7 @@ test('pre-merge-commit: delegates to pre-commit and accepts a clean staged agent
     const repo = initBaseRepo(root);
     armAgentDefinitions(repo);
     writeFileSync(join(repo, '.claude', 'agents', 'reviewer.md'), '---\nname: reviewer\ndescription: "Updated fixture"\nmodel: opus\n---\nReview.\n');
-    writeFileSync(join(repo, '.codex', 'agents', 'reviewer.toml'), 'name = "reviewer"\ndescription = "Updated fixture"\nmodel = "gpt-fixture"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nReview.\n"""\n');
+    writeFileSync(join(repo, '.codex', 'agents', 'reviewer.toml'), 'name = "reviewer"\ndescription = "Updated fixture"\nmodel = "gpt-6-luna"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nReview.\n"""\n');
     git(repo, ['add', '.claude/agents/reviewer.md', '.codex/agents/reviewer.toml']);
     const r = runPreMergeCommit(repo);
     assert.equal(r.status, 0, r.stderr);

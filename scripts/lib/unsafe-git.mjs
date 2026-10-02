@@ -24,26 +24,52 @@
 //                                `git branch -d`, pulls, and worktree upkeep stay allowed
 //
 // Quoted spans and heredoc bodies are data, not invocations, and are blanked before the rules look,
-// so a commit message or pull request body that mentions `--force` or `--draft` trips nothing. The
-// guard reads the command text with regular expressions and does not tokenise it, and it does not
-// look inside a shell wrapper, a command substitution, or an `env -S` string: it is an
-// accident-catcher for an agent's own plainly written tool calls, not a security boundary.
-// Server-side branch protection is the boundary, and a manual command in your own terminal is not
-// a tool call, so your escape hatch survives.
+// so a commit message or pull request body that mentions `--force` or `--draft` trips nothing. A
+// backslash-escaped character outside single quotes is a character and nothing more: an escaped
+// quote opens and closes no span and an escaped `<` opens no heredoc, so neither can turn a live
+// command into data. The guard reads the command text with regular expressions and does not
+// tokenise it, and it does not look inside a shell wrapper, a command substitution, or an `env -S`
+// string: it is an accident-catcher for an agent's own plainly written tool calls, not a security
+// boundary. Server-side branch protection is the boundary, and a manual command in your own
+// terminal is not a tool call, so your escape hatch survives.
 // The `gh pr merge` and `gh pr ready` rules are the exception: the allow rules in
 // `.claude/settings.json` run those prefixes unprompted, so these two rules bound what the prefixes
 // admit and fail closed on any segment that invokes either and that they cannot fully read (a
-// quoted word, a variable, a command substitution, a redirection, a wrapper, an assignment prefix,
-// -R/--repo, a path-qualified or capitalised `gh`). They also read four shapes the other rules
-// leave alone: an invocation glued to a lone `&` or `|&`, one that follows a shell comment or
-// arithmetic holding a `<<word` or a quote character, one in a command substitution inside a
-// double-quoted span, and one whose `gh`, `pr`, `merge` or `ready` word is quoted. Residuals, none
-// of which matches the two `gh` allow rules: a `sh -c` or other wrapper string is not looked
-// inside, a substitution that carries a heredoc inside double quotes is not read, and a quoted
-// capitalised or path-qualified name and a partly quoted or backslash-escaped command word are not
-// unquoted, and a `$(…)` inside double quotes whose closing `)` is hidden by a nested quote, a
-// `case` pattern or an unbalanced literal `)` is read only to that early `)`, so an invocation
-// after it is not seen.
+// quoted word, the command words `gh`, `pr`, `merge` and `ready` included, a variable, a command
+// substitution, a redirection, a wrapper, an assignment prefix, -R/--repo, a path-qualified or
+// capitalised `gh`). They also read four shapes the other rules leave alone: an invocation glued to
+// a lone `&` or `|&`, one that follows a shell comment or arithmetic holding a `<<word` or a quote
+// character, one in a command substitution inside a double-quoted span, where a backslash-escaped
+// `$(` or backtick is text and opens or closes nothing, and one whose `gh`, `pr`, `merge` or
+// `ready` word is quoted, which is seen and refused even when the rest of the segment is the
+// delivery form. Residuals, none of which matches the two `gh` allow rules: a `sh -c` or other
+// wrapper string is not looked inside, a substitution that carries a heredoc inside double quotes
+// is not read, and a quoted capitalised or path-qualified name and a partly quoted or
+// backslash-escaped command word are not unquoted, and a `$(…)` inside double quotes whose closing
+// `)` is hidden by a nested quote, a `case` pattern or an unbalanced literal `)` is read only to
+// that early `)`, so an invocation after it is not seen. One residual does run unprompted: the
+// working directory is not judged, so a delivery form after a `cd`, in the same command or an
+// earlier call, passes, and `gh` acts on the repository that directory belongs to, which is another
+// repository only where one sits inside the session's working directories. The environment is not
+// judged either: after an `export` of `GH_REPO`, `GH_HOST`, `GH_TOKEN` or `GH_CONFIG_DIR` in the
+// same command a delivery form passes, and `gh` acts on the repository or account the variable
+// names. The allow rules do not cover the `export`, so they do not run that command unprompted. An
+// ANSI-C `$'…'` span is paired as a plain single-quoted one, so a `\'` inside it ends the span
+// early for the guard, and a command between it and the next `'` is read as quoted data and not
+// seen. The segment walk does not read a backslash. An escaped `;` or `|`, a backslash-newline and
+// an escaped blank in an assignment value each end a segment or a value for it, so a `--force` or
+// `--no-verify` after one (`git push origin HEAD \` with the flag on the next line, `git commit -m
+// a\;b --no-verify`) is not seen by the git rules, a `--draft` on a continuation line is not seen
+// by the create rule, which refuses, and the merge and ready rules refuse the cut segment. A
+// backslash-newline between the command words themselves (`gh pr \` then `merge`, `git \` then
+// `push --force`) hides the invocation from every rule, and whether such a command then runs
+// unprompted depends on how the runtime matches a continued command against the allow rules, which
+// the guard does not control. A `#` straight after a closing `)` is not read as a comment, because
+// after a substitution (`$(…)#`) it is a character; after a subshell it is a comment, so a
+// `<<word` or a quote character in it (`(cmd)# <<word`) is read as an operator or a span and the
+// lines up to its pairing are not seen. Arithmetic is one `((` to the next `))` with no depth, so a
+// nested `))` ends it early and a shift after it (`$(( ((1)) << word ))`) is read as a heredoc
+// operator. In both, the unseen line can be one the `gh pr ready` allow rule matches.
 // Executable names (git, gh) are matched case-insensitively: this repository lives on a
 // case-insensitive volume, so `Git push --force` runs the real binary. Only the name is widened;
 // subcommands and flags stay exact (`git COMMIT` is not a command, `-F` is not `-f`), and `cd` stays
@@ -59,6 +85,21 @@ export function blockReason(cmd, checkout) {
   // Widen each letter of a name to its own class rather than using a regex `i` flag, which would
   // also loosen every option match in the same expression (`-F` for `-f`, `-D` for `-d`).
   const ci = (name) => [...name].map((ch) => (/[a-z]/.test(ch) ? `[${ch.toUpperCase()}${ch}]` : ch)).join('');
+  // An odd run of backslashes before a character escapes it; an even run is literal backslashes.
+  const escapedAt = (text, at) => {
+    let run = 0;
+    while (text[at - 1 - run] === '\\') run += 1;
+    return run % 2 === 1;
+  };
+  // A `#` here would start a word, and so a comment, at the start of `text` or after an unescaped
+  // blank or operator. A backslash-newline pair joins two lines, so the character before the pairs
+  // decides. `text` is the scan's output, where a comment's text is already gone, so a comment line
+  // ending in a backslash continues nothing.
+  const startsWord = (text) => {
+    let at = text.length;
+    while (text[at - 1] === '\n' && escapedAt(text, at - 1)) at -= 2;
+    return at === 0 || (/[\s;&|(]/.test(text[at - 1]) && !escapedAt(text, at - 1));
+  };
   // deheredoc — replace each heredoc operator with `<<HEREDOC` and drop its body, nothing else.
   // A body starts after the next UNQUOTED newline (POSIX XCU 2.7.4), so words after `<<WORD` on the
   // operator line are argv and survive; a `<<WORD` inside quotes is prose and opens no pairing; `<<<`
@@ -66,10 +107,21 @@ export function blockReason(cmd, checkout) {
   // so an apostrophe in a body cannot poison it, and it queues the operators on one line so
   // `cat <<A <<B` consumes A's body then B's. The terminator test tolerates surrounding blanks and a
   // trailing \r, because a body left visible is the false-block this pass exists to prevent.
-  // A shell comment keeps its `#` and loses its text up to the newline, and a `<<` between `((` and
-  // `))` is an arithmetic shift, so neither opens a pairing or a quoted span.
-  // Not modelled, named rather than hidden: a backslash-continued operator line, a `<<\EOF`
-  // delimiter, and a heredoc inside "$(…)", which the shell re-parses and this scan does not
+  // A backslash outside single quotes is copied together with the character it escapes and the pair
+  // is read as nothing: an escaped quote toggles no quote state, an escaped `#` starts no comment,
+  // an escaped `<` opens no pairing, an escaped `(` or `)` opens or closes no arithmetic, and an
+  // escaped newline does not end the operator line, so the body starts after the next unescaped
+  // one. Inside single quotes a backslash is a character and the next `'` closes the span. A shell
+  // comment keeps its `#` and loses its text up to the newline, and a `<<` between `((` and `))` is
+  // an arithmetic shift, so neither opens a pairing or a quoted span. A `#` starts a comment only at
+  // the start of a word, which `startsWord` judges on the text already copied: after a
+  // backslash-escaped blank or operator it continues the word and the rest of the line stays live.
+  // Not modelled, named rather than hidden: a `<<\EOF` or `<<""EOF` delimiter, which is no operator
+  // here, so its body stays live text and a quote character in it can pair with a later one and hide
+  // the lines between, a delimiter the pattern reads only in part (`<<E\OF`, `<<E"OF"`, `<<EOF-x`),
+  // which is paired by the part it read, so the lines between the shell's terminator and a later line
+  // of that part are dropped as a body and not seen, a heredoc operator straight after an escaped `<`
+  // (`\<<<EOF`), and a heredoc inside "$(…)", which the shell re-parses and this scan does not
   // re-enter.
   const HEREDOC_OPERATOR = /^<<-?[ \t]*(['"]?)(\w+)\1/;
   const deheredoc = (() => {
@@ -81,10 +133,11 @@ export function blockReason(cmd, checkout) {
     let pending = [];
     while (index < cmd.length) {
       const ch = cmd[index];
+      if (ch === '\\' && !inSingle) { out += cmd.slice(index, index + 2); index += 2; continue; }
       if (ch === "'" && !inDouble) { inSingle = !inSingle; out += ch; index += 1; continue; }
       if (ch === '"' && !inSingle) { inDouble = !inDouble; out += ch; index += 1; continue; }
       const unquoted = !inSingle && !inDouble;
-      if (unquoted && ch === '#' && (index === 0 || /[\s;&|(]/.test(cmd[index - 1]))) {
+      if (unquoted && ch === '#' && startsWord(out)) {
         const lineEnd = cmd.indexOf('\n', index);
         out += ch;
         index = lineEnd === -1 ? cmd.length : lineEnd;
@@ -137,33 +190,39 @@ export function blockReason(cmd, checkout) {
   const REASON_READY = "gh pr ready: only `gh pr ready <number>` and `gh pr ready <number> --undo`, alone in their command segment, are allowed; the allow list runs that prefix unprompted, so anything else in the segment (a quoted, substituted or variable word, a redirection, a wrapper) is refused";
   // Blank every quoted span ONCE, before any splitting or matching. A quoted mention is data
   // (`git commit -m "mentions --no-verify"`, a PR body citing `--draft`), and blanking a quoted
-  // newline keeps a multi-line body from stranding a later `--draft` in its own segment. `[^"]` and
-  // `[^']` match newlines, so a multi-line span is blanked whole. A quoted path after `cd` or `-C` is
-  // a relocation the root-checkout walk below must follow, and this checkout's own directory carries
-  // a space, so it is blanked to a whitespace-free ␀<n>␀ placeholder instead of `""` and kept aside
-  // for relocate(). Planted inside the one pass so quote pairing stays the blanker's own: a separate
+  // newline keeps a multi-line body from stranding a later `--draft` in its own segment. Both span
+  // patterns match newlines, so a multi-line span is blanked whole. A backslash outside single
+  // quotes is matched together with the character it escapes and returned as written, in the
+  // command-word unquote and in the blanker alike, so an escaped quote opens and closes no span and
+  // both agree with the scan above. A quoted path after `cd` or `-C` is a relocation the
+  // root-checkout walk below must follow, and this checkout's own directory carries a space, so it
+  // is blanked to a whitespace-free ␀<n>␀ placeholder instead of `""` and kept aside for
+  // relocate(). Planted inside the one pass so quote pairing stays the blanker's own: a separate
   // scan once paired an apostrophe inside a double-quoted span with a later single quote and
   // swallowed live argv (pinned by test).
   // Two readings serve the merge and ready rules alone. Quote removal makes `"merge"` the word
-  // `merge`, so a quoted span that is exactly one of their four command words is unquoted first; no
-  // other quoted word is, because a quoted `--draft` or `--force` is data. And a double-quoted span
-  // runs only what its `$(…)`, read to the matching `)`, or its backtick pair holds, so a merge or
-  // ready invocation in that substituted text is live and its reason is kept for the end of the
-  // segment walk, while the rest of the span stays data; a span carrying a heredoc operator is a
-  // message body and is left as data.
+  // `merge`, so a quoted span that is exactly one of their four command words is unquoted first,
+  // and left followed by a space the command never held: the rules see the invocation, and its
+  // segment can never be the exact delivery text, so it is refused. No other quoted word is
+  // unquoted, because a quoted `--draft` or `--force` is data. And a double-quoted span
+  // runs only what its `$(…)`, read to the matching `)`, or its backtick pair holds, a
+  // backslash-escaped `$(` or backtick being text that opens or closes neither, so a merge or ready
+  // invocation in that substituted text is live and its reason is kept for the end of the segment
+  // walk, while the rest of the span stays data; a span carrying a heredoc operator is a message
+  // body and is left as data.
   let substitutedReason = '';
   const quotedPaths = [];
-  const sanitized = deheredoc.replace(/(['"])(gh|pr|merge|ready)\1/g, '$2').replace(/'[^']*'|"[^"]*"/g, (span, offset, whole) => {
+  const sanitized = deheredoc.replace(/\\[\s\S]|(['"])(gh|pr|merge|ready)\1/g, (match, quote, word) => (word ? `${word} ` : match)).replace(/\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*"/g, (span, offset, whole) => {
+    if (span[0] === '\\') return span;
     if (span[0] === '"' && !span.includes('<<')) {
       const body = span.slice(1, -1);
       for (let index = 0; index < body.length; index += 1) {
         const backtick = body[index] === '`';
-        if (!backtick && !body.startsWith('$(', index)) continue;
+        if ((!backtick && !body.startsWith('$(', index)) || escapedAt(body, index)) continue;
         const start = index + (backtick ? 1 : 2);
         let end = start;
         if (backtick) {
-          end = body.indexOf('`', start);
-          if (end === -1) end = body.length;
+          while (end < body.length && (body[end] !== '`' || escapedAt(body, end))) end += 1;
         } else {
           for (let depth = 1; end < body.length; end += 1) {
             if (body[end] === '(') depth += 1;

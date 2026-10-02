@@ -51,16 +51,23 @@ process list; nothing is inferred from chat.
    prefix. Any Docker command or API failure, including an unreachable daemon, also retains the worktree. On
    either uncertainty or failure, stop before branch deletion and continue to step 6 and the final report. Keep
    images and volumes. In the final report, name any other container or image confirmed as job-created by recorded
-   build output or Docker metadata, and leave its cleanup to the owner; do not infer ownership from a name. Leave
-   the job worktree through the available runtime mechanism described in step 3; if the runtime cannot leave it
-   or ownership is uncertain, retain it, report why, and stop before worktree removal and branch deletion;
-   continue to step 6 and the final report. That report tells the owner that removing the worktree the session
-   sits in ends the session's shell, so run `git worktree remove <path>` only after the session is finished. From
-   the verifier checkout, outside the target worktree, run `git worktree remove <path>` on that exact approved job
+   build output or Docker metadata, and leave its cleanup to the owner; do not infer ownership from a name. A
+   temporary folder outside the job worktree is the session's to delete only when the output of a verifier run this
+   session itself started names that exact path as retained. Delete that path alone, once the container inspection
+   above shows no container with a recorded host bind source equal to, below or above it, and none whose inspection
+   output names that path or one below it anywhere else, such as a label or a working directory, and name the
+   deletion in the final report. A folder known only from another job, another session, a memory or summary, or a
+   matching name pattern is never deleted on this authority and keeps exact-target approval. If that container
+   check cannot be run, is uncertain or fails, leave the folder in place and name its path in the final report.
+   Leave the job worktree through the available runtime mechanism described in step 3; if the runtime cannot leave
+   it or ownership is uncertain, retain it, report why, and stop before worktree removal and branch deletion;
+   continue to step 6 and the final report. That report tells the owner that removing the worktree the session sits
+   in ends the session's shell, so run `git worktree remove <path>` only after the session is finished. From the
+   verifier checkout, outside the target worktree, run `git worktree remove <path>` on that exact approved job
    path. If removal is refused, stop before branch deletion and report the refusal. Confirm
    `git worktree list --porcelain` no longer registers that path, then run ordinary `git branch -d job/<issue>`;
-   report a refusal and never force deletion. The remote
-   branch is deleted by the merge setting or `git push origin --delete <branch>`. Finish with `git worktree prune`.
+   report a refusal and never force deletion. The remote branch is deleted by the merge setting or
+   `git push origin --delete <branch>`. Finish with `git worktree prune`.
 6. **Rulings.** Anything the owner settled this session that should outlive it goes where it belongs: a comment
    on the issue, or the manual or rule that owns the topic. Never as a new document.
 
