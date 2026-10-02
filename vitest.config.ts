@@ -3,6 +3,9 @@ import { defaultExclude, defineConfig } from "vitest/config";
 // Only these audited paths have proved they need neither the browser environment nor React setup.
 // New or renamed tests stay in the jsdom project until they receive the same review.
 const domainNodeTests = [
+  "scripts/local-supabase-concurrency-harness.test.mjs",
+  "scripts/verify-access-interruption.test.mjs",
+  "scripts/verify-access-retention.test.mjs",
   "scripts/verify.test.mjs",
   "src/access/account-access.test.ts",
   "src/access/actions.test.ts",
