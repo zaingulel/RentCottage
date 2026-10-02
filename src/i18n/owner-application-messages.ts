@@ -78,6 +78,7 @@ export const ownerApplicationMessages: Record<
     cottageName: string;
     governorate: string;
     approximateLocation: string;
+    approximateLocationHelp: string;
     exactAddress: string;
     exactAddressHelp: string;
     capacity: string;
@@ -143,6 +144,8 @@ export const ownerApplicationMessages: Record<
     cottageName: "Cottage name",
     governorate: "Governorate",
     approximateLocation: "Approximate public area",
+    approximateLocationHelp:
+      "Area only, in words. Never put coordinates or the exact address here; this text is public.",
     exactAddress: "Exact private address",
     exactAddressHelp: "Kept private and never shown in ordinary cottage views.",
     capacity: "Guest capacity",
@@ -231,6 +234,8 @@ export const ownerApplicationMessages: Record<
     cottageName: "اسم البيت",
     governorate: "المحافظة",
     approximateLocation: "المنطقة التقريبية العامة",
+    approximateLocationHelp:
+      "المنطقة فقط، بالكلمات. لا تضع الإحداثيات أو العنوان الدقيق هنا؛ هذا النص عام.",
     exactAddress: "العنوان الدقيق الخاص",
     exactAddressHelp: "يبقى خاصاً ولا يظهر في صفحات البيوت العادية.",
     capacity: "سعة الضيوف",
@@ -347,6 +352,8 @@ export const ownerApplicationMessages: Record<
     cottageName: "ناوی ماڵ",
     governorate: "پارێزگا",
     approximateLocation: "ناوچەی گشتیی نزیکەوە",
+    approximateLocationHelp:
+      "تەنها ناوچە، بە وشە. هەرگیز کۆئۆردینات یان ناونیشانی ورد لێرە مەنووسە؛ ئەم دەقە گشتییە.",
     exactAddress: "ناونیشانی وردی تایبەت",
     exactAddressHelp:
       "تایبەت دەمێنێتەوە و لە پەڕە ئاساییەکانی ماڵ نیشان نادرێت.",

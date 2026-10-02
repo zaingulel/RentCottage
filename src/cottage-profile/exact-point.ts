@@ -81,3 +81,8 @@ export function readExactPoint(
   }
   return { kind: "outside-bounds" };
 }
+
+export function readsAsCoordinatePair(text: string): boolean {
+  const { kind } = readExactPoint(text, "");
+  return kind === "valid" || kind === "swapped" || kind === "outside-bounds";
+}

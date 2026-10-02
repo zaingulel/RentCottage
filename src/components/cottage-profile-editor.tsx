@@ -208,9 +208,13 @@ export function CottageProfileEditor({
             {copy.approximateLocation}
             <input
               name="approximateLocation"
+              aria-describedby="cottage-profile-approximate-location-help"
               defaultValue={profile.approximateLocation}
             />
           </label>
+          <p id="cottage-profile-approximate-location-help">
+            {copy.approximateLocationHelp}
+          </p>
           <div className="cottage-profile-number-grid">
             <label>
               {copy.capacity}

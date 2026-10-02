@@ -1,4 +1,4 @@
-import { readExactPoint } from "./exact-point";
+import { readExactPoint, readsAsCoordinatePair } from "./exact-point";
 
 export const cottageProfileAmenities = [
   "garden",
@@ -234,6 +234,9 @@ function parseDraftValues(
   const invalid: string[] = [];
   for (const [field, maximum] of Object.entries(cottageProfileMaximumLengths)) {
     if (text(input[field]).length > maximum) invalid.push(field);
+  }
+  if (readsAsCoordinatePair(text(input.approximateLocation))) {
+    invalid.push("approximateLocation");
   }
   const exactPoint = readExactPoint(
     String(input.exactLatitude ?? ""),

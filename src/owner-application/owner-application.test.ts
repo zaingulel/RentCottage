@@ -309,6 +309,42 @@ describe("Owner Application", () => {
     expect(repository.saveDraft).not.toHaveBeenCalled();
   });
 
+  it("rejects a coordinate pair in the public approximate area and accepts an area in words", async () => {
+    const { application, repository } = setup();
+    const draft = {
+      applicantKind: "individual",
+      legalName: "Zana Kareem",
+      companyName: "",
+      licensingBasis: "licence",
+      exemptionBasis: "",
+      cottageName: "Cottage",
+      governorate: "Erbil",
+      exactAddress: "Address",
+      capacity: "2",
+      bedrooms: "1",
+      bathrooms: "1",
+      amenities: [],
+      description: "Description",
+      houseRules: "Rules",
+    };
+
+    await expect(
+      application.saveDraft({
+        ...draft,
+        approximateLocation: "36.408333, 44.385834",
+      }),
+    ).resolves.toEqual({ status: "invalid", fields: ["approximateLocation"] });
+    expect(repository.saveDraft).not.toHaveBeenCalled();
+
+    await application.saveDraft({
+      ...draft,
+      approximateLocation: "Shaqlawa countryside",
+    });
+    expect(repository.saveDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ approximateLocation: "Shaqlawa countryside" }),
+    );
+  });
+
   it("returns every missing submission item without changing status", async () => {
     const { application, repository } = setup();
     vi.mocked(repository.missingItems).mockResolvedValue([

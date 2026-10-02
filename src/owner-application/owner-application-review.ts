@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { readsAsCoordinatePair } from "@/cottage-profile/exact-point";
 import {
   verificationDocumentKinds,
   type OwnerLicensingBasis,
@@ -285,7 +286,13 @@ function parseResponseFieldValue(
     house_rules: 1500,
   };
   const requiredMaximum = requiredTextMaximums[field];
-  if (requiredMaximum !== undefined) return boundedText(value, requiredMaximum);
+  if (requiredMaximum !== undefined) {
+    const bounded = boundedText(value, requiredMaximum);
+    if (field === "approximate_location" && readsAsCoordinatePair(bounded)) {
+      invalid();
+    }
+    return bounded;
+  }
   if (field === "company_name" || field === "exemption_basis") {
     if (typeof value !== "string") invalid();
     const normalized = value.trim();

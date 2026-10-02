@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { readExactPoint, type ExactPointReading } from "./exact-point";
+import {
+  readExactPoint,
+  readsAsCoordinatePair,
+  type ExactPointReading,
+} from "./exact-point";
 
 const shaqlawa = { latitude: 36.408333, longitude: 44.385834 };
 const unreadable = { kind: "unreadable" } as const;
@@ -105,6 +109,22 @@ describe("readExactPoint", () => {
     "reads %s",
     (_name, latitudeText, longitudeText, reading) => {
       expect(readExactPoint(latitudeText, longitudeText)).toEqual(reading);
+    },
+  );
+});
+
+describe("readsAsCoordinatePair", () => {
+  it.each(["36.408333, 44.385834", "٣٦.٤٠٨٣٣٣, ٤٤.٣٨٥٨٣٤"])(
+    "reads %s as a coordinate pair",
+    (text) => {
+      expect(readsAsCoordinatePair(text)).toBe(true);
+    },
+  );
+
+  it.each(["Shaqlawa countryside", "44"])(
+    "does not read %s as a coordinate pair",
+    (text) => {
+      expect(readsAsCoordinatePair(text)).toBe(false);
     },
   );
 });

@@ -42,6 +42,8 @@ const en = {
   cottageName: "Cottage name",
   governorate: "Governorate",
   approximateLocation: "Approximate public location",
+  approximateLocationHelp:
+    "Area only, in words. Never put coordinates or the exact address here; this text is public.",
   exactAddress: "Exact private address",
   latitude: "Latitude",
   longitude: "Longitude",
@@ -138,6 +140,8 @@ const ar: Copy = {
   cottageName: "اسم الكوخ",
   governorate: "المحافظة",
   approximateLocation: "الموقع العام التقريبي",
+  approximateLocationHelp:
+    "المنطقة فقط، بالكلمات. لا تضع الإحداثيات أو العنوان الدقيق هنا؛ هذا النص عام.",
   exactAddress: "العنوان الخاص الدقيق",
   latitude: "خط العرض",
   longitude: "خط الطول",
@@ -234,6 +238,8 @@ const ckb: Copy = {
   cottageName: "ناوی کۆتێج",
   governorate: "پارێزگا",
   approximateLocation: "شوێنی گشتی نزیکەیی",
+  approximateLocationHelp:
+    "تەنها ناوچە، بە وشە. هەرگیز کۆئۆردینات یان ناونیشانی ورد لێرە مەنووسە؛ ئەم دەقە گشتییە.",
   exactAddress: "ناونیشانی وردی تایبەت",
   latitude: "پانی جوگرافی",
   longitude: "درێژی جوگرافی",

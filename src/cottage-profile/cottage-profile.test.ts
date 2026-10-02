@@ -710,4 +710,25 @@ describe("Cottage Profile", () => {
     });
     expect(update).not.toHaveBeenCalled();
   });
+
+  it("rejects a coordinate pair in the public approximate location and accepts an area in words", async () => {
+    const { cottageProfile, repository } = setup();
+    const update = vi.spyOn(repository, "updateOwner");
+
+    await expect(
+      cottageProfile.saveOwnerDraft(profileId, 1, {
+        approximateLocation: "36.408333, 44.385834",
+      }),
+    ).resolves.toEqual({ status: "invalid", fields: ["approximateLocation"] });
+    expect(update).not.toHaveBeenCalled();
+
+    await expect(
+      cottageProfile.saveOwnerDraft(profileId, 1, {
+        approximateLocation: "Shaqlawa countryside",
+      }),
+    ).resolves.toMatchObject({
+      status: "saved",
+      profile: { approximateLocation: "Shaqlawa countryside" },
+    });
+  });
 });
