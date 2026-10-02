@@ -113,3 +113,15 @@ export function administratorAccessHref(locale: Locale, returnTo: unknown) {
     ? `/${locale}/administrator/access?returnTo=${encodeURIComponent(destination)}`
     : `/${locale}/administrator/access`;
 }
+
+export function administratorAccessLanguageHref(
+  locale: Locale,
+  target: Locale,
+  returnTo: unknown,
+) {
+  const destination = safeAdministratorReturnDestination(locale, returnTo);
+  return administratorAccessHref(
+    target,
+    destination && `/${target}${destination.slice(locale.length + 1)}`,
+  );
+}

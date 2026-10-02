@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   accessLanguageHref,
   administratorAccessHref,
+  administratorAccessLanguageHref,
   safeAdministratorReturnDestination,
   safeReturnDestination,
 } from "./return-destination";
@@ -37,6 +38,20 @@ const untrustedDestinations = [
   "/en/results?note=private",
   "/en/\\evil.test",
   "/en/bookings\n",
+];
+
+const untrustedAdministratorDestinations = [
+  undefined,
+  ["/en/administrator/reviews"],
+  "https://evil.test/en/administrator/reviews",
+  "//evil.test/en/administrator/reviews",
+  "/ar/administrator/reviews",
+  "/en/administrator/reviews%3FbeforeAt=private",
+  "/en/administrator/reviews?beforeAt=private",
+  "/en/administrator/reviews#private",
+  "/en/administrator/reviews\n",
+  "/en/administrator\\reviews",
+  "/en/administrator",
 ];
 
 describe("account return destinations", () => {
@@ -95,26 +110,61 @@ describe("administrator return destinations", () => {
     },
   );
 
+  it.each(untrustedAdministratorDestinations)(
+    "rejects an untrusted administrator destination %#",
+    (destination) => {
+      expect(
+        safeAdministratorReturnDestination("en", destination),
+      ).toBeUndefined();
+      expect(administratorAccessHref("en", destination)).toBe(
+        "/en/administrator/access",
+      );
+    },
+  );
+});
+
+describe("administrator access language links", () => {
   it.each([
-    undefined,
-    ["/en/administrator/reviews"],
-    "https://evil.test/en/administrator/reviews",
-    "//evil.test/en/administrator/reviews",
-    "/ar/administrator/reviews",
-    "/en/administrator/reviews%3FbeforeAt=private",
-    "/en/administrator/reviews?beforeAt=private",
-    "/en/administrator/reviews#private",
-    "/en/administrator/reviews\n",
-    "/en/administrator\\reviews",
-    "/en/administrator",
-  ])("rejects an untrusted administrator destination %#", (destination) => {
-    expect(
-      safeAdministratorReturnDestination("en", destination),
-    ).toBeUndefined();
-    expect(administratorAccessHref("en", destination)).toBe(
-      "/en/administrator/access",
-    );
-  });
+    [
+      "en",
+      "ar",
+      "/ar/administrator/access?returnTo=%2Far%2Fadministrator%2Freviews",
+    ],
+    [
+      "en",
+      "ckb",
+      "/ckb/administrator/access?returnTo=%2Fckb%2Fadministrator%2Freviews",
+    ],
+    [
+      "ckb",
+      "en",
+      "/en/administrator/access?returnTo=%2Fen%2Fadministrator%2Freviews",
+    ],
+    [
+      "ar",
+      "ar",
+      "/ar/administrator/access?returnTo=%2Far%2Fadministrator%2Freviews",
+    ],
+  ] as const)(
+    "translates the %s moderation queue into %s",
+    (locale, target, href) => {
+      expect(
+        administratorAccessLanguageHref(
+          locale,
+          target,
+          `/${locale}/administrator/reviews`,
+        ),
+      ).toBe(href);
+    },
+  );
+  it.each(untrustedAdministratorDestinations)(
+    "links to the bare access page for an untrusted administrator destination %#",
+    (destination) => {
+      expect(administratorAccessLanguageHref("en", "ar", destination)).toBe(
+        "/ar/administrator/access",
+      );
+    },
+  );
 });
 
 describe("access language links", () => {
