@@ -2,6 +2,7 @@ import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
 import { getConfirmedBookingAccess } from "./confirmed-booking-access";
+import { simulatedMapProvider } from "@/cottage-profile/map-provider";
 import { SupabaseBookingNotificationStatusRepository } from "@/notification/notification-status-repository";
 import type { BookingNotificationStatus } from "@/notification/notification-status-repository";
 
@@ -38,5 +39,8 @@ export async function loadConfirmedBookingAccess(reference: string) {
       historical: false,
     };
   }
-  return { access, notification };
+  const navigation = access.mapPin
+    ? simulatedMapProvider.navigationHandoff(access.mapPin)
+    : null;
+  return { access, notification, navigation };
 }

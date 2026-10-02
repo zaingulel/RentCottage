@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 const retryAction = vi.hoisted(() => vi.fn());
@@ -58,6 +58,7 @@ describe("confirmed booking details", () => {
         locale="en"
         access={base}
         notification={pending}
+        navigation={null}
       />,
     );
     expect(screen.getByText("Preserved House Rules")).toBeInTheDocument();
@@ -75,6 +76,7 @@ describe("confirmed booking details", () => {
         locale="ckb"
         access={base}
         notification={{ ...pending, state: "retryable", lastOutcome: "failed" }}
+        navigation={null}
       />,
     );
     expect(
@@ -95,6 +97,7 @@ describe("confirmed booking details", () => {
           state: "uncertain",
           lastOutcome: "unknown",
         }}
+        navigation={null}
       />,
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
@@ -114,6 +117,7 @@ describe("confirmed booking details", () => {
           suppressedAt: null,
           historical: false,
         }}
+        navigation={null}
       />,
     );
     expect(
@@ -142,12 +146,48 @@ describe("confirmed booking details", () => {
             ownerPhone: null,
           }}
           notification={pending}
+          navigation={null}
         />,
       );
       expect(screen.getByRole("status", { name: incomplete })).toBeVisible();
       expect(
         screen.queryByText("Current private address"),
       ).not.toBeInTheDocument();
+    },
+  );
+  it.each([
+    [
+      "en",
+      "Map pin",
+      "Simulated navigation: no map service is connected. Enter these numbers in your own maps app.",
+    ],
+    [
+      "ar",
+      "إحداثيات الخريطة",
+      "ملاحة محاكاة: لا توجد خدمة خرائط متصلة. أدخل هذه الأرقام في تطبيق الخرائط لديك.",
+    ],
+    [
+      "ckb",
+      "خاڵی نەخشە",
+      "ڕێنیشاندانی لاساییکراو: هیچ خزمەتگوزارییەکی نەخشە نەبەستراوەتەوە. ئەم ژمارانە لە ئەپی نەخشەکەی خۆتدا بنووسە.",
+    ],
+  ] as const)(
+    "labels navigation as simulated and offers no link in %s",
+    (locale, mapTerm, label) => {
+      render(
+        <ConfirmedBookingDetails
+          locale={locale}
+          access={base}
+          notification={pending}
+          navigation={{ kind: "simulated" }}
+        />,
+      );
+      const mapRow = screen.getByText(mapTerm).parentElement!;
+      expect(within(mapRow).getByText(label)).toBeVisible();
+      expect(
+        within(mapRow).getByText("33.315241, 44.366067"),
+      ).toBeInTheDocument();
+      expect(within(mapRow).queryByRole("link")).not.toBeInTheDocument();
     },
   );
   it("keeps paid details visible and explains a failed retry", async () => {
@@ -157,6 +197,7 @@ describe("confirmed booking details", () => {
         locale="en"
         access={base}
         notification={{ ...pending, state: "retryable", lastOutcome: "failed" }}
+        navigation={null}
       />,
     );
     await userEvent.click(
@@ -176,6 +217,7 @@ it("shows the persisted lifecycle beside the retained booking reference", () => 
       locale="en"
       access={base}
       notification={pending}
+      navigation={null}
       lifecycleStatus="completed"
     />,
   );

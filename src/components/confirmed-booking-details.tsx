@@ -4,6 +4,7 @@ import { accessMessages } from "@/i18n/access-messages";
 import Link from "next/link";
 import type { ConfirmedBookingAccess } from "@/booking-request/confirmed-booking-access";
 import type { PaidConfirmationNotificationPresentationStatus } from "@/booking-request/request-confirmed-booking-access";
+import type { NavigationHandoff } from "@/cottage-profile/map-provider";
 import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 import { NotificationRetryControl } from "./notification-retry-control";
@@ -24,6 +25,8 @@ const messages = {
     address: "Exact address",
     directions: "Private directions",
     map: "Map pin",
+    simulatedNavigation:
+      "Simulated navigation: no map service is connected. Enter these numbers in your own maps app.",
     customerPhone: "Customer phone",
     ownerPhone: "Cottage Owner phone",
     notice: "Confirmation notice",
@@ -58,6 +61,8 @@ const messages = {
     address: "العنوان الدقيق",
     directions: "إرشادات الوصول الخاصة",
     map: "إحداثيات الخريطة",
+    simulatedNavigation:
+      "ملاحة محاكاة: لا توجد خدمة خرائط متصلة. أدخل هذه الأرقام في تطبيق الخرائط لديك.",
     customerPhone: "هاتف العميل",
     ownerPhone: "هاتف مالك البيت",
     notice: "إشعار التأكيد",
@@ -90,6 +95,8 @@ const messages = {
     address: "ناونیشانی ورد",
     directions: "ڕێنمایی تایبەتی گەیشتن",
     map: "خاڵی نەخشە",
+    simulatedNavigation:
+      "ڕێنیشاندانی لاساییکراو: هیچ خزمەتگوزارییەکی نەخشە نەبەستراوەتەوە. ئەم ژمارانە لە ئەپی نەخشەکەی خۆتدا بنووسە.",
     customerPhone: "تەلەفۆنی کڕیار",
     ownerPhone: "تەلەفۆنی خاوەن کۆتێج",
     notice: "ئاگادارکردنەوەی پشتڕاستکردن",
@@ -111,16 +118,25 @@ const messages = {
   },
 } as const;
 
+function navigationLabel(navigation: NavigationHandoff, locale: Locale) {
+  switch (navigation.kind) {
+    case "simulated":
+      return messages[locale].simulatedNavigation;
+  }
+}
+
 export function ConfirmedBookingDetails({
   locale,
   access,
   notification,
+  navigation,
   lifecycleStatus = "confirmed",
 }: {
   locale: Locale;
   lifecycleStatus?: BookingLifecycleStatus;
   access: ConfirmedBookingAccess;
   notification: PaidConfirmationNotificationPresentationStatus;
+  navigation: NavigationHandoff | null;
 }) {
   const c = messages[locale];
   const practicalDetailsIncomplete =
@@ -240,6 +256,9 @@ export function ConfirmedBookingDetails({
               <bdi dir="ltr">
                 {access.mapPin.latitude}, {access.mapPin.longitude}
               </bdi>
+              {navigation ? (
+                <small>{navigationLabel(navigation, locale)}</small>
+              ) : null}
             </dd>
           </div>
         ) : null}
