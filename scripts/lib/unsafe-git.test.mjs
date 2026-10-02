@@ -128,10 +128,17 @@ test('ANTI-REGRESSION: only the exact delivery merge and ready forms pass; every
     'git commit -m "`date` then gh pr merge x `date`"',
     "git commit -m \"$(cat <<'EOF'\nuse `gh pr merge --auto --squash --delete-branch 5` to deliver\nEOF\n)\"",
     "gh pr create --draft --body \"$(cat <<'EOF'\nuse `gh pr merge --auto --squash --delete-branch 5` to deliver\nEOF\n)\"",
+    // A backslash-escaped `$(` or backtick inside double quotes is text and substitutes nothing.
+    String.raw`gh pr create --draft --body "Document \$(gh pr merge --admin 493) here"`,
+    'git commit -m "use \\`gh pr ready 493\\` to deliver"',
     // A comment or arithmetic before a delivery form hides nothing and refuses nothing.
     'echo hi # a comment\ngh pr ready 493',
     'echo $((1 << 3))\ngh pr merge --auto --squash --delete-branch 493',
     'echo "$#"',
+    // A backslash-newline joins the lines, so the character before it decides, and a comment line
+    // ending in a backslash continues nothing.
+    "echo foo \\\n# do not run gh pr merge --admin 493",
+    "echo hi # note\\\n# second gh pr merge --admin 1",
   ]) assert.equal(blockReason(command), '', command);
 
   for (const command of [
@@ -163,14 +170,23 @@ test('ANTI-REGRESSION: only the exact delivery merge and ready forms pass; every
     'echo hi # <<pwd\ngh pr merge --auto --squash --delete-branch 1 --admin\npwd',
     'echo $((1 << pwd))\ngh pr merge --auto --squash --delete-branch 1 --admin\npwd',
     "echo hi # don't\ngh pr merge --admin 1\necho 'x'",
+    // An even backslash run leaves the blank unescaped, so the `#` is a comment; an odd run escapes
+    // the blank, so the `#` continues the word and the rest of the line stays live.
+    String.raw`echo a\\ # don't` + "\ngh pr merge --admin 1\necho 'x'",
+    String.raw`echo foo\ #; gh pr merge --admin 493`,
     // A command substitution runs inside double quotes.
     'gh pr ready 493 && echo "$(gh pr merge --admin 493)"',
     'echo "`gh pr merge --admin 493`"',
     'echo "$( cd x && gh pr merge --admin 493)"',
     'echo "$(echo $(date) && gh pr merge --admin 493)"',
     'echo "$( (cd x) ; gh pr merge --admin 493)"',
-    // Quote removal makes a quoted command word the word itself.
+    // An even backslash run escapes nothing, and a live backtick pair runs to its unescaped closer.
+    String.raw`echo "\\$(gh pr merge --admin 493)"`,
+    'echo "`echo \\`date\\`; gh pr merge --admin 493`"',
+    // Quote removal makes a quoted command word the word itself, and a segment that held one is never
+    // the delivery form.
     'gh pr "merge" --auto --squash --delete-branch 493 --admin',
+    'gh pr "merge" --auto --squash --delete-branch 493',
     "gh 'pr' merge 493",
     '"gh" pr merge 493',
   ]) assert.equal(blockReason(command), REASON_MERGE, command);
@@ -187,6 +203,7 @@ test('ANTI-REGRESSION: only the exact delivery merge and ready forms pass; every
     'node scripts/board.mjs &gh pr ready 493 --repo o/r',
     'node scripts/board.mjs # <<pwd\ngh pr ready 1 -R o/r\npwd',
     'gh pr "ready" 493 -R o/r',
+    'gh pr "ready" 493',
     'echo "$(gh pr ready 493 -R o/r)"',
     'echo "see `gh pr ready 493 -R o/r` now"',
   ]) assert.equal(blockReason(command), REASON_READY, command);
@@ -227,6 +244,8 @@ test('git push --force and -f are blocked', () => {
   assert.equal(blockReason('git push -f origin main'), REASON_PUSH_FORCE);
   assert.equal(blockReason('git --git-dir .git push --force'), REASON_PUSH_FORCE);
   assert.equal(blockReason('git commit -m "x" && git push --force'), REASON_PUSH_FORCE);
+  assert.equal(blockReason(String.raw`echo foo\ #; git push --force`), REASON_PUSH_FORCE);
+  assert.equal(blockReason("echo foo\\\n#; git push --force"), REASON_PUSH_FORCE);
 });
 
 test('git push --force-with-lease is allowed', () => {
@@ -251,6 +270,51 @@ test('a stray apostrophe in a message cannot hide a gated flag', () => {
   assert.equal(blockReason(`git commit -m "x -C 'a" --no-verify -m '  x'`), REASON_COMMIT_NO_VERIFY);
   assert.equal(blockReason(`git commit -m "x cd 'a" --no-verify -m ' x'`), REASON_COMMIT_NO_VERIFY);
   assert.equal(blockReason(`git push -m "x -C 'a" --force ' x'`), REASON_PUSH_FORCE);
+});
+
+// A backslash outside single quotes makes the next quote a character: it opens and closes nothing in
+// the scan, in the command-word unquote or in the blanker, so the commands around it stay live.
+test('ANTI-REGRESSION: a backslash-escaped quote opens and closes no span, so it cannot hide a gated command', () => {
+  for (const [command, reason] of [
+    // The four the escaped-blank comment rule let through.
+    ["echo foo\\ #\\\"\ngit push --force\necho \\\"", REASON_PUSH_FORCE],
+    ["echo foo\\ #\\\"\ngh pr merge --admin 493\necho \\\"", REASON_MERGE],
+    ["echo foo\\ #\\'\ngh pr ready 493 -R o/r\necho \\'", REASON_READY],
+    ["echo foo\\ #\\\"\ngit commit -m x --no-verify\necho \\\"", REASON_COMMIT_NO_VERIFY],
+    // An escaped quote before a real pair, and one inside a double-quoted span, pair with nothing.
+    ["echo \\\" ; gh pr merge --admin 1 ; echo \"x\"", REASON_MERGE],
+    ["echo \"a \\\" b\"; gh pr merge --admin 1; echo \"c \\\" d\"", REASON_MERGE],
+    // The scan's quote state ignores it too, so the comment after it is still a comment.
+    ["echo \\\" # don't\ngh pr merge --admin 1\necho 'x'", REASON_MERGE],
+    ["echo \\' # \"\ngh pr merge --admin 1\necho \"x\"", REASON_MERGE],
+    // Inside single quotes the backslash is a character and the quote closes the span.
+    ["echo 'a\\' # don't\ngh pr merge --admin 1\necho 'x'", REASON_MERGE],
+    // The command-word unquote does not pair an escaped quote with a real one.
+    ["echo \"a \\\"gh\"; gh pr ready 1 -R o/r; echo \"b\"", REASON_READY],
+    // A message that quotes with escaped quotes is one span, and what it mentions is data.
+    ["git commit -m \"say \\\" gh pr merge --admin 1 \\\" here\"", ''],
+  ]) assert.equal(blockReason(command), reason, command);
+});
+
+// The scan copies a backslash outside single quotes together with the character it escapes and
+// reads the pair as nothing, so an escaped `<`, `)` or newline cannot open a heredoc, close
+// arithmetic or end the operator line, and a live line cannot be dropped as a body.
+test('ANTI-REGRESSION: a backslash-escaped operator character opens no heredoc and closes no arithmetic, so it cannot hide a gated command', () => {
+  for (const [command, reason] of [
+    // An escaped `<` leaves `<EOF`, an input redirection, and the next line runs.
+    ["echo \\\" \\<<EOF\ngh pr merge --admin 493\nEOF", REASON_MERGE],
+    ["echo \\<<EOF\ngit push --force\nEOF", REASON_PUSH_FORCE],
+    ["echo \\<<pwd\ngh pr ready 1 -R o/r\npwd", REASON_READY],
+    ["echo \\<<EOF\ngit commit -m x --no-verify\nEOF", REASON_COMMIT_NO_VERIFY],
+    // An escaped `)` closes no arithmetic, so the `<<` after it is still a shift.
+    ["echo $(( (1\\)) << 2 ))\ngh pr merge --admin 1\n2", REASON_MERGE],
+    // An escaped newline continues the operator line: what follows is argv, and the body starts
+    // after the next unescaped newline.
+    ["cat <<EOF \\\n; gh pr ready 1 -R o/r\nx\nEOF", REASON_READY],
+    ["cat <<EOF \\\nEOF\ngh pr merge --admin 1\nEOF", ''],
+    // An escaped backslash escapes nothing: the operator after it is real and its body is data.
+    ["echo \\\\<<EOF\ngh pr merge --admin 493\nEOF", ''],
+  ]) assert.equal(blockReason(command), reason, command);
 });
 
 // ── git filter-branch ───────────────────────────────────────────────────────
@@ -411,6 +475,10 @@ test('deheredoc removes only a real heredoc body', () => {
   assert.equal(blockReason('gh pr ready 1 <<EOF --undo\nbody\nEOF'), REASON_READY);
   // Two heredocs on one line: A's body then B's, both inert, even when body B is a bare gated command.
   assert.equal(blockReason('cat <<A <<B\nprose\nA\ngit push --force\nB'), '');
+
+  // A delimiter with an empty quoted suffix is read by its word characters and paired, so its body,
+  // apostrophe included, is dropped and cannot open a span that hides the live command after it.
+  assert.equal(blockReason('cat <<EOF""\n\'\nEOF\ngh pr ready 1 -R o/r\necho "\'"'), REASON_READY);
 
   // Legitimate-heredoc preservation: every shape below is ALLOW and must stay ALLOW.
   const preserved = [

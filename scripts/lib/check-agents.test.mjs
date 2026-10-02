@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -23,7 +23,7 @@ You review the diff.
 
 const GOOD_TOML = `name = "reviewer"
 description = "Adversarial pre-merge review"
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "xhigh"
 sandbox_mode = "read-only"
 developer_instructions = """
@@ -71,12 +71,13 @@ test('a well-formed Codex agent is clean', () => {
 
 test('Codex format failures are named: unclosed block, missing field, bad name, sandbox, unrecognized line', () => {
   assert.match(checkCodexAgentSource('reviewer.toml', GOOD_TOML.replace(/\n"""\n$/, '\n')).join('\n'), /never closes/);
-  assert.match(checkCodexAgentSource('reviewer.toml', GOOD_TOML.replace('model = "gpt-5.6-sol"\n', '')).join('\n'), /missing required TOML field `model`/);
+  assert.match(checkCodexAgentSource('reviewer.toml', GOOD_TOML.replace('model = "gpt-6.1-sol"\n', '')).join('\n'), /missing required TOML field `model`/);
   assert.match(checkCodexAgentSource('critic.toml', GOOD_TOML).join('\n'), /name `reviewer` != filename `critic`/);
   assert.match(checkCodexAgentSource('reviewer.toml', `color = "red"\n${GOOD_TOML}`).join('\n'), /unrecognized preamble line/);
   assert.match(checkCodexAgentSource('reviewer.toml', GOOD_TOML.replace('model_reasoning_effort = "xhigh"', 'model_reasoning_effort = "extreme"')).join('\n'), /unknown model_reasoning_effort/);
   assert.match(checkCodexAgentSource('reviewer.toml', GOOD_TOML.replace('sandbox_mode = "read-only"', 'sandbox_mode = "danger-full-access"')).join('\n'), /unknown sandbox_mode/);
   assert.match(checkCodexAgentSource('reviewer.toml', GOOD_TOML.replace('sandbox_mode = "read-only"\n', '')).join('\n'), /missing required TOML field `sandbox_mode`/);
+  assert.match(checkCodexAgentSource('reviewer.toml', GOOD_TOML.replace('model = "gpt-6.1-sol"', 'model = "gpt-9"')).join('\n'), /unknown model `gpt-9`/);
 });
 
 test('checkAgentsDir picks the checker by extension and refuses an unchecked directory', () => {
@@ -129,6 +130,27 @@ test('oracle and security-reviewer retain the owner\'s 90-turn cap', () => {
     const claude = readFileSync(join('.claude/agents', `${seat}.md`), 'utf8');
     assert.match(claude, /^maxTurns: 90$/m, `${seat} turn cap`);
   }
+});
+
+const FABLE_LINE = /^model:[^\S\n]*["']?fable["']?[^\S\n]*$/m;
+const ASTRA_LINE = /^model[^\S\n]*=[^\S\n]*["']gpt-6-astra["'][^\S\n]*$/m;
+
+// Mutation: put `fable` (or `gpt-6-astra`) on another seat, in any spelling the agent check accepts, and this goes red.
+test('the costliest models stay on the seats the manual names', () => {
+  const seatsWith = (dir, extension, modelLine) => readdirSync(dir)
+    .filter((file) => file.endsWith(extension) && modelLine.test(readFileSync(join(dir, file), 'utf8')))
+    .map((file) => file.slice(0, -extension.length))
+    .sort();
+  assert.deepEqual(seatsWith('.claude/agents', '.md', FABLE_LINE), ['oracle', 'security-reviewer']);
+  assert.deepEqual(seatsWith('.codex/agents', '.toml', ASTRA_LINE), ['architect', 'oracle', 'security-reviewer']);
+  for (const line of ['model:  fable', 'model: fable ', "model: 'fable'", 'model: "fable"', 'model: fable ', 'model: fable\f']) {
+    assert.match(line, FABLE_LINE, line);
+  }
+  for (const line of ["model = 'gpt-6-astra'", 'model="gpt-6-astra"', 'model =  "gpt-6-astra" ', 'model\v="gpt-6-astra"', 'model = "gpt-6-astra"　']) {
+    assert.match(line, ASTRA_LINE, line);
+  }
+  assert.doesNotMatch('model: fables', FABLE_LINE);
+  assert.doesNotMatch('model = "gpt-6-astra-mini"', ASTRA_LINE);
 });
 
 // The three builder seats share one body from `Workflow:` down. Mutation: drop the parity call from

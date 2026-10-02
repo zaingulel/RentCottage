@@ -179,30 +179,32 @@ disjoint.
 - Drive visual work as the Conventions table's `visual verification` row says, and display the screenshot inline
   in chat. No push authorisation is requested without it.
 - Run every check the Surfaces table's rows name for a surface the diff touches.
-- One fresh review of the final tree, by tier. **Documents** (`docs/`, the root readme, `CONTEXT.md`): the session
-  itself. **Code and agent instruction**, everything else, the manual, `CLAUDE.md`, the rules, skills and seat
-  files included: the `reviewer` charter run by the model family that did not write the diff, through
-  `cross-review`; an instruction that misreads a gate has cost more than most code. When the other family's seat
-  cannot be reached, its provider out of usage, unauthenticated or failing, the branch does not wait: run the
-  same `reviewer` charter on this family's own seat, and record in the pull request body which family reviewed,
-  which was unavailable and how that was established, and that the cross-family gate was therefore not met. That
-  recording is the whole of the exception: a substitution the body does not declare is a skip, and a skip is
-  neither unavailability nor a clean review. **Sign-off**: sign-off surfaces are the Surfaces table's `sign-off`
-  row; this tier covers them and any diff where material uncertainty remains
-  after that pass: the same cross-family pass, its unavailability route included, then Greptile on the draft
-  in section 8. A sign-off diff whose other family is unavailable and whose Greptile attempt settles as
-  `UNAVAILABLE` by either of the routes section 8 establishes proceeds on the substituted pass plus that record,
-  both declared in the pull request body, because there is no further reviewer to wait for. Risk and uncertainty
-  override category and line count, and a mixed diff is assessed whole, so a one-line change to a
-  sign-off surface is sign-off tier. `security-reviewer` only when a change widens a surface in the Surfaces
-  table's `security review` row. The pull request body names the tier
-  and one sentence why; a Greptile review not requested on tier grounds is neither `UNAVAILABLE` nor a clean
-  review. Fix each true finding by the cheapest valid fix it names. A true finding whose every fix costs more than
-  it is worth goes to the owner as a plain-language decision, and the owner may set it aside as deferred; a finding
-  is dismissed, with a reason, only when it is false. Then one pass scoped to the repaired hunks and what they can
-  break, by the same reviewer with its context intact or by the session. No further pass when a repair adds no
-  factual claim. Record the review in the pull request body's review line, in the format
-  [the workflow manual](../../../docs/AI-WORKFLOW.md#the-review-line) specifies.
+- One fresh review of the final tree, by tier. **Documents** (`docs/`, the root readme, `CONTEXT.md`) and a
+  **setting-only seat change**: the session itself, recorded at tier `document`. A seat change is setting-only when each
+  changed seat file differs only in model, effort or turn-limit lines of its settings block (`model`, `effort` or
+  `maxTurns` in a Claude seat's frontmatter, changed, added or removed; `model` or `model_reasoning_effort` above a
+  Codex seat's `developer_instructions`, changed in value only), and the manifest differs only in the hash recorded
+  for each such file. **Code and agent instruction**, everything else, the manual, `CLAUDE.md`, the rules, skills and every other seat-file change
+  (instructions, tools, permissions, or any other line) included: the `reviewer` charter run by the model family that
+  did not write the diff, through `cross-review`; an instruction that misreads a gate has cost more than most code. When
+  the other family's seat cannot be reached, its provider out of usage, unauthenticated or failing, the branch does not
+  wait: run the same `reviewer` charter on this family's own seat, and record in the pull request body which family
+  reviewed, which was unavailable and how that was established, and that the cross-family gate was therefore not met.
+  That recording is the whole of the exception: a substitution the body does not declare is a skip, and a skip is
+  neither unavailability nor a clean review. **Sign-off**: sign-off surfaces are the Surfaces table's `sign-off` row;
+  this tier covers them and any diff where material uncertainty remains after that pass: the same cross-family pass, its
+  unavailability route included, then Greptile on the draft in section 8. A sign-off diff whose other family is
+  unavailable and whose Greptile attempt settles as `UNAVAILABLE` by either of the routes section 8 establishes proceeds
+  on the substituted pass plus that record, both declared in the pull request body, because there is no further reviewer
+  to wait for. Risk and uncertainty override category and line count, and a mixed diff is assessed whole, so a one-line
+  change to a sign-off surface is sign-off tier. `security-reviewer` only when a change widens a surface in the Surfaces
+  table's `security review` row. The pull request body names the tier and one sentence why; a Greptile review not
+  requested on tier grounds is neither `UNAVAILABLE` nor a clean review. Fix each true finding by the cheapest valid fix
+  it names. A true finding whose every fix costs more than it is worth goes to the owner as a plain-language decision,
+  and the owner may set it aside as deferred; a finding is dismissed, with a reason, only when it is false. Then one
+  pass scoped to the repaired hunks and what they can break, by the same reviewer with its context intact or by the
+  session. No further pass when a repair adds no factual claim. Record the review in the pull request body's review
+  line, in the format [the workflow manual](../../../docs/AI-WORKFLOW.md#the-review-line) specifies.
 
 ## 7. Push authorisation (owner gate two)
 
@@ -224,7 +226,7 @@ After the rebase in step 1, the session checks eligibility for the direct route:
 as `<origin-main>` and `git rev-parse HEAD` as `<head>`, then check the gate with `test -x
 scripts/gates/pre-push-main`. A repository where that gate is missing or not executable has no direct route: the gate
 is not run and the job takes the pull request route below. Otherwise run `scripts/gates/pre-push-main <origin-main>
-<head>`; exit 0 means every changed path qualifies for the direct route, any other exit means the pull request route
+<head>`; exit 0 means the whole change qualifies for the direct route, any other exit means the pull request route
 below.
 On the direct route: settle the convergence checks exactly as step 1 names on `<head>`, so their receipts carry
 `head=<head>`, and those receipts replace any the approved body quoted for an earlier head; nothing else in that
@@ -233,7 +235,7 @@ message is the pull-request title, a blank line, the same filled body shown to t
 receipts so replaced, a blank line, `Closes #<issue>`, and the attribution lines. Before pushing, confirm `git
 rev-parse HEAD^{tree}` equals `git rev-parse <head>^{tree}`, so the pushed commit carries exactly the content the
 receipts checked; a mismatch stops the route and the checks are settled again. Then push with `git push origin
-HEAD:main`, whose pre-push hook re-runs the gate and refuses a non-qualifying path. The draft, Greptile, ready,
+HEAD:main`, whose pre-push hook re-runs the gate and refuses a change that does not qualify. The draft, Greptile, ready,
 auto-merge and merge-watch steps below are skipped, and `closeout` runs. A refusal from the gate means the pull
 request route, never a workaround.
 
