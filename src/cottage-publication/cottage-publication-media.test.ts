@@ -16,6 +16,10 @@ function service(fetchMedia: typeof fetch) {
   });
 }
 
+const emptyWebp = [
+  0x52, 0x49, 0x46, 0x46, 0x04, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+];
+
 describe("Cottage publication media service", () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -24,7 +28,7 @@ describe("Cottage publication media service", () => {
   it("returns approved same-origin image bytes without provider response metadata", async () => {
     const fetchMedia = vi.fn(async () =>
       Promise.resolve(
-        new Response(new Uint8Array([1, 2, 3]), {
+        new Response(new Uint8Array(emptyWebp), {
           headers: {
             "Content-Type": "image/webp",
             "x-provider-path": "owner/profile/private-photo.webp",
@@ -38,7 +42,7 @@ describe("Cottage publication media service", () => {
     );
 
     expect(result).toEqual({
-      bytes: new Uint8Array([1, 2, 3]),
+      bytes: new Uint8Array(emptyWebp),
       contentType: "image/webp",
     });
   });
@@ -53,8 +57,8 @@ describe("Cottage publication media service", () => {
         }),
       )
       .mockResolvedValueOnce(
-        new Response(new Uint8Array([4, 5]), {
-          headers: { "Content-Type": "image/png" },
+        new Response(new Uint8Array(emptyWebp), {
+          headers: { "Content-Type": "image/webp" },
         }),
       ) as unknown as typeof fetch;
 
@@ -63,8 +67,8 @@ describe("Cottage publication media service", () => {
     );
 
     expect(result).toEqual({
-      bytes: new Uint8Array([4, 5]),
-      contentType: "image/png",
+      bytes: new Uint8Array(emptyWebp),
+      contentType: "image/webp",
     });
     expect(fetchMedia).toHaveBeenNthCalledWith(
       2,
