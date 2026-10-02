@@ -58,6 +58,21 @@ const en = {
   pointDecimal:
     "Enter both as decimal numbers, such as 36.408333 and 44.385834.",
   pointConfirm: "I checked this point is the cottage",
+  deviceLocationUse: "Use this device's location",
+  deviceLocationStatus: "Device location",
+  deviceLocationFinding: "Finding this device's location…",
+  deviceLocationProposed:
+    "This is where this device is now, accurate to about {metres} metres. It may be your home, not the cottage. Check the numbers before confirming.",
+  deviceLocationRough:
+    "This reading is rough. Type the numbers from a maps app instead if you can.",
+  deviceLocationDenied:
+    "Location permission was refused. You can still type or paste the numbers.",
+  deviceLocationUnavailable:
+    "This device could not find its location. You can still type or paste the numbers.",
+  deviceLocationTimedOut:
+    "Finding the location took too long. Try again outdoors, or type or paste the numbers.",
+  deviceLocationUnsupported:
+    "This browser cannot share its location. Type or paste the numbers.",
   privateDirections: "Private directions",
   capacity: "Guest capacity",
   bedrooms: "Bedrooms",
@@ -166,6 +181,21 @@ const ar: Copy = {
   pointSwap: "تبديل الرقمين",
   pointDecimal: "أدخل الرقمين بصيغة عشرية، مثل 36.408333 و 44.385834.",
   pointConfirm: "تحققت من أن هذه النقطة هي الكوخ",
+  deviceLocationUse: "استخدم موقع هذا الجهاز",
+  deviceLocationStatus: "موقع الجهاز",
+  deviceLocationFinding: "جارٍ تحديد موقع هذا الجهاز…",
+  deviceLocationProposed:
+    "هذا هو مكان هذا الجهاز الآن، بدقة تقارب {metres} متراً. قد يكون منزلك وليس الكوخ. تحقق من الأرقام قبل التأكيد.",
+  deviceLocationRough:
+    "هذه القراءة تقريبية. إن أمكن، اكتب الأرقام من تطبيق خرائط بدلاً من ذلك.",
+  deviceLocationDenied:
+    "رُفض إذن الموقع. ما زال بإمكانك كتابة الأرقام أو لصقها.",
+  deviceLocationUnavailable:
+    "تعذّر على هذا الجهاز تحديد موقعه. ما زال بإمكانك كتابة الأرقام أو لصقها.",
+  deviceLocationTimedOut:
+    "استغرق تحديد الموقع وقتاً طويلاً. حاول مرة أخرى في مكان مفتوح، أو اكتب الأرقام أو الصقها.",
+  deviceLocationUnsupported:
+    "لا يستطيع هذا المتصفح مشاركة موقعه. اكتب الأرقام أو الصقها.",
   privateDirections: "اتجاهات الوصول الخاصة",
   capacity: "سعة الضيوف",
   bedrooms: "غرف النوم",
@@ -275,6 +305,21 @@ const ckb: Copy = {
   pointDecimal:
     "هەردوو ژمارەکە بە شێوەی دەیی بنووسە، وەک 36.408333 و 44.385834.",
   pointConfirm: "پشکنیم کە ئەم خاڵە کۆتێجەکەیە",
+  deviceLocationUse: "شوێنی ئەم ئامێرە بەکاربهێنە",
+  deviceLocationStatus: "شوێنی ئامێر",
+  deviceLocationFinding: "شوێنی ئەم ئامێرە دەدۆزرێتەوە…",
+  deviceLocationProposed:
+    "ئەمە ئەو شوێنەیە کە ئەم ئامێرە ئێستا لێیەتی، بە وردیی نزیکەی {metres} مەتر. لەوانەیە ماڵەکەت بێت، نەک کۆتێجەکە. پێش پشتڕاستکردنەوە ژمارەکان بپشکنە.",
+  deviceLocationRough:
+    "ئەم خوێندنەوەیە نزیکەییە. ئەگەر دەتوانیت، لەبری ئەوە ژمارەکان لە ئەپێکی نەخشەوە بنووسە.",
+  deviceLocationDenied:
+    "مۆڵەتی شوێن ڕەتکرایەوە. هێشتا دەتوانیت ژمارەکان بنووسیت یان بیانلکێنیت.",
+  deviceLocationUnavailable:
+    "ئەم ئامێرە نەیتوانی شوێنەکەی بدۆزێتەوە. هێشتا دەتوانیت ژمارەکان بنووسیت یان بیانلکێنیت.",
+  deviceLocationTimedOut:
+    "دۆزینەوەی شوێنەکە زۆری خایاند. لە دەرەوە دووبارە هەوڵ بدەوە، یان ژمارەکان بنووسە یان بیانلکێنە.",
+  deviceLocationUnsupported:
+    "ئەم وێبگەڕە ناتوانێت شوێنەکەی هاوبەش بکات. ژمارەکان بنووسە یان بیانلکێنە.",
   privateDirections: "ڕێنمایی تایبەتی گەیشتن",
   capacity: "ژمارەی میوان",
   bedrooms: "ژووری نوستن",

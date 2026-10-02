@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { readExactPoint, type ExactPoint } from "@/cottage-profile/exact-point";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
@@ -9,6 +9,56 @@ import type { Locale } from "@/i18n/routing";
 import { ActionButton, FormControl } from "./interaction-controls";
 
 const checkId = "cottage-profile-exact-point-check";
+
+type DeviceLocationFailure =
+  | "denied"
+  | "unavailable"
+  | "timed-out"
+  | "unsupported";
+
+type DeviceLocation =
+  | { kind: "idle" }
+  | { kind: "locating" }
+  | { kind: "proposed"; accuracyMetres: number }
+  | { kind: "failed"; reason: DeviceLocationFailure };
+
+// The W3C Geolocation specification defines exactly these three error codes.
+function failureFor(code: 1 | 2 | 3): DeviceLocationFailure {
+  switch (code) {
+    case 1:
+      return "denied";
+    case 2:
+      return "unavailable";
+    case 3:
+      return "timed-out";
+  }
+}
+
+function deviceLocationMessage(
+  copy: (typeof cottageProfileMessages)[Locale],
+  deviceLocation: Exclude<DeviceLocation, { kind: "idle" }>,
+) {
+  if (deviceLocation.kind === "locating") return copy.deviceLocationFinding;
+  if (deviceLocation.kind === "proposed") {
+    const proposal = copy.deviceLocationProposed.replace(
+      "{metres}",
+      String(deviceLocation.accuracyMetres),
+    );
+    return deviceLocation.accuracyMetres > 100
+      ? `${proposal} ${copy.deviceLocationRough}`
+      : proposal;
+  }
+  switch (deviceLocation.reason) {
+    case "denied":
+      return copy.deviceLocationDenied;
+    case "unavailable":
+      return copy.deviceLocationUnavailable;
+    case "timed-out":
+      return copy.deviceLocationTimedOut;
+    case "unsupported":
+      return copy.deviceLocationUnsupported;
+  }
+}
 
 function PointInWords({
   template,
@@ -47,8 +97,48 @@ export function CottageLocationFields({
   const [confirmed, setConfirmed] = useState(
     savedLatitude !== null && savedLongitude !== null,
   );
+  const [deviceLocation, setDeviceLocation] = useState<DeviceLocation>({
+    kind: "idle",
+  });
+  const latestRequest = useRef(0);
   const reading = readExactPoint(latitudeText, longitudeText);
   const invalid = reading.kind !== "empty" && reading.kind !== "valid";
+
+  // A request in flight when the owner edits is abandoned: its result must not replace what they typed.
+  function clearDeviceLocation() {
+    latestRequest.current += 1;
+    setDeviceLocation({ kind: "idle" });
+  }
+
+  function requestDeviceLocation() {
+    if (!navigator.geolocation) {
+      setDeviceLocation({ kind: "failed", reason: "unsupported" });
+      return;
+    }
+    latestRequest.current += 1;
+    const request = latestRequest.current;
+    setDeviceLocation({ kind: "locating" });
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        if (request !== latestRequest.current) return;
+        setLatitudeText(String(Number(coords.latitude.toFixed(6))));
+        setLongitudeText(String(Number(coords.longitude.toFixed(6))));
+        setConfirmed(false);
+        setDeviceLocation({
+          kind: "proposed",
+          accuracyMetres: Math.round(coords.accuracy),
+        });
+      },
+      (error) => {
+        if (request !== latestRequest.current) return;
+        setDeviceLocation({
+          kind: "failed",
+          reason: failureFor(error.code as 1 | 2 | 3),
+        });
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
+    );
+  }
 
   return (
     <div className="exact-point-fields">
@@ -67,6 +157,7 @@ export function CottageLocationFields({
             onChange={(event) => {
               setLatitudeText(event.target.value);
               setConfirmed(false);
+              clearDeviceLocation();
             }}
           />
         </label>
@@ -84,10 +175,29 @@ export function CottageLocationFields({
             onChange={(event) => {
               setLongitudeText(event.target.value);
               setConfirmed(false);
+              clearDeviceLocation();
             }}
           />
         </label>
       </div>
+      <ActionButton
+        kind="secondary"
+        size="compact"
+        type="button"
+        pending={deviceLocation.kind === "locating"}
+        onClick={requestDeviceLocation}
+      >
+        {copy.deviceLocationUse}
+      </ActionButton>
+      {deviceLocation.kind === "idle" ? null : (
+        <div
+          className="exact-point-check"
+          role="status"
+          aria-label={copy.deviceLocationStatus}
+        >
+          <p>{deviceLocationMessage(copy, deviceLocation)}</p>
+        </div>
+      )}
       <div
         id={checkId}
         className="exact-point-check"
@@ -115,6 +225,7 @@ export function CottageLocationFields({
             setLatitudeText(String(reading.corrected.latitude));
             setLongitudeText(String(reading.corrected.longitude));
             setConfirmed(false);
+            clearDeviceLocation();
           }}
         >
           {copy.pointSwap}
