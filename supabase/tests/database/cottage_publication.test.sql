@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(93);
+select plan(94);
 
 create function pg_temp.configure_translation_runtime(target_ready boolean)
 returns void language sql as $$
@@ -732,6 +732,23 @@ select results_eq(
 select throws_ok(
   $$select object_path from public.cottage_publication_media$$,
   '42501', null, 'anonymous callers cannot read private storage paths');
+
+reset role;
+insert into public.cottage_profile_review_cycles (
+  profile_id, owner_user_id, source_revision_id, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities, cycle_number
+)
+select profile_id, owner_user_id, source_revision_id, name, governorate,
+  '36.408333, 44.385834', capacity, bedrooms, bathrooms, amenities, 3
+from public.cottage_profile_review_cycles where cycle_number = 2;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
+select throws_ok(
+  $$select public.approve_cottage_profile_publication(
+    (select id from public.cottage_profile_review_cycles where cycle_number = 3), 'Legacy cycle'
+  )$$,
+  'RC203', 'Reviewed Approximate Location reads as a coordinate pair',
+  'publication approval refuses a legacy review cycle whose Approximate Location reads as a coordinate pair');
 
 select * from finish();
 rollback;

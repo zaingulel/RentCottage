@@ -1146,6 +1146,8 @@ begin
           when 'description' then 2000
           when 'house_rules' then 1500
         end
+        or (supplied.key = 'approximate_location'
+          and public.reads_as_coordinate_pair(supplied.value #>> '{}'))
       when supplied.key in ('company_name', 'exemption_basis') then
         jsonb_typeof(supplied.value) is distinct from 'string'
         or char_length(btrim(supplied.value #>> '{}')) > case supplied.key

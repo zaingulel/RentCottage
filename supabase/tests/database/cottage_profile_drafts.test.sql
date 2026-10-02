@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(99);
+select plan(103);
 
 insert into auth.users (
   id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at
@@ -48,6 +48,39 @@ insert into public.owner_application_cottage_profiles (
   '20000000-0000-4000-8000-000000000702', 'Prospective Cottage', 'Duhok',
   'Near Amedi', 'Private prospective address', 6, 2, 2,
   array['garden'], 'Prospective description', 'Prospective rules'
+);
+
+select is_empty(
+  $$select input from (values
+      ('36.408333, 44.385834'),
+      ('٣٦.٤٠٨٣٣٣, ٤٤.٣٨٥٨٣٤'),
+      ('(36.408333, 44.385834)'),
+      ('36.408333; 44.385834'),
+      ('36.408333, 44.385834.'),
+      ('36.408333°, 44.385834°'),
+      ('36.408333/44.385834'),
+      ('36.4083333333333333, 44.3858343333333333'),
+      ('[36.408333 | 44.385834]'),
+      (U&'\06F3\06F6\066B\06F4\060C \06F4\06F4\066B\06F3'),
+      (U&'36.408333\00A044.385834'),
+      (E'\t36.408333 44.385834\n')
+    ) cases(input)
+    where public.reads_as_coordinate_pair(input) is not true$$,
+  'every coordinate pair form the application refuses reads as a coordinate pair in PostgreSQL'
+);
+
+select is_empty(
+  $$select input from (values
+      ('Shaqlawa countryside'),
+      ('44'),
+      ('Near Shaqlawa'),
+      ('Shaqlawa, 12 km north of Erbil'),
+      ('36'),
+      ('36.408333, 44.385834 Shaqlawa'),
+      (U&'\0969\096C.\096A \096A\096A.\0969')
+    ) cases(input)
+    where public.reads_as_coordinate_pair(input) is not false$$,
+  'area words, a lone number and a digit script the application does not read are not a coordinate pair in PostgreSQL'
 );
 
 select throws_ok(
@@ -151,6 +184,21 @@ select throws_ok(
   )$$,
   '22023', null,
   'an owner save rejects a non-positive expected version at the database boundary'
+);
+
+select throws_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id = '20000000-0000-4000-8000-000000000701'),
+    1, 'Continued Application Cottage', 'Erbil', '36.408333, 44.385834',
+    'Private exact address', 36.408333, 44.385834,
+    'Continue past the orchard gate.', 10, 4, 3,
+    array['garden', 'parking', 'wifi'], 'en',
+    'Owner working-copy description', 'Owner working-copy House Rules'
+  )$$,
+  '23514',
+  'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_approximate_location_not_coordinate_pair"',
+  'the owner draft save refuses a bare coordinate pair as the Approximate Location'
 );
 
 select lives_ok(
@@ -823,6 +871,21 @@ select results_eq(
     0
   )$$,
   'a blocked source edit leaves both the working copy and audit unchanged'
+);
+
+select throws_ok(
+  $$select public.update_administrator_cottage_profile(
+    (select id from public.owner_application_cottage_profiles
+      where application_id = '20000000-0000-4000-8000-000000000701'),
+    3, 'Administrator working copy', 'Erbil', '36.408333, 44.385834',
+    'Private exact address', 36.408333, 44.385834,
+    'Administrator directions', 10, 4, 3, array['garden', 'wifi'], 'en',
+    'Owner working-copy description',
+    'Owner working-copy House Rules'
+  )$$,
+  '23514',
+  'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_approximate_location_not_coordinate_pair"',
+  'the administrator edit refuses a bare coordinate pair as the Approximate Location'
 );
 
 select lives_ok(
