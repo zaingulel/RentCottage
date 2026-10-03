@@ -51,14 +51,45 @@ process list; nothing is inferred from chat.
    prefix. Any Docker command or API failure, including an unreachable daemon, also retains the worktree. On
    either uncertainty or failure, stop before branch deletion and continue to step 6 and the final report. Keep
    images and volumes. In the final report, name any other container or image confirmed as job-created by recorded
-   build output or Docker metadata, and leave its cleanup to the owner; do not infer ownership from a name. A
-   temporary folder outside the job worktree is the session's to delete only when the output of a verifier run this
-   session itself started names that exact path as retained. Delete that path alone, once the container inspection
-   above shows no container with a recorded host bind source equal to, below or above it, and none whose inspection
-   output names that path or one below it anywhere else, such as a label or a working directory, and name the
-   deletion in the final report. A folder known only from another job, another session, a memory or summary, or a
-   matching name pattern is never deleted on this authority and keeps exact-target approval. If that container
-   check cannot be run, is uncertain or fails, leave the folder in place and name its path in the final report.
+   build output or Docker metadata, and leave its cleanup to the owner; do not infer ownership from a name.
+   **Scratch files and folders.** Apply `AGENTS.md`'s Disposable job cleanup authority to job scratch,
+   including local prompts, drafts and disposable verification reports once no longer needed, inside or outside
+   the worktree and not just verifier-reported paths. Inspect each exact target and its contents against actual
+   file-writing tool calls or commands read in this session's transcript or in transcripts of helpers it
+   dispatched for this job. A helper's returned path list alone does not establish creation. Use native file
+   inspection and git's tracked-file inventory to establish eligibility under that authority; a nonempty
+   directory must be wholly verified disposable before recursive deletion. Canonicalize the target and its
+   existing parents, checking links and filesystem namespace differences; unresolved links or comparisons
+   retain the target. Outside scratch includes runtime-managed plan and review locations; location alone
+   never establishes eligibility. Remove only exact verified artifacts, preserving enclosing or shared scratch
+   directories unless their entire contents are verified disposable under the same authority. Check
+   `git worktree list --porcelain` in this repository and retain any scratch target with a registered worktree
+   equal to it or below it.
+   Check inactive use for both inside and outside scratch with native process inspection such as `lsof` and
+   `ps`, following the exact target and its contents, recorded job/helper processes and retained process groups,
+   and processes identified by target references. Examine relevant working directories, open files and command
+   arguments; do not require every system process's details. Denied access to an unrelated protected process
+   alone neither blocks cleanup nor requires elevation. An unreadable relevant process, unavailable meaningful
+   target-use check or unresolved target relationship retains the affected targets; silence from an incomplete
+   lookup of the target or a relevant process is never proof of inactivity. Stop only processes confirmed as
+   this session's own, then verify they stopped and the target is unused; unconfirmed termination or uncertain
+   ownership retains the target.
+   For verifier-reported artifacts, also require that this session started the reporting run, that it has
+   stopped, and that its output reports neither a retained process group nor unconfirmed termination. Either
+   report retains the artifact even if other checks pass; verifier output never replaces independent path,
+   ownership or inactive-use checks.
+   For outside scratch, use the all-container inspection above, including stopped containers and recorded bind
+   declarations. Compare canonical host bind sources by path component and retain the scratch target if any
+   source is equal to, below or above it, or any other container metadata references the target or a path below
+   it, including labels and working directories. Skip Docker inspection only when the CLI is not installed;
+   daemon or inspection failures and unresolved translated paths retain the scratch target. Keep images and
+   volumes, and leave other recorded job-created containers and images for the owner as above.
+   Recheck the exact target and inactive use immediately before removal. After all applicable checks pass,
+   remove eligible targets autonomously with native exact-target commands such as `rm -- <file>` or
+   `rm -r -- <directory>`. On uncertainty or failure, preserve the target and ask the owner as `AGENTS.md`
+   requires; do not force cleanup. Report each exact removed or retained path and the reason for retention
+   directly in the session, without creating approval-only files. Continue independent cleanup when another
+   target is retained.
    Leave the job worktree through the available runtime mechanism described in step 3; if the runtime cannot leave
    it or ownership is uncertain, retain it, report why, and stop before worktree removal and branch deletion;
    continue to step 6 and the final report. That report tells the owner that removing the worktree the session sits

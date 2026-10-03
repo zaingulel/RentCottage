@@ -51,8 +51,10 @@ available, report board freshness unavailable rather than presenting stale local
 - The board output for planned work. Prefer `Ready` work matching the owner's latest objective;
   `Backlog` remains eligible. `Ready` means startable in the next session with no missing owner decision,
   external dependency, or scheduled date; a card waiting on any of those goes to `Backlog` with its trigger
-  named in a comment. A card in `In progress` with no branch or pull request behind it is stale: return it to
-  `Ready`.
+  named in a comment. A card in `In progress` with no branch or pull request behind it may be another machine's or
+  session's job, since a job branch stays local until push: never return it to `Ready` on the session's own
+  judgment and never offer it as a candidate row. Show it to the owner at work-pick with its latest comment
+  starting `Claim:`, or say it has none, and return it to `Ready` only on the owner's say.
 - If the Conventions table in `AGENTS.md` marks the documentation routines active, intake sweep-triage cards
   as `docs/SWEEP-TRIAGE.md` describes: the day-after triage routine files issues it cannot card. Before
   work-pick, list them with
@@ -113,6 +115,10 @@ disjoint.
   further confirmation is needed.
 - Before edits in any newly created runtime worktree, require `git rev-parse HEAD` to equal that newly recorded
   commit. Preserve and report a mismatch before edits.
+- Keep scratch files, plans, and local draft or review prompts inside the job worktree where possible;
+  the existing gitignored .claude/worklog area is suitable. Retain artifacts needed for unfinished work or
+  handoff. Apply routine scratch cleanup through [closeout step 5](../closeout/SKILL.md) under `AGENTS.md`'s
+  Disposable job cleanup authority.
 - Builders work inside the job worktree, one at a time. Two slices with disjoint files may run at once: from the
   job worktree, give the second its own branch and worktree with
   `git worktree add -b slice/<issue>-<name> <path> job/<issue>`, since git refuses to check the job branch out in a
@@ -120,7 +126,10 @@ disjoint.
   the job worktree, then `git worktree remove <path>` and `git branch -d slice/<issue>-<name>`. A runtime's own
   subagent worktree branches from `main`, not the job branch, so it is not used for builders.
 - Move the card to `In progress`: `node scripts/board-move.mjs <issue> "In progress"`, and claim it with
-  `gh issue edit <issue> --add-assignee @me` — active work with no assignee is reported as drift. Run `npm ci`
+  `gh issue edit <issue> --add-assignee @me` — active work with no assignee is reported as drift. Then post the
+  claim where every machine can see it, with `gh issue comment <issue> --body "Claim: <machine>, <runtime>, <time>"`:
+  the machine is what `hostname` prints, the runtime is Claude Code, Codex or Herdr, and the time is what
+  `date -u +%Y-%m-%dT%H:%MZ` prints, each read first and typed in as a literal. Run `npm ci`
   in a fresh checkout, then confirm `git config --get core.hooksPath` prints `.githooks`; when it does not, run
   `git config core.hooksPath .githooks` and report it.
 
@@ -144,6 +153,13 @@ disjoint.
   then weighs a mechanism's recurring run time and upkeep against the failure it prevents, states that cost for any
   new or extended test or tooling, and names existing machinery the change makes unnecessary. The build-seat choice
   keeps its own rule: cost and latency break only equal-reliability ties.
+- Before dispatching an `architect`, the coordinating session runs `explorer` first when discovery exceeds a
+  couple of files. Each explorer writes its completed findings with `file:line` references and explicit
+  unresolved gaps to its own distinct named findings file, such as `.claude/worklog/<branch>-discovery-<name>.md`;
+  the handoff's `Discovery:` line carries every findings file path. For discovery confined to a couple of files, the line carries the
+  session's own completed findings with the same references and gaps. Discovery is never a list of places to
+  search. On an unplanned Discovery return, the coordinating session completes the missing discovery under this
+  rule, then redispatches the architect; that return is exempt from the bounded non-delivery rule.
 - Every `architect` dispatch is a filled copy of `.agents/templates/planner-handoff.md`.
 - A plan names its scope: the files each slice changes and the claim each slice proves, never a line estimate.
   Size is the owner's judgment before work-pick, through the `to-issues` size signals; after work-pick no seat
@@ -247,9 +263,14 @@ request route, never a workaround.
    receipt. The pre-push hook still runs its own gates on every push. Then push;
    `gh pr create --draft --body-file <body>` with `Closes #<issue>` in the body. Greptile is requested only for the
    sign-off tier in section 6; the other tiers go straight to step 3. Move the card to `In review`.
-2. Read the current allowance first on Greptile's usage page: Greptile is metered from one pool shared by every
-   adopter. Record the source, the observation time and the credits left in the pull request body; confirmed
-   exhaustion is the `UNAVAILABLE` evidence below and skips the request. Then read the open draft's `headRefOid`
+2. Read the current allowance in the signed-in built-in browser at
+   https://app.greptile.com/flowgauge/-/settings/billing. Record the Flex Usage Limit bar (`$N of $M`), remaining
+   allowance, invoice period, observation source and time in the pull request body. A login or join redirect from any other
+   address means the address is wrong, not that the owner is signed out or the allowance is exhausted; a command-line
+   fetch is never signed in. If the signed-in built-in browser is unavailable or this exact page cannot be read, ask
+   the owner for the bar and invoice period; never infer sign-out or exhaustion from a failed read. Greptile is metered
+   from one pool shared by every adopter. Confirmed exhaustion is the `UNAVAILABLE` evidence below and skips the
+   request. Then read the open draft's `headRefOid`
    and request the final review once for that commit: `gh pr comment <pr> --body "@greptileai review this draft"`.
    Record the request URL, time and exact head. `.greptile/config.json` disables automatic reviews; labels are
    metadata. `COMPLETE` requires Greptile's completed review for that exact head, its summary, and disposition of
