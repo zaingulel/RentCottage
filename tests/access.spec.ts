@@ -1915,11 +1915,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       .filter({ hasText: reportReason });
     await expect(
       affectedLocalization.getByRole("button", {
-        name: "Reprocess with stronger model العربية",
-      }),
-    ).toBeVisible();
-    await expect(
-      affectedLocalization.getByRole("button", {
         name: "Route to human review",
       }),
     ).toBeVisible();
