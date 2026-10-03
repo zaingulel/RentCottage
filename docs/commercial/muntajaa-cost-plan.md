@@ -42,8 +42,8 @@
 | Customer support software | **$0 initially** | Working assumption | Founder-managed support. Staff and helpdesk software remain TBC |
 | Push notifications | **$0 initially** | Working assumption | Platform push services within normal launch usage |
 | Monitoring and security tools | **$0 initially** | Working assumption | Free tiers and platform tooling at launch |
-| Static interface translation | **$0 additional** | Working assumption | AI-assisted drafting with human review in Arabic, Sorani Kurdish and English |
-| Automatic content translation | **TBC usage** | Usage-based | OpenAI `gpt-5.6-luna` as the default behind a replaceable AI service, with stronger-model or human escalation |
+| Static interface translation | **$0 additional** | Working assumption | AI-assisted drafting with AI-only quality review in Arabic, Sorani Kurdish and English |
+| Automatic content translation | **TBC usage** | Usage-based | OpenAI `gpt-6-luna` at `none` as the default behind a replaceable AI service, `gpt-6.1-sol` at `low` for stronger-model escalation and `gpt-6-astra` at `medium` for AI-only quality review |
 
 ### 2.2 Approved infrastructure baseline
 
@@ -58,7 +58,7 @@ Cloudflare and Supabase overages remain usage-based. Spend alerts must be enable
 | GitHub Actions continuous integration | **Included initially** | Use repository allowances first and monitor actual runner demand |
 | Blacksmith continuous integration | **Deferred** | Consider only if measured demand makes a runner change worthwhile |
 | Google Maps and geocoding | **$0 initially** | Use free monthly thresholds and set a $50 billing alert |
-| Automatic translation | **TBC** | Measure `gpt-5.6-luna` usage, cache repeat translations, and set per-request and monthly limits before launch |
+| Automatic translation | **TBC** | Measure `gpt-6-luna` usage, cache repeat translations, and set per-request and monthly limits before launch |
 | Phone verification and urgent SMS | **TBC** | Confirm Iraqi delivery, sender requirements and unit pricing |
 | Hosting, database and storage overages | **TBC** | Enable provider spend alerts before public launch |
 
@@ -157,7 +157,7 @@ The known incremental cost for the first app year is therefore **$124 plus £4,0
 3. Select the Iraqi company registry after local legal and accounting advice.
 4. Validate Qi Card first and compare its written offer with ZainCash and AsiaPay.
 5. Obtain legal approval of the owner-document checklist and retention schedule before storage goes live.
-6. Quality-test `gpt-5.6-luna` with Arabic and Sorani reviewers, validate the `gpt-5.6-terra` or human escalation path, then cost measured production usage.
+6. Quality-test `gpt-6-luna` for Arabic and Sorani through AI-only review, validate `gpt-6.1-sol` escalation and the `gpt-6-astra` judge, then cost measured production usage. Translation quality review follows the [owner ruling on #99](https://github.com/zaingulel/RentCottage/issues/99#issuecomment-5929150305); legal-language approval remains separate under [#117](https://github.com/zaingulel/RentCottage/issues/117).
 7. Obtain the remaining TBC quotations and then calculate the 10% one-off contingency.
 8. Approve Phase 2 timing before opening app-store organisation accounts.
 
@@ -191,8 +191,10 @@ Public prices and provider evidence were checked during the July, 2 August and 1
 - [Apple Developer Program pricing](https://developer.apple.com/programs/whats-included/)
 - [Google Play developer account pricing](https://support.google.com/googleplay/android-developer/answer/6112435)
 - [Google Maps Platform pricing](https://developers.google.com/maps/billing-and-pricing/pricing)
-- [OpenAI gpt-5.6-luna model](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
-- [OpenAI API pricing](https://openai.com/api/pricing/)
+- [OpenAI gpt-6-luna model](https://developers.openai.com/api/docs/models/gpt-6-luna)
+- [OpenAI gpt-6.1-sol model](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+- [OpenAI gpt-6-astra model](https://developers.openai.com/api/docs/models/gpt-6-astra)
+- [OpenAI API pricing](https://developers.openai.com/api/docs/pricing)
 - [Qi Card gateway documentation](https://developers-gate.qi.iq/docs/getting-started/payment-gateway-intro)
 - [ZainCash business pricing](https://www.zaincash.iq/business-wallets)
 - [Central Bank of Iraq licensed providers](https://www.cbi.iq/page/25)

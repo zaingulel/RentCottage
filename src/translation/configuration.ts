@@ -120,19 +120,19 @@ export function readTranslationConfiguration(
   const ordinary = route(
     source,
     "TRANSLATION_ORDINARY",
-    { model: "gpt-5.6-luna", effort: "none", promptVersion: "v1" },
+    { model: "gpt-6-luna", effort: "none", promptVersion: "v1" },
     defaultTranslationPromptV1,
   );
   const strongerModel = route(
     source,
     "TRANSLATION_STRONGER",
-    { model: "gpt-5.6-terra", effort: "none", promptVersion: "v1" },
+    { model: "gpt-6.1-sol", effort: "low", promptVersion: "v1" },
     defaultTranslationPromptV1,
   );
   const judge = route(
     source,
     "TRANSLATION_JUDGE",
-    { model: "gpt-5.6-sol", effort: "medium", promptVersion: "judge-v1" },
+    { model: "gpt-6-astra", effort: "medium", promptVersion: "judge-v1" },
     defaultTranslationJudgePromptV1,
   );
   const monthlyRequests = positiveInteger(

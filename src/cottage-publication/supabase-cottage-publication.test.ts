@@ -264,7 +264,7 @@ describe("Supabase Cottage publication adapter", () => {
       houseRules: "ممنوع التدخين",
       provenance: {
         provider: "openai",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
       },
@@ -310,7 +310,7 @@ describe("Supabase Cottage publication adapter", () => {
               houseRules: "ممنوع التدخين",
               provenance: {
                 provider: "openai",
-                model: "gpt-5.6-luna",
+                model: "gpt-6-luna",
                 effort: "none",
                 promptVersion: "v1",
               },

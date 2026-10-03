@@ -38,7 +38,7 @@ const copy = {
     controls: "Translation controls",
     generate: "Generate",
     reprocess: "Reprocess",
-    reprocessWithTerra: "Reprocess with Terra",
+    reprocessWithStrongerModel: "Reprocess with stronger model",
     requestsReserved: "requests reserved",
     tokensReserved: "tokens reserved",
     spendReserved: "microusd reserved",
@@ -74,7 +74,7 @@ const copy = {
     controls: "ضوابط الترجمة",
     generate: "إنشاء",
     reprocess: "إعادة المعالجة",
-    reprocessWithTerra: "إعادة المعالجة باستخدام Terra",
+    reprocessWithStrongerModel: "إعادة المعالجة باستخدام نموذج أقوى",
     requestsReserved: "طلبات محجوزة",
     tokensReserved: "رموز محجوزة",
     spendReserved: "ميكرو دولار محجوز",
@@ -111,7 +111,7 @@ const copy = {
     controls: "کۆنترۆڵەکانی وەرگێڕان",
     generate: "دروستکردن",
     reprocess: "دووبارە پرۆسەکردن",
-    reprocessWithTerra: "دووبارە پرۆسەکردن بە Terra",
+    reprocessWithStrongerModel: "دووبارە پرۆسەکردن بە مۆدێلی بەهێزتر",
     requestsReserved: "داواکاری تەرخانکراو",
     tokensReserved: "تۆکن تەرخانکراو",
     spendReserved: "مایکرۆدۆلار تەرخانکراو",
@@ -306,7 +306,7 @@ export function CottagePublicationReview({
                 <button type="submit" disabled={!review.productionReady}>
                   {item.origin === "generated"
                     ? item.qualityReportReason
-                      ? text.reprocessWithTerra
+                      ? text.reprocessWithStrongerModel
                       : text.reprocess
                     : text.generate}{" "}
                   {languageName(item.locale)}

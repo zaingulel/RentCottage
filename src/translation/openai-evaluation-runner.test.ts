@@ -71,12 +71,12 @@ const bounds = {
 };
 
 describe("OpenAI translation evaluation runner", () => {
-  it("runs a candidate and blinded Sol judge through separate strict Responses calls", async () => {
+  it("runs a candidate and blinded Astra judge through separate strict Responses calls", async () => {
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(
         providerResponse({
-          model: "gpt-5.6-luna",
+          model: "gpt-6-luna",
           output: {
             segments: [{ key: "description", text: "كوخ هادئ" }],
           },
@@ -86,7 +86,7 @@ describe("OpenAI translation evaluation runner", () => {
       )
       .mockResolvedValueOnce(
         providerResponse({
-          model: "gpt-5.6-sol",
+          model: "gpt-6-astra",
           output: { score: 0.94, criticalErrors: 0 },
           inputTokens: 200,
           outputTokens: 20,
@@ -110,7 +110,7 @@ describe("OpenAI translation evaluation runner", () => {
     await expect(
       runner.runCandidate({
         apiKey: "server-key",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
         promptContent: "Translate with the approved candidate prompt.",
@@ -122,7 +122,7 @@ describe("OpenAI translation evaluation runner", () => {
     ).resolves.toEqual({
       segments: [{ key: "description", text: "كوخ هادئ" }],
       provenance: {
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
         promptDigest: "candidate-prompt-digest",
@@ -132,7 +132,7 @@ describe("OpenAI translation evaluation runner", () => {
     await expect(
       runner.runJudge({
         apiKey: "server-key",
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         effort: "medium",
         promptVersion: "judge-v1",
         promptContent: "Apply the approved judge rubric.",
@@ -163,7 +163,7 @@ describe("OpenAI translation evaluation runner", () => {
       score: 0.94,
       criticalErrors: 0,
       provenance: {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         effort: "medium",
         promptVersion: "judge-v1",
         promptDigest: "judge-prompt-digest",
@@ -177,7 +177,7 @@ describe("OpenAI translation evaluation runner", () => {
     const candidateBody = JSON.parse(String(fetch.mock.calls[0]![1]!.body));
     const judgeBody = JSON.parse(String(fetch.mock.calls[1]![1]!.body));
     expect(candidateBody).toMatchObject({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       store: false,
       background: false,
       tools: [],
@@ -189,7 +189,7 @@ describe("OpenAI translation evaluation runner", () => {
       "Translate with the approved candidate prompt.",
     );
     expect(judgeBody).toMatchObject({
-      model: "gpt-5.6-sol",
+      model: "gpt-6-astra",
       store: false,
       background: false,
       tools: [],
@@ -199,7 +199,7 @@ describe("OpenAI translation evaluation runner", () => {
     });
     expect(judgeBody.instructions).toBe("Apply the approved judge rubric.");
     const judgePayload = JSON.stringify(judgeBody.input);
-    expect(judgePayload).not.toContain("gpt-5.6-luna");
+    expect(judgePayload).not.toContain("gpt-6-luna");
     expect(judgePayload).not.toContain('"effort":"none"');
     expect(judgePayload).not.toContain('"promptVersion":"v1"');
     expect(judgePayload).toContain("0123456789abcdef");
@@ -214,7 +214,7 @@ describe("OpenAI translation evaluation runner", () => {
   it("fails on malformed judge output without retrying or logging content", async () => {
     const fetch = vi.fn().mockResolvedValue(
       providerResponse({
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         output: { score: 2, criticalErrors: 0 },
         inputTokens: 10,
         outputTokens: 10,
@@ -233,7 +233,7 @@ describe("OpenAI translation evaluation runner", () => {
     await expect(
       runner.runJudge({
         apiKey: "server-key",
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         effort: "medium",
         promptVersion: "judge-v1",
         promptContent: "Apply the approved judge rubric.",

@@ -8,12 +8,12 @@ import {
 
 const protocol: TranslationEvaluationProtocol = {
   version: "translation-eval-v1",
-  candidateModel: "gpt-5.6-luna",
+  candidateModel: "gpt-6-luna",
   candidatePromptVersion: "v1",
   candidateInstructions: "Translate the supplied segments faithfully.",
   candidatePromptDigest:
     "15c1627e293e3f3b51313694b3b2978aeefda9f1831ad3bf711a826dc04b7657",
-  judgeModel: "gpt-5.6-sol",
+  judgeModel: "gpt-6-astra",
   judgeEffort: "medium",
   judgePromptVersion: "judge-v1",
   judgeInstructions: "Apply the locked translation rubric.",
@@ -206,7 +206,7 @@ describe("translation evaluation harness", () => {
     expect(artifact).toMatchObject({
       protocolVersion: "translation-eval-v1",
       selected: {
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "low",
         promptVersion: "v1",
       },
@@ -220,7 +220,7 @@ describe("translation evaluation harness", () => {
     expect(artifact.artifactDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(artifact).toMatchObject({
       judge: {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         effort: "medium",
         promptVersion: "judge-v1",
         promptDigest: protocol.judgePromptDigest,
@@ -260,7 +260,7 @@ describe("translation evaluation harness", () => {
       score: 1,
       criticalErrors: 1,
       provenance: {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         effort: "medium",
         promptVersion: "judge-v1",
         promptDigest: protocol.judgePromptDigest,
@@ -277,7 +277,7 @@ describe("translation evaluation harness", () => {
     });
 
     expect(artifact.selected).toEqual({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       effort: "low",
       promptVersion: "v1",
       promptDigest: protocol.candidatePromptDigest,
