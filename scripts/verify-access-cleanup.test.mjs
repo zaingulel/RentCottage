@@ -222,7 +222,10 @@ describe("access verification command", () => {
       },
       {
         scenario: "self-hosted",
-        environment: { GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "self-hosted" },
+        environment: {
+          GITHUB_ACTIONS: "true",
+          RUNNER_ENVIRONMENT: "self-hosted",
+        },
         deferred: false,
         expected: 0,
       },
@@ -271,7 +274,9 @@ describe("access verification command", () => {
         }),
         scenario,
       ).toBe(expected);
-      const retained = ["ownership-change", "cleanup-failure"].includes(scenario);
+      const retained = ["ownership-change", "cleanup-failure"].includes(
+        scenario,
+      );
       const stops = run.mock.calls.filter(
         ([command, args]) =>
           command === "npx" &&

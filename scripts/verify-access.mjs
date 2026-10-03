@@ -830,6 +830,7 @@ export async function main(
   const verify = async () => {
     if (disposableCi) {
       freshStart = true;
+      // Empty inventory means start builds a new database with migrations and seed; any retained resource requires reset.
       for (const inventoryArgs of [
         ["container", "ls", "--all", "--quiet"],
         ["volume", "ls", "--quiet"],
@@ -839,9 +840,10 @@ export async function main(
           stdio: "pipe",
         });
         if (inventory.status !== 0 || typeof inventory.stdout !== "string") {
-          stderr(
-            `Unable to verify Docker ${inventoryArgs[0]} inventory. Check Docker daemon access before retrying hosted verification.`,
-          );
+          if (!interruptedSignal)
+            stderr(
+              `Unable to verify Docker ${inventoryArgs[0]} inventory. Check Docker daemon access before retrying hosted verification.`,
+            );
           return inventory.status || 1;
         }
         freshStart = freshStart && !inventory.stdout.trim();
@@ -1412,6 +1414,7 @@ export async function main(
           );
         }
         if (!retainedResources && disposableCi) {
+          // Hosted runner disposal owns resource teardown.
           stopDeferred = true;
         } else if (!retainedResources) {
           const stopped = await execute(

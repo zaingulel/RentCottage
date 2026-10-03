@@ -128,8 +128,7 @@ describe("access verification command", () => {
       ]) {
         const baseRun = successfulRun();
         const run = vi.fn((command, args, options) => {
-          if (command === "docker" && args[0] === resource)
-            return failure;
+          if (command === "docker" && args[0] === resource) return failure;
           return baseRun(command, args, options);
         });
         const stderr = vi.fn();
@@ -210,14 +209,14 @@ describe("access verification command", () => {
         ownershipCommand,
         declaredSchemaDiffCommand,
       ]);
-      expect(
-        run.mock.calls.some(([, args]) => args[2] === "reset"),
-      ).toBe(false);
+      expect(run.mock.calls.some(([, args]) => args[2] === "reset")).toBe(
+        false,
+      );
       if (scenario.diagnostic) {
         expect(stderr).toHaveBeenCalledWith(scenario.diagnostic);
-        expect(
-          run.mock.calls.some(([, args]) => args[1] === "status"),
-        ).toBe(false);
+        expect(run.mock.calls.some(([, args]) => args[1] === "status")).toBe(
+          false,
+        );
         if (scenario.diff && scenario.name === "stale diff")
           expect(stderr).toHaveBeenCalledWith(
             "ALTER TABLE public.booking_requests DROP COLUMN party_size;",
@@ -228,6 +227,55 @@ describe("access verification command", () => {
           );
       } else {
         expect(stderr).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it("does not blame Docker access when hosted inventory is cancelled", async () => {
+    const inventoryCommands = [
+      ["docker", ["container", "ls", "--all", "--quiet"]],
+      ["docker", ["volume", "ls", "--quiet"]],
+    ];
+    for (const [inventoryIndex, resource] of [
+      [0, "container"],
+      [1, "volume"],
+    ]) {
+      for (const [signal, status] of [
+        ["SIGINT", 130],
+        ["SIGTERM", 143],
+      ]) {
+        const run = vi.fn((command, args) => {
+          if (command === "docker" && args[0] === resource)
+            process.emit(signal);
+          return { status: 0, stdout: "" };
+        });
+        const stderr = vi.fn();
+        const removeTemp = vi.fn();
+        const stdout = vi.fn();
+        expect(
+          await mainWithPreparedProject(["--database"], {
+            environment: {
+              GITHUB_ACTIONS: "true",
+              RUNNER_ENVIRONMENT: "github-hosted",
+            },
+            makeTemp: () => "/tmp/access-inventory-cancellation",
+            removeTemp,
+            run,
+            stderr,
+            stdout,
+          }),
+        ).toBe(status);
+        expect(stderr).not.toHaveBeenCalled();
+        expect(commands(run)).toEqual(
+          inventoryCommands.slice(0, inventoryIndex + 1),
+        );
+        expect(removeTemp).toHaveBeenCalledWith(
+          "/tmp/access-inventory-cancellation",
+        );
+        expect(JSON.parse(stdout.mock.calls.at(-1)[0])).toMatchObject({
+          type: "access-lifecycle",
+          outcome: { type: "signal", signal },
+        });
       }
     }
   });
