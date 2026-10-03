@@ -19,6 +19,30 @@ import {
   successfulRun,
 } from "./verify-access-command-doubles.mjs";
 
+const workerFilesByShard = {
+  "1/2": [
+    "tests/access.spec.ts",
+    "tests/administrator-payment-history.spec.ts",
+    "tests/administrator-records.spec.ts",
+    "tests/messaging.spec.ts",
+    "tests/customer-reviews.spec.ts",
+  ],
+  "2/2": [
+    "tests/booking-request-access.spec.ts",
+    "tests/booking-cancellation-refund.spec.ts",
+  ],
+};
+
+function workerArgsFor(shard) {
+  const [command, action, ...rest] = browserCommands[6][1];
+  return [
+    command,
+    action,
+    ...workerFilesByShard[shard],
+    ...rest.filter((arg) => !arg.startsWith("tests/")),
+  ];
+}
+
 describe("access verification command", () => {
   it("partitions hosted checks without losing setup, coverage or cleanup", async () => {
     const cases = [
@@ -144,28 +168,39 @@ describe("access verification command", () => {
       ["scripts/prepare-access-test.mjs", "create", "mobile", "worker"],
     ];
     const longPrograms = new Map([
-      ["booking-request", "scripts/verify-booking-request-concurrency.mjs"],
+      [
+        "booking-request",
+        [
+          "scripts/verify-booking-request-concurrency.mjs",
+          "scripts/verify-booking-request-lifecycle-concurrency.mjs",
+        ],
+      ],
       [
         "booking-capture",
-        "scripts/verify-booking-request-capture-concurrency.mjs",
+        ["scripts/verify-booking-request-capture-concurrency.mjs"],
       ],
       [
         "payment-required-expiry",
-        "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+        [
+          "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+        ],
       ],
     ]);
     expect(observed.get("database-core:")).toEqual([
-      ...databasePreflightCommands,
+      databasePreflightCommands[1],
       statusCommand,
       ...databaseCheckCommands.filter(
-        ([, args]) => ![...longPrograms.values()].includes(args[0]),
+        ([, args]) => ![...longPrograms.values()].flat().includes(args[0]),
       ),
     ]);
-    for (const [partition, script] of longPrograms) {
+    for (const [partition, scripts] of longPrograms) {
       expect(observed.get(`${partition}:`)).toEqual([
+        ...(partition === "booking-request"
+          ? [databasePreflightCommands[0]]
+          : []),
         statusCommand,
         partition === "booking-request" ? bookingRequestFixture : mobileFixture,
-        ["node", [script]],
+        ...scripts.map((script) => ["node", [script]]),
       ]);
     }
     const failedBookingRequestPreparation = ownedRun((command, args) => ({
@@ -212,19 +247,26 @@ describe("access verification command", () => {
           args[0] === "scripts/verify-booking-request-concurrency.mjs",
       ),
     ).toBe(false);
-    const databaseUnion = [
-      ...observed
-        .get("database-core:")
-        .slice(databasePreflightCommands.length + 1),
-      ...[...longPrograms.keys()].map((partition) =>
-        observed.get(`${partition}:`).at(-1),
+    const databaseUnion = ["database-core", ...longPrograms.keys()].flatMap(
+      (partition) =>
+        observed
+          .get(`${partition}:`)
+          .filter(
+            ([, args]) =>
+              args[1] !== "status" &&
+              args[0] !== "scripts/prepare-access-test.mjs",
+          ),
+    );
+    const completeDatabaseChecks = [
+      ...databasePreflightCommands,
+      ...databaseCheckCommands.filter(
+        ([, args]) => args[0] !== "scripts/prepare-access-test.mjs",
       ),
     ];
-    expect(databaseUnion).toHaveLength(databaseCheckCommands.length);
-    expect(
-      new Set(databaseUnion.map((entry) => JSON.stringify(entry))),
-    ).toEqual(
-      new Set(databaseCheckCommands.map((entry) => JSON.stringify(entry))),
+    const commandOrder = (left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right));
+    expect(databaseUnion.sort(commandOrder)).toEqual(
+      completeDatabaseChecks.sort(commandOrder),
     );
 
     for (const shard of ["1/2", "2/2"]) {
@@ -234,13 +276,23 @@ describe("access verification command", () => {
         ["npx", [...browserCommands[2][1], "--list"]],
         ["npx", [...browserCommands[2][1], `--shard=${shard}`]],
       ]);
+      const workerArgs = workerArgsFor(shard);
       expect(observed.get(`worker:${shard}`)).toEqual([
         statusCommand,
         ...browserCommands.slice(3, 6),
-        ["npx", [...browserCommands[6][1], "--list"]],
-        ["npx", [...browserCommands[6][1], `--shard=${shard}`]],
+        ["npx", [...workerArgs, "--list"]],
+        ["npx", workerArgs],
       ]);
     }
+    const workerFiles = ["1/2", "2/2"].flatMap((shard) =>
+      observed
+        .get(`worker:${shard}`)
+        .at(-1)[1]
+        .filter((arg) => arg.startsWith("tests/")),
+    );
+    expect(workerFiles.sort()).toEqual(
+      browserCommands[6][1].filter((arg) => arg.startsWith("tests/")).sort(),
+    );
     expect(observed.get("scheduled:")).toEqual([
       statusCommand,
       ...browserCommands.slice(3, 6),
@@ -283,7 +335,7 @@ describe("access verification command", () => {
     }
   });
 
-  it("rejects empty hosted journey selections before sharding and cleans up", async () => {
+  it("rejects empty hosted journey selections before execution and cleans up", async () => {
     for (const partition of ["next", "worker"]) {
       for (const shard of ["1/2", "2/2"]) {
         const run = ownedRun((command, args) => ({
@@ -319,10 +371,12 @@ describe("access verification command", () => {
         );
         const journey =
           partition === "next" ? browserCommands[2] : browserCommands[6];
-        expect(listed).toEqual([["npx", [...journey[1], "--list"]]]);
+        const selectedArgs =
+          partition === "next" ? journey[1] : workerArgsFor(shard);
+        expect(listed).toEqual([["npx", [...selectedArgs, "--list"]]]);
         expect(
-          commands(run).some(([, args]) => args.includes(`--shard=${shard}`)),
-        ).toBe(false);
+          commands(run).filter(([, args]) => args[0] === "playwright"),
+        ).toEqual(listed);
         expect(commands(run).at(-2)).toEqual(ownershipCommand);
         expect(commands(run).at(-1)).toEqual(stopCommand);
         expect(removeTemp).toHaveBeenCalledWith("/tmp/empty-hosted-journeys");
