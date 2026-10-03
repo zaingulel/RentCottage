@@ -1196,7 +1196,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
           `select count(*)||':'||sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=ledger.id)) from public.payment_provider_operations ledger join public.booking_request_payment_recovery_attempts attempts on attempts.id=ledger.recovery_attempt_id where attempts.booking_request_id='${failureId}';`,
       ),
     ).toBe("3:3");
-      await assertPaymentViews("paid-confirmed", failureReference);
+    await assertPaymentViews("paid-confirmed", failureReference);
 
     // A separate future Shift proves unpaid expiry without changing either confirmed booking above.
     const expiryDay = serviceDay(offset + 1);
