@@ -30,6 +30,10 @@ vi.mock("@/cottage-publication/request-cottage-publication", async () => {
 
 import { GET } from "./route";
 
+const emptyWebp = new Uint8Array([
+  0x52, 0x49, 0x46, 0x46, 0x04, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+]);
+
 describe("approved Cottage publication media", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -46,7 +50,7 @@ describe("approved Cottage publication media", () => {
       error: null,
     });
     fetchMedia.mockResolvedValue(
-      new Response(new Uint8Array([1, 2, 3]), {
+      new Response(emptyWebp, {
         headers: {
           "Content-Type": "image/webp",
           "x-provider-path": "owner/profile/private-photo.webp",
@@ -92,8 +96,8 @@ describe("approved Cottage publication media", () => {
         }),
       )
       .mockResolvedValueOnce(
-        new Response(new Uint8Array([1, 2, 3]), {
-          headers: { "Content-Type": "image/png" },
+        new Response(emptyWebp, {
+          headers: { "Content-Type": "image/webp" },
         }),
       );
 
@@ -249,6 +253,73 @@ describe("approved Cottage publication media", () => {
     expect(diagnostic).toHaveBeenCalledWith(
       "Cottage publication media unavailable",
       { phase: "size", result: "unavailable" },
+    );
+  });
+
+  it("serves a stored photo with a fictional embedded location without its location, device or capture metadata", async () => {
+    const fictionalLocationTiff =
+      "4d4d002a00000008000201120003000000010006000088250004000000010000002600000000000400010002000000024e00000000020005000000030000005c00030002000000024500000000040005000000030000007400000000" +
+      "0000000000000001".repeat(6);
+    const storedPhoto =
+      "ffd8" +
+      "ffe10094457869660000" +
+      fictionalLocationTiff +
+      "fffe00064e756c6c" +
+      "ffd9";
+    resolveMedia.mockResolvedValue("private/photo.jpg");
+    createSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://storage.test/signed" },
+      error: null,
+    });
+    fetchMedia.mockResolvedValue(
+      new Response(Buffer.from(storedPhoto, "hex"), {
+        headers: { "Content-Type": "image/jpeg" },
+      }),
+    );
+
+    const response = await GET(
+      new Request("https://app.test/api/cottage-media/id"),
+      {
+        params: Promise.resolve({
+          mediaId: "40000000-0000-4000-8000-000000000024",
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer()).toString("hex")).toBe(
+      "ffd8" +
+        "ffe100224578696600004d4d002a00000008000101120003000000010006000000000000" +
+        "ffd9",
+    );
+    expect(response.headers.get("content-length")).toBe("40");
+  });
+
+  it("refuses to serve a stored photo it cannot clean", async () => {
+    resolveMedia.mockResolvedValue("private/photo.jpg");
+    createSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://storage.test/signed" },
+      error: null,
+    });
+    fetchMedia.mockResolvedValue(
+      new Response("not an image", {
+        headers: { "Content-Type": "image/jpeg" },
+      }),
+    );
+
+    const response = await GET(
+      new Request("https://app.test/api/cottage-media/id"),
+      {
+        params: Promise.resolve({
+          mediaId: "40000000-0000-4000-8000-000000000024",
+        }),
+      },
+    );
+
+    expect(response.status).toBe(404);
+    expect(diagnostic).toHaveBeenCalledWith(
+      "Cottage publication media unavailable",
+      { phase: "metadata", result: "unavailable" },
     );
   });
 

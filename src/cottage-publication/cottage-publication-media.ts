@@ -1,3 +1,5 @@
+import { removeCottagePhotoMetadata } from "@/cottage-profile/cottage-photo-metadata";
+
 export type CottagePublicationMediaFailurePhase =
   | "resolve"
   | "sign"
@@ -7,6 +9,7 @@ export type CottagePublicationMediaFailurePhase =
   | "type"
   | "size"
   | "stream"
+  | "metadata"
   | "timeout";
 
 export class CottagePublicationMediaUnavailableError extends Error {
@@ -192,10 +195,12 @@ export function createCottagePublicationMediaService({
           declaredLength > maximumMediaBytes
         )
           unavailable("size");
-        return {
-          bytes: await readBounded(providerResponse, controller.signal),
+        const cleaned = removeCottagePhotoMetadata(
+          await readBounded(providerResponse, controller.signal),
           contentType,
-        };
+        );
+        if (cleaned.kind === "unreadable") unavailable("metadata");
+        return { bytes: cleaned.bytes, contentType };
       } finally {
         clearTimeout(timeout);
       }
