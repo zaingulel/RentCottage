@@ -688,6 +688,10 @@ export async function main(
     SUPABASE_TELEMETRY_DISABLED: "1",
     DO_NOT_TRACK: "1",
   };
+  const disposableCi =
+    environment.GITHUB_ACTIONS === "true" &&
+    environment.RUNNER_ENVIRONMENT === "github-hosted";
+  let freshStart = false;
   let started = false;
   let startupAttempted = false;
   let exitCode = 0;
@@ -824,6 +828,25 @@ export async function main(
   delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
 
   const verify = async () => {
+    if (disposableCi) {
+      freshStart = true;
+      for (const inventoryArgs of [
+        ["container", "ls", "--all", "--quiet"],
+        ["volume", "ls", "--quiet"],
+      ]) {
+        const inventory = await execute("docker", inventoryArgs, {
+          encoding: "utf8",
+          stdio: "pipe",
+        });
+        if (inventory.status !== 0 || typeof inventory.stdout !== "string") {
+          stderr(
+            `Unable to verify Docker ${inventoryArgs[0]} inventory. Check Docker daemon access before retrying hosted verification.`,
+          );
+          return inventory.status || 1;
+        }
+        freshStart = freshStart && !inventory.stdout.trim();
+      }
+    }
     startupAttempted = true;
     let result = await execute(
       "npx",
@@ -864,11 +887,13 @@ export async function main(
     }
     started = true;
 
-    result = await execute(
-      "npx",
-      supabaseArguments(["supabase", "db", "reset", "--local"]),
-    );
-    if (result.status !== 0) return result.status;
+    if (!freshStart) {
+      result = await execute(
+        "npx",
+        supabaseArguments(["supabase", "db", "reset", "--local"]),
+      );
+      if (result.status !== 0) return result.status;
+    }
 
     // The declared schema files must describe exactly what the migration chain builds; any diff is drift.
     const verifyDeclaredSchema = async () => {

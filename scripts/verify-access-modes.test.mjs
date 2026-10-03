@@ -23,6 +23,215 @@ import {
 } from "./verify-access-command-doubles.mjs";
 
 describe("access verification command", () => {
+  it("skips reset only for a proven fresh GitHub-hosted start", async () => {
+    const hosted = {
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+    };
+    const inventoryCommands = [
+      ["docker", ["container", "ls", "--all", "--quiet"]],
+      ["docker", ["volume", "ls", "--quiet"]],
+    ];
+    for (const scenario of [
+      { name: "empty hosted", environment: hosted, reset: false },
+      {
+        name: "whitespace-only hosted",
+        environment: hosted,
+        containers: " \n",
+        volumes: "\n",
+        reset: false,
+      },
+      {
+        name: "stopped container",
+        environment: hosted,
+        containers: "stopped-container-id\n",
+        reset: true,
+      },
+      {
+        name: "retained volume only",
+        environment: hosted,
+        volumes: "retained-volume\n",
+        reset: true,
+      },
+      { name: "local", environment: {}, reset: true },
+      { name: "CI-only", environment: { CI: "true" }, reset: true },
+      {
+        name: "self-hosted",
+        environment: {
+          GITHUB_ACTIONS: "true",
+          RUNNER_ENVIRONMENT: "self-hosted",
+        },
+        reset: true,
+      },
+      {
+        name: "GitHub identity alone",
+        environment: { GITHUB_ACTIONS: "true" },
+        reset: true,
+      },
+    ]) {
+      const baseRun = successfulRun();
+      const run = vi.fn((command, args, options) => {
+        if (command === "docker" && args[1] === "ls")
+          return {
+            status: 0,
+            stdout:
+              args[0] === "container"
+                ? (scenario.containers ?? "")
+                : (scenario.volumes ?? ""),
+          };
+        return baseRun(command, args, options);
+      });
+      const stderr = vi.fn();
+      expect(
+        await mainWithPreparedProject(["--fixture-contract"], {
+          environment: scenario.environment,
+          run,
+          stderr,
+          stdout: vi.fn(),
+        }),
+        scenario.name,
+      ).toBe(0);
+      const inventories = run.mock.calls.filter(
+        ([command, args]) => command === "docker" && args[1] === "ls",
+      );
+      expect(inventories.map(([command, args]) => [command, args])).toEqual(
+        scenario.environment === hosted ? inventoryCommands : [],
+      );
+      for (const [, , options] of inventories)
+        expect(options).toMatchObject({ encoding: "utf8", stdio: "pipe" });
+      const startupOffset = inventories.length;
+      expect(commands(run).slice(0, startupOffset + 2)).toEqual([
+        ...inventories.map(([command, args]) => [command, args]),
+        startCommand,
+        ownershipCommand,
+      ]);
+      const resets = run.mock.calls.filter(
+        ([command, args]) =>
+          command === "npx" && args[1] === "db" && args[2] === "reset",
+      );
+      expect(resets, scenario.name).toHaveLength(scenario.reset ? 1 : 0);
+      if (scenario.reset)
+        expect(commands(run)[startupOffset + 2]).toEqual(resetCommand);
+      expect(stderr).not.toHaveBeenCalled();
+    }
+
+    for (const [inventoryIndex, resource] of [
+      [0, "container"],
+      [1, "volume"],
+    ]) {
+      for (const failure of [
+        { status: 0 },
+        { status: 0, stdout: null },
+        { status: 0, stdout: { ids: [] } },
+        { status: 7, stdout: "", stderr: "Docker daemon unavailable" },
+        { status: null, error: new Error("Docker executable unavailable") },
+      ]) {
+        const baseRun = successfulRun();
+        const run = vi.fn((command, args, options) => {
+          if (command === "docker" && args[0] === resource)
+            return failure;
+          return baseRun(command, args, options);
+        });
+        const stderr = vi.fn();
+        const removeTemp = vi.fn();
+        expect(
+          await mainWithPreparedProject(["--database"], {
+            environment: hosted,
+            makeTemp: () => "/tmp/access-fresh-start",
+            removeTemp,
+            run,
+            stderr,
+            stdout: vi.fn(),
+          }),
+        ).toBe(failure.status || 1);
+        expect(commands(run)).toEqual(
+          inventoryCommands.slice(0, inventoryIndex + 1),
+        );
+        expect(stderr).toHaveBeenCalledWith(
+          `Unable to verify Docker ${resource} inventory. Check Docker daemon access before retrying hosted verification.`,
+        );
+        expect(removeTemp).toHaveBeenCalledWith("/tmp/access-fresh-start");
+      }
+    }
+
+    for (const scenario of [
+      { name: "empty diff", exit: 0 },
+      {
+        name: "stale diff",
+        diff: JSON.stringify({
+          diff: "ALTER TABLE public.booking_requests DROP COLUMN party_size;",
+        }),
+        exit: 1,
+        diagnostic: "Declared schema drifts from the migration chain:",
+      },
+      {
+        name: "unreadable diff",
+        diff: "not json",
+        exit: 1,
+        diagnostic: "Supabase returned an unreadable declared schema diff.",
+      },
+      {
+        name: "SQL failure",
+        sqlFailure: true,
+        exit: 9,
+        diagnostic: "SQL invariant failed",
+      },
+    ]) {
+      const baseRun = successfulRun();
+      const run = ownedRun((command, args, options) => {
+        if (args[1] === "db" && args[2] === "diff" && scenario.diff)
+          return { status: 0, stdout: scenario.diff };
+        if (args[1] === "test" && args[2] === "db" && scenario.sqlFailure)
+          return { status: 9, stderr: "SQL invariant failed" };
+        return baseRun(command, args, options);
+      });
+      const stderr = vi.fn();
+      expect(
+        await mainWithPreparedProject(["--database"], {
+          environment: { ...hosted, VERIFY_CI_PARTITION: "database-core" },
+          run,
+          stderr,
+          stdout: vi.fn(),
+        }),
+        scenario.name,
+      ).toBe(scenario.exit);
+      const preflight = commands(run).filter(
+        ([command, args]) =>
+          command === "npx" &&
+          ((args[1] === "db" && args[2] === "diff") ||
+            (args[1] === "test" && args[2] === "db")),
+      );
+      expect(preflight).toEqual(
+        scenario.diff ? [declaredSchemaDiffCommand] : databasePreflightCommands,
+      );
+      expect(commands(run).slice(0, 5)).toEqual([
+        ...inventoryCommands,
+        startCommand,
+        ownershipCommand,
+        declaredSchemaDiffCommand,
+      ]);
+      expect(
+        run.mock.calls.some(([, args]) => args[2] === "reset"),
+      ).toBe(false);
+      if (scenario.diagnostic) {
+        expect(stderr).toHaveBeenCalledWith(scenario.diagnostic);
+        expect(
+          run.mock.calls.some(([, args]) => args[1] === "status"),
+        ).toBe(false);
+        if (scenario.diff && scenario.name === "stale diff")
+          expect(stderr).toHaveBeenCalledWith(
+            "ALTER TABLE public.booking_requests DROP COLUMN party_size;",
+          );
+        if (scenario.sqlFailure)
+          expect(stderr).toHaveBeenCalledWith(
+            expect.stringContaining("Failed: npx supabase test db"),
+          );
+      } else {
+        expect(stderr).not.toHaveBeenCalled();
+      }
+    }
+  });
+
   it("declares homogeneous concurrency checks serial without changing their command order", () => {
     const checks = [
       "verify-account-access-concurrency",
