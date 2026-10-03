@@ -184,6 +184,164 @@ describe("access verification command", () => {
     expect(removeTemp).not.toHaveBeenCalled();
   });
 
+  it("defers Supabase stop only to GitHub-hosted runner disposal", async () => {
+    const hostedEnvironment = {
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+    };
+    for (const { scenario, environment, deferred, expected } of [
+      {
+        scenario: "hosted-success",
+        environment: hostedEnvironment,
+        deferred: true,
+        expected: 0,
+      },
+      {
+        scenario: "primary-failure",
+        environment: hostedEnvironment,
+        deferred: true,
+        expected: 9,
+      },
+      {
+        scenario: "ownership-change",
+        environment: hostedEnvironment,
+        deferred: false,
+        expected: 1,
+      },
+      {
+        scenario: "local-success",
+        environment: {},
+        deferred: false,
+        expected: 0,
+      },
+      {
+        scenario: "ci-only",
+        environment: { CI: "true" },
+        deferred: false,
+        expected: 0,
+      },
+      {
+        scenario: "self-hosted",
+        environment: { GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "self-hosted" },
+        deferred: false,
+        expected: 0,
+      },
+      {
+        scenario: "cleanup-failure",
+        environment: {},
+        deferred: false,
+        expected: 6,
+      },
+    ]) {
+      let tick = 100;
+      let inspections = 0;
+      const lines = [];
+      const stderr = vi.fn();
+      const removeTemp = vi.fn(() => {
+        tick += 3;
+      });
+      const baseRun = successfulRun();
+      const run = vi.fn((command, args, options) => {
+        tick += args[1] === "stop" ? 41 : 7;
+        if (command === "docker" && args[0] === "inspect") {
+          inspections += 1;
+          if (scenario === "ownership-change" && inspections === 2)
+            return { status: 0, stdout: "foreign-project|foreign-workdir\n" };
+        }
+        if (
+          scenario === "primary-failure" &&
+          args[0] === "scripts/verify-access-fixture-contract.mjs"
+        )
+          return { status: 9 };
+        if (scenario === "cleanup-failure" && args[1] === "stop")
+          return { status: 6 };
+        return baseRun(command, args, options);
+      });
+
+      expect(
+        await mainWithPreparedProject(["--fixture-contract"], {
+          environment,
+          makeTemp: () => "/tmp/access-timing",
+          removeTemp,
+          run,
+          stderr,
+          stdout: (line) => lines.push(JSON.parse(line)),
+          monotonicNow: () => tick,
+          utcNow: () => new Date(Date.UTC(2026, 0, 1) + tick).toISOString(),
+        }),
+        scenario,
+      ).toBe(expected);
+      const retained = ["ownership-change", "cleanup-failure"].includes(scenario);
+      const stops = run.mock.calls.filter(
+        ([command, args]) =>
+          command === "npx" &&
+          args.slice(0, 3).join(" ") === "supabase stop --no-backup",
+      );
+      expect(inspections, scenario).toBe(2);
+      const cleanupInspection = run.mock.calls.filter(
+        ([command, args]) => command === "docker" && args[0] === "inspect",
+      )[1];
+      expect(cleanupInspection[2]).toMatchObject({ lifecycleLimit: 30_000 });
+      expect(stops, scenario).toHaveLength(
+        deferred || scenario === "ownership-change" ? 0 : 1,
+      );
+      const stop = lines.find((line) => line.name === "supabase-stop");
+      if (deferred || scenario === "ownership-change") {
+        expect(stop, scenario).toBeUndefined();
+      } else {
+        expect(stops[0].slice(0, 2)).toEqual(stopCommand);
+        expect(stop).toMatchObject({
+          durationMs: 41,
+          outcome: {
+            type: "exit",
+            status: scenario === "cleanup-failure" ? 6 : 0,
+          },
+        });
+      }
+      const cleanup = lines.find((line) => line.name === "outer-cleanup");
+      expect(cleanup, scenario).toMatchObject({
+        scope: "shared-cleanup",
+        inclusive: true,
+        outcome: { type: "exit", status: retained ? 1 : 0 },
+      });
+      if (!retained) expect(cleanup.durationMs).toBe(deferred ? 10 : 51);
+      expect(lines.at(-1), scenario).toMatchObject({
+        type: "access-lifecycle",
+        durationMs: tick - 100,
+        completedAt: new Date(Date.UTC(2026, 0, 1) + tick).toISOString(),
+        cleanupMs: retained ? null : deferred ? 10 : 51,
+        cleanupReason: retained
+          ? "Exact cleanup could not be completed; resources may be retained."
+          : deferred
+            ? "Supabase stop is deferred to disposal of the GitHub-hosted runner."
+            : null,
+        outcome: { type: "exit", status: expected },
+      });
+      if (retained) {
+        expect(removeTemp).not.toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(
+          "Retained local Supabase project rentcottage-verification in /tmp/access-timing/project because exact cleanup could not be completed; temporary state /tmp/access-timing.",
+        );
+      } else {
+        expect(removeTemp).toHaveBeenCalledTimes(1);
+        expect(removeTemp).toHaveBeenCalledWith("/tmp/access-timing");
+        expect(
+          stderr.mock.calls.some(([line]) =>
+            line.startsWith("Retained local Supabase project"),
+          ),
+        ).toBe(false);
+      }
+      if (scenario === "ownership-change")
+        expect(stderr).toHaveBeenCalledWith(
+          expect.stringContaining(
+            "Unable to reverify disposable local Supabase ownership before cleanup:",
+          ),
+        );
+      if (scenario === "cleanup-failure")
+        expect(stderr).toHaveBeenCalledWith("Local Supabase cleanup failed.");
+    }
+  });
+
   it("finishes access timing after cleanup and preserves failed or retained teardown", async () => {
     for (const scenario of [
       "passed",

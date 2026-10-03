@@ -1356,6 +1356,7 @@ export async function main(
 
   let retainedResources = false;
   let failedCleanup = false;
+  let stopDeferred = false;
   let verificationThrew = false;
   try {
     exitCode = await verify();
@@ -1410,7 +1411,9 @@ export async function main(
             ownershipOutcome,
           );
         }
-        if (!retainedResources) {
+        if (!retainedResources && disposableCi) {
+          stopDeferred = true;
+        } else if (!retainedResources) {
           const stopped = await execute(
             "npx",
             supabaseArguments([
@@ -1460,22 +1463,24 @@ export async function main(
     } finally {
       process.off("SIGINT", handleSigint);
       process.off("SIGTERM", handleSigterm);
-      const cleanupReason =
-        retainedResources || failedCleanup
-          ? "Exact cleanup could not be completed; resources may be retained."
+      const cleanupFailed = retainedResources || failedCleanup;
+      const cleanupReason = cleanupFailed
+        ? "Exact cleanup could not be completed; resources may be retained."
+        : stopDeferred
+          ? "Supabase stop is deferred to disposal of the GitHub-hosted runner."
           : null;
       const observedCleanupMs = finishTiming(
         cleanupStart,
         "outer-cleanup",
         "shared-cleanup",
         null,
-        { type: "exit", status: cleanupReason ? 1 : 0 },
+        { type: "exit", status: cleanupFailed ? 1 : 0 },
         true,
       );
       finishLifecycle(
         verificationThrew || failedCleanup ? 1 : exitCode,
         interruptedSignal,
-        cleanupReason ? null : observedCleanupMs,
+        cleanupFailed ? null : observedCleanupMs,
         cleanupReason,
       );
     }
