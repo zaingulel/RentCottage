@@ -127,7 +127,6 @@ describe("Cottage Pricing and Availability editor", () => {
     expect(
       screen.getByRole("spinbutton", {
         name: "نرخی ستاندارد بە دیناری عێراقی بۆ شیفت 1",
-        exact: true,
       }),
     ).toBeEnabled();
     expect(screen.getByRole("region")).toHaveAttribute("dir", "rtl");
