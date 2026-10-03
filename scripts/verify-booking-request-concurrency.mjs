@@ -50,6 +50,75 @@ try {
 
   const runSql = async (sql) => await rawRunSql(paymentEvidenceSql, sql);
   const activeSessions = new Set();
+  const boundaryClockDefinitions = new Map();
+  let boundaryClockInstalled = false;
+
+  async function advanceBoundaryClock(label) {
+    const before = await runSql(`
+    select count(*)
+    from public.test_booking_request_race_clock clock
+    cross join public.test_booking_request_time_boundary_fixture fixture
+    where fixture.label = '${label}' and clock.instant < fixture.crosses_at;
+  `);
+    if (before !== "1") {
+      throw new Error(
+        `The ${label} clock was not before its boundary: ${before}`,
+      );
+    }
+    const updated = await runSql(`
+    with advanced as (
+      update public.test_booking_request_race_clock clock
+      set instant = fixture.crosses_at + interval '500 milliseconds'
+      from public.test_booking_request_time_boundary_fixture fixture
+      where fixture.label = '${label}'
+      returning clock.instant
+    ) select count(*) from advanced;
+  `);
+    const after = await runSql(`
+    select count(*)
+    from public.test_booking_request_race_clock clock
+    cross join public.test_booking_request_time_boundary_fixture fixture
+    where fixture.label = '${label}'
+      and clock.instant = fixture.crosses_at + interval '500 milliseconds'
+      and clock.instant > fixture.crosses_at;
+  `);
+    if (updated !== "1" || after !== "1") {
+      throw new Error(
+        `The ${label} clock did not cross its boundary: updated=${updated}, after=${after}`,
+      );
+    }
+  }
+
+  async function restoreBoundaryClock() {
+    if (!boundaryClockInstalled) return;
+    guardDisposableLocalDatabase();
+    await runSql(`begin;
+    ${[...boundaryClockDefinitions.values()].join(";\n")};
+    drop function if exists public.test_booking_request_race_now();
+    drop table if exists public.test_booking_request_race_clock;
+    commit;`);
+    boundaryClockInstalled = false;
+    for (const [signature, original] of boundaryClockDefinitions) {
+      const restored = JSON.parse(
+        await runSql(`
+      select to_json(pg_get_functiondef('public.${signature}'::regprocedure));
+    `),
+      );
+      if (restored !== original) {
+        throw new Error(
+          `Restoration changed ${signature}; inspect its definition.`,
+        );
+      }
+    }
+    if (
+      (await runSql(`
+    select to_regclass('public.test_booking_request_race_clock') is null
+      and to_regprocedure('public.test_booking_request_race_now()') is null;
+  `)) !== "t"
+    ) {
+      throw new Error("The disposable Booking Request clock was not removed.");
+    }
+  }
 
   async function startSession(sql, closeInput) {
     const session = await openSession(paymentEvidenceSql, sql, closeInput);
@@ -139,8 +208,18 @@ try {
       and availability.unit_kind = 'shift'
       and availability.unit_id = fixture.shift_id
       and availability.service_day = fixture.service_day;
+    do $reset_clock$
+    declare updated integer;
+    begin
+      update public.test_booking_request_race_clock
+      set instant = date_trunc('minute', clock_timestamp()) + interval '1 day';
+      get diagnostics updated = row_count;
+      if updated <> 1 then
+        raise exception 'The boundary clock reset did not update one row';
+      end if;
+    end $reset_clock$;
     create temporary table boundary_time as
-    select date_trunc('minute', clock_timestamp())
+    select public.test_booking_request_race_now()
         + interval '${boundaryHours} hours 1 minute'
       as starts_at;
     alter table public.cottage_shifts
@@ -200,7 +279,7 @@ try {
         select quoted.*,
           (public.booking_request_policy_at(
             (quote -> 'items' -> 0 ->> 'startsAt')::timestamptz,
-            clock_timestamp()
+            public.test_booking_request_race_now()
           ) ->> 'requiresInside48HourNoRefundAcceptance')::boolean
             as requires_inside_48
         from quoted
@@ -396,12 +475,23 @@ try {
         and attempt_id is not null
         and payment_snapshot is null;
     `);
-      if (fixtureReady !== "1") {
+      const boundaryReady = await runSql(`
+      select count(*)
+      from public.test_booking_request_time_boundary_fixture boundary
+      cross join public.test_booking_request_concurrency_fixture fixture
+      where boundary.label = '${label}'
+        and boundary.prepare_result ->> 'status' = 'ready'
+        and public.test_booking_request_race_now() < boundary.crosses_at
+        and boundary.crosses_at =
+          (fixture.submission ->> 'firstStartsAt')::timestamptz
+            - interval '${boundaryHours} hours';
+    `);
+      if (fixtureReady !== "1" || boundaryReady !== "1") {
         const result = await runSql(`
       select jsonb_build_object(
         'prepareResult', boundary.prepare_result,
         'crossesAt', boundary.crosses_at,
-        'observedAt', clock_timestamp(),
+        'observedAt', public.test_booking_request_race_now(),
         'firstStartsAt', fixture.submission ->> 'firstStartsAt'
       )::text
       from public.test_booking_request_time_boundary_fixture boundary
@@ -431,11 +521,6 @@ try {
     where profiles.id = (select profile_id from public.test_booking_request_concurrency_fixture)
     for update;
     select '${blockerMarker}';
-    select pg_sleep(greatest(0, extract(epoch from (
-      (select crosses_at + interval '500 milliseconds'
-        from public.test_booking_request_time_boundary_fixture
-        where label = '${label}') - clock_timestamp()
-    ))));
   `);
     await waitForMarker(blocker, blockerMarker);
     const preparerName = `rc-booking-request-${label}-preparer`;
@@ -450,6 +535,7 @@ try {
       true,
     );
     await waitForLock(preparerName, preparer);
+    await advanceBoundaryClock(label);
     await finishSession(blocker, { action: "commit" });
     await finishSession(preparer);
     if (!preparer.stdout.includes(expectedStatus)) {
@@ -557,11 +643,6 @@ try {
     where profiles.id = (select profile_id from public.test_booking_request_concurrency_fixture)
     for update;
     select '${blockerMarker}';
-    select pg_sleep(greatest(0, extract(epoch from (
-      (select crosses_at + interval '500 milliseconds'
-        from public.test_booking_request_time_boundary_fixture
-        where label = '${label}') - clock_timestamp()
-    ))));
   `);
     await waitForMarker(blocker, blockerMarker);
     const finalizerName = `rc-booking-request-${label}-finalizer`;
@@ -578,6 +659,7 @@ try {
       true,
     );
     await waitForLock(finalizerName, finalizer);
+    await advanceBoundaryClock(label);
     await finishSession(blocker, { action: "rollback" });
     await finishSession(finalizer, { expectedState: "RC409" });
     if (!finalizer.stderr.includes(expectedMessage)) {
@@ -630,6 +712,33 @@ try {
     set role service_role;
     insert into public.test_booking_request_cutoff_stale_work
     select public.dequeue_booking_request_authorization_reconciliation();
+    reset role;
+  `);
+    const matchedWork = await runSql(`
+    select count(*)
+    from public.test_booking_request_time_boundary_fixture fixture
+    join public.booking_request_authorization_claims claims
+      on claims.attempt_id = fixture.attempt_id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id = claims.id
+    cross join public.test_booking_request_cutoff_stale_work work
+    where fixture.label = '${label}'
+      and claims.reconciliation_expires_at = claims.not_after
+      and claims.not_after = fixture.crosses_at
+      and work.result ->> 'status' = 'work'
+      and (work.result ->> 'claimId')::uuid = claims.id
+      and (work.result ->> 'generation')::integer = claims.generation
+      and (work.result ->> 'stateRevision')::bigint = claims.state_revision
+      and (work.result ->> 'leaseToken')::uuid = outbox.lease_token
+      and outbox.claim_generation = claims.generation;
+  `);
+    if (matchedWork !== "1") {
+      throw new Error(
+        `Cut-off release did not dequeue its boundary claim: ${matchedWork}`,
+      );
+    }
+    await runSql(`
+    set role service_role;
     select public.expire_booking_request_authorization_claims();
     reset role;
   `);
@@ -655,6 +764,16 @@ try {
     if (releaseState !== "releasing|releasing|t|pending|pending|t|0|0") {
       throw new Error(
         `Cut-off expiry did not preserve inventory around a recoverable release: ${releaseState}`,
+      );
+    }
+    if (
+      (await runSql(`
+    select count(*) from public.test_booking_request_cutoff_stale_work
+    where (result ->> 'leaseExpiresAt')::timestamptz > clock_timestamp();
+  `)) !== "1"
+    ) {
+      throw new Error(
+        "The stale cut-off worker's real-clock lease had expired before fencing.",
       );
     }
     const staleCompletion = await runSql(`
@@ -965,6 +1084,109 @@ commit;`;
       );
     }
 
+    if (
+      (await runSql(`
+    select to_regclass('public.test_booking_request_race_clock') is null
+      and to_regprocedure('public.test_booking_request_race_now()') is null;
+  `)) !== "t"
+    ) {
+      throw new Error(
+        "Refusing pre-existing Booking Request race clock objects.",
+      );
+    }
+    const substitutions = [
+      [
+        "prepare_booking_request_submission(uuid,uuid,jsonb)",
+        "policy_evaluated_at := clock_timestamp();",
+        "policy_evaluated_at := public.test_booking_request_race_now();",
+        1,
+      ],
+      [
+        "finalize_booking_request_submission(uuid,jsonb)",
+        "submission_created_at := clock_timestamp();",
+        "submission_created_at := public.test_booking_request_race_now();",
+        1,
+      ],
+      [
+        "expire_booking_request_authorization_claims()",
+        "clock_timestamp()",
+        "public.test_booking_request_race_now()",
+        1,
+      ],
+    ];
+    const replacements = [];
+    for (const [signature, target, replacement, count] of substitutions) {
+      const original = JSON.parse(
+        await runSql(`
+      select case when to_regprocedure('public.${signature}') is null
+        then 'null'::json
+        else to_json(pg_get_functiondef(to_regprocedure('public.${signature}')))
+      end;
+    `),
+      );
+      if (
+        typeof original !== "string" ||
+        !original.trim() ||
+        original.split(target).length - 1 !== count
+      ) {
+        throw new Error(
+          `Unexpected ${signature} definition; inspect before clock substitution.`,
+        );
+      }
+      boundaryClockDefinitions.set(signature, original);
+      let definition = original.replaceAll(target, replacement);
+      if (signature === "expire_booking_request_authorization_claims()") {
+        const duePredicate =
+          "claims.reconciliation_expires_at <= statement_timestamp()";
+        if (original.split(duePredicate).length - 1 !== 2) {
+          throw new Error(
+            `Unexpected ${signature} due predicates; inspect before clock substitution.`,
+          );
+        }
+        definition = definition.replaceAll(
+          duePredicate,
+          "claims.reconciliation_expires_at <= public.test_booking_request_race_now()",
+        );
+      }
+      replacements.push(definition);
+    }
+    // Track the attempt so teardown also covers a lost post-commit subprocess result.
+    boundaryClockInstalled = true;
+    await runSql(`begin;
+    create table public.test_booking_request_race_clock (
+      singleton boolean primary key check (singleton),
+      instant timestamptz not null check (isfinite(instant))
+    );
+    insert into public.test_booking_request_race_clock
+    values (true, date_trunc('minute', clock_timestamp()) + interval '1 day');
+    create function public.test_booking_request_race_now() returns timestamptz
+    language plpgsql volatile security invoker set search_path = '' as $clock$
+    declare observed_at timestamptz;
+    begin
+      select clock.instant into strict observed_at
+      from public.test_booking_request_race_clock clock;
+      return observed_at;
+    end $clock$;
+    revoke all on public.test_booking_request_race_clock
+      from public, anon, authenticated, service_role;
+    revoke all on function public.test_booking_request_race_now()
+      from public, anon, authenticated, service_role;
+    ${replacements.join(";\n")};
+    do $missing_clock$
+    begin
+      begin
+        delete from public.test_booking_request_race_clock;
+        perform public.test_booking_request_race_now();
+        raise exception 'The missing race clock did not fail loudly';
+      exception when no_data_found then
+        null;
+      end;
+      if (select count(*) from public.test_booking_request_race_clock) <> 1 then
+        raise exception 'The missing-clock probe did not restore the singleton';
+      end if;
+    end $missing_clock$;
+    commit;`);
+
     markTimingPhase("execution");
     await prepareBoundaryAttempt({
       authorize: false,
@@ -1023,6 +1245,10 @@ commit;`;
     });
     await removeBoundaryAttempt("inside-48-hour");
     await restoreBaseBookingWindow();
+
+    markTimingPhase("setup");
+    await restoreBoundaryClock();
+    markTimingPhase("execution");
 
     const authorization = await startSession(`
     set application_name = 'rc-booking-request-first';
@@ -1906,9 +2132,10 @@ commit;`;
     failure = error;
   } finally {
     markTimingPhase("cleanup");
-    try {
-      for (const session of activeSessions) {
-        if (session.exit) continue;
+    const cleanupFailures = [];
+    for (const session of activeSessions) {
+      if (session.exit) continue;
+      try {
         if (
           !session.child.stdin.destroyed &&
           !session.child.stdin.writableEnded
@@ -1918,16 +2145,26 @@ commit;`;
           session.child.kill("SIGTERM");
         }
         await session.exited;
+      } catch (error) {
+        cleanupFailures.push(error);
       }
+    }
+    try {
+      await restoreBoundaryClock();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    try {
       guardDisposableLocalDatabase();
       await runSql(cleanup);
-    } catch (cleanupError) {
-      failure = failure
-        ? new AggregateError(
-            [failure, cleanupError],
-            "Booking Request concurrency and cleanup failed.",
-          )
-        : cleanupError;
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    if (cleanupFailures.length) {
+      failure = new AggregateError(
+        [...(failure ? [failure] : []), ...cleanupFailures],
+        "Booking Request concurrency and cleanup failed.",
+      );
     }
   }
   if (failure) throw failure;
