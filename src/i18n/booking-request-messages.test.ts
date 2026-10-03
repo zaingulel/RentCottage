@@ -20,6 +20,22 @@ const failureStatuses = [
 ] as const satisfies readonly SubmissionFailureStatus[];
 
 describe("Booking Request error messages", () => {
+  it("anchors the Arabic request cutoff to the first shift", () => {
+    expect(bookingRequestMessages.ar.errors["too-late"]).toContain(
+      "بداية أول فترة محجوزة",
+    );
+    expect(bookingRequestMessages.ar.errors["too-late"]).toContain("بست ساعات");
+  });
+
+  it("describes online payment authorisation without promising launch access", () => {
+    expect(bookingRequestMessages.ar.futureBody).toContain(
+      "حجز المبلغ عبر الإنترنت",
+    );
+    expect(bookingRequestMessages.ar.futureBody).toContain(
+      "بعد اكتمال فحوصات الإطلاق",
+    );
+  });
+
   it.each(["en", "ar", "ckb"] satisfies Locale[])(
     "provides exact %s copy for every domain failure status",
     (locale) => {

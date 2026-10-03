@@ -155,7 +155,7 @@ const browserFixtures: Record<
       sendCode: "أرسل رمز التحقق",
       code: "رمز التحقق",
       verify: "تحقق",
-      enroll: "ابدأ طلب المالك",
+      enroll: "ابدأ طلب الانضمام كمالك",
     },
     application: {
       privacyNote:
@@ -214,7 +214,7 @@ const browserFixtures: Record<
       documentTitles: [
         "بەڵگەی ناسنامە",
         "بەڵگەی مافی بەکرێدان",
-        "بەڵگەی مۆڵەت یان بەخشین",
+        "بەڵگەی مۆڵەت یان معافبوون",
         "بەڵگەی هەژماری پارەدان",
       ],
       legalName: "ناوی یاسایی",

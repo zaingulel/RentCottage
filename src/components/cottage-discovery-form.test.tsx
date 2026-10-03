@@ -47,9 +47,7 @@ describe("CottageDiscoveryForm booking period picker", () => {
 
     chooseDates(dateLabels.ckb, "2099-01-01", "2099-01-01");
 
-    expect(
-      screen.getByRole("button", { name: "ڕۆژی تەواو" }),
-    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "ڕۆژی تەواو" })).toBeVisible();
   });
 
   it("shows default chips with the helper before a valid range exists", async () => {

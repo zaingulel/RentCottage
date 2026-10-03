@@ -48,14 +48,14 @@ it.each(["en", "ar", "ckb"] as const)(
           "شكاوى الدعم",
           "حوادث الحجز",
           "نزاعات الدفع",
-          "المراجعات العامة",
+          "التقييمات العامة",
           "السجلات الحالية",
         ],
         ckb: [
           "سکاڵاکانی پشتیوانی",
           "ڕووداوەکانی حجز",
           "ناکۆکییەکانی پارەدان",
-          "پێداچوونەوە گشتییەکان",
+          "هەڵسەنگاندنە گشتییەکان",
           "تۆمارە هەبووەکان",
         ],
       }[locale],
@@ -69,6 +69,19 @@ it.each(["en", "ar", "ckb"] as const)(
     expect(within(main).queryByRole("form")).toBeNull();
     expect(within(main).queryByRole("textbox")).toBeNull();
     expect(within(main).queryByRole("button")).toBeNull();
+  },
+);
+
+it.each([
+  ["ar", "الشكوى لا تضمن استرداد المبلغ"],
+  ["ckb", "سکاڵا گەڕاندنەوەی پارە مسۆگەر ناکات"],
+] as const)(
+  "keeps chargeback cases separate from refund promises in %s",
+  async (locale, complaint) => {
+    render(await SupportPage({ params: Promise.resolve({ locale }) }));
+    const disputes = screen.getByText(/\(chargeback\)/);
+    expect(disputes).toBeVisible();
+    expect(disputes).toHaveTextContent(complaint);
   },
 );
 

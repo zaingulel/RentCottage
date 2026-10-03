@@ -16,12 +16,12 @@ const candidate = {
 };
 describe("booking event notices", () => {
   it.each([
-    ["en", "Prepare for your stay", "View booking"],
-    ["ar", "استعد لإقامتك", "عرض الحجز"],
-    ["ckb", "بۆ مانەوەکەت ئامادە بە", "بینینی حجز"],
+    ["en", "Prepare for your stay", "View booking", "authenticated"],
+    ["ar", "استعد لإقامتك", "عرض الحجز", "سجّل الدخول"],
+    ["ckb", "بۆ مانەوەکەت ئامادە بە", "بینینی حجز", "بچۆ ژوورەوە"],
   ] as const)(
     "uses private-detail links instead of embedding preparation details in %s",
-    (locale, title, linkLabel) => {
+    (locale, title, linkLabel, access) => {
       const notice = bookingEventNotice({
         ...candidate,
         locale,
@@ -38,6 +38,7 @@ describe("booking event notices", () => {
         linkLabel,
         detailsPath: `/${locale}/booking-requests/RC-REQ-AAAAAAAAAAAAAAAA`,
       });
+      expect(notice.body).toContain(access);
       expect(JSON.stringify(notice)).not.toMatch(/address|phone|location/i);
       expect(notice).not.toHaveProperty("allocation");
     },

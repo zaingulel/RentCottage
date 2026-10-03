@@ -20,7 +20,7 @@ const messages = {
   },
   ar: {
     title: "تم تأكيد الحجز",
-    body: (reference: string) => `تم تأكيد الحجز ${reference} واستلام الدفعة.`,
+    body: (reference: string) => `تم تأكيد حجزك ${reference} وتم الدفع.`,
     linkLabel: "عرض الحجز المؤكد",
   },
   ckb: {

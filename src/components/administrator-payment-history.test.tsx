@@ -53,7 +53,7 @@ const history = {
 it.each([
   ["en", "Internal support reference"],
   ["ar", "مرجع دعم داخلي"],
-  ["ckb", "سەرچاوەی ناوخۆیی پشتگیری"],
+  ["ckb", "ژمارەی ئاماژەی ناوخۆیی پشتگیری"],
 ] as const)("labels internal aliases explicitly in %s", (locale, label) => {
   const id = "20000000-0000-4000-8000-000000000137";
   render(
@@ -126,7 +126,7 @@ it.each(["ar", "ckb"] as const)(
       expect(rendered).toContain("وەرگرتنی پارە");
       expect(rendered).toContain("سەرکەوتوو");
       expect(rendered).toContain("بەڵگەی پۆلێننەکراو");
-      expect(rendered).toContain("سەرچاوە بەردەست نییە");
+      expect(rendered).toContain("ژمارەی ئاماژە بەردەست نییە");
     }
   },
 );

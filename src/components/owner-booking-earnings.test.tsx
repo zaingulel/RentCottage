@@ -59,6 +59,16 @@ describe("Owner Booking Earnings summary", () => {
 });
 
 describe("Owner Booking Earnings details", () => {
+  it("Arabic earnings names pending refunds separately from owner payouts", () => {
+    render(<OwnerBookingEarningsDetails locale="ar" earnings={earnings} />);
+    expect(
+      screen.getByText("المبالغ قيد الاسترداد من سعر الحجز"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("المبالغ قيد الاسترداد من رسوم خدمة الحجز"),
+    ).toBeVisible();
+  });
+
   it("keeps service fees, current net, expected unpaid, and causes distinct", () => {
     render(<OwnerBookingEarningsDetails locale="en" earnings={earnings} />);
     const details = screen.getByRole("region", { name: "Earnings and payout" });
@@ -108,10 +118,14 @@ describe("Owner Booking Earnings details", () => {
     );
     const details = screen.getByRole("region", { name: "الأرباح والدفعة" });
     expect(details).toHaveTextContent("صافي الدفعة الحاليIQD 72,000");
-    expect(details).toHaveTextContent("الدفعة المسجلةIQD 90,000");
-    expect(details).toHaveTextContent("رصيد الاسترداد الحاليIQD 18,000");
-    expect(details).toHaveTextContent("التعرض المسجل للاستردادIQD 90,000");
-    expect(details).toHaveTextContent("دُفعت التسوية أثناء وجود حظر.");
+    expect(details).toHaveTextContent("الدفعة المدفوعة المسجلةIQD 90,000");
+    expect(details).toHaveTextContent(
+      "الرصيد الحالي للمبالغ المطلوب استردادها من المالكIQD 18,000",
+    );
+    expect(details).toHaveTextContent(
+      "التعرض المسجل لاسترداد مبالغ من المالكIQD 90,000",
+    );
+    expect(details).toHaveTextContent("دُفعت التسوية أثناء تعليق المستحقات.");
     expect(details).toHaveTextContent(
       "لا يخصم سجل الاسترداد هذا مبلغاً من المالك تلقائياً.",
     );
@@ -123,10 +137,7 @@ describe("Owner Booking Earnings details", () => {
       "en",
       "Payment has not been collected for this request, so it has no earnings yet.",
     ],
-    [
-      "ckb",
-      "پارەی ئەم داواکارییە هێشتا کۆنەکراوەتەوە، بۆیە هێشتا داهاتی نییە.",
-    ],
+    ["ckb", "پارەی ئەم داواکارییە هێشتا وەرنەگیراوە، بۆیە هێشتا داهاتی نییە."],
   ] as const)(
     "explains uncaptured earnings without inventing zero in %s",
     (locale, copy) => {

@@ -225,7 +225,7 @@ describe("Cottage Profile editor", () => {
     [
       "ckb",
       "unavailable",
-      "پێشبینینی وێنە تایبەتەکە کاتێک بەردەست نییە. دووبارە هەوڵ بدە.",
+      "پێشبینینی وێنە تایبەتەکە بە شێوەیەکی کاتی بەردەست نییە. دووبارە هەوڵ بدە.",
     ],
   ] as const)(
     "announces a localized %s private-photo preview failure",

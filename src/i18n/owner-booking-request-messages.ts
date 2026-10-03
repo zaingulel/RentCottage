@@ -92,7 +92,7 @@ export const ownerBookingRequestMessages: Record<
     responseDeadline: "وەڵام بدەرەوە پێش",
     bookingPrice: "نرخی حجز",
     commission: "کۆمسیۆنی پلاتفۆرم",
-    ownerNet: "بڕی چاوەڕوانکراوی خاوەن",
+    ownerNet: "بڕی پوختی چاوەڕوانکراو",
     houseRules: "یاساکانی کۆتێج",
     openConfirmedBooking: "کردنەوەی حجزی پشتڕاستکراو",
     notification: "ئاگادارکردنەوەی دۆخ",
