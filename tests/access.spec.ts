@@ -866,7 +866,6 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
       filename: string,
       objectPath: string,
       expectedBytes: Buffer,
-      stage: string,
     ) {
       await administratorPage.goto(
         `/${locale}/administrator/owner-applications/${applicationId}`,
@@ -888,10 +887,6 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
         name: browserFixtures[locale].review.openDocument,
       });
       await expect(link).toBeVisible();
-      await administratorPage.screenshot({
-        path: testInfo.outputPath(`${locale}-owned-review-${stage}.png`),
-        fullPage: true,
-      });
       const href = await link.getAttribute("href");
       if (!href) throw new Error("Owned secure link has no URL");
       const signedUrl = new URL(href, administratorPage.url());
@@ -1009,7 +1004,6 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
       reviewDocumentFilename,
       identityDocument.object_path,
       originalIdentityBytes,
-      "submitted",
     );
     const tamperedLink = new URL(submittedLink);
     tamperedLink.pathname = tamperedLink.pathname.replace(
@@ -1041,7 +1035,6 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
       reviewDocumentFilename,
       identityDocument.object_path,
       originalIdentityBytes,
-      "under-review",
     );
 
     await administratorPage.goto(
@@ -1104,10 +1097,6 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
       });
     }
     expect(grantsAfterDenial).toBe(grantsBeforeDenial);
-    await administratorPage.screenshot({
-      path: testInfo.outputPath("en-owned-review-needs-information.png"),
-      fullPage: true,
-    });
 
     await page.reload();
     await expect(
@@ -1160,7 +1149,6 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
       "replacement-identity.pdf",
       replacement.object_path,
       replacementBytes,
-      "replacement-under-review",
     );
   } finally {
     await administratorContext.close();
@@ -1268,16 +1256,6 @@ registerOwnedJourney("owner-layout", async ({ page }, testInfo) => {
       );
       expect(invalidHeight).toBeGreaterThan(successHeight);
     }
-
-    await page
-      .getByRole("heading", { name: copy.documentsSection })
-      .scrollIntoViewIfNeeded();
-    await page.screenshot({
-      path: testInfo.outputPath(
-        `${locale}-owner-application-evidence-submit.png`,
-      ),
-      fullPage: true,
-    });
 
     if (testInfo.project.name !== "mobile") {
       for (let index = 0; index < cards.length; index += 2) {
@@ -1409,10 +1387,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     ),
   ).toBeVisible();
   await expect(page.getByLabel("Cottage name")).toBeDisabled();
-  await page.screenshot({
-    path: testInfo.outputPath("en-owner-additional-abandoned.png"),
-    fullPage: true,
-  });
   const additionalPath = new URL(page.url()).pathname.replace(/^\/en/, "");
   await page.goto(`/ar${additionalPath}`);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -1423,10 +1397,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await expect(
     page.getByRole("button", { name: "استعادة المسودة" }),
   ).toHaveCount(0);
-  await page.screenshot({
-    path: testInfo.outputPath("ar-owner-additional-abandoned.png"),
-    fullPage: true,
-  });
   await page.goto("/en/owner/cottages");
 
   const applicationProfile = page
@@ -1525,11 +1495,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     ["Save private draft", "Upload photo", "Submit for content approval"],
     testInfo.project.name,
   );
-
-  await page.screenshot({
-    path: testInfo.outputPath("en-owner-cottage-profile-ready.png"),
-    fullPage: true,
-  });
   const profilePath = new URL(page.url()).pathname.replace(/^\/en/, "");
   for (const [locale, direction, heading, sectionNames, actionNames] of [
     [
@@ -1574,10 +1539,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
       actionNames,
       testInfo.project.name,
     );
-    await page.screenshot({
-      path: testInfo.outputPath(`${locale}-owner-cottage-profile-ready.png`),
-      fullPage: true,
-    });
   }
 
   await page.goto(`/en${profilePath}`);
@@ -1633,12 +1594,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.getByText(status, { exact: true })).toBeVisible();
     await expect(page.getByText(disabled)).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath(
-        `${locale}-owner-cottage-profile-submitted-review.png`,
-      ),
-      fullPage: true,
-    });
   }
 });
 
@@ -1724,10 +1679,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(
     page.getByRole("button", { name: "Abandon draft" }),
   ).toBeEnabled();
-  await page.screenshot({
-    path: testInfo.outputPath("en-administrator-additional-restored.png"),
-    fullPage: true,
-  });
   await page.getByRole("link", { name: "Back to cottages" }).click();
   const submittedProfile = page
     .getByRole("article")
@@ -1757,12 +1708,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     await expect(page.getByText(status, { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: publish })).toBeDisabled();
     await expect(page.getByText("shaqlawa-orchard-cottage.png")).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath(
-        `${locale}-administrator-submitted-cottage-review.png`,
-      ),
-      fullPage: true,
-    });
   }
   await page.goto(`/en${cottagePath}`);
   await expect(page.getByLabel("Source description")).toBeDisabled();
@@ -1932,11 +1877,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
           name: `${strongerLabel} العربية`,
         }),
       ).toBeVisible();
-      await reportedLocalization.screenshot({
-        path: testInfo.outputPath(
-          `${locale}-administrator-stronger-model-remediation.png`,
-        ),
-      });
     }
     await page.goto(`/en${cottagePath}`);
   }
@@ -1944,10 +1884,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(
     page.getByRole("heading", { name: "Private Cottage Profiles" }),
   ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("en-administrator-cottage-profiles.png"),
-    fullPage: true,
-  });
 
   await page.goto("/en/administrator/owner-applications");
   const accessedAfter = new Date(Date.now() - 5_000).toISOString();
@@ -1971,23 +1907,11 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       name: copy.createLink,
     });
     await tabTo(page, createLink);
-    if (testInfo.project.name !== "worker") {
-      await page.screenshot({
-        path: testInfo.outputPath(`${locale}-administrator-review-idle.png`),
-        fullPage: true,
-      });
-    }
     await page.keyboard.press("Enter");
     const secureLink = identityDocument.getByRole("link", {
       name: copy.openDocument,
     });
     await expect(secureLink).toBeVisible();
-    if (testInfo.project.name !== "worker") {
-      await page.screenshot({
-        path: testInfo.outputPath(`${locale}-administrator-review-ready.png`),
-        fullPage: true,
-      });
-    }
     const viewport = page.viewportSize();
     if (!viewport) throw new Error("Browser viewport is unavailable");
     expect(
@@ -2066,10 +1990,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     page.getByRole("heading", { name: "Owner Application review" }),
   ).toBeVisible();
   await expect(page.getByText(reviewFixture.exactAddress)).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("en-administrator-review-detail.png"),
-    fullPage: true,
-  });
 
   await page.getByRole("button", { name: "Start review" }).click();
   const currentAdministratorStatus = page
@@ -2089,10 +2009,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     .getByRole("button", { name: "Request missing information" })
     .click();
   await expect(currentAdministratorStatus).toHaveText("Needs information");
-  await page.screenshot({
-    path: testInfo.outputPath("en-administrator-review-needs-information.png"),
-    fullPage: true,
-  });
 
   await page.goto("/en/owner/access");
   await expect(
@@ -2146,10 +2062,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await ownerResponseCard
     .getByLabel("Exact private address")
     .fill("Confirmed orchard road");
-  await page.screenshot({
-    path: testInfo.outputPath("en-owner-response-request.png"),
-    fullPage: true,
-  });
   await page
     .getByRole("button", { name: "Send requested information" })
     .click();
@@ -2348,10 +2260,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       expect(serializedPage).not.toContain(privateValue);
     }
   };
-  const waitForFonts = () =>
-    page.evaluate(async () => {
-      await document.fonts.ready;
-    });
   const { data: shifts, error: shiftsError } = await fixtureOwner
     .from("cottage_shifts")
     .select("id,position,name,start_time,end_time")
@@ -2509,11 +2417,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       .first(),
   ).toBeVisible();
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("public-cottage-results.png"),
-    fullPage: true,
-  });
   await resultCard.getByRole("link", { name: "View cottage" }).click();
   await expect(page).toHaveURL(/\/en\/cottages\/[^/?]+\?/);
   await expect(
@@ -2523,11 +2426,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     page.getByText("Total price", { exact: true }).locator(".."),
   ).toContainText("IQD 550,000");
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("en-public-cottage-profile.png"),
-    fullPage: true,
-  });
   const english = new URL(page.url());
   expect(english.searchParams.getAll("selection")).toHaveLength(3);
   expect(english.searchParams.get("from")).toBe(firstDay);
@@ -2608,11 +2506,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     page.getByRole("button", { name: "Send Booking Request" }),
   ).toBeVisible();
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("en-booking-request-form.png"),
-    fullPage: true,
-  });
   const quoteUrl = page.url();
   // Verification completes through the access page; wait for the header to
   // settle on the request page before switching language.
@@ -2634,11 +2527,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("ckb-public-booking-quote.png"),
-    fullPage: true,
-  });
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -2653,11 +2541,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("ar-public-booking-quote.png"),
-    fullPage: true,
-  });
 
   await page.goto("/en");
   await page.getByLabel("From Service Day").fill(firstDay);
@@ -2703,11 +2586,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     expectedFullDayAccessRange,
   );
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("en-consecutive-full-day-booking-quote.png"),
-    fullPage: true,
-  });
 
   await page.goto(english.toString());
   await page.getByRole("banner").getByRole("link", { name: "کوردی" }).click();
@@ -2738,11 +2616,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     expect(metric.lineHeight).toBeGreaterThanOrEqual(metric.fontSize * 1.35);
   }
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("ckb-public-cottage-profile.png"),
-    fullPage: true,
-  });
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ar")}\\?`),
@@ -2753,11 +2626,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByText(fixture!.arabicDescription)).toBeVisible();
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("ar-public-cottage-profile.png"),
-    fullPage: true,
-  });
 
   for (const requestedDay of [firstDay, secondDay]) {
     const { error: closeError } = await fixtureOwner.rpc(
@@ -2797,11 +2665,8 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(page.getByText(/IQD/)).toHaveCount(0);
   await expectPrivateValuesAbsent();
-  await waitForFonts();
-  await page.screenshot({
-    path: testInfo.outputPath("public-cottage-profile-unavailable.png"),
-    fullPage: true,
-  });
+  // Wait for font requests before checking their origins.
+  await page.evaluate(() => document.fonts.ready);
   expect(
     [...requestedOrigins].filter(
       (origin) =>
@@ -2855,10 +2720,6 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     owner_approval_state: null,
   });
   await page.getByText("Account", { exact: true }).click();
-  await page.screenshot({
-    path: `test-results/account-menu-${testInfo.project.name}.png`,
-    fullPage: true,
-  });
   await page
     .getByRole("banner")
     .getByRole("link", { name: "List your cottage" })
@@ -2867,10 +2728,6 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     page.getByRole("heading", { name: "Become a Cottage Owner" }),
   ).toBeVisible();
   expect(accountContext().role).toBe("customer");
-  await page.screenshot({
-    path: `test-results/account-enrollment-${testInfo.project.name}.png`,
-    fullPage: true,
-  });
   await page.getByRole("button", { name: "Start owner application" }).click();
   await expect(page).toHaveURL(/\/en\/owner\/application$/);
   expect(accountContext()).toEqual({
@@ -2944,25 +2801,13 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
       expect(box).not.toBeNull();
       expect(box!.height).toBeGreaterThanOrEqual(44);
     }
-    await page.screenshot({
-      path: `test-results/account-denied-${testInfo.project.name}.png`,
-      fullPage: true,
-    });
     await page.context().clearCookies();
     await page.reload();
     await expect(page).toHaveURL(
       /\/en\/access\?returnTo=%2Fen%2Fbooking-requests%2FRC-REQ-2142142142142142/,
     );
-    await page.screenshot({
-      path: `test-results/account-return-${testInfo.project.name}.png`,
-      fullPage: true,
-    });
   } catch (error) {
     try {
-      await secondPage.screenshot({
-        path: `test-results/account-second-device-failure-${testInfo.project.name}.png`,
-        fullPage: true,
-      });
       await second.close();
     } catch (cleanupError) {
       throw new AggregateError(

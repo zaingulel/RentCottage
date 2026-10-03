@@ -217,7 +217,7 @@ test.beforeAll(async ({}, testInfo) => {
 
 test("an administrator discovers accounts and approval records with authoritative counts and restricted documents in every locale", async ({
   page,
-}, testInfo) => {
+}) => {
   test.setTimeout(180_000);
   const fixture = reviewFixture;
   const applications = count(
@@ -296,10 +296,6 @@ test("an administrator discovers accounts and approval records with authoritativ
           document.documentElement.clientWidth,
       ),
     ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath(`${locale}-administrator-records.png`),
-      fullPage: true,
-    });
   }
 
   await page.goto("/en/administrator/records");
@@ -321,10 +317,6 @@ test("an administrator discovers accounts and approval records with authoritativ
     "aria-describedby",
     "administrator-records-filter-error",
   );
-  await page.screenshot({
-    path: testInfo.outputPath("en-administrator-records-invalid.png"),
-    fullPage: true,
-  });
   await page.getByLabel("Record type").selectOption("owners");
   await page.getByLabel("Search", { exact: true }).fill("+9647510000101");
   await page.getByLabel("From date (Baghdad)").fill("");
@@ -359,10 +351,6 @@ test("an administrator discovers accounts and approval records with authoritativ
   await expect(page.getByText("Fictional English approval")).toBeVisible();
   await expect(page.getByText("Fictional Arabic approval")).toBeVisible();
   await expect(page.getByText("Fictional Sorani approval")).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("en-administrator-approval-history.png"),
-    fullPage: true,
-  });
 
   harness.guardDisposableLocalDatabase();
   try {
@@ -456,10 +444,6 @@ test("an administrator discovers accounts and approval records with authoritativ
       "Records are temporarily unavailable",
     );
     await expect(page.getByText("Matching records: 0")).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath("en-administrator-records-unavailable.png"),
-      fullPage: true,
-    });
   } finally {
     harness.runSql(definition);
   }
