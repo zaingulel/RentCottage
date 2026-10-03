@@ -111,15 +111,52 @@ describe("shared site header", () => {
       "/ar/access?returnTo=%2Far%2Fbookings",
     );
   });
-  it("keeps the raw query in administrator access language links", () => {
+  it("translates the return destination in administrator access language links", () => {
     location.pathname = "/en/administrator/access";
     location.query = "returnTo=%2Fen%2Fadministrator%2Freviews";
     render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
     expect(screen.getByRole("link", { name: "العربية" })).toHaveAttribute(
       "href",
-      "/ar/administrator/access?returnTo=%2Fen%2Fadministrator%2Freviews",
+      "/ar/administrator/access?returnTo=%2Far%2Fadministrator%2Freviews",
+    );
+    expect(screen.getByRole("link", { name: "کوردی" })).toHaveAttribute(
+      "href",
+      "/ckb/administrator/access?returnTo=%2Fckb%2Fadministrator%2Freviews",
+    );
+    expect(screen.getByRole("link", { name: "English" })).toHaveAttribute(
+      "href",
+      "/en/administrator/access?returnTo=%2Fen%2Fadministrator%2Freviews",
     );
   });
+  it.each([
+    [
+      "an external address",
+      "returnTo=https%3A%2F%2Fevil.test%2Fen%2Fadministrator%2Freviews",
+      "/ar/administrator/access",
+    ],
+    [
+      "a repeated destination",
+      "returnTo=%2Fen%2Fadministrator%2Freviews&returnTo=%2Fen%2Fadministrator%2Freviews",
+      "/ar/administrator/access",
+    ],
+    ["no destination", "", "/ar/administrator/access"],
+    [
+      "another query field",
+      "returnTo=%2Fen%2Fadministrator%2Freviews&token=private",
+      "/ar/administrator/access?returnTo=%2Far%2Fadministrator%2Freviews",
+    ],
+  ])(
+    "carries only a safe return destination in administrator access language links: %s",
+    (_case, query, href) => {
+      location.pathname = "/en/administrator/access";
+      location.query = query;
+      render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+      expect(screen.getByRole("link", { name: "العربية" })).toHaveAttribute(
+        "href",
+        href,
+      );
+    },
+  );
   it("renders the landing header transparent and condenses it after scrolling", () => {
     render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
     const header = screen.getByRole("banner");

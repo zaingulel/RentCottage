@@ -7,6 +7,7 @@ import type { AccountContext } from "@/access/account-access";
 import {
   accessLanguageHref,
   accountAccessHref,
+  administratorAccessLanguageHref,
 } from "@/access/return-destination";
 import { accessMessages } from "@/i18n/access-messages";
 import { messages } from "@/i18n/messages";
@@ -49,7 +50,11 @@ export function SiteHeader({
   const locale = isLocale(pathLocale) ? pathLocale : initialLocale;
   const landing = pathname === `/${locale}`;
   const accessPage = pathname === `/${locale}/access`;
+  const administratorAccessPage =
+    pathname === `/${locale}/administrator/access`;
   const returnToValues = searchParams.getAll("returnTo");
+  const returnToParameter =
+    returnToValues.length === 1 ? returnToValues[0] : returnToValues;
   const [condensed, setCondensed] = useState(false);
   useEffect(() => {
     if (!landing) return;
@@ -80,14 +85,14 @@ export function SiteHeader({
             locale={locale}
             hrefFor={(target) =>
               accessPage
-                ? accessLanguageHref(
-                    locale,
-                    target,
-                    returnToValues.length === 1
-                      ? returnToValues[0]
-                      : returnToValues,
-                  )
-                : `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
+                ? accessLanguageHref(locale, target, returnToParameter)
+                : administratorAccessPage
+                  ? administratorAccessLanguageHref(
+                      locale,
+                      target,
+                      returnToParameter,
+                    )
+                  : `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
             }
           />
           <span className="site-header-rule" aria-hidden="true" />
