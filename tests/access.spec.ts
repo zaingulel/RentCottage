@@ -1257,10 +1257,6 @@ registerOwnedJourney("owner-layout", async ({ page }, testInfo) => {
       expect(invalidHeight).toBeGreaterThan(successHeight);
     }
 
-    await page
-      .getByRole("heading", { name: copy.documentsSection })
-      .scrollIntoViewIfNeeded();
-
     if (testInfo.project.name !== "mobile") {
       for (let index = 0; index < cards.length; index += 2) {
         const [left, right] = await Promise.all(
@@ -2264,10 +2260,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       expect(serializedPage).not.toContain(privateValue);
     }
   };
-  const waitForFonts = () =>
-    page.evaluate(async () => {
-      await document.fonts.ready;
-    });
   const { data: shifts, error: shiftsError } = await fixtureOwner
     .from("cottage_shifts")
     .select("id,position,name,start_time,end_time")
@@ -2425,7 +2417,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       .first(),
   ).toBeVisible();
   await expectPrivateValuesAbsent();
-  await waitForFonts();
   await resultCard.getByRole("link", { name: "View cottage" }).click();
   await expect(page).toHaveURL(/\/en\/cottages\/[^/?]+\?/);
   await expect(
@@ -2435,7 +2426,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     page.getByText("Total price", { exact: true }).locator(".."),
   ).toContainText("IQD 550,000");
   await expectPrivateValuesAbsent();
-  await waitForFonts();
   const english = new URL(page.url());
   expect(english.searchParams.getAll("selection")).toHaveLength(3);
   expect(english.searchParams.get("from")).toBe(firstDay);
@@ -2516,7 +2506,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     page.getByRole("button", { name: "Send Booking Request" }),
   ).toBeVisible();
   await expectPrivateValuesAbsent();
-  await waitForFonts();
   const quoteUrl = page.url();
   // Verification completes through the access page; wait for the header to
   // settle on the request page before switching language.
@@ -2538,7 +2527,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
   await expectPrivateValuesAbsent();
-  await waitForFonts();
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -2553,7 +2541,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
   await expectPrivateValuesAbsent();
-  await waitForFonts();
 
   await page.goto("/en");
   await page.getByLabel("From Service Day").fill(firstDay);
@@ -2599,7 +2586,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     expectedFullDayAccessRange,
   );
   await expectPrivateValuesAbsent();
-  await waitForFonts();
 
   await page.goto(english.toString());
   await page.getByRole("banner").getByRole("link", { name: "کوردی" }).click();
@@ -2630,7 +2616,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     expect(metric.lineHeight).toBeGreaterThanOrEqual(metric.fontSize * 1.35);
   }
   await expectPrivateValuesAbsent();
-  await waitForFonts();
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ar")}\\?`),
@@ -2641,7 +2626,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByText(fixture!.arabicDescription)).toBeVisible();
   await expectPrivateValuesAbsent();
-  await waitForFonts();
 
   for (const requestedDay of [firstDay, secondDay]) {
     const { error: closeError } = await fixtureOwner.rpc(
@@ -2681,7 +2665,8 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(page.getByText(/IQD/)).toHaveCount(0);
   await expectPrivateValuesAbsent();
-  await waitForFonts();
+  // Wait for font requests before checking their origins.
+  await page.evaluate(() => document.fonts.ready);
   expect(
     [...requestedOrigins].filter(
       (origin) =>
