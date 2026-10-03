@@ -376,7 +376,8 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   page,
   browser,
 }, testInfo) => {
-  test.setTimeout(testInfo.project.name === "worker" ? 480_000 : 180_000);
+  // Hosted CI peaked at 23.9s; 60s leaves 36.1s of headroom.
+  test.setTimeout(60_000);
   requireLocalDatabase();
   const allocatedNamespaces = [
     ...Object.values(namespaces).flat(),
@@ -1020,7 +1021,6 @@ test.describe("administrator review return", () => {
       test(`${copy.locale} ${entry} administrator review return keeps the chosen language and MFA`, async ({
         page,
       }, testInfo) => {
-        test.setTimeout(testInfo.project.name === "worker" ? 240_000 : 120_000);
         const queuePath = `/${copy.locale}/administrator/reviews`;
         const accessPath = `/${copy.locale}/administrator/access?returnTo=${encodeURIComponent(queuePath)}`;
         const administrator = await provisionAdministrator(

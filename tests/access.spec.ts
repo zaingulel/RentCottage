@@ -690,7 +690,6 @@ test("Arabic access renders right to left", async ({ page }) => {
 });
 
 registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
-  test.setTimeout(300_000);
   const fixture = await prepareOwnedAccessJourney("owner-submit", testInfo);
   await openOwnerApplication(page, "en", fixture.phone);
   expect(
@@ -1156,7 +1155,6 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
 });
 
 registerOwnedJourney("owner-layout", async ({ page }, testInfo) => {
-  test.setTimeout(180_000);
   const fixture = await prepareOwnedAccessJourney("owner-layout", testInfo);
   await openOwnerApplication(page, "en", fixture.phone);
 
@@ -1342,7 +1340,6 @@ registerOwnedJourney("owner-layout", async ({ page }, testInfo) => {
 test("an approved owner continues the first Cottage Profile and submits a private photo-backed working copy", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(180_000);
   const phoneByProject: Record<string, string> = {
     mobile: "+9647510000000",
     desktop: "+9647510000001",
@@ -1601,7 +1598,6 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   page,
   request,
 }, testInfo) => {
-  test.setTimeout(180_000);
   const reviewFixture = accessBrowserFixture(testInfo.project.name);
   const email = `platform-administrator-${testInfo.project.name}@rentcottage.test`;
   const actorUserId = await administratorId(email);
@@ -2677,7 +2673,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
 });
 
 registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
-  test.setTimeout(60_000);
   const { phone } = await prepareOwnedAccessJourney("shared-account", testInfo);
   assertIsolatedLocalAccessDatabase();
   const before = await listAllAccessFixtureUsers(auditClient.auth.admin);
