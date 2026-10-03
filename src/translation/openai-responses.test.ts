@@ -288,9 +288,7 @@ describe("OpenAI Responses translation adapter", () => {
   });
 
   it("executes distinct stronger-route prompt content without substitution", async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(response({ model: "gpt-6.1-sol" }));
+    const fetch = vi.fn().mockResolvedValue(response({ model: "gpt-6.1-sol" }));
     const adapter = createOpenAIResponsesTranslationAdapter({
       apiKey: "server-secret",
       fetch,
