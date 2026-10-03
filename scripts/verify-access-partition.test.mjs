@@ -19,6 +19,20 @@ import {
   successfulRun,
 } from "./verify-access-command-doubles.mjs";
 
+const workerFilesByShard = {
+  "1/2": [
+    "tests/access.spec.ts",
+    "tests/administrator-payment-history.spec.ts",
+    "tests/administrator-records.spec.ts",
+    "tests/messaging.spec.ts",
+    "tests/customer-reviews.spec.ts",
+  ],
+  "2/2": [
+    "tests/booking-request-access.spec.ts",
+    "tests/booking-cancellation-refund.spec.ts",
+  ],
+};
+
 describe("access verification command", () => {
   it("partitions hosted checks without losing setup, coverage or cleanup", async () => {
     const cases = [
@@ -245,13 +259,28 @@ describe("access verification command", () => {
         ["npx", [...browserCommands[2][1], "--list"]],
         ["npx", [...browserCommands[2][1], `--shard=${shard}`]],
       ]);
+      const workerArgs = [
+        ...browserCommands[6][1].slice(0, 2),
+        ...workerFilesByShard[shard],
+        ...browserCommands[6][1].slice(9),
+      ];
       expect(observed.get(`worker:${shard}`)).toEqual([
         statusCommand,
         ...browserCommands.slice(3, 6),
-        ["npx", [...browserCommands[6][1], "--list"]],
-        ["npx", [...browserCommands[6][1], `--shard=${shard}`]],
+        ["npx", [...workerArgs, "--list"]],
+        ["npx", workerArgs],
       ]);
     }
+    const workerFiles = ["1/2", "2/2"].flatMap((shard) =>
+      observed
+        .get(`worker:${shard}`)
+        .at(-1)[1]
+        .filter((arg) => arg.startsWith("tests/")),
+    );
+    expect(workerFiles.sort()).toEqual(
+      browserCommands[6][1].filter((arg) => arg.startsWith("tests/")).sort(),
+    );
+    expect(new Set(workerFiles).size).toBe(workerFiles.length);
     expect(observed.get("scheduled:")).toEqual([
       statusCommand,
       ...browserCommands.slice(3, 6),
@@ -294,7 +323,7 @@ describe("access verification command", () => {
     }
   });
 
-  it("rejects empty hosted journey selections before sharding and cleans up", async () => {
+  it("rejects empty hosted journey selections before execution and cleans up", async () => {
     for (const partition of ["next", "worker"]) {
       for (const shard of ["1/2", "2/2"]) {
         const run = ownedRun((command, args) => ({
@@ -330,10 +359,18 @@ describe("access verification command", () => {
         );
         const journey =
           partition === "next" ? browserCommands[2] : browserCommands[6];
-        expect(listed).toEqual([["npx", [...journey[1], "--list"]]]);
+        const selectedArgs =
+          partition === "next"
+            ? journey[1]
+            : [
+                ...journey[1].slice(0, 2),
+                ...workerFilesByShard[shard],
+                ...journey[1].slice(9),
+              ];
+        expect(listed).toEqual([["npx", [...selectedArgs, "--list"]]]);
         expect(
-          commands(run).some(([, args]) => args.includes(`--shard=${shard}`)),
-        ).toBe(false);
+          commands(run).filter(([, args]) => args[0] === "playwright"),
+        ).toEqual(listed);
         expect(commands(run).at(-2)).toEqual(ownershipCommand);
         expect(commands(run).at(-1)).toEqual(stopCommand);
         expect(removeTemp).toHaveBeenCalledWith("/tmp/empty-hosted-journeys");

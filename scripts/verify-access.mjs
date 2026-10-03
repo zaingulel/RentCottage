@@ -1285,6 +1285,22 @@ export async function main(
       if (workerBuild.status !== 0) return workerBuild.status;
 
       if (partition !== "scheduled") {
+        const workerFiles = [
+          "tests/access.spec.ts",
+          "tests/booking-request-access.spec.ts",
+          "tests/administrator-payment-history.spec.ts",
+          "tests/administrator-records.spec.ts",
+          "tests/booking-cancellation-refund.spec.ts",
+          "tests/messaging.spec.ts",
+          "tests/customer-reviews.spec.ts",
+        ];
+        const selectedWorkerFiles = workerFiles.filter((file) => {
+          if (partition !== "worker") return true;
+          const requestFile =
+            file === "tests/booking-request-access.spec.ts" ||
+            file === "tests/booking-cancellation-refund.spec.ts";
+          return shard === "2/2" ? requestFile : !requestFile;
+        });
         const workerArgs = ownedJourneysMode
           ? [
               "playwright",
@@ -1303,13 +1319,7 @@ export async function main(
           : [
               "playwright",
               "test",
-              "tests/access.spec.ts",
-              "tests/booking-request-access.spec.ts",
-              "tests/administrator-payment-history.spec.ts",
-              "tests/administrator-records.spec.ts",
-              "tests/booking-cancellation-refund.spec.ts",
-              "tests/messaging.spec.ts",
-              "tests/customer-reviews.spec.ts",
+              ...selectedWorkerFiles,
               "--project=worker",
               "--config=playwright.worker-prebuilt.config.ts",
               "--workers=1",
@@ -1321,7 +1331,6 @@ export async function main(
             stdio: "inherit",
           });
           if (listed.status !== 0) return listed.status;
-          workerArgs.push(`--shard=${shard}`);
         }
         const workerBrowser = await execute("npx", workerArgs, {
           env: workerEnvironment,

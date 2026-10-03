@@ -140,7 +140,10 @@ Worker and Playwright paths the browser group; an unlisted path stops the run un
 investigated flake. A repair that touches only tests reruns the repaired test by title and never the full local
 check. Continuous integration runs `npm run verify -- --baseline` and native `--database` and `--browser` matrices
 against the merge result once the pull request leaves draft. The database matrix runs four independent portions;
-the browser matrix runs two Next.js shards, two Worker shards, the scheduled checks and the shell smoke checks.
+the browser matrix runs two Next.js shards, two Worker file groups, the scheduled checks and the shell smoke checks.
+Worker `2/2` selects `booking-request-access.spec.ts` and `booking-cancellation-refund.spec.ts`; Worker `1/2` selects
+`access.spec.ts`, `administrator-payment-history.spec.ts`, `administrator-records.spec.ts`, `messaging.spec.ts` and
+`customer-reviews.spec.ts`. Each group lists and executes its selected files without native sharding.
 The required `test` check passes only when the baseline and every matrix portion succeed. The database and browser
 matrices select every check, except for a change touching only documentation or workflow instructions, where they
 run nothing. The hosted preview is smoked with
