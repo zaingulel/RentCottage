@@ -79,7 +79,18 @@ A material change to the approved outcome, product meaning, or a trade-off goes 
 plain-language decision before it is built; a parser, state machine, or framework the outcome did not name is
 such a change. Anything short of that which the job surfaces and can sensibly finish in the same job, in the
 same files under the same tests, rides along and is named in the pull request body; a follow-up card is filed,
-without asking, only for work that genuinely cannot. Destructive actions keep exact-target approval.
+without asking, only for work that genuinely cannot.
+
+**Disposable job cleanup.** The session must remove verified disposable, inactive files and folders it created
+for its own approved job, inside or outside the job worktree, without further approval and whether or not a
+verifier reported them. This project rule overrides the general machine rule requiring deletion approval only
+for this exception. Session creation evidence must establish the exact path and ownership; a name pattern,
+memory, summary or previous session alone does not establish either. Disposable excludes owner files, another
+job's artifacts, tracked deliverables, and evidence or plans still needed for unfinished work or handoff. Verify
+inactive use and follow [closeout's cleanup steps](.agents/skills/closeout/SKILL.md); existing worktree, branch,
+server and container safeguards remain. On uncertainty or failed verification, preserve the target and ask the
+owner about that exact path. This grants no general deletion or publication authority; other destructive
+actions keep exact-target approval.
 
 An approval covers only the question it answered. After a context compaction, reread the owner's latest messages
 before acting on one; an approval whose question is no longer in view is asked again. A memory, summary or earlier

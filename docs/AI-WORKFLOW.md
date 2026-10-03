@@ -145,7 +145,8 @@ flowchart LR
    pull request ready, the queued merge, and the closeout that follows it. The owner is not asked again.
 
 A material change to the approved outcome goes back to the owner as a plain-language decision before it is
-built. Destructive actions keep their own exact-target approval regardless of either gate.
+built. Destructive actions keep their own exact-target approval regardless of either gate, except for the
+[Disposable job cleanup exception](../AGENTS.md#owner-gates).
 
 ## The life of one change
 

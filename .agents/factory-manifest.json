@@ -3,11 +3,11 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "274563bd07abd38f42821bf5ffd692544badc131",
+  "syncedFrom": "567e8560e46f2d571bebef8780fade2edc03e011",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "a2798baceeee08e98b3ec427211fd402770924f5d8df531fce921ce862747407"
+      "sha256": "dd3ad9c5e977a2ff5b11517e01b68f7bc1ac5cd4ff8a841cd776f4d08614c91c"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "8123a5a294d855934a80587eabbd962cbff08416875044ad838aa0d69b91328f"
+      "sha256": "f2cfe6b914ef28cbc43fdff1af214f779b5cdf8088a96deb7fd5946b941dddef"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -151,7 +151,7 @@
     },
     {
       "path": ".agents/templates/planner-handoff.md",
-      "sha256": "844076136ec950c3dd48bbbd790aaae46dfe63fbc99b1552b2bb60bf54fb1867"
+      "sha256": "36160a4180bbaa3648484362cccb0da7d0dda57a92b5f8be04a4d1e6a71e88be"
     },
     {
       "path": ".agents/upstream/mattpocock-skills/LICENSE",
@@ -267,7 +267,7 @@
     },
     {
       "path": ".claude/agents/architect.md",
-      "sha256": "5d20032c7c1055542d89e9d1681068e762d21df59d1d760166daf854c25039de"
+      "sha256": "b70dc9ecf7d1bd5c80e270b7c295764bf45e3d26b72470f9796f67e42bcea896"
     },
     {
       "path": ".claude/agents/builder-lite.md",
@@ -331,7 +331,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "a2798baceeee08e98b3ec427211fd402770924f5d8df531fce921ce862747407"
+      "sha256": "dd3ad9c5e977a2ff5b11517e01b68f7bc1ac5cd4ff8a841cd776f4d08614c91c"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -443,7 +443,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "8123a5a294d855934a80587eabbd962cbff08416875044ad838aa0d69b91328f"
+      "sha256": "f2cfe6b914ef28cbc43fdff1af214f779b5cdf8088a96deb7fd5946b941dddef"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -479,7 +479,7 @@
     },
     {
       "path": ".codex/agents/architect.toml",
-      "sha256": "1799eba410cba3221c5edbb49787b161e07ae26cdc04e7b62e43c918c65af072"
+      "sha256": "9e8db2eb7185dd38aa89911332ce78dc889b24030a46838c0eeacfc740d2ea89"
     },
     {
       "path": ".codex/agents/builder-lite.toml",
@@ -575,7 +575,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "23da45daf35beb6309e2930d291d1a81a8d69057325d055bfbbd413a56ded22c"
+      "sha256": "838108fc91595c43baf927589967280f154123d176978a1734cce2b4dd9004a1"
     },
     {
       "path": "CLAUDE.md",
@@ -583,7 +583,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "033f661bc59ebed7605b3e21c781f7ccabd4e33dc495c0e692507c740d907d5a"
+      "sha256": "da3021584b978f259357dfbc36ec374f3941b7b656051737d1f826494d823023"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -724,7 +724,7 @@
     },
     {
       "path": "scripts/lib/handoff-check.test.mjs",
-      "sha256": "3fc75f4275c3286765108ef0aa8952904d2767a334bb339542dd7f928811b077"
+      "sha256": "f211a31eb3b0de44a23874ff6b7df2e9366cbf4a7c83801a4981ef3ce78bfc7a"
     },
     {
       "path": "scripts/lib/issue-publish.mjs",
@@ -800,7 +800,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "add28f2a99a6080db6627be3642c676b2a9a1f8e04337457fd2b6ca608274d62"
+      "sha256": "d5c04248bf7eed2e87018c54ede5416cd2882091efe2171791b197801cff9663"
     },
     {
       "path": "scripts/merge-watch.mjs",

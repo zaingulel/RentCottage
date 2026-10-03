@@ -34,7 +34,7 @@ const GOOD_BUILDER = [
 const GOOD_ARCHITECT = [
   "Decision: where the unavailable-state copy lives",
   "Scope: the cycle-time card only",
-  "Discovery: read 19-cycle-time-card.js and its spec",
+  "Discovery: example/card-renderer.js:234 renders the unavailable-state shell; unresolved gaps: none",
   "Judgment: copy placement, not metric meaning",
   "Deliverable: a file-level plan with one claim",
   "Stop condition: plan delivered in full",
@@ -96,7 +96,7 @@ test("the real architect template, filled, passes the guard", () => {
   const prompt = filledTemplate(".agents/templates/planner-handoff.md", {
     DECISION: "where the copy lives",
     SCOPE: "the card only",
-    DISCOVERY: "read the renderer",
+    DISCOVERY: "example/card-renderer.js:234 renders the unavailable-state shell; unresolved gaps: none",
     JUDGMENT: "placement",
     DELIVERABLE: "a plan",
     STOP_CONDITION: "plan delivered in full",
