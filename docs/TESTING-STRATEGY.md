@@ -90,9 +90,9 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
 - Keep an expensive fixture alive across related assertions only when isolation is proven and a failure still
   identifies the broken claim; construction-asserting evidence keeps fresh fixtures, per
   [Test economics](CODING-STANDARDS.md#test-economics) in CODING-STANDARDS.md.
-- Cleanup belongs to the disposable project teardown that `npm run verify:access` starts and disposes of; a
-  journey deletes nothing of its own, a failed attempt keeps its rows until that teardown, and synthetic
-  identities carry no credentials or sessions.
+- Cleanup belongs to the teardown of the disposable project that `npm run verify:access` starts:
+  explicit Supabase stop, or disposal of the GitHub-hosted runner; a journey deletes nothing of its own, a failed
+  attempt keeps its rows until that teardown, and synthetic identities carry no credentials or sessions.
 - Before running a temporary test configuration, inspect the runner's selected list and correct it before
   execution.
 

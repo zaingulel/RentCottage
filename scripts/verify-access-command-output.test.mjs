@@ -34,6 +34,7 @@ describe("access verification command", () => {
           cwd: process.cwd(),
           env: {
             ...process.env,
+            GITHUB_ACTIONS: "false",
             PATH: emptyPath,
             SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
             TMPDIR: emptyPath,
@@ -78,6 +79,7 @@ setTimeout(() => {
           cwd: process.cwd(),
           env: {
             ...process.env,
+            GITHUB_ACTIONS: "false",
             PATH: stateRoot,
             SUPABASE_LOCAL_PROJECT: "rentcottage-verification",
             TMPDIR: stateRoot,
@@ -125,6 +127,7 @@ setInterval(() => {}, 1000);
           cwd: process.cwd(),
           env: {
             ...process.env,
+            GITHUB_ACTIONS: "false",
             OUTPUT_READY: ready,
             OUTPUT_TOKEN: token,
             PATH: stateRoot,

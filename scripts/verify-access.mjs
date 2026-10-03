@@ -688,6 +688,10 @@ export async function main(
     SUPABASE_TELEMETRY_DISABLED: "1",
     DO_NOT_TRACK: "1",
   };
+  const disposableCi =
+    environment.GITHUB_ACTIONS === "true" &&
+    environment.RUNNER_ENVIRONMENT === "github-hosted";
+  let freshStart = false;
   let started = false;
   let startupAttempted = false;
   let exitCode = 0;
@@ -824,6 +828,27 @@ export async function main(
   delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
 
   const verify = async () => {
+    if (disposableCi) {
+      freshStart = true;
+      // Empty inventory means start builds a new database with migrations and seed; any retained resource requires reset.
+      for (const inventoryArgs of [
+        ["container", "ls", "--all", "--quiet"],
+        ["volume", "ls", "--quiet"],
+      ]) {
+        const inventory = await execute("docker", inventoryArgs, {
+          encoding: "utf8",
+          stdio: "pipe",
+        });
+        if (inventory.status !== 0 || typeof inventory.stdout !== "string") {
+          if (!interruptedSignal)
+            stderr(
+              `Unable to verify Docker ${inventoryArgs[0]} inventory. Check Docker daemon access before retrying hosted verification.`,
+            );
+          return inventory.status || 1;
+        }
+        freshStart = freshStart && !inventory.stdout.trim();
+      }
+    }
     startupAttempted = true;
     let result = await execute(
       "npx",
@@ -864,11 +889,13 @@ export async function main(
     }
     started = true;
 
-    result = await execute(
-      "npx",
-      supabaseArguments(["supabase", "db", "reset", "--local"]),
-    );
-    if (result.status !== 0) return result.status;
+    if (!freshStart) {
+      result = await execute(
+        "npx",
+        supabaseArguments(["supabase", "db", "reset", "--local"]),
+      );
+      if (result.status !== 0) return result.status;
+    }
 
     // The declared schema files must describe exactly what the migration chain builds; any diff is drift.
     const verifyDeclaredSchema = async () => {
@@ -1331,6 +1358,7 @@ export async function main(
 
   let retainedResources = false;
   let failedCleanup = false;
+  let stopDeferred = false;
   let verificationThrew = false;
   try {
     exitCode = await verify();
@@ -1385,7 +1413,10 @@ export async function main(
             ownershipOutcome,
           );
         }
-        if (!retainedResources) {
+        if (!retainedResources && disposableCi) {
+          // Hosted runner disposal owns resource teardown.
+          stopDeferred = true;
+        } else if (!retainedResources) {
           const stopped = await execute(
             "npx",
             supabaseArguments([
@@ -1435,22 +1466,24 @@ export async function main(
     } finally {
       process.off("SIGINT", handleSigint);
       process.off("SIGTERM", handleSigterm);
-      const cleanupReason =
-        retainedResources || failedCleanup
-          ? "Exact cleanup could not be completed; resources may be retained."
+      const cleanupFailed = retainedResources || failedCleanup;
+      const cleanupReason = cleanupFailed
+        ? "Exact cleanup could not be completed; resources may be retained."
+        : stopDeferred
+          ? "Supabase stop is deferred to disposal of the GitHub-hosted runner."
           : null;
       const observedCleanupMs = finishTiming(
         cleanupStart,
         "outer-cleanup",
         "shared-cleanup",
         null,
-        { type: "exit", status: cleanupReason ? 1 : 0 },
+        { type: "exit", status: cleanupFailed ? 1 : 0 },
         true,
       );
       finishLifecycle(
         verificationThrew || failedCleanup ? 1 : exitCode,
         interruptedSignal,
-        cleanupReason ? null : observedCleanupMs,
+        cleanupFailed ? null : observedCleanupMs,
         cleanupReason,
       );
     }

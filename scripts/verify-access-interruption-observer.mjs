@@ -373,6 +373,7 @@ if (args[1] === "status") {
         cwd: process.cwd(),
         env: {
           ...process.env,
+          GITHUB_ACTIONS: "false",
           ACCESS_INTERRUPTION_FIXTURE: fixtureProcess,
           ACCESS_INTERRUPTION_DESCENDANT_BEHAVIOR: descendantBehavior,
           ACCESS_INTERRUPTION_HANG_CLEANUP: hangCleanup ? "1" : "0",

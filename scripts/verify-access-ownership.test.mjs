@@ -224,54 +224,65 @@ describe("access verification command", () => {
   });
 
   it("refuses to reset, modify, browse, or stop a foreign local project", async () => {
-    const run = vi.fn((command, args) => ({
-      status: 0,
-      stdout:
-        command === "docker" && args[0] === "inspect"
-          ? "rentcottage-verification|/tmp/another-checkout\n"
-          : "",
-    }));
-    const removeTemp = vi.fn();
-    const stderr = vi.fn();
+    for (const environment of [
+      {},
+      { GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted" },
+    ]) {
+      const run = vi.fn((command, args) => ({
+        status: 0,
+        stdout:
+          command === "docker" && args[0] === "inspect"
+            ? "rentcottage-verification|/tmp/another-checkout\n"
+            : "",
+      }));
+      const removeTemp = vi.fn();
+      const stderr = vi.fn();
 
-    expect(
-      await mainWithPreparedProject(["--browser"], {
-        environment: {},
-        makeTemp: () => "/tmp/access-docker",
-        removeTemp,
-        run,
-        stderr,
-        workingDirectory: "/tmp/this-checkout",
-      }),
-    ).toBe(1);
-    expect(commands(run)).toEqual([
-      [
-        "npx",
+      expect(
+        await mainWithPreparedProject(["--browser"], {
+          environment,
+          makeTemp: () => "/tmp/access-docker",
+          removeTemp,
+          run,
+          stderr,
+          workingDirectory: "/tmp/this-checkout",
+        }),
+      ).toBe(1);
+      expect(commands(run)).toEqual([
+        ...(environment.RUNNER_ENVIRONMENT === "github-hosted"
+          ? [
+              ["docker", ["container", "ls", "--all", "--quiet"]],
+              ["docker", ["volume", "ls", "--quiet"]],
+            ]
+          : []),
         [
-          "supabase",
-          "start",
-          "-x",
-          "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
-          "--workdir",
-          "/tmp/access-docker/project",
+          "npx",
+          [
+            "supabase",
+            "start",
+            "-x",
+            "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
+            "--workdir",
+            "/tmp/access-docker/project",
+          ],
         ],
-      ],
-      [
-        "docker",
         [
-          "inspect",
-          "supabase_db_rentcottage-verification",
-          "--format",
-          '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+          "docker",
+          [
+            "inspect",
+            "supabase_db_rentcottage-verification",
+            "--format",
+            '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+          ],
         ],
-      ],
-    ]);
-    expect(stderr).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "does not belong to this disposable local checkout",
-      ),
-    );
-    expect(removeTemp).not.toHaveBeenCalled();
+      ]);
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "does not belong to this disposable local checkout",
+        ),
+      );
+      expect(removeTemp).not.toHaveBeenCalled();
+    }
   });
 
   it("rejects a malformed local project before creating temp state or starting a subprocess", async () => {
