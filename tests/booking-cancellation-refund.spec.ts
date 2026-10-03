@@ -1,7 +1,7 @@
 import { expect, test, type Page, type BrowserContext } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import * as OTPAuth from "otpauth";
@@ -216,13 +216,10 @@ async function administrator(page: Page) {
   await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
   return data.user.id;
 }
-async function snapshots(
+async function assertResponsiveDetails(
   page: Page,
   role: "customer" | "cottage_owner" | "platform_administrator",
-  project: string,
-  label: string,
 ) {
-  mkdirSync(".agent-evidence/visible-screenshots", { recursive: true });
   for (const locale of ["en", "ar", "ckb"] as const) {
     const route =
       role === "customer"
@@ -239,21 +236,6 @@ async function snapshots(
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     ).toBe(true);
-    await page.screenshot({
-      path: `.agent-evidence/visible-screenshots/${project}-${label}-${locale}.png`,
-      fullPage: true,
-    });
-    if (role === "cottage_owner")
-      await page.screenshot({
-        path: `.agent-evidence/visual/${project}-${label}-${locale}.png`,
-        fullPage: true,
-      });
-    if (role === "platform_administrator")
-      await page
-        .getByRole("region", { name: messages[locale].title })
-        .screenshot({
-          path: `.agent-evidence/visible-screenshots/${project}-${label}-${locale}-financial.png`,
-        });
   }
 }
 test.describe("retained cancellation and refund controls", () => {
@@ -305,7 +287,7 @@ test.describe("retained cancellation and refund controls", () => {
     page,
     browser,
     baseURL,
-  }, info) => {
+  }) => {
     await administrator(page);
     await page.goto(`/en/administrator/payments/${reference}`);
     const p = payoutMessages.en;
@@ -340,12 +322,7 @@ test.describe("retained cancellation and refund controls", () => {
         `select count(*) from public.payment_provider_operations where operation_kind='settlement'`,
       ),
     ).toBe("0");
-    await snapshots(
-      page,
-      "platform_administrator",
-      info.project.name,
-      "payout-held",
-    );
+    await assertResponsiveDetails(page, "platform_administrator");
     await page.goto(`/en/administrator/payments/${reference}`);
     await command("release_hold", "PRIVATE review complete");
     await expect(page.getByText(p.clear, { exact: true })).toBeVisible();
@@ -356,12 +333,7 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(page.getByTestId("settlement-recovery")).toContainText(
       p.noDebit,
     );
-    await snapshots(
-      page,
-      "platform_administrator",
-      info.project.name,
-      "payout-settled",
-    );
+    await assertResponsiveDetails(page, "platform_administrator");
     const ownerContext = await browser.newContext({
       baseURL,
       viewport: page.viewportSize() ?? undefined,
@@ -377,11 +349,6 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(summary).toContainText("Expected unpaid payoutsIQD 0");
       await ownerPage.reload();
       await expect(summary).toContainText("Paid payoutsIQD 99,000");
-      mkdirSync(".agent-evidence/visual", { recursive: true });
-      await ownerPage.screenshot({
-        path: ".agent-evidence/visual/worker-real-owner-paid-history.png",
-        fullPage: true,
-      });
       await ownerPage.goto(`/en/owner/booking-requests/${reference}`);
       await expect(
         ownerPage.getByRole("region", { name: earningsMessages.en.title }),
@@ -393,12 +360,7 @@ test.describe("retained cancellation and refund controls", () => {
         ownerPage.getByRole("region", { name: p.title }),
       ).toHaveCount(0);
       await expect(ownerPage.getByTestId("settlement-recovery")).toHaveCount(0);
-      await snapshots(
-        ownerPage,
-        "cottage_owner",
-        info.project.name,
-        "owner-paid-earnings",
-      );
+      await assertResponsiveDetails(ownerPage, "cottage_owner");
     } finally {
       await ownerContext.close();
     }
@@ -406,7 +368,7 @@ test.describe("retained cancellation and refund controls", () => {
   test("customer cancels with the disclosed rule and returns through retained history", async ({
     page,
     baseURL,
-  }, info) => {
+  }) => {
     await participant(page.context(), customer, baseURL);
     await page.goto(`/en/booking-requests/${reference}`);
     await expect(
@@ -448,7 +410,7 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: "Cancelled booking", exact: true }),
     ).toBeVisible();
-    await snapshots(page, "customer", info.project.name, "customer-cancelled");
+    await assertResponsiveDetails(page, "customer");
     expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     await page.goto(`/en/booking-requests/${reference}`);
     await expect(page.getByTestId("verified-refund")).toContainText(
@@ -461,7 +423,7 @@ test.describe("retained cancellation and refund controls", () => {
   test("owner must supply a reason and retains the no-payout cancellation outcome", async ({
     page,
     baseURL,
-  }, info) => {
+  }) => {
     await participant(page.context(), owner, baseURL);
     await page.goto(`/ar/owner/booking-requests/${reference}`);
     const form = page.getByRole("form", { name: messages.ar.cancel });
@@ -483,18 +445,13 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByText("PRIVATE owner operational reason", { exact: true }),
     ).toHaveCount(0);
-    await snapshots(
-      page,
-      "cottage_owner",
-      info.project.name,
-      "owner-cancelled",
-    );
+    await assertResponsiveDetails(page, "cottage_owner");
   });
   test("administrator approves exact partial exceptions then cancels with a privileged reason", async ({
     page,
     browser,
     baseURL,
-  }, info) => {
+  }) => {
     await administrator(page);
     const ownerContext = await browser.newContext({
       baseURL,
@@ -544,12 +501,7 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(ownerPage.getByTestId("verified-refund")).toContainText(
         "IQD 20,000.001",
       );
-      await snapshots(
-        ownerPage,
-        "cottage_owner",
-        info.project.name,
-        "owner-partial-returned",
-      );
+      await assertResponsiveDetails(ownerPage, "cottage_owner");
       await page.reload();
       form = page.getByRole("form", { name: messages.en.exception });
       await form
@@ -587,12 +539,7 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(
         page.getByText(messages.ckb.noPayout, { exact: true }),
       ).toBeVisible();
-      await snapshots(
-        page,
-        "platform_administrator",
-        info.project.name,
-        "administrator-cancelled",
-      );
+      await assertResponsiveDetails(page, "platform_administrator");
       await ownerPage.goto(`${baseURL}/en/owner/booking-requests/${reference}`);
       await expect(
         ownerPage.getByText("PRIVATE administrator safety reason", {

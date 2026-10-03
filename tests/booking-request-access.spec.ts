@@ -193,10 +193,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(
     page.getByRole("heading", { name: "أرسل طلب الحجز" }),
   ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("ar-booking-request-form.png"),
-    fullPage: true,
-  });
   await page.getByRole("banner").getByRole("link", { name: "English" }).click();
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
@@ -230,10 +226,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
   const unpaidResponseBody = await unpaidResponse!.text();
   expect(unpaidResponseBody).not.toContain(exactAddress);
   expect(unpaidResponseBody).not.toContain(ownerPhone);
-  await page.screenshot({
-    path: testInfo.outputPath("en-booking-request-pending.png"),
-    fullPage: true,
-  });
   const ownerContext = await browser.newContext({
     baseURL: new URL(page.url()).origin,
   });
@@ -271,10 +263,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(ownerNotice).toContainText("House Rules");
   await expect(ownerNotice).not.toContainText(/terms version|policy version/i);
   await expect(ownerNotice).toContainText("(Cottage Shift)");
-  await ownerPage.screenshot({
-    path: testInfo.outputPath("en-owner-booking-request-notice.png"),
-    fullPage: true,
-  });
 
   await page.getByRole("banner").getByRole("link", { name: "Support" }).click();
   await expect(page.getByRole("status")).toContainText(
@@ -340,27 +328,15 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       ownerPage.getByText("إشعار الحالة", { exact: true }),
     ).toBeVisible();
-    await ownerPage.screenshot({
-      path: testInfo.outputPath("ar-owner-booking-request-declined.png"),
-      fullPage: true,
-    });
     await page.goto(`/ar/booking-requests/${requestReference}`);
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expect(
       page.getByText("البيت غير متاح", { exact: true }),
     ).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("ar-customer-booking-request-declined.png"),
-      fullPage: true,
-    });
     const secondReference = await submitAnotherRequest("ckb");
     await page.goto(`/ckb/booking-requests/${secondReference}`);
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expect(page.getByText("چاوەڕێ", { exact: true })).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("ckb-customer-booking-request-pending.png"),
-      fullPage: true,
-    });
     await page
       .getByRole("button", { name: "کشاندنەوەی داواکاری چاوەڕێ" })
       .click();
@@ -369,10 +345,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       page.getByText("ئاگادارکردنەوەی دۆخ", { exact: true }),
     ).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("ckb-customer-booking-request-withdrawn.png"),
-      fullPage: true,
-    });
   } else if (testInfo.project.name === "desktop") {
     await ownerNotice
       .getByLabel("Decline reason")
@@ -390,10 +362,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       ownerPage.getByText("Status notification", { exact: true }),
     ).toBeVisible();
-    await ownerPage.screenshot({
-      path: testInfo.outputPath("en-owner-booking-request-declined.png"),
-      fullPage: true,
-    });
     await page.goto(`/en/booking-requests/${requestReference}`);
     await expect(
       page.getByText("Cannot accommodate this request", { exact: true }),
@@ -403,10 +371,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
         exact: true,
       }),
     ).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("en-customer-booking-request-declined.png"),
-      fullPage: true,
-    });
 
     const processingReference = await submitAnotherRequest("en");
     await page.goto(`/en/booking-requests/${processingReference}`);
@@ -420,10 +384,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
       .getByRole("button", { name: "Withdraw pending request" })
       .click();
     await expect(page.getByText("Processing", { exact: true })).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("en-customer-booking-request-processing.png"),
-      fullPage: true,
-    });
     await expect(page.getByText("Withdrawn", { exact: true })).toBeVisible();
     const resubmittedReference = await submitAnotherRequest("en");
     await page.goto(`/en/booking-requests/${resubmittedReference}`);
@@ -661,13 +621,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
         if (state !== "paid-confirmed" && state !== "paid-confirmed-incomplete")
           await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
         for (const viewport of [
-          { name: "mobile", width: 390, height: 844 },
-          { name: "desktop", width: 1440, height: 1000 },
+          { width: 390, height: 844 },
+          { width: 1440, height: 1000 },
         ]) {
-          for (const [role, surface] of [
-            ["customer", customerView],
-            ["owner", ownerView],
-          ] as const) {
+          for (const surface of [customerView, ownerView]) {
             await surface.setViewportSize({
               width: viewport.width,
               height: viewport.height,
@@ -680,12 +637,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
                   document.documentElement.clientWidth,
               ),
             ).toBe(true);
-            await surface.screenshot({
-              path: testInfo.outputPath(
-                `${role}-${copy.locale}-${viewport.name}-${state}-${reference}.png`,
-              ),
-              fullPage: true,
-            });
           }
         }
         // Drain screenshot-page requests before closing their local proxy streams.

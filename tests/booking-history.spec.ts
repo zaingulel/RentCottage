@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { build } from "esbuild";
-import { mkdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
@@ -98,17 +98,6 @@ test("complete customer and owner history stays role-specific, private, translat
         () => document.documentElement.scrollWidth > window.innerWidth,
       );
       expect(overflow).toBe(false);
-      await page.screenshot({
-        path: testInfo.outputPath(`${locale}-${role}-history.png`),
-        fullPage: true,
-      });
-      if (role === "cottage_owner") {
-        mkdirSync(".agent-evidence/visual", { recursive: true });
-        await page.screenshot({
-          path: `.agent-evidence/visual/${testInfo.project.name}-${locale}-owner-earnings-history.png`,
-          fullPage: true,
-        });
-      }
     }
   }
 });
@@ -295,10 +284,6 @@ test("same-phone reauthentication restores the same real history and owner unpai
         `select count(*) from auth.users where regexp_replace(phone,'^\\+','')=regexp_replace('${customerPhone}','^\\+','')`,
       ),
     ).toBe("1");
-    await returningPage.screenshot({
-      path: testInfo.outputPath("returning-customer-history.png"),
-      fullPage: true,
-    });
     await returningContext.close();
 
     prepareLaterSignIn(ownerId, ownerPhone);
@@ -338,11 +323,6 @@ test("same-phone reauthentication restores the same real history and owner unpai
     await expect(unpaidItem).toContainText(
       "Payment has not been collected for this request, so it has no earnings yet.",
     );
-    mkdirSync(".agent-evidence/visual", { recursive: true });
-    await ownerPage.screenshot({
-      path: ".agent-evidence/visual/real-owner-unavailable-history.png",
-      fullPage: true,
-    });
     await unpaidLink.click();
     const card = ownerPage.getByRole("article", { name: unpaidReference });
     await expect(card).toContainText("Returning Customer");
@@ -350,10 +330,6 @@ test("same-phone reauthentication restores the same real history and owner unpai
     const pageText = await ownerPage.locator("body").innerText();
     expect(pageText).not.toContain("Current private address");
     expect(pageText).not.toContain(customerPhone);
-    await ownerPage.screenshot({
-      path: testInfo.outputPath("owner-unpaid-detail.png"),
-      fullPage: true,
-    });
     await ownerContext.close();
   } finally {
     harness.runSql(cleanup);

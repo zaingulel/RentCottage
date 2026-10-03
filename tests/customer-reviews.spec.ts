@@ -819,10 +819,6 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
       locale === "en" ? "ltr" : "rtl",
     );
   }
-  await page.screenshot({
-    path: testInfo.outputPath("customer-review-submitted.png"),
-    fullPage: true,
-  });
 
   const administrator = await provisionAdministrator(
     `customer-reviews-${testInfo.project.name}`,
@@ -904,10 +900,6 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await page.reload();
   await expect(review.getByText(original)).toBeVisible();
   await expect(review.getByText(reason)).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("customer-review-hidden-audit.png"),
-    fullPage: true,
-  });
 
   const hiddenAuthorContext = await browser.newContext({
     baseURL: new URL(page.url()).origin,
@@ -1074,12 +1066,6 @@ test.describe("administrator review return", () => {
             "dir",
             copy.direction,
           );
-          await page.screenshot({
-            path: testInfo.outputPath(
-              `${copy.locale}-aal1-administrator-review-return-denied.png`,
-            ),
-            fullPage: true,
-          });
 
           const recovery = page.getByRole("link", {
             name: copy.accessAction,
@@ -1110,12 +1096,6 @@ test.describe("administrator review return", () => {
           page.getByText(protectedReview.ids.bookingReference),
         ).toHaveCount(0);
         await expect(page.getByText(protectedReviewBody)).toHaveCount(0);
-        await page.screenshot({
-          path: testInfo.outputPath(
-            `${copy.locale}-${entry}-administrator-review-return-invalid-code.png`,
-          ),
-          fullPage: true,
-        });
 
         await page.getByLabel(copy.mfaCode).fill(
           new OTPAuth.TOTP({
@@ -1137,12 +1117,6 @@ test.describe("administrator review return", () => {
           .filter({ hasText: protectedReview.ids.bookingReference });
         await expect(protectedRow).toHaveCount(1);
         await expect(protectedRow).toContainText(protectedReviewBody);
-        await page.screenshot({
-          path: testInfo.outputPath(
-            `${copy.locale}-${entry}-administrator-review-return-queue.png`,
-          ),
-          fullPage: true,
-        });
       });
     }
   }

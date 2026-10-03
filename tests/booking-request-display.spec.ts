@@ -254,10 +254,6 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
         expect(dimensions.cardContent).toBeLessThanOrEqual(
           dimensions.cardWidth,
         );
-        await page.screenshot({
-          path: testInfo.outputPath(`${role}-${locale.name}-${status}.png`),
-          fullPage: true,
-        });
       }
     }
     for (const recovery of ["available", "processing", "retryable"] as const) {
@@ -290,12 +286,6 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
             document.documentElement.clientWidth,
         ),
       ).toBe(true);
-      await page.screenshot({
-        path: testInfo.outputPath(
-          `customer-${locale.name}-recovery-${recovery}.png`,
-        ),
-        fullPage: true,
-      });
     }
   }
 });

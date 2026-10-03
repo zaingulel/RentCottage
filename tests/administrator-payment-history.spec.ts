@@ -165,10 +165,6 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
   const aal1Page = await page.context().newPage();
   await aal1Page.goto(`/en/administrator/payments/${reference}`);
   await expect(aal1Page.getByText(/assurance level 2/i)).toBeVisible();
-  await aal1Page.screenshot({
-    path: testInfo.outputPath("en-payment-history-aal1.png"),
-    fullPage: true,
-  });
   await aal1Page.close();
 
   const code = new OTPAuth.TOTP({
@@ -227,10 +223,6 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
     await expect(page.getByText("Sensitive Customer")).toHaveCount(0);
     await expect(page.getByText("merchant-secret-value")).toHaveCount(0);
     await expect(page.getByText("raw-provider-token")).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath(`${locale}-payment-history.png`),
-      fullPage: true,
-    });
     await page.goto(`/${locale}/administrator/payments/${supportReference}`);
     const supportLabel = {
       en: "Internal support reference",
@@ -248,12 +240,6 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
     await expect(page.locator("main")).not.toContainText(
       /fixture-request-|fixture-reference-|fixture-movement-/,
     );
-    await page.screenshot({
-      path: testInfo.outputPath(
-        `${locale}-payment-history-internal-support.png`,
-      ),
-      fullPage: true,
-    });
   }
 
   // Fail only the read RPC in the guarded disposable DB. Restore its exact
@@ -283,10 +269,6 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
       await expect(
         page.getByRole("main").getByRole("alert").getByRole("link"),
       ).toHaveCount(0);
-      await page.screenshot({
-        path: testInfo.outputPath(`${locale}-payment-history-error.png`),
-        fullPage: true,
-      });
     }
   } finally {
     harness.runSql(readDefinition);

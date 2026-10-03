@@ -123,10 +123,6 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(message.getByRole("status")).toContainText(
     "Translation reported.",
   );
-  await page.screenshot({
-    path: testInfo.outputPath("en-messaging-translation.png"),
-    fullPage: true,
-  });
 
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -167,8 +163,4 @@ test("booking customer keeps the original while using fictional translations acr
   ).toBeLessThanOrEqual(
     await page.locator("body").evaluate((body) => body.clientWidth),
   );
-  await page.screenshot({
-    path: testInfo.outputPath("ckb-messaging-translation.png"),
-    fullPage: true,
-  });
 });

@@ -1,7 +1,7 @@
 import { expect, test, type Page, type BrowserContext } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import * as OTPAuth from "otpauth";
@@ -258,17 +258,15 @@ async function privatePage(
   }
   return page.getByRole("region", { name: lifecycle.en.title });
 }
-async function screenshots(
+async function assertLifecycleViews(
   page: Page,
   role: "customer" | "cottage_owner" | "platform_administrator",
   status: "completed" | "incident_pending" | "no_show",
-  label: string,
 ) {
-  mkdirSync(".agent-evidence/lifecycle-screenshots", { recursive: true });
-  for (const [size, viewport] of [
-    ["mobile", { width: 393, height: 851 }],
-    ["desktop", { width: 1440, height: 1000 }],
-  ] as const) {
+  for (const viewport of [
+    { width: 393, height: 851 },
+    { width: 1440, height: 1000 },
+  ]) {
     await page.setViewportSize(viewport);
     for (const locale of ["en", "ar", "ckb"] as const) {
       await page.goto(route(role, locale));
@@ -285,13 +283,6 @@ async function screenshots(
           () => document.documentElement.scrollWidth <= window.innerWidth,
         ),
       ).toBe(true);
-      await page.screenshot({
-        path: `.agent-evidence/lifecycle-screenshots/${label}-${size}-${locale}.png`,
-        fullPage: true,
-      });
-      await region.screenshot({
-        path: `.agent-evidence/lifecycle-screenshots/${label}-${size}-${locale}-lifecycle.png`,
-      });
     }
   }
 }
@@ -384,7 +375,7 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
     await expect(
       page.getByRole("link", { name: /Preserved Cottage/ }),
     ).toContainText(lifecycle.en.completed);
-    await screenshots(page, "customer", "completed", "customer-completed");
+    await assertLifecycleViews(page, "customer", "completed");
     const adminContext = await browser.newContext({ baseURL });
     const ownerContext = await browser.newContext({ baseURL });
     try {
@@ -475,12 +466,7 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
     });
     expect(after.original).toEqual(before.original);
     await privatePage(page, route("cottage_owner"), "PRIVATE owner incident39");
-    await screenshots(
-      page,
-      "cottage_owner",
-      "incident_pending",
-      "owner-incident",
-    );
+    await assertLifecycleViews(page, "cottage_owner", "incident_pending");
     const customerContext = await browser.newContext({ baseURL });
     const adminContext = await browser.newContext({ baseURL });
     try {
@@ -547,12 +533,7 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
     expect(after.original).toEqual(before.original);
     await tick(baseURL);
     expect(observe()).toEqual(after);
-    await screenshots(
-      page,
-      "platform_administrator",
-      "no_show",
-      "administrator-no-show",
-    );
+    await assertLifecycleViews(page, "platform_administrator", "no_show");
     const customerContext = await browser.newContext({ baseURL });
     try {
       await participant(customerContext, customer, baseURL);
