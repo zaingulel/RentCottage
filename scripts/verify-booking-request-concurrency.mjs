@@ -119,7 +119,9 @@ try {
       }
     }
     if (!(await raceClockAbsent())) {
-      throw new Error("The disposable Booking Request race clock was not removed.");
+      throw new Error(
+        "The disposable Booking Request race clock was not removed.",
+      );
     }
   }
 
