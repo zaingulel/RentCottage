@@ -460,7 +460,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         paymentDeadline: "کاتی کۆتایی پارەدان",
       },
     ] as const;
-    async function captureViews(
+    async function assertPaymentViews(
       state:
         | "capture-processing"
         | "paid-confirmed"
@@ -639,7 +639,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
             ).toBe(true);
           }
         }
-        // Drain screenshot-page requests before closing their local proxy streams.
+        // Drain page requests before closing their local proxy streams.
         await Promise.all([
           customerView.waitForLoadState("networkidle"),
           ownerView.waitForLoadState("networkidle"),
@@ -648,7 +648,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         await ownerView.close();
       }
     }
-    await captureViews("capture-processing");
+    await assertPaymentViews("capture-processing");
     const harness = createLocalSupabaseConcurrencyHarness();
     harness.guardDisposableLocalDatabase();
     const notificationSelector = harness.runSql(
@@ -708,7 +708,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         .filter((n) => n.kind === "preparation_reminder")
         .every((n) => typeof n.receiptId === "string"),
     ).toBe(true);
-    await captureViews("paid-confirmed");
+    await assertPaymentViews("paid-confirmed");
     const originalPrivateDirections = JSON.parse(
       harness.runSql(
         `select to_jsonb(private_directions) from public.owner_application_cottage_profiles where id='${profile.id}';`,
@@ -718,7 +718,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       harness.runSql(
         `update public.owner_application_cottage_profiles set private_directions=null where id='${profile.id}';`,
       );
-      await captureViews("paid-confirmed-incomplete");
+      await assertPaymentViews("paid-confirmed-incomplete");
     } finally {
       const restoredPrivateDirections =
         originalPrivateDirections === null
@@ -969,7 +969,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     // The live owner list has refreshed through both capture outcomes. Paid
     // access details are fetched on explicit navigation, not by list prefetch.
     expect(ownerPaidDetailPrefetches).toEqual([]);
-    await captureViews("payment-required-open", failureReference);
+    await assertPaymentViews("payment-required-open", failureReference);
     expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     expect(observeFailure()).toEqual(terminal);
 
@@ -996,7 +996,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await expect(failureNotice.getByRole("status")).toContainText(
         "deadline has passed",
       );
-      await captureViews("payment-required-elapsed", failureReference);
+      await assertPaymentViews("payment-required-elapsed", failureReference);
       expect(observeFailure()).toEqual(terminal);
     } finally {
       harness.runSql(paymentEvidenceSql + windowDefinition);
@@ -1196,7 +1196,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
           `select count(*)||':'||sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=ledger.id)) from public.payment_provider_operations ledger join public.booking_request_payment_recovery_attempts attempts on attempts.id=ledger.recovery_attempt_id where attempts.booking_request_id='${failureId}';`,
       ),
     ).toBe("3:3");
-    await captureViews("paid-confirmed", failureReference);
+      await assertPaymentViews("paid-confirmed", failureReference);
 
     // A separate future Shift proves unpaid expiry without changing either confirmed booking above.
     const expiryDay = serviceDay(offset + 1);
@@ -1342,7 +1342,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         "deadline has passed",
         { timeout: 15000 },
       );
-      await captureViews("payment-required-elapsed", expiryReference);
+      await assertPaymentViews("payment-required-elapsed", expiryReference);
       harness.runSql(
         paymentEvidenceSql +
           `set role service_role;select pg_temp.expiry_execute(pg_temp.expiry_prepare('${expiryId}','${identity}',jsonb_build_object('action','release','authorizationLifecycleId',public.get_booking_request_payment_facts('${expiryId}')->>'originalLifecycleId','recoveryOperationId',null))->'permit','indeterminate','expiry-release-indeterminate');`,
@@ -1392,7 +1392,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
           (unit: { id: string }) => unit.id === shift.id,
         ).calendarState,
       ).toBe("pending_hold");
-      await captureViews("payment-expiry-quarantined", expiryReference);
+      await assertPaymentViews("payment-expiry-quarantined", expiryReference);
       // The actual scheduled handler cannot restart an uncertain release after quarantine.
       harness.runSql(paymentEvidenceSql + clocked[4]);
       expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
@@ -1400,7 +1400,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         "Payment needs review",
       );
       expect(await expiryGraph()).toEqual(attention);
-      await captureViews("payment-expiry-quarantined", expiryReference);
+      await assertPaymentViews("payment-expiry-quarantined", expiryReference);
       expect(observeFailure()).toEqual(recovered);
     } finally {
       for (const definition of definitions)
