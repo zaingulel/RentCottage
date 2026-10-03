@@ -113,8 +113,11 @@ move under [ADR 0002](adr/0002-database-integrity-application-orchestration.md) 
 keeps its Integrity Core in the declaration and migration, proves outcome selection with Vitest at the
 application-service seam and keeps the real PostgreSQL observers for what stays in the database.
 
-The database group runs `supabase db diff` before the SQL tests and fails on any drift between the declared schema
-and the migration chain. Two declarations keep their exact wording for that baseline to stay empty: the migrations
+The unpartitioned local database group runs `supabase db diff` before the SQL tests and fails on any drift between
+the declared schema and the migration chain. Hosted verification runs the drift check in `booking-request` before
+its fixtures, alongside request and lifecycle concurrency; `database-core` runs the SQL tests and the remaining
+core checks. Capture and payment-required expiry keep their separate portions. Two declarations keep their exact
+wording for that baseline to stay empty: the migrations
 revoke the default `REFERENCES`, `TRIGGER`, `TRUNCATE` and `MAINTAIN` table privileges from the API roles, so
 `50_privileges.sql` repeats those revokes explicitly, and `cottage_profile_source_text_lengths` is written in the
 migration's `between` form because the diff engine compares constraint text. Direct changes made in Studio, the

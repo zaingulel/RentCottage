@@ -144,28 +144,35 @@ describe("access verification command", () => {
       ["scripts/prepare-access-test.mjs", "create", "mobile", "worker"],
     ];
     const longPrograms = new Map([
-      ["booking-request", "scripts/verify-booking-request-concurrency.mjs"],
+      [
+        "booking-request",
+        [
+          "scripts/verify-booking-request-concurrency.mjs",
+          "scripts/verify-booking-request-lifecycle-concurrency.mjs",
+        ],
+      ],
       [
         "booking-capture",
-        "scripts/verify-booking-request-capture-concurrency.mjs",
+        ["scripts/verify-booking-request-capture-concurrency.mjs"],
       ],
       [
         "payment-required-expiry",
-        "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+        ["scripts/verify-booking-request-payment-required-expiry-concurrency.mjs"],
       ],
     ]);
     expect(observed.get("database-core:")).toEqual([
-      ...databasePreflightCommands,
+      databasePreflightCommands[1],
       statusCommand,
       ...databaseCheckCommands.filter(
-        ([, args]) => ![...longPrograms.values()].includes(args[0]),
+        ([, args]) => ![...longPrograms.values()].flat().includes(args[0]),
       ),
     ]);
-    for (const [partition, script] of longPrograms) {
+    for (const [partition, scripts] of longPrograms) {
       expect(observed.get(`${partition}:`)).toEqual([
+        ...(partition === "booking-request" ? [databasePreflightCommands[0]] : []),
         statusCommand,
         partition === "booking-request" ? bookingRequestFixture : mobileFixture,
-        ["node", [script]],
+        ...scripts.map((script) => ["node", [script]]),
       ]);
     }
     const failedBookingRequestPreparation = ownedRun((command, args) => ({
@@ -212,19 +219,23 @@ describe("access verification command", () => {
           args[0] === "scripts/verify-booking-request-concurrency.mjs",
       ),
     ).toBe(false);
-    const databaseUnion = [
-      ...observed
-        .get("database-core:")
-        .slice(databasePreflightCommands.length + 1),
-      ...[...longPrograms.keys()].map((partition) =>
-        observed.get(`${partition}:`).at(-1),
+    const databaseUnion = ["database-core", ...longPrograms.keys()].flatMap(
+      (partition) =>
+        observed.get(`${partition}:`).filter(
+          ([, args]) =>
+            args[1] !== "status" && args[0] !== "scripts/prepare-access-test.mjs",
+        ),
+    );
+    const completeDatabaseChecks = [
+      ...databasePreflightCommands,
+      ...databaseCheckCommands.filter(
+        ([, args]) => args[0] !== "scripts/prepare-access-test.mjs",
       ),
     ];
-    expect(databaseUnion).toHaveLength(databaseCheckCommands.length);
-    expect(
-      new Set(databaseUnion.map((entry) => JSON.stringify(entry))),
-    ).toEqual(
-      new Set(databaseCheckCommands.map((entry) => JSON.stringify(entry))),
+    const commandOrder = (left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right));
+    expect(databaseUnion.sort(commandOrder)).toEqual(
+      completeDatabaseChecks.sort(commandOrder),
     );
 
     for (const shard of ["1/2", "2/2"]) {

@@ -187,7 +187,12 @@ describe("access verification command", () => {
       const stderr = vi.fn();
       expect(
         await mainWithPreparedProject(["--database"], {
-          environment: { ...hosted, VERIFY_CI_PARTITION: "database-core" },
+          environment: {
+            ...hosted,
+            VERIFY_CI_PARTITION: scenario.sqlFailure
+              ? "database-core"
+              : "booking-request",
+          },
           run,
           stderr,
           stdout: vi.fn(),
@@ -200,14 +205,15 @@ describe("access verification command", () => {
           ((args[1] === "db" && args[2] === "diff") ||
             (args[1] === "test" && args[2] === "db")),
       );
-      expect(preflight).toEqual(
-        scenario.diff ? [declaredSchemaDiffCommand] : databasePreflightCommands,
-      );
+      const expectedPreflight = scenario.sqlFailure
+        ? databasePreflightCommands[1]
+        : declaredSchemaDiffCommand;
+      expect(preflight).toEqual([expectedPreflight]);
       expect(commands(run).slice(0, 5)).toEqual([
         ...inventoryCommands,
         startCommand,
         ownershipCommand,
-        declaredSchemaDiffCommand,
+        expectedPreflight,
       ]);
       expect(run.mock.calls.some(([, args]) => args[2] === "reset")).toBe(
         false,

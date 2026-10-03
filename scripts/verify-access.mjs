@@ -931,15 +931,20 @@ export async function main(
     };
 
     const verifyDatabasePreflight = async () => {
-      const declaredSchemaStatus = await verifyDeclaredSchema();
-      if (declaredSchemaStatus !== 0) return declaredSchemaStatus;
-      result = await execute(
-        "npx",
-        supabaseArguments(["supabase", "test", "db"]),
-      );
-      return result.status;
+      if (!partition || partition === "booking-request") {
+        const declaredSchemaStatus = await verifyDeclaredSchema();
+        if (declaredSchemaStatus !== 0) return declaredSchemaStatus;
+      }
+      if (!partition || partition === "database-core") {
+        result = await execute(
+          "npx",
+          supabaseArguments(["supabase", "test", "db"]),
+        );
+        return result.status;
+      }
+      return 0;
     };
-    if (databaseMode && (!partition || partition === "database-core")) {
+    if (databaseMode) {
       group = "database";
       const preflightStatus = await verifyDatabasePreflight();
       if (preflightStatus !== 0) return preflightStatus;
@@ -1145,18 +1150,24 @@ export async function main(
         if (!bookingConcurrency && script.startsWith("scripts/verify-booking-"))
           continue;
         if (partition) {
-          const selectedScript = {
-            "booking-request": "scripts/verify-booking-request-concurrency.mjs",
-            "booking-capture":
+          const selectedScripts = {
+            "booking-request": [
+              "scripts/verify-booking-request-concurrency.mjs",
+              "scripts/verify-booking-request-lifecycle-concurrency.mjs",
+            ],
+            "booking-capture": [
               "scripts/verify-booking-request-capture-concurrency.mjs",
-            "payment-required-expiry":
+            ],
+            "payment-required-expiry": [
               "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+            ],
           }[partition];
           if (
-            selectedScript
-              ? script !== selectedScript
+            selectedScripts
+              ? !selectedScripts.includes(script)
               : [
                   "scripts/verify-booking-request-concurrency.mjs",
+                  "scripts/verify-booking-request-lifecycle-concurrency.mjs",
                   "scripts/verify-booking-request-capture-concurrency.mjs",
                   "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
                 ].includes(script)
