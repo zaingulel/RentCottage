@@ -1146,31 +1146,28 @@ export async function main(
           env: inventoryConcurrencyEnvironment,
         },
       ];
+      const partitionPrograms = {
+        "booking-request": [
+          "scripts/verify-booking-request-concurrency.mjs",
+          "scripts/verify-booking-request-lifecycle-concurrency.mjs",
+        ],
+        "booking-capture": [
+          "scripts/verify-booking-request-capture-concurrency.mjs",
+        ],
+        "payment-required-expiry": [
+          "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+        ],
+      };
+      const excludedCorePrograms = Object.values(partitionPrograms).flat();
       for (const { script, env } of concurrencyPrograms) {
         if (!bookingConcurrency && script.startsWith("scripts/verify-booking-"))
           continue;
         if (partition) {
-          const selectedScripts = {
-            "booking-request": [
-              "scripts/verify-booking-request-concurrency.mjs",
-              "scripts/verify-booking-request-lifecycle-concurrency.mjs",
-            ],
-            "booking-capture": [
-              "scripts/verify-booking-request-capture-concurrency.mjs",
-            ],
-            "payment-required-expiry": [
-              "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
-            ],
-          }[partition];
+          const selectedScripts = partitionPrograms[partition];
           if (
             selectedScripts
               ? !selectedScripts.includes(script)
-              : [
-                  "scripts/verify-booking-request-concurrency.mjs",
-                  "scripts/verify-booking-request-lifecycle-concurrency.mjs",
-                  "scripts/verify-booking-request-capture-concurrency.mjs",
-                  "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
-                ].includes(script)
+              : excludedCorePrograms.includes(script)
           )
             continue;
         }
@@ -1285,46 +1282,49 @@ export async function main(
       if (workerBuild.status !== 0) return workerBuild.status;
 
       if (partition !== "scheduled") {
-        const workerFiles = [
-          "tests/access.spec.ts",
-          "tests/booking-request-access.spec.ts",
-          "tests/administrator-payment-history.spec.ts",
-          "tests/administrator-records.spec.ts",
-          "tests/booking-cancellation-refund.spec.ts",
-          "tests/messaging.spec.ts",
-          "tests/customer-reviews.spec.ts",
-        ];
-        const selectedWorkerFiles = workerFiles.filter((file) => {
-          if (partition !== "worker") return true;
-          const requestFile =
-            file === "tests/booking-request-access.spec.ts" ||
-            file === "tests/booking-cancellation-refund.spec.ts";
-          return shard === "2/2" ? requestFile : !requestFile;
-        });
-        const workerArgs = ownedJourneysMode
-          ? [
-              "playwright",
-              "test",
-              "tests/access.spec.ts",
-              "--project=worker",
-              "--config=playwright.worker-prebuilt.config.ts",
-              "--workers=1",
-              phase === "retry-proof" ? "--retries=1" : "--retries=0",
-              "--grep",
-              phase === "retry-proof"
-                ? OWNED_SUBMISSION_GREP
-                : OWNED_JOURNEYS_GREP,
-              `--output=playwright-report/owned-worker-${phase}`,
-            ]
-          : [
-              "playwright",
-              "test",
-              ...selectedWorkerFiles,
-              "--project=worker",
-              "--config=playwright.worker-prebuilt.config.ts",
-              "--workers=1",
-              "--output=playwright-report/access-worker",
-            ];
+        let workerArgs;
+        if (ownedJourneysMode) {
+          workerArgs = [
+            "playwright",
+            "test",
+            "tests/access.spec.ts",
+            "--project=worker",
+            "--config=playwright.worker-prebuilt.config.ts",
+            "--workers=1",
+            phase === "retry-proof" ? "--retries=1" : "--retries=0",
+            "--grep",
+            phase === "retry-proof"
+              ? OWNED_SUBMISSION_GREP
+              : OWNED_JOURNEYS_GREP,
+            `--output=playwright-report/owned-worker-${phase}`,
+          ];
+        } else {
+          const workerFiles = [
+            "tests/access.spec.ts",
+            "tests/booking-request-access.spec.ts",
+            "tests/administrator-payment-history.spec.ts",
+            "tests/administrator-records.spec.ts",
+            "tests/booking-cancellation-refund.spec.ts",
+            "tests/messaging.spec.ts",
+            "tests/customer-reviews.spec.ts",
+          ];
+          const selectedWorkerFiles = workerFiles.filter((file) => {
+            if (partition !== "worker") return true;
+            const requestFile =
+              file === "tests/booking-request-access.spec.ts" ||
+              file === "tests/booking-cancellation-refund.spec.ts";
+            return shard === "2/2" ? requestFile : !requestFile;
+          });
+          workerArgs = [
+            "playwright",
+            "test",
+            ...selectedWorkerFiles,
+            "--project=worker",
+            "--config=playwright.worker-prebuilt.config.ts",
+            "--workers=1",
+            "--output=playwright-report/access-worker",
+          ];
+        }
         if (partition === "worker") {
           const listed = await execute("npx", [...workerArgs, "--list"], {
             env: workerEnvironment,

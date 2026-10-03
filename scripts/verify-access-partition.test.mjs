@@ -33,6 +33,16 @@ const workerFilesByShard = {
   ],
 };
 
+function workerArgsFor(shard) {
+  const [command, action, ...rest] = browserCommands[6][1];
+  return [
+    command,
+    action,
+    ...workerFilesByShard[shard],
+    ...rest.filter((arg) => !arg.startsWith("tests/")),
+  ];
+}
+
 describe("access verification command", () => {
   it("partitions hosted checks without losing setup, coverage or cleanup", async () => {
     const cases = [
@@ -266,11 +276,7 @@ describe("access verification command", () => {
         ["npx", [...browserCommands[2][1], "--list"]],
         ["npx", [...browserCommands[2][1], `--shard=${shard}`]],
       ]);
-      const workerArgs = [
-        ...browserCommands[6][1].slice(0, 2),
-        ...workerFilesByShard[shard],
-        ...browserCommands[6][1].slice(9),
-      ];
+      const workerArgs = workerArgsFor(shard);
       expect(observed.get(`worker:${shard}`)).toEqual([
         statusCommand,
         ...browserCommands.slice(3, 6),
@@ -287,7 +293,6 @@ describe("access verification command", () => {
     expect(workerFiles.sort()).toEqual(
       browserCommands[6][1].filter((arg) => arg.startsWith("tests/")).sort(),
     );
-    expect(new Set(workerFiles).size).toBe(workerFiles.length);
     expect(observed.get("scheduled:")).toEqual([
       statusCommand,
       ...browserCommands.slice(3, 6),
@@ -367,13 +372,7 @@ describe("access verification command", () => {
         const journey =
           partition === "next" ? browserCommands[2] : browserCommands[6];
         const selectedArgs =
-          partition === "next"
-            ? journey[1]
-            : [
-                ...journey[1].slice(0, 2),
-                ...workerFilesByShard[shard],
-                ...journey[1].slice(9),
-              ];
+          partition === "next" ? journey[1] : workerArgsFor(shard);
         expect(listed).toEqual([["npx", [...selectedArgs, "--list"]]]);
         expect(
           commands(run).filter(([, args]) => args[0] === "playwright"),
