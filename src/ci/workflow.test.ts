@@ -8,6 +8,8 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
+import playwrightConfig from "../../playwright.config";
+
 type Step = {
   env?: Record<string, string>;
   id?: string;
@@ -228,6 +230,70 @@ describe("pull-request CI", () => {
       "database",
       "browser",
     ]);
+  });
+
+  it("keeps desktop exclusions scoped to approved journey identities", () => {
+    const excludedIdentities = [
+      "access.spec.ts an empty administrator password is recorded as a failed attempt",
+      "access.spec.ts failed administrator sign-in gives no privileged access",
+      "administrator-records.spec.ts marketplace users and AAL1 administrators cannot discover administrator records",
+      "administrator-payment-history.spec.ts AAL2 support sees ordered redacted history in every launch language",
+      "customer-reviews.spec.ts Customer review publishes, paginates, survives moderation audit, and disappears publicly",
+      "customer-reviews.spec.ts administrator review return en signed-out administrator review return keeps the chosen language and MFA",
+      "customer-reviews.spec.ts administrator review return en aal1 administrator review return keeps the chosen language and MFA",
+      "customer-reviews.spec.ts administrator review return ar signed-out administrator review return keeps the chosen language and MFA",
+      "customer-reviews.spec.ts administrator review return ar aal1 administrator review return keeps the chosen language and MFA",
+      "customer-reviews.spec.ts administrator review return ckb signed-out administrator review return keeps the chosen language and MFA",
+      "customer-reviews.spec.ts administrator review return ckb aal1 administrator review return keeps the chosen language and MFA",
+    ];
+    const retainedIdentities = [
+      "access.spec.ts the fictional booking-request back door is unavailable",
+      "access.spec.ts shared sign-in from the homepage returns a prospective owner to their private application",
+      "access.spec.ts Arabic access renders right to left",
+      "access.spec.ts a Cottage Owner saves, resumes and submits a complete private application",
+      "access.spec.ts Owner Application keeps evidence controls aligned and accessible in every locale",
+      "access.spec.ts an approved owner continues the first Cottage Profile and submits a private photo-backed working copy",
+      "access.spec.ts a Platform Administrator reaches access only after authenticator MFA",
+      "access.spec.ts anonymous discovery uses live approved inventory and preserves its query",
+      "access.spec.ts one account returns to customer bookings, enrolls explicitly and signs out only this device",
+      "administrator-records.spec.ts an administrator discovers accounts and approval records with authoritative counts and restricted documents in every locale",
+      "booking-history.spec.ts complete customer and owner history stays role-specific, private, translated, and responsive",
+      "booking-history.spec.ts same-phone reauthentication restores the same real history and owner unpaid detail",
+      "booking-request-access.spec.ts a verified Customer double-submit creates one Pending request and one minimal owner notice",
+      "messaging.spec.ts booking customer keeps the original while using fictional translations across directions",
+    ];
+    expect(playwrightConfig.grepInvert).toBeUndefined();
+    expect(playwrightConfig.projects?.map((project) => project.name)).toEqual([
+      "mobile",
+      "desktop",
+      "worker",
+    ]);
+    const desktop = playwrightConfig.projects?.find(
+      (project) => project.name === "desktop",
+    );
+    expect(desktop?.grepInvert).toBeInstanceOf(Array);
+    const exclusions = desktop?.grepInvert as RegExp[];
+    for (const identity of excludedIdentities) {
+      expect(
+        exclusions.some((pattern) => pattern.test(`desktop ${identity}`)),
+        identity,
+      ).toBe(true);
+    }
+    for (const identity of [
+      ...retainedIdentities,
+      "access.spec.ts failed administrator sign-in gives no privileged access after recovery",
+    ]) {
+      expect(
+        exclusions.some((pattern) => pattern.test(`desktop ${identity}`)),
+        identity,
+      ).toBe(false);
+    }
+    for (const name of ["mobile", "worker"]) {
+      expect(
+        playwrightConfig.projects?.find((project) => project.name === name)
+          ?.grepInvert,
+      ).toBeUndefined();
+    }
   });
 
   // The budget sits far above the work: this asserts which exit status each combination

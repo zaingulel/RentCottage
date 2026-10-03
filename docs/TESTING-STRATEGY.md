@@ -143,6 +143,23 @@ matrices select every check, except for a change touching only documentation or 
 run nothing. The hosted preview is smoked with
 `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
 
+The authoritative desktop exclusion list is in [playwright.config.ts](../playwright.config.ts). These eleven
+journeys run on mobile and Worker (1280×720) only. All remaining Node.js journeys run on both mobile and desktop,
+subject to their existing explicit skips, including one booking-history skip:
+
+| Journey | Spec and scope | Exact journey titles |
+|---|---|---|
+| Administrator review returns | `customer-reviews.spec.ts`, describe `administrator review return` | `en signed-out administrator review return keeps the chosen language and MFA`; `en aal1 administrator review return keeps the chosen language and MFA`; `ar signed-out administrator review return keeps the chosen language and MFA`; `ar aal1 administrator review return keeps the chosen language and MFA`; `ckb signed-out administrator review return keeps the chosen language and MFA`; `ckb aal1 administrator review return keeps the chosen language and MFA` |
+| Failed administrator sign-in | `access.spec.ts` | `an empty administrator password is recorded as a failed attempt`; `failed administrator sign-in gives no privileged access` |
+| Administrator records denial | `administrator-records.spec.ts` | `marketplace users and AAL1 administrators cannot discover administrator records` |
+| Administrator payment history | `administrator-payment-history.spec.ts` | `AAL2 support sees ordered redacted history in every launch language` |
+| Customer review lifecycle | `customer-reviews.spec.ts` | `Customer review publishes, paginates, survives moderation audit, and disappears publicly` |
+
+Continuous integration exhausts this configured selection through both Next.js shards and the Worker, scheduled and
+shell partitions. Native project selection applies the desktop exclusions only to the desktop project. Mobile and
+Worker runs of the listed journeys carry their access, authorization, redaction, hostile-input and unavailable-reader
+assertions. Every other Node journey runs on both viewports for its responsive, keyboard and booking-branch checks.
+
 ## Reviewing tests
 
 Review of test code asks four questions: does it catch the failure (its mutation went red), is its expected
