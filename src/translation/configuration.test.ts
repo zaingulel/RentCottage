@@ -131,7 +131,7 @@ describe("translation configuration", () => {
     });
   });
 
-  it("starts ordinary translation at Luna none and keeps the stronger and judge routes replaceable", () => {
+  it("keeps current translation defaults and evaluation models and prices aligned", () => {
     const protocol = JSON.parse(
       readFileSync("translation/evaluation/protocol-v1.json", "utf8"),
     );

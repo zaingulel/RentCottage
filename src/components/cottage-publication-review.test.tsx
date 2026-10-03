@@ -259,45 +259,67 @@ describe("Cottage publication review", () => {
     ).toBeEnabled();
   });
 
-  it("exposes a published owner report with Terra and human remediation actions", () => {
-    render(
-      <CottagePublicationReview
-        locale="en"
-        review={{
-          ...review,
-          productionReady: true,
-          localizations: review.localizations.map((item) =>
-            item.locale === "ar"
-              ? {
-                  ...item,
-                  qualityReportReason:
-                    "The published Arabic meaning is incorrect",
-                }
-              : item,
-          ),
-        }}
-        actor="administrator"
-      />,
-    );
+  it.each([
+    [
+      "en",
+      "Reprocess with stronger model",
+      "Owner report",
+      "Route to human review",
+    ],
+    [
+      "ar",
+      "إعادة المعالجة باستخدام نموذج أقوى",
+      "بلاغ المالك",
+      "إرسال إلى المراجعة البشرية",
+    ],
+    [
+      "ckb",
+      "دووبارە پرۆسەکردن بە مۆدێلی بەهێزتر",
+      "ڕاپۆرتی خاوەن",
+      "ناردن بۆ پێداچوونەوەی مرۆیی",
+    ],
+  ] as const)(
+    "exposes a published owner report with stronger model and human remediation actions in %s",
+    (locale, strongerLabel, ownerReportLabel, humanReviewLabel) => {
+      render(
+        <CottagePublicationReview
+          locale={locale}
+          review={{
+            ...review,
+            productionReady: true,
+            localizations: review.localizations.map((item) =>
+              item.locale === "ar"
+                ? {
+                    ...item,
+                    qualityReportReason:
+                      "The published Arabic meaning is incorrect",
+                  }
+                : item,
+            ),
+          }}
+          actor="administrator"
+        />,
+      );
 
-    const arabic = screen
-      .getByRole("heading", { name: "العربية" })
-      .closest("article");
-    expect(arabic).not.toBeNull();
-    expect(
-      within(arabic!).getByText(
-        "Owner report: The published Arabic meaning is incorrect",
-      ),
-    ).toBeVisible();
-    expect(
-      within(arabic!).getByRole("button", {
-        name: "Reprocess with Terra العربية",
-      }),
-    ).toBeEnabled();
-    expect(
-      within(arabic!).getByRole("button", { name: "Route to human review" }),
-    ).toBeVisible();
-  });
+      const arabic = screen
+        .getByRole("heading", { name: "العربية" })
+        .closest("article");
+      expect(arabic).not.toBeNull();
+      expect(
+        within(arabic!).getByText(
+          `${ownerReportLabel}: The published Arabic meaning is incorrect`,
+        ),
+      ).toBeVisible();
+      expect(
+        within(arabic!).getByRole("button", {
+          name: `${strongerLabel} العربية`,
+        }),
+      ).toBeEnabled();
+      expect(
+        within(arabic!).getByRole("button", { name: humanReviewLabel }),
+      ).toBeVisible();
+    },
+  );
 
   it("shows the AAL2 administrator the approved gate and bounded monthly usage", () => {
     render(

@@ -84,9 +84,9 @@ set approved_evaluation_artifact_digest = repeat('a', 64),
   provider_terms_approval_reference = 'terms-approval-46',
   native_review_approval_reference = 'native-review-46',
   quality_threshold_approval_reference = 'quality-threshold-46',
-  ordinary_model = 'gpt-5.6-luna', ordinary_effort = 'none', ordinary_prompt_version = 'v1',
-  stronger_model = 'gpt-5.6-terra', stronger_effort = 'none', stronger_prompt_version = 'v1',
-  judge_model = 'gpt-5.6-sol', judge_effort = 'medium', judge_prompt_version = 'judge-v1',
+  ordinary_model = 'gpt-6-luna', ordinary_effort = 'none', ordinary_prompt_version = 'v1',
+  stronger_model = 'gpt-6.1-sol', stronger_effort = 'low', stronger_prompt_version = 'v1',
+  judge_model = 'gpt-6-astra', judge_effort = 'medium', judge_prompt_version = 'judge-v1',
   monthly_request_limit = 2, monthly_token_limit = 1000,
   monthly_spend_microusd_limit = 20000,
   production_ready = true;
@@ -101,7 +101,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 
 select is(
   (public.reserve_cottage_translation_usage(
-    repeat('c', 64), 'gpt-5.6-luna', 'none', 'v1', 100, 10000,
+    repeat('c', 64), 'gpt-6-luna', 'none', 'v1', 100, 10000,
     repeat('b', 64), 2, 1000, 20000
   ) ->> 'granted')::boolean,
   true,
@@ -110,7 +110,7 @@ select is(
 
 select is(
   (public.reserve_cottage_translation_usage(
-    repeat('d', 64), 'gpt-5.6-luna', 'none', 'v1', 100, 10000,
+    repeat('d', 64), 'gpt-6-luna', 'none', 'v1', 100, 10000,
     repeat('b', 64), 1, 1000, 20000
   ) ->> 'granted')::boolean,
   false,
@@ -119,7 +119,7 @@ select is(
 
 select throws_ok(
   $$select public.reserve_cottage_translation_usage(
-    repeat('d', 64), 'gpt-5.6-luna', 'none', 'v1', 100, 10000,
+    repeat('d', 64), 'gpt-6-luna', 'none', 'v1', 100, 10000,
     repeat('e', 64), 2, 1000, 20000
   )$$,
   'RC246', null,
@@ -203,7 +203,7 @@ select is(
   public.complete_cottage_profile_translation_execution(
     (select id from public.cottage_profile_translation_attempts where state = 'pending'),
     '50000000-0000-4000-8000-000000004699',
-    'غير صالح', 'غير صالح', 'openai', 'gpt-5.6-luna', 'none', 'v1'
+    'غير صالح', 'غير صالح', 'openai', 'gpt-6-luna', 'none', 'v1'
   ),
   false,
   'a caller without the exclusive lease token cannot complete provider work'
@@ -233,7 +233,7 @@ select results_eq(
   $$select public.complete_cottage_profile_translation_execution(
     (select id from public.cottage_profile_translation_attempts where state = 'pending'),
     (select lease_token from public.cottage_profile_translation_attempts where state = 'pending'),
-    'كوخ هادئ', 'ممنوع التدخين', 'openai', 'gpt-5.6-luna', 'none', 'v1'
+    'كوخ هادئ', 'ممنوع التدخين', 'openai', 'gpt-6-luna', 'none', 'v1'
   )$$,
   array[true],
   'only the current ordinary lease owner appends a generated localization'
@@ -250,7 +250,7 @@ select results_eq(
   $$select public.complete_cottage_profile_translation_execution(
     (select id from public.cottage_profile_translation_attempts where state = 'pending'),
     (select lease_token from public.cottage_profile_translation_attempts where state = 'pending'),
-    'كوخ أدق', 'ممنوع التدخين', 'openai', 'gpt-5.6-terra', 'none', 'v1'
+    'كوخ أدق', 'ممنوع التدخين', 'openai', 'gpt-6.1-sol', 'low', 'v1'
   )$$,
   array[true],
   'the stronger lease owner appends the replacement generated localization'
@@ -267,7 +267,7 @@ select results_eq(
   $$select public.complete_cottage_profile_translation_execution(
     (select id from public.cottage_profile_translation_attempts where state = 'pending'),
     (select lease_token from public.cottage_profile_translation_attempts where state = 'pending'),
-    'کۆتێجی ئارام', 'جگەرەکێشان قەدەغەیە', 'openai', 'gpt-5.6-luna', 'none', 'v1'
+    'کۆتێجی ئارام', 'جگەرەکێشان قەدەغەیە', 'openai', 'gpt-6-luna', 'none', 'v1'
   )$$,
   array[true],
   'the second locale is ready for a complete published-remediation fixture'

@@ -1915,7 +1915,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       .filter({ hasText: reportReason });
     await expect(
       affectedLocalization.getByRole("button", {
-        name: "Reprocess with Terra العربية",
+        name: "Reprocess with stronger model العربية",
       }),
     ).toBeVisible();
     await expect(
@@ -1923,6 +1923,27 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
         name: "Route to human review",
       }),
     ).toBeVisible();
+    for (const [locale, strongerLabel] of [
+      ["en", "Reprocess with stronger model"],
+      ["ar", "إعادة المعالجة باستخدام نموذج أقوى"],
+      ["ckb", "دووبارە پرۆسەکردن بە مۆدێلی بەهێزتر"],
+    ] as const) {
+      await page.goto(`/${locale}${cottagePath}`);
+      const reportedLocalization = page
+        .getByRole("article")
+        .filter({ hasText: reportReason });
+      await expect(
+        reportedLocalization.getByRole("button", {
+          name: `${strongerLabel} العربية`,
+        }),
+      ).toBeVisible();
+      await reportedLocalization.screenshot({
+        path: testInfo.outputPath(
+          `${locale}-administrator-stronger-model-remediation.png`,
+        ),
+      });
+    }
+    await page.goto(`/en${cottagePath}`);
   }
   await page.getByRole("link", { name: "Back to cottages" }).click();
   await expect(
