@@ -171,7 +171,9 @@ describe("access verification command", () => {
       ],
       [
         "payment-required-expiry",
-        ["scripts/verify-booking-request-payment-required-expiry-concurrency.mjs"],
+        [
+          "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
+        ],
       ],
     ]);
     expect(observed.get("database-core:")).toEqual([
@@ -183,7 +185,9 @@ describe("access verification command", () => {
     ]);
     for (const [partition, scripts] of longPrograms) {
       expect(observed.get(`${partition}:`)).toEqual([
-        ...(partition === "booking-request" ? [databasePreflightCommands[0]] : []),
+        ...(partition === "booking-request"
+          ? [databasePreflightCommands[0]]
+          : []),
         statusCommand,
         partition === "booking-request" ? bookingRequestFixture : mobileFixture,
         ...scripts.map((script) => ["node", [script]]),
@@ -235,10 +239,13 @@ describe("access verification command", () => {
     ).toBe(false);
     const databaseUnion = ["database-core", ...longPrograms.keys()].flatMap(
       (partition) =>
-        observed.get(`${partition}:`).filter(
-          ([, args]) =>
-            args[1] !== "status" && args[0] !== "scripts/prepare-access-test.mjs",
-        ),
+        observed
+          .get(`${partition}:`)
+          .filter(
+            ([, args]) =>
+              args[1] !== "status" &&
+              args[0] !== "scripts/prepare-access-test.mjs",
+          ),
     );
     const completeDatabaseChecks = [
       ...databasePreflightCommands,
