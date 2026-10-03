@@ -818,6 +818,12 @@ try {
   drop table if exists public.test_booking_request_expiry_stale_work;
   drop table if exists public.test_booking_request_cutoff_stale_work;
   drop table if exists public.test_booking_request_boundary_durable_operation;
+  drop table if exists public.test_booking_request_first_release_retry_work;
+  drop table if exists public.test_booking_request_recovered_release_retry_work;
+  drop table if exists public.test_booking_request_failed_release_result;
+  drop table if exists public.test_booking_request_cleanup_release_permit;
+  drop table if exists public.test_booking_request_failed_release_operation;
+  drop table if exists public.test_booking_request_release_retry_fixture;
   alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
   delete from public.booking_notification_events events
   using public.booking_requests requests
@@ -1784,6 +1790,7 @@ commit;`;
     drop table public.test_booking_request_first_release_retry_work,
       public.test_booking_request_recovered_release_retry_work,
       public.test_booking_request_failed_release_result,
+      public.test_booking_request_cleanup_release_permit,
       public.test_booking_request_failed_release_operation,
       public.test_booking_request_release_retry_fixture;
   `);
