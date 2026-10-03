@@ -694,7 +694,7 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   const ratingOnlyText = {
     en: "Rating only",
     ar: "تقييم رقمي فقط",
-    ckb: "تەنها هەڵسەنگاندن",
+    ckb: "تەنها نمرەی ئەستێرەکان",
   } as const;
   const nextReviewText = {
     en: "Next reviews",

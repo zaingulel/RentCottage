@@ -220,7 +220,7 @@ const browserFixtures: Record<
       legalName: "ناوی یاسایی",
       cottageName: "ناوی ماڵ",
       governorate: "پارێزگا",
-      approximateLocation: "ناوچەی گشتیی نزیکەوە",
+      approximateLocation: "ناوچەی گشتیی نزیکەیی",
       exactAddress: "ناونیشانی وردی تایبەت",
       capacity: "گنجایشی میوان",
       bedrooms: "ژووری نوستن",
