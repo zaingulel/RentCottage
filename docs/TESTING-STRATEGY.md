@@ -156,10 +156,9 @@ subject to their existing explicit skips, including one booking-history skip:
 | Customer review lifecycle | `customer-reviews.spec.ts` | `Customer review publishes, paginates, survives moderation audit, and disappears publicly` |
 
 Continuous integration exhausts this configured selection through both Next.js shards and the Worker, scheduled and
-shell partitions. The retained observers preserve layout, locale, access, authorization, redaction, hostile-input
-and unavailable-reader claims. Native project selection applies the desktop exclusions only to the desktop project;
-the mobile and Worker projects run their configured selections directly. Both Node viewports therefore continue to
-cover their distinct responsive, keyboard and booking-branch checks.
+shell partitions. Native project selection applies the desktop exclusions only to the desktop project. Mobile and
+Worker runs of the listed journeys carry their access, authorization, redaction, hostile-input and unavailable-reader
+assertions. Every other Node journey runs on both viewports for its responsive, keyboard and booking-branch checks.
 
 ## Reviewing tests
 
