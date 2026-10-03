@@ -27,7 +27,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? "github" : "list",
+  reporter: process.env.CI ? [["github"], ["list"]] : "list",
   use: {
     baseURL: workerPreview ? workerOrigin : "http://127.0.0.1:3000",
     trace: "on-first-retry",

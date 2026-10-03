@@ -13,6 +13,7 @@ async function loadConfig(port) {
 
 afterEach(() => {
   vi.resetModules();
+  vi.unstubAllEnvs();
   if (originalWorkerServer === undefined) delete process.env.PLAYWRIGHT_SERVER;
   else process.env.PLAYWRIGHT_SERVER = originalWorkerServer;
   if (originalWorkerPort === undefined)
@@ -90,4 +91,16 @@ describe("Playwright build freshness", () => {
       ).rejects.toThrow("Prebuilt preview requires PLAYWRIGHT_SERVER=worker");
     },
   );
+});
+
+describe("Playwright reporters", () => {
+  it("prints per-test durations beside GitHub annotations in CI and keeps local list output", async () => {
+    vi.stubEnv("CI", "true");
+    const ci = await loadConfig();
+    expect(ci.reporter).toEqual([["github"], ["list"]]);
+
+    vi.stubEnv("CI", undefined);
+    const local = await loadConfig();
+    expect(local.reporter).toBe("list");
+  });
 });
