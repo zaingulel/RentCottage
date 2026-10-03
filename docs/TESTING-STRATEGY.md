@@ -143,25 +143,23 @@ matrices select every check, except for a change touching only documentation or 
 run nothing. The hosted preview is smoked with
 `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
 
-The authoritative desktop exclusion list is in [playwright.config.ts](../playwright.config.ts). The following
-approved repetitions retain mobile and Worker (1280×720) execution and lose Next.js desktop sampling at exactly
-1440×1000:
+The authoritative desktop exclusion list is in [playwright.config.ts](../playwright.config.ts). These eleven
+journeys run on mobile and Worker (1280×720) only. All remaining Node.js journeys run on both mobile and desktop,
+subject to their existing explicit skips, including one booking-history skip:
 
-| Group | Spec | Exact journey titles |
+| Journey | Spec and scope | Exact journey titles |
 |---|---|---|
-| A: administrator returns | `customer-reviews.spec.ts`, describe `administrator review return` | `en signed-out administrator review return keeps the chosen language and MFA`; `en aal1 administrator review return keeps the chosen language and MFA`; `ar signed-out administrator review return keeps the chosen language and MFA`; `ar aal1 administrator review return keeps the chosen language and MFA`; `ckb signed-out administrator review return keeps the chosen language and MFA`; `ckb aal1 administrator review return keeps the chosen language and MFA` |
-| B: negative access | `access.spec.ts` | `an empty administrator password is recorded as a failed attempt`; `failed administrator sign-in gives no privileged access` |
-| B: records denial | `administrator-records.spec.ts` | `marketplace users and AAL1 administrators cannot discover administrator records` |
-| C: payment history | `administrator-payment-history.spec.ts` | `AAL2 support sees ordered redacted history in every launch language` |
-| C: review lifecycle | `customer-reviews.spec.ts` | `Customer review publishes, paginates, survives moderation audit, and disappears publicly` |
+| Administrator review returns | `customer-reviews.spec.ts`, describe `administrator review return` | `en signed-out administrator review return keeps the chosen language and MFA`; `en aal1 administrator review return keeps the chosen language and MFA`; `ar signed-out administrator review return keeps the chosen language and MFA`; `ar aal1 administrator review return keeps the chosen language and MFA`; `ckb signed-out administrator review return keeps the chosen language and MFA`; `ckb aal1 administrator review return keeps the chosen language and MFA` |
+| Failed administrator sign-in | `access.spec.ts` | `an empty administrator password is recorded as a failed attempt`; `failed administrator sign-in gives no privileged access` |
+| Administrator records denial | `administrator-records.spec.ts` | `marketplace users and AAL1 administrators cannot discover administrator records` |
+| Administrator payment history | `administrator-payment-history.spec.ts` | `AAL2 support sees ordered redacted history in every launch language` |
+| Customer review lifecycle | `customer-reviews.spec.ts` | `Customer review publishes, paginates, survives moderation audit, and disappears publicly` |
 
-All other desktop executions and existing skips remain unchanged. Continuous integration exhausts this configured
-selection through both Next.js shards and the unchanged Worker, scheduled and shell partitions. The retained named
-observers preserve the approved layout, locale, access and runtime claims: both Node viewports remain for distinct
-responsive, keyboard and booking-branch checks; all six administrator-return variants, negative-access cases,
-payment-history and review-lifecycle assertions remain on mobile and Worker. Those retained executions preserve
-their authorization, redaction, hostile-input and unavailable-reader observers, but do not establish the removed
-1440×1000 sample. All other verification mechanisms and fixture preparation, isolation and cleanup remain unchanged.
+Continuous integration exhausts this configured selection through both Next.js shards and the Worker, scheduled and
+shell partitions. The retained observers preserve layout, locale, access, authorization, redaction, hostile-input
+and unavailable-reader claims. Native project selection applies the desktop exclusions only to the desktop project;
+the mobile and Worker projects run their configured selections directly. Both Node viewports therefore continue to
+cover their distinct responsive, keyboard and booking-branch checks.
 
 ## Reviewing tests
 

@@ -230,7 +230,9 @@ describe("pull-request CI", () => {
       "database",
       "browser",
     ]);
+  });
 
+  it("keeps desktop exclusions scoped to approved journey identities", () => {
     const excludedIdentities = [
       "access.spec.ts an empty administrator password is recorded as a failed attempt",
       "access.spec.ts failed administrator sign-in gives no privileged access",
@@ -291,12 +293,6 @@ describe("pull-request CI", () => {
         playwrightConfig.projects?.find((project) => project.name === name)
           ?.grepInvert,
       ).toBeUndefined();
-      for (const identity of [...excludedIdentities, ...retainedIdentities]) {
-        expect(
-          exclusions.some((pattern) => pattern.test(`${name} ${identity}`)),
-          `${name} ${identity}`,
-        ).toBe(false);
-      }
     }
   });
 
