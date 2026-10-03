@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { bookingRequestStatuses } from "@/booking-request/booking-request-status";
 import { bookingRequestDeclineReasons } from "@/booking-request/booking-request-lifecycle";
 import {
+  administratorPaymentHistoryCodeMessages,
+  administratorPaymentHistoryMessages,
+} from "./administrator-payment-history-messages";
+import {
   bookingRequestDeclineReasonMessages,
   bookingRequestDisplayStatusMessages,
   bookingRequestStatusMessages,
@@ -79,3 +83,33 @@ it.each([
     expect(copy.expiredDescription).not.toContain(held);
   },
 );
+
+it("Arabic payment copy distinguishes collection recovery from returned money", () => {
+  const recoveryCodes = [
+    "recovery-evidence-invalid",
+    "unexplained-recovery-provider-operation",
+    "recovery-operation-indeterminate",
+    "unsafe-recovery-original-release-indeterminate",
+    "unsafe-recovery-original-release-failed",
+    "unsafe-recovery-replacement-authorization-indeterminate",
+    "unsafe-recovery-replacement-capture-indeterminate",
+    "unsafe-recovery-replacement-release-indeterminate",
+    "unsafe-recovery-replacement-release-failed",
+    "admitted",
+  ] as const;
+
+  for (const code of recoveryCodes) {
+    const label = administratorPaymentHistoryCodeMessages.ar[code];
+    expect(label).toContain("تعثّر الدفع");
+    expect(label).not.toContain("استرداد");
+  }
+  const generation = administratorPaymentHistoryMessages.ar.recoveryGeneration;
+  expect(generation).toContain("تعثّر الدفع");
+  expect(generation).not.toContain("استرداد");
+
+  const refunding = bookingRequestPaymentRequiredExpiryMessages.ar;
+  expect(refunding.refundingLabel).toContain("إرجاع المبلغ");
+  expect(refunding.refundingDescription).toContain("إرجاع المبلغ");
+  expect(refunding.refundingDescription).toContain("الحجز غير مؤكد");
+  expect(refunding.refundingDescription).toContain("محجوزة");
+});

@@ -50,7 +50,7 @@ export const administratorPaymentHistoryMessages = {
     fromState: "الحالة السابقة",
     toState: "الحالة الناتجة",
     operationGeneration: "جيل العملية",
-    recoveryGeneration: "جيل استرداد الدفع",
+    recoveryGeneration: "جيل معالجة تعثّر الدفع",
     deadline: "الموعد النهائي للدفع",
     timeZone: "الأوقات بتوقيت بغداد (UTC+3)",
     providerOperation: "عملية المزود",
@@ -263,10 +263,10 @@ export const administratorPaymentHistoryCodeMessages = {
     "source-evidence-invalid": "أدلة المصدر غير صالحة",
     "capture-occurrence-unknown": "وقت التحصيل غير معروف",
     "original-capture-unresolved": "التحصيل الأصلي غير محسوم",
-    "recovery-evidence-invalid": "أدلة استرداد الدفع غير صالحة",
+    "recovery-evidence-invalid": "أدلة معالجة تعثّر الدفع غير صالحة",
     "unexplained-recovery-provider-operation":
-      "عملية مزود غير مفسرة أثناء استرداد الدفع",
-    "recovery-operation-indeterminate": "نتيجة عملية استرداد الدفع غير محسومة",
+      "عملية مزود غير مفسرة أثناء معالجة تعثّر الدفع",
+    "recovery-operation-indeterminate": "نتيجة عملية معالجة تعثّر الدفع غير محسومة",
     "corrective-capture-invalid": "أدلة تصحيح التحصيل غير صالحة",
     "unexplained-provider-operation": "عملية مزود غير مفسرة",
     "original-release-indeterminate": "نتيجة تحرير التفويض الأصلي غير محسومة",
@@ -286,17 +286,17 @@ export const administratorPaymentHistoryCodeMessages = {
     "legacy-unresolved-money": "أدلة الدفع السابقة غير محسومة",
     "legacy-confirmation-evidence-invalid": "أدلة التأكيد السابقة غير صالحة",
     "unsafe-recovery-original-release-indeterminate":
-      "استرداد الدفع محظور: نتيجة تحرير التفويض الأصلي غير محسومة",
+      "معالجة تعثّر الدفع محظورة: نتيجة تحرير التفويض الأصلي غير محسومة",
     "unsafe-recovery-original-release-failed":
-      "استرداد الدفع محظور: فشل تحرير التفويض الأصلي",
+      "معالجة تعثّر الدفع محظورة: فشل تحرير التفويض الأصلي",
     "unsafe-recovery-replacement-authorization-indeterminate":
-      "استرداد الدفع محظور: نتيجة التفويض البديل غير محسومة",
+      "معالجة تعثّر الدفع محظورة: نتيجة التفويض البديل غير محسومة",
     "unsafe-recovery-replacement-capture-indeterminate":
-      "استرداد الدفع محظور: نتيجة التحصيل البديل غير محسومة",
+      "معالجة تعثّر الدفع محظورة: نتيجة التحصيل البديل غير محسومة",
     "unsafe-recovery-replacement-release-indeterminate":
-      "استرداد الدفع محظور: نتيجة تحرير التفويض البديل غير محسومة",
+      "معالجة تعثّر الدفع محظورة: نتيجة تحرير التفويض البديل غير محسومة",
     "unsafe-recovery-replacement-release-failed":
-      "استرداد الدفع محظور: فشل تحرير التفويض البديل",
+      "معالجة تعثّر الدفع محظورة: فشل تحرير التفويض البديل",
     malformed: "إيصال غير صالح",
     not_executed: "لم يتم التنفيذ",
     unknown: "غير معروف",
@@ -315,7 +315,7 @@ export const administratorPaymentHistoryCodeMessages = {
     payment_required: "الدفع مطلوب",
     quarantined: "معزول للمراجعة",
     attention_required: "يتطلب المتابعة",
-    admitted: "تم قبول الاسترداد",
+    admitted: "تم السماح بمعالجة تعثّر الدفع",
     original_released: "تم تحرير التفويض الأصلي",
     replacement_authorized: "تم التفويض البديل",
     capture_failed: "فشل التحصيل",

@@ -106,7 +106,7 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
     },
     {
       name: "ar",
-      refunding: "جارٍ إعادة الدفع",
+      refunding: "جارٍ إرجاع المبلغ",
       quarantined: "الدفع يحتاج إلى مراجعة",
       refunded: "انتهى الطلب — تم إرجاع الدفع",
       attention: "لم نتمكن بعد من التحقق",
