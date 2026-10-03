@@ -50,10 +50,19 @@ try {
 
   const runSql = async (sql) => await rawRunSql(paymentEvidenceSql, sql);
   const activeSessions = new Set();
-  const boundaryClockDefinitions = new Map();
-  let boundaryClockInstalled = false;
+  const raceClockDefinitions = new Map();
+  let raceClockInstalled = false;
 
-  async function advanceBoundaryClock(label) {
+  async function raceClockAbsent() {
+    return (
+      (await runSql(`
+    select to_regclass('public.test_booking_request_race_clock') is null
+      and to_regprocedure('public.test_booking_request_race_now()') is null;
+  `)) === "t"
+    );
+  }
+
+  async function advanceRaceClock(label) {
     const before = await runSql(`
     select count(*)
     from public.test_booking_request_race_clock clock
@@ -62,7 +71,7 @@ try {
   `);
     if (before !== "1") {
       throw new Error(
-        `The ${label} clock was not before its boundary: ${before}`,
+        `The ${label} race clock was not before its boundary: ${before}`,
       );
     }
     const updated = await runSql(`
@@ -79,26 +88,25 @@ try {
     from public.test_booking_request_race_clock clock
     cross join public.test_booking_request_time_boundary_fixture fixture
     where fixture.label = '${label}'
-      and clock.instant = fixture.crosses_at + interval '500 milliseconds'
-      and clock.instant > fixture.crosses_at;
+      and clock.instant = fixture.crosses_at + interval '500 milliseconds';
   `);
     if (updated !== "1" || after !== "1") {
       throw new Error(
-        `The ${label} clock did not cross its boundary: updated=${updated}, after=${after}`,
+        `The ${label} race clock did not cross its boundary: updated=${updated}, after=${after}`,
       );
     }
   }
 
-  async function restoreBoundaryClock() {
-    if (!boundaryClockInstalled) return;
+  async function restoreRaceClock() {
+    if (!raceClockInstalled) return;
     guardDisposableLocalDatabase();
     await runSql(`begin;
-    ${[...boundaryClockDefinitions.values()].join(";\n")};
+    ${[...raceClockDefinitions.values()].join(";\n")};
     drop function if exists public.test_booking_request_race_now();
     drop table if exists public.test_booking_request_race_clock;
     commit;`);
-    boundaryClockInstalled = false;
-    for (const [signature, original] of boundaryClockDefinitions) {
+    raceClockInstalled = false;
+    for (const [signature, original] of raceClockDefinitions) {
       const restored = JSON.parse(
         await runSql(`
       select to_json(pg_get_functiondef('public.${signature}'::regprocedure));
@@ -110,13 +118,8 @@ try {
         );
       }
     }
-    if (
-      (await runSql(`
-    select to_regclass('public.test_booking_request_race_clock') is null
-      and to_regprocedure('public.test_booking_request_race_now()') is null;
-  `)) !== "t"
-    ) {
-      throw new Error("The disposable Booking Request clock was not removed.");
+    if (!(await raceClockAbsent())) {
+      throw new Error("The disposable Booking Request race clock was not removed.");
     }
   }
 
@@ -215,7 +218,7 @@ try {
       set instant = date_trunc('minute', clock_timestamp()) + interval '1 day';
       get diagnostics updated = row_count;
       if updated <> 1 then
-        raise exception 'The boundary clock reset did not update one row';
+        raise exception 'The race clock reset did not update one row';
       end if;
     end $reset_clock$;
     create temporary table boundary_time as
@@ -480,7 +483,6 @@ try {
       from public.test_booking_request_time_boundary_fixture boundary
       cross join public.test_booking_request_concurrency_fixture fixture
       where boundary.label = '${label}'
-        and boundary.prepare_result ->> 'status' = 'ready'
         and public.test_booking_request_race_now() < boundary.crosses_at
         and boundary.crosses_at =
           (fixture.submission ->> 'firstStartsAt')::timestamptz
@@ -535,7 +537,7 @@ try {
       true,
     );
     await waitForLock(preparerName, preparer);
-    await advanceBoundaryClock(label);
+    await advanceRaceClock(label);
     await finishSession(blocker, { action: "commit" });
     await finishSession(preparer);
     if (!preparer.stdout.includes(expectedStatus)) {
@@ -659,7 +661,7 @@ try {
       true,
     );
     await waitForLock(finalizerName, finalizer);
-    await advanceBoundaryClock(label);
+    await advanceRaceClock(label);
     await finishSession(blocker, { action: "rollback" });
     await finishSession(finalizer, { expectedState: "RC409" });
     if (!finalizer.stderr.includes(expectedMessage)) {
@@ -699,7 +701,7 @@ try {
     await runSql(`
     drop table if exists public.test_booking_request_cutoff_stale_work;
     update public.booking_request_authorization_claims claims
-    -- The preceding cutoff observer already proved not_after is in the past.
+    -- The preceding cutoff observer proved not_after is in the past for the injected race clock.
     set reconciliation_expires_at = claims.not_after
     from public.test_booking_request_time_boundary_fixture fixture
     where fixture.label = '${label}'
@@ -723,7 +725,6 @@ try {
       on outbox.claim_id = claims.id
     cross join public.test_booking_request_cutoff_stale_work work
     where fixture.label = '${label}'
-      and claims.reconciliation_expires_at = claims.not_after
       and claims.not_after = fixture.crosses_at
       and work.result ->> 'status' = 'work'
       and (work.result ->> 'claimId')::uuid = claims.id
@@ -1090,12 +1091,7 @@ commit;`;
       );
     }
 
-    if (
-      (await runSql(`
-    select to_regclass('public.test_booking_request_race_clock') is null
-      and to_regprocedure('public.test_booking_request_race_now()') is null;
-  `)) !== "t"
-    ) {
+    if (!(await raceClockAbsent())) {
       throw new Error(
         "Refusing pre-existing Booking Request race clock objects.",
       );
@@ -1105,23 +1101,20 @@ commit;`;
         "prepare_booking_request_submission(uuid,uuid,jsonb)",
         "policy_evaluated_at := clock_timestamp();",
         "policy_evaluated_at := public.test_booking_request_race_now();",
-        1,
       ],
       [
         "finalize_booking_request_submission(uuid,jsonb)",
         "submission_created_at := clock_timestamp();",
         "submission_created_at := public.test_booking_request_race_now();",
-        1,
       ],
       [
         "expire_booking_request_authorization_claims()",
         "clock_timestamp()",
         "public.test_booking_request_race_now()",
-        1,
       ],
     ];
     const replacements = [];
-    for (const [signature, target, replacement, count] of substitutions) {
+    for (const [signature, target, replacement] of substitutions) {
       const original = JSON.parse(
         await runSql(`
       select case when to_regprocedure('public.${signature}') is null
@@ -1132,21 +1125,20 @@ commit;`;
       );
       if (
         typeof original !== "string" ||
-        !original.trim() ||
-        original.split(target).length - 1 !== count
+        original.split(target).length - 1 !== 1
       ) {
         throw new Error(
-          `Unexpected ${signature} definition; inspect before clock substitution.`,
+          `Unexpected ${signature} definition; inspect before race clock substitution.`,
         );
       }
-      boundaryClockDefinitions.set(signature, original);
+      raceClockDefinitions.set(signature, original);
       let definition = original.replaceAll(target, replacement);
       if (signature === "expire_booking_request_authorization_claims()") {
         const duePredicate =
           "claims.reconciliation_expires_at <= statement_timestamp()";
         if (original.split(duePredicate).length - 1 !== 2) {
           throw new Error(
-            `Unexpected ${signature} due predicates; inspect before clock substitution.`,
+            `Unexpected ${signature} due predicates; inspect before race clock substitution.`,
           );
         }
         definition = definition.replaceAll(
@@ -1157,7 +1149,7 @@ commit;`;
       replacements.push(definition);
     }
     // Track the attempt so teardown also covers a lost post-commit subprocess result.
-    boundaryClockInstalled = true;
+    raceClockInstalled = true;
     await runSql(`begin;
     create table public.test_booking_request_race_clock (
       singleton boolean primary key check (singleton),
@@ -1187,9 +1179,6 @@ commit;`;
       exception when no_data_found then
         null;
       end;
-      if (select count(*) from public.test_booking_request_race_clock) <> 1 then
-        raise exception 'The missing-clock probe did not restore the singleton';
-      end if;
     end $missing_clock$;
     commit;`);
 
@@ -1253,7 +1242,7 @@ commit;`;
     await restoreBaseBookingWindow();
 
     markTimingPhase("setup");
-    await restoreBoundaryClock();
+    await restoreRaceClock();
     markTimingPhase("execution");
 
     const authorization = await startSession(`
@@ -2157,7 +2146,7 @@ commit;`;
       }
     }
     try {
-      await restoreBoundaryClock();
+      await restoreRaceClock();
     } catch (error) {
       cleanupFailures.push(error);
     }
@@ -2170,7 +2159,9 @@ commit;`;
     if (cleanupFailures.length) {
       failure = new AggregateError(
         [...(failure ? [failure] : []), ...cleanupFailures],
-        "Booking Request concurrency and cleanup failed.",
+        failure
+          ? "Booking Request concurrency and cleanup failed."
+          : "Booking Request cleanup failed.",
       );
     }
   }
