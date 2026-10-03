@@ -224,7 +224,7 @@ export const administratorRecordsMessages = {
     relevantDate: "بەروار",
     decided: "بڕیاردراوە",
     cycle: "خولی پێداچوونەوە",
-    locality: "ناوچەی نزیکی",
+    locality: "ناوچەی نزیکەیی",
     applicationLink: "داواکاریی خاوەن و بەڵگەکان بکەرەوە",
     cottagesLink: "ماڵەکانی ئەم خاوەنە بدۆزەوە",
     profileLink: "ماڵەکە بکەرەوە",

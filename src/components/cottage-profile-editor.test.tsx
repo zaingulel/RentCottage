@@ -49,6 +49,25 @@ describe("Cottage Profile editor", () => {
     vi.clearAllMocks();
   });
 
+  it("Sorani profile warning names private coordinates", () => {
+    render(
+      <CottageProfileEditor
+        locale="ckb"
+        profile={profile}
+        actor="owner"
+        editable
+      />,
+    );
+
+    const warning = screen.getByText(/ناونیشانی ورد،/);
+    expect(warning).toBeVisible();
+    expect(warning).toHaveTextContent("کۆئۆردینات");
+    expect(warning).toHaveTextContent("ناونیشانی ورد");
+    expect(warning).toHaveTextContent("ڕێنماییەکان");
+    expect(warning).toHaveTextContent("تایبەت دەمێننەوە");
+    expect(warning).toHaveTextContent("هەرگیز لە لیستی گشتی پیشان نادرێن");
+  });
+
   it("exposes the complete structured editor and distinguishes private location data", () => {
     render(
       <CottageProfileEditor

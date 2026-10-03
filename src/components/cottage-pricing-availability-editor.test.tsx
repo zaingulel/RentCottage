@@ -112,6 +112,27 @@ const roundTripPricingAfterOverride: CottageInventoryOwnerEditorState = {
 describe("Cottage Pricing and Availability editor", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("Sorani standard-price inputs have a natural accessible name", () => {
+    render(
+      <CottagePricingAvailabilityEditor
+        locale="ckb"
+        profileId={schedule.profileId}
+        schedule={schedule}
+        pricing={pricing}
+        editable
+        canOpen={false}
+      />,
+    );
+
+    expect(
+      screen.getByRole("spinbutton", {
+        name: "نرخی ستاندارد بە دیناری عێراقی بۆ شیفت 1",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    expect(screen.getByRole("region")).toHaveAttribute("dir", "rtl");
+  });
+
   it("renders localized right-to-left pricing and availability controls", () => {
     render(
       <CottagePricingAvailabilityEditor

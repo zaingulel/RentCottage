@@ -195,7 +195,7 @@ export function CottagePricingAvailabilityEditor({
                       locale === "ar"
                         ? `سعر ${unit.label} ${copy.standard}`
                         : locale === "ckb"
-                          ? `نرخی ${unit.label} ${copy.standard}`
+                          ? `${copy.standard} بۆ ${unit.label}`
                           : `${unit.label} ${copy.standard}`;
                     const addWeekdayLabel =
                       locale === "ar"

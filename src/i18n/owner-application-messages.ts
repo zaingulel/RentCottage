@@ -351,7 +351,7 @@ export const ownerApplicationMessages: Record<
       "تەنها کاتێک پێویستە کە مۆڵەت جێبەجێ نابێت. دەسەڵات و هۆکارەکە ڕوون بکەرەوە.",
     cottageName: "ناوی ماڵ",
     governorate: "پارێزگا",
-    approximateLocation: "ناوچەی گشتیی نزیکەوە",
+    approximateLocation: "ناوچەی گشتیی نزیکەیی",
     approximateLocationHelp:
       "تەنها ناوچە، بە وشە. هەرگیز کۆئۆردینات یان ناونیشانی ورد لێرە مەنووسە؛ ئەم دەقە گشتییە.",
     exactAddress: "ناونیشانی وردی تایبەت (ئارەزوومەندانە)",
@@ -432,7 +432,7 @@ export const ownerApplicationMessages: Record<
         exemption_basis: "بنەمای بەخشینی تۆمارکراو",
         cottage_name: "ناوی ماڵ",
         governorate: "پارێزگا",
-        approximate_location: "ناوچەی گشتیی نزیکەوە",
+        approximate_location: "ناوچەی گشتیی نزیکەیی",
         exact_address: "ناونیشانی وردی تایبەت",
         capacity: "گنجایشی میوان",
         bedrooms: "ژووری نوستن",
