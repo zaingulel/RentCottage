@@ -227,7 +227,7 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
     const supportLabel = {
       en: "Internal support reference",
       ar: "مرجع دعم داخلي",
-      ckb: "سەرچاوەی ناوخۆیی پشتگیری",
+      ckb: "ژمارەی ئاماژەی ناوخۆیی پشتگیری",
     }[locale];
     await expect(
       page.getByText(supportLabel, { exact: true }).first(),

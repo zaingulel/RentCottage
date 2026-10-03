@@ -22,10 +22,13 @@ const unavailableCopy = {
     title: "Booking Request status is unavailable",
     home: "RentCottage home",
   },
-  ar: { title: "حالة طلب الحجز غير متاحة", home: "العودة إلى RentCottage" },
+  ar: {
+    title: "حالة طلب الحجز غير متاحة",
+    home: "الصفحة الرئيسية لـ RentCottage",
+  },
   ckb: {
     title: "دۆخی داواکاری حجز بەردەست نییە",
-    home: "گەڕانەوە بۆ RentCottage",
+    home: "پەڕەی سەرەکیی RentCottage",
   },
 } as const;
 

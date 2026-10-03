@@ -63,7 +63,7 @@ export const ownerApplicationStatusMessages: Record<Locale, Copy> = {
       approved: "مقبول",
       rejected: "مرفوض",
       expired: "منتهي الصلاحية",
-      suspended: "معلّق",
+      suspended: "موقوف",
     },
     guidance: {
       submitted: "طلبك مقفل أثناء انتظار المراجعة الأولية.",

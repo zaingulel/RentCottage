@@ -142,7 +142,8 @@ const administratorReturnLocales = [
     verify: "پشتڕاست بکەرەوە",
     invalidCode: "کۆدەکە پشتڕاست نەکرایەوە.",
     queueTitle: "بەڕێوەبردنی هەڵسەنگاندنی کڕیاران",
-    accessRequired: "چوونەژوورەوەی بەڕێوەبەر بە دڵنیایی ئەپ پێویستە.",
+    accessRequired:
+      "دەستگەیشتنی بەڕێوەبەر کە بە ئەپی پشتڕاستکەرەوە پشتڕاست کراوەتەوە پێویستە.",
     accessAction: "چوونەژوورەوەی بەڕێوەبەر تەواو بکە",
   },
 ] as const;
@@ -693,7 +694,7 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   const ratingOnlyText = {
     en: "Rating only",
     ar: "تقييم رقمي فقط",
-    ckb: "تەنها هەڵسەنگاندن",
+    ckb: "تەنها نمرەی ئەستێرەکان",
   } as const;
   const nextReviewText = {
     en: "Next reviews",

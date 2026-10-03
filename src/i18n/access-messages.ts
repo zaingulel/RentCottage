@@ -65,7 +65,7 @@ export const accessMessages: Record<
     enrollTitle: "انضم كمالك كوخ",
     enrollIntro:
       "استخدم الحساب نفسه للحجز وإدارة الأكواخ. ابدأ طلب مالك خاصًا؛ يلزم الحصول على الموافقة قبل نشر كوخك.",
-    enroll: "ابدأ طلب المالك",
+    enroll: "ابدأ طلب الانضمام كمالك",
     expiredCode:
       "انتهت صلاحية الرمز أو أنه غير صحيح. اطلب رمزًا آخر أو تحقق من الرقم.",
     rateLimited: "محاولات كثيرة. انتظر قليلًا قبل المحاولة مجددًا.",
@@ -85,7 +85,7 @@ export const accessMessages: Record<
     invalidPhone: "أدخل رقمًا عراقيًا صحيحًا يبدأ بـ +964.",
     invalidCode: "تعذر التحقق من الرمز.",
     unavailable: "التحقق غير متاح الآن. حاول مرة أخرى.",
-    ownerApplicationCta: "تابع إلى طلب المالك",
+    ownerApplicationCta: "تابع إلى طلب الانضمام كمالك",
     administratorTitle: "دخول مسؤول المنصة",
     email: "البريد الإلكتروني",
     password: "كلمة المرور",
@@ -134,9 +134,9 @@ export const accessMessages: Record<
     sendCode: "کۆدی پشتڕاستکردنەوە بنێرە",
     code: "کۆدی پشتڕاستکردنەوە",
     verify: "پشتڕاست بکەرەوە",
-    invalidPhone: "ژمارەیەکی دروستی عێراقی بە +964 بنووسە.",
+    invalidPhone: "ژمارەیەکی دروستی عێراقی بنووسە کە بە +964 دەست پێ بکات.",
     invalidCode: "کۆدەکە پشتڕاست نەکرایەوە.",
-    unavailable: "پشتڕاستکردنەوە ئێستا بەردەست نییە.",
+    unavailable: "پشتڕاستکردنەوە ئێستا بەردەست نییە. دووبارە هەوڵ بدەوە.",
     ownerApplicationCta: "بەردەوام بە بۆ داواکاری خاوەن",
     administratorTitle: "چوونەژوورەوەی بەڕێوەبەری پلاتفۆرم",
     email: "ئیمەیڵ",
@@ -146,7 +146,8 @@ export const accessMessages: Record<
     mfaSetup: "کۆدەکە بە ئەپی پشتڕاستکەرەوە سکان بکە و کۆدەکە بنووسە.",
     mfaQrAlt: "کۆدی ڕێکخستنی ئەپی پشتڕاستکەرەوە",
     mfaChallenge: "کۆدی ئەپی پشتڕاستکەرەوە بنووسە.",
-    administratorReady: "پشتڕاستکردنەوەی دوو هەنگاو تەواو بوو.",
+    administratorReady:
+      "پشتڕاستکردنەوەی دوو هەنگاو تەواو بوو. دەستگەیشتنی بەڕێوەبەر ئامادەیە.",
     reviewApplications: "داواکارییە نێردراوەکانی خاوەن بپشکنە",
     manageCottageProfiles: "پرۆفایلەکانی کۆتێج بەڕێوەببە",
     invalidSignIn:

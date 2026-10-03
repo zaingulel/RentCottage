@@ -331,6 +331,21 @@ describe("administrator payout investigation", () => {
       },
     ],
   };
+  it("Sorani settlement guidance preserves maturity and unresolved holds", () => {
+    render(
+      <BookingFinancialDetails
+        locale="ckb"
+        view={{ ...financial, actorRole: "platform_administrator", payout }}
+      />,
+    );
+    const help = screen.getByText(/هاوشێوەکەری دابینکەر/);
+    expect(help).toBeVisible();
+    expect(help).toHaveTextContent("تەنها دوای تەواوبوونی ماوەی حجز");
+    expect(help).toHaveTextContent("هەموو ڕاگرتنەکان");
+    expect(help).toHaveTextContent("گەڕاندنەوەکانی پارە");
+    expect(help).toHaveTextContent("ناسنامەی ڕەسەنی خۆی");
+  });
+
   it("preserves the administrator owner-share summary", () => {
     render(
       <BookingFinancialDetails

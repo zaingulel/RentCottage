@@ -71,7 +71,7 @@ const copy = {
     ownerReport: "بلاغ المالك",
     humanReviewReason: "سبب المراجعة البشرية",
     routeHumanReview: "إرسال إلى المراجعة البشرية",
-    controls: "ضوابط الترجمة",
+    controls: "أدوات التحكم بالترجمة",
     generate: "إنشاء",
     reprocess: "إعادة المعالجة",
     reprocessWithStrongerModel: "إعادة المعالجة باستخدام نموذج أقوى",

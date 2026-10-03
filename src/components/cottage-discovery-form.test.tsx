@@ -17,6 +17,7 @@ const facets = {
 const dateLabels = {
   en: { from: "From Service Day", to: "To Service Day" },
   ar: { from: "من تاريخ", to: "إلى تاريخ" },
+  ckb: { from: "لە بەرواری", to: "تا بەرواری" },
 };
 
 function chooseDates(
@@ -32,6 +33,22 @@ function chooseDates(
 
 describe("CottageDiscoveryForm booking period picker", () => {
   beforeEach(() => push.mockClear());
+
+  it("Sorani discovery distinguishes an approximate area and a full-day bundle", () => {
+    render(<CottageDiscoveryForm locale="ckb" facets={facets} />);
+    expect(
+      screen.getByRole("combobox", {
+        name: "ناوچەی نزیکەیی (ئارەزوومەندانە)",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "پاکێجی ڕۆژی تەواو" }),
+    ).toBeVisible();
+
+    chooseDates(dateLabels.ckb, "2099-01-01", "2099-01-01");
+
+    expect(screen.getByRole("button", { name: "ڕۆژی تەواو" })).toBeVisible();
+  });
 
   it("shows default chips with the helper before a valid range exists", async () => {
     const user = userEvent.setup();

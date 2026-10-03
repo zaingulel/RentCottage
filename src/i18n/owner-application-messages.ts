@@ -298,7 +298,7 @@ export const ownerApplicationMessages: Record<
         },
         licensing_or_exemption: {
           title: "إثبات الترخيص أو الإعفاء",
-          help: "دليل سياحي أو بلدي أو سلامة أو إعفاء مسجل.",
+          help: "مستندات تثبت استيفاء المتطلبات السياحية أو البلدية أو متطلبات السلامة المعمول بها، أو إثبات إعفاء مسجل.",
         },
         payout_account: {
           title: "إثبات حساب التحويل",
@@ -345,13 +345,13 @@ export const ownerApplicationMessages: Record<
     companyName: "ناوی کۆمپانیا",
     licensingBasis: "بنەمای پابەندبوونی ناوخۆیی",
     licence: "مۆڵەتی پێویست",
-    exemption: "بەخشینی تۆمارکراو",
-    exemptionBasis: "بنەمای بەخشینی تۆمارکراو",
+    exemption: "معافبوونی تۆمارکراو",
+    exemptionBasis: "بنەمای معافبوونی تۆمارکراو",
     exemptionBasisHelp:
       "تەنها کاتێک پێویستە کە مۆڵەت جێبەجێ نابێت. دەسەڵات و هۆکارەکە ڕوون بکەرەوە.",
     cottageName: "ناوی ماڵ",
     governorate: "پارێزگا",
-    approximateLocation: "ناوچەی گشتیی نزیکەوە",
+    approximateLocation: "ناوچەی گشتیی نزیکەیی",
     approximateLocationHelp:
       "تەنها ناوچە، بە وشە. هەرگیز کۆئۆردینات یان ناونیشانی ورد لێرە مەنووسە؛ ئەم دەقە گشتییە.",
     exactAddress: "ناونیشانی وردی تایبەت (ئارەزوومەندانە)",
@@ -364,7 +364,7 @@ export const ownerApplicationMessages: Record<
     amenityOptions: [
       { value: "garden", label: "باخچە" },
       { value: "parking", label: "وەستانگە" },
-      { value: "pool", label: "مەڵەوانگەی تایبەت" },
+      { value: "pool", label: "مەلەوانگەی تایبەت" },
       { value: "air_conditioning", label: "ساردکەرەوە" },
       { value: "wifi", label: "وای فای" },
       { value: "outdoor_seating", label: "دانیشتنی دەرەوە" },
@@ -416,8 +416,8 @@ export const ownerApplicationMessages: Record<
           help: "قەواڵە، گرێبەستی کرێ، بەڕێوەبردن یان ڕێپێدانی نووسراوی خاوەن.",
         },
         licensing_or_exemption: {
-          title: "بەڵگەی مۆڵەت یان بەخشین",
-          help: "بەڵگەی گەشتیاری، شارەوانی، سەلامەتی یان بەخشینی تۆمارکراو.",
+          title: "بەڵگەی مۆڵەت یان معافبوون",
+          help: "بەڵگەی گەشتیاری، شارەوانی، سەلامەتی یان معافبوونی تۆمارکراو.",
         },
         payout_account: {
           title: "بەڵگەی هەژماری پارەدان",
@@ -429,10 +429,10 @@ export const ownerApplicationMessages: Record<
         legal_name: "ناوی یاسایی",
         company_name: "ناوی کۆمپانیا",
         licensing_basis: "بنەمای پابەندبوونی ناوخۆیی",
-        exemption_basis: "بنەمای بەخشینی تۆمارکراو",
+        exemption_basis: "بنەمای معافبوونی تۆمارکراو",
         cottage_name: "ناوی ماڵ",
         governorate: "پارێزگا",
-        approximate_location: "ناوچەی گشتیی نزیکەوە",
+        approximate_location: "ناوچەی گشتیی نزیکەیی",
         exact_address: "ناونیشانی وردی تایبەت",
         capacity: "گنجایشی میوان",
         bedrooms: "ژووری نوستن",

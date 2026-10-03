@@ -109,7 +109,7 @@ export const bookingManagementMessages = {
       "ينظر في تسوية المالك بعد انتهاء فترة الحجز الأصلية فقط. هذا ليس تأكيداً لتوفر دفعة أو موعد دفع.",
     approved: "استرداد معتمد",
     automatic: "طلب استرداد الإلغاء",
-    requested: "مطلوب",
+    requested: "تم الطلب",
     processing: "قيد المعالجة",
     unknown: "يحتاج إلى متابعة: جارٍ التحقق من الاسترداد",
     succeeded: "تم رد المبلغ",
@@ -135,7 +135,7 @@ export const bookingManagementMessages = {
     priceInput: "سعر الحجز المطلوب رده (IQD)",
     feeInput: "رسوم الخدمة المطلوب ردها (IQD)",
     precision:
-      "استخدم فاصلة عشرية. سعر الحجز بمضاعفات 0.01 دينار. رسوم الخدمة حتى 3 منازل عشرية. أدخل 0 للمكون الذي لن ترده.",
+      "استخدم نقطة عشرية (.). سعر الحجز بمضاعفات 0.01 دينار. رسوم الخدمة حتى 3 منازل عشرية. أدخل 0 للمكون الذي لن ترده.",
     approve: "اعتماد الاسترداد",
     invalid: "تحقق من الحقول. أدخل سبباً ومبالغ صحيحة أو فئة إلغاء.",
     unavailable:
@@ -236,7 +236,7 @@ export const bookingManagementMessages = {
     noticeRequested: "ئاگادارکردنەوەی داوای گەڕاندنەوە",
     noticeReturned: "ئاگادارکردنەوەی پارەی گەڕێندراو",
     noticeAttention: "ئاگادارکردنەوەی بەدواداچوونی پارە",
-    noticePreparation: "بیرهێنانەوەی ئامادەبوون",
+    noticePreparation: "بیرخستنەوەی ئامادەکاری",
     noticeRecipient: "وەرگر",
     noticeRecipientCustomer: "کڕیار",
     noticeRecipientOwner: "خاوەنی کۆخ",
@@ -252,6 +252,6 @@ export const bookingManagementMessages = {
     retryFailed: "دووبارە هەوڵدانەوەی ئاگادارکردن سەرکەوتوو نەبوو.",
     retryQueued: "ئاگادارکردنەوە بۆ دووبارە هەوڵدانەوە ڕیزکرا.",
     unavailableView:
-      "وردەکارییەکانی هەڵوەشاندنەوە و گەڕاندنەوەی پارە کاتێک بەردەست نین.",
+      "وردەکارییەکانی هەڵوەشاندنەوە و گەڕاندنەوەی پارە بە شێوەیەکی کاتی بەردەست نین.",
   },
 } as const;

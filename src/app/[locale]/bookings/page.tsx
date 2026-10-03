@@ -18,11 +18,11 @@ const copy = {
   },
   ar: {
     empty: "لا توجد طلبات حجز بعد.",
-    home: "العودة إلى RentCottage",
+    home: "الصفحة الرئيسية لـ RentCottage",
   },
   ckb: {
     empty: "هێشتا هیچ داواکارییەکی حجز نییە.",
-    home: "گەڕانەوە بۆ RentCottage",
+    home: "پەڕەی سەرەکیی RentCottage",
   },
 } as const;
 export default async function BookingHistoryPage({
