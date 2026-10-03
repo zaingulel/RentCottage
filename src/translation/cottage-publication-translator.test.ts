@@ -17,7 +17,7 @@ describe("Cottage publication translation bridge", () => {
       ],
       provenance: {
         provider: "openai",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
         promptDigest: "a".repeat(64),
@@ -39,7 +39,7 @@ describe("Cottage publication translation bridge", () => {
       houseRules: "ممنوع التدخين",
       provenance: {
         provider: "openai",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
       },

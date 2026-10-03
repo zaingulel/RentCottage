@@ -11,21 +11,21 @@ const configuration = {
   provider: "openai",
   apiKey: "server-secret",
   ordinary: {
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     effort: "none",
     promptVersion: "v1",
     promptContent: "Translate.",
     promptDigest: "1".repeat(64),
   },
   strongerModel: {
-    model: "gpt-5.6-terra",
-    effort: "none",
+    model: "gpt-6.1-sol",
+    effort: "low",
     promptVersion: "v1",
     promptContent: "Translate carefully.",
     promptDigest: "2".repeat(64),
   },
   judge: {
-    model: "gpt-5.6-sol",
+    model: "gpt-6-astra",
     effort: "medium",
     promptVersion: "judge-v1",
     promptContent: "Judge.",
@@ -101,7 +101,7 @@ describe("Supabase translation store", () => {
     await expect(
       store.reserveUsage({
         cacheKey: "4".repeat(64),
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
         reservedTokens: 4_608,
@@ -111,7 +111,7 @@ describe("Supabase translation store", () => {
 
     expect(rpc).toHaveBeenCalledWith("reserve_cottage_translation_usage", {
       target_cache_key: "4".repeat(64),
-      target_model: "gpt-5.6-luna",
+      target_model: "gpt-6-luna",
       target_effort: "none",
       target_prompt_version: "v1",
       target_reserved_tokens: 4_608,
@@ -128,7 +128,7 @@ describe("Supabase translation store", () => {
       segments: [{ key: "description", text: "كوخ هادئ" }],
       provenance: {
         provider: "openai",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
         promptDigest: "1".repeat(64),
@@ -184,7 +184,7 @@ describe("Supabase translation store", () => {
       segments: [{ key: "description", text: "كوخ هادئ" }],
       provenance: {
         provider: "openai",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
         promptDigest: "1".repeat(64),

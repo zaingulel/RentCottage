@@ -12,18 +12,18 @@ import {
 vi.mock("server-only", () => ({}));
 
 const ordinaryBase = {
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "none",
   promptVersion: "v1",
 };
 const judgeBase = {
-  model: "gpt-5.6-sol",
+  model: "gpt-6-astra",
   effort: "medium",
   promptVersion: "judge-v1",
 };
 const strongerBase = {
-  model: "gpt-5.6-terra",
-  effort: "none",
+  model: "gpt-6.1-sol",
+  effort: "low",
   promptVersion: "v1",
 };
 
@@ -132,6 +132,22 @@ describe("translation configuration", () => {
   });
 
   it("starts ordinary translation at Luna none and keeps the stronger and judge routes replaceable", () => {
+    const protocol = JSON.parse(
+      readFileSync("translation/evaluation/protocol-v1.json", "utf8"),
+    );
+    expect(protocol).toMatchObject({
+      candidateModel: "gpt-6-luna",
+      candidateLowestSupportedEffort: "none",
+      reasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
+      judgeModel: "gpt-6-astra",
+      judgeEffort: "medium",
+      candidateInputMicrousdPerMillion: 100000,
+      candidateOutputMicrousdPerMillion: 500000,
+      judgeInputMicrousdPerMillion: 10000000,
+      judgeOutputMicrousdPerMillion: 50000000,
+      maximumCandidateCallMicrousd: 666,
+      maximumJudgeCallMicrousd: 88320,
+    });
     expect(readTranslationConfiguration(approved)).toEqual({
       enabled: true,
       provider: "openai",

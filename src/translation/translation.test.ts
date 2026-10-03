@@ -25,7 +25,7 @@ const configuration: Extract<TranslationConfiguration, { enabled: true }> = {
   enabled: true,
   provider: "openai",
   ordinary: {
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     effort: "none",
     promptVersion: "v1",
     promptContent: "Approved ordinary prompt.",
@@ -33,8 +33,8 @@ const configuration: Extract<TranslationConfiguration, { enabled: true }> = {
       "5a7874e3c4e75a4a2afe3cc5385fcb8b3498e6617fe99a80c3f026e846adfa60",
   },
   strongerModel: {
-    model: "gpt-5.6-terra",
-    effort: "none",
+    model: "gpt-6.1-sol",
+    effort: "low",
     promptVersion: "v1",
     promptContent: "Approved stronger prompt.",
     promptDigest:
@@ -155,7 +155,7 @@ describe("translation module", () => {
       ],
       provenance: {
         provider: "openai",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
         promptDigest:
@@ -198,7 +198,7 @@ describe("translation module", () => {
           ],
           provenance: {
             provider: "openai",
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             effort: "none",
             promptVersion: "v1",
             promptDigest:
@@ -330,7 +330,7 @@ describe("translation module", () => {
           ],
           provenance: {
             provider: "openai",
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             effort: "none",
             promptVersion: "v1",
             promptDigest:

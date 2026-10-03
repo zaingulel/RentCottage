@@ -10,7 +10,7 @@ const request: TranslationAdapterRequest = {
   targetLanguage: "ar",
   route: "ordinary",
   configuration: {
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     effort: "none",
     promptVersion: "v1",
     promptContent: "Approved ordinary prompt.",
@@ -41,7 +41,7 @@ function response(overrides: Record<string, unknown> = {}) {
     JSON.stringify({
       id: "resp_46",
       status: "completed",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       output: [
         {
           id: "rs_46",
@@ -89,7 +89,7 @@ describe("OpenAI Responses translation adapter", () => {
       ],
       provenance: {
         provider: "openai",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         effort: "none",
         promptVersion: "v1",
         promptDigest:
@@ -109,7 +109,7 @@ describe("OpenAI Responses translation adapter", () => {
     });
     const body = JSON.parse(String(init.body));
     expect(body).toMatchObject({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       store: false,
       background: false,
       tools: [],
@@ -290,7 +290,7 @@ describe("OpenAI Responses translation adapter", () => {
   it("executes distinct stronger-route prompt content without substitution", async () => {
     const fetch = vi
       .fn()
-      .mockResolvedValue(response({ model: "gpt-5.6-terra" }));
+      .mockResolvedValue(response({ model: "gpt-6.1-sol" }));
     const adapter = createOpenAIResponsesTranslationAdapter({
       apiKey: "server-secret",
       fetch,
@@ -300,7 +300,7 @@ describe("OpenAI Responses translation adapter", () => {
       ...request,
       route: "stronger_model",
       configuration: {
-        model: "gpt-5.6-terra",
+        model: "gpt-6.1-sol",
         effort: "high",
         promptVersion: "v1",
         promptContent: "Approved stronger prompt with distinct instructions.",

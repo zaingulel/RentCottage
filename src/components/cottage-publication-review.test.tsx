@@ -310,11 +310,11 @@ describe("Cottage publication review", () => {
           providerTermsApproved: true,
           nativeReviewApproved: true,
           qualityThresholdApproved: true,
-          ordinaryModel: "gpt-5.6-luna",
+          ordinaryModel: "gpt-6-luna",
           ordinaryEffort: "none",
-          strongerModel: "gpt-5.6-terra",
-          strongerEffort: "none",
-          judgeModel: "gpt-5.6-sol",
+          strongerModel: "gpt-6.1-sol",
+          strongerEffort: "low",
+          judgeModel: "gpt-6-astra",
           judgeEffort: "medium",
           monthlyRequestLimit: 100,
           monthlyTokenLimit: 100000,
@@ -334,6 +334,6 @@ describe("Cottage publication review", () => {
     expect(screen.getByText("3 / 100 requests reserved")).toBeVisible();
     expect(screen.getByText("2 quality reports")).toBeVisible();
     expect(screen.getByText("1200 microusd used")).toBeVisible();
-    expect(screen.getByText(/gpt-5.6-luna/)).toBeVisible();
+    expect(screen.getByText(/gpt-6-luna/)).toBeVisible();
   });
 });

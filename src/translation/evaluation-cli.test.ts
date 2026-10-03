@@ -7,12 +7,12 @@ import type { TranslationEvaluationProtocol } from "./evaluation";
 
 const protocol: TranslationEvaluationProtocol = {
   version: "translation-eval-v1",
-  candidateModel: "gpt-5.6-luna",
+  candidateModel: "gpt-6-luna",
   candidatePromptVersion: "v1",
   candidateInstructions: "Translate the supplied segments faithfully.",
   candidatePromptDigest:
     "15c1627e293e3f3b51313694b3b2978aeefda9f1831ad3bf711a826dc04b7657",
-  judgeModel: "gpt-5.6-sol",
+  judgeModel: "gpt-6-astra",
   judgeEffort: "medium",
   judgePromptVersion: "judge-v1",
   judgeInstructions: "Apply the locked translation rubric.",
@@ -31,12 +31,12 @@ const protocol: TranslationEvaluationProtocol = {
   judgeMaxOutputTokens: 128,
   judgeMaximumRequestBytes: 7000,
   providerFramingTokenAllowance: 512,
-  maximumCandidateCallMicrousd: 25000,
-  maximumJudgeCallMicrousd: 100000,
-  candidateInputMicrousdPerMillion: 200000,
-  candidateOutputMicrousdPerMillion: 1200000,
-  judgeInputMicrousdPerMillion: 5000000,
-  judgeOutputMicrousdPerMillion: 30000000,
+  maximumCandidateCallMicrousd: 666,
+  maximumJudgeCallMicrousd: 88320,
+  candidateInputMicrousdPerMillion: 100000,
+  candidateOutputMicrousdPerMillion: 500000,
+  judgeInputMicrousdPerMillion: 10000000,
+  judgeOutputMicrousdPerMillion: 50000000,
   calibrationDigest: "a".repeat(64),
   nativeReviewerSetDigest: "b".repeat(64),
 };
@@ -94,9 +94,9 @@ function dependencies({
 } = {}) {
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
-    return body.model === "gpt-5.6-sol"
-      ? response("gpt-5.6-sol", { score: 0.95, criticalErrors: 0 })
-      : response("gpt-5.6-luna", {
+    return body.model === "gpt-6-astra"
+      ? response("gpt-6-astra", { score: 0.95, criticalErrors: 0 })
+      : response("gpt-6-luna", {
           segments: [{ key: "description", text: "كوخ هادئ" }],
         });
   });
@@ -177,7 +177,7 @@ describe("translation evaluation command", () => {
     const serialized = command.stdout.mock.calls[0]![0];
     const artifact = JSON.parse(serialized);
     expect(artifact).toMatchObject({
-      selected: { model: "gpt-5.6-luna", effort: "none", promptVersion: "v1" },
+      selected: { model: "gpt-6-luna", effort: "none", promptVersion: "v1" },
       sampleCount: 1,
       runsPerConfiguration: 3,
     });
