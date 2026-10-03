@@ -50,6 +50,7 @@ type ChildProbe = { directory: string; completion: Promise<ChildExit> };
 
 const outerTest = test.extend<{ childProbe: ChildProbe }>({
   childProbe: async ({ baseURL }, use, testInfo) => {
+    // Hosted CI peaked at 11.7s; retain 390s for child startup, its own deadlines and cleanup.
     testInfo.setTimeout(390_000);
     if (!baseURL)
       throw new Error(

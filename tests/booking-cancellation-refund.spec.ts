@@ -239,7 +239,6 @@ async function assertResponsiveDetails(
   }
 }
 test.describe("retained cancellation and refund controls", () => {
-  test.setTimeout(120000);
   test.use({ actionTimeout: 10000 });
   test.beforeEach(async () => {
     clear();

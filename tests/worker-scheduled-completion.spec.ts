@@ -287,7 +287,6 @@ async function assertLifecycleViews(
   }
 }
 test.describe("scheduled completion and restricted lifecycle journeys", () => {
-  test.setTimeout(180000);
   test.use({ actionTimeout: 10000 });
   test.beforeEach(async () => {
     clear();

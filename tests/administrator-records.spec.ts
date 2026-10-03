@@ -218,7 +218,6 @@ test.beforeAll(async ({}, testInfo) => {
 test("an administrator discovers accounts and approval records with authoritative counts and restricted documents in every locale", async ({
   page,
 }) => {
-  test.setTimeout(180_000);
   const fixture = reviewFixture;
   const applications = count(
     "select count(*) from public.owner_applications where status in ('submitted','under_review');",

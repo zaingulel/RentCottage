@@ -58,7 +58,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
   browser,
   baseURL,
 }, testInfo) => {
-  test.setTimeout(testInfo.project.name === "worker" ? 480_000 : 120_000);
+  if (testInfo.project.name === "worker") {
+    // Hosted CI peaked at a rounded 1.5m on Worker; 180s leaves about 90s of headroom.
+    test.setTimeout(180_000);
+  }
   const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
   if (
     process.env.APP_ENVIRONMENT !== "test" ||
