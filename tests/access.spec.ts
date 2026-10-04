@@ -2375,57 +2375,341 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     if (availabilityError) throw availabilityError;
   }
 
+  const dayOnlyQuery = {
+    from: firstDay,
+    to: secondDay,
+    guests: 4,
+    selections: [],
+    amenities: [],
+  };
+  const expectedInventory = [firstDay, secondDay].flatMap((day) => [
+    ...shifts.map((shift) => ({
+      serviceDay: day,
+      kind: "shift",
+      position: shift.position,
+      name: shift.name,
+      startTime: shift.start_time.slice(0, 5),
+      endTime: shift.end_time.slice(0, 5),
+      priceIqd: ({ 1: 180000, 2: 190000, 3: 200000 } as const)[
+        shift.position as 1 | 2 | 3
+      ],
+      available: true,
+    })),
+    {
+      serviceDay: day,
+      kind: "full-day",
+      name: "Full-day bundle",
+      startTime: firstShift.start_time.slice(0, 5),
+      endTime: lastShift!.end_time.slice(0, 5),
+      priceIqd: day === firstDay ? 250000 : 260000,
+      available: true,
+    },
+  ]);
+  const { error: partialAvailabilityError } = await fixtureOwner.rpc(
+    "set_cottage_inventory_availability",
+    {
+      target_profile_id: fixture!.profileId,
+      target_schedule_revision_id: fixture!.scheduleId,
+      target_service_day: firstDay,
+      requested_states: [
+        { unitId: secondShift.id, unitKind: "shift", state: "closed" },
+        {
+          unitId: schedule.full_day_bundle_id,
+          unitKind: "full_day_bundle",
+          state: "closed",
+        },
+      ],
+    },
+  );
+  if (partialAvailabilityError) throw partialAvailabilityError;
+  const { data: partialReadback, error: partialReadbackError } =
+    await fixtureOwner.rpc("get_public_cottage_profile", {
+      target_locale: "en",
+      target_slug: fixture!.slug,
+      requested_search: dayOnlyQuery,
+    });
+  if (partialReadbackError) throw partialReadbackError;
+  expect(partialReadback).toEqual(
+    expect.objectContaining({
+      inventory: expectedInventory.map((unit) => ({
+        ...unit,
+        available: !(
+          unit.serviceDay === firstDay &&
+          (unit.kind === "full-day" ||
+            ("position" in unit && unit.position === secondShift.position))
+        ),
+      })),
+    }),
+  );
+  expect(partialReadback).not.toBeNull();
+  expect(Object.keys(partialReadback).sort()).toEqual([
+    "amenities",
+    "approximateLocation",
+    "bathrooms",
+    "bedrooms",
+    "capacity",
+    "description",
+    "governorate",
+    "houseRules",
+    "inventory",
+    "mediaIds",
+    "name",
+    "slug",
+  ]);
+
   await page.goto("/en");
   await page.getByLabel("From Service Day").fill(firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
-  await page
-    .getByRole("group", { name: serviceDayLabel(firstDay) })
-    .getByRole("button", { name: `Shift ${firstShift.position}` })
-    .click();
-  await page
-    .getByRole("group", { name: serviceDayLabel(firstDay) })
-    .getByRole("button", { name: `Shift ${secondShift.position}` })
-    .click();
-  await page
-    .getByRole("group", { name: serviceDayLabel(secondDay) })
-    .getByRole("button", { name: `Shift ${firstShift.position}` })
-    .click();
+  await page.getByLabel("Guests", { exact: true }).fill("4");
+  const optionalFilters = page
+    .locator("summary")
+    .filter({ hasText: "Booking Period filters (optional)" });
+  await optionalFilters.focus();
+  await expect(optionalFilters).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("group", { name: serviceDayLabel(firstDay) }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { pressed: true })).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("group", { name: serviceDayLabel(firstDay) }),
+  ).toBeHidden();
   await page.getByRole("button", { name: "Search available cottages" }).click();
+  await expect(page).toHaveURL(/\/en\/results\?/);
+  const dayOnlyResultsUrl = new URL(page.url());
+  expect(dayOnlyResultsUrl.searchParams.getAll("selection")).toEqual([]);
+  expect(dayOnlyResultsUrl.searchParams.get("from")).toBe(firstDay);
+  expect(dayOnlyResultsUrl.searchParams.get("to")).toBe(secondDay);
+  expect(dayOnlyResultsUrl.searchParams.get("guests")).toBe("4");
   const resultCard = page.locator("article").filter({
     has: page.locator(`a[href^="/en/cottages/${fixture!.slug}?"]`),
   });
+  await expect(resultCard).toHaveCount(1);
   await expect(
     resultCard.getByRole("heading", { name: fixture!.name }),
   ).toBeVisible();
   await expect(
     resultCard.getByText(`${fixture!.approximateLocation},`, { exact: false }),
   ).toBeVisible();
-  await expect(
-    resultCard.getByText("IQD 550,000", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByText(
-        new RegExp(
-          `${firstShift.name}.*${firstShift.start_time.slice(0, 5)}.*${firstShift.end_time.slice(0, 5)}`,
+  await expect(resultCard.getByRole("listitem")).toHaveCount(
+    (shifts.length + 1) * 2,
+  );
+  for (const [index, day] of [firstDay, secondDay].entries()) {
+    const rows = resultCard.getByRole("listitem");
+    for (const [shiftIndex, shift] of shifts.entries()) {
+      const option = rows.nth(index * (shifts.length + 1) + shiftIndex);
+      await expect(option).toContainText(shift.name);
+      await expect(option).toContainText(
+        `${shift.start_time.slice(0, 5)}–${shift.end_time.slice(0, 5)}`,
+      );
+      await expect(option).toContainText(
+        ({ 1: "IQD 180,000", 2: "IQD 190,000", 3: "IQD 200,000" } as const)[
+          shift.position as 1 | 2 | 3
+        ],
+      );
+      await expect(
+        option.getByText(
+          day === firstDay && shift.position === secondShift.position
+            ? "Unavailable"
+            : "Available",
+          { exact: true },
         ),
-      )
-      .first(),
-  ).toBeVisible();
+      ).toBeVisible();
+    }
+    const bundle = rows.nth(index * (shifts.length + 1) + shifts.length);
+    await expect(bundle).toContainText(
+      day === firstDay ? "IQD 250,000" : "IQD 260,000",
+    );
+    await expect(
+      bundle.getByText(day === firstDay ? "Unavailable" : "Available", {
+        exact: true,
+      }),
+    ).toBeVisible();
+  }
+  await expect(resultCard.getByText(/total|IQD 550,000/i)).toHaveCount(0);
   await expectPrivateValuesAbsent();
+  if (testInfo.project.name === "desktop") {
+    await resultCard.screenshot({
+      path: test.info().outputPath("day-first-results-en-desktop.png"),
+    });
+  }
   await resultCard.getByRole("link", { name: "View cottage" }).click();
   await expect(page).toHaveURL(/\/en\/cottages\/[^/?]+\?/);
   await expect(
     page.getByRole("heading", { name: fixture!.name }),
   ).toBeVisible();
+  const dayOnlyProfileUrl = new URL(page.url());
+  expect(dayOnlyProfileUrl.search).toBe(dayOnlyResultsUrl.search);
+  const picker = page.getByRole("complementary");
+  await expect(picker.getByRole("button", { pressed: true })).toHaveCount(0);
   await expect(
-    page.getByText("Total price", { exact: true }).locator(".."),
-  ).toContainText("IQD 550,000");
+    picker.getByRole("button", { name: "Get exact quote" }),
+  ).toBeDisabled();
+  await expect(
+    picker.getByRole("button", { name: "Message this cottage" }),
+  ).toBeDisabled();
+  await expect(
+    picker.getByText(
+      "Choose at least one available option for every Service Day.",
+    ),
+  ).toBeVisible();
+  await expect(picker.getByText("Total price", { exact: true })).toHaveCount(0);
   await expectPrivateValuesAbsent();
+  if (testInfo.project.name === "mobile") {
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        ),
+      )
+      .toBe(true);
+    await picker.screenshot({
+      path: test.info().outputPath("day-first-picker-empty-en-mobile.png"),
+    });
+  }
+
+  await page.goto("/en");
+  await page.getByLabel("From Service Day").fill(firstDay);
+  await page.getByLabel("To Service Day").fill(secondDay);
+  await page
+    .getByLabel("Approximate area (optional)")
+    .selectOption(fixture!.approximateLocation);
+  await page
+    .locator("summary")
+    .filter({ hasText: "Booking Period filters (optional)" })
+    .click();
+  await page
+    .getByRole("group", { name: serviceDayLabel(firstDay) })
+    .getByRole("button", { name: `Shift ${firstShift.position}`, exact: true })
+    .click();
+  await page.getByRole("button", { name: "Search available cottages" }).click();
+  await expect(page).toHaveURL(/\/en\/results\?/);
+  const partialResultsUrl = new URL(page.url());
+  expect(partialResultsUrl.searchParams.getAll("selection")).toEqual([
+    `${firstDay}:shift:${firstShift.position}`,
+  ]);
+  expect(partialResultsUrl.searchParams.get("area")).toBe(
+    fixture!.approximateLocation,
+  );
+  await expect(resultCard).toHaveCount(1);
+  await expect(
+    resultCard.getByText("Selected filter", { exact: true }),
+  ).toHaveCount(1);
+  await resultCard.getByRole("link", { name: "View cottage" }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === dayOnlyProfileUrl.pathname &&
+      url.search === partialResultsUrl.search,
+  );
+  await expect(
+    picker
+      .getByRole("group", { name: serviceDayLabel(firstDay) })
+      .getByRole("button", { name: firstShift.name, exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    picker
+      .getByRole("group", { name: serviceDayLabel(secondDay) })
+      .getByRole("button", { pressed: true }),
+  ).toHaveCount(0);
+  await expect(
+    picker.getByRole("button", { name: "Get exact quote" }),
+  ).toBeDisabled();
+  await page.getByRole("link", { name: "Back to results" }).click();
+  await expect(page).toHaveURL(partialResultsUrl.href);
+
+  await page.goto("/en");
+  await page.getByLabel("From Service Day").fill(firstDay);
+  await page.getByLabel("To Service Day").fill(secondDay);
+  await page
+    .locator("summary")
+    .filter({ hasText: "Booking Period filters (optional)" })
+    .click();
+  await page
+    .getByRole("group", { name: serviceDayLabel(firstDay) })
+    .getByRole("button", { name: `Shift ${secondShift.position}`, exact: true })
+    .click();
+  await page.getByRole("button", { name: "Search available cottages" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Available cottages" }),
+  ).toBeVisible();
+  expect(new URL(page.url()).searchParams.getAll("selection")).toEqual([
+    `${firstDay}:shift:${secondShift.position}`,
+  ]);
+  await expect(resultCard).toHaveCount(0);
+
+  const { error: restoreAvailabilityError } = await fixtureOwner.rpc(
+    "set_cottage_inventory_availability",
+    {
+      target_profile_id: fixture!.profileId,
+      target_schedule_revision_id: fixture!.scheduleId,
+      target_service_day: firstDay,
+      requested_states: [
+        { unitId: secondShift.id, unitKind: "shift", state: "open" },
+        {
+          unitId: schedule.full_day_bundle_id,
+          unitKind: "full_day_bundle",
+          state: "open",
+        },
+      ],
+    },
+  );
+  if (restoreAvailabilityError) throw restoreAvailabilityError;
+  const { data: restoredReadback, error: restoredReadbackError } =
+    await fixtureOwner.rpc("get_public_cottage_profile", {
+      target_locale: "en",
+      target_slug: fixture!.slug,
+      requested_search: dayOnlyQuery,
+    });
+  if (restoredReadbackError) throw restoredReadbackError;
+  expect(restoredReadback).toEqual(
+    expect.objectContaining({ inventory: expectedInventory }),
+  );
+  await page.goto(dayOnlyProfileUrl.href);
+  const firstDayPicker = picker.getByRole("group", {
+    name: serviceDayLabel(firstDay),
+  });
+  const firstOption = firstDayPicker.getByRole("button", {
+    name: firstShift.name,
+    exact: true,
+  });
+  await expect(firstOption).toHaveAttribute("aria-pressed", "false");
+  await firstOption.focus();
+  await expect(firstOption).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(firstOption).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    picker.getByRole("button", { name: "Get exact quote" }),
+  ).toBeDisabled();
+  await firstDayPicker
+    .getByRole("button", { name: secondShift.name, exact: true })
+    .click();
+  await expect(
+    firstDayPicker.getByRole("button", { name: secondShift.name, exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  const secondDayOption = picker
+    .getByRole("group", { name: serviceDayLabel(secondDay) })
+    .getByRole("button", { name: firstShift.name, exact: true });
+  await secondDayOption.click();
+  await expect(secondDayOption).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    picker.getByRole("link", { name: "Get exact quote" }),
+  ).toBeVisible();
+  await expect(
+    picker.getByRole("link", { name: "Message this cottage" }),
+  ).toBeVisible();
   const english = new URL(page.url());
-  expect(english.searchParams.getAll("selection")).toHaveLength(3);
+  expect(english.searchParams.getAll("selection")).toEqual([
+    `${firstDay}:shift:${firstShift.position}`,
+    `${firstDay}:shift:${secondShift.position}`,
+    `${secondDay}:shift:${firstShift.position}`,
+  ]);
   expect(english.searchParams.get("from")).toBe(firstDay);
   expect(english.searchParams.get("to")).toBe(secondDay);
+  expect(english.searchParams.get("guests")).toBe("4");
+  await expectPrivateValuesAbsent();
   await page.getByRole("link", { name: "Get exact quote" }).click();
   await expect(page).toHaveURL(/\/en\/request\/[^/?]+\?/);
   await expect(
@@ -2541,6 +2825,10 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await page.goto("/en");
   await page.getByLabel("From Service Day").fill(firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
+  await page
+    .locator("summary")
+    .filter({ hasText: "Booking Period filters (optional)" })
+    .click();
   for (const day of [firstDay, secondDay]) {
     await page
       .getByRole("group", { name: serviceDayLabel(day) })
@@ -2555,15 +2843,26 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     fullDayResult.getByRole("heading", { name: fixture!.name }),
   ).toBeVisible();
   await expect(
-    fullDayResult.getByText("IQD 510,000", { exact: true }),
+    fullDayResult.getByText("IQD 250,000", { exact: true }),
   ).toBeVisible();
+  await expect(
+    fullDayResult.getByText("IQD 260,000", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    fullDayResult.getByText("IQD 510,000", { exact: true }),
+  ).toHaveCount(0);
   await expect(
     fullDayResult.getByText("Full-day bundle", { exact: false }),
   ).toHaveCount(2);
   await fullDayResult.getByRole("link", { name: "View cottage" }).click();
   await expect(
-    page.getByText("Total price", { exact: true }).locator(".."),
-  ).toContainText("IQD 510,000");
+    picker.getByRole("button", {
+      name: "Full-day bundle",
+      pressed: true,
+      exact: true,
+    }),
+  ).toHaveCount(2);
+  await expect(picker.getByText("Total price", { exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Get exact quote" }).click();
   const fullDayItems = page.getByRole("listitem", {
     name: /Full-Day Bundle/,
@@ -2596,7 +2895,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(page.getByText(fixture!.soraniDescription)).toBeVisible();
   const soraniLineMetrics = await page
     .locator(
-      ".profile-heading h1, .profile-section h2, .profile-section p, .booking-summary h2, .booking-summary li, .booking-summary strong",
+      ".profile-heading h1, .profile-section h2, .profile-section p, .booking-summary h2, .booking-summary li, .booking-summary legend",
     )
     .evaluateAll((elements) =>
       elements.map((element) => {
@@ -2612,6 +2911,21 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     expect(metric.lineHeight).toBeGreaterThanOrEqual(metric.fontSize * 1.35);
   }
   await expectPrivateValuesAbsent();
+  if (testInfo.project.name === "mobile") {
+    await expect(picker.getByRole("button", { pressed: true })).toHaveCount(3);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        ),
+      )
+      .toBe(true);
+    await picker.screenshot({
+      path: test.info().outputPath("day-first-picker-selected-ckb-mobile.png"),
+    });
+  }
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ar")}\\?`),
@@ -2646,6 +2960,53 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     );
     if (closeError) throw closeError;
   }
+
+  const { data: closedReadback, error: closedReadbackError } =
+    await fixtureOwner.rpc("get_public_cottage_profile", {
+      target_locale: "en",
+      target_slug: fixture!.slug,
+      requested_search: dayOnlyQuery,
+    });
+  if (closedReadbackError) throw closedReadbackError;
+  expect(closedReadback).toEqual(
+    expect.objectContaining({
+      inventory: expectedInventory.map((unit) => ({
+        ...unit,
+        available: false,
+      })),
+    }),
+  );
+  await page.goto(dayOnlyResultsUrl.href);
+  await expect(
+    page.getByRole("heading", { name: "Available cottages" }),
+  ).toBeVisible();
+  await expect(resultCard).toHaveCount(0);
+  await expectPrivateValuesAbsent();
+  await page.goto(english.href);
+  await expect(picker.getByRole("alert")).toContainText(
+    "A selected option is no longer available.",
+  );
+  await expect(
+    picker.getByRole("button", { name: "Get exact quote" }),
+  ).toBeDisabled();
+  await expect(firstOption).toHaveAttribute("aria-pressed", "true");
+  await expect(firstOption).toBeEnabled();
+  if (testInfo.project.name === "desktop") {
+    await picker.screenshot({
+      path: test.info().outputPath("day-first-picker-stale-en-desktop.png"),
+    });
+  }
+  await firstOption.click();
+  await expect(firstOption).toHaveAttribute("aria-pressed", "false");
+  await expect(picker.getByRole("button", { pressed: true })).toHaveCount(2);
+  expect(new URL(page.url()).searchParams.getAll("selection")).toEqual([
+    `${firstDay}:shift:${secondShift.position}`,
+    `${secondDay}:shift:${firstShift.position}`,
+  ]);
+  await expect(
+    picker.getByRole("button", { name: "Get exact quote" }),
+  ).toBeDisabled();
+  await expectPrivateValuesAbsent();
 
   await page.goto(english.pathname);
   await expect(

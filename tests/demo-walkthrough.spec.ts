@@ -743,21 +743,9 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       duration: 1_400,
     });
     await page.goto("/en");
-    const periodPicker = page.getByRole("group", {
-      name: "Booking Period for each Service Day",
-    });
-    const defaultShift = periodPicker.getByRole("button", { name: "Shift 1" });
-    await expect(defaultShift).toHaveAttribute("aria-pressed", "false");
-    await defaultShift.click();
-    await expect(defaultShift).toHaveAttribute("aria-pressed", "true");
     await page.getByLabel("From Service Day").fill(demo.recordedDay);
     await page.getByLabel("To Service Day").fill(demo.recordedDay);
-    const serviceDayRow = page.getByRole("group", {
-      name: expectedServiceDayLabel(demo.recordedDay),
-    });
-    await expect(
-      serviceDayRow.getByRole("button", { name: "Shift 1" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    await page.getByLabel("Guests", { exact: true }).fill("4");
     await page
       .getByRole("button", { name: "Search available cottages" })
       .click();
@@ -770,12 +758,23 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expectScene(
       publicCottage.getByRole("heading", { name: demo.cottageName }),
     );
-    await expect(
-      publicCottage.getByText("total", { exact: true }),
-    ).toBeVisible();
-    await expect(publicCottage.getByRole("listitem")).toContainText(
-      `${expectedServiceDayLabel(demo.recordedDay).replace(/^\w+, /, "")} · Morning · 08:00–12:00`,
+    expect(new URL(page.url()).searchParams.getAll("selection")).toEqual([]);
+    await expect(publicCottage.getByText("total", { exact: true })).toHaveCount(
+      0,
     );
+    await expect(
+      publicCottage.getByRole("heading", {
+        name: expectedServiceDayLabel(demo.recordedDay).replace(/^\w+, /, ""),
+      }),
+    ).toBeVisible();
+    const morningOption = publicCottage
+      .getByRole("listitem")
+      .filter({ hasText: "Morning" });
+    await expect(morningOption).toContainText("08:00–12:00");
+    await expect(morningOption).toContainText("IQD 180,000");
+    await expect(
+      morningOption.getByText("Available", { exact: true }),
+    ).toBeVisible();
     await expectDemoImage(
       publicCottage.getByRole("img", { name: demo.cottageName }),
     );
@@ -797,10 +796,24 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     const bookingSidebar = page.getByRole("complementary");
     await expect(
       bookingSidebar.getByRole("heading", {
-        name: "Requested Booking Period",
+        name: "Choose your Booking Period",
       }),
     ).toBeVisible();
-    await expect(bookingSidebar.getByText("Total price")).toBeVisible();
+    await expect(bookingSidebar.getByText("Total price")).toHaveCount(0);
+    await expect(
+      bookingSidebar.getByRole("button", { pressed: true }),
+    ).toHaveCount(0);
+    await expect(
+      bookingSidebar.getByRole("button", { name: "Get exact quote" }),
+    ).toBeDisabled();
+    const morningChoice = bookingSidebar
+      .getByRole("group", { name: expectedServiceDayLabel(demo.recordedDay) })
+      .getByRole("button", { name: "Morning", exact: true });
+    await morningChoice.click();
+    await expect(morningChoice).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      bookingSidebar.getByRole("link", { name: "Get exact quote" }),
+    ).toBeVisible();
     await expect(page.getByText("Capacity", { exact: true })).toBeVisible();
     await expect(
       page.getByText("Bedrooms and bathrooms", { exact: true }),
