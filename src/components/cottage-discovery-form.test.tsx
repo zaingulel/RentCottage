@@ -232,13 +232,16 @@ describe("CottageDiscoveryForm booking period picker", () => {
   it("rejects an oversized date range through the query parser before navigation", async () => {
     const user = userEvent.setup();
     render(<CottageDiscoveryForm locale="en" facets={facets} />);
+    const submitButton = screen.getByRole("button", {
+      name: "Search available cottages",
+    });
     chooseDates(dateLabels.en, "2099-01-01", "2100-02-05");
-    await user.click(
-      screen.getByRole("button", { name: "Search available cottages" }),
-    );
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Check your dates and guest count. Choose a range of at most 400 days.",
-    );
+    await user.click(submitButton);
+    expect(
+      screen.getByText(
+        "Check your dates and guest count. Choose a range of at most 400 days.",
+      ),
+    ).toHaveAttribute("role", "alert");
     expect(push).not.toHaveBeenCalled();
   });
 });
