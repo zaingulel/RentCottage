@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { ActionButton } from "@/components/interaction-controls";
 import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
 import { isLocale } from "@/i18n/routing";
 
@@ -30,7 +31,9 @@ export default async function AdministratorPaymentLookupPage({
           autoComplete="off"
           dir="ltr"
         />
-        <button type="submit">{copy.lookupAction}</button>
+        <ActionButton kind="primary" width="content" type="submit">
+          {copy.lookupAction}
+        </ActionButton>
       </form>
     </main>
   );

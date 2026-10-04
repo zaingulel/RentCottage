@@ -26,6 +26,7 @@ import { messagingMessages } from "@/i18n/messaging-messages";
 import {
   ActionButton,
   ActionFeedback,
+  ActionLink,
   FormControl,
 } from "./interaction-controls";
 import { PhoneAccessForm } from "./phone-access-form";
@@ -171,7 +172,7 @@ export function BookingRequestForm({
       <h2>{copy.formTitle}</h2>
       <p>{copy.formIntro}</p>
       <p className="quote-notice">{quoteNotice}</p>
-      <fieldset>
+      <fieldset className="booking-request-enquiry">
         <legend>{messagingMessages[locale].continueEnquiry}</legend>
         <label>
           <input
@@ -196,11 +197,12 @@ export function BookingRequestForm({
           </label>
         ))}
         <p>{messagingMessages[locale].newEnquiryHelp}</p>
-        <Link
+        <ActionLink
+          kind="text"
           href={`/${locale}/messages?cottage=${quote.slug}&${serializeCottageDiscoveryQuery(discoveryQuery)}`}
         >
           {messagingMessages[locale].browseEnquiries}
-        </Link>
+        </ActionLink>
       </fieldset>
       {uiPolicy.insideCutoff ? (
         <ActionFeedback kind="error">{copy.cutoffPassed}</ActionFeedback>

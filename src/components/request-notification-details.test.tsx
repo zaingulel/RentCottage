@@ -120,3 +120,24 @@ it.each(["en", "ar", "ckb"] as const)(
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
   },
 );
+
+it.each([
+  ["en", "Request notification delivery"],
+  ["ar", "تسليم إشعارات الطلب"],
+  ["ckb", "گەیاندنی ئاگادارکردنەوەی داواکاری"],
+] as const)(
+  "%s shows no delivery heading when an available delivery has no notices",
+  (locale, title) => {
+    render(
+      <RequestNotificationDetails
+        locale={locale}
+        reference="RC-REQ-0000000000000553"
+        delivery={{ status: "available", notices: [] }}
+      />,
+    );
+    expect(
+      screen.queryByRole("region", { name: title }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+  },
+);

@@ -174,6 +174,22 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
 
+  await page.goto("/en/administrator/payments");
+  const lookup = page.getByRole("button", { name: "View payment history" });
+  // A raw browser button computes weight 400 and radius 0px here.
+  await expect(lookup).toHaveCSS("font-weight", "700");
+  await expect(lookup).not.toHaveCSS("border-radius", "0px");
+  const lookupField = page.getByLabel("Booking Request reference");
+  await expect
+    .poll(async () => {
+      const [field, action] = await Promise.all([
+        lookupField.boundingBox(),
+        lookup.boundingBox(),
+      ]);
+      return action!.y - (field!.y + field!.height);
+    })
+    .toBeGreaterThanOrEqual(8);
+
   for (const [locale, heading, pending, physical, succeeded, retry] of [
     [
       "en",
