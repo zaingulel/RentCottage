@@ -13,11 +13,10 @@ export interface PublicCottageSummary {
   capacity: number;
   amenities: string[];
   mediaUrls: string[];
-  totalPriceIqd: number;
-  selectedInventory: PublicCottageSelectedInventory[];
+  inventory: PublicCottageInventoryUnit[];
 }
 
-export interface PublicCottageSelectedInventory {
+export interface PublicCottageInventoryUnit {
   serviceDay: string;
   kind: "shift" | "full-day";
   position?: number;
@@ -28,12 +27,7 @@ export interface PublicCottageSelectedInventory {
   available: boolean;
 }
 
-export interface PublicCottageProfile extends Omit<
-  PublicCottageSummary,
-  "totalPriceIqd" | "selectedInventory"
-> {
-  totalPriceIqd: number | null;
-  selectedInventory: PublicCottageSelectedInventory[];
+export interface PublicCottageProfile extends PublicCottageSummary {
   bedrooms: number;
   bathrooms: number;
   description: string;
@@ -71,8 +65,7 @@ const summaryKeys = new Set([
   "capacity",
   "amenities",
   "mediaIds",
-  "totalPriceIqd",
-  "selectedInventory",
+  "inventory",
 ]);
 const profileKeys = new Set([
   ...summaryKeys,
@@ -81,7 +74,7 @@ const profileKeys = new Set([
   "description",
   "houseRules",
 ]);
-const selectedShiftKeys = new Set([
+const inventoryShiftKeys = new Set([
   "serviceDay",
   "kind",
   "position",
@@ -91,8 +84,8 @@ const selectedShiftKeys = new Set([
   "priceIqd",
   "available",
 ]);
-const selectedFullDayKeys = new Set(
-  [...selectedShiftKeys].filter((key) => key !== "position"),
+const inventoryFullDayKeys = new Set(
+  [...inventoryShiftKeys].filter((key) => key !== "position"),
 );
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -144,85 +137,92 @@ function unavailable(
   return { status: "unavailable" };
 }
 
-function selectedInventoryFrom(
-  value: unknown,
-  availableOnly: boolean,
-): PublicCottageSelectedInventory[] | undefined {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 1200)
-    return undefined;
-  if (
-    !value.every((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item))
-        return false;
-      const selected = item as Record<string, unknown>;
-      const kind = selected.kind;
-      if (
-        (kind === "shift" && !exactObject(selected, selectedShiftKeys)) ||
-        (kind === "full-day" && !exactObject(selected, selectedFullDayKeys))
-      )
-        return false;
-      const validPrice =
-        selected.priceIqd === null ||
-        (Number.isSafeInteger(selected.priceIqd) &&
-          (selected.priceIqd as number) > 0);
-      return (
-        serviceDay(selected.serviceDay) &&
-        nonEmptyText(selected.name) &&
-        typeof selected.startTime === "string" &&
-        timePattern.test(selected.startTime) &&
-        typeof selected.endTime === "string" &&
-        timePattern.test(selected.endTime) &&
-        validPrice &&
-        typeof selected.available === "boolean" &&
-        (!availableOnly ||
-          (selected.available === true && selected.priceIqd !== null)) &&
-        (kind === "full-day" ||
-          (Number.isSafeInteger(selected.position) &&
-            (selected.position as number) >= 1 &&
-            (selected.position as number) <= 3))
-      );
-    })
-  )
-    return undefined;
-  const keys = value.map((item) => {
-    const selected = item as Record<string, unknown>;
-    return `${selected.serviceDay}:${selected.kind}:${selected.position ?? "full"}`;
-  });
-  if (new Set(keys).size !== keys.length) return undefined;
-  const byDay = new Map<string, number>();
-  for (const item of value as Array<Record<string, unknown>>) {
-    const day = item.serviceDay as string;
-    if (item.kind === "full-day" && byDay.has(day)) return undefined;
-    if (item.kind !== "full-day" && byDay.get(day) === -1) return undefined;
-    byDay.set(day, item.kind === "full-day" ? -1 : (byDay.get(day) ?? 0) + 1);
-  }
-  return value as PublicCottageSelectedInventory[];
+function inventoryIdentity(
+  item:
+    | CottageDiscoveryQuery["selections"][number]
+    | PublicCottageInventoryUnit,
+) {
+  return `${item.serviceDay}:${item.kind}:${item.kind === "shift" ? item.position : "full"}`;
 }
 
-function selectedInventoryMatchesQuery(
-  inventory: PublicCottageSelectedInventory[],
+function inventoryFrom(
+  value: unknown,
+  query: CottageDiscoveryQuery,
+): PublicCottageInventoryUnit[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 1600)
+    return undefined;
+  const byDay = new Map<string, PublicCottageInventoryUnit[]>();
+  let previousKey = "";
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const item = raw as Record<string, unknown>;
+    if (
+      (item.kind !== "shift" && item.kind !== "full-day") ||
+      !exactObject(
+        item,
+        item.kind === "shift" ? inventoryShiftKeys : inventoryFullDayKeys,
+      ) ||
+      !serviceDay(item.serviceDay) ||
+      item.serviceDay < query.from ||
+      item.serviceDay > query.to ||
+      !nonEmptyText(item.name) ||
+      typeof item.startTime !== "string" ||
+      !timePattern.test(item.startTime) ||
+      typeof item.endTime !== "string" ||
+      !timePattern.test(item.endTime) ||
+      !(
+        item.priceIqd === null ||
+        (Number.isSafeInteger(item.priceIqd) && (item.priceIqd as number) > 0)
+      ) ||
+      typeof item.available !== "boolean" ||
+      (item.available && item.priceIqd === null) ||
+      (item.kind === "shift" && ![1, 2, 3].includes(item.position as number))
+    )
+      return undefined;
+    const key = `${item.serviceDay}:${item.kind === "shift" ? item.position : 4}`;
+    if (key <= previousKey) return undefined;
+    previousKey = key;
+    const units = byDay.get(item.serviceDay) ?? [];
+    units.push(item as unknown as PublicCottageInventoryUnit);
+    byDay.set(item.serviceDay, units);
+  }
+  for (let day = query.from; day <= query.to; ) {
+    const units = byDay.get(day);
+    if (
+      !units ||
+      (units.length !== 3 && units.length !== 4) ||
+      units.at(-1)?.kind !== "full-day" ||
+      units
+        .slice(0, -1)
+        .some(
+          (unit, index) => unit.kind !== "shift" || unit.position !== index + 1,
+        )
+    )
+      return undefined;
+    const next = new Date(`${day}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    day = next.toISOString().slice(0, 10);
+  }
+  return value as PublicCottageInventoryUnit[];
+}
+
+function inventorySatisfiesSearch(
+  inventory: PublicCottageInventoryUnit[],
   query: CottageDiscoveryQuery,
 ) {
-  const inventoryKeys = inventory.map(
-    (item) =>
-      `${item.serviceDay}:${item.kind}:${item.kind === "shift" ? item.position : "full"}`,
+  const availableDays = new Set(
+    inventory.filter((item) => item.available).map((item) => item.serviceDay),
   );
-  const queryKeys = query.selections.map(
-    (item) =>
-      `${item.serviceDay}:${item.kind}:${item.kind === "shift" ? item.position : "full"}`,
+  const offeredDays = new Set(inventory.map((item) => item.serviceDay));
+  const availableUnits = new Set(
+    inventory.filter((item) => item.available).map(inventoryIdentity),
   );
   return (
-    inventoryKeys.length === queryKeys.length &&
-    inventoryKeys.every((key, index) => key === queryKeys[index])
+    availableDays.size === offeredDays.size &&
+    query.selections.every((selection) =>
+      availableUnits.has(inventoryIdentity(selection)),
+    )
   );
-}
-
-function selectedInventoryTotal(
-  inventory: PublicCottageSelectedInventory[],
-): number | null | undefined {
-  if (inventory.some((item) => item.priceIqd === null)) return null;
-  const total = inventory.reduce((sum, item) => sum + (item.priceIqd ?? 0), 0);
-  return Number.isSafeInteger(total) ? total : undefined;
 }
 
 function summaryFrom(
@@ -231,10 +231,7 @@ function summaryFrom(
 ): PublicCottageSummary | undefined {
   if (!exactObject(value, summaryKeys)) return undefined;
   const input = value as Record<string, unknown>;
-  const selectedInventory = selectedInventoryFrom(
-    input.selectedInventory,
-    true,
-  );
+  const inventory = inventoryFrom(input.inventory, query);
   if (
     typeof input.slug !== "string" ||
     !publicSlugPattern.test(input.slug) ||
@@ -242,15 +239,12 @@ function summaryFrom(
     !nonEmptyText(input.governorate) ||
     !nonEmptyText(input.approximateLocation) ||
     !Number.isSafeInteger(input.capacity) ||
-    !Number.isSafeInteger(input.totalPriceIqd) ||
     (input.capacity as number) < 1 ||
-    (input.totalPriceIqd as number) < 1 ||
     !amenityArray(input.amenities) ||
     !stringArray(input.mediaIds) ||
     !input.mediaIds.every((id) => uuidPattern.test(id)) ||
-    !selectedInventory ||
-    !selectedInventoryMatchesQuery(selectedInventory, query) ||
-    selectedInventoryTotal(selectedInventory) !== input.totalPriceIqd
+    !inventory ||
+    !inventorySatisfiesSearch(inventory, query)
   ) {
     return undefined;
   }
@@ -262,8 +256,7 @@ function summaryFrom(
     capacity: input.capacity as number,
     amenities: input.amenities,
     mediaUrls: input.mediaIds.map((id) => `/api/cottage-media/${id}`),
-    totalPriceIqd: input.totalPriceIqd as number,
-    selectedInventory,
+    inventory,
   };
 }
 
@@ -273,10 +266,7 @@ function profileFrom(
 ): PublicCottageProfile | undefined {
   if (!exactObject(value, profileKeys)) return undefined;
   const input = value as Record<string, unknown>;
-  const selectedInventory = selectedInventoryFrom(
-    input.selectedInventory,
-    false,
-  );
+  const inventory = inventoryFrom(input.inventory, query);
   if (
     typeof input.slug !== "string" ||
     !publicSlugPattern.test(input.slug) ||
@@ -287,14 +277,8 @@ function profileFrom(
     !amenityArray(input.amenities) ||
     !stringArray(input.mediaIds) ||
     !input.mediaIds.every((id) => uuidPattern.test(id)) ||
-    !(
-      input.totalPriceIqd === null ||
-      (Number.isSafeInteger(input.totalPriceIqd) &&
-        (input.totalPriceIqd as number) > 0)
-    ) ||
-    !selectedInventory ||
-    !selectedInventoryMatchesQuery(selectedInventory, query) ||
-    selectedInventoryTotal(selectedInventory) !== input.totalPriceIqd ||
+    (input.capacity as number) < 1 ||
+    !inventory ||
     !Number.isSafeInteger(input.bedrooms) ||
     !Number.isSafeInteger(input.bathrooms) ||
     (input.bedrooms as number) < 0 ||
@@ -312,8 +296,7 @@ function profileFrom(
     capacity: input.capacity as number,
     amenities: input.amenities,
     mediaUrls: input.mediaIds.map((id) => `/api/cottage-media/${id}`),
-    totalPriceIqd: input.totalPriceIqd as number | null,
-    selectedInventory,
+    inventory,
     bedrooms: input.bedrooms as number,
     bathrooms: input.bathrooms as number,
     description: input.description,
@@ -388,7 +371,10 @@ export class SupabaseCottageDiscovery {
     if (!Array.isArray(data))
       return unavailable("search", "invalid-provider-data");
     const cottages = data.map((cottage) => summaryFrom(cottage, query));
-    if (cottages.some((cottage) => cottage === undefined)) {
+    if (
+      cottages.some((cottage) => cottage === undefined) ||
+      new Set(cottages.map((cottage) => cottage?.slug)).size !== cottages.length
+    ) {
       return unavailable("search", "invalid-provider-data");
     }
     return {

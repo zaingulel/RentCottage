@@ -11,6 +11,7 @@ import {
 } from "@/booking-quote/booking-quote";
 import { charLength } from "@/content/postgres-text";
 import {
+  hasCompleteCottageBookingSelection,
   parseCottageDiscoveryQuery,
   type CottageDiscoveryQuery,
 } from "@/cottage-discovery/discovery-query";
@@ -81,7 +82,10 @@ function discoveryQueryFrom(value: unknown): CottageDiscoveryQuery | undefined {
       typeof query.governorate === "string" ? query.governorate : undefined,
     area: typeof query.area === "string" ? query.area : undefined,
   });
-  return parsed.status === "loaded" ? parsed.query : undefined;
+  return parsed.status === "loaded" &&
+    hasCompleteCottageBookingSelection(parsed.query)
+    ? parsed.query
+    : undefined;
 }
 
 function inputFrom(

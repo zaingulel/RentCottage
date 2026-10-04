@@ -22,8 +22,17 @@ const validSummary = {
   capacity: 6,
   amenities: ["pool", "wifi"],
   mediaIds: ["70000000-0000-4000-8000-000000000028"],
-  totalPriceIqd: 175000,
-  selectedInventory: [
+  inventory: [
+    {
+      serviceDay: "2026-08-21",
+      kind: "shift",
+      position: 1,
+      name: "Morning",
+      startTime: "08:00",
+      endTime: "14:00",
+      priceIqd: 60000,
+      available: true,
+    },
     {
       serviceDay: "2026-08-21",
       kind: "shift",
@@ -32,6 +41,15 @@ const validSummary = {
       startTime: "18:00",
       endTime: "23:00",
       priceIqd: 175000,
+      available: true,
+    },
+    {
+      serviceDay: "2026-08-21",
+      kind: "full-day",
+      name: "Full-day bundle",
+      startTime: "08:00",
+      endTime: "23:00",
+      priceIqd: 200000,
       available: true,
     },
   ],
@@ -100,7 +118,7 @@ describe("Supabase Cottage discovery", () => {
       cottages: [
         expect.objectContaining({
           slug: publicSlug,
-          totalPriceIqd: 175000,
+          inventory: validSummary.inventory,
           mediaUrls: [
             "/api/cottage-media/70000000-0000-4000-8000-000000000028",
           ],
@@ -114,9 +132,7 @@ describe("Supabase Cottage discovery", () => {
 
     const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
     const unsafe = new SupabaseCottageDiscovery(
-      clientReturning([
-        { ...(await client.rpc("ignored")).data[0], exactAddress: "private" },
-      ]),
+      clientReturning([{ ...validSummary, exactAddress: "private" }]),
     );
     await expect(unsafe.search("en", query)).resolves.toEqual({
       status: "unavailable",
@@ -127,7 +143,7 @@ describe("Supabase Cottage discovery", () => {
     );
   });
 
-  it("independently rejects unknown amenities and empty selected inventory at the database boundary", async () => {
+  it("independently rejects unknown amenities and empty public inventory at the database boundary", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
       new SupabaseCottageDiscovery(
@@ -138,7 +154,7 @@ describe("Supabase Cottage discovery", () => {
     ).resolves.toEqual({ status: "unavailable" });
     await expect(
       new SupabaseCottageDiscovery(
-        clientReturning([{ ...validSummary, selectedInventory: [] }]),
+        clientReturning([{ ...validSummary, inventory: [] }]),
       ).search("en", query),
     ).resolves.toEqual({ status: "unavailable" });
   });
@@ -150,9 +166,9 @@ describe("Supabase Cottage discovery", () => {
         clientReturning([
           {
             ...validSummary,
-            selectedInventory: [
+            inventory: [
               {
-                ...validSummary.selectedInventory[0],
+                ...validSummary.inventory[0],
                 serviceDay: "2026-02-31",
               },
             ],
@@ -199,72 +215,197 @@ describe("Supabase Cottage discovery", () => {
     ).resolves.toEqual({ status: "unavailable" });
   });
 
-  it("binds returned inventory identities and totals to the requested Booking Period", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const multiQuery = {
-      ...query,
-      selections: [
+  it("validates complete public inventory and every-day search eligibility", async () => {
+    const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rangedQuery = { ...query, to: "2026-08-22", selections: [] };
+    const inventory = [
+      { ...validSummary.inventory[0] },
+      { ...validSummary.inventory[1], available: false },
+      { ...validSummary.inventory[2], available: false },
+      {
+        serviceDay: "2026-08-22",
+        kind: "shift",
+        position: 1,
+        name: "Morning",
+        startTime: "08:00",
+        endTime: "14:00",
+        priceIqd: 65000,
+        available: true,
+      },
+      {
+        serviceDay: "2026-08-22",
+        kind: "shift",
+        position: 2,
+        name: "Evening",
+        startTime: "18:00",
+        endTime: "23:00",
+        priceIqd: 90000,
+        available: true,
+      },
+      {
+        serviceDay: "2026-08-22",
+        kind: "full-day",
+        name: "Full-day bundle",
+        startTime: "08:00",
+        endTime: "23:00",
+        priceIqd: 120000,
+        available: true,
+      },
+    ];
+    const summary = { ...validSummary, inventory };
+    for (const selections of [
+      [],
+      [
         {
-          serviceDay: query.from,
+          serviceDay: "2026-08-21",
           kind: "shift" as const,
           position: 1 as const,
         },
-        {
-          serviceDay: query.from,
-          kind: "shift" as const,
-          position: 2 as const,
-        },
       ],
-    };
-    const firstInventory = {
-      ...validSummary.selectedInventory[0],
-      position: 1,
-      name: "Morning",
-    };
-    const completeSummary = {
-      ...validSummary,
-      selectedInventory: [firstInventory, validSummary.selectedInventory[0]],
-      totalPriceIqd: 350000,
-    };
-    await expect(
-      new SupabaseCottageDiscovery(
-        clientReturning([
-          { ...completeSummary, selectedInventory: [firstInventory] },
-        ]),
-      ).search("en", multiQuery),
-    ).resolves.toEqual({ status: "unavailable" });
-    await expect(
-      new SupabaseCottageDiscovery(
-        clientReturning([
+    ]) {
+      await expect(
+        new SupabaseCottageDiscovery(clientReturning([summary])).search("en", {
+          ...rangedQuery,
+          selections,
+        }),
+      ).resolves.toEqual({
+        status: "loaded",
+        cottages: [
           {
-            ...completeSummary,
-            selectedInventory: [
-              firstInventory,
-              { ...validSummary.selectedInventory[0], position: 3 },
+            slug: publicSlug,
+            name: "Quiet Garden",
+            governorate: "Baghdad",
+            approximateLocation: "Abu Ghraib",
+            capacity: 6,
+            amenities: ["pool", "wifi"],
+            mediaUrls: [
+              "/api/cottage-media/70000000-0000-4000-8000-000000000028",
             ],
+            inventory,
           },
-        ]),
-      ).search("en", multiQuery),
-    ).resolves.toEqual({ status: "unavailable" });
-    await expect(
-      new SupabaseCottageDiscovery(
-        clientReturning([{ ...completeSummary, totalPriceIqd: 1 }]),
-      ).search("en", multiQuery),
-    ).resolves.toEqual({ status: "unavailable" });
-
-    const inconsistentProfile = {
-      ...completeSummary,
+        ],
+      });
+    }
+    const profile = {
+      ...summary,
       bedrooms: 2,
       bathrooms: 1,
       description: "Approved",
       houseRules: "No smoking",
-      totalPriceIqd: 1,
     };
     await expect(
-      new SupabaseCottageDiscovery(
-        clientReturning(inconsistentProfile),
-      ).profile("en", publicSlug, multiQuery),
+      new SupabaseCottageDiscovery(clientReturning(profile)).profile(
+        "en",
+        publicSlug,
+        {
+          ...rangedQuery,
+          selections: [
+            { serviceDay: "2026-08-21", kind: "shift", position: 3 },
+          ],
+        },
+      ),
+    ).resolves.toEqual({
+      status: "loaded",
+      cottage: expect.objectContaining({ inventory }),
+    });
+    await expect(
+      new SupabaseCottageDiscovery(clientReturning([summary])).search("en", {
+        ...rangedQuery,
+        selections: [{ serviceDay: "2026-08-21", kind: "shift", position: 2 }],
+      }),
     ).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      new SupabaseCottageDiscovery(clientReturning([summary, summary])).search(
+        "en",
+        rangedQuery,
+      ),
+    ).resolves.toEqual({ status: "unavailable" });
+    const corruptInventories = [
+      [],
+      inventory.slice(1),
+      inventory.slice(0, 3),
+      [...inventory, inventory[0]],
+      [inventory[1], inventory[0], ...inventory.slice(2)],
+      inventory.map((item, index) =>
+        index === 0 ? { ...item, exactAddress: "private" } : item,
+      ),
+      inventory.map((item, index) =>
+        index === 0 ? { ...item, serviceDay: "2026-08-20" } : item,
+      ),
+      inventory.map((item, index) =>
+        index === 0 ? { ...item, kind: "unknown" } : item,
+      ),
+      inventory.map((item, index) =>
+        index === 0 ? { ...item, position: 3 } : item,
+      ),
+      inventory.map((item, index) =>
+        index === 0 ? { ...item, priceIqd: null } : item,
+      ),
+      inventory.map((item, index) =>
+        index === 0 ? { ...item, priceIqd: 0 } : item,
+      ),
+      inventory.map((item, index) =>
+        index === 0 ? { ...item, priceIqd: 1.5 } : item,
+      ),
+      inventory.map((item, index) =>
+        index === 0 ? { ...item, priceIqd: Number.MAX_SAFE_INTEGER + 1 } : item,
+      ),
+      inventory.map((item) =>
+        item.serviceDay === "2026-08-22" ? { ...item, available: false } : item,
+      ),
+    ];
+    for (const corrupt of corruptInventories) {
+      await expect(
+        new SupabaseCottageDiscovery(
+          clientReturning([{ ...summary, inventory: corrupt }]),
+        ).search("en", rangedQuery),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
+    const maximumInventory = Array.from({ length: 400 }, (_, index) => {
+      const day = new Date("2030-01-12T00:00:00Z");
+      day.setUTCDate(day.getUTCDate() + index);
+      return [
+        {
+          ...validSummary.inventory[0],
+          serviceDay: day.toISOString().slice(0, 10),
+        },
+        {
+          ...validSummary.inventory[1],
+          serviceDay: day.toISOString().slice(0, 10),
+        },
+        {
+          ...validSummary.inventory[1],
+          position: 3,
+          serviceDay: day.toISOString().slice(0, 10),
+        },
+        {
+          ...validSummary.inventory[2],
+          serviceDay: day.toISOString().slice(0, 10),
+        },
+      ];
+    }).flat();
+    expect(maximumInventory).toHaveLength(1600);
+    await expect(
+      new SupabaseCottageDiscovery(
+        clientReturning([{ ...validSummary, inventory: maximumInventory }]),
+      ).search("en", {
+        ...query,
+        from: "2030-01-12",
+        to: "2031-02-15",
+        selections: [],
+      }),
+    ).resolves.toEqual({
+      status: "loaded",
+      cottages: [expect.objectContaining({ inventory: maximumInventory })],
+    });
+    expect(diagnostic).toHaveBeenCalledWith(
+      "Public Cottage discovery unavailable",
+      {
+        operation: "search",
+        result: "invalid-provider-data",
+      },
+    );
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
   });
 
   it("distinguishes unavailable and not-found Cottage Profiles", async () => {
@@ -301,19 +442,12 @@ describe("Supabase Cottage discovery", () => {
       description: "Approved",
       houseRules: "No smoking",
       mediaIds: [],
-      totalPriceIqd: null,
-      selectedInventory: [
-        {
-          serviceDay: "2099-08-21",
-          kind: "shift",
-          position: 1,
-          name: "Morning",
-          startTime: "08:00",
-          endTime: "14:00",
-          priceIqd: null,
-          available: false,
-        },
-      ],
+      inventory: validSummary.inventory.map((item) => ({
+        ...item,
+        serviceDay: "2099-08-21",
+        priceIqd: null,
+        available: false,
+      })),
     };
     const closedQuery = {
       ...query,
@@ -337,10 +471,7 @@ describe("Supabase Cottage discovery", () => {
       status: "loaded",
       cottage: expect.objectContaining({
         slug: publicSlug,
-        totalPriceIqd: null,
-        selectedInventory: [
-          expect.objectContaining({ available: false, priceIqd: null }),
-        ],
+        inventory: data.inventory,
       }),
     });
   });

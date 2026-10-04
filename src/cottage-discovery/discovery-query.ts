@@ -98,6 +98,9 @@ export function parseCottageDiscoveryQuery(
 
   if (
     Object.keys(input).some((key) => !acceptedKeys.has(key)) ||
+    ["from", "to", "guests", "governorate", "area"].some((key) =>
+      Array.isArray(input[key]),
+    ) ||
     !from ||
     !to ||
     !isServiceDay(from) ||
@@ -106,7 +109,6 @@ export function parseCottageDiscoveryQuery(
     !Number.isSafeInteger(guests) ||
     guests < 1 ||
     guests > 100 ||
-    rawSelections.length === 0 ||
     rawSelections.length > maximumDefensiveSelections ||
     !validFacet(governorate, cottageProfileMaximumLengths.governorate) ||
     !validFacet(area, cottageProfileMaximumLengths.approximateLocation) ||
@@ -137,8 +139,6 @@ export function parseCottageDiscoveryQuery(
     byDay.set(selection.serviceDay, daySelections);
   }
   if (
-    byDay.get(from) === undefined ||
-    byDay.get(to) === undefined ||
     [...byDay.values()].some(
       (daySelections) =>
         daySelections.some((selection) => selection.kind === "full-day") &&
@@ -151,9 +151,6 @@ export function parseCottageDiscoveryQuery(
   const lastDate = new Date(`${to}T00:00:00Z`).valueOf();
   if ((lastDate - firstDate) / 86_400_000 + 1 > maximumDefensiveServiceDays) {
     return { status: "invalid" };
-  }
-  for (let day = from; day <= to; day = nextServiceDay(day)) {
-    if (!byDay.has(day)) return { status: "invalid" };
   }
   if ([...byDay.keys()].some((day) => day < from || day > to)) {
     return { status: "invalid" };
@@ -179,6 +176,18 @@ export function parseCottageDiscoveryQuery(
       amenities,
     },
   };
+}
+
+export function hasCompleteCottageBookingSelection(
+  query: CottageDiscoveryQuery,
+): boolean {
+  const selectedDays = new Set(
+    query.selections.map((selection) => selection.serviceDay),
+  );
+  for (let day = query.from; day <= query.to; day = nextServiceDay(day)) {
+    if (!selectedDays.has(day)) return false;
+  }
+  return true;
 }
 
 export function serializeCottageDiscoveryQuery(

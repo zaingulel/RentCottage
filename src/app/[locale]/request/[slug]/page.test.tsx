@@ -82,6 +82,32 @@ describe("public Booking Quote page", () => {
     expect(resolveAccountContext).not.toHaveBeenCalled();
   });
 
+  it("rejects incomplete booking selections before loading a request quote", async () => {
+    loadQuote.mockResolvedValue({ status: "selection-unavailable" });
+    for (const selection of [undefined, "2099-08-21:shift:2"]) {
+      const view = render(
+        await RequestPage({
+          params: Promise.resolve({
+            locale: "en",
+            slug: "cottage-00000000000040008000000000000029",
+          }),
+          searchParams: Promise.resolve({
+            from: "2099-08-21",
+            to: "2099-08-22",
+            guests: "4",
+            selection,
+          }),
+        }),
+      );
+      expect(
+        screen.getByRole("heading", { name: "This search cannot be used" }),
+      ).toBeInTheDocument();
+      expect(loadQuote).not.toHaveBeenCalled();
+      expect(resolveAccountContext).not.toHaveBeenCalled();
+      view.unmount();
+    }
+  });
+
   it("shows an unavailable error when Customer identity cannot be checked", async () => {
     loadQuote.mockResolvedValue({
       status: "quoted",

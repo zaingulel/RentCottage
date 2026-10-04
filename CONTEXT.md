@@ -305,7 +305,7 @@ The AI-generated Arabic, Sorani Kurdish or English version of dynamic text, incl
 _Avoid_: Replacing the original, blank translation failure, unreportable poor translation, translating verification documents, unlabelled generated text, treating AI output as automatically trustworthy
 
 **Cottage Search**:
-The customer search experience for finding published cottages by approximate location, date, cottage shifts, guest capacity and optional key amenities. It returns only cottages with every shift in the requested booking period available.
+The customer search experience for finding published cottages by Service Days, guest capacity, approximate location and optional amenities or Booking Period filters. It returns only cottages with at least one available option on every requested Service Day and every explicitly filtered option available; customers then select their complete Booking Period.
 _Avoid_: Map-first discovery, general directory
 
 **House Rules**:

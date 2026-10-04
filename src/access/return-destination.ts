@@ -1,5 +1,8 @@
 import type { Locale } from "@/i18n/routing";
-import { parseCottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
+import {
+  hasCompleteCottageBookingSelection,
+  parseCottageDiscoveryQuery,
+} from "@/cottage-discovery/discovery-query";
 
 const uuid =
   "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
@@ -10,14 +13,18 @@ const privateRoute = new RegExp(
 );
 const uuidPattern = new RegExp(`^${uuid}$`, "i");
 
-function discoveryQueryFrom(params: URLSearchParams) {
+function discoveryQueryFrom(params: URLSearchParams, requiresComplete = false) {
   const raw: Record<string, string | string[]> = Object.create(null);
   for (const key of new Set(params.keys())) {
     const values = params.getAll(key);
     if (values.some((item) => /[\\\x00-\x1f\x7f]/.test(item))) return null;
     raw[key] = values.length === 1 ? values[0] : values;
   }
-  return parseCottageDiscoveryQuery(raw).status === "loaded";
+  const parsed = parseCottageDiscoveryQuery(raw);
+  return (
+    parsed.status === "loaded" &&
+    (!requiresComplete || hasCompleteCottageBookingSelection(parsed.query))
+  );
 }
 
 export function isOwnerEnrollmentDestination(locale: Locale, value: unknown) {
@@ -50,7 +57,7 @@ export function safeReturnDestination(locale: Locale, value: unknown): string {
       if (cottages.length !== 1 || !/^cottage-[0-9a-f]{32}$/.test(cottages[0]))
         return fallback;
       params.delete("cottage");
-      if (params.size > 0 && !discoveryQueryFrom(params)) return fallback;
+      if (params.size > 0 && !discoveryQueryFrom(params, true)) return fallback;
     }
   } else if (new RegExp(`^/messages/${uuid}$`).test(route)) {
     if (query) {
@@ -64,7 +71,7 @@ export function safeReturnDestination(locale: Locale, value: unknown): string {
       )
         return fallback;
       params.delete("before");
-      if (params.size > 0 && !discoveryQueryFrom(params)) return fallback;
+      if (params.size > 0 && !discoveryQueryFrom(params, true)) return fallback;
     }
   } else if (privateRoute.test(route)) {
     if (query) return fallback;
@@ -78,7 +85,13 @@ export function safeReturnDestination(locale: Locale, value: unknown): string {
         return fallback;
       params.delete("conversation");
     }
-    if (!discoveryQueryFrom(params)) return fallback;
+    if (
+      !discoveryQueryFrom(
+        params,
+        route.startsWith("/request/") || route.startsWith("/quote/"),
+      )
+    )
+      return fallback;
   }
   return value;
 }

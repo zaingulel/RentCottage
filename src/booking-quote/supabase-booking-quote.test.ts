@@ -49,6 +49,19 @@ function clientReturning(data: unknown, error: unknown = null) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Supabase Booking Quote", () => {
+  it("rejects incomplete booking selections before quote provider access", async () => {
+    for (const incomplete of [
+      { ...query, selections: [] },
+      { ...query, to: "2026-08-22" },
+    ]) {
+      const client = clientReturning(response);
+      await expect(
+        new SupabaseBookingQuote(client).load("en", slug, incomplete),
+      ).resolves.toEqual({ status: "selection-unavailable" });
+      expect(client.rpc).not.toHaveBeenCalled();
+    }
+  });
+
   it("loads a strict quote bound to the requested selection", async () => {
     const client = clientReturning(response);
     await expect(

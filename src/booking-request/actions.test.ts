@@ -116,6 +116,20 @@ describe("Booking Request action boundary", () => {
     },
   );
 
+  it("rejects incomplete booking selections before request submission", async () => {
+    for (const discoveryQuery of [
+      { ...request.discoveryQuery, selections: [] },
+      { ...request.discoveryQuery, to: "2099-08-22" },
+    ]) {
+      await expect(
+        submitBookingRequest({ ...request, discoveryQuery }),
+      ).resolves.toEqual({ status: "invalid" });
+      expect(createClient).not.toHaveBeenCalled();
+      expect(createSubmission).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+    }
+  });
+
   it("binds the request to the authenticated Customer and normalized details", async () => {
     await expect(submitBookingRequest(request)).resolves.toEqual({
       status: "pending",

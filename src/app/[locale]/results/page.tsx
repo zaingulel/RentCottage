@@ -38,6 +38,7 @@ export default async function ResultsPage({
       <PublicCottageResults
         locale={locale}
         result={result}
+        query={parsed.query}
         queryString={queryString}
       />
       <SiteFooter locale={locale} path="/results" queryString={queryString} />
