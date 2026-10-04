@@ -30,13 +30,17 @@ type DemoAdministratorCredential = {
 type DemoInventoryUnit = {
   id: string;
   kind: "shift" | "full_day_bundle";
-  calendarState: "open" | "closed" | "private_blocked";
+  calendarState:
+    | "open"
+    | "closed"
+    | "private_blocked"
+    | "confirmed_booking"
+    | "component_unavailable";
   available: boolean;
 };
 
 type ValidatedDemoCottage = {
   fixture: AccessBrowserFixture;
-  identity: { id: string };
   profile: {
     id: string;
     current_publication_id: string;
@@ -104,10 +108,6 @@ function expectedServiceDayLabel(day: string) {
   }).format(new Date(`${day}T00:00:00Z`));
 }
 
-function requireIsolatedLocalDemo() {
-  return requireDemoEnvironment();
-}
-
 async function expectScene(locator: Locator, milliseconds = 1_200) {
   await expect(locator).toBeVisible();
   await locator.page().waitForTimeout(milliseconds);
@@ -139,7 +139,7 @@ async function clearBrowserSession(page: Page) {
 }
 
 async function assertApplicationHealth(page: Page) {
-  requireIsolatedLocalDemo();
+  requireDemoEnvironment();
   const response = await page.goto("/api/health?check=supabase");
   if (!response) {
     throw new Error("The application health check returned no response");
@@ -347,7 +347,7 @@ async function prepareDemoAdministrator(
 }
 
 async function prepareDemoState() {
-  const localWorkdir = requireIsolatedLocalDemo();
+  const localWorkdir = requireDemoEnvironment();
   const url = process.env.SUPABASE_URL ?? "";
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? "";
   const secretKey = process.env.SUPABASE_SECRET_KEY ?? "";
@@ -1462,44 +1462,21 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
         };
         expect(ownerCalendar.data).toMatchObject(envelope);
         expect(publicAvailability.data).toMatchObject(envelope);
-        expect(ownerCalendar.data.units).toHaveLength(3);
-        expect(publicAvailability.data.units).toHaveLength(3);
-        const morning = cottage.units[0];
-        expect(
-          ownerCalendar.data.units.filter(
-            (unit: { id: unknown; kind: unknown }) =>
-              unit.id === morning.id && unit.kind === morning.kind,
-          ),
-        ).toEqual([
-          expect.objectContaining({
-            calendarState: "confirmed_booking",
-            available: false,
-          }),
-        ]);
-        expect(
-          publicAvailability.data.units.filter(
-            (unit: { id: unknown }) => unit.id === morning.id,
-          ),
-        ).toEqual([{ ...morning, available: false }]);
-        expect(Object.keys(publicAvailability.data).sort()).toEqual([
-          "profileId",
-          "scheduleRevisionId",
-          "serviceDay",
-          "units",
-        ]);
-        for (const unit of publicAvailability.data.units) {
-          expect(Object.keys(unit).sort()).toEqual(["available", "id", "kind"]);
-        }
-      } else {
-        assertDemoInventoryReadback({
-          ownerCalendar: ownerCalendar.data,
-          publicAvailability: publicAvailability.data,
-          expectedUnits: cottage.units.map((unit) => ({
-            ...unit,
-            calendarState: "open",
-            available: true,
-          })),
-        });
+      }
+      const states: DemoInventoryUnit["calendarState"][] =
+        day === demo.recordedDay
+          ? ["confirmed_booking", "open", "component_unavailable"]
+          : ["open", "open", "open"];
+      assertDemoInventoryReadback({
+        ownerCalendar: ownerCalendar.data,
+        publicAvailability: publicAvailability.data,
+        expectedUnits: cottage.units.map((unit, position) => ({
+          ...unit,
+          calendarState: states[position],
+          available: states[position] === "open",
+        })),
+      });
+      if (day !== demo.recordedDay) {
         for (const unit of ownerCalendar.data.units) {
           expect(unit.commitmentReference).toBeNull();
           expect(unit.editable).toBe(true);

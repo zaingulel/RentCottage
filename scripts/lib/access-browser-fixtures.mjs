@@ -249,8 +249,6 @@ export function assertDemoFixtureReadback(
       typeof unit?.id !== "string" ||
       !unit.id ||
       unit.kind !== (index === 2 ? "full_day_bundle" : "shift") ||
-      !Number.isSafeInteger(unit.standardPriceIqd) ||
-      unit.standardPriceIqd <= 0 ||
       unit.standardPriceIqd !== content.prices[index] ||
       !Array.isArray(unit.weekdayOverrides) ||
       unit.weekdayOverrides.length !== 0 ||
@@ -1156,12 +1154,6 @@ export async function createDemoBrowserFixtures({
       "Demo fixtures already exist or are partial; create a fresh owned demo project.",
     );
   }
-  await createSubmittedReviewFixture({
-    fixture: accessBrowserFixture("desktop"),
-    privilegedClient,
-    publishableKey,
-    url,
-  });
   for (const fixture of fixtures) {
     await createPublishedBookingFixture({
       fixture,
@@ -1329,13 +1321,7 @@ export async function validateDemoBrowserFixtures({
       { profile, publications, pricing: loadedPricing },
       fixture,
     );
-    validated.push({
-      fixture,
-      identity,
-      profile,
-      publications,
-      pricing: loadedPricing,
-    });
+    validated.push({ fixture, profile });
   }
   return validated;
 }

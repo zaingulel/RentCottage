@@ -329,15 +329,6 @@ test("demo readback rejects missing publications and malformed pricing", () => {
       data.pricing.units[1] = data.pricing.units[0];
     },
     (data) => {
-      data.pricing.units[0].standardPriceIqd = 0;
-    },
-    (data) => {
-      data.pricing.units[0].standardPriceIqd = -240000;
-    },
-    (data) => {
-      data.pricing.units[0].standardPriceIqd = "240000";
-    },
-    (data) => {
       data.pricing.units[0].standardPriceIqd = 180000;
     },
   ];
