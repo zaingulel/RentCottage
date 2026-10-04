@@ -1046,11 +1046,16 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expect(page.getByRole("main")).not.toContainText(
       /Synthetic private fixture address|Synthetic private directions|36\.408333|44\.385834|private_blocked|commitmentReference|9647540000/,
     );
-    await page.getByRole("link", { name: "Change search", exact: true }).click();
+    await page
+      .getByRole("link", { name: "Change search", exact: true })
+      .click();
     await page.getByLabel("From Service Day").fill(demo.recordedDay);
     await page.getByLabel("To Service Day").fill(demo.recordedDay);
     await page.getByLabel("Guests", { exact: true }).fill("4");
-    const poolFilter = page.getByRole("checkbox", { name: "Pool", exact: true });
+    const poolFilter = page.getByRole("checkbox", {
+      name: "Pool",
+      exact: true,
+    });
     await poolFilter.check();
     await expect(poolFilter).toBeChecked();
     await expectScene(poolFilter);

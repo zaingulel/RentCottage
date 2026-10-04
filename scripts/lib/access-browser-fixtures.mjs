@@ -279,7 +279,8 @@ export function assertDemoInventoryReadback({
     typeof ownerCalendar.serviceDay !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(ownerCalendar.serviceDay) ||
     publicAvailability?.profileId !== ownerCalendar.profileId ||
-    publicAvailability.scheduleRevisionId !== ownerCalendar.scheduleRevisionId ||
+    publicAvailability.scheduleRevisionId !==
+      ownerCalendar.scheduleRevisionId ||
     publicAvailability.serviceDay !== ownerCalendar.serviceDay ||
     Object.keys(publicAvailability).sort().join(",") !==
       "profileId,scheduleRevisionId,serviceDay,units"
