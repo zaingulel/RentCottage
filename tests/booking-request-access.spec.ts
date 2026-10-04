@@ -200,6 +200,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "Continue an existing enquiry" }),
+  ).toHaveCSS("border-top-width", "0px");
   await page.getByLabel("Customer name").fill("Browser Customer");
   await page.getByLabel(/accept the preserved House Rules/i).check();
   await page.getByLabel(/accept the cancellation policy/i).check();
@@ -572,6 +575,37 @@ test("a verified Customer double-submit creates one Pending request and one mini
               0,
             );
             await expect(requestDelivery.getByRole("status")).toHaveCount(0);
+            const conversation = surface.getByRole("button", {
+              name: {
+                en: "Open conversation",
+                ar: "فتح المحادثة",
+                ckb: "گفتوگۆ بکەرەوە",
+              }[copy.locale],
+            });
+            // A raw browser button computes weight 400 and radius 0px here.
+            await expect(conversation).toHaveCSS("font-weight", "700");
+            await expect(conversation).not.toHaveCSS("border-radius", "0px");
+            const bookingCard = surface.getByRole("region").filter({
+              has: surface.getByRole("heading", { level: 1 }),
+            });
+            for (const followUp of [conversation, requestDelivery]) {
+              await expect
+                .poll(async () => {
+                  const [card, box, viewportWidth] = await Promise.all([
+                    bookingCard.boundingBox(),
+                    followUp.boundingBox(),
+                    surface.evaluate(
+                      () => document.documentElement.clientWidth,
+                    ),
+                  ]);
+                  return (
+                    box!.x >= Math.max(card!.x, 1) &&
+                    box!.x + box!.width <=
+                      Math.min(card!.x + card!.width, viewportWidth - 1)
+                  );
+                })
+                .toBe(true);
+            }
             if (state === "paid-confirmed-incomplete") {
               await expect(
                 surface.getByRole("status", { name: copy.incomplete }),
