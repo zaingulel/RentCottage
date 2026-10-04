@@ -7,6 +7,8 @@ import { messagingMessages } from "@/i18n/messaging-messages";
 import type { Locale } from "@/i18n/routing";
 import { openBookingMessagingConversation } from "@/messaging/actions";
 
+import { ActionButton } from "./interaction-controls";
+
 export function MessagingBookingLink({
   locale,
   reference,
@@ -20,10 +22,13 @@ export function MessagingBookingLink({
   const [pending, startTransition] = useTransition();
   const [failed, setFailed] = useState(false);
   return (
-    <div>
-      <button
+    <div className="request-follow-up">
+      <ActionButton
+        kind="secondary"
+        size="regular"
+        width="content"
         type="button"
-        disabled={pending}
+        pending={pending}
         onClick={() =>
           startTransition(async () => {
             const result = await openBookingMessagingConversation({
@@ -37,7 +42,7 @@ export function MessagingBookingLink({
         }
       >
         {copy.open}
-      </button>
+      </ActionButton>
       {failed ? <p role="status">{copy.unavailable}</p> : null}
     </div>
   );

@@ -735,6 +735,10 @@ input[type="file"].form-control::file-selector-button {
   align-items: center;
 }
 
+.access-required-card > .action {
+  margin-block-start: 1rem;
+}
+
 @media (max-width: 850px) {
   .owner-application-layout {
     grid-template-columns: 1fr;
@@ -2515,6 +2519,25 @@ a:focus-visible {
   line-height: 1.5;
 }
 
+.booking-request-enquiry {
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.booking-request-enquiry > legend {
+  padding: 0;
+  font-weight: 700;
+}
+
+.booking-request-enquiry > label {
+  min-block-size: 2.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .booking-request-form {
   display: grid;
   gap: 1rem;
@@ -2762,6 +2785,57 @@ a:focus-visible {
   border: 1px solid var(--line);
   border-radius: 1.25rem;
   background: var(--surface-bright);
+}
+
+.request-follow-up {
+  inline-size: min(100% - 2rem, 48rem);
+  margin-block-start: 1rem;
+  margin-inline: auto;
+}
+
+.owner-booking-requests ~ .request-follow-up {
+  inline-size: min(100% - 2rem, 70rem);
+}
+
+.confirmed-booking-details ~ .request-follow-up {
+  inline-size: min(100% - 2rem, 52rem);
+}
+
+.request-follow-up > p[role="status"] {
+  margin-block: 0.5rem 0;
+}
+
+.request-follow-up > h2 {
+  margin: 0 0 1rem;
+  color: var(--green);
+  font-family: var(--display);
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.request-follow-up > ul {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.request-follow-up > ul > li {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface-bright);
+  padding: 1rem;
+}
+
+.request-follow-up > ul > li > p {
+  margin: 0;
+}
+
+.request-follow-up > ul > li > p + p {
+  color: var(--muted);
 }
 
 .customer-booking-request-status dl > div {

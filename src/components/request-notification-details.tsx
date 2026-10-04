@@ -55,9 +55,11 @@ export function RequestNotificationDetails({
   readonly reference: string;
   readonly delivery: RequestNotificationPresentation;
 }) {
+  if (delivery.status === "available" && delivery.notices.length === 0)
+    return null;
   const copy = messages[locale];
   return (
-    <section aria-label={copy.title}>
+    <section className="request-follow-up" aria-label={copy.title}>
       <h2>{copy.title}</h2>
       {delivery.status === "unavailable" ? (
         <p role="status">{copy.unavailable}</p>
