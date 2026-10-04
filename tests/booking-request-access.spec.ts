@@ -585,6 +585,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
             // A raw browser button computes weight 400 and radius 0px here.
             await expect(conversation).toHaveCSS("font-weight", "700");
             await expect(conversation).not.toHaveCSS("border-radius", "0px");
+            // An unstyled section computes border width 0px and radius 0px.
+            await expect(requestDelivery).toHaveCSS("border-top-width", "1px");
+            await expect(requestDelivery).not.toHaveCSS("border-radius", "0px");
             const bookingCard = surface.getByRole("region").filter({
               has: surface.getByRole("heading", { level: 1 }),
             });

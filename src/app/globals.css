@@ -2193,7 +2193,8 @@ a:focus-visible {
   font-size: 0.75rem;
 }
 
-.cottage-inventory-add-override {
+.cottage-inventory-add-override,
+.request-follow-up > ul > li + li {
   border-block-start: 1px solid var(--line);
   padding-block-start: 0.75rem;
 }
@@ -2819,11 +2820,6 @@ section.request-follow-up {
 .request-follow-up > ul > li {
   display: grid;
   gap: 0.25rem;
-}
-
-.request-follow-up > ul > li + li {
-  border-block-start: 1px solid var(--line);
-  padding-block-start: 0.75rem;
 }
 
 .request-follow-up > ul > li > p {
