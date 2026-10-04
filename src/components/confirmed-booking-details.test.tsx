@@ -104,7 +104,9 @@ describe("confirmed booking details", () => {
         `Full-day · ${startsAt} – ${endsAt}`,
       ]);
       for (const [index, name] of ["Morning", "Full-day"].entries()) {
-        const values = Array.from(period.children[index].querySelectorAll("bdi"));
+        const values = Array.from(
+          period.children[index].querySelectorAll("bdi"),
+        );
         expect(values.map((value) => value.textContent)).toEqual([
           name,
           startsAt,

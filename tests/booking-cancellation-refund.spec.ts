@@ -1,4 +1,10 @@
-import { expect, test, type Page, type BrowserContext } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Page,
+  type BrowserContext,
+  type Locator,
+} from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { readFileSync } from "node:fs";
@@ -10,6 +16,7 @@ import { getBookingFinancialView } from "../src/booking-request/booking-financia
 import { triggerScheduled } from "./fixtures/trigger-scheduled";
 import { bookingPayoutMessages as payoutMessages } from "../src/i18n/administrator-payment-history-messages";
 import { bookingManagementMessages as messages } from "../src/i18n/booking-management-messages";
+import { bookingLifecycleMessages } from "../src/i18n/booking-lifecycle-messages";
 import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/owner-booking-earnings-messages";
 import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
@@ -216,6 +223,33 @@ async function administrator(page: Page) {
   await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
   return data.user.id;
 }
+async function captureMetadataViewports(
+  page: Page,
+  region: Locator,
+  screenshotPrefix: string,
+  observe: () => Promise<string[][]>,
+) {
+  const observations = [];
+  for (const [viewport, size] of [
+    ["desktop", { width: 1440, height: 1000 }],
+    ["mobile", { width: 393, height: 851 }],
+  ] as const) {
+    await page.setViewportSize(size);
+    await expect(region).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      )
+      .toBe(true);
+    await region.screenshot({
+      path: test.info().outputPath(`${screenshotPrefix}-${viewport}.png`),
+    });
+    observations.push({ viewport, values: await observe() });
+  }
+  return observations;
+}
 async function assertResponsiveDetails(
   page: Page,
   role: "customer" | "cottage_owner" | "platform_administrator",
@@ -332,6 +366,44 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(page.getByTestId("settlement-recovery")).toContainText(
       p.noDebit,
     );
+    const settlementViewport = page.viewportSize()!;
+    const settlementObservations: {
+      locale: string;
+      viewport: string;
+      values: string[][];
+    }[] = [];
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      await page.goto(`/${locale}/administrator/payments/${reference}`);
+      const payout = page.getByRole("region", {
+        name: payoutMessages[locale].title,
+        exact: true,
+      });
+      await expect(
+        payout.getByText(payoutMessages[locale].succeeded, { exact: true }),
+      ).toBeVisible();
+      const metadata = payout
+        .locator(":scope > div")
+        .first()
+        .locator("p")
+        .filter({ hasText: activeAdministratorId! });
+      const captures = await captureMetadataViewports(
+        page,
+        payout,
+        `settlement-${locale}`,
+        async () => [await metadata.locator("bdi").allTextContents()],
+      );
+      settlementObservations.push(
+        ...captures.map((capture) => ({ locale, ...capture })),
+      );
+    }
+    for (const observation of settlementObservations) {
+      expect(
+        observation.values,
+        `${observation.locale} ${observation.viewport} settlement boundaries`,
+      ).toEqual([[activeAdministratorId, expect.stringMatching(/\S.*[:：]/)]]);
+    }
+    await page.setViewportSize(settlementViewport);
+    await page.goto(`/en/administrator/payments/${reference}`);
     await assertResponsiveDetails(page, "platform_administrator");
     const ownerContext = await browser.newContext({
       baseURL,
@@ -373,6 +445,61 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: "Confirmed booking", exact: true }),
     ).toBeVisible();
+    const bookingViewport = page.viewportSize()!;
+    const periodLabels = {
+      en: "Booking period",
+      ar: "فترة الحجز",
+      ckb: "ماوەی حجز",
+    };
+    const periodObservations: {
+      locale: string;
+      viewport: string;
+      values: string[][];
+    }[] = [];
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      await page.goto(`/${locale}/booking-requests/${reference}`);
+      const confirmed = page.getByRole("region", {
+        name: bookingLifecycleMessages[locale].confirmed,
+        exact: true,
+      });
+      await expect(confirmed).toContainText(browserQuote.cottageName);
+      const period = confirmed.locator("dl > div").filter({
+        has: page.getByText(periodLabels[locale], { exact: true }),
+      });
+      const captures = await captureMetadataViewports(
+        page,
+        confirmed,
+        `confirmed-booking-${locale}`,
+        () =>
+          period
+            .locator("dd > span")
+            .evaluateAll((entries) =>
+              entries.map((entry) =>
+                Array.from(
+                  entry.querySelectorAll(":scope > bdi"),
+                  (value) => value.textContent ?? "",
+                ),
+              ),
+            ),
+      );
+      periodObservations.push(
+        ...captures.map((capture) => ({ locale, ...capture })),
+      );
+    }
+    for (const observation of periodObservations) {
+      expect(
+        observation.values,
+        `${observation.locale} ${observation.viewport} booking period boundaries`,
+      ).toEqual(
+        ["Morning", "Night", "Full day"].map((name) => [
+          name,
+          expect.stringMatching(/\S.*[:：]/),
+          expect.stringMatching(/\S.*[:：]/),
+        ]),
+      );
+    }
+    await page.setViewportSize(bookingViewport);
+    await page.goto(`/en/booking-requests/${reference}`);
     const form = page.getByRole("form", { name: messages.en.cancel });
     await expect(form).toContainText("48 hours");
     await form.getByRole("checkbox").focus();

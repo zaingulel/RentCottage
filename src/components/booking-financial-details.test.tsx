@@ -391,7 +391,8 @@ describe("administrator payout investigation", () => {
         </div>,
       );
       const metadata = Array.from(container.querySelectorAll("p")).find(
-        (paragraph) => paragraph.textContent === `${actorUserId} · ${requestedTime}`,
+        (paragraph) =>
+          paragraph.textContent === `${actorUserId} · ${requestedTime}`,
       );
       expect(metadata).toBeInTheDocument();
       const values = Array.from(metadata!.querySelectorAll("bdi"));
