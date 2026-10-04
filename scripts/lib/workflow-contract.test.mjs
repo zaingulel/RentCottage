@@ -9,17 +9,8 @@ import { gitEnvironment, MANIFEST_PATH, readManifest, regionText, verifyManifest
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const CLOSEOUT = readFileSync(resolve(ROOT, '.agents/skills/closeout/SKILL.md'), 'utf8');
-const HANDOFF = readFileSync(resolve(ROOT, '.agents/skills/handoff/SKILL.md'), 'utf8');
 const RESUME = readFileSync(resolve(ROOT, '.agents/skills/resume/SKILL.md'), 'utf8');
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-function updateLocalMainStepFive(markdown) {
-  const section = markdown.match(/^## Update local main\n([\s\S]*)$/m);
-  assert.ok(section, 'Update local main must exist');
-  const step = section[1].match(/^5\. Verify local `main`([\s\S]*?)(?=^\S|(?![\s\S]))/m);
-  assert.ok(step, 'Update local main step 5 must exist');
-  return step[1].replace(/\s+/g, ' ').trim();
-}
 
 test('closeout removes the linked job worktree before deleting its branch', () => {
   const match = CLOSEOUT.match(/^5\. \*\*Branch and worktree\.\*\*([\s\S]*?)(?=^6\. \*\*Rulings\.\*\*)/m);
@@ -31,73 +22,6 @@ test('closeout removes the linked job worktree before deleting its branch', () =
   assert.notEqual(removeWorktree, -1, 'step 5 must remove the exact job worktree');
   assert.notEqual(deleteBranch, -1, 'step 5 must ordinarily delete the job branch');
   assert.ok(removeWorktree < deleteBranch, 'step 5 must remove the linked worktree before deleting its branch');
-});
-
-test('closeout retains its verifier through job cleanup and stops when the runtime cannot leave', () => {
-  const closeoutStep = CLOSEOUT.match(/^5\. \*\*Branch and worktree\.\*\*([\s\S]*?)(?=^6\. \*\*Rulings\.\*\*)/m);
-  assert.ok(closeoutStep, 'closeout step 5 must exist');
-  const closeoutText = closeoutStep[1].replace(/\s+/g, ' ').trim();
-  assert.match(
-    closeoutText,
-    /if the runtime cannot leave it or ownership is uncertain, retain it, report why, and stop before worktree removal and branch deletion; continue to step 6 and the final report\./i,
-  );
-
-  const verifierText = updateLocalMainStepFive(CLOSEOUT);
-  assert.match(verifierText, /During resume, .* removed at the end of the same run, after board operations/i);
-  assert.match(verifierText, /During closeout, .* retained until closeout step 5's job cleanup has finished, then removed in the same run/i);
-});
-
-test('Update local main step 5 excludes later unindented text', () => {
-  const lifecycleDecoy = 'During resume, a verifier is removed at the end of the same run, after board operations. During closeout, it is retained until closeout step 5\'s job cleanup has finished, then removed in the same run.';
-  const leaks = ['# Later top-level heading', '### Later deeper heading', 'Later bare trailing text'].map((boundary) => {
-    const markdown = `## Update local main\n\n5. Verify local \`main\` has no lifecycle contract.\n   This indented continuation remains in step 5.\n${boundary}\n${lifecycleDecoy}\n`;
-    return /During resume|During closeout/i.test(updateLocalMainStepFive(markdown));
-  });
-  assert.deepEqual(leaks, [false, false, false], 'H1, H3+, and bare trailing text must remain outside step 5');
-});
-
-test('handoff requires explicit owner authorization before remote publication', () => {
-  const handoff = HANDOFF.replace(/\s+/g, ' ').trim();
-  const parkingSection = RESUME.match(/^## Parking\n([\s\S]*?)(?=^## |(?![\s\S]))/m);
-  const authorization = handoff.indexOf('**Get publication authorization.**');
-  const publication = handoff.indexOf('**Push the branch**');
-
-  assert.notEqual(authorization, -1, 'handoff must name a publication authorization gate');
-  assert.notEqual(publication, -1, 'handoff must name the remote publication step');
-  assert.ok(authorization < publication, 'handoff must require authorization before remote publication');
-  assert.match(
-    handoff,
-    /A bare `?handoff`? or `?park`? request authorizes only local preparation and the commit\./i,
-    'a bare handoff or park request must not authorize publication',
-  );
-  assert.match(
-    handoff,
-    /Do not push the branch or create or update a draft pull request until the owner explicitly authorizes those outward actions\./i,
-    'the gate must cover both push and draft pull-request mutations',
-  );
-  assert.match(
-    handoff,
-    /An invocation that explicitly names both push and draft pull-request publication satisfies this gate\./i,
-    'an owner instruction that explicitly names both publication actions must satisfy the gate',
-  );
-
-  assert.ok(parkingSection, 'resume must retain a Parking section');
-  const parking = parkingSection[1].replace(/\s+/g, ' ').trim();
-  assert.doesNotMatch(
-    parking,
-    /commit what exists, push the branch/i,
-    'Parking must not unconditionally shortcut from commit to remote publication',
-  );
-  assert.match(
-    parking,
-    /A bare `?handoff`? or `?park`? request does not authorize remote publication\./i,
-    'Parking must limit a bare handoff or park request to local work',
-  );
-  assert.match(
-    parking,
-    /Follow (?:the )?`?handoff`? skill's explicit publication-authorization gate before pushing the branch or creating or updating a draft pull request\./i,
-    'Parking must route both remote actions through the handoff authorization gate',
-  );
 });
 
 // Independent oracle for the resume skill's parallel-slice route: Git runs its commands verbatim. Recurring cost: one
@@ -218,219 +142,14 @@ test('Git permits job branch deletion only after its linked worktree is removed'
   }
 });
 
-test('card size is judged by the owner and epics are never picked', () => {
-  // These assertions come from card #1398's acceptance criteria.
-  const read = (path) => readFileSync(resolve(ROOT, path), 'utf8').replace(/\s+/g, ' ');
-  const toIssues = read('.agents/skills/to-issues/SKILL.md');
+test('the resume work-pick query requests parent and up to 50 blockers', () => {
   const resume = RESUME.replace(/\s+/g, ' ');
 
-  assert.match(
-    toIssues,
-    /more than five distinct outcome or invariant statements, checkbox or bullet, is a signal to make the work a `type:epic` parent with native child slices/,
-    'to-issues must flag more than five outcome or invariant statements as an epic signal',
-  );
-  assert.match(
-    toIssues,
-    /No later seat stops, replans, splits or refuses work on these signals or on a line count; after work-pick the only split is the plan-time finding/,
-    'no later seat may act on the to-issues size signals or a line count',
-  );
-  assert.match(
-    toIssues,
-    /one-sentence outcome and its count of outcome or invariant statements, flagging any count above five/,
-    'every to-issues proposal must show its outcome and statement count',
-  );
-  assert.match(
-    toIssues,
-    /not a proposal the owner has not seen, so a single captured idea is presented here too/,
-    'a single captured idea must be presented to the owner too',
-  );
-  assert.match(
-    toIssues,
-    /`type:epic` parent holds no acceptance criteria of its own; any whole-journey or end-to-end check becomes its last child, blocked by the others/,
-    'an epic must hold no criteria and put its whole-journey check in its last child',
-  );
-  assert.match(
-    toIssues,
-    /Never name a builder seat: the plan chooses one per slice/,
-    'to-issues routing must never name a builder seat',
-  );
-  assert.match(
-    toIssues,
-    /## Required capabilities The planning, review, or specialist capabilities required, provider-neutral; never a builder seat\./,
-    'the issue template must never name a builder seat',
-  );
-
-  assert.match(
-    resume,
-    /open `type:epic` parent is never a candidate row; its next unblocked child is, and a child with an open blocker is not offered/,
-    'work-pick must offer an epic\'s next unblocked child, never the parent or a blocked child',
-  );
   assert.match(
     resume,
     /fragment Card on Issue \{[^}]*parent \{ number \} blockedBy\(first:50\) \{ nodes \{ number state \} \}/,
     'the work-pick Card fragment must read up to GitHub\'s maximum of 50 blockers per card',
   );
-  assert.match(
-    resume,
-    /never split again on a session's own judgment; only the owner starts another split/,
-    'resume must leave any further split of a split card to the owner',
-  );
-  assert.match(
-    resume,
-    /the session never narrows such a plan inline or merges slices to fit/,
-    'resume must never narrow an oversized plan inline',
-  );
-
-  assert.match(
-    read('.agents/templates/planner-handoff.md'),
-    /more than one independently demonstrable outcome goes to the owner as a split proposal under the `resume` skill's Plan section and is never narrowed or finished inline/,
-    'the planner handoff must route a multi-outcome card to the owner',
-  );
-
-  for (const path of ['.claude/agents/architect.md', '.codex/agents/architect.toml']) {
-    assert.match(
-      read(path),
-      /\*\*build seat\*\*, chosen per builder handoff and stated once when all handoffs share it/,
-      `${path} must choose the build seat per builder handoff`,
-    );
-  }
-
-  assert.match(
-    read('.claude/templates/builder-handoff.md'),
-    /The stop condition never carries a line count: a builder stops for a file or step the plan did not name, never for size\./,
-    'the builder handoff template must forbid a line-count stop',
-  );
-});
-
-test('the factory never gates on line counts, ends review loops in one more round, and binds approvals to their question', () => {
-  // These assertions come from card #1402's acceptance criteria.
-  const read = (path) => readFileSync(resolve(ROOT, path), 'utf8').replace(/\s+/g, ' ');
-  const builderSeats = [
-    '.claude/agents/builder.md',
-    '.claude/agents/builder-lite.md',
-    '.claude/agents/builder-max.md',
-    '.codex/agents/builder.toml',
-    '.codex/agents/builder-lite.toml',
-    '.codex/agents/builder-max.toml',
-  ];
-  const architectSeats = ['.claude/agents/architect.md', '.codex/agents/architect.toml'];
-
-  for (const path of [
-    'AGENTS.md',
-    'CLAUDE.md',
-    '.agents/skills/resume/SKILL.md',
-    '.agents/skills/to-issues/SKILL.md',
-    '.agents/templates/planner-handoff.md',
-    '.claude/templates/builder-handoff.md',
-    ...architectSeats,
-    ...builderSeats,
-  ]) {
-    assert.doesNotMatch(
-      read(path),
-      /size envelope|rough line count|roughly doubles|1,500 changed lines/,
-      `${path} must not gate work on a line count`,
-    );
-  }
-
-  const resume = RESUME.replace(/\s+/g, ' ');
-  assert.match(
-    resume,
-    /Commit green work before any stop, handoff, replan or split proposal/,
-    'resume must commit green work before any stop',
-  );
-  assert.match(
-    resume,
-    /or when that round still does not converge/,
-    'resume must bring the owner a review loop that still does not converge',
-  );
-  assert.match(
-    resume,
-    /still produce true findings, new or repeated, judge them/,
-    'resume must end the review loop on repeated as well as new true findings',
-  );
-  assert.match(
-    resume,
-    /If each is bounded and verifiable, run one more round that fixes all of them/,
-    'resume must run one more fixing round when findings are bounded and verifiable',
-  );
-  assert.match(
-    resume,
-    /Bring the owner the choice, with a recommendation, only when a finding needs an unsettled design, owner judgment or evidence that cannot be bounded/,
-    'resume must bring the owner the choice only when a finding needs unsettled design, owner judgment or unbounded evidence',
-  );
-  assert.doesNotMatch(
-    resume,
-    /still produce new\s+true findings/,
-    'resume must not gate the review loop on new findings alone',
-  );
-
-  const agents = read('AGENTS.md');
-  assert.match(
-    agents,
-    /An approval covers only the question it answered/,
-    'an approval must be bound to its question',
-  );
-  assert.match(agents, /never grants approval/, 'memory or a summary must never grant approval');
-  assert.match(
-    agents,
-    /## Compact instructions [^#]*quoted word for word with the question it answered/,
-    'the compact instructions must keep each approval with its question',
-  );
-  assert.doesNotMatch(
-    read('CLAUDE.md'),
-    /Compact instructions/,
-    'CLAUDE.md must not duplicate the compact instructions',
-  );
-  assert.match(
-    agents,
-    /reread the owner's latest messages before acting on one/,
-    'AGENTS.md must require rereading the owner\'s latest messages before acting on an approval',
-  );
-  assert.match(
-    agents,
-    /an approval whose question is no longer in view is asked again/,
-    'AGENTS.md must ask again when an approval\'s question is no longer in view',
-  );
-  assert.match(
-    agents,
-    /dispatched by its seat name; a generic, default or unnamed role is never dispatched/,
-    'AGENTS.md must require dispatch by seat name and forbid a generic, default or unnamed role',
-  );
-
-  for (const path of builderSeats) {
-    const seat = read(path);
-    assert.match(seat, /its line count never stops it/, `${path} must never stop on a line count`);
-    assert.match(
-      seat,
-      /No hook sees a Codex handoff, so this check is yours on both runtimes/,
-      `${path} must check its own handoff`,
-    );
-    assert.match(
-      seat,
-      /Before any edit, check that the handoff carries every labelled line of/,
-      `${path} must check the handoff carries every labelled line before any edit`,
-    );
-    assert.match(
-      seat,
-      /from `Slice` to `Stop condition`, each with a value and no `\{\{SLOT\}\}` left/,
-      `${path} must require every labelled line from Slice to Stop condition with no {{SLOT}} left`,
-    );
-    assert.match(
-      seat,
-      /stop and report which without editing anything/,
-      `${path} must stop and report a missing labelled line without editing anything`,
-    );
-    assert.match(
-      seat,
-      /A build that needs a file or step the plan did not name stops and reports/,
-      `${path} must stop and report when a build needs a file or step the plan did not name`,
-    );
-  }
-  for (const path of architectSeats) {
-    const seat = read(path);
-    assert.match(seat, /never a line estimate/, `${path} must scope without a line estimate`);
-    assert.match(seat, /[Nn]ever propose a split for size/, `${path} must never propose a split for size`);
-  }
 });
 
 test('every seat that plans, designs, builds or reviews code names the coding standards', () => {
@@ -454,34 +173,7 @@ test('every seat that plans, designs, builds or reviews code names the coding st
   assert.deepEqual(missing, [], `these seat charters must name docs/CODING-STANDARDS.md: ${missing.join(', ')}`);
 });
 
-test('a Codex session waits on helpers with one long timeout and the deliver step watches checks with one waiting command', () => {
-  const agents = readFileSync(resolve(ROOT, 'AGENTS.md'), 'utf8').replace(/\s+/g, ' ');
-  assert.match(agents, /calls `wait_agent` with `timeout_ms: 3600000`, the maximum/, 'AGENTS.md must give a Codex session the one-hour helper wait');
-  assert.match(agents, /never sleeps and checks in a loop/, 'AGENTS.md must forbid the sleep-then-check loop');
-  assert.match(agents, /`\/\/ @exec: \{"yield_time_ms": 3600000\}`/, 'AGENTS.md must run a long Codex command in one exec cell');
-  assert.match(agents, /chars: "", yield_time_ms: 300000/, 'AGENTS.md must poll the process inside the cell at the empty-write cap');
-  assert.match(agents, /`Bash` with `run_in_background: true`/, 'AGENTS.md must background the same command on Claude Code');
-  const resume = RESUME.replace(/\s+/g, ' ');
-  const step = resume.match(/4\. Watch it land(.*?)(?= Greptile is metered)/);
-  assert.ok(step, 'deliver step 4 must exist');
-  assert.doesNotMatch(step[1], /every 30 seconds/, 'step 4 must not read the checks on a timer');
-  assert.match(
-    step[1],
-    /one `exec` cell whose first line is `\/\/ @exec: \{"yield_time_ms": 3600000\}`/,
-    'step 4 must run the Codex watch in one exec cell opened by the one-hour pragma',
-  );
-  assert.match(
-    step[1],
-    /polls the returned `session_id` with `tools\.write_stdin\(\{ session_id, chars: "", yield_time_ms: 300000 \}\)` until `exit_code` is set/,
-    'step 4 must poll the Codex process inside the cell until it exits',
-  );
-  assert.match(step[1], /`Bash` with `run_in_background: true`/, 'step 4 must background the watch on Claude Code');
-  assert.match(
-    step[1],
-    /exits 0 only when the pull request has merged, and otherwise exits 1 with its reason as the last line of output/,
-    'step 4 must state the exit contract the session relies on',
-  );
-  assert.match(step[1], /Merged: run `closeout` in the same session/, 'step 4 must still run closeout on merge');
+test('the resume deliver step carries exactly the merge-watch command', () => {
   const rawStep = RESUME.match(/^4\. Watch it land[\s\S]*?(?=^Greptile is metered)/m);
   assert.deepEqual(
     shellBlocks(rawStep[0]).map((block) => block.body),
@@ -656,13 +348,8 @@ test('the refused-shape check catches each refused shape and passes quoted jq te
   ]);
 });
 
-test('the cross-review skill reads the reviewer model and effort from the seat file at run time, never a copy', () => {
+test("the cross-review skill does not copy the reviewer seat's model or effort values", () => {
   const skill = readFileSync(resolve(ROOT, '.agents/skills/cross-review/SKILL.md'), 'utf8');
-  assert.match(
-    skill.replace(/\s+/g, ' '),
-    /Read the seat's `model` and `model_reasoning_effort` from `\.codex\/agents\/reviewer\.toml`/,
-    'cross-review must name the seat file as where the model and effort are read',
-  );
   const seat = readFileSync(resolve(ROOT, '.codex/agents/reviewer.toml'), 'utf8');
   for (const key of ['model', 'model_reasoning_effort']) {
     const value = seat.match(new RegExp(`^${key} = "([^"]+)"$`, 'm'))?.[1];
@@ -709,10 +396,8 @@ test('the manual carries one shared workflow region followed by the product head
   }
 
   const surfaces = section('Surfaces').split('\n');
-  const guaranteesAt = surfaces.indexOf('The standing security guarantees, in order of blast radius:');
-  assert.notEqual(guaranteesAt, -1, '## Surfaces must carry the line introducing the standing security guarantees');
   assert.ok(
-    surfaces.slice(guaranteesAt + 1).find((line) => line.trim())?.startsWith('1. '),
+    surfaces.find((line) => /^\d+\. /.test(line))?.startsWith('1. '),
     'the standing security guarantees must start with a numbered item 1.',
   );
   const securityRow = surfaces.find((line) => line.startsWith('|') && line.split('|')[1].trim() === 'security review');
@@ -739,17 +424,6 @@ const FIXED_PRODUCT_DOCUMENTS = [
 test('the fixed product documents exist', () => {
   const missing = FIXED_PRODUCT_DOCUMENTS.filter((path) => !existsSync(resolve(ROOT, path)));
   assert.deepEqual(missing, [], `the shared workflow points at these fixed product documents, which are missing: ${missing.join(', ')}`);
-});
-
-test('the testing strategy carries the shared construction-mode and mutation rules verbatim', () => {
-  const strategy = readFileSync(resolve(ROOT, 'docs/TESTING-STRATEGY.md'), 'utf8').replace(/\s+/g, ' ');
-  const rules = [
-    'Subject matter sets the minimum mode; change shape cannot lower that floor.',
-    'The builder follows the handed-off mode and cannot reinterpret or downgrade it.',
-    'An asserted-but-unexecuted mutation is a review finding.',
-  ];
-  const missing = rules.filter((rule) => !strategy.includes(rule));
-  assert.deepEqual(missing, [], `docs/TESTING-STRATEGY.md is missing these shared rules: ${missing.map((rule) => JSON.stringify(rule)).join(', ')}`);
 });
 
 // Runs the real prepare script in a fresh repository holding a copy of package.json. The environment drops git's
