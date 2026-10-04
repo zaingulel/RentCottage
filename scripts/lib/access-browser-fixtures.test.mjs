@@ -350,3 +350,120 @@ test("demo readback rejects missing publications and malformed pricing", () => {
     );
   }
 });
+
+test("demo inventory readback rejects missing units and leaked private reasons", () => {
+  const expectedUnits = [
+    {
+      id: "morning",
+      kind: "shift",
+      calendarState: "private_blocked",
+      available: false,
+    },
+    { id: "evening", kind: "shift", calendarState: "open", available: true },
+    {
+      id: "bundle",
+      kind: "full_day_bundle",
+      calendarState: "closed",
+      available: false,
+    },
+  ];
+  const envelope = {
+    profileId: "fictional-cottage",
+    scheduleRevisionId: "fictional-schedule",
+    serviceDay: "2026-11-03",
+  };
+  const valid = {
+    expectedUnits,
+    ownerCalendar: {
+      ...envelope,
+      units: expectedUnits.map((unit) => ({
+        ...unit,
+        priceIqd: 300000,
+        commitmentReference: null,
+        editable: true,
+      })),
+    },
+    publicAvailability: {
+      ...envelope,
+      units: [
+        { id: "morning", kind: "shift", available: false },
+        { id: "evening", kind: "shift", available: true },
+        { id: "bundle", kind: "full_day_bundle", available: false },
+      ],
+    },
+  };
+  assert.doesNotThrow(() => fixtures.assertDemoInventoryReadback(valid));
+  const malformed = [
+    (data) => {
+      data.ownerCalendar = null;
+    },
+    (data) => {
+      data.publicAvailability = null;
+    },
+    (data) => {
+      data.ownerCalendar.serviceDay = null;
+    },
+    (data) => {
+      data.publicAvailability.profileId = "other-cottage";
+    },
+    (data) => {
+      data.publicAvailability.scheduleRevisionId = "old-schedule";
+    },
+    (data) => {
+      data.publicAvailability.serviceDay = "2026-11-04";
+    },
+    (data) => {
+      delete data.ownerCalendar.units;
+    },
+    (data) => {
+      data.publicAvailability.units = [];
+    },
+    (data) => {
+      data.ownerCalendar.units.pop();
+    },
+    (data) => {
+      data.publicAvailability.units.pop();
+    },
+    (data) => {
+      data.publicAvailability.units[1] = data.publicAvailability.units[0];
+    },
+    (data) => {
+      data.ownerCalendar.units[0].calendarState = "open";
+    },
+    (data) => {
+      data.ownerCalendar.units[0].available = true;
+    },
+    (data) => {
+      data.publicAvailability.units[0].available = true;
+    },
+    (data) => {
+      data.publicAvailability.units[0].available = "false";
+    },
+    (data) => {
+      data.publicAvailability.units[2].kind = "shift";
+    },
+    (data) => {
+      data.publicAvailability.units[0].id = "other-unit";
+    },
+    (data) => {
+      data.publicAvailability.units[0].ownerState = "private_blocked";
+    },
+    (data) => {
+      data.publicAvailability.units[0].reason = "Synthetic private reason";
+    },
+    (data) => {
+      data.publicAvailability.units[0].priceIqd = 300000;
+    },
+    (data) => {
+      data.publicAvailability.commitmentReference = "private-reference";
+    },
+  ];
+  for (const corrupt of malformed) {
+    const data = structuredClone(valid);
+    corrupt(data);
+    assert.throws(
+      () => fixtures.assertDemoInventoryReadback(data),
+      /Demo inventory readback/,
+    );
+  }
+});

@@ -261,6 +261,64 @@ export function assertDemoFixtureReadback(
   }
 }
 
+export function assertDemoInventoryReadback({
+  ownerCalendar,
+  publicAvailability,
+  expectedUnits,
+}) {
+  const fail = (reason) => {
+    throw new Error(
+      `Demo inventory readback: ${reason}; create a fresh owned demo project.`,
+    );
+  };
+  if (
+    typeof ownerCalendar?.profileId !== "string" ||
+    !ownerCalendar.profileId ||
+    typeof ownerCalendar.scheduleRevisionId !== "string" ||
+    !ownerCalendar.scheduleRevisionId ||
+    typeof ownerCalendar.serviceDay !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(ownerCalendar.serviceDay) ||
+    publicAvailability?.profileId !== ownerCalendar.profileId ||
+    publicAvailability.scheduleRevisionId !== ownerCalendar.scheduleRevisionId ||
+    publicAvailability.serviceDay !== ownerCalendar.serviceDay ||
+    Object.keys(publicAvailability).sort().join(",") !==
+      "profileId,scheduleRevisionId,serviceDay,units"
+  )
+    fail("missing or mismatched inventory envelope");
+  for (const units of [
+    ownerCalendar.units,
+    publicAvailability.units,
+    expectedUnits,
+  ]) {
+    if (
+      !Array.isArray(units) ||
+      units.length !== 3 ||
+      new Set(units.map((unit) => unit?.id)).size !== 3 ||
+      units.some((unit) => typeof unit?.id !== "string" || !unit.id) ||
+      units.filter((unit) => unit.kind === "shift").length !== 2 ||
+      units.filter((unit) => unit.kind === "full_day_bundle").length !== 1
+    )
+      fail("expected three unique inventory units");
+  }
+  for (const expected of expectedUnits) {
+    const owner = ownerCalendar.units.find((unit) => unit.id === expected.id);
+    const publicUnit = publicAvailability.units.find(
+      (unit) => unit.id === expected.id,
+    );
+    if (
+      owner?.kind !== expected.kind ||
+      owner.calendarState !== expected.calendarState ||
+      typeof expected.available !== "boolean" ||
+      owner.available !== expected.available ||
+      publicUnit?.kind !== expected.kind ||
+      publicUnit.available !== expected.available
+    )
+      fail("inventory state does not match the prepared unit");
+    if (Object.keys(publicUnit).sort().join(",") !== "available,id,kind")
+      fail("public availability leaked a private field or reason");
+  }
+}
+
 const password = "Local-test-password-2026";
 const pdfBytes = new TextEncoder().encode(
   "%PDF-1.7\nsynthetic access fixture\n%%EOF",

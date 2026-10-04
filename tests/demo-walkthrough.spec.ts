@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
 
@@ -27,17 +27,48 @@ type DemoAdministratorCredential = {
   version: 1;
 };
 
-const { accessBrowserFixture, refreshAccessBrowserFixturePhoto } =
-  createRequire(import.meta.url)(
-    "../scripts/lib/access-browser-fixtures.mjs",
-  ) as {
-    accessBrowserFixture(project: string): AccessBrowserFixture;
-    refreshAccessBrowserFixturePhoto(input: {
-      project: string;
-      publicationId: string;
-      privilegedClient: unknown;
-    }): Promise<void>;
+type DemoInventoryUnit = {
+  id: string;
+  kind: "shift" | "full_day_bundle";
+  calendarState: "open" | "closed" | "private_blocked";
+  available: boolean;
+};
+
+type ValidatedDemoCottage = {
+  fixture: AccessBrowserFixture;
+  identity: { id: string };
+  profile: {
+    id: string;
+    current_publication_id: string;
+    current_shift_schedule_id: string;
   };
+};
+
+const {
+  requireDemoEnvironment,
+  validateDemoBrowserFixtures,
+  assertDemoInventoryReadback,
+  refreshAccessBrowserFixturePhoto,
+} = createRequire(import.meta.url)(
+  "../scripts/lib/access-browser-fixtures.mjs",
+) as {
+  requireDemoEnvironment(): string;
+  validateDemoBrowserFixtures(input: {
+    privilegedClient: unknown;
+    publishableKey: string;
+    url: string;
+  }): Promise<ValidatedDemoCottage[]>;
+  assertDemoInventoryReadback(input: {
+    ownerCalendar: unknown;
+    publicAvailability: unknown;
+    expectedUnits: DemoInventoryUnit[];
+  }): void;
+  refreshAccessBrowserFixturePhoto(input: {
+    project: string;
+    publicationId: string;
+    privilegedClient: unknown;
+  }): Promise<void>;
+};
 
 const administratorEmail = "mvp-demo-administrator-v2@rentcottage.test";
 const customerPhone = "+9647520000001";
@@ -80,22 +111,7 @@ function expectedServiceDayLabel(day: string) {
 }
 
 function requireIsolatedLocalDemo() {
-  const target = new URL(process.env.SUPABASE_URL ?? "invalid:");
-  const localWorkdir = process.env.SUPABASE_LOCAL_WORKDIR;
-  if (
-    process.env.APP_ENVIRONMENT !== "test" ||
-    process.env.SUPABASE_LOCAL_PROJECT !== "rentcottage-demo" ||
-    !localWorkdir ||
-    !isAbsolute(localWorkdir) ||
-    process.env.SUPABASE_PROJECT_REF !== "local-test" ||
-    target.protocol !== "http:" ||
-    target.hostname !== "127.0.0.1"
-  ) {
-    throw new Error(
-      "The demo walkthrough requires the dedicated preserved local demo environment",
-    );
-  }
-  return resolve(localWorkdir);
+  return requireDemoEnvironment();
 }
 
 async function expectScene(locator: Locator, milliseconds = 1_200) {
@@ -338,219 +354,205 @@ async function prepareDemoAdministrator(
 
 async function prepareDemoState() {
   const localWorkdir = requireIsolatedLocalDemo();
-  const fixture = accessBrowserFixture("desktop");
   const url = process.env.SUPABASE_URL ?? "";
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? "";
   const secretKey = process.env.SUPABASE_SECRET_KEY ?? "";
-  await mkdir(demoOutputDirectory, { recursive: true });
+  const privileged = createClient(url, secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const validated = await validateDemoBrowserFixtures({
+    privilegedClient: privileged,
+    publishableKey,
+    url,
+  });
   const administrator = await prepareDemoAdministrator(
     url,
     publishableKey,
     secretKey,
     resolve(localWorkdir, ".env.demo-administrator.local.json"),
   );
-  const privileged = createClient(url, secretKey, {
+  const showcaseDay = serviceDay(30);
+  const recordedDay = serviceDay(31);
+  const rehearsalDay = serviceDay(32);
+  const meetingDay = serviceDay(33);
+  const anonymous = createClient(url, publishableKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-
-  const owner = createClient(url, publishableKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const ownerSignIn = await owner.auth.signInWithPassword({
-    phone: fixture.bookingOwnerPhone,
-    password: fixturePassword,
-  });
-  if (ownerSignIn.error) throw ownerSignIn.error;
-  const profile = await owner
-    .from("owner_application_cottage_profiles")
-    .select(
-      "id,name,current_publication_id,current_shift_schedule_id,exact_address,exact_latitude,exact_longitude,private_directions",
-    )
-    .eq("name", fixture.bookingCottageName)
-    .single();
-  if (
-    profile.error ||
-    !profile.data.current_publication_id ||
-    !profile.data.current_shift_schedule_id
-  ) {
-    throw new Error(
-      "The exact published synthetic demo cottage is incompatible",
+  const cottages = [];
+  for (const [index, cottage] of validated.entries()) {
+    const owner = createClient(url, publishableKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const signedIn = await owner.auth.signInWithPassword({
+      phone: cottage.fixture.bookingOwnerPhone,
+      password: fixturePassword,
+    });
+    if (signedIn.error) throw signedIn.error;
+    const profile = await owner
+      .from("owner_application_cottage_profiles")
+      .select(
+        "id,exact_address,exact_latitude,exact_longitude,private_directions",
+      )
+      .eq("id", cottage.profile.id)
+      .single();
+    if (
+      profile.error ||
+      profile.data.exact_address !== "Synthetic private fixture address" ||
+      profile.data.private_directions !== "Synthetic private directions." ||
+      profile.data.exact_latitude !== 36.408333 ||
+      profile.data.exact_longitude !== 44.385834
+    ) {
+      throw new Error(
+        "The synthetic demo cottage private access fields are incompatible",
+      );
+    }
+    const requests = await owner.rpc(
+      "list_owner_booking_request_notifications",
     );
+    if (requests.error) throw requests.error;
+    if (!Array.isArray(requests.data) || requests.data.length !== 0) {
+      throw new Error(
+        "Unexpected demo Booking Requests; create a fresh owned demo project.",
+      );
+    }
+    const shifts = await owner
+      .from("cottage_shifts")
+      .select("id,position")
+      .eq("schedule_revision_id", cottage.profile.current_shift_schedule_id)
+      .order("position");
+    const schedule = await owner
+      .from("cottage_shift_schedule_revisions")
+      .select("full_day_bundle_id")
+      .eq("id", cottage.profile.current_shift_schedule_id)
+      .single();
+    if (
+      shifts.error ||
+      schedule.error ||
+      !Array.isArray(shifts.data) ||
+      shifts.data.length !== 2 ||
+      shifts.data[0].position !== 1 ||
+      shifts.data[1].position !== 2 ||
+      typeof schedule.data.full_day_bundle_id !== "string"
+    ) {
+      throw new Error("The synthetic demo cottage schedule is incompatible");
+    }
+    const units = [
+      ...shifts.data.map((shift) => ({
+        id: shift.id as string,
+        kind: "shift" as const,
+      })),
+      {
+        id: schedule.data.full_day_bundle_id as string,
+        kind: "full_day_bundle" as const,
+      },
+    ];
+    for (const day of [showcaseDay, recordedDay, rehearsalDay, meetingDay]) {
+      const args = {
+        target_profile_id: cottage.profile.id,
+        target_schedule_revision_id: cottage.profile.current_shift_schedule_id,
+        target_service_day: day,
+      };
+      const before = await owner.rpc(
+        "resolve_cottage_inventory_owner_calendar",
+        args,
+      );
+      if (before.error) throw before.error;
+      if (
+        !Array.isArray(before.data?.units) ||
+        before.data.units.length !== 3 ||
+        units.some(
+          (unit) =>
+            before.data.units.filter(
+              (row: { id?: unknown; kind?: unknown }) =>
+                row.id === unit.id && row.kind === unit.kind,
+            ).length !== 1,
+        ) ||
+        before.data.units.some(
+          (unit: { commitmentReference?: unknown; editable?: unknown }) =>
+            unit.commitmentReference !== null || unit.editable !== true,
+        )
+      ) {
+        throw new Error(
+          "Unexpected demo commitments or malformed calendar; create a fresh owned demo project.",
+        );
+      }
+      const states: DemoInventoryUnit["calendarState"][] =
+        day !== showcaseDay || index < 3
+          ? ["open", "open", "open"]
+          : index === 3
+            ? ["open", "closed", "closed"]
+            : index === 4
+              ? ["closed", "closed", "closed"]
+              : ["private_blocked", "open", "closed"];
+      const expectedUnits = units.map((unit, position) => ({
+        ...unit,
+        calendarState: states[position],
+        available: states[position] === "open",
+      }));
+      const written = await owner.rpc("set_cottage_inventory_availability", {
+        ...args,
+        requested_states: expectedUnits.map((unit) => ({
+          unitId: unit.id,
+          unitKind: unit.kind,
+          state: unit.calendarState,
+        })),
+      });
+      if (written.error) throw written.error;
+      const ownerCalendar = await owner.rpc(
+        "resolve_cottage_inventory_owner_calendar",
+        args,
+      );
+      const publicAvailability = await anonymous.rpc(
+        "resolve_cottage_inventory_public_availability",
+        args,
+      );
+      if (ownerCalendar.error) throw ownerCalendar.error;
+      if (publicAvailability.error) throw publicAvailability.error;
+      assertDemoInventoryReadback({
+        ownerCalendar: ownerCalendar.data,
+        publicAvailability: publicAvailability.data,
+        expectedUnits,
+      });
+    }
+    const signedOut = await owner.auth.signOut();
+    if (signedOut.error) throw signedOut.error;
+    cottages.push({ ...cottage, units });
   }
-  if (
-    profile.data.exact_address !== "Synthetic private fixture address" ||
-    profile.data.private_directions !== "Synthetic private directions." ||
-    profile.data.exact_latitude !== 36.408333 ||
-    profile.data.exact_longitude !== 44.385834
-  ) {
-    throw new Error(
-      "The synthetic demo cottage private access fields are incompatible",
-    );
-  }
-  const participantUsers = await privileged.auth.admin.listUsers({
+  const participants = await privileged.auth.admin.listUsers({
     page: 1,
     perPage: 1000,
   });
+  if (participants.error) throw participants.error;
   if (
-    participantUsers.error ||
-    ![fixture.bookingOwnerPhone, customerPhone].every((phone) =>
-      participantUsers.data.users.some(
-        (user) => user.phone?.replace(/^\+/, "") === phone.replace(/^\+/, ""),
-      ),
+    !participants.data.users.some(
+      (user) =>
+        user.phone?.replace(/^\+/, "") === customerPhone.replace(/^\+/, ""),
     )
   ) {
-    throw new Error("The synthetic demo participant phones are incompatible");
+    throw new Error("The synthetic demo Customer phone is incompatible");
   }
   await refreshAccessBrowserFixturePhoto({
     project: "desktop",
-    publicationId: profile.data.current_publication_id,
+    publicationId: cottages[0].profile.current_publication_id,
     privilegedClient: privileged,
   });
-  const existingOwnerRequests = await owner.rpc(
-    "list_owner_booking_request_notifications",
-  );
-  if (
-    existingOwnerRequests.error ||
-    !Array.isArray(existingOwnerRequests.data) ||
-    existingOwnerRequests.data.some(
-      (request: {
-        bookingNote?: unknown;
-        bookingPeriod?: unknown;
-        bookingRequestReference?: unknown;
-        cottageName?: unknown;
-        customerName?: unknown;
-        houseRules?: unknown;
-      }) =>
-        request.cottageName !== fixture.bookingCottageName ||
-        !["Demo Customer", "Browser Customer", "Live Demo Customer"].includes(
-          request.customerName as string,
-        ) ||
-        ![null, "Weekly live rehearsal with synthetic data."].includes(
-          request.bookingNote as string | null,
-        ) ||
-        request.houseRules !== "Synthetic fixture only. Respect neighbours." ||
-        !Array.isArray(request.bookingPeriod) ||
-        request.bookingPeriod.length !== 1 ||
-        request.bookingPeriod.some(
-          (item: {
-            displayName?: unknown;
-            kind?: unknown;
-            position?: unknown;
-            priceIqd?: unknown;
-            serviceDay?: unknown;
-          }) =>
-            item.kind !== "shift" ||
-            item.displayName !== "Morning" ||
-            item.position !== 1 ||
-            item.priceIqd !== 180_000 ||
-            typeof item.serviceDay !== "string" ||
-            !/^\d{4}-\d{2}-\d{2}$/.test(item.serviceDay),
-        ) ||
-        typeof request.bookingRequestReference !== "string" ||
-        !/^RC-REQ-[A-F0-9]{16}$/.test(request.bookingRequestReference),
-    )
-  ) {
-    throw new Error(
-      "The Owner request overview contains unaudited data and cannot be recorded safely",
-    );
-  }
-  const shifts = await owner
-    .from("cottage_shifts")
-    .select("id,position")
-    .eq("schedule_revision_id", profile.data.current_shift_schedule_id)
-    .order("position");
-  const schedule = await owner
-    .from("cottage_shift_schedule_revisions")
-    .select("full_day_bundle_id")
-    .eq("id", profile.data.current_shift_schedule_id)
-    .single();
-  const shift = shifts.data?.[0];
-  if (
-    shifts.error ||
-    schedule.error ||
-    !shift ||
-    !schedule.data.full_day_bundle_id
-  ) {
-    throw new Error("The synthetic demo cottage schedule is incompatible");
-  }
-  const selectedDays: string[] = [];
-  for (let offset = 30; offset <= 760 && selectedDays.length < 3; offset += 1) {
-    const day = serviceDay(offset);
-    const state = await owner.rpc("resolve_cottage_inventory_owner_calendar", {
-      target_profile_id: profile.data.id,
-      target_schedule_revision_id: profile.data.current_shift_schedule_id,
-      target_service_day: day,
-    });
-    if (state.error) throw state.error;
-    if (
-      !Array.isArray(state.data?.units) ||
-      state.data.units.length !== (shifts.data?.length ?? 0) + 1 ||
-      state.data.units.some(
-        (unit: {
-          calendarState?: string;
-          commitmentReference?: string | null;
-          editable?: boolean;
-        }) =>
-          unit.calendarState !== "closed" ||
-          unit.commitmentReference !== null ||
-          unit.editable !== true,
-      )
-    ) {
-      continue;
-    }
-    selectedDays.push(day);
-  }
-  if (selectedDays.length !== 3) {
-    throw new Error("Three unused future Service Days are not available");
-  }
-  const [recordedDay, rehearsalDay, meetingDay] = selectedDays;
-  for (const day of [recordedDay, rehearsalDay, meetingDay]) {
-    const availability = await owner.rpc("set_cottage_inventory_availability", {
-      target_profile_id: profile.data.id,
-      target_schedule_revision_id: profile.data.current_shift_schedule_id,
-      target_service_day: day,
-      requested_states: [
-        ...(shifts.data ?? []).map((item) => ({
-          unitId: item.id,
-          unitKind: "shift",
-          state: "open",
-        })),
-        {
-          unitId: schedule.data.full_day_bundle_id,
-          unitKind: "full_day_bundle",
-          state: "open",
-        },
-      ],
-    });
-    if (availability.error) throw availability.error;
-  }
-  const pricing = await owner.rpc("load_cottage_inventory_owner_editor_state", {
-    target_profile_id: profile.data.id,
-    target_schedule_revision_id: profile.data.current_shift_schedule_id,
-    target_service_day: null,
-  });
-  if (
-    pricing.error ||
-    !Array.isArray(pricing.data?.units) ||
-    pricing.data.units.some(
-      (unit: { standardPriceIqd?: number | null }) =>
-        !unit.standardPriceIqd || unit.standardPriceIqd <= 0,
-    )
-  ) {
-    throw new Error("The synthetic demo cottage pricing is incompatible");
-  }
-  const ownerSignOut = await owner.auth.signOut();
-  if (ownerSignOut.error) throw ownerSignOut.error;
-
   return {
     administrator,
-    cottageName: fixture.bookingCottageName,
-    meetingDay,
-    ownerPhone: fixture.bookingOwnerPhone,
+    cottages,
+    showcaseDay,
     recordedDay,
     rehearsalDay,
+    meetingDay,
+    cottageName: cottages[0].fixture.bookingCottageName,
+    ownerPhone: cottages[0].fixture.bookingOwnerPhone,
   };
 }
+
+let demo: Awaited<ReturnType<typeof prepareDemoState>>;
+
+test.beforeAll(async () => {
+  demo = await prepareDemoState();
+});
 
 async function verifyPhone(page: Page, phone: string) {
   await page.getByLabel("Iraqi phone number").fill(phone);
@@ -575,6 +577,283 @@ function detailValue(surface: Locator, label: string) {
     .locator("xpath=following-sibling::dd");
 }
 
+test("shows varied demo results and filters across desktop and mobile languages", async ({
+  page,
+}, testInfo) => {
+  await assertApplicationHealth(page);
+  const allNames = [
+    "Palm Garden",
+    "Zab Riverside",
+    "Dukan Hills",
+    "Orchard Retreat",
+    "Tigris Courtyard",
+    "Date Palm Cottage",
+  ];
+  const languages = [
+    {
+      locale: "en",
+      direction: "ltr",
+      from: "From Service Day",
+      to: "To Service Day",
+      guests: "Guests",
+      governorate: "Governorate (optional)",
+      area: "Approximate area (optional)",
+      filters: "Booking Period filters (optional)",
+      fullDay: "Full day",
+      pool: "Pool",
+      submit: "Search available cottages",
+      results: "Available cottages",
+      back: "Change search",
+    },
+    {
+      locale: "ar",
+      direction: "rtl",
+      from: "من تاريخ",
+      to: "إلى تاريخ",
+      guests: "عدد الضيوف",
+      governorate: "المحافظة (اختياري)",
+      area: "المنطقة التقريبية (اختياري)",
+      filters: "مرشحات فترة الحجز (اختياري)",
+      fullDay: "يوم كامل",
+      pool: "مسبح",
+      submit: "ابحث عن البيوت المتاحة",
+      results: "البيوت المتاحة",
+      back: "تعديل البحث",
+    },
+    {
+      locale: "ckb",
+      direction: "rtl",
+      from: "لە بەرواری",
+      to: "تا بەرواری",
+      guests: "ژمارەی میوان",
+      governorate: "پارێزگا (ئارەزوومەندانە)",
+      area: "ناوچەی نزیکەیی (ئارەزوومەندانە)",
+      filters: "پاڵاوتەکانی ماوەی حجز (ئارەزوومەندانە)",
+      fullDay: "ڕۆژی تەواو",
+      pool: "مەلەوانگە",
+      submit: "گەڕان بۆ کۆتێجی بەردەست",
+      results: "کۆتێجە بەردەستەکان",
+      back: "گەڕانەکە بگۆڕە",
+    },
+  ];
+  type SearchFilters = {
+    governorate?: string;
+    area?: string;
+    guests?: string;
+    pool?: boolean;
+    fullDay?: boolean;
+  };
+  async function search(
+    language: (typeof languages)[number],
+    day: string,
+    names: string[],
+    filters: SearchFilters = {},
+  ) {
+    await expect(page.locator("html")).toHaveAttribute("lang", language.locale);
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      language.direction,
+    );
+    await expect(page.getByLabel(language.from, { exact: true })).toHaveValue(
+      "",
+    );
+    await expect(
+      page.getByRole("combobox", { name: language.governorate, exact: true }),
+    ).toHaveValue("");
+    await expect(
+      page.getByRole("combobox", { name: language.area, exact: true }),
+    ).toHaveValue("");
+    await expect(page.getByRole("checkbox", { checked: true })).toHaveCount(0);
+    await page.getByLabel(language.from, { exact: true }).fill(day);
+    await page.getByLabel(language.to, { exact: true }).fill(day);
+    await page
+      .getByLabel(language.guests, { exact: true })
+      .fill(filters.guests ?? "4");
+    if (filters.governorate)
+      await page
+        .getByRole("combobox", { name: language.governorate, exact: true })
+        .selectOption(filters.governorate);
+    if (filters.area)
+      await page
+        .getByRole("combobox", { name: language.area, exact: true })
+        .selectOption(filters.area);
+    if (filters.pool)
+      await page
+        .getByRole("checkbox", { name: language.pool, exact: true })
+        .check();
+    const disclosure = page
+      .locator("summary")
+      .filter({ hasText: language.filters });
+    await disclosure.focus();
+    await expect(disclosure).toBeFocused();
+    await page.keyboard.press("Enter");
+    const fullDay = page.getByRole("button", {
+      name: language.fullDay,
+      exact: true,
+    });
+    await expect(fullDay).toBeVisible();
+    await expect(fullDay).toHaveAttribute("aria-pressed", "false");
+    if (filters.fullDay) {
+      await fullDay.click();
+      await expect(fullDay).toHaveAttribute("aria-pressed", "true");
+    }
+    const submit = page.getByRole("button", {
+      name: language.submit,
+      exact: true,
+    });
+    await submit.focus();
+    await expect(submit).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/${language.locale}/results\\?`));
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: language.results,
+        exact: true,
+      }),
+    ).toBeVisible();
+    const cards = page.getByRole("main").getByRole("article");
+    await expect(cards).toHaveCount(names.length);
+    await expect
+      .poll(async () =>
+        (
+          await cards.getByRole("heading", { level: 2 }).allTextContents()
+        ).sort(),
+      )
+      .toEqual([...names].sort());
+    for (const name of names) {
+      const card = cards.filter({
+        has: page.getByRole("heading", { level: 2, name, exact: true }),
+      });
+      await expect(
+        card.getByRole("heading", { level: 2, name, exact: true }),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          card
+            .getByRole("img", { name, exact: true })
+            .evaluate((image) =>
+              image instanceof HTMLImageElement && image.complete
+                ? image.naturalWidth
+                : 0,
+            ),
+        )
+        .toBeGreaterThan(100);
+    }
+    await expect(page.getByRole("main")).not.toContainText(
+      /Synthetic private fixture address|Synthetic private directions|36\.408333|44\.385834|private_blocked|commitmentReference|9647540000/,
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        ),
+      )
+      .toBe(true);
+  }
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 412, height: 915 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const language of languages) {
+      await page.goto(`/${language.locale}`);
+      await search(language, demo.recordedDay, allNames);
+      if (
+        (viewport.width === 1440 && language.locale === "en") ||
+        (viewport.width === 412 && language.locale === "ar")
+      ) {
+        const path = testInfo.outputPath(
+          `demo-results-${language.locale}-${viewport.width}.png`,
+        );
+        await page.screenshot({ path, fullPage: true });
+        await testInfo.attach(
+          `Demo results ${language.locale} ${viewport.width}`,
+          { path, contentType: "image/png" },
+        );
+      }
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/en");
+  const english = languages[0];
+  await search(english, demo.recordedDay, allNames);
+  for (const [name, prices] of [
+    ["Palm Garden", ["IQD 180,000", "IQD 190,000", "IQD 250,000"]],
+    ["Zab Riverside", ["IQD 140,000", "IQD 150,000", "IQD 220,000"]],
+    ["Dukan Hills", ["IQD 240,000", "IQD 260,000", "IQD 360,000"]],
+    ["Orchard Retreat", ["IQD 100,000", "IQD 120,000", "IQD 180,000"]],
+    ["Tigris Courtyard", ["IQD 210,000", "IQD 230,000", "IQD 320,000"]],
+    ["Date Palm Cottage", ["IQD 300,000", "IQD 320,000", "IQD 450,000"]],
+  ] as const) {
+    const card = page
+      .getByRole("article")
+      .filter({ has: page.getByRole("heading", { name, exact: true }) });
+    for (const [index, label] of [
+      "Morning",
+      "Evening",
+      "Full-day bundle",
+    ].entries()) {
+      await expect(
+        card.getByRole("listitem").filter({ hasText: label }),
+      ).toContainText(prices[index]);
+    }
+    await expect(card.getByText("total", { exact: true })).toHaveCount(0);
+  }
+  for (const [filters, names] of [
+    [{ governorate: "Erbil" }, ["Palm Garden", "Zab Riverside"]],
+    [{ area: "Shaqlawa" }, ["Palm Garden"]],
+    [
+      { guests: "10" },
+      ["Dukan Hills", "Tigris Courtyard", "Date Palm Cottage"],
+    ],
+    [
+      { pool: true },
+      ["Palm Garden", "Dukan Hills", "Tigris Courtyard", "Date Palm Cottage"],
+    ],
+  ] satisfies [SearchFilters, string[]][]) {
+    await page.getByRole("link", { name: english.back, exact: true }).click();
+    await search(english, demo.recordedDay, names, filters);
+  }
+  await page.getByRole("link", { name: english.back, exact: true }).click();
+  await search(english, demo.showcaseDay, [
+    "Palm Garden",
+    "Zab Riverside",
+    "Dukan Hills",
+    "Orchard Retreat",
+    "Date Palm Cottage",
+  ]);
+  for (const [name, states] of [
+    ["Orchard Retreat", ["Available", "Unavailable", "Unavailable"]],
+    ["Date Palm Cottage", ["Unavailable", "Available", "Unavailable"]],
+  ] as const) {
+    const card = page
+      .getByRole("article")
+      .filter({ has: page.getByRole("heading", { name, exact: true }) });
+    for (const [index, label] of [
+      "Morning",
+      "Evening",
+      "Full-day bundle",
+    ].entries()) {
+      await expect(
+        card
+          .getByRole("listitem")
+          .filter({ hasText: label })
+          .getByText(states[index], { exact: true }),
+      ).toBeVisible();
+    }
+  }
+  await page.getByRole("link", { name: english.back, exact: true }).click();
+  await search(
+    english,
+    demo.showcaseDay,
+    ["Palm Garden", "Zab Riverside", "Dukan Hills"],
+    { fullDay: true },
+  );
+});
+
 test("records the continuous local RentCottage MVP story", async ({ page }) => {
   test.setTimeout(240_000);
   await mkdir(demoOutputDirectory, { recursive: true });
@@ -583,7 +862,6 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     `rentcottage-mvp-walkthrough-${randomUUID()}.webm`,
   );
   await assertApplicationHealth(page);
-  const demo = await prepareDemoState();
   console.log(`Recorded walkthrough Service Day: ${demo.recordedDay}`);
   console.log(`Reserved rehearsal Service Day: ${demo.rehearsalDay}`);
   console.log(`Reserved meeting Service Day: ${demo.meetingDay}`);
