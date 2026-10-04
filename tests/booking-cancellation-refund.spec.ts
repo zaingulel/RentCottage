@@ -473,6 +473,7 @@ test.describe("retained cancellation and refund controls", () => {
         exact: true,
       });
       await expect(confirmed).toContainText(browserQuote.cottageName);
+      await expect(confirmed).toHaveCSS("border-top-style", "solid");
       const period = confirmed.locator("dl > div").filter({
         has: page.getByText(periodLabels[locale], { exact: true }),
       });
