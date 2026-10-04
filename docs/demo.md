@@ -24,8 +24,9 @@ procedure under [Evidence and teardown](#evidence-and-teardown) only for diagnos
 bash --noprofile --norc
 ```
 
-Check that this shell inherited no demo or verification overrides before creating anything. A conflict means
-return to a clean parent environment, rather than hiding the stale setting with a new value.
+Inherited-environment check: check that this shell inherited no demo or verification overrides before creating
+anything. A conflict means return to a clean parent environment, rather than hiding the stale setting with a
+new value.
 
 ```sh
 set -eu
@@ -36,6 +37,11 @@ names += [name for name in ('APP_ENVIRONMENT', 'NEXTJS_ENV', 'PRIVILEGED_AUDIT_H
 if names:
     raise SystemExit('Stop: inherited environment overrides: ' + ', '.join(sorted(names)))
 PY
+```
+
+Fresh creation only: run this block only when starting a new demo, never during recovery.
+
+```sh
 umask 077
 export SUPABASE_TELEMETRY_DISABLED=1
 export DO_NOT_TRACK=1
@@ -400,14 +406,16 @@ jobs -l
 fg %+ || :
 ```
 
-If the dedicated shell exited, open a clean dedicated Bash shell using the setup's shell command and inherited
-environment check, in the same recorded checkout. Run only that shell command and environment check, never the
-creation or preparation commands in that section. Recovery is for diagnosis and teardown only. Select this run's
-exact workdir and project from its retained creation results; compare `creation.txt` and `checkout.txt` with
-those results and the checkout's current commit. Verify the actual copied `supabase/config.toml` project and
-workdir, and compare the recorded `container-ownership.json` IDs, names, labels and port bindings with current
-Docker inspection. If failure preceded any needed evidence, stop and report exactly what is missing. Never
-guess a project, borrow another run's evidence or source a nonexistent file.
+If the dedicated shell exited, open a clean dedicated Bash shell in the same recorded checkout using the
+setup's `bash --noprofile --norc` command, then run the whole inherited-environment-check block, including
+`set -eu`. Stop before the fresh-creation block; run no creation or preparation commands. Recovery is for
+diagnosis and teardown only. Select this run's exact workdir and project from its retained creation results
+and compare `creation.txt` with those results. `checkout.txt` records the source revision at creation; record
+and report a different current commit, but that difference alone does not block independently ownership-verified
+teardown. Current path, configuration, container and process identities establish ownership. Verify the actual
+copied `supabase/config.toml` project and workdir, and compare the recorded `container-ownership.json` IDs, names,
+labels and port bindings with current Docker inspection. If failure preceded any needed evidence, stop and
+report exactly what is missing. Never guess a project, borrow another run's evidence or source a nonexistent file.
 
 Only after ownership is established, restore `SUPABASE_LOCAL_WORKDIR` and `SUPABASE_LOCAL_PROJECT` to those
 recorded values. If this run created `demo-environment.sh`, verify it is a regular, non-symlink, mode-0600 file
@@ -426,6 +434,11 @@ If any process ownership remains unresolved, preserve it and report the exact bl
 only with the existing ownership and binding-equality checks and the exact-project Supabase stop below;
 if no bindings were created, do not run the binding-removal block, and stop Supabase only after its recorded
 project ownership is proven.
+
+After Ctrl+C, wait for the native preview children to finish and use the native process inspector to confirm
+8792 and 9232 are released before pasting the binding-removal and stop block below. The receipt wrapper returning
+alone does not prove shutdown is complete. A failed port check exits this fail-fast shell and requires the
+recovery procedure above.
 
 Verify both Worker ports are free before removing bindings. Recheck the recorded Docker container metadata and
 labels against the creation record before stopping the owned project with the explicit workdir and basename.
