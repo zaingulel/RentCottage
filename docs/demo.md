@@ -1,369 +1,483 @@
-# Local MVP demonstration
+# Local Minimum Viable Product (MVP) demonstration
 
-This walkthrough runs only against the preserved local synthetic demo database. It records one continuous
-1920 x 1080 WebM showing the Platform Administrator, Cottage Owner, and Customer journeys through a paid
-Confirmed Booking. Payment is simulated, customer data is synthetic, and the Booking Terms are fictional and
-non-operative. This file is the single source of truth for starting, presenting, recording, and recovering the
-demo, and for the shareable summary of delivered and remaining work.
+This guide prepares a fresh, isolated synthetic demo and records one continuous 1920 x 1080 WebM of the
+English Platform Administrator, Cottage Owner and Customer journey through a paid Confirmed Booking.
+All cottages, identities, verification evidence and private details are fictional. Payment and supplier
+responses are simulated; Booking Terms are fictional and non-operative. This is local demonstration evidence,
+not approval to activate suppliers, publish a hosted preview or launch the marketplace.
 
-## Dedicated demo resources
+## Fresh operator setup
 
-The demo owns these stable local resources:
+Use the selected checkout with dependencies installed by `npm ci`, Docker running, Python 3, Bash and the
+existing Playwright Chromium installation. The locked Supabase command-line interface (CLI) is `node_modules/.bin/supabase`,
+version 2.114.0. Its installed executable uses Bun internally; invoke the supplied command directly.
+Do not upgrade the CLI or use a globally installed replacement.
 
-- Supabase workdir: `/Users/zain/Developer/Codex/RentCottage/.demo`
-- Supabase project: `rentcottage-demo`
-- Worker preview: `http://127.0.0.1:8789`
-- Worker bindings: ignored `.dev.vars.test`, restricted to the local user
-- Administrator credential:
-  `/Users/zain/Developer/Codex/RentCottage/.demo/.env.demo-administrator.local.json`, created exclusively with
-  mode `0600`
-
-Do not point the demo at the repository's default local Supabase project. The normal verifier owns disposable
-projects selected through its own `SUPABASE_LOCAL_PROJECT`; never set that verifier project to
-`rentcottage-demo`. Do not run `supabase db reset` or `supabase stop --no-backup` against the demo because both
-destroy its retained accounts, administrator Multi-Factor Authentication (MFA) enrollment, cottage, and Booking
-History.
-
-## Refresh to completed merged work
-
-Before the weekly rehearsal, update a clean checkout to the completed merged commit selected for the sprint
-review. Record the exact commit:
+Run the following commands from the checkout in one dedicated interactive Bash subshell. Keep that shell open
+through recording, rehearsal and teardown. Every demo export belongs inside it; do ordinary verification only
+from its clean parent shell. Stop at any failed command or ownership check. Preserve failed evidence for review;
+never reset a database, kill an unknown listener or allocate a replacement port. The fail-fast `set -eu` below
+can exit this shell after a failed command. Do not continue preparation in another shell; use the recovery
+procedure under [Evidence and teardown](#evidence-and-teardown) only for diagnosis and teardown.
 
 ```sh
-git rev-parse HEAD
-npm ci
+bash --noprofile --norc
 ```
 
-Review the week's merged changes for anything that alters the visible journey, labels, synthetic fixture,
-database schema, Worker payment processing, or private participant details. Update this walkthrough when the
-meeting story changes; do not add failure-path chapters unless that week's completed work needs them.
-
-Set the stable local identity in every terminal used for the demo:
+Inherited-environment check: check that this shell inherited no demo or verification overrides before creating
+anything. A conflict means return to a clean parent environment, rather than hiding the stale setting with a
+new value.
 
 ```sh
-export SUPABASE_LOCAL_WORKDIR=/Users/zain/Developer/Codex/RentCottage/.demo
-export SUPABASE_LOCAL_PROJECT=rentcottage-demo
+set -eu
+python3 - <<'PY'
+import os
+names = [name for name in os.environ if name.startswith(('SUPABASE_', 'PLAYWRIGHT_', 'WRANGLER_'))]
+names += [name for name in ('APP_ENVIRONMENT', 'NEXTJS_ENV', 'PRIVILEGED_AUDIT_HMAC_KEY') if name in os.environ]
+if names:
+    raise SystemExit('Stop: inherited environment overrides: ' + ', '.join(sorted(names)))
+PY
 ```
 
-Do not shorten the workdir to `.demo`, `~`, or another relative path. The walkthrough rejects a non-absolute
-workdir and derives the Administrator credential path from this exact identity.
-
-The stable workdir keeps its own `supabase/config.toml`. On first setup, copy the repository configuration there
-and change only its first `project_id` value from `rentcottage` to `rentcottage-demo`. On every weekly refresh,
-copy the current migration and declared-schema files into that workdir while preserving its configuration and
-administrator credential:
+Fresh creation only: run this block only when starting a new demo, never during recovery.
 
 ```sh
-mkdir -p "$SUPABASE_LOCAL_WORKDIR/supabase/migrations" "$SUPABASE_LOCAL_WORKDIR/supabase/schemas"
-cp -p supabase/migrations/* "$SUPABASE_LOCAL_WORKDIR/supabase/migrations/"
-cp -p supabase/schemas/* "$SUPABASE_LOCAL_WORKDIR/supabase/schemas/"
+umask 077
+export SUPABASE_TELEMETRY_DISABLED=1
+export DO_NOT_TRACK=1
+test "$(node_modules/.bin/supabase --version)" = '2.114.0'
+export SUPABASE_LOCAL_WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/rentcottage-demo-XXXXXX")"
+export SUPABASE_LOCAL_WORKDIR="$(cd "$SUPABASE_LOCAL_WORKDIR" && pwd -P)"
+export SUPABASE_LOCAL_PROJECT="$(basename "$SUPABASE_LOCAL_WORKDIR")"
+printf '%s\n' "$SUPABASE_LOCAL_WORKDIR" "$SUPABASE_LOCAL_PROJECT" > "$SUPABASE_LOCAL_WORKDIR/creation.txt"
+git rev-parse HEAD > "$SUPABASE_LOCAL_WORKDIR/checkout.txt"
+printf 'Owned workdir: %s\nOwned project: %s\n' "$SUPABASE_LOCAL_WORKDIR" "$SUPABASE_LOCAL_PROJECT"
 ```
 
-Inspect the target paths before the first copy. Do not overwrite an existing
-`$SUPABASE_LOCAL_WORKDIR/supabase/config.toml` or
-`$SUPABASE_LOCAL_WORKDIR/.env.demo-administrator.local.json`.
+Record those creation results with the session evidence. The basename must match
+`rentcottage-demo-` followed by letters or numbers. Each fresh recording gets a new project. Preserve all
+unowned workdirs, projects, volumes, Worker bindings and listeners.
 
-Before starting or migrating the dedicated project, verify that its stable workdir still identifies the demo:
+Copy the current declared schemas and migrations and change only the copied configuration. This one-shot
+file operation refuses a changed source contract and never edits `supabase/config.toml` in the checkout.
 
 ```sh
-rg -n '^project_id' "$SUPABASE_LOCAL_WORKDIR/supabase/config.toml"
+python3 - <<'PY'
+import os, re, shutil
+from pathlib import Path
+workdir = Path(os.environ['SUPABASE_LOCAL_WORKDIR'])
+project = os.environ['SUPABASE_LOCAL_PROJECT']
+assert workdir.is_absolute() and workdir.name == project
+assert re.fullmatch(r'rentcottage-demo-[A-Za-z0-9]+', project)
+target = workdir / 'supabase'
+target.mkdir()
+for folder in ('migrations', 'schemas'):
+    shutil.copytree(Path('supabase') / folder, target / folder)
+config = Path('supabase/config.toml').read_text()
+changes = {
+    'project_id = "rentcottage"': f'project_id = "{project}"',
+    'port = 54331': 'port = 56331',
+    'port = 54332': 'port = 56332',
+    'port = 54333': 'port = 56333',
+    'port = 54334': 'port = 56334',
+    'port = 54337': 'port = 56337',
+    'port = 54339': 'port = 56339',
+    'shadow_port = 54330': 'shadow_port = 16330',
+    'inspector_port = 8083': 'inspector_port = 8283',
+}
+for before, after in changes.items():
+    assert config.count(before) == 1, f'Stop: source configuration mismatch for {before}'
+    config = config.replace(before, after)
+config, count = re.subn(r'(\[db.seed\]\n.*?\nenabled = )true', r'\1false', config, flags=re.S)
+assert count == 1, 'Stop: seed configuration mismatch'
+with (target / 'config.toml').open('x') as output:
+    output.write(config)
+PY
 ```
 
-Require the identity check to show the stable demo value `rentcottage-demo`; a different value stops the run for
-inspection. Then start the dedicated project and apply only missing migrations through Supabase's supported local
-upgrade path:
+The application programming interface (API), database, Studio, mail, analytics and pooler ports are 56331, 56332, 56333, 56334, 56337 and
+56339. The shadow database uses 16330 and edge inspector 8283. The Worker uses 8792 with inspector 9232.
+Check every port immediately before Supabase startup. Also inspect Docker's published ports because Docker
+can reserve a port without an ordinary userspace listener. Any conflict stops this run.
 
 ```sh
-SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase start --workdir "$SUPABASE_LOCAL_WORKDIR"
-SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase migration up --local --workdir "$SUPABASE_LOCAL_WORKDIR"
+docker ps --format '{{.Names}}\t{{.Ports}}'
+python3 - <<'PY'
+import socket
+ports = (56331, 56332, 56333, 56334, 56337, 56339, 16330, 8283, 8792, 9232)
+for port in ports:
+    for family, host in ((socket.AF_INET, '0.0.0.0'), (socket.AF_INET6, '::')):
+        with socket.socket(family, socket.SOCK_STREAM) as listener:
+            if family == socket.AF_INET6:
+                listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            try:
+                listener.bind((host, port))
+            except OSError:
+                raise SystemExit(f'Stop: port {port} is unavailable')
+print('Demo ports are free; require no conflicting Docker published port above.')
+PY
+node scripts/run-log.mjs demo start -- node_modules/.bin/supabase start --workdir "$SUPABASE_LOCAL_WORKDIR" > "$SUPABASE_LOCAL_WORKDIR/start-private.log" 2>&1
+node scripts/run-log.mjs demo migrations -- node_modules/.bin/supabase migration up --local --workdir "$SUPABASE_LOCAL_WORKDIR" > "$SUPABASE_LOCAL_WORKDIR/migrations-private.log" 2>&1
+node scripts/run-log.mjs demo migration history -- sh -c 'node_modules/.bin/supabase migration list --local --workdir "$SUPABASE_LOCAL_WORKDIR" --output-format json > "$SUPABASE_LOCAL_WORKDIR/migration-history.json"'
 ```
 
-After that upgrade, use the stable identity exports above to check the selected merged checkout's target migration
-against the retained demo's applied history:
+Native startup uses the copied configuration with no service exclusion list. Seeds are disabled; the existing
+fixture command owns all synthetic data. Compare every selected migration, not merely the newest timestamp.
+Under `--local`, the history's `local` and `remote` entries describe files and the selected local database.
+No missing, extra or mismatched migration is acceptable.
 
 ```sh
-SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase migration list --local --workdir "$SUPABASE_LOCAL_WORKDIR"
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+workdir = Path(os.environ['SUPABASE_LOCAL_WORKDIR'])
+expected = sorted(path.name.split('_', 1)[0] for path in Path('supabase/migrations').glob('*.sql'))
+rows = json.loads((workdir / 'migration-history.json').read_text())['migrations']
+assert expected and sorted(row['local'] for row in rows) == expected
+assert all(row['local'] == row['remote'] for row in rows), 'Stop: unapplied migration'
+print(f'All {len(expected)} selected migrations are applied.')
+PY
+node_modules/.bin/supabase status --workdir "$SUPABASE_LOCAL_WORKDIR" --output json > "$SUPABASE_LOCAL_WORKDIR/status-private.json"
 ```
 
-Match the target migration timestamp from the selected checkout's `supabase/migrations` filename to the history.
-The `Local` column is the migration files; the `Remote` column is the selected local database under `--local`.
-The target and every earlier selected-checkout migration must be present and applied with no missing rows; a later
-maximum timestamp alone is insufficient. If history is missing, failed, or ambiguous, investigate; never mark
-history applied or reset the retained demo to force the condition. See the
-[Supabase migration list reference](https://supabase.com/docs/reference/cli/supabase-migration-list) for the
-command's column semantics.
+## Verify ownership before privileged preparation
 
-For a confirmed brand-new, empty database only, map its environment, create the synthetic desktop fixture once,
-and validate it:
+Do not print the status file, keys or private startup logs. Before fixture or Administrator preparation,
+require the exact API origin and Docker labels connecting that endpoint to the workdir just created. A
+`test` or `local-test` health label alone does not prove ownership.
 
 ```sh
-set -a
-eval "$(SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase status --workdir "$SUPABASE_LOCAL_WORKDIR" -o env)"
-export APP_ENVIRONMENT=test
-export SUPABASE_PROJECT_REF=local-test
-export SUPABASE_URL="$API_URL"
-export SUPABASE_PUBLISHABLE_KEY="$PUBLISHABLE_KEY"
-export SUPABASE_SECRET_KEY="$SECRET_KEY"
-set +a
-node scripts/prepare-access-test.mjs create desktop
-node scripts/prepare-access-test.mjs validate desktop
+python3 - <<'PY'
+import json, os, subprocess
+from pathlib import Path
+workdir = Path(os.environ['SUPABASE_LOCAL_WORKDIR'])
+project = os.environ['SUPABASE_LOCAL_PROJECT']
+status = json.loads((workdir / 'status-private.json').read_text())
+assert status['API_URL'] == 'http://127.0.0.1:56331', 'Stop: foreign API origin'
+assert all(isinstance(status.get(key), str) and status[key] for key in ('PUBLISHABLE_KEY', 'SECRET_KEY'))
+ids = subprocess.check_output(['docker', 'ps', '-aq', '--filter', f'label=com.supabase.cli.project={project}'], text=True).split()
+assert len(ids) == 12, 'Stop: unexpected native container set'
+containers = json.loads(subprocess.check_output(['docker', 'inspect', *ids], text=True))
+metadata = []
+for container in containers:
+    labels = container['Config']['Labels']
+    assert labels['com.supabase.cli.project'] == project
+    assert labels['com.supabase.cli.workdir'] == str(workdir)
+    assert container['State']['Running']
+    metadata.append({'id': container['Id'], 'name': container['Name'], 'labels': labels, 'ports': container['NetworkSettings']['Ports']})
+api = [item for item in metadata if any(binding['HostPort'] == '56331' for binding in item['ports'].get('8000/tcp') or [])]
+db = [item for item in metadata if any(binding['HostPort'] == '56332' for binding in item['ports'].get('5432/tcp') or [])]
+assert len(api) == len(db) == 1, 'Stop: endpoint binding mismatch'
+with (workdir / 'container-ownership.json').open('x') as output:
+    json.dump(metadata, output, indent=2)
+print('Exact owned workdir, project, API and database bindings verified.')
+PY
 ```
 
-Skip `create desktop` for every reused database. The walkthrough validates the exact synthetic private address,
-directions, coordinates, participant phone numbers, published cottage, shift schedule, and retained Owner request
-history before recording. A mismatch stops the run for inspection; it never rewinds or recreates retained data.
-
-## Build and run the payment-capable Worker
-
-The owner-acceptance chapter needs the existing Cloudflare Worker scheduled handler to run the simulated Payment
-Capture and confirmation flow. Keep service credentials in the ignored `.dev.vars.test`; never pass them as
-`--var` command arguments.
-
-Inspect an existing file before changing it:
+Map status privately to the existing environment and create `.dev.vars.test` exclusively, with mode 0600.
+An existing file or symlink stops preparation; never overwrite it. This shell fragment contains secrets and
+stays private in the owned workdir. No key is passed in a command argument or receipt label.
 
 ```sh
-stat -f '%Sp %N' .dev.vars.test
+python3 - <<'PY'
+import json, os, secrets, shlex
+from pathlib import Path
+workdir = Path(os.environ['SUPABASE_LOCAL_WORKDIR'])
+status = json.loads((workdir / 'status-private.json').read_text())
+values = {
+    'APP_ENVIRONMENT': 'test',
+    'SUPABASE_PROJECT_REF': 'local-test',
+    'SUPABASE_URL': status['API_URL'],
+    'SUPABASE_PUBLISHABLE_KEY': status['PUBLISHABLE_KEY'],
+    'SUPABASE_SECRET_KEY': status['SECRET_KEY'],
+    'PRIVILEGED_AUDIT_HMAC_KEY': secrets.token_hex(32),
+}
+assert values['SUPABASE_URL'] == 'http://127.0.0.1:56331'
+with Path('.dev.vars.test').open('x') as output:
+    for key, value in values.items():
+        output.write(f'{key}={json.dumps(value)}\n')
+with (workdir / 'demo-environment.sh').open('x') as output:
+    for key, value in values.items():
+        output.write(f'export {key}={shlex.quote(value)}\n')
+assert Path('.dev.vars.test').stat().st_mode & 0o777 == 0o600
+(workdir / 'binding-ownership.txt').write_text(str(Path('.dev.vars.test').resolve()) + '\n')
+PY
+. "$SUPABASE_LOCAL_WORKDIR/demo-environment.sh"
+node --input-type=module - <<'JS'
+const response = await fetch(`${process.env.SUPABASE_URL}/auth/v1/health`, {
+  headers: { apikey: process.env.SUPABASE_PUBLISHABLE_KEY },
+});
+if (!response.ok) throw new Error('Stop: owned local Auth health failed');
+console.log('Owned local Auth health passed.');
+JS
+node scripts/run-log.mjs demo create -- node scripts/prepare-access-test.mjs create demo
+node scripts/run-log.mjs demo validate -- node scripts/prepare-access-test.mjs validate demo
+node scripts/run-log.mjs demo worker build -- npm run build:worker
 ```
 
-If the file does not exist, create it locally with the following keys populated from the dedicated Supabase
-status above, then restrict it with `chmod 600 .dev.vars.test`:
+`create demo` uses real production approval and publication transitions for the six cottages below.
+`validate demo` is read-only and requires the complete publications, localizations, pricing and approval
+records. Neither command repairs an existing partial fixture. Failure requires inspection and a fresh owned
+project for another attempt, not deletion or a database reset.
 
-```text
-APP_ENVIRONMENT="test"
-SUPABASE_PROJECT_REF="local-test"
-SUPABASE_URL="<dedicated local API_URL>"
-SUPABASE_PUBLISHABLE_KEY="<dedicated local PUBLISHABLE_KEY>"
-SUPABASE_SECRET_KEY="<dedicated local SECRET_KEY>"
-PRIVILEGED_AUDIT_HMAC_KEY="<local synthetic value of at least 32 characters>"
-```
+## Start the Worker and record
 
-The angle-bracket values describe private local input and must not remain as literal bindings. Build once, then
-leave the Worker preview running in its own terminal:
+Stay in the dedicated shell. Keep Wrangler logs and registry inside the owned workdir, and check the Worker
+ports again immediately before preview. Docker published ports must also remain free at 8792 and 9232.
 
 ```sh
-npm run build:worker
-WRANGLER_LOG_PATH=/private/tmp/rentcottage-demo-wrangler-logs WRANGLER_REGISTRY_PATH=/private/tmp/rentcottage-demo-wrangler-registry npm run preview -- --env test --test-scheduled --ip 127.0.0.1 --port 8789
-```
-
-Confirm the Worker is connected to the local test boundary before using it:
-
-```sh
-curl --fail --silent --show-error 'http://127.0.0.1:8789/api/health?check=supabase'
-```
-
-## Record and rehearse
-
-In another terminal, map the same dedicated Supabase environment, then use the Worker-only demo configuration:
-
-```sh
-set -a
-eval "$(SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase status --workdir "$SUPABASE_LOCAL_WORKDIR" -o env)"
-export APP_ENVIRONMENT=test
-export SUPABASE_PROJECT_REF=local-test
-export SUPABASE_URL="$API_URL"
-export SUPABASE_PUBLISHABLE_KEY="$PUBLISHABLE_KEY"
-export SUPABASE_SECRET_KEY="$SECRET_KEY"
+export WRANGLER_LOG_PATH="$SUPABASE_LOCAL_WORKDIR/wrangler-logs"
+export WRANGLER_REGISTRY_PATH="$SUPABASE_LOCAL_WORKDIR/wrangler-registry"
 export PLAYWRIGHT_SERVER=worker
-export PLAYWRIGHT_WORKER_PORT=8789
-set +a
-npx playwright test --config=playwright.demo.config.ts
+export PLAYWRIGHT_WORKER_PORT=8792
+docker ps --format '{{.Names}}\t{{.Ports}}'
+python3 - <<'PY'
+import socket
+for port in (8792, 9232):
+    for family, host in ((socket.AF_INET, '0.0.0.0'), (socket.AF_INET6, '::')):
+        with socket.socket(family, socket.SOCK_STREAM) as listener:
+            if family == socket.AF_INET6:
+                listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            listener.bind((host, port))
+print('Worker ports are free; require no conflicting Docker published port above.')
+PY
+node scripts/run-log.mjs demo worker serve -- npm run preview -- --env test --test-scheduled --ip 127.0.0.1 --port 8792 --inspector-port 9232 > "$SUPABASE_LOCAL_WORKDIR/worker-private.log" 2>&1 &
+jobs -l
 ```
 
-The run prints three unused future Service Days and opens all three without changing existing availability or
-history:
-
-- `Recorded walkthrough Service Day` is consumed by the automated recording.
-- `Reserved rehearsal Service Day` is for the normal-browser rehearsal.
-- `Reserved meeting Service Day` remains untouched for the sprint review.
-
-The recorded story keeps every existing chapter: the unified header and footer, language switching,
-Administrator access, the published Cottage Profile and inventory, Customer discovery and quote, and the Booking
-Request. It then shows the Owner accepting the request, both participants seeing `Payment confirmation pending`,
-the real local Worker scheduled handler processing simulated capture, both participants viewing the same paid
-Confirmed Booking reference and period, Booking History, and paid private messaging. Verification and
-authenticator codes stay hidden from the action overlay.
-
-The manual Customer uses `+9647520000001`, the Cottage Owner uses `+9647540000001`, and both use the local
-synthetic phone verification code `123456`. Keep the verification code off-screen when recording manually.
-
-On its first successful setup, the walkthrough creates a dedicated synthetic Platform Administrator and stores
-its reusable email, password, and Time-based One-Time Password (TOTP) enrollment secret in
-`$SUPABASE_LOCAL_WORKDIR/.env.demo-administrator.local.json`. The file stays restricted to the local user and must
-never be committed, shared, or shown in a recording. For a manual Administrator demonstration, read the email and
-password from that file off-camera, add its `secret` to an authenticator app off-camera, then use the
-authenticator's current code on the visible login screen. The browser shows the password only as native dots. The
-walkthrough never deletes or replaces this Administrator's MFA factor; if the account, factor, and file do not
-match, it stops for inspection.
-
-Only a fully successful Customer and Owner paid-booking journey is published to:
-
-```text
-test-results/demo/rentcottage-mvp-walkthrough.webm
-```
-
-The test records to a run-specific temporary WebM and moves it to the canonical path only after both participant
-views pass. Playwright cleans `test-results` before the run, and a failed run removes its partial recording, so an
-older canonical video cannot appear current. Watch the complete canonical file before sharing it to confirm
-readable quality, continuous story flow, correct language direction, the synthetic-data and simulated-payment
-disclosures, and the absence of credentials or private evidence before confirmation.
-
-For the manual rehearsal, use a normal browser and the printed rehearsal day. Follow the same Customer request
-and Owner acceptance journey. Enter `Live Demo Customer` as the Customer name and
-`Weekly live rehearsal with synthetic data.` as the optional Booking Note so the preserved-history audit can
-recognise the exact synthetic rehearsal record on future weeks.
-
-Browser tabs in one profile share the same authentication session. Use separate browser profiles or private
-windows for simultaneous Customer and Owner views when they are available. Otherwise, switch roles by revisiting
-the appropriate access route and reverifying that participant's synthetic phone; the Customer status route can
-appear unavailable while the Owner session is active.
-
-Once the live Owner view shows `Payment confirmation pending`, trigger the existing Worker handler off-screen from
-a terminal:
+This is the only background job created in this shell. Record its job identity and command. Wait for the native
+preview's readiness message in the private log, then check health once. An unavailable or mismatched response
+stops the run; do not add a retry loop or reuse another server.
 
 ```sh
-curl --fail --silent --show-error 'http://127.0.0.1:8789/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A'
+node --input-type=module - <<'JS'
+const response = await fetch('http://127.0.0.1:8792/api/health?check=supabase');
+if (!response.ok) throw new Error('Stop: Worker health failed');
+const health = await response.json();
+if (health.ok !== true || health.environment !== 'test' || health.supabase?.projectRef !== 'local-test' || health.supabase?.connected !== true)
+  throw new Error('Stop: Worker test/Supabase boundary mismatch');
+console.log('Owned Worker test/local-test/Supabase health passed.');
+JS
+node scripts/run-log.mjs demo selection -- npx playwright test --config playwright.demo.config.ts --list --retries=0
 ```
 
-Return to the browser and verify that the Customer reaches `Confirmed booking`, the Owner sees
-`Booking confirmed` and can open the confirmed booking, and both views show the same booking reference and Morning
-period. Confirm the Customer's original booking price is IQD 180,000 plus the IQD 5,000 service fee, and that the
-Owner view shows the IQD 18,000 original commission and IQD 162,000 original owner share. Both participant views
-must show the synthetic address, directions, coordinates, and Customer and Cottage Owner phone numbers only after
-confirmation. Open `My bookings` and `Bookings for my cottages` to show that the paid booking is retained, then
-open its conversation from both views to demonstrate participant-only messaging.
+Require exactly two selected tests in this order, on the `desktop` project:
 
-Use the untouched meeting day for the sprint review. A later weekly run selects three newer unused days rather
-than changing the recording, rehearsal, meeting, or Booking History already retained.
+1. `shows varied demo results and filters across desktop and mobile languages`
+2. `records the continuous local RentCottage MVP story`
+
+Then run the complete selection once. The result-layout prerequisite precedes the recording, one worker and zero
+retries are configured, and the first failure stops later work. Any focused diagnosis or rerun must happen before
+this final complete run and carry `RUN_LOG_RERUN_REASON` under the existing receipt rules. A recording consumes its
+Service Day, so repeat recording requires another fresh project.
+
+```sh
+node scripts/run-log.mjs demo complete -- npx playwright test --config playwright.demo.config.ts --retries=0
+```
+
+Success requires two passes, zero failures and zero skipped tests. The walkthrough prints the recording,
+rehearsal and meeting Service Days. Dates use the authoritative Baghdad clock at preparation: offset 30 is the
+showcase, 31 recording, 32 rehearsal and 33 meeting. Do not substitute a workstation-local date.
+
+Only successful story completion publishes `test-results/demo/rentcottage-mvp-walkthrough.webm`. Playwright
+clears its default output directory at startup; run no later Playwright command after the final complete run.
+Review the entire canonical video before sharing, including its exact ending, readable chapters, English
+journey, synthetic/simulator disclosure, masked credentials and absence of premature private information.
+Preserve the recording and representative results screenshots with the evidence needed for review.
+
+## Fictional cottages and availability
+
+Shared names and approximate locations are English in every locale. Descriptions and House Rules have synthetic
+English, Arabic and Sorani localizations; these fixtures do not certify translation-supplier or human quality.
+House Rules require respect for neighbours, no indoor smoking and staying within capacity.
+Prices are Iraqi dinars (IQD), with separate Morning, Evening and Full day options.
+
+| Cottage | Governorate / approximate area | Guests; bedrooms/bathrooms | Amenities | Morning / Evening / Full day IQD | Bundled cover |
+|---|---|---|---|---|---|
+| Palm Garden | Erbil / Shaqlawa | 8; 3/2 | garden, parking, pool | 180000 / 190000 / 250000 | cottage-pool.png |
+| Zab Riverside | Erbil / Koya | 6; 2/1 | garden, parking, outdoor_seating | 140000 / 150000 / 220000 | cottage-river.png |
+| Dukan Hills | Sulaymaniyah / Dukan | 12; 4/3 | garden, pool, wifi | 240000 / 260000 / 360000 | cottage-hills.png |
+| Orchard Retreat | Duhok / Amedi | 4; 2/1 | garden, parking, wifi | 100000 / 120000 / 180000 | cottage-orchard.png |
+| Tigris Courtyard | Baghdad / Al-Tarmiyah | 10; 3/2 | pool, parking, air_conditioning | 210000 / 230000 / 320000 | cottage-garden.png |
+| Date Palm Cottage | Babil / Hillah | 16; 5/3 | garden, pool, outdoor_seating | 300000 / 320000 / 450000 | cottage-dusk.png |
+
+On the showcase day, Palm Garden, Zab Riverside and Dukan Hills are fully open. Orchard Retreat has Morning
+open, Evening and Full day closed. Tigris Courtyard is entirely closed. Date Palm Cottage has Morning privately
+blocked, Evening open and Full day closed. Public results show availability only, never private reasons.
+Five cottages appear for the showcase search; Full day narrows them to Palm Garden, Zab Riverside and Dukan Hills.
+
+All six start fully open on the recording, rehearsal and meeting days. Owner calendar and anonymous availability
+readers verify every cottage across all four days before the browser journey. Separate results evidence checks
+English, Arabic and Sorani on desktop and mobile, covers, filters, keyboard access and overflow. On the recording
+day, Erbil matches Palm Garden/Zab Riverside, Shaqlawa matches Palm Garden, ten guests match Dukan Hills/Tigris
+Courtyard/Date Palm Cottage, and pool matches Palm Garden/Dukan Hills/Tigris Courtyard/Date Palm Cottage.
+
+The English video displays only Palm Garden's Owner calendar, first open and then Morning reserved by the paid
+Confirmed Booking. It does not display the other cottages' private calendar reasons or sign in their owners.
+Its Confirmed Booking is produced by Customer request, Owner acceptance and simulated Worker capture, not seeded.
 
 ## Click-by-click presenter script
 
-Share this section with the person driving the demo. Before handing them control, start the environment, give them
-only the printed `Reserved meeting Service Day`, and keep credentials and verification codes with the operator.
-Use a Customer browser profile and a separate Cottage Owner profile so the sessions do not replace one another.
+Give the driver only the printed reserved meeting Service Day. Use separate Customer and Cottage Owner browser
+profiles or private windows; browser tabs in one profile share a session. The manual Customer is
+`+9647520000001` and Palm Garden's Cottage Owner is `+9647540000001`. Both use synthetic verification code
+`123456`, entered off-camera. Never use real personal data.
+
+The dedicated Administrator credential is created with mode 0600 in
+`$SUPABASE_LOCAL_WORKDIR/.env.demo-administrator.local.json`. Read its email and password privately and add its
+Time-based One-Time Password (TOTP) secret to an authenticator off-camera. Keep passwords, verification codes,
+authenticator secrets and private Owner evidence out of shared screens. The recorded story masks or conceals them.
+
+The script mirrors the English recording. Use the meeting day for live clicks and the untouched rehearsal day
+for practice. A live booking consumes that selected day; do not replay it as an unused example.
 
 | Step | Presenter says | Driver clicks or checks |
 |---|---|---|
-| 1 | “RentCottage is a trilingual marketplace for countryside homes across Iraq.” | Open `http://127.0.0.1:8789/en`. Point out the branded unified header over the hero. Scroll to the footer, then return to the top. |
-| 2 | “The same journey works in English, Arabic, and Sorani Kurdish.” | In the top header only, click `العربية`, then `کوردی`, then `English`. Confirm Arabic and Kurdish run right-to-left. Do not use the duplicate language links in the footer. |
-| 3 | “Platform Administrators use a separate multi-factor access boundary.” | In an operator-only profile, open `/en/administrator/access`. The operator enters the dedicated synthetic email, masked password, and authenticator code off-screen, clicking `Continue` and then `Verify`. Point out `Administrator access is ready`, `Review submitted Owner Applications`, and `Manage Cottage Profiles`; do not reveal or reenrol the authenticator. |
-| 4 | “Cottage Owners control a published profile, its shift prices, and each future Service Day.” | In the Cottage Owner profile, open `/en/owner/access` and verify the synthetic Owner phone off-screen. On `Your cottages`, click `Open Cottage Profile` for `Desktop Booking Fixture Cottage`. Point out `Published`, scroll to `Pricing and availability`, confirm the Shift 1 standard price is populated, enter the reserved meeting day, click `Load availability`, and confirm Shift 1 is open. |
-| 5 | “Customers start with dates and the number of guests.” | In the signed-out Customer profile, return to `/en`. Enter the reserved meeting day into both `From Service Day` and `To Service Day`. Leave `Guests` at 4. |
-| 6 | “Booking Period filters are optional; each cottage has its own shift times.” | Point out the native `Booking Period filters (optional)` disclosure. Open it to show the shift-number explanation, then close it without selecting a filter. |
-| 7 | “Results show the actual options, individual prices, and availability for each day.” | Click `Search available cottages`. On `Available cottages`, point out the dated `Morning` option, its times, price and availability, the other offered options, and the full-width `View cottage` action. Explain that the exact quote includes the Booking Service Fee. A localized summary of the full search and a “why this matched” explanation remain issue #268. |
-| 8 | “Customers choose their Booking Period after inspecting the cottage.” | Click `View cottage`. Point out the facts, gallery, amenities and House Rules. In `Choose your Booking Period`, show the requested date, options, times and individual prices. Confirm nothing is selected and `Get exact quote` is disabled. Click `Morning` for the reserved day and show that the quote action becomes available. |
-| 9 | “The quote preserves the selected Booking Period and makes the charges and terms explicit.” | Click `Get exact quote`. Show `Customer Total`, the itemised price and service fee, the preserved House Rules, cancellation policy, and fictional local-test terms. |
-| 10 | “A verified Customer sends a request; it is not a confirmed booking yet.” | Enter the synthetic Customer phone. The operator enters the verification code off-screen. Fill `Customer name` with `Live Demo Customer`, fill the optional Booking Note with `Weekly live rehearsal with synthetic data.`, accept all three required acknowledgements, and click `Send Booking Request`. Record the `RC-REQ-…` reference. |
-| 11 | “The Cottage Owner receives the complete request without private payment or contact leakage.” | In the Cottage Owner profile, return to `Your cottages`, find the article labelled with the request reference, and click `Accept complete request`. Show `Payment confirmation pending`. |
-| 12 | “Acceptance starts payment processing; it does not fake a paid result in the page.” | In the Customer profile, open `/en/booking-requests/<RC-REQ-reference>` and show `Payment confirmation pending`. Confirm the exact address, directions, map pin, and Owner phone are still absent. |
-| 13 | “For this local demo, the real Worker scheduled handler performs a simulated capture.” | The operator runs the scheduled `curl` command off-screen. Refresh the Customer page and show `Confirmed booking`. |
-| 14 | “Both participants now see the same paid booking, with private details unlocked only after confirmation.” | Show the booking reference, Morning period, IQD 180,000 original price, IQD 5,000 service fee, IQD 185,000 Customer total, synthetic address, directions, map pin, and phones. In the Owner profile, open the same request and show IQD 18,000 original commission and IQD 162,000 original owner share. |
-| 15 | “The booking remains accessible after the moment of confirmation.” | From the Customer detail click `My bookings`; from the Owner detail click `Bookings for my cottages`. In each history, open the matching booking reference and confirm it returns to the same paid detail. |
-| 16 | “The paid Customer and Cottage Owner have a private conversation linked to the booking.” | Click `Open conversation` on the confirmed booking. Show `Contact details are allowed for this paid booking.` Send one short synthetic message as the Customer, then open the same conversation as the Cottage Owner and reply. Do not enter real contact or personal data. |
-| 17 | “That is the current completed customer-to-owner journey; the next visible improvements remain tracked.” | Return to the RentCottage home page and leave the meeting-day booking in preserved history. |
+| 1 | “RentCottage offers English, Arabic and Sorani Kurdish. We will follow the journey in English.” | Open `http://127.0.0.1:8792/`, show the three existing language choices, click `English` and stay in English. Show the unified header and footer. |
+| 2 | “Platform Administrators have a separate multi-factor access boundary.” | Open `/en/administrator/access`. The operator signs in with the dedicated synthetic email, masked password and hidden authenticator code. Show access readiness and the application/profile management links. Do not enrol another factor. |
+| 3 | “Cottage Owners manage their published cottage and future availability.” | In the Owner profile open `/en/owner/access`, verify Palm Garden's phone off-camera, open its Cottage Profile, show `Published`, shift prices and `Pricing and availability`. Load the meeting day and show Morning open. |
+| 4 | “Customers begin with Service Days and guests.” | In the Customer profile open `/en`, fill both `From Service Day` and `To Service Day` with the meeting day, leave guests at 4, and click `Search available cottages`. Compare all six names, locations and individual option prices. |
+| 5 | “The pool filter narrows the comparison.” | Return to the search form, preserve the same day and guests, check `Pool`, and search. Show Palm Garden, Dukan Hills, Tigris Courtyard and Date Palm Cottage. The separate showcase check covers partial and unavailable options; their private reasons are not shown here. |
+| 6 | “Customers inspect a cottage before choosing a Booking Period.” | Open Palm Garden with `View cottage`. Show its gallery, facts, amenities and House Rules. In `Choose your Booking Period`, show that nothing is selected and `Get exact quote` is disabled. Select Morning, then click the enabled quote action. |
+| 7 | “The exact quote makes the charges and terms explicit.” | Show IQD 180,000 Booking Price, IQD 5,000 Booking Service Fee and IQD 185,000 Customer Total, plus House Rules, cancellation policy and fictional non-operative terms. |
+| 8 | “A verified Customer sends a request, which is not yet a confirmed booking.” | Verify the Customer phone off-camera, enter a fictional Customer name and optional synthetic Booking Note, accept all three acknowledgements and click `Send Booking Request`. Note the `RC-REQ-…` reference. |
+| 9 | “Owner acceptance starts payment processing.” | In the Owner profile find that reference and click `Accept complete request`. Show `Payment confirmation pending`; in the Customer profile show the same pending status with address, directions, coordinates and Owner phone still absent. |
+| 10 | “The local Worker performs simulated capture.” | The operator triggers the existing scheduled endpoint off-camera, then refreshes the participant views. Never change booking status in the database. |
+| 11 | “Both participants now see the same paid Confirmed Booking.” | Match the reference, Morning period and Customer price/fee/total. Show the Owner's IQD 18,000 original commission and IQD 162,000 original owner share. Synthetic address, directions, coordinates and participant phones become available only after confirmation. |
+| 12 | “The booking stays accessible in each participant's history.” | Open `My bookings` and `Bookings for my cottages`, and follow the same booking back to its paid details. |
+| 13 | “The paid participants have a private conversation linked to the booking.” | Open the conversation from both profiles and exchange one short synthetic message each. Do not enter real contact data. |
+| 14 | “Palm Garden's Morning is now reserved by the confirmed booking.” | Reload its Owner availability for the meeting day and show `Confirmed booking`. Explain that the other cottages' varied showcase states were verified separately, outside the recording. |
 
-If the presenter is short on time, use steps 1–9 and the prepared recording. Do not improvise credentials,
-database edits, payment status changes, or an unreserved date on stage.
+Run the scheduled action from the dedicated demo shell only, off-camera, when a live request is payment-pending:
+
+```sh
+curl --fail --silent --show-error 'http://127.0.0.1:8792/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A'
+```
+
+For a shorter presentation, show language choice and comparison, then use the reviewed recording. Never improvise
+credentials, an unreserved Service Day, payment status or database edits on stage.
 
 ## Built so far
 
-This is a plain-English summary of the relevant behaviour already on the current merged application. “Shown”
-means the main path appears in the script above; it does not mean every failure path is presented.
+These are built application capabilities. “Recorded” describes the English main path, not every failure path or
+real supplier operation. Separate multilingual results checks establish layout evidence, not certification of
+all translated journeys or readiness for release.
 
-| Area | Built behaviour | Shown in this demo |
+| Area | Built behaviour | Demonstration coverage |
 |---|---|---|
-| Marketplace shell | Responsive landing page, unified branded header and footer, and English, Arabic, and Sorani Kurdish routes with right-to-left layouts where appropriate | Yes |
-| Account access | Phone verification for Customers and Cottage Owners, shared account navigation, and separate email/password plus MFA access for Platform Administrators | Yes |
-| Cottage Owner onboarding and moderation | Private Owner Application, evidence review, administrative approval, Cottage Profile publication, and visibility controls | Administrator and published outcome only |
-| Cottage operations | Cottage Profile editing, recurring shifts, prices, and future Service Day availability | Yes, published state and one day |
-| Discovery | Dates and guests first, optional governorate, area, amenity and per-Service-Day Booking Period filters, with preserved localized query state | Yes, dates-only search for one Service Day |
-| Results and Cottage Profile | One article per cottage with each offered option’s price and availability by day; gallery, facts, amenities, House Rules and deliberate Booking Period selection before an exact quote | Yes, inspect options and select Morning on the profile |
-| Quote and request | Exact itemised quote, required policies and terms, phone verification, full-payment authorization boundary, pending hold, request reference, and Owner decision | Yes |
-| Confirmation and payment | Owner acceptance, payment-pending state, Worker-orchestrated simulated local capture, paid booking details, participant-only contact and access details, and fictional delivery status | Yes |
-| Booking management | Customer and Cottage Owner Booking History, preserved financial facts, lifecycle outcomes, cancellation/refund controls, and Owner earnings views | Paid history only |
-| Private messaging | Cottage enquiry and paid-booking conversations, automatic fictional local-test translations, contact protection before payment, and moderation/reporting controls | Paid conversation only |
-| Administration and finance | Customer/Owner/Cottage search and status controls, payment history, refunds, disputes, payout holds, settlement visibility, and audit-backed administrative actions | No |
+| Marketplace shell | Responsive landing page, unified header/footer, English/Arabic/Sorani routes and right-to-left layouts | Language choice then English recorded; results checked separately in all three languages on desktop/mobile |
+| Account access | Customer/Owner phone verification and separate Administrator email/password plus Multi-Factor Authentication (MFA) | Recorded with secret/code concealment |
+| Owner onboarding and moderation | Private application, evidence review, approval, publication and visibility controls | Prepared through real transitions; Administrator access and published outcome recorded, not full onboarding |
+| Cottage operations | Profile editing, recurring shifts, pricing and future availability | Palm Garden prices and open-to-confirmed calendar recorded; six-cottage/four-day reader checks separate |
+| Discovery | Dates and guests first; optional governorate, area, amenities and per-day Booking Period filters; preserved localized query | Six-cottage comparison and pool filter recorded; other fixed subsets checked separately |
+| Results and Cottage Profile | One article per cottage with dated option prices/availability; gallery, facts, amenities, rules and deliberate period choice | Recorded; public availability omits private reasons |
+| Quote and request | Itemised exact quote, policies/terms, phone verification, full-payment authorization, pending hold, reference and Owner decision | Recorded with simulated payment and fictional terms |
+| Confirmation and payment | Owner acceptance, pending state, Worker-orchestrated capture and paid participant details | Recorded using simulated local capture; no live provider claim |
+| Booking management | Customer/Owner history, preserved financial facts, lifecycle outcomes, cancellation/refund controls and Owner earnings views | Paid history recorded; other management outcomes available but unshown |
+| Private messaging | Enquiry and paid conversations, fictional local-test translations, pre-payment contact protection and moderation/reporting | Paid conversation recorded; enquiry/moderation paths unshown |
+| Administration and finance | Customer/Owner/Cottage status controls, payment history, refunds, disputes, payout holds, settlements and audited actions | Available but unshown beyond Administrator access |
 
 ## Still left
 
-The issue tracker remains authoritative. This table calls out known demo-relevant gaps; it is not a substitute for
-the full board.
+The issue tracker remains authoritative. These open demo-relevant items are a subset of the full board.
 
-| Issue | Remaining outcome | Demo handling |
+| Issue | Remaining outcome | Presenter handling |
 |---|---|---|
-| #268 | Add the localized search summary, echo dates/guests/shifts, explain why each cottage matched, and complete the connected discovery presentation work | Disclose it at Results; do not imply the current heading is a full summary |
-| #269 | Continue the owner-approved visual refinement beyond the unified shell and refreshed customer screens | Describe current styling as the shipped baseline, not final polish |
-| #218 | Refine the landing hero headline and subtitle spacing | Do not promise the final hero typography |
-| #220 | Improve Booking Period summary readability | Keep the one-day Shift 1 example simple |
-| #282 | Preserve the return destination when switching language on an access page | Switch languages on the landing/profile flow, not midway through access |
-| #283 | Remove confirmed orphan images and styles with exact deletion evidence | No presenter action; do not delete assets during demo preparation |
+| #268 | Customer discovery, quote and request presentation, including localized submitted-search summary and explanations of why each cottage matches | Explain the gap at Results; current heading is not a complete search summary |
+| #269 | Owner setup and booking-management presentation refinements | Describe current screens as the shipped baseline |
+| #220 | Readable Booking Period summaries across languages and screen sizes | Use the one-day Morning example without implying longer summaries are finished |
 
-## Weekly evidence and handoff
+## Evidence and teardown
 
-Record these facts after the recording and normal-browser rehearsal succeed:
+Keep a current receipt of checkout commit, exact project/workdir creation, endpoint/container ownership,
+migration history, command exits, both selected test results, printed Service Days, complete video review and
+any separately observed live rehearsal. Never carry an earlier run's dates, booking reference or runtime status
+forward. A failed or skipped observation is not a pass.
 
-- demonstrated merged commit;
-- recording command result and canonical video inspection result;
-- printed recording, rehearsal, and meeting Service Days;
-- normal-browser Customer and Owner confirmation, Booking History, and messaging result;
-- retained Supabase project/workdir and Worker origin left available for the meeting.
-
-| Evidence | Current weekly result |
-|---|---|
-| Demonstrated merged commit | Product baseline `36ee484e6bb2bd10d2fb1498d5997cd5b23ffc2b` (`origin/main`, including the refreshed unified customer experience) |
-| Automated Worker walkthrough | Final repaired run passed 1/1 in 1.9 minutes against the Worker preview; recorded request `RC-REQ-AE3861F3E640491F` reached paid confirmation |
-| Recorded, rehearsal, and meeting Service Days | Final recording: October 29, 2026; final-run reserved rehearsal day: October 30, 2026; reserved untouched meeting day: October 31, 2026 — all use Morning / Shift 1. The separate normal-browser rehearsal used October 27 before the post-review recording. |
-| Canonical video inspection | `test-results/demo/rentcottage-mvp-walkthrough.webm`, 113.76 seconds. Complete playback reached the exact end; representative chapter frames were inspected across the run and showed a coherent flow. Credential and verification-code concealment also passed executable assertions; no credential or premature private detail was visible in the inspected frames. |
-| Normal-browser Customer and Owner rehearsal | Passed in the visible in-app browser for request `RC-REQ-8A0653746C064F0C`; both participants reached the same confirmed Morning booking and saw the correct participant-specific financial and private details |
-| Booking History and private messaging rehearsal | Passed; both histories reopened the preserved booking and both participants exchanged and saw one synthetic message each in the paid conversation |
-| Meeting runtime readiness | Dedicated `rentcottage-demo` Supabase data preserved; forward-only migration reported no pending migration; Worker health was green at `http://127.0.0.1:8789/api/health?check=supabase`; the visible browser was reset signed out at `/en` |
-
-Replace each `Not yet…` entry only with evidence observed in the current weekly preparation. Never carry a prior
-week's commit, dates, request reference, or runtime status forward as if it were current.
-
-Leave the dedicated Supabase project and Worker running when the meeting is next. If the Worker is stopped, restart
-the same build on port 8789; do not allocate another port automatically.
-
-## After a laptop shutdown
-
-Yes, the preserved demo can be used after the laptop has been shut down. The browser and terminal processes will
-stop, but the dedicated Supabase data remains in its local Docker volumes when stopped with the preservation
-command below. After turning the laptop back on:
-
-1. Start Docker Desktop and wait until it reports that Docker is running.
-2. Open the exact checkout containing the commit recorded in the weekly evidence table.
-3. Export the absolute `SUPABASE_LOCAL_WORKDIR` and `SUPABASE_LOCAL_PROJECT` values from this file.
-4. Run the dedicated `supabase start --workdir …` and forward-only `supabase migration up --local --workdir …`
-   commands above. Do not run fixture creation again.
-5. Confirm `.dev.vars.test` still has mode `0600`, run `npm run build:worker`, then start the Worker preview on
-   port 8789 with the command above.
-6. Run the health check. Open `http://127.0.0.1:8789/en` and use the already recorded meeting Service Day.
-
-Do not rerun the automated walkthrough on meeting morning unless a new recording is intentionally required: it
-creates another preserved request and chooses a newer set of dates. A forced shutdown does not itself justify a
-database reset or fixture recreation.
-
-## Stop without deleting demo data
-
-Press `Ctrl-C` in the Worker terminal. Preserve Supabase volumes and data with:
+To stop this shell's exact Worker, inspect `jobs -l` and confirm its job and command are the preview started above,
+then bring that job to the foreground and press Ctrl+C. A process ID (PID) retained from another session is
+not current ownership evidence; never signal a stale PID alone or any foreign process. Native preview shutdown
+can make the receipt wrapper exit 1 rather than 130; that interrupted serve receipt is not a passing check.
+Tolerate the foreground interruption here, then require the stopped-port and ownership checks below before
+teardown.
 
 ```sh
-SUPABASE_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 npx supabase stop --project-id rentcottage-demo --workdir "$SUPABASE_LOCAL_WORKDIR"
+jobs -l
+fg %+ || :
 ```
 
-## Targeted recovery
+If the dedicated shell exited, open a clean dedicated Bash shell in the same recorded checkout using the
+setup's `bash --noprofile --norc` command, then run the whole inherited-environment-check block, including
+`set -eu`. Stop before the fresh-creation block; run no creation or preparation commands. Recovery is for
+diagnosis and teardown only. Select this run's exact workdir and project from its retained creation results
+and compare `creation.txt` with those results. `checkout.txt` records the source revision at creation; record
+and report a different current commit, but that difference alone does not block independently ownership-verified
+teardown. Current path, configuration, container and process identities establish ownership. Verify the actual
+copied `supabase/config.toml` project and workdir, and compare the recorded `container-ownership.json` IDs, names,
+labels and port bindings with current Docker inspection. If failure preceded any needed evidence, stop and
+report exactly what is missing. Never guess a project, borrow another run's evidence or source a nonexistent file.
 
-- If Docker is unavailable, start Docker Desktop and rerun the native command that failed.
-- If a confirmed project or port conflict blocks startup, stop only the exact process or local project whose
-  ownership you have confirmed. Do not kill an unknown process or allocate a different port automatically.
-- If Chromium is missing, install it with `npx playwright install chromium`.
-- If fixture or private-field validation fails, preserve the exact error and inspect the known synthetic fixture.
-  Do not reset, rewind, or recreate a fixture in a reused database.
-- If the dedicated demo administrator credential reports a mismatch, inspect that exact synthetic account, its
-  factor, and `$SUPABASE_LOCAL_WORKDIR/.env.demo-administrator.local.json`. Do not delete or replace unrelated MFA
-  factors.
-- If payment remains pending, preserve the Worker and `curl` failure. Do not update booking status directly in the
-  database or add a scheduler, retry loop, process controller, or fallback confirmation path.
-- The currently pinned Wrangler preview can terminate with a `ProxyWorker` / `Network connection lost` chain. If
-  that happens, preserve the exact failure and restart the same native preview once on port 8789. Treat another
-  failure as unavailable rehearsal evidence until the separately owned runtime upgrade is merged; do not work
-  around it with a restart loop or a different Worker runtime in this demo job.
+Only after ownership is established, restore `SUPABASE_LOCAL_WORKDIR` and `SUPABASE_LOCAL_PROJECT` to those
+recorded values. If this run created `demo-environment.sh`, verify it is a regular, non-symlink, mode-0600 file
+in that owned workdir, then source it privately using the existing source command. Never display its secrets,
+rerun the binding-creation block, overwrite bindings, resume preparation or repeat a booking. If binding
+creation was incomplete, preserve the files and report the missing evidence rather than bypassing the
+binding-equality check below.
+
+`jobs` and `fg` cannot recover a job from the exited shell. For an orphan preview, use the native process
+inspector to identify the current 8792 and 9232 listeners and trace their complete current preview ancestry.
+Verify the chain's commands, checkout and owned `worker-private.log`, Wrangler log and registry identities
+against this run's retained creation evidence. A stale PID, command-name match or occupied port alone proves
+nothing. Send the interrupt signal (SIGINT) only to that currently verified owned preview chain, then recheck
+both ports.
+If any process ownership remains unresolved, preserve it and report the exact blocker. Continue teardown
+only with the existing ownership and binding-equality checks and the exact-project Supabase stop below;
+if no bindings were created, do not run the binding-removal block, and stop Supabase only after its recorded
+project ownership is proven.
+
+After Ctrl+C, wait for the native preview children to finish and use the native process inspector to confirm
+8792 and 9232 are released before pasting the binding-removal and stop block below. The receipt wrapper returning
+alone does not prove shutdown is complete. A failed port check exits this fail-fast shell and requires the
+recovery procedure above.
+
+Verify both Worker ports are free before removing bindings. Recheck the recorded Docker container metadata and
+labels against the creation record before stopping the owned project with the explicit workdir and basename.
+The native stop preserves its volumes; do not use `--all` or `--no-backup`.
+
+```sh
+python3 - <<'PY'
+import json, os, socket, subprocess
+from pathlib import Path
+workdir = Path(os.environ['SUPABASE_LOCAL_WORKDIR'])
+assert (workdir / 'creation.txt').read_text().splitlines() == [str(workdir), os.environ['SUPABASE_LOCAL_PROJECT']]
+for port in (8792, 9232):
+    with socket.socket() as listener:
+        listener.bind(('0.0.0.0', port))
+owned = json.loads((workdir / 'container-ownership.json').read_text())
+current = json.loads(subprocess.check_output(['docker', 'inspect', *[item['id'] for item in owned]], text=True))
+for container in current:
+    assert container['Config']['Labels']['com.supabase.cli.project'] == os.environ['SUPABASE_LOCAL_PROJECT']
+    assert container['Config']['Labels']['com.supabase.cli.workdir'] == str(workdir)
+binding = Path('.dev.vars.test')
+assert not binding.is_symlink() and binding.stat().st_mode & 0o777 == 0o600
+assert (workdir / 'binding-ownership.txt').read_text().strip() == str(binding.resolve())
+expected = dict(line.split('=', 1) for line in binding.read_text().splitlines())
+assert {key: json.loads(value) for key, value in expected.items()} == {
+    key: os.environ[key] for key in ('APP_ENVIRONMENT', 'SUPABASE_PROJECT_REF', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'PRIVILEGED_AUDIT_HMAC_KEY')
+}, 'Stop: bindings changed since creation'
+binding.unlink()
+print('Stopped Worker verified; removed only the unchanged job-owned bindings.')
+PY
+node scripts/run-log.mjs demo stop -- node_modules/.bin/supabase stop --project-id "$SUPABASE_LOCAL_PROJECT" --workdir "$SUPABASE_LOCAL_WORKDIR"
+exit
+```
+
+`exit` returns to the clean parent shell; none of the demo exports survive. If preparing final job evidence,
+stop and remove the owned runtime bindings before the coordinator's ordinary convergence check. Complete that
+check in the clean parent environment, then follow this guide with a new project for the final complete demo
+run so ordinary Playwright output cleanup cannot erase the final recording.
+
+Keep owned workdirs, credentials, preserved volumes and failed evidence until review and any meeting are complete.
+Later disposal follows the manual's creation, ownership and inactivity checks and
+[closeout cleanup](../.agents/skills/closeout/SKILL.md). Preserve foreign resources, images and volumes. Uncertain
+ownership or an occupied port is a blocker to report, never permission to repair another job's environment.

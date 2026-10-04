@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -10,6 +10,40 @@ import {
 } from "./access-fixture-users.mjs";
 
 export const ACCESS_BROWSER_PROJECTS = ["mobile", "desktop", "worker"];
+
+export function requireDemoEnvironment(environment = process.env) {
+  const project = environment.SUPABASE_LOCAL_PROJECT;
+  const workdir = environment.SUPABASE_LOCAL_WORKDIR;
+  let safeUrl = false;
+  try {
+    const url = new URL(environment.SUPABASE_URL);
+    safeUrl =
+      url.origin === "http://127.0.0.1:56331" &&
+      url.pathname === "/" &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash;
+  } catch {
+    safeUrl = false;
+  }
+  if (
+    environment.APP_ENVIRONMENT !== "test" ||
+    environment.SUPABASE_PROJECT_REF !== "local-test" ||
+    !safeUrl ||
+    !/^rentcottage-demo-[A-Za-z0-9]+$/.test(project ?? "") ||
+    !workdir ||
+    !isAbsolute(workdir) ||
+    basename(resolve(workdir)) !== project ||
+    !environment.SUPABASE_SECRET_KEY ||
+    !environment.SUPABASE_PUBLISHABLE_KEY
+  ) {
+    throw new Error(
+      "Demo fixtures require an isolated test/local-test project at http://127.0.0.1:56331, matching rentcottage-demo workdir and local credentials; create a fresh owned project.",
+    );
+  }
+  return resolve(workdir);
+}
 
 export const ACCESS_REVIEW_DOCUMENT_FILENAME =
   "syntheticlongprivateidentityevidencefilenamethatmustwrapwithouttruncation.pdf";
@@ -36,6 +70,254 @@ export function accessBrowserFixture(project) {
   };
 }
 
+export function demoBrowserFixtures() {
+  const houseRules = {
+    en: "Respect neighbours, do not smoke indoors, and stay within the guest capacity.",
+    ar: "احترم الجيران، ولا تدخن داخل الكوخ، ولا تتجاوز عدد الضيوف المسموح به.",
+    ckb: "ڕێز لە دراوسێکان بگرە، لە ناو کۆخەکە جگەرە مەکێشە، و لە ژمارەی ڕێپێدراوی میوانان زیاتر مەبە.",
+  };
+  const cottages = [
+    {
+      name: "Palm Garden",
+      governorate: "Erbil",
+      approximateLocation: "Shaqlawa",
+      capacity: 8,
+      bedrooms: 3,
+      bathrooms: 2,
+      amenities: ["garden", "parking", "pool"],
+      prices: [180000, 190000, 250000],
+      photoFilename: "cottage-pool.png",
+      descriptions: {
+        en: "A fictional leisure cottage with a garden, parking and pool.",
+        ar: "كوخ ترفيهي خيالي مع حديقة وموقف سيارات ومسبح.",
+        ckb: "کۆخێکی خەیاڵی بۆ پشوودان بە باخچە و شوێنی پارککردن و مەلەوانگە.",
+      },
+    },
+    {
+      name: "Zab Riverside",
+      governorate: "Erbil",
+      approximateLocation: "Koya",
+      capacity: 6,
+      bedrooms: 2,
+      bathrooms: 1,
+      amenities: ["garden", "parking", "outdoor_seating"],
+      prices: [140000, 150000, 220000],
+      photoFilename: "cottage-river.png",
+      descriptions: {
+        en: "A fictional leisure cottage with a garden, parking and outdoor seating.",
+        ar: "كوخ ترفيهي خيالي مع حديقة وموقف سيارات وجلسات خارجية.",
+        ckb: "کۆخێکی خەیاڵی بۆ پشوودان بە باخچە و شوێنی پارککردن و دانیشتنی دەرەوە.",
+      },
+    },
+    {
+      name: "Dukan Hills",
+      governorate: "Sulaymaniyah",
+      approximateLocation: "Dukan",
+      capacity: 12,
+      bedrooms: 4,
+      bathrooms: 3,
+      amenities: ["garden", "pool", "wifi"],
+      prices: [240000, 260000, 360000],
+      photoFilename: "cottage-hills.png",
+      descriptions: {
+        en: "A fictional leisure cottage with a garden, pool and Wi-Fi.",
+        ar: "كوخ ترفيهي خيالي مع حديقة ومسبح وخدمة واي فاي.",
+        ckb: "کۆخێکی خەیاڵی بۆ پشوودان بە باخچە و مەلەوانگە و وایفای.",
+      },
+    },
+    {
+      name: "Orchard Retreat",
+      governorate: "Duhok",
+      approximateLocation: "Amedi",
+      capacity: 4,
+      bedrooms: 2,
+      bathrooms: 1,
+      amenities: ["garden", "parking", "wifi"],
+      prices: [100000, 120000, 180000],
+      photoFilename: "cottage-orchard.png",
+      descriptions: {
+        en: "A fictional leisure cottage with a garden, parking and Wi-Fi.",
+        ar: "كوخ ترفيهي خيالي مع حديقة وموقف سيارات وخدمة واي فاي.",
+        ckb: "کۆخێکی خەیاڵی بۆ پشوودان بە باخچە و شوێنی پارککردن و وایفای.",
+      },
+    },
+    {
+      name: "Tigris Courtyard",
+      governorate: "Baghdad",
+      approximateLocation: "Al-Tarmiyah",
+      capacity: 10,
+      bedrooms: 3,
+      bathrooms: 2,
+      amenities: ["pool", "parking", "air_conditioning"],
+      prices: [210000, 230000, 320000],
+      photoFilename: "cottage-garden.png",
+      descriptions: {
+        en: "A fictional leisure cottage with a pool, parking and air conditioning.",
+        ar: "كوخ ترفيهي خيالي مع مسبح وموقف سيارات وتكييف.",
+        ckb: "کۆخێکی خەیاڵی بۆ پشوودان بە مەلەوانگە و شوێنی پارککردن و ساردکەرەوە.",
+      },
+    },
+    {
+      name: "Date Palm Cottage",
+      governorate: "Babil",
+      approximateLocation: "Hillah",
+      capacity: 16,
+      bedrooms: 5,
+      bathrooms: 3,
+      amenities: ["garden", "pool", "outdoor_seating"],
+      prices: [300000, 320000, 450000],
+      photoFilename: "cottage-dusk.png",
+      descriptions: {
+        en: "A fictional leisure cottage with a garden, pool and outdoor seating.",
+        ar: "كوخ ترفيهي خيالي مع حديقة ومسبح وجلسات خارجية.",
+        ckb: "کۆخێکی خەیاڵی بۆ پشوودان بە باخچە و مەلەوانگە و دانیشتنی دەرەوە.",
+      },
+    },
+  ];
+  return cottages.map(({ name, ...content }, index) => ({
+    ...accessBrowserFixture("desktop"),
+    project: `demo-${index + 1}`,
+    bookingOwnerPhone: index === 0 ? "+9647540000001" : `+964754000001${index}`,
+    bookingLegalName: `Fictional ${name} Owner`,
+    bookingCottageName: name,
+    demoContent: { ...content, houseRules: { ...houseRules } },
+  }));
+}
+
+export function assertDemoFixtureReadback(
+  { profile, publications, pricing },
+  fixture,
+) {
+  const fail = (reason) => {
+    throw new Error(
+      `Demo fixture readback for ${fixture.bookingCottageName}: ${reason}; create a fresh owned demo project.`,
+    );
+  };
+  if (
+    typeof profile?.id !== "string" ||
+    !profile.id ||
+    typeof profile.current_publication_id !== "string" ||
+    !profile.current_publication_id ||
+    typeof profile.current_shift_schedule_id !== "string" ||
+    !profile.current_shift_schedule_id
+  ) {
+    fail("missing current profile, publication or Shift Schedule");
+  }
+  const content = fixture.demoContent;
+  if (
+    !publications ||
+    Array.isArray(publications) ||
+    Object.keys(publications).length !== 3
+  ) {
+    fail("expected exactly three locale readbacks");
+  }
+  for (const locale of ["en", "ar", "ckb"]) {
+    const rows = publications[locale];
+    if (!Array.isArray(rows) || rows.length !== 1)
+      fail(`expected one ${locale} publication`);
+    const row = rows[0];
+    if (
+      row?.publication_id !== profile.current_publication_id ||
+      row.name !== fixture.bookingCottageName ||
+      row.governorate !== content.governorate ||
+      row.approximate_location !== content.approximateLocation ||
+      row.capacity !== content.capacity ||
+      row.bedrooms !== content.bedrooms ||
+      row.bathrooms !== content.bathrooms ||
+      !Array.isArray(row.amenities) ||
+      row.amenities.length !== content.amenities.length ||
+      new Set(row.amenities).size !== row.amenities.length ||
+      content.amenities.some((amenity) => !row.amenities.includes(amenity)) ||
+      row.description !== content.descriptions[locale] ||
+      row.house_rules !== content.houseRules[locale] ||
+      !Array.isArray(row.media_ids) ||
+      row.media_ids.length === 0 ||
+      row.media_ids.some((id) => typeof id !== "string" || !id)
+    )
+      fail(`wrong or incomplete ${locale} publication facts`);
+  }
+  if (
+    pricing?.profileId !== profile.id ||
+    pricing.scheduleRevisionId !== profile.current_shift_schedule_id ||
+    !Array.isArray(pricing.units) ||
+    pricing.units.length !== 3 ||
+    new Set(pricing.units.map((unit) => unit?.id)).size !== 3
+  )
+    fail("expected pricing for the current schedule with three unique units");
+  for (const [index, unit] of pricing.units.entries()) {
+    if (
+      typeof unit?.id !== "string" ||
+      !unit.id ||
+      unit.kind !== (index === 2 ? "full_day_bundle" : "shift") ||
+      unit.standardPriceIqd !== content.prices[index] ||
+      !Array.isArray(unit.weekdayOverrides) ||
+      unit.weekdayOverrides.length !== 0 ||
+      !Array.isArray(unit.dateOverrides) ||
+      unit.dateOverrides.length !== 0
+    )
+      fail("wrong or incomplete standard pricing");
+  }
+}
+
+export function assertDemoInventoryReadback({
+  ownerCalendar,
+  publicAvailability,
+  expectedUnits,
+}) {
+  const fail = (reason) => {
+    throw new Error(
+      `Demo inventory readback: ${reason}; create a fresh owned demo project.`,
+    );
+  };
+  if (
+    typeof ownerCalendar?.profileId !== "string" ||
+    !ownerCalendar.profileId ||
+    typeof ownerCalendar.scheduleRevisionId !== "string" ||
+    !ownerCalendar.scheduleRevisionId ||
+    typeof ownerCalendar.serviceDay !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(ownerCalendar.serviceDay) ||
+    publicAvailability?.profileId !== ownerCalendar.profileId ||
+    publicAvailability.scheduleRevisionId !==
+      ownerCalendar.scheduleRevisionId ||
+    publicAvailability.serviceDay !== ownerCalendar.serviceDay ||
+    Object.keys(publicAvailability).sort().join(",") !==
+      "profileId,scheduleRevisionId,serviceDay,units"
+  )
+    fail("missing or mismatched inventory envelope");
+  for (const units of [
+    ownerCalendar.units,
+    publicAvailability.units,
+    expectedUnits,
+  ]) {
+    if (
+      !Array.isArray(units) ||
+      units.length !== 3 ||
+      new Set(units.map((unit) => unit?.id)).size !== 3 ||
+      units.some((unit) => typeof unit?.id !== "string" || !unit.id) ||
+      units.filter((unit) => unit.kind === "shift").length !== 2 ||
+      units.filter((unit) => unit.kind === "full_day_bundle").length !== 1
+    )
+      fail("expected three unique inventory units");
+  }
+  for (const expected of expectedUnits) {
+    const owner = ownerCalendar.units.find((unit) => unit.id === expected.id);
+    const publicUnit = publicAvailability.units.find(
+      (unit) => unit.id === expected.id,
+    );
+    if (
+      owner?.kind !== expected.kind ||
+      owner.calendarState !== expected.calendarState ||
+      typeof expected.available !== "boolean" ||
+      owner.available !== expected.available ||
+      publicUnit?.kind !== expected.kind ||
+      publicUnit.available !== expected.available
+    )
+      fail("inventory state does not match the prepared unit");
+    if (Object.keys(publicUnit).sort().join(",") !== "available,id,kind")
+      fail("public availability leaked a private field or reason");
+  }
+}
+
 const password = "Local-test-password-2026";
 const pdfBytes = new TextEncoder().encode(
   "%PDF-1.7\nsynthetic access fixture\n%%EOF",
@@ -58,8 +340,9 @@ const standardShiftPrices = new Map([
 ]);
 const standardFullDayPrice = 250000;
 
-async function cottagePhoto(project) {
-  const filename = cottagePhotoFilenames.get(project);
+async function cottagePhoto(project, demoContent) {
+  const filename =
+    demoContent?.photoFilename ?? cottagePhotoFilenames.get(project);
   if (!filename) {
     throw new Error(`Unknown access browser fixture project: ${project}`);
   }
@@ -75,10 +358,12 @@ function requireData(result, message) {
   return result.data;
 }
 
-function deterministicStandardPricing(schedule, shifts) {
+function deterministicStandardPricing(schedule, shifts, demoContent) {
   if (!schedule.full_day_bundle_id || shifts.length !== 2) return null;
   const units = shifts.map((shift) => {
-    const standardPriceIqd = standardShiftPrices.get(shift.position);
+    const standardPriceIqd = demoContent
+      ? demoContent.prices[shift.position - 1]
+      : standardShiftPrices.get(shift.position);
     return standardPriceIqd
       ? {
           unitId: shift.id,
@@ -93,7 +378,7 @@ function deterministicStandardPricing(schedule, shifts) {
     {
       unitId: schedule.full_day_bundle_id,
       unitKind: "full_day_bundle",
-      standardPriceIqd: standardFullDayPrice,
+      standardPriceIqd: demoContent?.prices[2] ?? standardFullDayPrice,
     },
   ];
 }
@@ -130,7 +415,11 @@ async function loadBookingFixturePricing({ fixture, ownerClient, profile }) {
     .eq("schedule_revision_id", schedule.id)
     .order("position");
   if (shifts.error) throw shifts.error;
-  const expectedPricing = deterministicStandardPricing(schedule, shifts.data);
+  const expectedPricing = deterministicStandardPricing(
+    schedule,
+    shifts.data,
+    fixture.demoContent,
+  );
   if (!expectedPricing) {
     throw new Error(
       `${fixture.project} access booking fixture is incomplete: expected two Cottage Shifts and a full-day bundle`,
@@ -268,6 +557,7 @@ async function ensureOwnerRole(ownerClient) {
 
 async function saveApplication(ownerClient, fixture, kind) {
   const isReview = kind === "review";
+  const demoContent = fixture.demoContent;
   const { error } = await ownerClient.rpc("save_owner_application", {
     requested_applicant_kind: "individual",
     requested_legal_name: isReview
@@ -279,15 +569,20 @@ async function saveApplication(ownerClient, fixture, kind) {
     requested_cottage_name: isReview
       ? fixture.reviewCottageName
       : fixture.bookingCottageName,
-    requested_governorate: "Erbil",
-    requested_approximate_location: "Synthetic access fixture area",
+    requested_governorate: demoContent?.governorate ?? "Erbil",
+    requested_approximate_location:
+      demoContent?.approximateLocation ?? "Synthetic access fixture area",
     requested_exact_address: fixture.exactAddress,
-    requested_capacity: 8,
-    requested_bedrooms: 3,
-    requested_bathrooms: 2,
-    requested_amenities: ["garden", "parking"],
-    requested_description: "Synthetic Cottage Profile for access verification.",
-    requested_house_rules: "Synthetic fixture only. Respect neighbours.",
+    requested_capacity: demoContent?.capacity ?? 8,
+    requested_bedrooms: demoContent?.bedrooms ?? 3,
+    requested_bathrooms: demoContent?.bathrooms ?? 2,
+    requested_amenities: demoContent?.amenities ?? ["garden", "parking"],
+    requested_description:
+      demoContent?.descriptions.en ??
+      "Synthetic Cottage Profile for access verification.",
+    requested_house_rules:
+      demoContent?.houseRules.en ??
+      "Synthetic fixture only. Respect neighbours.",
   });
   if (error) throw error;
   return requireData(
@@ -372,6 +667,7 @@ export async function createSubmittedReviewFixture({
 }
 
 async function approveApplication({
+  demoContent,
   applicationId,
   ownerClient,
   reviewerClient,
@@ -388,10 +684,14 @@ async function approveApplication({
     target_application_id: applicationId,
     expected_version: submitted.version,
     requested_action: "approve",
-    requested_reason: "Approved synthetic access booking fixture.",
+    requested_reason: demoContent
+      ? "Approved fictional demo owner fixture."
+      : "Approved synthetic access booking fixture.",
     requested_fields: [],
     requested_document_kinds: [],
-    requested_jurisdiction: "Kurdistan Region, Iraq",
+    requested_jurisdiction: demoContent
+      ? "Iraq (fictional demo)"
+      : "Kurdistan Region, Iraq",
     requested_licensing_basis: "licence",
     requested_licence_or_exemption_basis: "Synthetic test licence",
     requested_expiry_dates: { licensing_or_exemption: "2035-12-31" },
@@ -405,7 +705,8 @@ async function preparePublishedProfile({
   privilegedClient,
   reviewerClient,
 }) {
-  const samplePhoto = await cottagePhoto(fixture.project);
+  const demoContent = fixture.demoContent;
+  const samplePhoto = await cottagePhoto(fixture.project, demoContent);
   const profile = requireData(
     await ownerClient
       .from("owner_application_cottage_profiles")
@@ -418,20 +719,24 @@ async function preparePublishedProfile({
       target_profile_id: profile.id,
       target_expected_version: profile.version,
       requested_name: fixture.bookingCottageName,
-      requested_governorate: "Erbil",
-      requested_approximate_location: "Synthetic access fixture area",
+      requested_governorate: demoContent?.governorate ?? "Erbil",
+      requested_approximate_location:
+        demoContent?.approximateLocation ?? "Synthetic access fixture area",
       requested_exact_address: "Synthetic private fixture address",
       requested_exact_latitude: "36.408333",
       requested_exact_longitude: "44.385834",
       requested_private_directions: "Synthetic private directions.",
-      requested_capacity: 8,
-      requested_bedrooms: 3,
-      requested_bathrooms: 2,
-      requested_amenities: ["garden", "parking"],
+      requested_capacity: demoContent?.capacity ?? 8,
+      requested_bedrooms: demoContent?.bedrooms ?? 3,
+      requested_bathrooms: demoContent?.bathrooms ?? 2,
+      requested_amenities: demoContent?.amenities ?? ["garden", "parking"],
       requested_source_language: "en",
       requested_description:
+        demoContent?.descriptions.en ??
         "Synthetic published Cottage Profile for access verification.",
-      requested_house_rules: "Synthetic fixture only. Respect neighbours.",
+      requested_house_rules:
+        demoContent?.houseRules.en ??
+        "Synthetic fixture only. Respect neighbours.",
     }),
     `${fixture.project} booking Cottage Profile was not updated`,
   );
@@ -504,6 +809,16 @@ async function preparePublishedProfile({
     monthly_token_limit: 100_000,
     monthly_spend_microusd_limit: 1_000_000,
   };
+  const originalRuntime = demoContent
+    ? requireData(
+        await privilegedClient
+          .from("cottage_translation_runtime_control")
+          .select(Object.keys(runtimeReady).join(","))
+          .eq("singleton", true)
+          .single(),
+        "Demo fixture translation runtime control is unavailable",
+      )
+    : null;
   const { error: readyError } = await privilegedClient
     .from("cottage_translation_runtime_control")
     .update(runtimeReady)
@@ -529,8 +844,12 @@ async function preparePublishedProfile({
           {
             target_attempt_id: attempt.id,
             target_lease_token: attempt.lease_token,
-            translated_description: `${locale} synthetic description`,
-            translated_house_rules: `${locale} synthetic House Rules`,
+            translated_description:
+              demoContent?.descriptions[locale] ??
+              `${locale} synthetic description`,
+            translated_house_rules:
+              demoContent?.houseRules[locale] ??
+              `${locale} synthetic House Rules`,
             returned_provider: "access-browser-fixture",
             returned_model: "deterministic-fixture",
             returned_effort: "test",
@@ -568,36 +887,10 @@ async function preparePublishedProfile({
   } finally {
     const { error } = await privilegedClient
       .from("cottage_translation_runtime_control")
-      .update({ production_ready: false })
+      .update(originalRuntime ?? { production_ready: false })
       .eq("singleton", true);
     if (error) throw error;
   }
-}
-
-export async function refreshAccessBrowserFixturePhoto({
-  project,
-  publicationId,
-  privilegedClient,
-}) {
-  const samplePhoto = await cottagePhoto(project);
-  const publicationMedia = requireData(
-    await privilegedClient
-      .from("cottage_publication_media")
-      .select("object_path")
-      .eq("publication_id", publicationId)
-      .order("position")
-      .limit(1)
-      .maybeSingle(),
-    `${project} access booking fixture is incomplete: missing published photo`,
-  );
-
-  const { error: uploadError } = await privilegedClient.storage
-    .from("cottage-profile-photos")
-    .upload(publicationMedia.object_path, samplePhoto.bytes, {
-      contentType: "image/png",
-      upsert: true,
-    });
-  if (uploadError) throw uploadError;
 }
 
 async function createPublishedBookingFixture({
@@ -640,6 +933,7 @@ async function createPublishedBookingFixture({
     );
     if (submitError) throw submitError;
     await approveApplication({
+      demoContent: fixture.demoContent,
       applicationId: application.id,
       ownerClient,
       reviewerClient,
@@ -833,4 +1127,201 @@ export async function validateAccessBrowserFixtures({
       );
     }
   }
+}
+
+export async function createDemoBrowserFixtures({
+  privilegedClient,
+  publishableKey,
+  reviewerClient,
+  url,
+}) {
+  const fixtures = demoBrowserFixtures();
+  const users = await listAllAccessFixtureUsers(privilegedClient.auth.admin);
+  const snapshots = requireData(
+    await privilegedClient
+      .from("cottage_publication_snapshots")
+      .select("id,profile_id,name"),
+    "Demo fixture preflight could not read publication snapshots",
+  );
+  if (
+    fixtures.some((fixture) =>
+      findAccessFixtureUser(users, fixture.bookingOwnerPhone),
+    ) ||
+    !Array.isArray(snapshots) ||
+    snapshots.length !== 0
+  ) {
+    throw new Error(
+      "Demo fixtures already exist or are partial; create a fresh owned demo project.",
+    );
+  }
+  for (const fixture of fixtures) {
+    await createPublishedBookingFixture({
+      fixture,
+      privilegedClient,
+      publishableKey,
+      reviewerClient,
+      url,
+    });
+  }
+  return validateDemoBrowserFixtures({ privilegedClient, publishableKey, url });
+}
+
+export async function validateDemoBrowserFixtures({
+  privilegedClient,
+  publishableKey,
+  url,
+}) {
+  const fixtures = demoBrowserFixtures();
+  const snapshots = requireData(
+    await privilegedClient
+      .from("cottage_publication_snapshots")
+      .select("id,profile_id,name"),
+    "Demo publications are unavailable",
+  );
+  if (
+    !Array.isArray(snapshots) ||
+    snapshots.length !== 6 ||
+    snapshots.some(
+      (snapshot) =>
+        typeof snapshot?.id !== "string" ||
+        !snapshot.id ||
+        typeof snapshot.profile_id !== "string" ||
+        !snapshot.profile_id ||
+        typeof snapshot.name !== "string" ||
+        !snapshot.name,
+    ) ||
+    new Set(snapshots.map((snapshot) => snapshot.profile_id)).size !== 6 ||
+    new Set(snapshots.map((snapshot) => snapshot.name)).size !== 6 ||
+    fixtures.some(
+      (fixture) =>
+        !snapshots.some(
+          (snapshot) => snapshot.name === fixture.bookingCottageName,
+        ),
+    )
+  )
+    throw new Error(
+      "Demo validation requires exactly the six approved fictional publications; create a fresh owned demo project.",
+    );
+  const validated = [];
+  for (const fixture of fixtures) {
+    const identity = await fixtureIdentity(
+      privilegedClient,
+      fixture.bookingOwnerPhone,
+      fixture.bookingCottageName,
+    );
+    const ownerClient = await signInFixtureOwner({
+      url,
+      publishableKey,
+      identity,
+      phone: fixture.bookingOwnerPhone,
+      description: fixture.bookingCottageName,
+    });
+    const context = requireData(
+      await ownerClient
+        .from("account_contexts")
+        .select("role,owner_approval_state")
+        .single(),
+      "Demo owner access context is unavailable",
+    );
+    const application = requireData(
+      await ownerClient
+        .from("owner_applications")
+        .select(
+          "id,status,legal_name,submitted_at,decided_at,current_verification_record_id",
+        )
+        .single(),
+      "Demo Owner Application is unavailable",
+    );
+    if (
+      context.role !== "cottage_owner" ||
+      context.owner_approval_state !== "approved" ||
+      application.status !== "approved" ||
+      application.legal_name !== fixture.bookingLegalName ||
+      !application.submitted_at ||
+      !application.decided_at ||
+      !application.current_verification_record_id
+    )
+      throw new Error(
+        `Demo owner approval is incomplete for ${fixture.bookingCottageName}`,
+      );
+    const documentRows = requireData(
+      await ownerClient
+        .from("owner_verification_documents")
+        .select("kind,object_path")
+        .eq("application_id", application.id),
+      "Demo verification documents are unavailable",
+    );
+    if (
+      documentRows.length !== documents.length ||
+      new Set(documentRows.map((document) => document.kind)).size !==
+        documents.length
+    ) {
+      throw new Error(
+        `Demo verification documents are incomplete for ${fixture.bookingCottageName}`,
+      );
+    }
+    for (const [kind] of documents) {
+      const document = documentRows.find((row) => row.kind === kind);
+      if (!document?.object_path)
+        throw new Error(`Demo verification document ${kind} is missing`);
+      const downloaded = requireData(
+        await privilegedClient.storage
+          .from("owner-verification")
+          .download(document.object_path),
+        `Demo verification document ${kind} object is missing`,
+      );
+      if (
+        Buffer.from(await downloaded.arrayBuffer())
+          .subarray(0, 4)
+          .toString() !== "%PDF"
+      ) {
+        throw new Error(`Demo verification document ${kind} is not a PDF`);
+      }
+    }
+    const profile = requireData(
+      await ownerClient
+        .from("owner_application_cottage_profiles")
+        .select(
+          "id,name,owner_user_id,current_publication_id,current_shift_schedule_id",
+        )
+        .eq("application_id", application.id)
+        .single(),
+      "Demo Cottage Profile is unavailable",
+    );
+    if (
+      profile.owner_user_id !== identity.id ||
+      profile.name !== fixture.bookingCottageName ||
+      snapshots.filter(
+        (snapshot) =>
+          snapshot.profile_id === profile.id &&
+          snapshot.id === profile.current_publication_id &&
+          snapshot.name === fixture.bookingCottageName,
+      ).length !== 1
+    ) {
+      throw new Error(
+        `Demo Cottage Profile does not match ${fixture.bookingCottageName}`,
+      );
+    }
+    const publications = {};
+    for (const locale of ["en", "ar", "ckb"]) {
+      publications[locale] = requireData(
+        await ownerClient.rpc("get_current_cottage_publication", {
+          target_profile_id: profile.id,
+          target_locale: locale,
+        }),
+        `Demo ${locale} publication is unavailable`,
+      );
+    }
+    const { loadedPricing } = await loadBookingFixturePricing({
+      fixture,
+      ownerClient,
+      profile,
+    });
+    assertDemoFixtureReadback(
+      { profile, publications, pricing: loadedPricing },
+      fixture,
+    );
+    validated.push({ fixture, profile });
+  }
+  return validated;
 }

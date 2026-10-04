@@ -8,6 +8,8 @@ if (process.env.PLAYWRIGHT_SERVER !== "worker") {
 
 export default defineConfig({
   ...config,
+  fullyParallel: false,
+  maxFailures: 1,
   retries: 0,
   testMatch: "demo-walkthrough.spec.ts",
   webServer: undefined,
