@@ -390,7 +390,17 @@ test.describe("retained cancellation and refund controls", () => {
         page,
         payout,
         `settlement-${locale}`,
-        async () => [await metadata.locator("bdi").allTextContents()],
+        async () => {
+          await expect
+            .poll(() =>
+              metadata
+                .locator(":scope > bdi")
+                .nth(1)
+                .evaluate((timestamp) => timestamp.getClientRects().length),
+            )
+            .toBe(1);
+          return [await metadata.locator("bdi").allTextContents()];
+        },
       );
       settlementObservations.push(
         ...captures.map((capture) => ({ locale, ...capture })),
@@ -470,8 +480,19 @@ test.describe("retained cancellation and refund controls", () => {
         page,
         confirmed,
         `confirmed-booking-${locale}`,
-        () =>
-          period
+        async () => {
+          await expect
+            .poll(() =>
+              period.locator("dd > span").evaluateAll((entries) =>
+                entries.flatMap((entry) =>
+                  Array.from(entry.querySelectorAll(":scope > bdi"))
+                    .slice(1)
+                    .map((timestamp) => timestamp.getClientRects().length),
+                ),
+              ),
+            )
+            .toEqual([1, 1, 1, 1, 1, 1]);
+          return period
             .locator("dd > span")
             .evaluateAll((entries) =>
               entries.map((entry) =>
@@ -480,7 +501,8 @@ test.describe("retained cancellation and refund controls", () => {
                   (value) => value.textContent ?? "",
                 ),
               ),
-            ),
+            );
+        },
       );
       periodObservations.push(
         ...captures.map((capture) => ({ locale, ...capture })),

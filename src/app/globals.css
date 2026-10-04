@@ -2690,6 +2690,10 @@ a:focus-visible {
   display: block;
 }
 
+.confirmed-booking-details .booking-period-timestamp {
+  display: inline-block;
+}
+
 .confirmed-booking-details dd > small {
   margin-block-start: 0.4rem;
   color: var(--muted);
