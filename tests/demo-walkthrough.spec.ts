@@ -786,8 +786,8 @@ test("shows varied demo results and filters across desktop and mobile languages"
       "Full-day bundle",
     ].entries()) {
       await expect(
-        card.getByRole("listitem").filter({ hasText: label }),
-      ).toContainText(prices[index]);
+        card.getByRole("listitem").filter({ hasText: label }).locator("b"),
+      ).toHaveText(prices[index]);
     }
     await expect(card.getByText("total", { exact: true })).toHaveCount(0);
   }
@@ -1039,8 +1039,8 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       await card.scrollIntoViewIfNeeded();
       await expectScene(card.getByRole("heading", { name, exact: true }));
       await expect(
-        card.getByRole("listitem").filter({ hasText: "Morning" }),
-      ).toContainText(morningPrice);
+        card.getByRole("listitem").filter({ hasText: "Morning" }).locator("b"),
+      ).toHaveText(morningPrice);
       await expectDemoImage(card.getByRole("img", { name, exact: true }));
     }
     await expect(page.getByRole("main")).not.toContainText(
