@@ -9,12 +9,17 @@ import {
 import {
   ACCESS_BROWSER_PROJECTS,
   createAccessBrowserFixtures,
+  createDemoBrowserFixtures,
+  requireDemoEnvironment,
   validateAccessBrowserFixtures,
+  validateDemoBrowserFixtures,
 } from "./lib/access-browser-fixtures.mjs";
 
 const USAGE =
-  "Usage: node scripts/prepare-access-test.mjs <create|validate> <mobile|desktop|worker> [...]";
-const [mode, ...requestedProjects] = process.argv.slice(2);
+  "Usage: node scripts/prepare-access-test.mjs <create|validate> <mobile|desktop|worker> [...] or <create|validate> demo";
+const [mode, ...selection] = process.argv.slice(2);
+const isDemo = selection.length === 1 && selection[0] === "demo";
+const requestedProjects = isDemo ? ["desktop"] : selection;
 const projectsAreValid =
   (mode === "create" || mode === "validate") &&
   requestedProjects.length > 0 &&
@@ -36,7 +41,19 @@ try {
   localAccessUrl = false;
 }
 
-if (!projectsAreValid) {
+let demoEnvironmentError;
+if ((mode === "create" || mode === "validate") && isDemo) {
+  try {
+    requireDemoEnvironment();
+  } catch (error) {
+    demoEnvironmentError = error;
+  }
+}
+
+if (demoEnvironmentError) {
+  console.error(demoEnvironmentError.message);
+  process.exitCode = 2;
+} else if (!projectsAreValid) {
   console.error(USAGE);
   process.exitCode = 2;
 } else if (
@@ -56,11 +73,13 @@ if (!projectsAreValid) {
   });
   const password = "Local-test-password-2026";
   const users = await listAllAccessFixtureUsers(client.auth.admin);
-  const cottageOwnerFixtures = [
-    { profile: "mobile", phone: "+9647510000000" },
-    { profile: "desktop", phone: "+9647510000001" },
-    { profile: "worker", phone: "+9647510000002" },
-  ].filter(({ profile }) => requestedProjects.includes(profile));
+  const cottageOwnerFixtures = isDemo
+    ? []
+    : [
+        { profile: "mobile", phone: "+9647510000000" },
+        { profile: "desktop", phone: "+9647510000001" },
+        { profile: "worker", phone: "+9647510000002" },
+      ].filter(({ profile }) => requestedProjects.includes(profile));
   const bookingCustomerFixtures = [
     { profile: "mobile", phone: "+9647520000000" },
     { profile: "desktop", phone: "+9647520000001" },
@@ -197,14 +216,24 @@ if (!projectsAreValid) {
         );
       }
     }
-    await validateAccessBrowserFixtures({
-      projects: requestedProjects,
-      privilegedClient: client,
-      publishableKey,
-      url,
-    });
+    if (isDemo) {
+      await validateDemoBrowserFixtures({
+        privilegedClient: client,
+        publishableKey,
+        url,
+      });
+    } else {
+      await validateAccessBrowserFixtures({
+        projects: requestedProjects,
+        privilegedClient: client,
+        publishableKey,
+        url,
+      });
+    }
     console.log(
-      `Verified complete access browser fixtures for ${requestedProjects.join(", ")}.`,
+      isDemo
+        ? "Verified six complete fictional demo publications."
+        : `Verified complete access browser fixtures for ${requestedProjects.join(", ")}.`,
     );
     process.exit(0);
   }
@@ -232,29 +261,31 @@ if (!projectsAreValid) {
     if (provisionError) throw provisionError;
   }
 
-  const concurrencyReviewerEmail =
-    "cottage-profile-fixture-reviewer@rentcottage.test";
-  const existingConcurrencyReviewer = users.find(
-    (user) => user.email === concurrencyReviewerEmail,
-  );
-  if (existingConcurrencyReviewer) {
-    const { error } = await client.auth.admin.updateUserById(
-      existingConcurrencyReviewer.id,
-      { password },
+  if (!isDemo) {
+    const concurrencyReviewerEmail =
+      "cottage-profile-fixture-reviewer@rentcottage.test";
+    const existingConcurrencyReviewer = users.find(
+      (user) => user.email === concurrencyReviewerEmail,
     );
-    if (error) throw error;
-  } else {
-    const { data, error } = await client.auth.admin.createUser({
-      email: concurrencyReviewerEmail,
-      password,
-      email_confirm: true,
-    });
-    if (error) throw error;
-    const { error: provisionError } = await client.rpc(
-      "provision_platform_administrator",
-      { target_user_id: data.user.id },
-    );
-    if (provisionError) throw provisionError;
+    if (existingConcurrencyReviewer) {
+      const { error } = await client.auth.admin.updateUserById(
+        existingConcurrencyReviewer.id,
+        { password },
+      );
+      if (error) throw error;
+    } else {
+      const { data, error } = await client.auth.admin.createUser({
+        email: concurrencyReviewerEmail,
+        password,
+        email_confirm: true,
+      });
+      if (error) throw error;
+      const { error: provisionError } = await client.rpc(
+        "provision_platform_administrator",
+        { target_user_id: data.user.id },
+      );
+      if (provisionError) throw provisionError;
+    }
   }
 
   const reviewerEmail = `cottage-profile-fixture-reviewer-${crypto.randomUUID()}@rentcottage.test`;
@@ -298,139 +329,141 @@ if (!projectsAreValid) {
   });
   if (verifyFactorError) throw verifyFactorError;
 
-  const ownerClient = createClient(url, publishableKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const phone = "+9647500000002";
-  const { error: otpError } = await ownerClient.auth.signInWithOtp({ phone });
-  if (otpError) throw otpError;
-  const { data: verified, error: verifyError } =
-    await ownerClient.auth.verifyOtp({
-      phone,
-      token: "123456",
-      type: "sms",
-    });
-  if (verifyError) throw verifyError;
-  if (!verified.user) throw new Error("Concurrent upload test has no owner");
-  const ownerUserId = verified.user.id;
-  const {
-    data: existingConcurrentApplication,
-    error: existingConcurrentError,
-  } = await ownerClient.from("owner_applications").select("id").maybeSingle();
-  if (existingConcurrentError) throw existingConcurrentError;
   const pdfBytes = new TextEncoder().encode("%PDF-1.7\nfixture\n%%EOF");
   const pdfDigest = createHash("sha256").update(pdfBytes).digest("hex");
   let concurrentRegistrationChecked = false;
-  if (!existingConcurrentApplication) {
-    const { error: claimError } = await ownerClient.rpc(
-      "claim_marketplace_role",
-      { requested_role: "cottage_owner" },
-    );
-    if (claimError) throw claimError;
-    const { error: saveError } = await ownerClient.rpc(
-      "save_owner_application",
-      {
-        requested_applicant_kind: "individual",
-        requested_legal_name: "Concurrent Upload Test",
-        requested_company_name: null,
-        requested_licensing_basis: "licence",
-        requested_exemption_basis: null,
-        requested_cottage_name: "Concurrency Cottage",
-        requested_governorate: "Erbil",
-        requested_approximate_location: "Test area",
-        requested_exact_address: "Test address",
-        requested_capacity: 2,
-        requested_bedrooms: 1,
-        requested_bathrooms: 1,
-        requested_amenities: [],
-        requested_description: "Concurrent registration regression fixture.",
-        requested_house_rules: "Test only.",
-      },
-    );
-    if (saveError) throw saveError;
-    const { data: application, error: applicationError } = await ownerClient
-      .from("owner_applications")
-      .select("id")
-      .single();
-    if (applicationError) throw applicationError;
-
-    const prepareUpload = async (suffix) => {
-      const objectPath = `${ownerUserId}/${application.id}/identity/90000000-0000-4000-8000-00000000000${suffix}.pdf`;
-      const { data: cleanupId, error: prepareError } = await client.rpc(
-        "prepare_owner_verification_document_upload",
+  if (!isDemo) {
+    const ownerClient = createClient(url, publishableKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const phone = "+9647500000002";
+    const { error: otpError } = await ownerClient.auth.signInWithOtp({ phone });
+    if (otpError) throw otpError;
+    const { data: verified, error: verifyError } =
+      await ownerClient.auth.verifyOtp({
+        phone,
+        token: "123456",
+        type: "sms",
+      });
+    if (verifyError) throw verifyError;
+    if (!verified.user) throw new Error("Concurrent upload test has no owner");
+    const ownerUserId = verified.user.id;
+    const {
+      data: existingConcurrentApplication,
+      error: existingConcurrentError,
+    } = await ownerClient.from("owner_applications").select("id").maybeSingle();
+    if (existingConcurrentError) throw existingConcurrentError;
+    if (!existingConcurrentApplication) {
+      const { error: claimError } = await ownerClient.rpc(
+        "claim_marketplace_role",
+        { requested_role: "cottage_owner" },
+      );
+      if (claimError) throw claimError;
+      const { error: saveError } = await ownerClient.rpc(
+        "save_owner_application",
         {
-          requested_owner_user_id: ownerUserId,
-          requested_application_id: application.id,
-          requested_kind: "identity",
-          requested_object_path: objectPath,
-          requested_original_filename: `identity-${suffix}.pdf`,
-          requested_media_type: "application/pdf",
-          requested_size_bytes: pdfBytes.byteLength,
+          requested_applicant_kind: "individual",
+          requested_legal_name: "Concurrent Upload Test",
+          requested_company_name: null,
+          requested_licensing_basis: "licence",
+          requested_exemption_basis: null,
+          requested_cottage_name: "Concurrency Cottage",
+          requested_governorate: "Erbil",
+          requested_approximate_location: "Test area",
+          requested_exact_address: "Test address",
+          requested_capacity: 2,
+          requested_bedrooms: 1,
+          requested_bathrooms: 1,
+          requested_amenities: [],
+          requested_description: "Concurrent registration regression fixture.",
+          requested_house_rules: "Test only.",
         },
       );
-      if (prepareError) throw prepareError;
-      const { error: uploadError } = await client.storage
-        .from("owner-verification")
-        .upload(objectPath, pdfBytes, {
-          contentType: "application/pdf",
-          upsert: false,
-        });
-      if (uploadError) throw uploadError;
-      return { cleanupId, objectPath };
-    };
+      if (saveError) throw saveError;
+      const { data: application, error: applicationError } = await ownerClient
+        .from("owner_applications")
+        .select("id")
+        .single();
+      if (applicationError) throw applicationError;
 
-    const baseline = await prepareUpload(0);
-    const { error: baselineError } = await client.rpc(
-      "register_owner_verification_document",
-      { target_cleanup_id: baseline.cleanupId },
-    );
-    if (baselineError) throw baselineError;
+      const prepareUpload = async (suffix) => {
+        const objectPath = `${ownerUserId}/${application.id}/identity/90000000-0000-4000-8000-00000000000${suffix}.pdf`;
+        const { data: cleanupId, error: prepareError } = await client.rpc(
+          "prepare_owner_verification_document_upload",
+          {
+            requested_owner_user_id: ownerUserId,
+            requested_application_id: application.id,
+            requested_kind: "identity",
+            requested_object_path: objectPath,
+            requested_original_filename: `identity-${suffix}.pdf`,
+            requested_media_type: "application/pdf",
+            requested_size_bytes: pdfBytes.byteLength,
+          },
+        );
+        if (prepareError) throw prepareError;
+        const { error: uploadError } = await client.storage
+          .from("owner-verification")
+          .upload(objectPath, pdfBytes, {
+            contentType: "application/pdf",
+            upsert: false,
+          });
+        if (uploadError) throw uploadError;
+        return { cleanupId, objectPath };
+      };
 
-    const candidates = await Promise.all(
-      Array.from({ length: 8 }, (_, index) => prepareUpload(index + 1)),
-    );
-    const registrations = await Promise.all(
-      candidates.map(({ cleanupId }) =>
-        client.rpc("register_owner_verification_document", {
-          target_cleanup_id: cleanupId,
-        }),
-      ),
-    );
-    const registrationError = registrations.find(({ error }) => error)?.error;
-    if (registrationError) throw registrationError;
-
-    const { data: currentDocument, error: documentError } = await ownerClient
-      .from("owner_verification_documents")
-      .select("object_path")
-      .eq("kind", "identity")
-      .single();
-    if (documentError) throw documentError;
-    const { data: pendingCleanup, error: cleanupError } = await client
-      .from("owner_verification_document_cleanup")
-      .select("object_path")
-      .eq("application_id", application.id)
-      .eq("reason", "replaced")
-      .eq("status", "pending");
-    if (cleanupError) throw cleanupError;
-
-    const expectedPaths = new Set(
-      [baseline, ...candidates]
-        .map(({ objectPath }) => objectPath)
-        .filter((objectPath) => objectPath !== currentDocument.object_path),
-    );
-    const recordedPaths = new Set(
-      pendingCleanup.map(({ object_path: objectPath }) => objectPath),
-    );
-    if (
-      expectedPaths.size !== 8 ||
-      recordedPaths.size !== expectedPaths.size ||
-      [...expectedPaths].some((objectPath) => !recordedPaths.has(objectPath))
-    ) {
-      throw new Error(
-        "Concurrent document registration did not preserve every displaced object for cleanup",
+      const baseline = await prepareUpload(0);
+      const { error: baselineError } = await client.rpc(
+        "register_owner_verification_document",
+        { target_cleanup_id: baseline.cleanupId },
       );
+      if (baselineError) throw baselineError;
+
+      const candidates = await Promise.all(
+        Array.from({ length: 8 }, (_, index) => prepareUpload(index + 1)),
+      );
+      const registrations = await Promise.all(
+        candidates.map(({ cleanupId }) =>
+          client.rpc("register_owner_verification_document", {
+            target_cleanup_id: cleanupId,
+          }),
+        ),
+      );
+      const registrationError = registrations.find(({ error }) => error)?.error;
+      if (registrationError) throw registrationError;
+
+      const { data: currentDocument, error: documentError } = await ownerClient
+        .from("owner_verification_documents")
+        .select("object_path")
+        .eq("kind", "identity")
+        .single();
+      if (documentError) throw documentError;
+      const { data: pendingCleanup, error: cleanupError } = await client
+        .from("owner_verification_document_cleanup")
+        .select("object_path")
+        .eq("application_id", application.id)
+        .eq("reason", "replaced")
+        .eq("status", "pending");
+      if (cleanupError) throw cleanupError;
+
+      const expectedPaths = new Set(
+        [baseline, ...candidates]
+          .map(({ objectPath }) => objectPath)
+          .filter((objectPath) => objectPath !== currentDocument.object_path),
+      );
+      const recordedPaths = new Set(
+        pendingCleanup.map(({ object_path: objectPath }) => objectPath),
+      );
+      if (
+        expectedPaths.size !== 8 ||
+        recordedPaths.size !== expectedPaths.size ||
+        [...expectedPaths].some((objectPath) => !recordedPaths.has(objectPath))
+      ) {
+        throw new Error(
+          "Concurrent document registration did not preserve every displaced object for cleanup",
+        );
+      }
+      concurrentRegistrationChecked = true;
     }
-    concurrentRegistrationChecked = true;
   }
 
   for (const fixture of bookingCustomerFixtures) {
@@ -612,19 +645,30 @@ if (!projectsAreValid) {
       fixtureOwner,
     );
   }
-  await createAccessBrowserFixtures({
-    projects: requestedProjects,
-    privilegedClient: client,
-    publishableKey,
-    reviewerClient,
-    url,
-  });
+  if (isDemo) {
+    await createDemoBrowserFixtures({
+      privilegedClient: client,
+      publishableKey,
+      reviewerClient,
+      url,
+    });
+  } else {
+    await createAccessBrowserFixtures({
+      projects: requestedProjects,
+      privilegedClient: client,
+      publishableKey,
+      reviewerClient,
+      url,
+    });
+  }
   if (concurrentRegistrationChecked) {
     console.log(
       "Concurrent verification registration preserved all 8 displaced objects for cleanup.",
     );
   }
   console.log(
-    `Prepared complete access browser fixtures for ${requestedProjects.join(", ")}.`,
+    isDemo
+      ? "Prepared six complete fictional demo publications."
+      : `Prepared complete access browser fixtures for ${requestedProjects.join(", ")}.`,
   );
 }
