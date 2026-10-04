@@ -1,10 +1,12 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readlinkSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -144,7 +146,6 @@ describe("access verification command", () => {
       for (const value of [
         "port = 55331",
         "port = 55332",
-        "shadow_port = 55330",
         "port = 55339",
         "port = 55333",
         "port = 55334",
@@ -153,6 +154,13 @@ describe("access verification command", () => {
       ]) {
         expect(generatedConfig).toContain(value);
       }
+      const shadowPortLines = [
+        ...generatedConfig.matchAll(/^shadow_port = (\d+)$/gm),
+      ];
+      expect(shadowPortLines).toHaveLength(1);
+      const shadowPort = Number(shadowPortLines[0][1]);
+      expect(shadowPort).toBeGreaterThanOrEqual(1024);
+      expect(shadowPort).toBeLessThan(32768);
       const generatedOtpSection = generatedConfig.match(
         /\[auth\.sms\.test_otp\]\n([\s\S]*?)(?=\n\[|$)/,
       );
@@ -173,6 +181,23 @@ describe("access verification command", () => {
       expect(readlinkSync(join(workdir, "supabase", "tests"))).toBe(
         join(workingDirectory, "supabase", "tests"),
       );
+      const corruptSource = join(directState, "corrupt-source");
+      const corruptState = join(directState, "corrupt-state");
+      mkdirSync(join(corruptSource, "supabase"), { recursive: true });
+      writeFileSync(
+        join(corruptSource, "supabase", "config.toml"),
+        sourceConfig.replace("shadow_port = 54330", "shadow_port = invalid"),
+      );
+      expect(() =>
+        prepareIsolatedSupabaseWorkdir({
+          localProject: "rentcottage-issue-32-constructor",
+          stateRoot: corruptState,
+          workingDirectory: corruptSource,
+        }),
+      ).toThrow("Local Supabase config is missing shadow_port = 54330.");
+      expect(
+        existsSync(join(corruptState, "project", "supabase", "config.toml")),
+      ).toBe(false);
       expect(readFileSync(sourceConfigPath, "utf8")).toBe(sourceConfig);
     } finally {
       rmSync(directState, { recursive: true, force: true });
