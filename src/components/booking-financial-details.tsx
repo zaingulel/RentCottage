@@ -267,8 +267,13 @@ export function BookingFinancialDetails({
               <p>{p[view.payout.settlement.state]}</p>
               <p>{view.payout.settlement.reason}</p>
               <p>
-                {view.payout.settlement.actorUserId} ·{" "}
-                {formatIraqDateTime(view.payout.settlement.requestedAt, locale)}
+                <bdi>{view.payout.settlement.actorUserId}</bdi> ·{" "}
+                <bdi className={styles.timestamp}>
+                  {formatIraqDateTime(
+                    view.payout.settlement.requestedAt,
+                    locale,
+                  )}
+                </bdi>
               </p>
               <p>
                 {p.settlementAmount}:{" "}

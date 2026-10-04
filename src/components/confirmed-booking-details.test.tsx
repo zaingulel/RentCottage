@@ -52,6 +52,73 @@ const pending = {
   historical: false,
 };
 describe("confirmed booking details", () => {
+  it.each([
+    ["en", "Jan 1, 2101, 8:00 AM", "Jan 1, 2101, 12:00 PM", "IQD 115,000"],
+    [
+      "ar",
+      "01\u200f/01\u200f/2101، 8:00 ص",
+      "01\u200f/01\u200f/2101، 12:00 م",
+      "IQD 115,000",
+    ],
+    [
+      "ckb",
+      "٢١٠١ کانوونی دووەم ١ ٨:٠٠ ب.ن",
+      "٢١٠١ کانوونی دووەم ١ ١٢:٠٠ د.ن",
+      "IQD ١١٥٬٠٠٠",
+    ],
+  ] as const)(
+    "isolates confirmed booking names and dates in %s",
+    (locale, startsAt, endsAt, customerTotal) => {
+      render(
+        <div dir={locale === "en" ? "ltr" : "rtl"}>
+          <ConfirmedBookingDetails
+            locale={locale}
+            access={{
+              ...base,
+              bookingPeriod: [
+                ...base.bookingPeriod,
+                {
+                  serviceDay: "2101-01-01",
+                  displayName: "Full-day",
+                  startsAt: base.bookingPeriod[0].startsAt,
+                  endsAt: base.bookingPeriod[0].endsAt,
+                  crossesMidnight: false,
+                  priceIqd: 110000,
+                  kind: "full-day",
+                },
+              ],
+            }}
+            notification={pending}
+            navigation={null}
+          />
+        </div>,
+      );
+      const periodLabel = {
+        en: "Booking period",
+        ar: "فترة الحجز",
+        ckb: "ماوەی حجز",
+      }[locale];
+      const period = screen.getByText(periodLabel).nextElementSibling!;
+      expect(Array.from(period.children, (item) => item.textContent)).toEqual([
+        `Morning · ${startsAt} – ${endsAt}`,
+        `Full-day · ${startsAt} – ${endsAt}`,
+      ]);
+      for (const [index, name] of ["Morning", "Full-day"].entries()) {
+        const values = Array.from(
+          period.children[index].querySelectorAll("bdi"),
+        );
+        expect(values.map((value) => value.textContent)).toEqual([
+          name,
+          startsAt,
+          endsAt,
+        ]);
+        for (const value of values) {
+          expect(value.getAttribute("dir") ?? "auto").toBe("auto");
+        }
+      }
+      expect(screen.getByText(customerTotal)).toBeInTheDocument();
+    },
+  );
   it("renders preserved commercial facts and current private access for the paid customer", () => {
     render(
       <ConfirmedBookingDetails
