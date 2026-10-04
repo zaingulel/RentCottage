@@ -16,7 +16,9 @@ Do not upgrade the CLI or use a globally installed replacement.
 Run the following commands from the checkout in one dedicated interactive Bash subshell. Keep that shell open
 through recording, rehearsal and teardown. Every demo export belongs inside it; do ordinary verification only
 from its clean parent shell. Stop at any failed command or ownership check. Preserve failed evidence for review;
-never reset a database, kill an unknown listener or allocate a replacement port.
+never reset a database, kill an unknown listener or allocate a replacement port. The fail-fast `set -eu` below
+can exit this shell after a failed command. Do not continue preparation in another shell; use the recovery
+procedure under [Evidence and teardown](#evidence-and-teardown) only for diagnosis and teardown.
 
 ```sh
 bash --noprofile --norc
@@ -47,8 +49,8 @@ printf 'Owned workdir: %s\nOwned project: %s\n' "$SUPABASE_LOCAL_WORKDIR" "$SUPA
 ```
 
 Record those creation results with the session evidence. The basename must match
-`rentcottage-demo-` followed by letters or numbers. Never reuse the foreign `rentcottage-demo` project,
-its workdir, volumes, Worker bindings or listener. Each fresh recording gets a new project.
+`rentcottage-demo-` followed by letters or numbers. Each fresh recording gets a new project. Preserve all
+unowned workdirs, projects, volumes, Worker bindings and listeners.
 
 Copy the current declared schemas and migrations and change only the copied configuration. This one-shot
 file operation refuses a changed source contract and never edits `supabase/config.toml` in the checkout.
@@ -328,7 +330,7 @@ for practice. A live booking consumes that selected day; do not replay it as an 
 | 1 | “RentCottage offers English, Arabic and Sorani Kurdish. We will follow the journey in English.” | Open `http://127.0.0.1:8792/`, show the three existing language choices, click `English` and stay in English. Show the unified header and footer. |
 | 2 | “Platform Administrators have a separate multi-factor access boundary.” | Open `/en/administrator/access`. The operator signs in with the dedicated synthetic email, masked password and hidden authenticator code. Show access readiness and the application/profile management links. Do not enrol another factor. |
 | 3 | “Cottage Owners manage their published cottage and future availability.” | In the Owner profile open `/en/owner/access`, verify Palm Garden's phone off-camera, open its Cottage Profile, show `Published`, shift prices and `Pricing and availability`. Load the meeting day and show Morning open. |
-| 4 | “Customers begin with Service Days and guests.” | In the Customer profile open `/en`, fill both `From Service Day` and `To Service Day` with the meeting day, leave guests at 4, and click `Search available cottages`. Compare all six names, locations, capacities and individual option prices. |
+| 4 | “Customers begin with Service Days and guests.” | In the Customer profile open `/en`, fill both `From Service Day` and `To Service Day` with the meeting day, leave guests at 4, and click `Search available cottages`. Compare all six names, locations and individual option prices. |
 | 5 | “The pool filter narrows the comparison.” | Return to the search form, preserve the same day and guests, check `Pool`, and search. Show Palm Garden, Dukan Hills, Tigris Courtyard and Date Palm Cottage. The separate showcase check covers partial and unavailable options; their private reasons are not shown here. |
 | 6 | “Customers inspect a cottage before choosing a Booking Period.” | Open Palm Garden with `View cottage`. Show its gallery, facts, amenities and House Rules. In `Choose your Booking Period`, show that nothing is selected and `Get exact quote` is disabled. Select Morning, then click the enabled quote action. |
 | 7 | “The exact quote makes the charges and terms explicit.” | Show IQD 180,000 Booking Price, IQD 5,000 Booking Service Fee and IQD 185,000 Customer Total, plus House Rules, cancellation policy and fictional non-operative terms. |
@@ -387,15 +389,43 @@ any separately observed live rehearsal. Never carry an earlier run's dates, book
 forward. A failed or skipped observation is not a pass.
 
 To stop this shell's exact Worker, inspect `jobs -l` and confirm its job and command are the preview started above,
-then bring that job to the foreground and press Ctrl+C. Do not signal a process ID (PID) copied from another
-session or any foreign process. Native preview shutdown can make the receipt wrapper exit 1 rather than 130;
-that interrupted serve receipt is not a passing check. Tolerate the foreground interruption here, then require
-the stopped-port and ownership checks below before teardown.
+then bring that job to the foreground and press Ctrl+C. A process ID (PID) retained from another session is
+not current ownership evidence; never signal a stale PID alone or any foreign process. Native preview shutdown
+can make the receipt wrapper exit 1 rather than 130; that interrupted serve receipt is not a passing check.
+Tolerate the foreground interruption here, then require the stopped-port and ownership checks below before
+teardown.
 
 ```sh
 jobs -l
 fg %+ || :
 ```
+
+If the dedicated shell exited, open a clean dedicated Bash shell using the setup's shell command and inherited
+environment check, in the same recorded checkout. Run only that shell command and environment check, never the
+creation or preparation commands in that section. Recovery is for diagnosis and teardown only. Select this run's
+exact workdir and project from its retained creation results; compare `creation.txt` and `checkout.txt` with
+those results and the checkout's current commit. Verify the actual copied `supabase/config.toml` project and
+workdir, and compare the recorded `container-ownership.json` IDs, names, labels and port bindings with current
+Docker inspection. If failure preceded any needed evidence, stop and report exactly what is missing. Never
+guess a project, borrow another run's evidence or source a nonexistent file.
+
+Only after ownership is established, restore `SUPABASE_LOCAL_WORKDIR` and `SUPABASE_LOCAL_PROJECT` to those
+recorded values. If this run created `demo-environment.sh`, verify it is a regular, non-symlink, mode-0600 file
+in that owned workdir, then source it privately using the existing source command. Never display its secrets,
+rerun the binding-creation block, overwrite bindings, resume preparation or repeat a booking. If binding
+creation was incomplete, preserve the files and report the missing evidence rather than bypassing the
+binding-equality check below.
+
+`jobs` and `fg` cannot recover a job from the exited shell. For an orphan preview, use the native process
+inspector to identify the current 8792 and 9232 listeners and trace their complete current preview ancestry.
+Verify the chain's commands, checkout and owned `worker-private.log`, Wrangler log and registry identities
+against this run's retained creation evidence. A stale PID, command-name match or occupied port alone proves
+nothing. Send the interrupt signal (SIGINT) only to that currently verified owned preview chain, then recheck
+both ports.
+If any process ownership remains unresolved, preserve it and report the exact blocker. Continue teardown
+only with the existing ownership and binding-equality checks and the exact-project Supabase stop below;
+if no bindings were created, do not run the binding-removal block, and stop Supabase only after its recorded
+project ownership is proven.
 
 Verify both Worker ports are free before removing bindings. Recheck the recorded Docker container metadata and
 labels against the creation record before stopping the owned project with the explicit workdir and basename.
