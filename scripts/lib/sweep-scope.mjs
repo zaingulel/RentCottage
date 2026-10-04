@@ -5,7 +5,7 @@
 // only files in the may-edit column of the manual's scope table, and it introduces no link the
 // repository did not already carry. The table is parsed from the manual so the allowlist has one
 // home. The caller reads the manual from the BASE commit, never the head, so a diff cannot widen its
-// own scope. I/O lives in scripts/sweep-scope-check.mjs; this file is pure.
+// own scope. I/O lives in scripts/lib/sweep-scope-evaluate.mjs; this file is pure.
 
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfm } from 'micromark-extension-gfm';

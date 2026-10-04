@@ -11,11 +11,11 @@ Git is the state. A branch is a job; a draft pull request is its handoff; the bo
 ## Before intake
 
 Fetch `origin/main` with `git fetch --no-prune origin main` and record the fetched commit. If fetching fails,
-report freshness unavailable and do not select work from stale board evidence. Read `AGENTS.md`, this skill, and
-[Update local main](../closeout/SKILL.md#update-local-main) from that commit with
-`git show <recorded-origin-main>:<path>`, then apply that fetched procedure to the actual `main` checkout. The
-coordinating resume session may update it when no other task owns it. After a successful update, verify the
-recorded target and reread the files from disk. If the checkout is retained, report its path, branch and reason;
+report freshness unavailable and do not select work from stale board evidence. Load `AGENTS.md`, this skill, and
+[Update local main](../closeout/SKILL.md#update-local-main) from that commit under `AGENTS.md`'s Instruction reuse
+rule, then apply that fetched procedure to the actual `main` checkout. The coordinating resume session may update
+it when no other task owns it. After a successful update, verify the recorded target and cleanliness before using
+verifier code. If the checkout is retained, report its path, branch and reason;
 continue from fetched instructions read-only and choose verifier code at the recorded target: use a usable existing
 isolated checkout first, otherwise create a fresh verifier-only worktree without duplicating a job. A verifier-only
 worktree this run created is removed at the end of the same run, after board operations, with
@@ -24,11 +24,22 @@ available, report board freshness unavailable rather than presenting stale local
 
 ## 1. Find where things stand
 
-- Start `node scripts/board.mjs`, `git status`, `git branch --show-current`, `git worktree list`, and
-  `gh pr list --author @me --state open` only after the refresh above. Capture the board output to a file so its
-  paged walk overlaps the remaining reads. That one command lists the board and judges it from the same read:
-  exit 1 with drift rows is a reconciliation to do before work-pick, not a failed command, while a
-  `board: failed to read` line on stderr is a failed read, so report board freshness unavailable.
+- After the refresh barrier, use existing runtime parallel or background calls to overlap `node scripts/board.mjs`,
+  local inventory (`git status`, `git branch --show-current`, `git worktree list`), pull-request summaries
+  (`gh pr list --author @me --state open --json number,title,headRefName,isDraft,url`), the factory lag check,
+  tooling counts and conditional sweep discovery below. Run verifier commands only from a checkout verified clean
+  at the recorded target. Collect every exit status and stderr and finish the reads before reconciliation writes.
+  The board command lists and judges the same complete paginated read: exit 1 with drift rows is reconciliation
+  to do before work-pick, while `board: failed to read` on stderr means board freshness unavailable.
+- Capture large responses once with native stdout redirection to session-owned scratch, including board output
+  and issue details. Check each authoritative outcome, including board drift, then read non-overlapping bounded
+  character ranges until all required
+  fields are exposed, including very long lines. Never refetch because display truncated or assume omitted detail;
+  unreadable or incomplete output is unavailable evidence. This is ephemeral output handling, not a reusable cache.
+- After the batch, recheck verifier `HEAD` and cleanliness. Movement invalidates affected checkout-derived evidence;
+  use Before intake's verifier-selection procedure again before verifier operations. GitHub reads are observations
+  at their recorded times, not an atomic snapshot: conflicting facts or reconciliation writes require refreshing
+  only the affected evidence before decisions.
 - During intake, from the root checkout, inspect another job's worktree with `git -C <path>`, never by `cd`. On
   Claude Code, `EnterWorktree` records the shell's current folder as the one `ExitWorktree` later returns to, and
   a sibling job's closeout may remove that folder, leaving this session unable to leave its own worktree.
@@ -46,8 +57,8 @@ available, report board freshness unavailable rather than presenting stale local
   `git grep -c -E 'test\.setTimeout\(|test\.slow\(|[Ii]nfo(\(\))?\.(setTimeout|slow)\(|describe\.configure\(\{[^}]*timeout|^[[:space:]]*(test|it|describe)\([^;]*\{[[:space:]]*timeout:' <rev> -- tests scripts tools | awk -F: '{ s+=$NF } END { print s+0 }'`.
   A directory absent from a tree counts zero. When `rev-list` prints nothing or `git cat-file -e <rev>` fails, that
   commit's half is reported unavailable, never as zero.
-- A branch with an open draft pull request is unfinished work. Read its body: the "Not done" section says
-  where to pick up.
+- A branch with an open draft pull request is unfinished work. Use the summaries to identify relevant unfinished
+  jobs, then read only their bodies: the "Not done" section says where to pick up.
 - The board output for planned work. Prefer `Ready` work matching the owner's latest objective;
   `Backlog` remains eligible. `Ready` means startable in the next session with no missing owner decision,
   external dependency, or scheduled date; a card waiting on any of those goes to `Backlog` with its trigger
@@ -58,8 +69,9 @@ available, report board freshness unavailable rather than presenting stale local
 - If the Conventions table in `AGENTS.md` marks the documentation routines active, intake sweep-triage cards
   as `docs/SWEEP-TRIAGE.md` describes: the day-after triage routine files issues it cannot card. Before
   work-pick, list them with
-  `gh issue list --state open --author @me --limit 100 --json number,body --jq '.[] | select(.body | contains("Sweep triage: source #")) | .number'`
-  and, for each the board output does not show, card it with
+  `gh issue list --state open --author @me --limit 100 --json number,body --jq '[.[] | select(.body | contains("Sweep triage: source #"))]'`
+  and retain those bodies for the detail batch below, requesting only still-missing fields. Complete that batch
+  before triage writes. For each the board output does not show, card it with
   `node scripts/board-add.mjs <issue> Backlog <Workstream>`, the Workstream the issue body names, only when the
   owner-authored verdict comment on the sweep pull request its marker cites lists that issue number; otherwise
   report it at work-pick and card nothing. For every marker issue that verdict comment lists, whether or not it is
@@ -69,12 +81,28 @@ available, report board freshness unavailable rather than presenting stale local
 
 ## 2. Work-pick (owner gate one)
 
-Read the candidate cards' bodies and comments in one call, one alias per issue, never one `gh issue view`
-per card.
+Keep every worthwhile Ready or Backlog recommendation, with no arbitrary shortlist. Read needed issue details
+in the initial aliased batch, including candidates, unbacked In-progress claims and sweep-triage needs; request
+each needed field or page once per intake observation and reuse discovery fields already read. Preserve bodies, parent, blocker states
+and comments, including the latest `Claim:`. Reuse these details for planning after selection unless changed
+evidence invalidates them. Never issue one `gh issue view` per card.
+
+Capture the full response from this query, replacing the example aliases and numbers with needed issues and
+omitting only fields already read for an issue. Require command success, no GraphQL errors, and every requested
+issue identity present and non-null before consuming its details. Partial errors, missing issues or unreadable
+scratch are unavailable details; unresolved required facts prevent presenting the affected choice as startable.
+Set `intake_scratch` to this session's own scratch directory and read the captured response fully through the
+bounded-output procedure above.
 
 ```sh
-gh api graphql -F owner='{owner}' -F name='{repo}' -f query='query($owner:String!,$name:String!){ repository(owner:$owner name:$name) { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body parent { number } blockedBy(first:50) { nodes { number state } } comments(last:20) { nodes { body } } }' --jq '.data.repository[] | "===== #\(.number) \(.title)\nparent: \(if .parent then "#\(.parent.number)" else "none" end); open blockers: \([.blockedBy.nodes[] | select(.state == "OPEN") | "#\(.number)"] | join(" ") | if . == "" then "none" else . end)\n\(.body)\n--- comments:\n\(.comments.nodes | map(.body) | join("\n---\n"))"'
+gh api graphql -F owner='{owner}' -F name='{repo}' -f query='query($owner:String!,$name:String!){ repository(owner:$owner name:$name) { CANDIDATE_1_ALIAS: issue(number:CANDIDATE_1_NUMBER) { ...Card } CANDIDATE_2_ALIAS: issue(number:CANDIDATE_2_NUMBER) { ...Card } } } fragment Card on Issue { number title body parent { number } blockedBy(first:50) { nodes { number state } } comments(last:20) { nodes { body } pageInfo { hasPreviousPage startCursor } } }' > "$intake_scratch/candidate-details.json"
 ```
+
+For a required Claim, inspect each comment page in reverse chronological order. If no `Claim:` is found and
+`hasPreviousPage` is true, fetch the preceding page with `comments(last:20, before:<startCursor>)` and continue
+until the first Claim or exhausted history. Say no Claim only after exhaustion; a failed or missing page leaves
+that fact unavailable. Every continuation retains command-success, GraphQL-error, issue-identity and bounded
+capture checks above. Never refetch an already-read page merely for display.
 
 State the session's own model in one line, then always present this table, even for one candidate:
 
@@ -93,7 +121,8 @@ disjoint.
 
 ## 3. Start the job
 
-- After selection, fetch `origin/main` again with `git fetch --no-prune origin main` and record the new target.
+- After selection, fetch `origin/main` again with `git fetch --no-prune origin main` and record the new target;
+  load its required instructions under `AGENTS.md`'s Instruction reuse rule before proceeding.
 - On Claude Code, the coordinating session is started at the root checkout, never with the desktop app's worktree
   option: auto-archive removes that worktree at merge, before closeout can leave it. Confirm with `pwd` that the
   shell is in the root checkout, because `EnterWorktree` records the shell's current folder as the one

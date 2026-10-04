@@ -8,7 +8,7 @@ Closes #
 
 ## What the owner can see
 
-<!-- Screenshot of every changed interaction, driven in the built artifact over local HTTP. Say "no visual change" when true. -->
+<!-- Representative screenshots per [Review and visual verification](../AGENTS.md#review-and-visual-verification), driven in the built artifact over local HTTP. Say "no visual change" when true. -->
 
 ## Evidence
 

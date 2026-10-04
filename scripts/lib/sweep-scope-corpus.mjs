@@ -11,13 +11,20 @@
 // line is judged alone; the letters are the design's own row names.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { evaluateSweepScope } from './sweep-scope-evaluate.mjs';
 import { treeGrepArgs, treeGrepCandidates } from './sweep-scope.mjs';
 
 const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), '../sweep-scope-check.mjs');
+let parent;
+let template;
+after(() => {
+  if (parent) rmSync(parent, { recursive: true, force: true });
+});
 
 // Added lines `hiddenDestinationShapes` must refuse, each with the one rule that must name it.
 export const HIDDEN_ROWS = [
@@ -642,12 +649,20 @@ export const LEGACY = ['Historic plants, fenced so nothing renders:', '', '```',
 // `documents` replaces a base document by fiat and `mayEdit` names the paths the table admits, so a
 // row can start from the tree it needs without a second helper.
 export function repo({ documents = {}, mayEdit = ['docs/ALLOWED.md'] } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-scope-'));
+  if (!template) {
+    parent = mkdtempSync(join(tmpdir(), 'sweep-scope-'));
+    template = join(parent, 'template');
+    mkdirSync(template);
+    const templateGit = (...args) => execFileSync('git', args,
+      { cwd: template, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    templateGit('init', '-q', '-b', 'main');
+    templateGit('config', 'user.email', 'test@example.com');
+    templateGit('config', 'user.name', 'test');
+    templateGit('config', 'commit.gpgsign', 'false');
+  }
+  const dir = mkdtempSync(join(parent, 'repo-'));
+  cpSync(template, dir, { recursive: true });
   const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git('init', '-q', '-b', 'main');
-  git('config', 'user.email', 'test@example.com');
-  git('config', 'user.name', 'test');
-  git('config', 'commit.gpgsign', 'false');
   const write = (rel, text) => {
     mkdirSync(dirname(join(dir, rel)), { recursive: true });
     writeFileSync(join(dir, rel), text);
@@ -670,7 +685,8 @@ export function repo({ documents = {}, mayEdit = ['docs/ALLOWED.md'] } = {}) {
     git('commit', '-q', '-m', label);
     return git('rev-parse', 'HEAD');
   };
-  const check = (head, at = base) => spawnSync('node', [SCRIPT, at, head], { cwd: dir, encoding: 'utf8' });
+  const check = (head, at = base) => evaluateSweepScope(at, head, dir);
+  const checkCli = (head, at = base) => spawnSync('node', [SCRIPT, at, head], { cwd: dir, encoding: 'utf8' });
   // The check script's own grep stage, called through the same builder, so the tree rows are judged on
   // the lines the real base returns: every spelling of the destination, case-insensitively, with git's
   // `<rev>:<path>` prefix cut at the NUL `--null` writes after it.
@@ -682,7 +698,7 @@ export function repo({ documents = {}, mayEdit = ['docs/ALLOWED.md'] } = {}) {
     }
     return lines;
   };
-  return { git, write, commit, check, grep, base, dir };
+  return { git, write, commit, check, checkCli, grep, base, dir };
 }
 
 // One end-to-end run: `path` is the only may-edit entry, it starts as `before` in the base commit, and

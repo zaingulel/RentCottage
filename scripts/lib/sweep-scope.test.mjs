@@ -24,6 +24,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const MANUAL = readFileSync(join(ROOT, 'docs/DOC-SWEEP.md'), 'utf8');
 const SCRIPT = join(ROOT, 'scripts/sweep-scope-check.mjs');
 
+function checkCliParity(r, head) {
+  const cwd = process.cwd();
+  const result = r.checkCli(head);
+  assert.deepEqual(r.check(head), { status: result.status, stdout: result.stdout, stderr: result.stderr });
+  assert.equal(process.cwd(), cwd);
+  return result;
+}
+
 // A corpus row is one added line, judged in the smallest diff that can carry it.
 function addedDiff(line) {
   return [
@@ -209,10 +217,43 @@ test('the live tree vouches for no destination only the guard\'s own sources or 
   assert.equal(knownAtHead('github.com'), true, 'the tree at HEAD vouches for nothing at all');
 });
 
+test('repo clones isolate committed, indexed and untracked contamination', () => {
+  const a = repo();
+  a.git('checkout', '-q', '-b', 'contaminated');
+  a.git('config', 'user.email', 'contaminated@example.net');
+  a.git('config', 'user.name', 'contaminated');
+  a.write('docs/HOSTED.md', 'See https://isolated.example.net/in.\n');
+  a.commit('committed contamination');
+  a.write('docs/ALLOWED.md', 'staged contamination\n');
+  a.git('add', 'docs/ALLOWED.md');
+  a.write('docs/UNTRACKED.md', 'untracked contamination\n');
+
+  const b = repo();
+  assert.equal(b.git('status', '--porcelain'), '');
+  assert.equal(b.git('branch', '--show-current'), 'main');
+  assert.equal(b.git('config', 'user.email'), 'test@example.com');
+  assert.equal(b.git('config', 'user.name'), 'test');
+  assert.equal(b.git('config', 'commit.gpgsign'), 'false');
+  assert.equal(b.git('rev-list', '--parents', '-n', '1', b.base), b.base);
+  assert.equal(b.git('show', `${b.base}:docs/ALLOWED.md`), ALLOWED.trim());
+  assert.deepEqual(b.grep('https://isolated.example.net/in'), []);
+
+  const allowed = 'The app lives at https://app.example.app; see app.example.app for the hosted build.\n';
+  b.write('docs/ALLOWED.md', allowed);
+  const passed = b.check(b.commit('allowed edit'));
+  assert.equal(passed.status, 0, passed.stderr);
+  assert.match(passed.stdout, /1 modified path/);
+  b.write('docs/ALLOWED.md', `${allowed}See https://isolated.example.net/in.\n`);
+  const refused = b.check(b.commit('unknown host'));
+  assert.equal(refused.status, 1, refused.stdout);
+  assert.match(refused.stderr, /https:\/\/isolated\.example\.net\/in is added/);
+});
+
 test('the check passes a diff confined to the may-edit column that reuses a known host', () => {
   const r = repo();
   r.write('docs/ALLOWED.md', 'The app lives at https://app.example.app; see app.example.app for the hosted build.\n');
-  const result = r.check(r.commit('allowed edit'));
+  const head = r.commit('allowed edit');
+  const result = checkCliParity(r, head);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /1 modified path/);
 });
@@ -220,7 +261,8 @@ test('the check passes a diff confined to the may-edit column that reuses a know
 test('the check fails a diff that touches a path outside the may-edit column, naming the path', () => {
   const r = repo();
   r.write('src/code.js', 'export const x = 2;\n');
-  const result = r.check(r.commit('code edit'));
+  const head = r.commit('code edit');
+  const result = checkCliParity(r, head);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /src\/code\.js/);
 });
@@ -293,9 +335,19 @@ test('the check rejects missing or unresolvable commits instead of reporting a c
   const r = repo();
   const noArgs = spawnSync('node', [SCRIPT], { cwd: dirname(SCRIPT), encoding: 'utf8' });
   assert.equal(noArgs.status, 2);
-  const bad = r.check('0000000000000000000000000000000000000000');
+  const head = '0000000000000000000000000000000000000000';
+  const bad = checkCliParity(r, head);
   assert.notEqual(bad.status, 0);
   assert.match(bad.stderr, /0000000/);
+});
+
+test('the evaluator fails loudly on a malformed base manual', () => {
+  const r = repo({ documents: { 'docs/DOC-SWEEP.md': '# manual without a scope table\n' } });
+  r.write('docs/ALLOWED.md', 'The app lives at https://app.example.app, and that is all.\n');
+  const head = r.commit('allowed edit');
+  assert.throws(() => r.check(head), {
+    message: 'docs/DOC-SWEEP.md has no scope table headed `| May edit | Never edit |`',
+  });
 });
 
 // The end-to-end rows, written from the attacker's side rather than the implementation's: a week of

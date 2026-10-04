@@ -854,6 +854,11 @@ describe("repository verification command", () => {
     ["sweep scope entry", ["scripts/sweep-scope-check.mjs"], "baseline"],
     ["sweep scope corpus", ["scripts/lib/sweep-scope-corpus.mjs"], "baseline"],
     ["sweep scope library", ["scripts/lib/sweep-scope.mjs"], "baseline"],
+    [
+      "sweep scope evaluator",
+      ["scripts/lib/sweep-scope-evaluate.mjs"],
+      "baseline",
+    ],
     ["sweep scope tests", ["scripts/lib/sweep-scope.test.mjs"], "baseline"],
     [
       "sweep workflow contract",

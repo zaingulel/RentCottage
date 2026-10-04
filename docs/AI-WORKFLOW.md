@@ -171,6 +171,14 @@ flowchart TD
 
 The diagram is the whole path from a card to a merged commit. In words:
 
+- **Intake.** Fetching main and safely selecting current verifier code come first. The manual's instruction-reuse
+  rule avoids rereading content whose Git identity and full active context are verified. Independent board, local,
+  pull-request, sync and tooling reads then overlap; their results and failures are collected before reconciliation.
+  Pull-request summaries identify which continuation bodies matter, and issue details serve selection and planning
+  without duplicate fields. Large output is captured once and read completely in bounded portions. Checkout movement
+  or conflicting facts invalidate affected evidence. These reduce repeated input and serial waits while retaining
+  freshness, complete recommendations, claims, triage authority and both owner gates; they establish no total
+  agent-latency guarantee.
 - **Isolation.** Every issue gets its own git worktree on its own branch, with the session started inside it. On plain
   Claude Code (`git worktree add`) and on Herdr it lives in the repository's gitignored `.claude/worktrees/`; on Codex
   it is the Codex-managed worktree or a sibling worktree beside the repository. A runtime's own subagent worktree is
