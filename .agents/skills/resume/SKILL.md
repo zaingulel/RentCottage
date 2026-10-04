@@ -274,8 +274,9 @@ is not run and the job takes the pull request route below. Otherwise run `script
 <head>`; exit 0 means the whole change qualifies for the direct route, any other exit means the pull request route
 below.
 On the direct route: settle the convergence checks exactly as step 1 names on `<head>`, so their receipts carry
-`head=<head>`, and those receipts replace any the approved body quoted for an earlier head; nothing else in that
-body changes. Then squash the job with `git reset --soft <origin-main>` and `git commit` into one commit whose
+`head=<head>` except a browser receipt reused under step 1, and those receipts replace any the approved body quoted
+for an earlier head; disclose any reused receipt's head and documentation-only difference in that body, and nothing
+else in that body changes. Then squash the job with `git reset --soft <origin-main>` and `git commit` into one commit whose
 message is the pull-request title, a blank line, the same filled body shown to the owner with its review line and
 receipts so replaced, a blank line, `Closes #<issue>`, and the attribution lines. Before pushing, confirm `git
 rev-parse HEAD^{tree}` equals `git rev-parse <head>^{tree}`, so the pushed commit carries exactly the content the
@@ -288,8 +289,15 @@ request route, never a workaround.
    worklog receipt for the same command when that receipt reads `exit 0`, its `head=` is exactly the current
    `git rev-parse HEAD`, its `tree=` is `clean`, and `git status --porcelain --untracked-files=normal` still prints
    nothing; otherwise run the check again. A no-op rebase leaves `HEAD` unchanged and keeps the evidence; a rebase
-   onto a moved `main` changes `HEAD` and needs the rerun, as does a dirty tree or a missing, failed or `unknown`
-   receipt. The pre-push hook still runs its own gates on every push. Then push;
+   onto a moved `main` changes `HEAD` and normally needs the rerun, as does a dirty tree or a missing, failed or `unknown`
+   receipt. Exception: the full browser suite (`npm test`) may reuse its latest same-command receipt from a different
+   known head only when it reads `exit 0` and `tree=clean`, the current worktree is still clean, the repository has an
+   executable `scripts/gates/pre-push-main`, and a successful complete
+   `git diff --name-only --no-renames <receipt-head> <current-head>` lists only documentation paths under that gate's
+   existing path definition, excluding its setting-only seat and manifest exceptions; missing commits, unavailable
+   classification, or any other changed path require the full rerun, the fast checks still require the current head,
+   and the pull request body names the reused receipt's head and the documentation-only difference. The pre-push hook
+   still runs its own gates on every push. Then push;
    `gh pr create --draft --body-file <body>` with `Closes #<issue>` in the body. Greptile is requested only for the
    sign-off tier in section 6; the other tiers go straight to step 3. Move the card to `In review`.
 2. Read the current allowance in the signed-in built-in browser at

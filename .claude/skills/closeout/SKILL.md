@@ -16,8 +16,9 @@ process list; nothing is inferred from chat.
    took the direct route there is no pull request: confirm instead with `git fetch origin main` and
    `git merge-base --is-ancestor <pushed sha> origin/main`, check the review line in the pushed commit's
    message with `git log -1 --format=%B <pushed sha>`, never in chat, and confirm `git rev-parse <pushed
-   sha>^{tree}` equals the tree of the `head=` its message's convergence receipts name; a mismatch is a workflow
-   failure named in the report.
+   sha>^{tree}` equals the tree of the `head=` its message's current-head convergence receipts name; an older browser
+   receipt qualifies only with the head and documentation-only difference disclosed under `resume` section 8 step 1.
+   A mismatch is a workflow failure named in the report.
 2. **Issues.** `Closes #` in the body closed them at merge; confirm with `gh issue view <n> --json state`. An
    issue the pull request resolved but did not name is reported to the owner, never closed unasked: only the
    issues the approved body names are within this run's authorisation.

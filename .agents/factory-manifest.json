@@ -3,11 +3,11 @@
   "adopters": [
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "5b75146ca95d6cafe6adadb8b3ebbc44287dcd66",
+  "syncedFrom": "277e5dfe7a70b518db8607e16a836709ec4505b8",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "54a72be82087eba3acbd970e1691377b3e652cc175c58979e76ff8a1ce85a72a"
+      "sha256": "168c1a7f004b6dc36add235b0c332a5669d76d04f690d3ef835f286054652995"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "2b48d150d2ab9c85b3c1475d8ca7e0f2515058e8da50ccd3e8e40944e339b5e8"
+      "sha256": "791b5bea173926a4454fa3a851fb786811506e30d959318f0a173689ec4e7417"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -331,7 +331,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "54a72be82087eba3acbd970e1691377b3e652cc175c58979e76ff8a1ce85a72a"
+      "sha256": "168c1a7f004b6dc36add235b0c332a5669d76d04f690d3ef835f286054652995"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -443,7 +443,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "2b48d150d2ab9c85b3c1475d8ca7e0f2515058e8da50ccd3e8e40944e339b5e8"
+      "sha256": "791b5bea173926a4454fa3a851fb786811506e30d959318f0a173689ec4e7417"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -804,7 +804,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "54169c8e9867baf009b5d1c5936bec2085858023c0d624500b56dce904bcb7fe"
+      "sha256": "6ead8496b6b777eead139422ad50cef1b347c6f567dc0089dfb16057857c94c9"
     },
     {
       "path": "scripts/merge-watch.mjs",
