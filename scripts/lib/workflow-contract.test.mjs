@@ -272,16 +272,6 @@ test('card size is judged by the owner and epics are never picked', () => {
   );
   assert.match(
     resume,
-    /parent: \\\(if \.parent then "#\\\(\.parent\.number\)" else "none" end\); open blockers: /,
-    'the work-pick read must print each card\'s parent and open blockers',
-  );
-  assert.match(
-    resume,
-    /\[\.blockedBy\.nodes\[\] \| select\(\.state == "OPEN"\) \| "#\\\(\.number\)"\]/,
-    'the work-pick read must keep only open blockers',
-  );
-  assert.match(
-    resume,
     /never split again on a session's own judgment; only the owner starts another split/,
     'resume must leave any further split of a split card to the owner',
   );

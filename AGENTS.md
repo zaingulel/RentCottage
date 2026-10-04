@@ -16,11 +16,21 @@ they are never edited in place, an update replaces the vendored source and every
 invokes any skill as `$<name>`. The tracker and triage vocabulary those copies expect to have been provided is
 [docs/ISSUE-TRACKER.md](docs/ISSUE-TRACKER.md). The root checkout is the integration checkout: it stays on `main`,
 and nothing is edited, branched, or committed there; the git guard refuses the branching and committing half. Resume
-fetches before intake, reads the fetched manual and `resume`/`closeout` instructions, and uses closeout's safe
-procedure to advance the actual clean idle `main` checkout before board evidence or decisions. A topic, dirty,
-active, divergent or uncertain checkout is preserved.
+fetches before intake, loads the fetched manual and `resume`/`closeout` instructions under the reuse rule below,
+and uses closeout's safe procedure to advance the actual clean idle `main` checkout before board evidence or
+decisions. A topic, dirty, active, divergent or uncertain checkout is preserved.
 Each job gets one worktree and the session starts inside it, never a worktree inside another job worktree; the
 `resume` skill says where it lives on each runtime.
+
+**Instruction reuse.** Record the fetched target commit and required instruction paths. Reuse previously read
+text only when its full content remains in active context and its exact read Git revision is known: both
+`git rev-parse <read-revision>:<path>` and `git rev-parse <target>:<path>` must succeed and return identical blob
+IDs. Otherwise read the required content from the recorded target with `git show <target>:<path>`. Missing
+objects, failed commands, or failed or truncated content reads are unavailable evidence, never permission to
+reuse. Autoloaded text without verified read provenance, summaries and dirty disk content establish no identity.
+Retain provenance only in this session, with no cache or tracked state; apply the rule whenever the target
+changes, including the post-selection fetch. Instruction identity does not waive verifier target, cleanliness
+or ownership checks.
 
 The session that talks to the owner coordinates: it plans the cards that need no architect, hands every edit to a
 builder seat, settles reviews, and delivers; it never builds. Residual judgment that would make a handoff
@@ -127,7 +137,10 @@ disables automatic reviews so marking ready starts CI without requesting another
 
 Visual work is complete only after the changed interaction has been driven and a current screenshot displayed
 inline in chat; push authorisation waits for that image. Drive visual work as the Conventions table's `visual
-verification` row says.
+verification` row says. Use representative views to demonstrate the changed interaction and its relevant visual
+risks, with at most ten screenshots total per pull request and fewer when sufficient. Reuse captures from required
+verification; do not rerun tests solely to collect screenshots. Visual verification coverage does not require an
+image for every screen, state, language or viewport.
 
 ## Publication and machinery
 

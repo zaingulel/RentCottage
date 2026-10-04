@@ -1,11 +1,10 @@
-// merge-watch.test.mjs — the merge watch's exit contract and required-check rules, through the fake-gh seam.
+// merge-watch.test.mjs: the merge watch's exit contract and required-check rules, through the fake-gh seam.
 //
-// Polling scenarios run the command's `main` in-process with the real `runGh`, so every call reaches the fake `gh`
-// through `BOARD_TOOLKIT_GH`, and a recording sleep that returns at once; the argument contract and single-pass
-// stops also run the command as a subprocess.
+// Polling scenarios run `main` with an in-memory ghExec and a recording sleep that returns at once. The argument
+// contract and terminal success/failure cases run the real command as a subprocess with the same fake replies.
 //
-// Recurring cost: one Node process per faked `gh` call, a handful per scenario, and no network. Removal condition:
-// retire with scripts/merge-watch.mjs.
+// Recurring cost: no subprocess or disk state for polling; CLI wire proofs start Node for the command and each
+// faked gh call, with no network. Removal condition: retire with scripts/merge-watch.mjs.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -20,13 +19,42 @@ import { main } from '../merge-watch.mjs';
 const CLI = fileURLToPath(new URL('../merge-watch.mjs', import.meta.url));
 const USAGE = 'usage: node scripts/merge-watch.mjs <pull-request-number>';
 
-// The fake answers from the scenario directory named by MERGE_WATCH_SCENARIO and logs every call's argv as one JSON
-// line. Each loop pass's `pr view` advances to the next step and its `pr checks` answers from the same step; the last
-// step repeats. A reply is [exit code, body]: a zero-code body is the JSON gh exports, printed to stdout, and a
-// non-zero-code body is gh's error, printed to stderr. The rules reply holds one JSON page per array element: with
-// `--paginate` gh fetches every page and, without `--slurp`, prints them back to back; without `--paginate` the API
-// answers page one only. It refuses (exit 99) any call without the pull request number 7, the flags the command
-// relies on, gh's own `{owner}/{repo}` placeholders, or the base branch `trunk`, and it applies no `--jq`.
+// Each state-view call advances the scenario; checks use that step and the last step repeats. A reply is
+// [exit code, body]. Rules preserve gh's pagination/slurp behavior, and both paths refuse missing arguments.
+function scenarioReply(args, scenario) {
+  const refuse = (why) => [99, 'fake gh: ' + why + ': ' + args.join(' ')];
+  const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+  if (args.includes('--jq')) return refuse('the fake applies no --jq');
+  const step = (n) => scenario.steps[Math.min(n, scenario.steps.length) - 1];
+  if (args[0] === 'pr') {
+    if (!args.includes('7')) return refuse('<pr> was not passed');
+    if (args[1] === 'view' && flag('--json') === 'baseRefName') return scenario.base;
+    if (args[1] === 'view' && flag('--json') === 'state,mergeStateStatus') {
+      scenario.n += 1;
+      return step(scenario.n).view;
+    }
+    if (args[1] === 'checks' && args.includes('--required') && flag('--json') === 'name,bucket') {
+      return step(scenario.n).checks;
+    }
+    return refuse('unexpected pr call');
+  }
+  if (args[0] === 'api') {
+    if (args.includes('rate_limit')) return [0, JSON.stringify({ resources: { graphql: { limit: 5000, remaining: 5000, reset: 0 } } })];
+    const path = args.find((arg) => arg.startsWith('repos/'));
+    if (!path || !path.startsWith('repos/{owner}/{repo}/')) return refuse('api path without repos/{owner}/{repo}/');
+    if (path === 'repos/{owner}/{repo}/branches/trunk') return scenario.branch;
+    if (path === 'repos/{owner}/{repo}/rules/branches/trunk') {
+      const [code, pages] = scenario.rules;
+      if (code !== 0) return scenario.rules;
+      if (!args.includes('--paginate')) return [0, JSON.stringify(pages[0])];
+      return [0, args.includes('--slurp') ? JSON.stringify(pages) : pages.map((page) => JSON.stringify(page)).join('')];
+    }
+    return refuse('the base branch was not substituted');
+  }
+  return refuse('unexpected gh call');
+}
+
+// The CLI shim logs argv and persists the read counter across separate gh processes.
 const fakeGh = installFakeGh('merge-watch-', `
 const { appendFileSync, readFileSync, writeFileSync } = require('node:fs');
 const { join } = require('node:path');
@@ -34,41 +62,11 @@ const dir = process.env.MERGE_WATCH_SCENARIO;
 const args = process.argv.slice(2);
 appendFileSync(join(dir, 'calls'), JSON.stringify(args) + '\\n');
 const scenario = JSON.parse(readFileSync(join(dir, 'scenario.json'), 'utf8'));
-const refuse = (why) => { process.stderr.write('fake gh: ' + why + ': ' + args.join(' ') + '\\n'); process.exit(99); };
-const answer = ([code, body]) => {
-  if (code === 0) process.stdout.write(body + '\\n'); else process.stderr.write(body + '\\n');
-  process.exit(code);
-};
-const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-if (args.includes('--jq')) refuse('the fake applies no --jq');
-const step = (n) => scenario.steps[Math.min(n, scenario.steps.length) - 1];
-if (args[0] === 'pr') {
-  if (!args.includes('7')) refuse('<pr> was not passed');
-  if (args[1] === 'view' && flag('--json') === 'baseRefName') answer(scenario.base);
-  if (args[1] === 'view' && flag('--json') === 'state,mergeStateStatus') {
-    const n = Number(readFileSync(join(dir, 'n'), 'utf8')) + 1;
-    writeFileSync(join(dir, 'n'), String(n));
-    answer(step(n).view);
-  }
-  if (args[1] === 'checks' && args.includes('--required') && flag('--json') === 'name,bucket') {
-    answer(step(Number(readFileSync(join(dir, 'n'), 'utf8'))).checks);
-  }
-  refuse('unexpected pr call');
-}
-if (args[0] === 'api') {
-  if (args.includes('rate_limit')) answer([0, JSON.stringify({ resources: { graphql: { limit: 5000, remaining: 5000, reset: 0 } } })]);
-  const path = args.find((arg) => arg.startsWith('repos/'));
-  if (!path || !path.startsWith('repos/{owner}/{repo}/')) refuse('api path without repos/{owner}/{repo}/');
-  if (path === 'repos/{owner}/{repo}/branches/trunk') answer(scenario.branch);
-  if (path === 'repos/{owner}/{repo}/rules/branches/trunk') {
-    const [code, pages] = scenario.rules;
-    if (code !== 0) answer(scenario.rules);
-    if (!args.includes('--paginate')) answer([0, JSON.stringify(pages[0])]);
-    answer([0, args.includes('--slurp') ? JSON.stringify(pages) : pages.map((page) => JSON.stringify(page)).join('')]);
-  }
-  refuse('the base branch was not substituted');
-}
-refuse('unexpected gh call');
+scenario.n = Number(readFileSync(join(dir, 'n'), 'utf8'));
+const [code, body] = (${scenarioReply.toString()})(args, scenario);
+writeFileSync(join(dir, 'n'), String(scenario.n));
+if (code === 0) process.stdout.write(body + '\\n'); else process.stderr.write(body + '\\n');
+process.exit(code);
 `);
 after(() => fakeGh.cleanup());
 
@@ -82,10 +80,10 @@ const MERGED = { view: view('MERGED', 'CLEAN'), checks: checks({ test: 'pass', '
 // split across the two sources so dropping either read shows. The rules come as two pages, the ruleset's checks on
 // page two so reading page one alone shows; `extraRules` joins page two. `branch` or `rules` replaces that read's
 // reply, and `base` the base-branch read's.
-function writeScenario(steps, { classic = ['test'], ruled = ['sweep-scope'], extraRules = [], base, branch, rules } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'merge-watch-scenario-'));
-  writeFileSync(join(dir, 'scenario.json'), JSON.stringify({
+function createScenario(steps, { classic = ['test'], ruled = ['sweep-scope'], extraRules = [], base, branch, rules } = {}) {
+  return {
     steps,
+    n: 0,
     base: base ?? [0, JSON.stringify({ baseRefName: 'trunk' })],
     branch: branch ?? [0, JSON.stringify({ protection: { required_status_checks: { contexts: classic } } })],
     rules: rules ?? [0, [
@@ -95,7 +93,12 @@ function writeScenario(steps, { classic = ['test'], ruled = ['sweep-scope'], ext
         ...extraRules,
       ],
     ]],
-  }));
+  };
+}
+
+function writeScenario(steps, options) {
+  const dir = mkdtempSync(join(tmpdir(), 'merge-watch-scenario-'));
+  writeFileSync(join(dir, 'scenario.json'), JSON.stringify(createScenario(steps, options)));
   writeFileSync(join(dir, 'n'), '0');
   writeFileSync(join(dir, 'calls'), '');
   return dir;
@@ -126,9 +129,14 @@ function assertReadOnly(calls) {
 
 // Runs the command in-process against the scenario; a sleep past the twentieth means the watch never stopped.
 async function watch(steps, options) {
-  const dir = writeScenario(steps, options);
-  const env = fakeGh.env({ MERGE_WATCH_SCENARIO: dir });
-  const saved = { BOARD_TOOLKIT_GH: process.env.BOARD_TOOLKIT_GH, MERGE_WATCH_SCENARIO: process.env.MERGE_WATCH_SCENARIO };
+  const scenario = createScenario(steps, options);
+  const calls = [];
+  const ghExec = (args) => {
+    calls.push(args);
+    const [code, body] = scenarioReply(args, scenario);
+    if (code === 0) return body + '\n';
+    throw Object.assign(new Error(body), { status: code, stdout: '', stderr: body + '\n' });
+  };
   const lines = [];
   const sleeps = [];
   const output = { log: (line) => lines.push(line), error: (line) => lines.push(line) };
@@ -136,18 +144,7 @@ async function watch(steps, options) {
     sleeps.push(ms);
     if (sleeps.length > 20) throw new Error('the watch did not stop');
   };
-  let status;
-  try {
-    Object.assign(process.env, { BOARD_TOOLKIT_GH: env.BOARD_TOOLKIT_GH, MERGE_WATCH_SCENARIO: dir });
-    status = await main(['7'], { output, sleep });
-  } finally {
-    for (const [name, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-  }
-  const calls = readCalls(dir);
-  rmSync(dir, { recursive: true, force: true });
+  const status = await main(['7'], { ghExec, output, sleep });
   assertReadOnly(calls);
   return { status, lines, last: lines.at(-1), sleeps, calls, reads: calls.filter((call) => callKind(call) === 'view').length };
 }
@@ -187,6 +184,7 @@ test('merge-watch as a process exits 0 printing merged last, and 1 printing the 
   const auth = runCli(['7'], [{ view: [4, 'To get started with GitHub CLI, please run:  gh auth login'], checks: checks({}) }]);
   assert.equal(auth.status, 1, auth.stderr);
   assert.equal(auth.lastOut, 'To get started with GitHub CLI, please run:  gh auth login');
+  assert.equal(callKind(auth.calls.at(-1)), 'view', 'the command must make no read after the failing view, the rate-limit probe included');
 });
 
 test('the watch exits 1 the moment gh itself fails, with the gh error as its last line', async () => {

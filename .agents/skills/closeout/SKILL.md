@@ -112,8 +112,8 @@ creates; it does not authorise pushes or any other branch or worktree removal. A
 independent cleanup or work selection.
 
 1. Use the caller's just-fetched recorded `origin/main` target when available; otherwise fetch with
-   `git fetch --no-prune origin main` and record the fetched commit. Read this procedure, `AGENTS.md`, and `resume`
-   from that commit with `git show <recorded-origin-main>:<path>` before applying it. A failed fetch leaves
+   `git fetch --no-prune origin main` and record the fetched commit. Load this procedure, `AGENTS.md`, and `resume`
+   from that commit under `AGENTS.md`'s Instruction reuse rule before applying it. A failed fetch leaves
    freshness unavailable: preserve local state and stop before board operations.
 2. Record `refs/heads/main`, inspect `git worktree list --porcelain` and runtime ownership, and require
    `git merge-base --is-ancestor <recorded-local-main> <recorded-origin-main>`. If local `main` is missing, ahead
@@ -134,7 +134,8 @@ independent cleanup or work selection.
    unavailable, uncertain, collision-bearing, ahead, divergent, missing, or an old topic root — select a verifier
    checkout at the recorded target: use a usable existing isolated checkout first, otherwise create a fresh
    verifier-only worktree without duplicating a job. If none is available, report board freshness unavailable and
-   do not execute stale board operations. Reread the refreshed files from disk before board checks or decisions.
+   do not execute stale board operations. Verify the selected verifier's `HEAD` and cleanliness before using its
+   code for board checks or decisions.
    During resume, a verifier-only worktree this run created is removed at the end of the same run, after board
    operations, with `git worktree remove <path>`. During closeout, that verifier is retained until closeout step 5's
    job cleanup has finished, then removed in the same run with `git worktree remove <path>`. A reused existing
