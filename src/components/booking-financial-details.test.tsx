@@ -358,39 +358,54 @@ describe("administrator payout investigation", () => {
     );
   });
   it.each([
-    ["en", "Sep 12, 2026, 3:00 PM"],
-    ["ar", "12\u200f/09\u200f/2026، 3:00 م"],
-    ["ckb", "٢٠٢٦ ئەیلوول ١٢ ٣:٠٠ د.ن"],
+    ["en", "Sep 12, 2026, 3:00 PM", "IQD 90,000"],
+    ["ar", "12\u200f/09\u200f/2026، 3:00 م", "IQD 90,000"],
+    ["ckb", "٢٠٢٦ ئەیلوول ١٢ ٣:٠٠ د.ن", "IQD ٩٠٬٠٠٠"],
   ] as const)(
-    "shows the settlement request at localized Iraq time in %s",
-    (locale, requestedTime) => {
+    "isolates payout settlement administrator and date in %s",
+    (locale, requestedTime, ownerShare) => {
       const actorUserId = "10000000-0000-4000-8000-000000002279";
-      render(
-        <BookingFinancialDetails
-          locale={locale}
-          view={{
-            ...financial,
-            actorRole: "platform_administrator",
-            payout: {
-              ...payout,
-              settlement: {
-                id: financial.bookingRequestId,
-                commandId: financial.bookingRequestId,
-                amountFils: 90000000,
-                state: "processing",
-                retrySafe: false,
-                actorUserId,
-                reason: "Approved settlement",
-                requestedAt: "2026-09-12T12:00:00+00:00",
-                receipt: null,
+      const { container } = render(
+        <div dir={locale === "en" ? "ltr" : "rtl"}>
+          <BookingFinancialDetails
+            locale={locale}
+            view={{
+              ...financial,
+              actorRole: "platform_administrator",
+              payout: {
+                ...payout,
+                settlement: {
+                  id: financial.bookingRequestId,
+                  commandId: financial.bookingRequestId,
+                  amountFils: 90000000,
+                  state: "processing",
+                  retrySafe: false,
+                  actorUserId,
+                  reason: "Approved settlement",
+                  requestedAt: "2026-09-12T12:00:00+00:00",
+                  receipt: null,
+                },
               },
-            },
-          }}
-        />,
+            }}
+          />
+        </div>,
       );
-      expect(
-        screen.getByText(`${actorUserId} · ${requestedTime}`),
-      ).toBeInTheDocument();
+      const metadata = Array.from(container.querySelectorAll("p")).find(
+        (paragraph) => paragraph.textContent === `${actorUserId} · ${requestedTime}`,
+      );
+      expect(metadata).toBeInTheDocument();
+      const values = Array.from(metadata!.querySelectorAll("bdi"));
+      expect(values.map((value) => value.textContent)).toEqual([
+        actorUserId,
+        requestedTime,
+      ]);
+      for (const value of values) {
+        expect(value.getAttribute("dir") ?? "auto").toBe("auto");
+      }
+      expect(screen.getByTestId("owner-after-completed")).toHaveTextContent(
+        ownerShare,
+      );
+      expect(metadata!.nextElementSibling).toHaveTextContent(ownerShare);
     },
   );
   it("shows verified recovery amounts and the explicit absence of an owner debit to administrators", () => {
