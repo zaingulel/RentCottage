@@ -1,12 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import type { CottageDiscoveryProfileResult } from "@/cottage-discovery/supabase-cottage-discovery";
-import { formatIqd, formatServiceDay } from "@/i18n/format";
 import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
-import { messagingMessages } from "@/i18n/messaging-messages";
 import { customerReviewMessages } from "@/i18n/customer-review-messages";
+import { CottageBookingPeriodPicker } from "./cottage-booking-period-picker";
 
 const copy = {
   ar: {
@@ -18,12 +18,6 @@ const copy = {
     rooms: "غرف النوم والحمامات",
     amenities: "المرافق",
     rules: "قواعد البيت",
-    period: "الفترة المطلوبة",
-    total: "السعر الإجمالي",
-    fullDay: "اليوم الكامل",
-    closed: "غير متاح",
-    noPrice: "السعر غير متاح",
-    quote: "عرض السعر الدقيق",
   },
   ckb: {
     back: "گەڕانەوە بۆ ئەنجامەکان",
@@ -34,12 +28,6 @@ const copy = {
     rooms: "ژووری نوستن و حەمام",
     amenities: "خزمەتگوزارییەکان",
     rules: "یاساکانی کۆتێج",
-    period: "ماوە داواکراوەکە",
-    total: "کۆی نرخ",
-    fullDay: "پاکێجی ڕۆژی تەواو",
-    closed: "بەردەست نییە",
-    noPrice: "نرخ بەردەست نییە",
-    quote: "پێشنیاری نرخی ورد",
   },
   en: {
     back: "Back to results",
@@ -50,12 +38,6 @@ const copy = {
     rooms: "Bedrooms and bathrooms",
     amenities: "Amenities",
     rules: "House Rules",
-    period: "Requested Booking Period",
-    total: "Total price",
-    fullDay: "Full-day bundle",
-    closed: "Unavailable",
-    noPrice: "Price unavailable",
-    quote: "Get exact quote",
   },
 } as const;
 
@@ -63,13 +45,15 @@ export function PublicCottageProfileView({
   locale,
   result,
   queryString,
+  query,
 }: {
   locale: Locale;
   result: CottageDiscoveryProfileResult;
   queryString: string;
+  query: CottageDiscoveryQuery | null;
 }) {
   const messages = copy[locale];
-  if (result.status !== "loaded")
+  if (result.status !== "loaded" || query === null)
     return (
       <main className="results-page">
         <header className="results-header">
@@ -150,50 +134,12 @@ export function PublicCottageProfileView({
           </section>
         </div>
         <aside className="booking-summary">
-          <h2>{messages.period}</h2>
-          <ul>
-            {cottage.selectedInventory.map((unit) => (
-              <li
-                key={`${unit.serviceDay}-${unit.kind}-${unit.position ?? "full"}`}
-              >
-                <span>
-                  {formatServiceDay(unit.serviceDay, locale, { weekday: true })}{" "}
-                  · {unit.kind === "full-day" ? messages.fullDay : unit.name}
-                  {unit.available ? "" : ` · ${messages.closed}`}
-                </span>
-                <span>
-                  <span>
-                    {unit.startTime}–{unit.endTime}
-                  </span>
-                  <b>
-                    {unit.priceIqd === null
-                      ? messages.noPrice
-                      : formatIqd(unit.priceIqd, locale)}
-                  </b>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="booking-total">
-            <span>{messages.total}</span>
-            <strong>
-              {cottage.totalPriceIqd === null
-                ? messages.noPrice
-                : formatIqd(cottage.totalPriceIqd, locale)}
-            </strong>
-          </p>
-          <Link
-            className="action-link action-primary action-full"
-            href={`/${locale}/request/${cottage.slug}?${queryString}`}
-          >
-            {messages.quote}
-          </Link>
-          <Link
-            className="action-link action-secondary action-full"
-            href={`/${locale}/messages?cottage=${cottage.slug}&${queryString}`}
-          >
-            {messagingMessages[locale].messageCottage}
-          </Link>
+          <CottageBookingPeriodPicker
+            locale={locale}
+            slug={cottage.slug}
+            query={query}
+            inventory={cottage.inventory}
+          />
         </aside>
       </div>
     </main>

@@ -32,10 +32,20 @@ function chooseDates(
 }
 
 describe("CottageDiscoveryForm booking period picker", () => {
-  beforeEach(() => push.mockClear());
+  beforeEach(() => {
+    push.mockClear();
+  });
 
   it("Sorani discovery distinguishes an approximate area and a full-day bundle", () => {
     render(<CottageDiscoveryForm locale="ckb" facets={facets} />);
+    fireEvent.click(
+      screen.getByText(
+        /Booking Period filters|مرشحات فترة الحجز|پاڵاوتەکانی ماوەی حجز/,
+      ),
+    );
+    expect(
+      screen.getByText("پاڵاوتەکانی ماوەی حجز (ئارەزوومەندانە)"),
+    ).toBeVisible();
     expect(
       screen.getByRole("combobox", {
         name: "ناوچەی نزیکەیی (ئارەزوومەندانە)",
@@ -53,6 +63,11 @@ describe("CottageDiscoveryForm booking period picker", () => {
   it("shows default chips with the helper before a valid range exists", async () => {
     const user = userEvent.setup();
     render(<CottageDiscoveryForm locale="en" facets={facets} />);
+    fireEvent.click(
+      screen.getByText(
+        /Booking Period filters|مرشحات فترة الحجز|پاڵاوتەکانی ماوەی حجز/,
+      ),
+    );
     const picker = screen.getByRole("group", {
       name: "Booking Period for each Service Day",
     });
@@ -83,6 +98,11 @@ describe("CottageDiscoveryForm booking period picker", () => {
   it("applies the default set to every Service Day and submits it materialised", async () => {
     const user = userEvent.setup();
     render(<CottageDiscoveryForm locale="en" facets={facets} />);
+    fireEvent.click(
+      screen.getByText(
+        /Booking Period filters|مرشحات فترة الحجز|پاڵاوتەکانی ماوەی حجز/,
+      ),
+    );
     await user.click(screen.getByRole("button", { name: "Shift 1" }));
     await user.click(screen.getByRole("button", { name: "Shift 3" }));
     chooseDates(dateLabels.en, "2099-01-01", "2099-01-03");
@@ -122,6 +142,11 @@ describe("CottageDiscoveryForm booking period picker", () => {
   it("lets a touched day stop following the defaults while the others keep them", async () => {
     const user = userEvent.setup();
     render(<CottageDiscoveryForm locale="en" facets={facets} />);
+    fireEvent.click(
+      screen.getByText(
+        /Booking Period filters|مرشحات فترة الحجز|پاڵاوتەکانی ماوەی حجز/,
+      ),
+    );
     await user.click(screen.getByRole("button", { name: "Shift 2" }));
     chooseDates(dateLabels.en, "2099-01-01", "2099-01-02");
     const first = screen.getByRole("group", { name: "Thu, Jan 1" });
@@ -150,10 +175,18 @@ describe("CottageDiscoveryForm booking period picker", () => {
     );
   });
 
-  it("still blocks submission while any Service Day has an empty effective set", async () => {
+  it("submits dates alone and optional partial-day filters without choosing a Booking Period", async () => {
     const user = userEvent.setup();
     render(<CottageDiscoveryForm locale="en" facets={facets} />);
     chooseDates(dateLabels.en, "2099-01-01", "2099-01-02");
+    await user.click(
+      screen.getByRole("button", { name: "Search available cottages" }),
+    );
+    expect(push).toHaveBeenLastCalledWith(
+      "/en/results?from=2099-01-01&to=2099-01-02&guests=4",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    await user.click(screen.getByText("Booking Period filters (optional)"));
     await user.click(
       within(screen.getByRole("group", { name: "Thu, Jan 1" })).getByRole(
         "button",
@@ -163,25 +196,52 @@ describe("CottageDiscoveryForm booking period picker", () => {
     await user.click(
       screen.getByRole("button", { name: "Search available cottages" }),
     );
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Choose at least one shift for every Service Day.",
+    expect(push).toHaveBeenLastCalledWith(
+      "/en/results?from=2099-01-01&to=2099-01-02&selection=2099-01-01%3Ashift%3A1&guests=4",
     );
-    expect(push).not.toHaveBeenCalled();
-    await user.click(
-      within(screen.getByRole("group", { name: "Fri, Jan 2" })).getByRole(
-        "button",
-        { name: "Shift 1" },
-      ),
-    );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("labels Service Days in the active locale", () => {
     render(<CottageDiscoveryForm locale="ar" facets={facets} />);
+    fireEvent.click(
+      screen.getByText(
+        /Booking Period filters|مرشحات فترة الحجز|پاڵاوتەکانی ماوەی حجز/,
+      ),
+    );
     chooseDates(dateLabels.ar, "2099-01-01", "2099-01-01");
     expect(
       screen.getByRole("group", { name: "الخميس، 1 كانون الثاني" }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "يوم كامل" })).toBeVisible();
+  });
+  it.each([
+    ["en", "Search available cottages"],
+    ["ar", "ابحث عن البيوت المتاحة"],
+    ["ckb", "گەڕان بۆ کۆتێجی بەردەست"],
+  ] as const)("submits a day-only search in %s", async (locale, submit) => {
+    const user = userEvent.setup();
+    render(<CottageDiscoveryForm locale={locale} facets={facets} />);
+    chooseDates(dateLabels[locale], "2099-01-01", "2099-01-02");
+    await user.click(screen.getByRole("button", { name: submit }));
+    expect(push).toHaveBeenCalledWith(
+      `/${locale}/results?from=2099-01-01&to=2099-01-02&guests=4`,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("rejects an oversized date range through the query parser before navigation", async () => {
+    const user = userEvent.setup();
+    render(<CottageDiscoveryForm locale="en" facets={facets} />);
+    const submitButton = screen.getByRole("button", {
+      name: "Search available cottages",
+    });
+    chooseDates(dateLabels.en, "2099-01-01", "2100-02-05");
+    await user.click(submitButton);
+    expect(
+      screen.getByText(
+        "Check your dates and guest count. Choose a range of at most 400 days.",
+      ),
+    ).toHaveAttribute("role", "alert");
+    expect(push).not.toHaveBeenCalled();
   });
 });

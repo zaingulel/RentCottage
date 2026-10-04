@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import type { CottageDiscoveryResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import { formatIqd, formatServiceDay } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
@@ -9,33 +10,49 @@ import { ActionLink } from "./interaction-controls";
 const copy = {
   ar: {
     title: "البيوت المتاحة",
-    empty: "لا توجد بيوت متاحة تطابق هذا البحث.",
+    empty: "لا يوجد بيت يطابق كل يوم مطلوب وجميع المرشحات المحددة.",
     unavailable: "تعذر تحميل البيوت الآن. حاول مرة أخرى.",
     location: "الموقع التقريبي",
     view: "اعرض البيت",
     back: "تعديل البحث",
     fullDay: "اليوم الكامل",
-    total: "الإجمالي",
+    available: "متاح",
+    unavailableOption: "غير متاح",
+    noPrice: "السعر غير متاح",
+    selected: "مرشح محدد",
+    prices: "الأسعار لكل خيار. يشمل عرض السعر الدقيق رسوم خدمة الحجز.",
   },
   ckb: {
     title: "کۆتێجە بەردەستەکان",
-    empty: "هیچ کۆتێجێکی بەردەست لەگەڵ ئەم گەڕانە ناگونجێت.",
+    empty:
+      "هیچ کۆتێجێک لەگەڵ هەموو ڕۆژە داواکراوەکان و پاڵاوتە دیاریکراوەکان ناگونجێت.",
     unavailable: "ئێستا ناتوانرێت کۆتێجەکان باربکرێن. دووبارە هەوڵ بدەرەوە.",
     location: "شوێنی نزیکەیی",
     view: "کۆتێجەکە ببینە",
     back: "گەڕانەکە بگۆڕە",
     fullDay: "پاکێجی ڕۆژی تەواو",
-    total: "کۆ",
+    available: "بەردەستە",
+    unavailableOption: "بەردەست نییە",
+    noPrice: "نرخ بەردەست نییە",
+    selected: "پاڵاوتەی دیاریکراو",
+    prices:
+      "نرخەکان بۆ هەر هەڵبژاردەیەکن. پێشنیاری نرخی ورد کرێی خزمەتگوزاریی حجز لەخۆ دەگرێت.",
   },
   en: {
     title: "Available cottages",
-    empty: "No available cottages match this search.",
+    empty:
+      "No cottage matches every requested Service Day and selected filter.",
     unavailable: "Cottages could not be loaded right now. Please try again.",
     location: "Approximate location",
     view: "View cottage",
     back: "Change search",
     fullDay: "Full-day bundle",
-    total: "total",
+    available: "Available",
+    unavailableOption: "Unavailable",
+    noPrice: "Price unavailable",
+    selected: "Selected filter",
+    prices:
+      "Prices are per option. The exact quote includes the Booking Service Fee.",
   },
 } as const;
 
@@ -43,10 +60,12 @@ export function PublicCottageResults({
   locale,
   result,
   queryString,
+  query,
 }: {
   locale: Locale;
   result: CottageDiscoveryResult;
   queryString: string;
+  query: CottageDiscoveryQuery;
 }) {
   const messages = copy[locale];
   return (
@@ -84,28 +103,51 @@ export function PublicCottageResults({
                   {messages.location}: {cottage.approximateLocation},{" "}
                   {cottage.governorate}
                 </p>
-                <div>
-                  <strong>{formatIqd(cottage.totalPriceIqd, locale)}</strong>
-                  <span>{messages.total}</span>
-                </div>
-                <ul className="result-shifts">
-                  {cottage.selectedInventory.map((unit) => (
-                    <li
-                      key={`${unit.serviceDay}-${unit.kind}-${unit.position ?? "full"}`}
-                    >
-                      <span>
-                        {formatServiceDay(unit.serviceDay, locale)} ·{" "}
-                        {unit.kind === "full-day"
-                          ? messages.fullDay
-                          : unit.name}{" "}
-                        · {unit.startTime}–{unit.endTime}
-                      </span>
-                      {unit.priceIqd === null ? null : (
-                        <b>{formatIqd(unit.priceIqd, locale)}</b>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                <p>{messages.prices}</p>
+                {[
+                  ...new Set(cottage.inventory.map((unit) => unit.serviceDay)),
+                ].map((day) => (
+                  <section
+                    className="result-service-day"
+                    key={day}
+                    aria-label={formatServiceDay(day, locale)}
+                  >
+                    <h3>{formatServiceDay(day, locale)}</h3>
+                    <ul className="result-shifts">
+                      {cottage.inventory
+                        .filter((unit) => unit.serviceDay === day)
+                        .map((unit) => (
+                          <li key={`${unit.kind}-${unit.position ?? "full"}`}>
+                            <span>
+                              {unit.kind === "full-day"
+                                ? messages.fullDay
+                                : unit.name}
+                            </span>
+                            <bdi dir="ltr">
+                              {unit.startTime}–{unit.endTime}
+                            </bdi>
+                            <b>
+                              {unit.priceIqd === null
+                                ? messages.noPrice
+                                : formatIqd(unit.priceIqd, locale)}
+                            </b>
+                            <span>
+                              {unit.available
+                                ? messages.available
+                                : messages.unavailableOption}
+                            </span>
+                            {query.selections.some(
+                              (selection) =>
+                                selection.serviceDay === day &&
+                                selection.kind === unit.kind &&
+                                (selection.kind === "full-day" ||
+                                  selection.position === unit.position),
+                            ) && <span>{messages.selected}</span>}
+                          </li>
+                        ))}
+                    </ul>
+                  </section>
+                ))}
                 <ActionLink
                   kind="secondary"
                   width="full"

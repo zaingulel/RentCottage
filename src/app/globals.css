@@ -94,6 +94,18 @@
   --body: "Karla", "Almarai", sans-serif;
 
   --hero-headline-gap-rtl: 0.5em;
+
+  /* Booking Period disclosures and day groups */
+  --booking-period-space: 1rem;
+  --booking-period-inset: 0.75rem;
+  --booking-period-heading: 0.88rem;
+  --booking-period-target: 2.75rem;
+  --booking-period-focus-width: 2px;
+  --booking-period-focus-offset: 2px;
+  --booking-period-gap: 0.55rem;
+  --booking-option-gap: 0.2rem;
+  --booking-option-text: 0.92rem;
+  --booking-time-text: 0.82rem;
 }
 
 * {
@@ -999,13 +1011,6 @@ a {
   font-size: 0.88rem;
 }
 
-.result-content > div {
-  display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  margin-block: 1rem 0.6rem;
-}
-
 .result-shifts {
   display: grid;
   gap: 0.3rem;
@@ -1026,16 +1031,6 @@ a {
 
 .result-shifts b {
   color: var(--ink);
-}
-
-.result-content > div strong {
-  color: var(--green);
-  font-size: 1.15rem;
-}
-
-.result-content > div span {
-  color: var(--muted);
-  font-size: 0.78rem;
 }
 
 .profile-page,
@@ -1170,52 +1165,27 @@ a {
   line-height: 1.25;
 }
 
-.booking-summary > ul {
+.booking-summary .result-shifts {
   display: grid;
-  gap: 0.55rem;
+  gap: var(--booking-period-gap);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.booking-summary > ul > li {
+.booking-summary .result-shifts > li {
   display: grid;
-  gap: 0.2rem;
-  padding-block-end: 0.55rem;
+  gap: var(--booking-option-gap);
+  padding-block-end: var(--booking-period-gap);
   border-block-end: 1px solid var(--line);
-  font-size: 0.92rem;
+  font-size: var(--booking-option-text);
   font-weight: 700;
 }
 
-.booking-summary > ul > li > span + span {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.booking-summary > ul > li > span + span > span {
+.booking-summary .result-shifts bdi {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--booking-time-text);
   font-weight: 400;
-}
-
-.booking-summary .booking-total {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin: 1rem 0 0;
-}
-
-.booking-summary .booking-total > span {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.booking-summary .booking-total > strong {
-  color: var(--green);
-  font-size: 1.55rem;
 }
 
 html[lang="ckb"] .profile-page {
@@ -1224,8 +1194,7 @@ html[lang="ckb"] .profile-page {
 
 html[lang="ckb"] .profile-heading h1,
 html[lang="ckb"] .profile-section h2,
-html[lang="ckb"] .booking-summary h2,
-html[lang="ckb"] .booking-summary strong {
+html[lang="ckb"] .booking-summary h2 {
   line-height: 1.4;
 }
 
@@ -1234,13 +1203,16 @@ html[lang="ckb"] .booking-summary strong {
 }
 
 .booking-summary > .action-link,
+.booking-summary > .action,
 .request-form > .action {
   margin-block-start: 1.25rem;
   font-family: var(--display);
   font-weight: 600;
 }
 
-.booking-summary > .action-link + .action-link {
+.booking-summary > .action-link + .action-link,
+.booking-summary > .action + .action,
+.booking-summary > .action + .action-link {
   margin-block-start: 0.6rem;
 }
 
@@ -1406,6 +1378,58 @@ html[lang="ckb"] .booking-summary strong {
   background: var(--background);
   padding-inline: 0.75rem;
   color: inherit;
+}
+
+.booking-period-disclosure {
+  margin-block-start: var(--booking-period-space);
+}
+
+.booking-period-disclosure > summary {
+  display: list-item;
+  min-block-size: var(--booking-period-target);
+  padding-block: var(--booking-period-inset);
+  color: var(--green);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.booking-period-disclosure > summary:focus-visible {
+  outline: var(--booking-period-focus-width) solid var(--gold);
+  outline-offset: var(--booking-period-focus-offset);
+}
+
+.booking-period-disclosure > p {
+  color: var(--muted);
+}
+
+.booking-period-options {
+  min-inline-size: 0;
+  margin: 0;
+  margin-block: var(--booking-period-space);
+  padding: var(--booking-period-inset);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.booking-period-options > legend,
+.result-service-day h3 {
+  color: var(--green);
+  font-size: var(--booking-period-heading);
+  font-weight: 700;
+}
+
+.result-service-day {
+  margin-block-start: var(--booking-period-space);
+}
+
+.result-service-day h3 {
+  margin-block: 0 var(--booking-period-gap);
+}
+
+.booking-period-options .action,
+.result-shifts li > span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
 .booking-period-filter {

@@ -7,6 +7,7 @@ import { isLocale } from "@/i18n/routing";
 import { createRequestMessagingRuntime } from "@/messaging/request-messaging-runtime";
 import type { MessagingConversation as ConversationData } from "@/messaging/supabase-messaging-reader";
 import {
+  hasCompleteCottageBookingSelection,
   parseCottageDiscoveryQuery,
   serializeCottageDiscoveryQuery,
 } from "@/cottage-discovery/discovery-query";
@@ -39,7 +40,12 @@ export default async function MessagingConversationPage({
   const parsedDiscovery = hasDiscovery
     ? parseCottageDiscoveryQuery(discoveryRaw)
     : null;
-  if (parsedDiscovery?.status === "invalid") notFound();
+  if (
+    parsedDiscovery?.status === "invalid" ||
+    (parsedDiscovery?.status === "loaded" &&
+      !hasCompleteCottageBookingSelection(parsedDiscovery.query))
+  )
+    notFound();
   const contextQuery =
     parsedDiscovery?.status === "loaded"
       ? serializeCottageDiscoveryQuery(parsedDiscovery.query)

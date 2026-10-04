@@ -11,7 +11,9 @@ the code keeps them.
   base palette `--background`, `--card`, `--ink`, `--muted`, `--green`, `--gold` and `--line`, then the groups
   Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
   families `--display` and `--body`, the right-to-left hero headline gap `--hero-headline-gap-rtl`, and
-  `color-scheme: light`. There is no Tailwind and no theme object.
+  `color-scheme: light`. Booking Period disclosures and day groups use the `--booking-period-*`,
+  `--booking-option-*` and `--booking-time-text` dimension tokens in that same block. There is no Tailwind and
+  no theme object.
 - Interface colours and font families come from these tokens through `var(--…)`.
   [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside `:root` other than in an elevation
   shadow, and on a custom property a stylesheet uses that `:root` does not declare.
@@ -60,6 +62,14 @@ Anything else is a token.
   `.field-error` message there and `aria-invalid` on the fields; a correction is offered as an `ActionButton` and
   never applied unasked; and a native `required` checkbox, shown only for a valid reading and unticked by any
   edit, confirms it before the form submits.
+- Optional Booking Period filters use native `details`/`summary` with `.booking-period-disclosure`; the summary
+  keeps the native disclosure marker, a visible gold focus outline and the regular control target height.
+  Filter controls keep their existing `ActionButton` toggle pattern. Actual profile options use one native
+  `fieldset`/`legend` per Service Day with `.booking-period-options` and regular `ActionButton` toggles;
+  `aria-pressed` exposes the selection. Disable the fieldset and onward actions during URL navigation.
+  Missing choices are corrected only through an explicit `ActionButton`; changed availability uses
+  `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups, with individual
+  price and availability text. Times use `<bdi dir="ltr">` in every locale.
 - A new button, link-styled action, form field or submit feedback reuses these. A pattern they lack is added
   there, not built inside a feature component.
 

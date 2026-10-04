@@ -55,6 +55,36 @@ const untrustedAdministratorDestinations = [
 ];
 
 describe("account return destinations", () => {
+  it("allows optional discovery filters but requires complete booking return context", () => {
+    const slug = "cottage-0123456789abcdef0123456789abcdef";
+    const conversation = "10000000-0000-4000-8000-000000000001";
+    const dayOnly = "from=2030-01-12&to=2030-01-13&guests=4";
+    for (const filters of [
+      dayOnly,
+      `${dayOnly}&selection=2030-01-12:shift:1`,
+    ]) {
+      for (const route of ["results", `cottages/${slug}`]) {
+        const destination = `/en/${route}?${filters}`;
+        expect(safeReturnDestination("en", destination)).toBe(destination);
+      }
+      for (const route of [
+        `quote/${slug}`,
+        `request/${slug}`,
+        "messages",
+        `messages/${conversation}`,
+      ]) {
+        const context = route === "messages" ? `cottage=${slug}&` : "";
+        expect(
+          safeReturnDestination("en", `/en/${route}?${context}${filters}`),
+        ).toBe("/en/bookings");
+      }
+    }
+    const complete = `${dayOnly}&selection=2030-01-12:shift:1&selection=2030-01-13:full-day`;
+    expect(safeReturnDestination("en", `/en/request/${slug}?${complete}`)).toBe(
+      `/en/request/${slug}?${complete}`,
+    );
+  });
+
   it.each([
     "/en",
     "/en/results?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1",

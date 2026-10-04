@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
+import {
+  hasCompleteCottageBookingSelection,
+  type CottageDiscoveryQuery,
+} from "@/cottage-discovery/discovery-query";
 import type { Locale } from "@/i18n/routing";
 import { bookingTermsFixture } from "@/booking-request/booking-terms-fixture";
 
@@ -120,6 +123,9 @@ export class SupabaseBookingQuote implements BookingQuotePort {
     discoveryQuery: CottageDiscoveryQuery,
   ): Promise<PublicBookingQuoteResult> {
     if (!isPublicCottageSlug(publicSlug)) return { status: "not-found" };
+    if (!hasCompleteCottageBookingSelection(discoveryQuery)) {
+      return { status: "selection-unavailable" };
+    }
     const { data, error } = await this.client.rpc(
       "get_public_booking_quote_with_fingerprint",
       {

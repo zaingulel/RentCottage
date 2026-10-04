@@ -35,6 +35,7 @@ export default async function CottagePage({
           <PublicCottageProfileView
             locale={locale}
             result={{ status: "unavailable" }}
+            query={null}
             queryString=""
           />
           <SiteFooter locale={locale} path={path} queryString="" />
@@ -63,6 +64,7 @@ export default async function CottagePage({
       <PublicCottageProfileView
         locale={locale}
         result={result}
+        query={parsed.query}
         queryString={queryString}
       />
       <SiteFooter locale={locale} path={path} queryString={queryString} />

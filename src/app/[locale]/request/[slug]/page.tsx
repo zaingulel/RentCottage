@@ -13,6 +13,7 @@ import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-re
 import { BookingQuoteView } from "@/components/booking-quote";
 import { InvalidCottageSearch } from "@/components/invalid-cottage-search";
 import {
+  hasCompleteCottageBookingSelection,
   parseCottageDiscoveryQuery,
   serializeCottageDiscoveryQuery,
 } from "@/cottage-discovery/discovery-query";
@@ -60,7 +61,10 @@ export default async function RequestPage({
   const discoveryRawQuery = { ...rawQuery };
   delete discoveryRawQuery.conversation;
   const parsed = parseCottageDiscoveryQuery(discoveryRawQuery);
-  if (parsed.status === "invalid") {
+  if (
+    parsed.status === "invalid" ||
+    !hasCompleteCottageBookingSelection(parsed.query)
+  ) {
     return <InvalidCottageSearch locale={locale} />;
   }
   const result = await loadPublicBookingQuote(locale, slug, parsed.query);

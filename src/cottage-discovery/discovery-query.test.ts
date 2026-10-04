@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  hasCompleteCottageBookingSelection,
   parseCottageDiscoveryQuery,
   preserveRawCottageDiscoveryQuery,
   serializeCottageDiscoveryQuery,
@@ -45,13 +46,34 @@ describe("Cottage discovery query", () => {
     );
   });
 
+  it("accepts empty and partial discovery selections while requiring complete booking selections", () => {
+    const base = { from: "2030-01-12", to: "2030-01-13", guests: "4" };
+    for (const selection of [undefined, [], ["2030-01-12:shift:1"]]) {
+      const parsed = parseCottageDiscoveryQuery({ ...base, selection });
+      expect(parsed.status).toBe("loaded");
+      if (parsed.status !== "loaded") throw new Error("expected loaded query");
+      expect(parsed.query.selections).toEqual(
+        selection?.length
+          ? [{ serviceDay: "2030-01-12", kind: "shift", position: 1 }]
+          : [],
+      );
+      expect(hasCompleteCottageBookingSelection(parsed.query)).toBe(false);
+    }
+    const complete = parseCottageDiscoveryQuery({
+      ...base,
+      selection: ["2030-01-12:shift:1", "2030-01-13:full-day"],
+    });
+    if (complete.status !== "loaded")
+      throw new Error("expected complete query");
+    expect(hasCompleteCottageBookingSelection(complete.query)).toBe(true);
+    for (const key of ["from", "to", "guests", "governorate", "area"]) {
+      expect(
+        parseCottageDiscoveryQuery({ ...base, [key]: ["first", "second"] }),
+      ).toEqual({ status: "invalid" });
+    }
+  });
+
   it.each([
-    { from: "2026-08-21", to: "2026-08-21", selection: [] },
-    {
-      from: "2026-08-21",
-      to: "2026-08-22",
-      selection: ["2026-08-21:shift:1"],
-    },
     {
       from: "2026-08-21",
       to: "2026-08-22",
