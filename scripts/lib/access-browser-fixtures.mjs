@@ -894,32 +894,6 @@ async function preparePublishedProfile({
   }
 }
 
-export async function refreshAccessBrowserFixturePhoto({
-  project,
-  publicationId,
-  privilegedClient,
-}) {
-  const samplePhoto = await cottagePhoto(project);
-  const publicationMedia = requireData(
-    await privilegedClient
-      .from("cottage_publication_media")
-      .select("object_path")
-      .eq("publication_id", publicationId)
-      .order("position")
-      .limit(1)
-      .maybeSingle(),
-    `${project} access booking fixture is incomplete: missing published photo`,
-  );
-
-  const { error: uploadError } = await privilegedClient.storage
-    .from("cottage-profile-photos")
-    .upload(publicationMedia.object_path, samplePhoto.bytes, {
-      contentType: "image/png",
-      upsert: true,
-    });
-  if (uploadError) throw uploadError;
-}
-
 async function createPublishedBookingFixture({
   fixture,
   privilegedClient,

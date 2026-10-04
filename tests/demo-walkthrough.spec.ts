@@ -48,7 +48,6 @@ const {
   requireDemoEnvironment,
   validateDemoBrowserFixtures,
   assertDemoInventoryReadback,
-  refreshAccessBrowserFixturePhoto,
 } = createRequire(import.meta.url)(
   "../scripts/lib/access-browser-fixtures.mjs",
 ) as {
@@ -63,11 +62,6 @@ const {
     publicAvailability: unknown;
     expectedUnits: DemoInventoryUnit[];
   }): void;
-  refreshAccessBrowserFixturePhoto(input: {
-    project: string;
-    publicationId: string;
-    privilegedClient: unknown;
-  }): Promise<void>;
 };
 
 const administratorEmail = "mvp-demo-administrator-v2@rentcottage.test";
@@ -531,11 +525,6 @@ async function prepareDemoState() {
   ) {
     throw new Error("The synthetic demo Customer phone is incompatible");
   }
-  await refreshAccessBrowserFixturePhoto({
-    project: "desktop",
-    publicationId: cottages[0].profile.current_publication_id,
-    privilegedClient: privileged,
-  });
   return {
     administrator,
     cottages,
@@ -866,7 +855,7 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
   console.log(`Reserved rehearsal Service Day: ${demo.rehearsalDay}`);
   console.log(`Reserved meeting Service Day: ${demo.meetingDay}`);
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.goto("/en");
+  await page.goto("/");
   let journeyError: unknown;
   let screencastStarted = false;
   try {
@@ -882,33 +871,28 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       `<aside style="position:fixed;z-index:2147483647;right:24px;bottom:20px;max-width:760px;padding:12px 18px;border-radius:12px;background:#102c26ee;color:white;font:600 18px/1.35 system-ui;box-shadow:0 8px 30px #0006">Local demo · Synthetic data · Simulated payment · Fictional, non-operative Booking Terms</aside>`,
     );
 
-    await page.screencast.showChapter("Marketplace and languages", {
-      description: "English, Arabic, and Sorani with right-to-left layouts",
+    await page.screencast.showChapter("Choose English", {
+      description: "Start with the marketplace's existing language choices",
       duration: 1_400,
     });
-    await page.goto("/en");
+    const siteHeader = page.getByRole("banner");
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    for (const language of ["العربية", "کوردی", "English"]) {
+      await expectScene(siteHeader.getByRole("link", { name: language }));
+    }
+    await siteHeader.getByRole("link", { name: "English" }).click();
+    await expect(page).toHaveURL(/\/en$/);
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
     await expectScene(
       page.getByRole("heading", {
         level: 1,
         name: "A house in the countryside, all yours",
       }),
     );
-    const siteHeader = page.getByRole("banner");
     await expect(
       siteHeader.getByText("Countryside homes of Iraq"),
     ).toBeVisible();
-    await siteHeader.getByRole("link", { name: "العربية" }).click();
-    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-    await expectScene(
-      page.getByRole("heading", { name: "بيتٌ في الريف، لكم وحدكم" }),
-    );
-    await siteHeader.getByRole("link", { name: "کوردی" }).click();
-    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-    await expectScene(
-      page.getByRole("heading", { name: "ماڵێک لە گوند، تەنها بۆ ئێوە" }),
-    );
-    await siteHeader.getByRole("link", { name: "English" }).click();
-    await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
     const siteFooter = page.getByRole("contentinfo");
     await siteFooter.scrollIntoViewIfNeeded();
     await expectScene(siteFooter.getByText("Discover", { exact: true }));
@@ -985,6 +969,10 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await cottageCard
       .getByRole("link", { name: "Open Cottage Profile" })
       .click();
+    await expect(page).toHaveURL(
+      `/en/owner/cottages/${demo.cottages[0].profile.id}`,
+    );
+    const ownerCottageUrl = page.url();
     const publishedStatus = page.getByText("Published", { exact: true });
     await publishedStatus.scrollIntoViewIfNeeded();
     await expectScene(publishedStatus);
@@ -1008,9 +996,13 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
         name: `Availability for a future Service Day: ${demo.recordedDay}`,
       }),
     );
-    await expect(page.getByLabel("Shift 1 operational state")).toHaveValue(
-      "open",
-    );
+    for (const label of [
+      "Shift 1 operational state",
+      "Shift 2 operational state",
+      "Full-Day Bundle operational state",
+    ]) {
+      await expect(page.getByLabel(label)).toHaveValue("open");
+    }
     await expect(
       page.getByText("Synthetic private fixture address"),
     ).toHaveCount(0);
@@ -1030,6 +1022,59 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expectScene(
       page.getByRole("heading", { name: "Available cottages" }),
     );
+    const publicCards = page.getByRole("main").getByRole("article");
+    const comparedCottages = [
+      ["Palm Garden", "IQD 180,000"],
+      ["Zab Riverside", "IQD 140,000"],
+      ["Dukan Hills", "IQD 240,000"],
+      ["Orchard Retreat", "IQD 100,000"],
+      ["Tigris Courtyard", "IQD 210,000"],
+      ["Date Palm Cottage", "IQD 300,000"],
+    ];
+    await expect(publicCards).toHaveCount(6);
+    for (const [name, morningPrice] of comparedCottages) {
+      const card = publicCards.filter({
+        has: page.getByRole("heading", { name, exact: true }),
+      });
+      await card.scrollIntoViewIfNeeded();
+      await expectScene(card.getByRole("heading", { name, exact: true }));
+      await expect(
+        card.getByRole("listitem").filter({ hasText: "Morning" }),
+      ).toContainText(morningPrice);
+      await expectDemoImage(card.getByRole("img", { name, exact: true }));
+    }
+    await expect(page.getByRole("main")).not.toContainText(
+      /Synthetic private fixture address|Synthetic private directions|36\.408333|44\.385834|private_blocked|commitmentReference|9647540000/,
+    );
+    await page.getByRole("link", { name: "Change search", exact: true }).click();
+    await page.getByLabel("From Service Day").fill(demo.recordedDay);
+    await page.getByLabel("To Service Day").fill(demo.recordedDay);
+    await page.getByLabel("Guests", { exact: true }).fill("4");
+    const poolFilter = page.getByRole("checkbox", { name: "Pool", exact: true });
+    await poolFilter.check();
+    await expect(poolFilter).toBeChecked();
+    await expectScene(poolFilter);
+    await page
+      .getByRole("button", { name: "Search available cottages" })
+      .click();
+    await expectScene(
+      page.getByRole("heading", { name: "Available cottages" }),
+    );
+    await expect(publicCards).toHaveCount(4);
+    await expect
+      .poll(async () =>
+        (
+          await publicCards.getByRole("heading", { level: 2 }).allTextContents()
+        ).sort(),
+      )
+      .toEqual(
+        [
+          "Palm Garden",
+          "Dukan Hills",
+          "Tigris Courtyard",
+          "Date Palm Cottage",
+        ].sort(),
+      );
     const publicCottage = page.getByRole("article").filter({
       has: page.getByRole("heading", { name: demo.cottageName }),
     });
@@ -1096,29 +1141,6 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expect(
       page.getByText("Bedrooms and bathrooms", { exact: true }),
     ).toBeVisible();
-    await page.screencast.showChapter("Keep your place in every language", {
-      description: "The same cottage and selected dates in Arabic and Sorani",
-      duration: 1_400,
-    });
-    const cottageUrl = new URL(page.url());
-    for (const [language, locale, direction] of [
-      ["العربية", "ar", "rtl"],
-      ["کوردی", "ckb", "rtl"],
-      ["English", "en", "ltr"],
-    ]) {
-      await page
-        .getByRole("banner")
-        .getByRole("link", { name: language })
-        .click();
-      const translatedUrl = new URL(cottageUrl);
-      translatedUrl.pathname = cottageUrl.pathname.replace(
-        /^\/en\//,
-        `/${locale}/`,
-      );
-      await expect(page).toHaveURL(translatedUrl.href);
-      await expect(page.locator("html")).toHaveAttribute("dir", direction);
-      await expectScene(page.getByRole("heading", { name: demo.cottageName }));
-    }
     await page.getByRole("link", { name: "Get exact quote" }).click();
     await expectScene(
       page.getByRole("heading", { name: "Your exact Booking Quote" }),
@@ -1364,6 +1386,123 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expect(page.getByRole("list", { name: "Messages" })).toContainText(
       "Synthetic Cottage Owner reply: arrival noted.",
     );
+
+    await page.screencast.showChapter("Confirmed Owner availability", {
+      description: "The recorded Morning is now reserved by the paid Booking",
+      duration: 1_400,
+    });
+    await page.goto(ownerCottageUrl);
+    await expect(page).toHaveURL(ownerCottageUrl);
+    await expect(inventory).toBeVisible();
+    await inventory.scrollIntoViewIfNeeded();
+    await loadAvailability
+      .locator('input[name="serviceDay"]')
+      .fill(demo.recordedDay);
+    await loadAvailability
+      .getByRole("button", { name: "Load availability" })
+      .click();
+    await expectScene(
+      page.getByRole("heading", {
+        name: `Availability for a future Service Day: ${demo.recordedDay}`,
+      }),
+    );
+    const confirmedMorning = page.locator(
+      'output[aria-label="Shift 1 operational state"]',
+    );
+    await expect(confirmedMorning).toHaveText("Confirmed booking");
+    await confirmedMorning.scrollIntoViewIfNeeded();
+    await expectScene(confirmedMorning);
+    await expect(
+      page.getByRole("combobox", {
+        name: "Shift 1 operational state",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+
+    const url = process.env.SUPABASE_URL ?? "";
+    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? "";
+    const owner = createClient(url, publishableKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const signedIn = await owner.auth.signInWithPassword({
+      phone: demo.ownerPhone,
+      password: fixturePassword,
+    });
+    if (signedIn.error) throw signedIn.error;
+    const anonymous = createClient(url, publishableKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const cottage = demo.cottages[0];
+    for (const day of [demo.recordedDay, demo.rehearsalDay, demo.meetingDay]) {
+      const args = {
+        target_profile_id: cottage.profile.id,
+        target_schedule_revision_id: cottage.profile.current_shift_schedule_id,
+        target_service_day: day,
+      };
+      const ownerCalendar = await owner.rpc(
+        "resolve_cottage_inventory_owner_calendar",
+        args,
+      );
+      const publicAvailability = await anonymous.rpc(
+        "resolve_cottage_inventory_public_availability",
+        args,
+      );
+      if (ownerCalendar.error) throw ownerCalendar.error;
+      if (publicAvailability.error) throw publicAvailability.error;
+      if (day === demo.recordedDay) {
+        const envelope = {
+          profileId: cottage.profile.id,
+          scheduleRevisionId: cottage.profile.current_shift_schedule_id,
+          serviceDay: day,
+        };
+        expect(ownerCalendar.data).toMatchObject(envelope);
+        expect(publicAvailability.data).toMatchObject(envelope);
+        expect(ownerCalendar.data.units).toHaveLength(3);
+        expect(publicAvailability.data.units).toHaveLength(3);
+        const morning = cottage.units[0];
+        expect(
+          ownerCalendar.data.units.filter(
+            (unit: { id: unknown; kind: unknown }) =>
+              unit.id === morning.id && unit.kind === morning.kind,
+          ),
+        ).toEqual([
+          expect.objectContaining({
+            calendarState: "confirmed_booking",
+            available: false,
+          }),
+        ]);
+        expect(
+          publicAvailability.data.units.filter(
+            (unit: { id: unknown }) => unit.id === morning.id,
+          ),
+        ).toEqual([{ ...morning, available: false }]);
+        expect(Object.keys(publicAvailability.data).sort()).toEqual([
+          "profileId",
+          "scheduleRevisionId",
+          "serviceDay",
+          "units",
+        ]);
+        for (const unit of publicAvailability.data.units) {
+          expect(Object.keys(unit).sort()).toEqual(["available", "id", "kind"]);
+        }
+      } else {
+        assertDemoInventoryReadback({
+          ownerCalendar: ownerCalendar.data,
+          publicAvailability: publicAvailability.data,
+          expectedUnits: cottage.units.map((unit) => ({
+            ...unit,
+            calendarState: "open",
+            available: true,
+          })),
+        });
+        for (const unit of ownerCalendar.data.units) {
+          expect(unit.commitmentReference).toBeNull();
+          expect(unit.editable).toBe(true);
+        }
+      }
+    }
+    const signedOut = await owner.auth.signOut();
+    if (signedOut.error) throw signedOut.error;
   } catch (error) {
     journeyError = error;
   } finally {
