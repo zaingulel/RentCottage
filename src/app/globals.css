@@ -3230,8 +3230,7 @@ section.request-follow-up {
   padding-block: 3.25rem 2rem;
 }
 
-.site-footer-grid nav,
-.site-footer-language {
+.site-footer-grid nav {
   display: grid;
   align-content: start;
   gap: 0.6rem;
@@ -3241,8 +3240,7 @@ section.request-follow-up {
   margin: 0;
 }
 
-.site-footer-grid nav > p,
-.site-footer-language > p {
+.site-footer-grid nav > p {
   color: var(--green);
   font-size: 0.8rem;
   font-weight: 700;
@@ -3281,10 +3279,6 @@ section.request-follow-up {
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.6;
-}
-
-.site-footer-language .language-links {
-  background: var(--card);
 }
 
 .site-footer-bar {

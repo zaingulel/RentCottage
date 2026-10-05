@@ -136,7 +136,7 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(arabicMessage.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
   );
-  await page.getByRole("banner").getByRole("link", { name: "العربية" }).focus();
+  await page.getByRole("banner").getByRole("link", { name: "English" }).focus();
   await page.keyboard.press("Tab");
   const focusedLanguage = page
     .getByRole("banner")

@@ -4,7 +4,6 @@ import { accountAccessHref } from "@/access/return-destination";
 import { accessMessages } from "@/i18n/access-messages";
 import { messages } from "@/i18n/messages";
 import { locales, type Locale } from "@/i18n/routing";
-import { LocaleLinkList } from "./locale-links";
 
 export function SiteFooter({
   locale,
@@ -49,17 +48,6 @@ export function SiteFooter({
             {access.signInAccount}
           </Link>
         </nav>
-        <div className="site-footer-language">
-          <p>{copy.languageLabel}</p>
-          <div className="language-links">
-            <LocaleLinkList
-              locale={locale}
-              hrefFor={(target) =>
-                `/${target}${path}${queryString ? `?${queryString}` : ""}`
-              }
-            />
-          </div>
-        </div>
       </div>
       <div className="site-footer-bar">
         <span>

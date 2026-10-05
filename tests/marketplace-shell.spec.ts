@@ -27,6 +27,8 @@ const ownerSignIn = {
   },
 } as const;
 
+const languageNames = ["English", "کوردی", "العربية"] as const;
+
 test("preserves the selected Retreat shell around live discovery", async ({
   page,
 }) => {
@@ -98,17 +100,31 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
       await page.locator("html").evaluate((element) => element.clientWidth),
     );
 
+    const languageNavigation = header.getByRole("navigation", {
+      name: locale === "en" ? "Language" : locale === "ar" ? "اللغة" : "زمان",
+    });
+    const languageBoxes = [];
+    for (const language of languageNames) {
+      const box = await languageNavigation
+        .getByRole("link", { name: language, exact: true })
+        .boundingBox();
+      expect(box).not.toBeNull();
+      languageBoxes.push(box);
+      await expect(
+        page
+          .getByRole("contentinfo")
+          .getByRole("link", { name: language, exact: true }),
+      ).toHaveCount(0);
+    }
+    expect(languageBoxes[0]!.x).toBeLessThan(languageBoxes[1]!.x);
+    expect(languageBoxes[1]!.x).toBeLessThan(languageBoxes[2]!.x);
+
     await page.keyboard.press("Tab");
     await expect(header.getByRole("link", { name: copy.brand })).toBeFocused();
-    for (const language of ["العربية", "کوردی", "English"]) {
+    for (const language of languageNames) {
       await page.keyboard.press("Tab");
       await expect(
-        header
-          .getByRole("navigation", {
-            name:
-              locale === "en" ? "Language" : locale === "ar" ? "اللغة" : "زمان",
-          })
-          .getByRole("link", { name: language, exact: true }),
+        languageNavigation.getByRole("link", { name: language, exact: true }),
       ).toBeFocused();
     }
     await page.keyboard.press("Tab");
@@ -146,6 +162,13 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
           .getByRole("banner")
           .getByRole("link", { name: copy.label, exact: true }),
       ).toBeVisible();
+      for (const language of languageNames) {
+        await expect(
+          page
+            .getByRole("banner")
+            .getByRole("link", { name: language, exact: true }),
+        ).toBeInViewport();
+      }
     }
   }
 });
