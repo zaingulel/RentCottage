@@ -8,25 +8,22 @@ import type {
   BookingNoShowRepository,
   BookingNoShowResult,
 } from "./booking-completion-commands";
+import { isOffsetTimestamp, rowObject } from "./booking-request-row";
 export class BookingLifecycleConflict extends Error {
   constructor() {
     super("Booking lifecycle changed. Refresh to see its current outcome.");
   }
 }
 const object = (value: unknown): Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid booking lifecycle response");
-  return value as Record<string, unknown>;
+  const row = rowObject(value);
+  if (!row) throw new Error("Invalid booking lifecycle response");
+  return row;
 };
 const uuid = (value: unknown): value is string =>
   typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
-const timestamp = (value: unknown): value is string =>
-  typeof value === "string" &&
-  /(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
-  Number.isFinite(Date.parse(value));
 function checkError(error: { code?: string } | null) {
   if (error?.code === "RC409") throw new BookingLifecycleConflict();
   if (error) throw new Error("Booking lifecycle command is unavailable");
@@ -44,8 +41,8 @@ export class SupabaseBookingNoShowRepository implements BookingNoShowRepository 
       v.bookingRequestId !== command.bookingRequestId ||
       typeof v.revision !== "string" ||
       !/^[a-f0-9]{32}$/.test(v.revision) ||
-      !timestamp(v.firstStartsAt) ||
-      !timestamp(v.observedAt) ||
+      !isOffsetTimestamp(v.firstStartsAt) ||
+      !isOffsetTimestamp(v.observedAt) ||
       typeof captured.bookingPriceFils !== "number" ||
       typeof captured.bookingServiceFeeFils !== "number"
     )
@@ -81,7 +78,7 @@ export class SupabaseBookingNoShowRepository implements BookingNoShowRepository 
       v.status !== "no_show" ||
       v.bookingRequestId !== command.bookingRequestId ||
       !uuid(v.noShowId) ||
-      !timestamp(v.occurredAt) ||
+      !isOffsetTimestamp(v.occurredAt) ||
       refund.bookingPriceFils !== 0 ||
       refund.bookingServiceFeeFils !== 0
     )
@@ -112,7 +109,7 @@ export async function recordBookingIncident(
     v.status !== "recorded" ||
     v.bookingRequestId !== command.bookingRequestId ||
     !uuid(v.incidentId) ||
-    !timestamp(v.recordedAt)
+    !isOffsetTimestamp(v.recordedAt)
   )
     throw new Error("Invalid incident receipt");
   return {

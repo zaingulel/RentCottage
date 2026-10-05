@@ -5,6 +5,11 @@ import {
   type BookingQuoteItem,
 } from "@/booking-quote/booking-quote";
 import { isContactSafeBookingRequestText } from "./booking-request-content";
+import {
+  cloneBookingPeriod,
+  isTimestamp,
+  rowObject,
+} from "./booking-request-row";
 
 const requestReferencePattern = /^RC-REQ-[A-F0-9]{16}$/;
 const bookingReferencePattern = /^[A-Z0-9][A-Z0-9-]{0,119}$/;
@@ -96,8 +101,8 @@ function isMapPin(
   value: unknown,
 ): value is ConfirmedBookingAccessBase["mapPin"] {
   if (value === null) return true;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const pin = value as Record<string, unknown>;
+  const pin = rowObject(value);
+  if (!pin) return false;
   return (
     Object.keys(pin).length === 2 &&
     Object.hasOwn(pin, "latitude") &&
@@ -116,8 +121,8 @@ function isMapPin(
 function isCustomerPricing(
   value: unknown,
 ): value is CustomerConfirmedBookingAccess["pricing"] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const pricing = value as Record<string, unknown>;
+  const pricing = rowObject(value);
+  if (!pricing) return false;
   return (
     Object.keys(pricing).length === 3 &&
     Object.hasOwn(pricing, "bookingPriceIqd") &&
@@ -139,8 +144,8 @@ function isCustomerPricing(
 function isOwnerPricing(
   value: unknown,
 ): value is OwnerConfirmedBookingAccess["pricing"] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const pricing = value as Record<string, unknown>;
+  const pricing = rowObject(value);
+  if (!pricing) return false;
   return (
     Object.keys(pricing).length === 3 &&
     Object.hasOwn(pricing, "bookingPriceIqd") &&
@@ -159,38 +164,11 @@ function isOwnerPricing(
   );
 }
 
-function cloneBookingPeriod(
-  items: readonly BookingQuoteItem[],
-): BookingQuoteItem[] {
-  return items.map((item) =>
-    item.kind === "shift"
-      ? {
-          serviceDay: item.serviceDay,
-          displayName: item.displayName,
-          startsAt: item.startsAt,
-          endsAt: item.endsAt,
-          crossesMidnight: item.crossesMidnight,
-          priceIqd: item.priceIqd,
-          kind: "shift",
-          position: item.position,
-        }
-      : {
-          serviceDay: item.serviceDay,
-          displayName: item.displayName,
-          startsAt: item.startsAt,
-          endsAt: item.endsAt,
-          crossesMidnight: item.crossesMidnight,
-          priceIqd: item.priceIqd,
-          kind: "full-day",
-        },
-  );
-}
-
 function confirmedBookingAccessFrom(
   value: unknown,
 ): ConfirmedBookingAccess | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return;
-  const access = value as Record<string, unknown>;
+  const access = rowObject(value);
+  if (!access) return;
   const actualKeys = Object.keys(access);
   if (
     actualKeys.length !== sharedKeys.size ||
@@ -201,8 +179,7 @@ function confirmedBookingAccessFrom(
     !requestReferencePattern.test(access.bookingRequestReference) ||
     typeof access.bookingReference !== "string" ||
     !bookingReferencePattern.test(access.bookingReference) ||
-    typeof access.confirmedAt !== "string" ||
-    Number.isNaN(Date.parse(access.confirmedAt)) ||
+    !isTimestamp(access.confirmedAt) ||
     (access.actorRole !== "customer" && access.actorRole !== "cottage_owner") ||
     typeof access.customerName !== "string" ||
     access.customerName.length < 2 ||

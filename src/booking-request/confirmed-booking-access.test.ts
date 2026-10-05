@@ -69,6 +69,34 @@ describe("Confirmed Booking access repository", () => {
     });
   });
 
+  it("drops an unexpected field from a Booking Period item before release", async () => {
+    await expect(
+      getConfirmedBookingAccess(
+        clientReturning({
+          ...shared,
+          actorRole: "customer",
+          pricing: {
+            bookingPriceIqd: 100_003,
+            serviceFeeIqd: 5_000,
+            customerTotalIqd: 105_003,
+          },
+          bookingPeriod: [
+            { ...shared.bookingPeriod[0], privateUnitId: "private-unit" },
+          ],
+        }),
+        requestReference,
+      ),
+    ).resolves.toEqual({
+      ...shared,
+      actorRole: "customer",
+      pricing: {
+        bookingPriceIqd: 100_003,
+        serviceFeeIqd: 5_000,
+        customerTotalIqd: 105_003,
+      },
+    });
+  });
+
   it("parses the Cottage Owner's paid confirmation and Owner pricing", async () => {
     await expect(
       getConfirmedBookingAccess(

@@ -1,3 +1,5 @@
+import { isTimestamp, rowObject } from "./booking-request-row";
+
 export const bookingRequestStatuses = [
   "pending",
   "processing",
@@ -49,12 +51,11 @@ export function paymentRequiredExpiryFrom(
   window: BookingRequestPaymentRequiredWindow | null | undefined,
 ): BookingRequestPaymentRequiredExpiry | null | undefined {
   if (value === null) return null;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return;
-  const expiry = value as Record<string, unknown>;
+  const expiry = rowObject(value);
+  if (!expiry) return;
   if (
     Object.keys(expiry).length !== 2 ||
-    typeof expiry.deadline !== "string" ||
-    Number.isNaN(Date.parse(expiry.deadline)) ||
+    !isTimestamp(expiry.deadline) ||
     ![
       "processing",
       "attention-required",
@@ -114,17 +115,14 @@ export function paymentRequiredWindowFrom(
 ): BookingRequestPaymentRequiredWindow | null | undefined {
   if (paymentStatus !== "payment-required")
     return value === null ? null : undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return;
-  const window = value as Record<string, unknown>;
+  const window = rowObject(value);
+  if (!window) return;
   if (
     Object.keys(window).length !== 3 ||
     !["recordedAt", "deadline", "databaseNow"].every((key) => key in window) ||
-    typeof window.recordedAt !== "string" ||
-    typeof window.deadline !== "string" ||
-    typeof window.databaseNow !== "string" ||
-    [window.recordedAt, window.deadline, window.databaseNow].some((item) =>
-      Number.isNaN(Date.parse(item)),
-    ) ||
+    !isTimestamp(window.recordedAt) ||
+    !isTimestamp(window.deadline) ||
+    !isTimestamp(window.databaseNow) ||
     Date.parse(window.deadline) - Date.parse(window.recordedAt) !== 1_200_000
   )
     return;

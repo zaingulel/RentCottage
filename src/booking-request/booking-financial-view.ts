@@ -24,6 +24,7 @@ import {
   parseOwnerBookingEarningsAvailability,
   type OwnerBookingEarningsFacts,
 } from "./owner-booking-earnings";
+import { isTimestamp, rowObject } from "./booking-request-row";
 export type BookingParticipantRole = BookingCancellationCommand["actorRole"];
 export interface BookingFinancialView {
   readonly payout?: BookingSettlementFacts;
@@ -94,9 +95,9 @@ export interface BookingFinancialView {
   };
 }
 const object = (value: unknown): Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid booking financial view");
-  return value as Record<string, unknown>;
+  const row = rowObject(value);
+  if (!row) throw new Error("Invalid booking financial view");
+  return row;
 };
 const text = (v: unknown): string => {
   if (typeof v !== "string" || !v.trim())
@@ -115,8 +116,7 @@ const uuid = (v: unknown): string => {
 };
 const timestamp = (v: unknown): string => {
   const s = text(v);
-  if (!Number.isFinite(Date.parse(s)))
-    throw new Error("Invalid booking timestamp");
+  if (!isTimestamp(s)) throw new Error("Invalid booking timestamp");
   return s;
 };
 const choice = <T extends string>(v: unknown, choices: readonly T[]): T => {

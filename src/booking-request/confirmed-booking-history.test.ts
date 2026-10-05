@@ -107,4 +107,13 @@ describe("Booking History parser", () => {
       listBookingHistory({ rpc } as never, "customer"),
     ).rejects.toThrow("data is invalid");
   });
+  it("rejects a timestamp without a time zone offset", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ ...item, createdAt: "2100-12-30T13:00:00" }],
+      error: null,
+    });
+    await expect(
+      listBookingHistory({ rpc } as never, "customer"),
+    ).rejects.toThrow("Booking History data is invalid");
+  });
 });

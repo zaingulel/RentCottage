@@ -17,6 +17,7 @@ import {
   type SubmissionInput,
   type SubmissionLookupResult,
 } from "./booking-request-submission";
+import { isTimestamp, rowObject } from "./booking-request-row";
 import {
   isBookingRequestStatus,
   type BookingRequestStatus,
@@ -36,12 +37,6 @@ const stateStatuses = new Set<SubmissionFailureStatus>([
   "reconciliation-required",
   "unavailable",
 ]);
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]) {
   const actual = Object.keys(value);
@@ -69,7 +64,7 @@ function providerIdentityFrom(
   value: unknown,
 ): PaymentProviderIdentity | null | undefined {
   if (value === null) return null;
-  const identity = record(value);
+  const identity = rowObject(value);
   if (
     !identity ||
     !hasExactKeys(identity, [
@@ -93,8 +88,8 @@ function providerIdentityFrom(
 }
 
 function executionPermitFrom(value: unknown): ProviderExecutionPermit {
-  const result = record(value);
-  const permit = record(result?.executionPermit);
+  const result = rowObject(value);
+  const permit = rowObject(result?.executionPermit);
   if (
     !result ||
     !hasExactKeys(result, ["status", "executionPermit"]) ||
@@ -114,8 +109,7 @@ function executionPermitFrom(value: unknown): ProviderExecutionPermit {
     (permit.generation as number) < 1 ||
     typeof permit.idempotencyKey !== "string" ||
     permit.idempotencyKey.length < 16 ||
-    typeof permit.notAfter !== "string" ||
-    Number.isNaN(Date.parse(permit.notAfter))
+    !isTimestamp(permit.notAfter)
   ) {
     throw new Error("Database returned an invalid provider execution permit");
   }
@@ -123,8 +117,8 @@ function executionPermitFrom(value: unknown): ProviderExecutionPermit {
 }
 
 function cleanupExecutionPermitFrom(value: unknown): ProviderExecutionPermit {
-  const result = record(value);
-  const permit = record(result?.executionPermit);
+  const result = rowObject(value);
+  const permit = rowObject(result?.executionPermit);
   if (
     !result ||
     !hasExactKeys(result, ["status", "executionPermit"]) ||
@@ -153,8 +147,7 @@ function cleanupExecutionPermitFrom(value: unknown): ProviderExecutionPermit {
     permit.idempotencyKey.length < 16 ||
     typeof permit.requestFingerprint !== "string" ||
     !/^[0-9a-f]{64}$/.test(permit.requestFingerprint) ||
-    typeof permit.notAfter !== "string" ||
-    Number.isNaN(Date.parse(permit.notAfter))
+    !isTimestamp(permit.notAfter)
   ) {
     throw new Error("Database returned an invalid cleanup execution permit");
   }
@@ -171,8 +164,7 @@ function existingRequestResultFrom(value: Record<string, unknown>) {
     !isBookingRequestStatus(value.status) ||
     typeof value.bookingRequestReference !== "string" ||
     !bookingRequestReference.test(value.bookingRequestReference) ||
-    typeof value.responseDeadline !== "string" ||
-    Number.isNaN(Date.parse(value.responseDeadline))
+    !isTimestamp(value.responseDeadline)
   ) {
     return undefined;
   }
@@ -187,7 +179,7 @@ function preparationFrom(
   value: unknown,
   input: SubmissionInput,
 ): PrepareSubmissionResult {
-  const result = record(value);
+  const result = rowObject(value);
   if (!result || typeof result.status !== "string") {
     throw new Error(
       "Database returned an invalid Booking Request submission result",
@@ -336,7 +328,7 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
           "classify_booking_request_authorization_claim_persistence",
           { target_attempt_id: attemptId },
         );
-        const result = record(classification.data);
+        const result = rowObject(classification.data);
         if (
           !classification.error &&
           result &&
@@ -350,7 +342,7 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
     }
     if (startsCleanupRelease) return cleanupExecutionPermitFrom(data);
     if (!startsAuthorization) return;
-    const result = record(data);
+    const result = rowObject(data);
     if (
       result &&
       hasExactKeys(result, ["status"]) &&
@@ -374,7 +366,7 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
       },
     );
     if (error) throw new Error("Booking Request finalization is unavailable");
-    const result = record(data);
+    const result = rowObject(data);
     const pending = result ? existingRequestResultFrom(result) : undefined;
     if (!pending || pending.status !== "pending") {
       throw new Error("Database returned an invalid Booking Request result");
@@ -388,7 +380,7 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
       { target_attempt_id: attemptId },
     );
     if (error) throw new Error("Booking Request lookup is unavailable");
-    const result = record(data);
+    const result = rowObject(data);
     const pending = result ? existingRequestResultFrom(result) : undefined;
     if (pending?.status === "pending") {
       return { ...pending, status: "pending" as const };

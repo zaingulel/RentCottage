@@ -116,4 +116,11 @@ describe("restricted booking lifecycle projection", () => {
   ])("rejects invalid or contradictory eligibility %j", (value) =>
     expect(() => parseBookingCompletionEligibility(value)).toThrow(),
   );
+  it("rejects an eligibility timestamp without a time zone offset", () =>
+    expect(() =>
+      parseBookingCompletionEligibility({
+        ...eligibility,
+        assessedAt: "2026-09-12T01:00:00",
+      }),
+    ).toThrow("Invalid booking lifecycle timestamp"));
 });

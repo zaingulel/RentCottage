@@ -336,4 +336,22 @@ describe("owner booking earnings projection", () => {
       paidPayoutFils: 0,
     });
   });
+
+  it("rejects a settlement receipt timestamp without a time zone offset", () => {
+    expect(() =>
+      parseOwnerBookingEarningsFacts(
+        facts({
+          settlement: {
+            amountFils: 90_000_000,
+            state: "succeeded",
+            retrySafe: false,
+            receipt: {
+              paidFils: 90_000_000,
+              recordedAt: "2101-01-02T12:00:00",
+            },
+          },
+        }),
+      ),
+    ).toThrow("Invalid owner earnings timestamp");
+  });
 });

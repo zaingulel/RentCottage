@@ -7,15 +7,10 @@ import type {
   BookingRequestConfirmationRepository,
   BookingRequestConfirmationResult,
 } from "./booking-request-confirmation";
+import { isTimestamp, rowObject } from "./booking-request-row";
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
 
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
   return (
@@ -29,7 +24,7 @@ function isUuid(value: unknown): value is string {
 }
 
 function receipt(value: unknown): BookingConfirmationReceipt | undefined {
-  const candidate = record(value);
+  const candidate = rowObject(value);
   if (
     !candidate ||
     !exactKeys(candidate, ["id", "recipientId"]) ||
@@ -46,8 +41,8 @@ function confirmationFrom(
   bookingRequestId: string,
   captureSnapshot: BookingRequestConfirmationEvidence,
 ): BookingRequestConfirmationResult {
-  const candidate = record(value);
-  const receipts = record(candidate?.receipts);
+  const candidate = rowObject(value);
+  const receipts = rowObject(candidate?.receipts);
   const customer = receipt(receipts?.customer);
   const cottageOwner = receipt(receipts?.cottageOwner);
   if (
@@ -66,8 +61,7 @@ function confirmationFrom(
     !isUuid(candidate.commitmentId) ||
     typeof candidate.bookingReference !== "string" ||
     candidate.bookingReference.length === 0 ||
-    typeof candidate.confirmedAt !== "string" ||
-    Number.isNaN(Date.parse(candidate.confirmedAt)) ||
+    !isTimestamp(candidate.confirmedAt) ||
     candidate.capturePhysicalAttemptId !==
       captureSnapshot.capturePhysicalAttemptId ||
     candidate.captureMovementReference !==
@@ -114,8 +108,8 @@ export function recoveryConfirmationEvidenceFrom(
   value: unknown,
   attemptId: string,
 ): BookingRequestRecoveryConfirmationEvidence {
-  const evidence = record(value);
-  const capture = record(evidence?.capture);
+  const evidence = rowObject(value);
+  const capture = rowObject(evidence?.capture);
   if (
     !evidence ||
     !exactKeys(evidence, [

@@ -13,20 +13,15 @@ import type {
   BookingRequestLifecycleResult,
   BookingRequestReleaseWork,
 } from "./booking-request-lifecycle";
+import { isTimestamp, rowObject } from "./booking-request-row";
 import { isBookingRequestStatus } from "./booking-request-status";
 
 const bookingRequestReference = /^RC-REQ-[A-F0-9]{16}$/;
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
 function providerIdentity(value: unknown): PaymentProviderIdentity | undefined {
-  const identity = record(value);
+  const identity = rowObject(value);
   return identity &&
     typeof identity.provider === "string" &&
     typeof identity.environment === "string" &&
@@ -44,7 +39,7 @@ function providerIdentity(value: unknown): PaymentProviderIdentity | undefined {
 function resultFrom(
   value: unknown,
 ): BookingRequestLifecycleResult | BookingRequestReleaseWork | undefined {
-  const result = record(value);
+  const result = rowObject(value);
   if (!result || typeof result.status !== "string") return undefined;
   if (
     isBookingRequestStatus(result.status) &&
@@ -69,8 +64,7 @@ function resultFrom(
     (result.leaseGeneration as number) > 0 &&
     typeof result.leaseToken === "string" &&
     uuid.test(result.leaseToken) &&
-    typeof result.leaseExpiresAt === "string" &&
-    !Number.isNaN(Date.parse(result.leaseExpiresAt)) &&
+    isTimestamp(result.leaseExpiresAt) &&
     typeof result.bookingRequestReference === "string" &&
     bookingRequestReference.test(result.bookingRequestReference) &&
     typeof result.paymentLifecycleId === "string" &&
@@ -84,8 +78,8 @@ function resultFrom(
       identity &&
       isAuthorizationPhasePaymentSnapshot(snapshot, {
         paymentLifecycleId: result.paymentLifecycleId,
-        bookingPriceFils: record(snapshot)?.bookingPriceFils as number,
-        bookingServiceFeeFils: record(snapshot)
+        bookingPriceFils: rowObject(snapshot)?.bookingPriceFils as number,
+        bookingServiceFeeFils: rowObject(snapshot)
           ?.bookingServiceFeeFils as number,
       })
     ) {
@@ -166,7 +160,7 @@ export class SupabaseBookingRequestLifecycleRepository implements BookingRequest
     );
     if (error) throw new Error("Payment release evidence could not be saved");
     if (data === null) return;
-    const permit = record(data);
+    const permit = rowObject(data);
     if (
       !permit ||
       permit.purpose !== "booking-request-release" ||
@@ -180,8 +174,7 @@ export class SupabaseBookingRequestLifecycleRepository implements BookingRequest
       typeof permit.idempotencyKey !== "string" ||
       typeof permit.requestFingerprint !== "string" ||
       !/^[0-9a-f]{64}$/.test(permit.requestFingerprint) ||
-      typeof permit.notAfter !== "string" ||
-      Number.isNaN(Date.parse(permit.notAfter))
+      !isTimestamp(permit.notAfter)
     ) {
       throw new Error("Payment release permit is invalid");
     }

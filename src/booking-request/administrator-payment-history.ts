@@ -1,3 +1,5 @@
+import { isTimestamp, rowObject } from "./booking-request-row";
+
 export const paymentHistoryKinds = [
   "logical-operation",
   "physical-attempt",
@@ -202,9 +204,9 @@ function optionalCode(value: unknown, allowed: readonly string[]) {
 }
 
 function record(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Administrator payment history data is invalid");
-  return value as Record<string, unknown>;
+  const row = rowObject(value);
+  if (!row) throw new Error("Administrator payment history data is invalid");
+  return row;
 }
 
 function requiredString(value: unknown): string {
@@ -241,7 +243,7 @@ function supportReference(
 function optionalTimestamp(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   const parsed = requiredString(value);
-  if (!timestamp.test(parsed) || Number.isNaN(Date.parse(parsed)))
+  if (!timestamp.test(parsed) || !isTimestamp(parsed))
     throw new Error("Administrator payment history data is invalid");
   return parsed;
 }

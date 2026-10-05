@@ -54,6 +54,7 @@ describe("booking lifecycle database adapters", () => {
       refundObligation: { bookingPriceFils: 1, bookingServiceFeeFils: 0 },
     },
     { ...receipt, noShowId: "bad" },
+    { ...receipt, occurredAt: "2026-09-12T06:00:00" },
   ])("rejects invalid no-show receipt %j", async (data) => {
     const rpc = vi.fn().mockResolvedValue({ data, error: null });
     await expect(

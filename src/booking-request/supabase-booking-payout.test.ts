@@ -66,6 +66,12 @@ describe("payout evidence adapter", () => {
     { commands: [{ ...command, actorUserId: undefined }, facts.commands[1]] },
     { commands: [command, command, facts.commands[1]] },
     { refunded: { bookingPriceFils: 100000010, bookingServiceFeeFils: 0 } },
+    {
+      commands: [
+        { ...command, occurredAt: "2026-09-12T12:00:00" },
+        facts.commands[1],
+      ],
+    },
   ])(
     "fails closed for incomplete or conflicting financial evidence %j",
     (change) => {

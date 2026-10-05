@@ -1,4 +1,5 @@
 import type { BookingParticipantRole } from "./booking-financial-view";
+import { isOffsetTimestamp, rowObject } from "./booking-request-row";
 export const bookingLifecycleStatuses = [
   "confirmed",
   "completed",
@@ -43,9 +44,9 @@ export type BookingCompletionEligibility =
       readonly payoutPrerequisiteAvailable: boolean;
     };
 const object = (value: unknown): Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid booking lifecycle projection");
-  return value as Record<string, unknown>;
+  const row = rowObject(value);
+  if (!row) throw new Error("Invalid booking lifecycle projection");
+  return row;
 };
 const text = (value: unknown): string => {
   if (typeof value !== "string" || !value.trim())
@@ -64,10 +65,7 @@ const uuid = (value: unknown): string => {
 };
 const timestamp = (value: unknown): string => {
   const result = text(value);
-  if (
-    !/(?:Z|[+-]\d{2}:\d{2})$/.test(result) ||
-    !Number.isFinite(Date.parse(result))
-  )
+  if (!isOffsetTimestamp(result))
     throw new Error("Invalid booking lifecycle timestamp");
   return result;
 };

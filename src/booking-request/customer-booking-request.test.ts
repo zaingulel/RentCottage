@@ -183,6 +183,7 @@ describe("Customer Booking Request database projection", () => {
       ...baseRequest,
       customerPhone: "+9647000000000",
       paymentSnapshot: { private: true },
+      responseDeadline: "2099-08-21T12:00:00",
       bookingPeriod: [
         { ...baseRequest.bookingPeriod[0], privateUnitId: "private-unit" },
       ],
@@ -199,7 +200,10 @@ describe("Customer Booking Request database projection", () => {
       reference,
     );
 
-    expect(result).toEqual(baseRequest);
+    expect(result).toEqual({
+      ...baseRequest,
+      responseDeadline: "2099-08-21T12:00:00",
+    });
     expect(result).not.toBe(raw);
     expect(result?.bookingPeriod[0]).not.toBe(raw.bookingPeriod[0]);
     expect(result?.statusNotifications[0]).not.toBe(raw.statusNotifications[0]);

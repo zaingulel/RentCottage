@@ -10,18 +10,13 @@ import type {
   BookingCancellationRepository,
   BookingCancellationResult,
 } from "./booking-cancellation";
+import { isTimestamp, rowObject } from "./booking-request-row";
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-const timestamp = (value: unknown): value is string =>
-  typeof value === "string" && Number.isFinite(Date.parse(value));
 
 function allocation(value: unknown): RefundAllocation {
-  const amount = record(value);
+  const amount = rowObject(value);
   if (
     !amount ||
     typeof amount.bookingPriceFils !== "number" ||
@@ -52,14 +47,14 @@ export class SupabaseBookingCancellationRepository implements BookingCancellatio
       },
     );
     if (error) throw new Error("Booking cancellation facts are unavailable");
-    const facts = record(data);
+    const facts = rowObject(data);
     if (
       !facts ||
       facts.bookingRequestId !== command.bookingRequestId ||
       typeof facts.revision !== "string" ||
       !/^[0-9a-f]{32}$/.test(facts.revision) ||
-      !timestamp(facts.firstStartsAt) ||
-      !timestamp(facts.observedAt)
+      !isTimestamp(facts.firstStartsAt) ||
+      !isTimestamp(facts.observedAt)
     ) {
       throw new Error("Booking cancellation facts are invalid");
     }
@@ -91,7 +86,7 @@ export class SupabaseBookingCancellationRepository implements BookingCancellatio
       },
     );
     if (error) throw new Error("Booking cancellation could not be recorded");
-    const result = record(data);
+    const result = rowObject(data);
     if (result?.status === "stale") return { status: "stale" };
     if (
       !result ||
@@ -99,7 +94,7 @@ export class SupabaseBookingCancellationRepository implements BookingCancellatio
       result.bookingRequestId !== command.bookingRequestId ||
       typeof result.cancellationId !== "string" ||
       !uuid.test(result.cancellationId) ||
-      !timestamp(result.occurredAt)
+      !isTimestamp(result.occurredAt)
     ) {
       throw new Error("Booking cancellation result is invalid");
     }
