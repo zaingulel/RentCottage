@@ -11,7 +11,7 @@ import type {
   PaymentProviderAdapter,
   ProviderOperationRequest,
 } from "@/payment/payment-contract";
-import { DurablePaymentSimulator } from "@/payment/durable-payment-simulator";
+import { DurablePaymentSimulator } from "@/payment/durable-payment-simulator-core";
 
 function required(name: string): string {
   const value = process.env[name];
