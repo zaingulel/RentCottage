@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { customerReviewCleanup } from "./lib/booking-fixture.mjs";
 import { customerReviewFixture } from "./lib/customer-review-fixture.mjs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
@@ -36,78 +37,6 @@ set local request.jwt.claims='{"sub":"${userId}","role":"authenticated","aal":"$
 
   function reviewPublicSlug(namespace) {
     return `cottage-deadbeefdeadbeefdeadbeefdead00${namespace}`;
-  }
-
-  function cleanup(namespace) {
-    const suffix = (sequence) => namespaceSuffix(namespace, sequence);
-    const request = `60000000-0000-4000-8000-${suffix(1)}`;
-    const claim = `72000000-0000-4000-8000-${suffix(1)}`;
-    const attempt = `70000000-0000-4000-8000-${suffix(1)}`;
-    const commitment = `50000000-0000-4000-8000-${suffix(1)}`;
-    const snapshot = `40000000-0000-4000-8000-${suffix(1)}`;
-    const schedule = `30000000-0000-4000-8000-${suffix(1)}`;
-    const profile = `20000000-0000-4000-8000-${suffix(1)}`;
-    const users = [1, 2, 3, 81, 82]
-      .map((sequence) => `'10000000-0000-4000-8000-${suffix(sequence)}'`)
-      .join(",");
-    return `
-set session_replication_role=replica;
-delete from public.customer_review_hides where review_id in (
-  select id from public.customer_reviews where booking_request_id='${request}'
-);
-delete from public.customer_reviews where booking_request_id='${request}';
-delete from public.booking_completion_maturity where booking_request_id='${request}';
-delete from public.booking_incidents where booking_request_id='${request}';
-delete from public.booking_lifecycle_outcomes where booking_request_id='${request}';
-delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${request}';
-delete from public.booking_confirmation_notification_attempts where receipt_id in (
-  select receipt_id from public.booking_confirmation_notification_work where booking_request_id='${request}'
-);
-delete from public.booking_confirmation_notification_work where booking_request_id='${request}';
-delete from public.booking_notification_events where booking_request_id='${request}';
-delete from public.booking_request_payment_history where booking_request_id='${request}';
-delete from public.simulated_payment_effects where operation_id in (
-  select id from public.payment_provider_operations where claim_id='${claim}'
-);
-delete from public.payment_provider_observations where operation_id in (
-  select id from public.payment_provider_operations where claim_id='${claim}'
-);
-delete from public.payment_provider_operations where claim_id='${claim}';
-delete from public.booking_receipts where booking_confirmation_id in (
-  select id from public.booking_confirmations where booking_request_id='${request}'
-);
-delete from public.booking_confirmations where booking_request_id='${request}';
-delete from public.booking_request_capture_work where booking_request_id='${request}';
-delete from public.booking_request_provider_operation_identities where attempt_id='${attempt}';
-delete from public.booking_request_authorization_claim_items where claim_id='${claim}';
-delete from public.booking_request_authorization_claim_occupancies where claim_id='${claim}';
-delete from public.booking_request_authorization_claims where id='${claim}';
-delete from public.booking_request_submission_attempts where id='${attempt}';
-delete from public.booking_requests where id='${request}';
-delete from public.cottage_booking_period_occupancies where booking_period_commitment_id='${commitment}';
-delete from public.cottage_inventory_commitments where booking_period_commitment_id='${commitment}';
-delete from public.cottage_booking_period_commitments where id='${commitment}';
-delete from public.booking_snapshots where id='${snapshot}';
-delete from public.cottage_marketplace_listings where profile_id='${profile}';
-delete from public.cottage_publication_localizations where publication_id in (
-  select id from public.cottage_publication_snapshots where profile_id='${profile}'
-);
-delete from public.cottage_publication_snapshots where profile_id='${profile}';
-delete from public.cottage_profile_publication_decisions where review_cycle_id in (
-  select id from public.cottage_profile_review_cycles where profile_id='${profile}'
-);
-delete from public.cottage_profile_localized_revisions where review_cycle_id in (
-  select id from public.cottage_profile_review_cycles where profile_id='${profile}'
-);
-delete from public.cottage_profile_review_cycles where profile_id='${profile}';
-delete from public.cottage_profile_source_revisions where profile_id='${profile}';
-delete from public.cottage_shifts where schedule_revision_id='${schedule}';
-delete from public.cottage_shift_schedule_revisions where id='${schedule}';
-delete from public.owner_application_cottage_profiles where id='${profile}';
-delete from public.account_contexts where user_id in (${users});
-delete from auth.users where id in (${users});
-set session_replication_role=origin;
-`;
   }
 
   async function finish(session, action = "rollback") {
@@ -442,7 +371,7 @@ commit;`,
     harness.markTimingPhase("cleanup");
     for (const session of sessions) await finish(session);
     for (const namespace of ["49", "48", "47"]) {
-      harness.runSql(cleanup(namespace));
+      harness.runSql(customerReviewCleanup(namespace));
     }
   }
   timingOutcome = "passed";
