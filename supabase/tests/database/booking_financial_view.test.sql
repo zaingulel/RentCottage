@@ -146,6 +146,22 @@ $seed_function$;
 -- END CANCELLATION FIXTURE
 select no_plan();
 select pg_temp.seed_cancellation_booking('2101-01-01');
+insert into auth.users (id, aud, role, phone, phone_confirmed_at) values ('10000000-0000-4000-8000-000000001004','authenticated','authenticated','+9647500001004',now());
+insert into public.account_contexts (user_id, role, owner_approval_state) values ('10000000-0000-4000-8000-000000001004','cottage_owner','approved');
+insert into public.owner_application_cottage_profiles
+(id,owner_user_id,name,governorate,approximate_location,exact_address,capacity,bedrooms,bathrooms,amenities,source_language,description,house_rules,status)
+values ('20000000-0000-4000-8000-000000001004','10000000-0000-4000-8000-000000001004','Other Owner Cottage','Baghdad','Karrada','Private address',8,3,2,array['garden'],'en','Fixture description','Fixture rules','draft');
+insert into public.owner_request_notifications(booking_request_id,owner_user_id) values('60000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+set local role authenticated;
+select isnt(public.get_confirmed_booking_access('RC-REQ-0000000000001001'),null,'the owning Cottage Owner receives the Confirmed Booking private facts');
+select is(public.list_owner_booking_request_notifications()#>>'{0,bookingRequestReference}','RC-REQ-0000000000001001','the owning Cottage Owner lists the Confirmed Booking request');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001004',true);
+select is(public.get_confirmed_booking_access('RC-REQ-0000000000001001'),null,'an approved Cottage Owner of another cottage receives no Confirmed Booking private facts');
+select throws_ok($$select public.get_booking_financial_view('RC-REQ-0000000000001001','cottage_owner')$$,'42501','Booking cancellation is unavailable','an approved Cottage Owner of another cottage cannot read the financial and cancellation view');
+select throws_ok($$select public.list_booking_request_notification_status('RC-REQ-0000000000001001','cottage_owner')$$,'42501','Request notification status unavailable','an approved Cottage Owner of another cottage cannot read a Confirmed Booking request notification status');
+select is(public.list_owner_booking_request_notifications(),'[]'::jsonb,'an approved Cottage Owner of another cottage lists no Confirmed Booking request');
+reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 select lives_ok($$select public.get_booking_financial_view('RC-REQ-0000000000001001','customer')$$,'customer can read safe original booking financial facts');
