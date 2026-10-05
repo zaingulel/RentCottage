@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(290);
+select plan(292);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -4825,6 +4825,36 @@ select is(
   'the database clock records expiry as the winning outcome after the Response Deadline'
 );
 rollback to savepoint booking_request_deadline_overdue;
+
+savepoint booking_request_deadline_equality;
+update public.booking_requests
+set created_at = timed.deadline - interval '4 hours',
+  response_deadline = timed.deadline
+from (select clock_timestamp() as deadline) timed;
+-- Two clock reads never agree on purpose, so this observer alone makes the action's one
+-- clock read return the stored Response Deadline; the rollback restores the real clock.
+do $$begin execute replace(pg_get_functiondef('public.claim_booking_request_action(uuid,uuid,text,text,text)'::regprocedure),
+  'clock_timestamp()','target_request.response_deadline');end$$;
+set local role service_role;
+select is(
+  public.claim_booking_request_action(
+    (select owner_user_id from booking_request_lifecycle_target),
+    (select id from booking_request_lifecycle_target),
+    'accept', null, null
+  ) ->> 'status',
+  'release-required',
+  'acceptance evaluated at the exact Response Deadline is refused and expiry wins'
+);
+reset role;
+select results_eq(
+  $$select work.outcome, work.created_at = requests.response_deadline
+    from public.booking_request_release_work work
+    join public.booking_requests requests on requests.id = work.booking_request_id
+    where requests.id = (select id from booking_request_lifecycle_target)$$,
+  $$values ('expired'::text, true)$$,
+  'expiry is recorded as evaluated at the exact instant of the Response Deadline'
+);
+rollback to savepoint booking_request_deadline_equality;
 
 savepoint booking_request_automatic_expiry;
 update public.booking_requests
