@@ -4,8 +4,8 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
-import { withPaymentRecoveryCleanup } from "../tests/fixtures/payment-recovery-cleanup.mjs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { captureCleanup } from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -769,7 +769,10 @@ try {
       } finally {
         harness.markTimingPhase("cleanup");
         if (otherSeeded)
-          await harness.runSqlAfterSetup(paymentEvidenceSql, other(cleanup));
+          await harness.runSqlAfterSetup(
+            paymentEvidenceSql,
+            captureCleanup({ stem: "110" }),
+          );
       }
       harness.markTimingPhase("execution");
       const stillUnknown = await observeRecovery();
@@ -1296,7 +1299,7 @@ try {
       for (const index of indexes)
         await harness.runSqlAfterSetup(
           paymentEvidenceSql,
-          clone(cleanup, index),
+          captureCleanup({ stem: String(200 + Number(index)) }),
         );
     }
     harness.markTimingPhase("execution");
@@ -1365,7 +1368,7 @@ try {
     )
       .split("select plan(")[0]
       .replace(/^begin;/, "");
-    const recoveryCleanup = withPaymentRecoveryCleanup(cleanup, requestId);
+    const recoveryCleanup = captureCleanup({ paymentRecovery: true });
     harness.markTimingPhase("execution");
     const seed = async () => {
       harness.markTimingPhase("setup");
@@ -1811,56 +1814,7 @@ try {
 
   let paymentRecoverySeeded = false;
   let seeded = false;
-  const cleanup = `begin;
-  alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
-  delete from public.booking_notification_events where booking_request_id = '${requestId}';
-  alter table public.booking_notification_events enable trigger reject_booking_notification_events_change;
-  alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
-  alter table public.payment_provider_observations disable trigger guard_payment_provider_observation;
-  delete from public.payment_provider_observations where operation_id in (select id from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001');
-  alter table public.payment_provider_observations enable trigger guard_payment_provider_observation;
-  delete from public.simulated_payment_effects where operation_id in (select id from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001');
-  alter table public.booking_request_payment_history disable trigger reject_booking_request_payment_history_change;
-  delete from public.booking_request_payment_history
-  where payment_lifecycle_id in (
-    select payment_lifecycle_id from public.booking_requests where id = '${requestId}'
-  );
-  alter table public.booking_request_payment_history enable trigger reject_booking_request_payment_history_change;
-  alter table public.booking_receipts disable trigger reject_booking_receipt_change;
-  delete from public.booking_receipts where booking_confirmation_id in (
-    select id from public.booking_confirmations where booking_request_id = '${requestId}'
-  );
-  alter table public.booking_receipts enable trigger reject_booking_receipt_change;
-  alter table public.booking_confirmations disable trigger reject_booking_confirmation_change;
-  delete from public.booking_confirmations where booking_request_id = '${requestId}';
-  alter table public.booking_confirmations enable trigger reject_booking_confirmation_change;
-  delete from public.booking_request_release_work where booking_request_id = '${requestId}';
-  delete from public.booking_request_capture_work where booking_request_id = '${requestId}';
-  delete from public.payment_provider_operations where claim_id = '72000000-0000-4000-8000-000000001001';
-  delete from public.booking_request_provider_operation_identities where attempt_id = '70000000-0000-4000-8000-000000001001';
-  delete from public.booking_request_authorization_claim_items where claim_id = '72000000-0000-4000-8000-000000001001';
-  delete from public.booking_request_authorization_claim_occupancies where claim_id = '72000000-0000-4000-8000-000000001001';
-  delete from public.booking_request_authorization_claims where id = '72000000-0000-4000-8000-000000001001';
-  delete from public.booking_request_submission_attempts where id = '70000000-0000-4000-8000-000000001001';
-  delete from public.booking_request_status_notifications where booking_request_id = '${requestId}';
-  delete from public.owner_request_notifications where booking_request_id = '${requestId}';
-  delete from public.booking_requests where id = '${requestId}';
-  alter table public.booking_snapshots disable trigger reject_booking_snapshot_update;
-  delete from public.booking_snapshots where id = '40000000-0000-4000-8000-000000001001';
-  alter table public.booking_snapshots enable trigger reject_booking_snapshot_update;
-  delete from public.cottage_booking_period_occupancies where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001';
-  delete from public.cottage_booking_period_commitments where id = '50000000-0000-4000-8000-000000001001';
-  alter table public.cottage_shifts disable trigger reject_cottage_shift_delete;
-  delete from public.cottage_shifts where schedule_revision_id = '30000000-0000-4000-8000-000000001001';
-  alter table public.cottage_shifts enable trigger reject_cottage_shift_delete;
-  alter table public.cottage_shift_schedule_revisions disable trigger reject_cottage_shift_schedule_revision_delete;
-  delete from public.cottage_shift_schedule_revisions where id = '30000000-0000-4000-8000-000000001001';
-  alter table public.cottage_shift_schedule_revisions enable trigger reject_cottage_shift_schedule_revision_delete;
-  delete from public.owner_application_cottage_profiles where id = '20000000-0000-4000-8000-000000001001';
-  delete from public.account_contexts where user_id in ('10000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001002', '10000000-0000-4000-8000-000000001003');
-  delete from auth.users where id in ('10000000-0000-4000-8000-000000001001', '10000000-0000-4000-8000-000000001002', '10000000-0000-4000-8000-000000001003');
-alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
-commit;`;
+  const cleanup = captureCleanup();
 
   harness.guardDisposableLocalDatabase();
   try {
@@ -2070,7 +2024,7 @@ commit;`;
       await harness.runSqlAfterSetup(
         paymentEvidenceSql,
         paymentRecoverySeeded
-          ? withPaymentRecoveryCleanup(cleanup, requestId)
+          ? captureCleanup({ paymentRecovery: true })
           : cleanup,
       );
   }
