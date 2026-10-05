@@ -5,22 +5,74 @@ import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { main } from "./verify-access.mjs";
+import { accessStepPlan } from "./verify-access-plan.mjs";
 import {
   browserCommands,
   commands,
   databaseCheckCommands,
   databasePreflightCommands,
   declaredSchemaDiffCommand,
+  declaredSchemaDiffStep,
+  fixtureContractCommands,
+  inGroup,
   localCredentials,
   mainWithPreparedProject,
+  nextFixtureCommands,
+  nextJourneyCommand,
   ownedRun,
   ownershipCommand,
+  plannedCommands,
   resetCommand,
+  scheduledExpiryVerifyCommand,
+  scheduledJourneyCommand,
+  sqlTestsCommand,
+  sqlTestsStep,
   startCommand,
   statusCommand,
   stopCommand,
   successfulRun,
+  workerPreparationCommands,
 } from "./verify-access-command-doubles.mjs";
+
+function ownedJourneyCommands(phase) {
+  const grep =
+    phase === "retry-proof"
+      ? "a Cottage Owner saves, resumes and submits a complete private application$"
+      : "(?:shared sign-in from the homepage returns a prospective owner to their private application|a Cottage Owner saves, resumes and submits a complete private application|Owner Application keeps evidence controls aligned and accessible in every locale|one account returns to customer bookings, enrolls explicitly and signs out only this device)$";
+  const retries = phase === "retry-proof" ? "--retries=1" : "--retries=0";
+  return {
+    next: [
+      "npx",
+      [
+        "playwright",
+        "test",
+        "tests/access.spec.ts",
+        "--project=mobile",
+        "--project=desktop",
+        "--workers=1",
+        retries,
+        "--grep",
+        grep,
+        `--output=playwright-report/owned-next-${phase}`,
+      ],
+    ],
+    worker: [
+      "npx",
+      [
+        "playwright",
+        "test",
+        "tests/access.spec.ts",
+        "--project=worker",
+        "--config=playwright.worker-prebuilt.config.ts",
+        "--workers=1",
+        retries,
+        "--grep",
+        grep,
+        `--output=playwright-report/owned-worker-${phase}`,
+      ],
+    ],
+  };
+}
 
 describe("access verification command", () => {
   it("skips reset only for a proven fresh GitHub-hosted start", async () => {
@@ -206,7 +258,7 @@ describe("access verification command", () => {
             (args[1] === "test" && args[2] === "db")),
       );
       const expectedPreflight = scenario.sqlFailure
-        ? databasePreflightCommands[1]
+        ? sqlTestsCommand
         : declaredSchemaDiffCommand;
       expect(preflight).toEqual([expectedPreflight]);
       expect(commands(run).slice(0, 5)).toEqual([
@@ -414,49 +466,17 @@ describe("access verification command", () => {
           run,
         }),
       ).toBe(0);
-      const grep =
-        phase === "retry-proof"
-          ? "a Cottage Owner saves, resumes and submits a complete private application$"
-          : "(?:shared sign-in from the homepage returns a prospective owner to their private application|a Cottage Owner saves, resumes and submits a complete private application|Owner Application keeps evidence controls aligned and accessible in every locale|one account returns to customer bookings, enrolls explicitly and signs out only this device)$";
-      const retries = phase === "retry-proof" ? "--retries=1" : "--retries=0";
+      const owned = ownedJourneyCommands(phase);
       expect(commands(run)).toEqual([
         startCommand,
         ownershipCommand,
         resetCommand,
         statusCommand,
-        ...databaseCheckCommands.slice(0, 2),
-        ...browserCommands.slice(0, 2),
-        [
-          "npx",
-          [
-            "playwright",
-            "test",
-            "tests/access.spec.ts",
-            "--project=mobile",
-            "--project=desktop",
-            "--workers=1",
-            retries,
-            "--grep",
-            grep,
-            `--output=playwright-report/owned-next-${phase}`,
-          ],
-        ],
-        ...browserCommands.slice(3, 6),
-        [
-          "npx",
-          [
-            "playwright",
-            "test",
-            "tests/access.spec.ts",
-            "--project=worker",
-            "--config=playwright.worker-prebuilt.config.ts",
-            "--workers=1",
-            retries,
-            "--grep",
-            grep,
-            `--output=playwright-report/owned-worker-${phase}`,
-          ],
-        ],
+        ...fixtureContractCommands,
+        ...nextFixtureCommands,
+        owned.next,
+        ...workerPreparationCommands,
+        owned.worker,
         ownershipCommand,
         stopCommand,
       ]);
@@ -565,6 +585,104 @@ describe("access verification command", () => {
       ownershipCommand,
       stopCommand,
     ]);
+  });
+
+  it("runs the steps of the plan it is given between startup and cleanup", async () => {
+    const run = successfulRun();
+    const stepPlan = vi.fn(() => ({
+      preflight: [
+        {
+          group: "database",
+          command: "npx",
+          args: ["supabase", "inspect", "db"],
+          environment: "supabase",
+        },
+      ],
+      checks: [
+        {
+          group: "database",
+          command: "node",
+          args: ["scripts/unlisted-check.mjs"],
+          environment: "database",
+        },
+      ],
+    }));
+
+    expect(
+      await mainWithPreparedProject(["--database"], {
+        environment: {},
+        run,
+        stepPlan,
+      }),
+    ).toBe(0);
+
+    expect(stepPlan).toHaveBeenCalledWith({
+      mode: "--database",
+      phase: "ordinary",
+      partition: undefined,
+      shard: undefined,
+    });
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      ["npx", ["supabase", "inspect", "db", "--workdir", expect.any(String)]],
+      statusCommand,
+      ["node", ["scripts/unlisted-check.mjs"]],
+      ownershipCommand,
+      stopCommand,
+    ]);
+  });
+
+  it("refuses a planned step whose environment the runner does not provide", async () => {
+    const run = successfulRun();
+    const removeTemp = vi.fn();
+    const stderr = vi.fn();
+    const lines = [];
+
+    expect(
+      await mainWithPreparedProject(["--database"], {
+        environment: {},
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp,
+        run,
+        stderr,
+        stdout: (line) => lines.push(JSON.parse(line)),
+        stepPlan: () => ({
+          preflight: [],
+          checks: [
+            {
+              group: "database",
+              command: "node",
+              args: ["scripts/unlisted-check.mjs"],
+              environment: "inherited",
+            },
+          ],
+        }),
+      }),
+    ).toBe(1);
+
+    expect(stderr).toHaveBeenCalledWith(
+      expect.stringContaining("unknown environment inherited"),
+    );
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      statusCommand,
+      ownershipCommand,
+      stopCommand,
+    ]);
+    expect(
+      lines.filter((line) => line.type === "verification-failure"),
+    ).toEqual([
+      {
+        type: "verification-failure",
+        attemptedCommand: ["node", "scripts/unlisted-check.mjs"],
+        reproduceGroup: ["npm", "run", "verify:access:database"],
+      },
+    ]);
+    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
   });
 
   it("runs the database tests without the booking and payment concurrency programs", async () => {
@@ -719,8 +837,8 @@ describe("access verification command", () => {
         }),
       ).toBe(5);
       expect(commands(run).slice(-4)).toEqual([
-        browserCommands.at(-2),
-        browserCommands.at(-1),
+        scheduledJourneyCommand,
+        scheduledExpiryVerifyCommand,
         ownershipCommand,
         stopCommand,
       ]);
@@ -729,7 +847,7 @@ describe("access verification command", () => {
       ).toEqual([
         {
           type: "verification-failure",
-          attemptedCommand: ["npx", ...browserCommands.at(-2)[1]],
+          attemptedCommand: ["npx", ...scheduledJourneyCommand[1]],
           reproduceGroup: ["npm", "run", "verify:access:browser"],
         },
       ]);
@@ -761,7 +879,7 @@ describe("access verification command", () => {
       ownershipCommand,
       resetCommand,
       statusCommand,
-      ...databaseCheckCommands.slice(0, 2),
+      ...fixtureContractCommands,
       ownershipCommand,
       stopCommand,
     ]);
@@ -900,6 +1018,7 @@ describe("access verification command", () => {
       "verify-booking-cancellation-concurrency",
       "verify-messaging-concurrency",
       "verify-booking-completion-concurrency",
+      "verify-customer-review-concurrency",
       "verify-booking-refund-concurrency",
       "verify-booking-payout-concurrency",
       "verify-booking-request-payment-required-expiry-concurrency",
@@ -1084,7 +1203,7 @@ describe("access verification command", () => {
       "node",
       "scripts/verify-booking-request-capture-concurrency.mjs",
     ];
-    const nextCommand = [browserCommands[2][0], ...browserCommands[2][1]];
+    const nextCommand = [nextJourneyCommand[0], ...nextJourneyCommand[1]];
     const fixtureCommand = [
       "node",
       "scripts/verify-access-fixture-contract.mjs",
@@ -1100,7 +1219,12 @@ describe("access verification command", () => {
           resetCommand,
           ...databasePreflightCommands,
           statusCommand,
-          ...databaseCheckCommands.slice(0, 11),
+          ...databaseCheckCommands.slice(
+            0,
+            databaseCheckCommands.findIndex(
+              ([, args]) => args[0] === captureCommand[1],
+            ) + 1,
+          ),
         ],
       },
       {
@@ -1114,7 +1238,8 @@ describe("access verification command", () => {
           ...databasePreflightCommands,
           statusCommand,
           ...databaseCheckCommands,
-          ...browserCommands.slice(0, 3),
+          ...nextFixtureCommands,
+          nextJourneyCommand,
         ],
       },
       {
@@ -1126,7 +1251,7 @@ describe("access verification command", () => {
           ownershipCommand,
           resetCommand,
           statusCommand,
-          databaseCheckCommands[0],
+          fixtureContractCommands[0],
         ],
       },
       {
@@ -1286,6 +1411,82 @@ describe("access verification command", () => {
           type: "exit",
           status: 9,
         });
+    }
+  });
+
+  it("plans the checks for every mode without starting a process", () => {
+    const databasePreflight = inGroup("database", [
+      declaredSchemaDiffStep,
+      sqlTestsStep,
+    ]);
+    const modePlans = [
+      {
+        mode: undefined,
+        phase: "ordinary",
+        preflight: databasePreflight,
+        checks: [
+          ...inGroup("database", databaseCheckCommands),
+          ...inGroup("browser", browserCommands),
+        ],
+      },
+      {
+        mode: "--database",
+        phase: "ordinary",
+        preflight: databasePreflight,
+        checks: inGroup("database", databaseCheckCommands),
+      },
+      {
+        mode: "--database-tests",
+        phase: "ordinary",
+        preflight: databasePreflight,
+        checks: inGroup(
+          "database",
+          databaseCheckCommands.filter(
+            ([, [script]]) => !script.startsWith("scripts/verify-booking-"),
+          ),
+        ),
+      },
+      {
+        mode: "--browser",
+        phase: "ordinary",
+        preflight: [],
+        checks: inGroup("browser", browserCommands),
+      },
+      {
+        mode: "--fixture-contract",
+        phase: "ordinary",
+        preflight: [],
+        checks: inGroup("fixture", fixtureContractCommands),
+      },
+      ...["forward", "reverse", "retry-proof"].map((phase) => {
+        const owned = ownedJourneyCommands(phase);
+        return {
+          mode: "--owned-journeys",
+          phase,
+          preflight: [],
+          checks: [
+            ...inGroup("shared-setup", fixtureContractCommands),
+            ...inGroup("browser", [
+              ...nextFixtureCommands,
+              owned.next,
+              ...workerPreparationCommands,
+              owned.worker,
+            ]),
+          ],
+        };
+      }),
+    ];
+    for (const { mode, phase, preflight, checks } of modePlans) {
+      const plan = accessStepPlan({
+        mode,
+        phase,
+        partition: undefined,
+        shard: undefined,
+      });
+      expect(plannedCommands(plan.preflight), `${mode} ${phase}`).toEqual(
+        preflight,
+      );
+      expect(plannedCommands(plan.checks), `${mode} ${phase}`).toEqual(checks);
     }
   });
 });
