@@ -9,6 +9,7 @@ import type {
   BookingRequestCaptureSuccessfulOperation,
   PaymentProviderIdentity,
 } from "./payment-contract";
+import { exactKeys } from "./payment-permit";
 
 const bindingKeys = [
   "bookingRequestId",
@@ -54,13 +55,6 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
-}
-
-function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
-  const actual = Object.keys(value);
-  return (
-    actual.length === keys.length && actual.every((key) => keys.includes(key))
-  );
 }
 
 function sameProviderIdentity(

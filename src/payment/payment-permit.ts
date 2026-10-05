@@ -34,7 +34,7 @@ const providerIdentityKeys = [
   "merchantId",
   "terminalId",
 ];
-function exactKeys(value: object, keys: readonly string[]) {
+export function exactKeys(value: object, keys: readonly string[]) {
   const actual = Object.keys(value);
   return (
     actual.length === keys.length && actual.every((key) => keys.includes(key))
