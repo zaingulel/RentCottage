@@ -160,16 +160,14 @@ function paymentRequiredFrom(
     !exactKeys(window, ["recordedAt", "deadline"]) ||
     !isTimestamp(window.recordedAt) ||
     !isTimestamp(window.deadline) ||
-    Date.parse(window.deadline as string) -
-      Date.parse(window.recordedAt as string) !==
-      1_200_000
+    Date.parse(window.deadline) - Date.parse(window.recordedAt) !== 1_200_000
   )
     throw new Error("Database returned invalid Payment Required evidence");
   return {
     status: "payment-required",
     window: {
-      recordedAt: window.recordedAt as string,
-      deadline: window.deadline as string,
+      recordedAt: window.recordedAt,
+      deadline: window.deadline,
     },
   };
 }
@@ -228,8 +226,8 @@ function completedFrom(
       expected.authorizationProviderResult,
     ),
     captureProviderResult,
-    authorizationRecordedAt: expected.authorizationRecordedAt as string,
-    captureRecordedAt: expected.captureRecordedAt as string,
+    authorizationRecordedAt: expected.authorizationRecordedAt,
+    captureRecordedAt: expected.captureRecordedAt,
   };
   return {
     status: "complete",
@@ -308,7 +306,7 @@ export class SupabaseBookingRequestCaptureRepository
       workId: bookingRequestId,
       leaseGeneration: permit.leaseGeneration as number,
       leaseToken: permit.leaseToken as string,
-      notAfter: permit.notAfter as string,
+      notAfter: permit.notAfter,
     };
     return {
       status: "leased",
@@ -384,7 +382,7 @@ export class SupabaseBookingRequestCaptureRepository
           workId: lease.workId as string,
           leaseGeneration: lease.leaseGeneration as number,
           leaseToken: lease.leaseToken as string,
-          notAfter: lease.notAfter as string,
+          notAfter: lease.notAfter,
           recoveryOperationId: lease.recoveryOperationId as string,
           providerResult: recoveryResultIdentityFrom(lease.providerResult),
         },
