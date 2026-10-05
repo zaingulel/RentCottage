@@ -1,24 +1,8 @@
-vi.mock("@/notification/request-notification-status", () => ({
-  loadRequestNotificationStatus: vi
-    .fn()
-    .mockResolvedValue({ status: "unavailable" }),
-}));
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  loadRequest,
-  loadConfirmed,
-  loadFinancial,
-  loadReview,
-  submitReview,
-  notFound,
-  router,
-} = vi.hoisted(() => ({
-  loadRequest: vi.fn(),
-  loadConfirmed: vi.fn(),
-  loadFinancial: vi.fn(),
-  loadReview: vi.fn(),
+const { loadDetails, submitReview, notFound, router } = vi.hoisted(() => ({
+  loadDetails: vi.fn(),
   submitReview: vi.fn(),
   notFound: vi.fn(),
   router: { refresh: vi.fn() },
@@ -38,22 +22,10 @@ vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/navigation", () => ({
   notFound,
-  unstable_rethrow: vi.fn(),
   useRouter: () => router,
 }));
-vi.mock("@/booking-request/request-customer-booking-request", () => ({
-  loadCustomerBookingRequest: loadRequest,
-}));
-vi.mock("@/booking-request/request-confirmed-booking-access", () => ({
-  loadConfirmedBookingAccess: loadConfirmed,
-}));
-vi.mock("@/booking-request/request-booking-financial-view", () => ({
-  loadBookingFinancialView: loadFinancial,
-}));
-vi.mock("@/customer-review/request-customer-review", () => ({
-  createRequestCustomerReview: vi.fn().mockResolvedValue({
-    getOwn: loadReview,
-  }),
+vi.mock("@/booking-request/request-booking-request-details", () => ({
+  loadBookingRequestDetails: loadDetails,
 }));
 vi.mock("@/customer-review/actions", () => ({
   submitCustomerReview: submitReview,
@@ -96,17 +68,15 @@ const request = {
   declineNote: null,
   statusNotifications: [],
 };
+const delivery = { status: "unavailable" as const };
 
 describe("authenticated Customer Booking Request page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    loadConfirmed.mockResolvedValue(null);
-    loadFinancial.mockResolvedValue(null);
-    loadReview.mockResolvedValue({ status: "unavailable" });
   });
 
   it("renders a single contact-safe request and withdrawal control in right-to-left Arabic", async () => {
-    loadRequest.mockResolvedValue(request);
+    loadDetails.mockResolvedValue({ outcome: "pending", request, delivery });
     render(
       await CustomerBookingRequestPage({
         params: Promise.resolve({
@@ -128,7 +98,7 @@ describe("authenticated Customer Booking Request page", () => {
   });
 
   it("does not disclose another Customer's missing request", async () => {
-    loadRequest.mockResolvedValue(null);
+    loadDetails.mockResolvedValue({ outcome: "denied" });
     render(
       await CustomerBookingRequestPage({
         params: Promise.resolve({
@@ -149,7 +119,7 @@ describe("authenticated Customer Booking Request page", () => {
   ] as const)(
     "renders the localized unavailable recovery when confirmed access cannot be checked in %s",
     async (locale, unavailable) => {
-      loadConfirmed.mockRejectedValueOnce(new Error("database unavailable"));
+      loadDetails.mockResolvedValue({ outcome: "unavailable" });
 
       render(
         await CustomerBookingRequestPage({
@@ -161,13 +131,12 @@ describe("authenticated Customer Booking Request page", () => {
       );
 
       expect(screen.getByRole("alert")).toHaveTextContent(unavailable);
-      expect(loadRequest).not.toHaveBeenCalled();
       expect(screen.queryByText("Confirmed booking")).not.toBeInTheDocument();
     },
   );
 
   it("renders Sorani status copy without exposing the pending machine key", async () => {
-    loadRequest.mockResolvedValue(request);
+    loadDetails.mockResolvedValue({ outcome: "pending", request, delivery });
     render(
       await CustomerBookingRequestPage({
         params: Promise.resolve({
@@ -183,18 +152,22 @@ describe("authenticated Customer Booking Request page", () => {
   });
 
   it("renders an Arabic decline reason and note without raw machine keys", async () => {
-    loadRequest.mockResolvedValue({
-      ...request,
-      status: "declined",
-      declineReason: "cannot_accommodate_request",
-      declineNote: "لا يمكن تجهيز المكان بأمان.",
-      statusNotifications: [
-        {
-          id: "00000000-0000-4000-8000-000000000044",
-          status: "declined",
-          createdAt: "2099-08-21T18:00:00.000Z",
-        },
-      ],
+    loadDetails.mockResolvedValue({
+      outcome: "pending",
+      request: {
+        ...request,
+        status: "declined",
+        declineReason: "cannot_accommodate_request",
+        declineNote: "لا يمكن تجهيز المكان بأمان.",
+        statusNotifications: [
+          {
+            id: "00000000-0000-4000-8000-000000000044",
+            status: "declined",
+            createdAt: "2099-08-21T18:00:00.000Z",
+          },
+        ],
+      },
+      delivery,
     });
     render(
       await CustomerBookingRequestPage({
@@ -217,14 +190,15 @@ describe("authenticated Customer Booking Request page", () => {
 });
 
 it("keeps confirmed booking details visible and shows authoritative review eligibility", async () => {
-  loadConfirmed.mockResolvedValue({
-    access: { actorRole: "customer" },
-    navigation: null,
-  });
-  loadFinancial.mockResolvedValue({ lifecycle: { status: "completed" } });
-  loadReview.mockResolvedValue({
-    status: "eligible",
-    reviewExpiresAt: "2026-10-05T10:00:00.000Z",
+  loadDetails.mockResolvedValue({
+    outcome: "confirmed",
+    confirmed: { access: { actorRole: "customer" }, navigation: null },
+    financial: { lifecycle: { status: "completed" } },
+    review: {
+      status: "eligible",
+      reviewExpiresAt: "2026-10-05T10:00:00.000Z",
+    },
+    delivery,
   });
 
   render(
@@ -244,12 +218,13 @@ it("keeps confirmed booking details visible and shows authoritative review eligi
 });
 
 it("shows the four completed progress steps above a Customer's Confirmed Booking details", async () => {
-  loadConfirmed.mockResolvedValue({
-    access: { actorRole: "customer" },
-    navigation: null,
+  loadDetails.mockResolvedValue({
+    outcome: "confirmed",
+    confirmed: { access: { actorRole: "customer" }, navigation: null },
+    financial: { lifecycle: { status: "confirmed" } },
+    review: { status: "unavailable" },
+    delivery,
   });
-  loadFinancial.mockResolvedValue({ lifecycle: { status: "confirmed" } });
-  loadReview.mockResolvedValue({ status: "unavailable" });
 
   render(
     await CustomerBookingRequestPage({
@@ -277,12 +252,14 @@ it("shows the four completed progress steps above a Customer's Confirmed Booking
 });
 
 it("routes retained cancellation to safe history without reopening private access or pending status", async () => {
-  loadConfirmed.mockResolvedValue(null);
-  loadFinancial.mockResolvedValue({
-    cancellation: { occurredAt: "2101-01-01T05:00:00Z" },
-    actorRole: "customer",
+  loadDetails.mockResolvedValue({
+    outcome: "cancelled",
+    financial: {
+      cancellation: { occurredAt: "2101-01-01T05:00:00Z" },
+      actorRole: "customer",
+    },
+    delivery,
   });
-  loadRequest.mockClear();
   render(
     await CustomerBookingRequestPage({
       params: Promise.resolve({
@@ -292,18 +269,15 @@ it("routes retained cancellation to safe history without reopening private acces
     }),
   );
   expect(screen.getByText("Retained cancellation")).toBeVisible();
-  expect(loadRequest).not.toHaveBeenCalled();
   expect(screen.queryByText("Confirmed booking")).not.toBeInTheDocument();
-  expect(loadFinancial).toHaveBeenCalledWith(
+  expect(loadDetails).toHaveBeenCalledWith(
     request.bookingRequestReference,
     "customer",
   );
 });
 
 it("keeps request details visible when delivery status cannot load", async () => {
-  loadConfirmed.mockResolvedValue(null);
-  loadFinancial.mockResolvedValue(null);
-  loadRequest.mockResolvedValue(request);
+  loadDetails.mockResolvedValue({ outcome: "pending", request, delivery });
   render(
     await CustomerBookingRequestPage({
       params: Promise.resolve({

@@ -2,42 +2,25 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/notification/notification-actions", () => ({
   retryPaidConfirmationNotification: vi.fn(),
 }));
-vi.mock("@/notification/request-notification-status", () => ({
-  loadRequestNotificationStatus: vi
-    .fn()
-    .mockResolvedValue({ status: "unavailable" }),
-}));
 import { render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const { confirmed, financial, refresh, request } = vi.hoisted(() => ({
-  confirmed: vi.fn(),
-  financial: vi.fn(),
+const { loadDetails, refresh } = vi.hoisted(() => ({
+  loadDetails: vi.fn(),
   refresh: vi.fn(),
-  request: vi.fn(),
 }));
 vi.mock("@/access/request-account-context", () => ({
   requireRequestAccount: vi.fn().mockResolvedValue({ status: "authenticated" }),
 }));
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
-  unstable_rethrow: vi.fn(),
   useRouter: () => ({ refresh }),
 }));
 vi.mock("@/booking-request/lifecycle-actions", () => ({
   actOnBookingRequest: vi.fn(),
 }));
-vi.mock("@/booking-request/request-confirmed-booking-access", () => ({
-  loadConfirmedBookingAccess: confirmed,
+vi.mock("@/booking-request/request-booking-request-details", () => ({
+  loadBookingRequestDetails: loadDetails,
 }));
-vi.mock("@/booking-request/request-booking-financial-view", () => ({
-  loadBookingFinancialView: financial,
-}));
-vi.mock(
-  "@/booking-request/request-owner-booking-request-notifications",
-  () => ({
-    loadOwnerBookingRequest: request,
-  }),
-);
 vi.mock("@/components/confirmed-booking-details", () => ({
   ConfirmedBookingDetails: () => <h1>Confirmed booking</h1>,
 }));
@@ -51,17 +34,15 @@ import Page from "./page";
 import { ownerDisplayFixtures } from "../../../../../../tests/fixtures/booking-request-display.fixtures";
 const params = (locale: string) =>
   Promise.resolve({ locale, reference: "RC-REQ-AAAAAAAAAAAAAAAA" });
+const delivery = { status: "unavailable" as const };
 beforeEach(() => {
   vi.clearAllMocks();
-  confirmed.mockResolvedValue({
-    access: { actorRole: "cottage_owner" },
-    navigation: null,
+  loadDetails.mockResolvedValue({
+    outcome: "confirmed",
+    confirmed: { access: { actorRole: "cottage_owner" }, navigation: null },
+    financial: { cancellation: null, lifecycle: { status: "confirmed" } },
+    delivery,
   });
-  financial.mockResolvedValue({
-    cancellation: null,
-    lifecycle: { status: "confirmed" },
-  });
-  request.mockResolvedValue(null);
 });
 afterEach(() => vi.useRealTimers());
 it.each([
@@ -71,7 +52,7 @@ it.each([
 ])(
   "shows financial-load failure and a recovery link in %s",
   async (locale, message) => {
-    financial.mockRejectedValue(new Error("financial database unavailable"));
+    loadDetails.mockResolvedValue({ outcome: "unavailable" });
     render(await Page({ params: params(locale) }));
     expect(screen.getByRole("alert")).toHaveTextContent(message);
     expect(screen.getByRole("link", { name: "RentCottage" })).toHaveAttribute(
@@ -91,14 +72,17 @@ it("keeps successful private owner details and refund information together", asy
   expect(
     screen.getByRole("heading", { name: "Cancellation and refunds" }),
   ).toBeVisible();
-  expect(financial).toHaveBeenCalledWith(
+  expect(loadDetails).toHaveBeenCalledWith(
     "RC-REQ-AAAAAAAAAAAAAAAA",
     "cottage_owner",
   );
 });
 it("retains cancellation history without reopening private access", async () => {
-  confirmed.mockResolvedValue(null);
-  financial.mockResolvedValue({ cancellation: {} });
+  loadDetails.mockResolvedValue({
+    outcome: "cancelled",
+    financial: { cancellation: {} },
+    delivery,
+  });
   render(await Page({ params: params("en") }));
   expect(
     screen.getByRole("heading", { name: "Cancellation and refunds" }),
@@ -108,23 +92,32 @@ it("retains cancellation history without reopening private access", async () => 
   ).not.toBeInTheDocument();
 });
 it("opens an authorised unpaid owner request from complete history", async () => {
-  confirmed.mockResolvedValue(null);
-  request.mockResolvedValue(ownerDisplayFixtures["capture-processing"]);
+  loadDetails.mockResolvedValue({
+    outcome: "pending",
+    request: ownerDisplayFixtures["capture-processing"],
+    delivery,
+  });
   render(await Page({ params: params("en") }));
   expect(
     screen.getByRole("article", { name: "RC-REQ-AAAAAAAAAAAAAAAA" }),
   ).toBeVisible();
-  expect(request).toHaveBeenCalledWith("RC-REQ-AAAAAAAAAAAAAAAA");
   expect(
     screen.queryByRole("heading", { name: "Confirmed booking" }),
   ).not.toBeInTheDocument();
 });
 it("replaces an unpaid request with its authoritative payment status", async () => {
   vi.useFakeTimers();
-  confirmed.mockResolvedValue(null);
-  request
-    .mockResolvedValueOnce(ownerDisplayFixtures["capture-processing"])
-    .mockResolvedValueOnce(ownerDisplayFixtures["payment-required-open"]);
+  loadDetails
+    .mockResolvedValueOnce({
+      outcome: "pending",
+      request: ownerDisplayFixtures["capture-processing"],
+      delivery,
+    })
+    .mockResolvedValueOnce({
+      outcome: "pending",
+      request: ownerDisplayFixtures["payment-required-open"],
+      delivery,
+    });
   const view = render(await Page({ params: params("en") }));
   expect(
     within(screen.getByRole("article")).getByRole("status"),
@@ -137,10 +130,7 @@ it("replaces an unpaid request with its authoritative payment status", async () 
   ).toHaveTextContent("The Customer’s automatic payment failed");
 });
 it("keeps participant role isolation", async () => {
-  confirmed.mockResolvedValue({
-    access: { actorRole: "customer" },
-    navigation: null,
-  });
+  loadDetails.mockResolvedValue({ outcome: "denied" });
   render(await Page({ params: params("en") }));
   expect(screen.getByRole("alert")).toHaveTextContent("Access recovery");
   expect(screen.queryByRole("heading")).not.toBeInTheDocument();
