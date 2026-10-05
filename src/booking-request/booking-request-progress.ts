@@ -1,6 +1,6 @@
-import type {
-  BookingRequestDisplayStatus,
-  CustomerBookingRequestDisplay,
+import {
+  canRecoverBookingRequestPayment,
+  type CustomerBookingRequestDisplay,
 } from "./booking-request-display";
 
 export const bookingRequestProgressSteps = [
@@ -27,14 +27,28 @@ type ProgressStates = readonly [
   BookingRequestProgressState,
 ];
 
+type BookingRequestProgress = readonly {
+  readonly step: BookingRequestProgressStep;
+  readonly state: BookingRequestProgressState;
+}[];
+
+const confirmedStates: ProgressStates = [
+  "completed",
+  "completed",
+  "completed",
+  "completed",
+];
+
 function progressStates(
-  status: BookingRequestDisplayStatus,
   request: Pick<
     CustomerBookingRequestDisplay,
-    "paymentRequiredWindow" | "paymentRequiredExpiry"
+    | "status"
+    | "paymentRequiredWindow"
+    | "paymentRequiredExpiry"
+    | "paymentRecovery"
   >,
 ): ProgressStates {
-  switch (status) {
+  switch (request.status) {
     case "pending":
       return ["completed", "current", "upcoming", "upcoming"];
     case "processing":
@@ -49,28 +63,31 @@ function progressStates(
     case "capture-processing":
       return ["completed", "completed", "current", "upcoming"];
     case "payment-required":
-      return request.paymentRequiredExpiry === null &&
-        request.paymentRequiredWindow?.phase === "open"
+      return canRecoverBookingRequestPayment(request)
         ? ["completed", "completed", "action-required", "upcoming"]
         : ["completed", "completed", "current", "upcoming"];
     case "paid-confirmed":
-      return ["completed", "completed", "completed", "completed"];
+      return confirmedStates;
   }
 }
 
-export function customerBookingRequestProgress(
-  status: BookingRequestDisplayStatus,
-  request: Pick<
-    CustomerBookingRequestDisplay,
-    "paymentRequiredWindow" | "paymentRequiredExpiry"
-  >,
-): readonly {
-  readonly step: BookingRequestProgressStep;
-  readonly state: BookingRequestProgressState;
-}[] {
-  const states = progressStates(status, request);
+function progressOf(states: ProgressStates): BookingRequestProgress {
   return bookingRequestProgressSteps.map((step, index) => ({
     step,
     state: states[index],
   }));
+}
+
+export const confirmedBookingProgress = progressOf(confirmedStates);
+
+export function customerBookingRequestProgress(
+  request: Pick<
+    CustomerBookingRequestDisplay,
+    | "status"
+    | "paymentRequiredWindow"
+    | "paymentRequiredExpiry"
+    | "paymentRecovery"
+  >,
+): BookingRequestProgress {
+  return progressOf(progressStates(request));
 }

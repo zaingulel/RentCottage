@@ -12,8 +12,8 @@ the code keeps them.
   Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
   families `--display` and `--body`, the right-to-left hero headline gap `--hero-headline-gap-rtl`, and
   `color-scheme: light`. Booking Period disclosures and day groups use the `--booking-period-*`,
-  `--booking-option-*` and `--booking-time-text` dimension tokens in that same block. There is no Tailwind and
-  no theme object.
+  `--booking-option-*` and `--booking-time-text` dimension tokens in that same block, and the progress steps use
+  its `--booking-progress-*` dimension tokens. There is no Tailwind and no theme object.
 - Interface colours and font families come from these tokens through `var(--…)`.
   [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside `:root` other than in an elevation
   shadow, and on a custom property a stylesheet uses that `:root` does not declare.
@@ -70,11 +70,14 @@ Anything else is a token.
   Missing choices are corrected only through an explicit `ActionButton`; changed availability uses
   `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups, with individual
   price and availability text. Times use `<bdi dir="ltr">` in every locale.
-- Progress steps: the Customer Booking Request status page shows them as an `ol.booking-request-progress` named
-  by `aria-label`, with one `li` per step carrying `data-state` and `aria-current="step"` on the step in progress
-  or needing action. The marker is decorative and `aria-hidden`; the state is always present as text, visually
-  hidden with `.visually-hidden` for completed and not-started steps, so no state is conveyed by colour alone.
-  States are derived by `customerBookingRequestProgress` and never stored.
+- Progress steps: `BookingRequestProgress` in
+  [booking-request-progress.tsx](../src/components/booking-request-progress.tsx) renders an
+  `ol.booking-request-progress` with `role="list"`, named by `aria-label`, with one `li` per step carrying
+  `data-state` and `aria-current="step"` on the step in progress or needing action. The marker is decorative and
+  `aria-hidden`; the state is always present as text, visually hidden with `.visually-hidden` for completed and
+  not-started steps, so no state is conveyed by colour alone. The Customer Booking Request status page shows the
+  steps, and a Customer's Confirmed Booking page shows them all completed inside `.booking-request-progress-card`
+  above the Confirmed Booking details. States are derived by `customerBookingRequestProgress` and never stored.
 - A new button, link-styled action, form field or submit feedback reuses these. A pattern they lack is added
   there, not built inside a feature component.
 

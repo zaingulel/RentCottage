@@ -22,6 +22,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 import { CustomerBookingRequestStatus } from "./customer-booking-request-status";
 import {
   customerDisplayFixtures,
+  customerRecoveryDisplayFixtures,
   restrictedBookingRequestSentinels,
 } from "../../tests/fixtures/booking-request-display.fixtures";
 
@@ -114,7 +115,7 @@ describe("Customer Booking Request status", () => {
     view.rerender(
       <CustomerBookingRequestStatus
         locale="en"
-        request={customerDisplayFixtures["payment-required-open"]}
+        request={customerRecoveryDisplayFixtures.available}
       />,
     );
     const paymentRequired = steps("Booking Request progress");
@@ -122,6 +123,18 @@ describe("Customer Booking Request status", () => {
     expect(paymentRequired[2]).toHaveAttribute("aria-current", "step");
     expect(paymentRequired[2]).toHaveTextContent("Payment");
     expect(paymentRequired[2]).toHaveTextContent("Needs your action");
+
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerRecoveryDisplayFixtures.processing}
+      />,
+    );
+    const recovering = steps("Booking Request progress");
+    expect(recovering[2]).toHaveTextContent("Payment");
+    expect(recovering[2]).toHaveAttribute("aria-current", "step");
+    expect(recovering[2]).toHaveTextContent("In progress");
+    expect(recovering[2]).not.toHaveTextContent("Needs your action");
 
     view.rerender(
       <CustomerBookingRequestStatus
