@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  resolvePlatformAdministratorAccess,
+  type PlatformAdministratorAccess,
+} from "@/access/platform-administrator-gate";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import {
   parseAdministratorDetailTarget,
@@ -44,15 +48,16 @@ export async function searchAdministratorRecords(
     return { status: "invalid" };
   }
 
+  let access: PlatformAdministratorAccess;
+  try {
+    access = await resolvePlatformAdministratorAccess();
+  } catch {
+    return unavailable("search_authorization");
+  }
+  if (access !== "allowed") return { status: "access_required" };
+
   try {
     const client = await createRequestSupabaseClient();
-    const authorization = await client.rpc("is_platform_administrator", {
-      required_assurance: "aal2",
-    });
-    if (denied(authorization.error)) return { status: "access_required" };
-    if (authorization.error) return unavailable("search_authorization");
-    if (authorization.data === false) return { status: "access_required" };
-    if (authorization.data !== true) return unavailable("search_authorization");
     const result = await client.rpc("search_administrator_records", {
       target_kind: search.kind,
       target_query: search.query,
@@ -85,15 +90,16 @@ export async function loadAdministratorRecord(
     return { status: "invalid" };
   }
 
+  let access: PlatformAdministratorAccess;
+  try {
+    access = await resolvePlatformAdministratorAccess();
+  } catch {
+    return unavailable("detail_authorization");
+  }
+  if (access !== "allowed") return { status: "access_required" };
+
   try {
     const client = await createRequestSupabaseClient();
-    const authorization = await client.rpc("is_platform_administrator", {
-      required_assurance: "aal2",
-    });
-    if (denied(authorization.error)) return { status: "access_required" };
-    if (authorization.error) return unavailable("detail_authorization");
-    if (authorization.data === false) return { status: "access_required" };
-    if (authorization.data !== true) return unavailable("detail_authorization");
     const result = await client.rpc("get_administrator_record", {
       target_kind: target.kind,
       target_id: target.id,

@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createClient } = vi.hoisted(() => ({ createClient: vi.fn() }));
+const { createClient, resolve } = vi.hoisted(() => ({
+  createClient: vi.fn(),
+  resolve: vi.fn(),
+}));
 vi.mock("@/access/supabase-server", () => ({
   createRequestSupabaseClient: createClient,
+}));
+vi.mock("@/access/supabase-account-access", () => ({
+  SupabaseAccountContextStore: class {
+    resolve = resolve;
+  },
 }));
 vi.mock("server-only", () => ({}));
 import {
@@ -17,6 +25,7 @@ describe("administrator records request session", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     createClient.mockResolvedValue({ rpc });
+    resolve.mockResolvedValue({ role: "platform_administrator" });
   });
 
   it("rechecks AAL2 using the request client and passes fixed RPC arguments", async () => {
@@ -107,5 +116,42 @@ describe("administrator records request session", () => {
     await expect(
       searchAdministratorRecords({ kind: "customers" }),
     ).resolves.toEqual({ status: "unavailable" });
+  });
+
+  it("refuses search and detail to a signed-out session the database still accepts", async () => {
+    resolve.mockResolvedValue(undefined);
+    rpc.mockResolvedValueOnce({ data: true, error: null });
+    await expect(
+      searchAdministratorRecords({ kind: "customers" }),
+    ).resolves.toEqual({ status: "access_required" });
+    rpc.mockResolvedValueOnce({ data: true, error: null });
+    await expect(loadAdministratorRecord("account", id)).resolves.toEqual({
+      status: "access_required",
+    });
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "is_platform_administrator",
+      "is_platform_administrator",
+    ]);
+  });
+
+  it("reports a failed Platform Administrator check as unavailable without reading", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST500" } });
+    await expect(
+      searchAdministratorRecords({ kind: "customers" }),
+    ).resolves.toEqual({ status: "unavailable" });
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST500" } });
+    await expect(loadAdministratorRecord("account", id)).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(logged.mock.calls.map(([, detail]) => detail.operation)).toEqual([
+      "search_authorization",
+      "detail_authorization",
+    ]);
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "is_platform_administrator",
+      "is_platform_administrator",
+    ]);
+    logged.mockRestore();
   });
 });
