@@ -105,7 +105,7 @@ const baselineOnlyPaths = new Set([
   ".github/pull_request_template.md",
   "AGENTS.md",
   "CLAUDE.md",
-  "CONTEXT.md",
+  "GLOSSARY.md",
   "scripts/run-log.mjs",
   "scripts/lib/run-log.test.mjs",
   // The licences the self-hosted font unit test reads. npm test proves them in

@@ -4,8 +4,9 @@
 // Guards three prose-vigilance rules that used to live as by-hand habits: a
 // dangling backtick-quoted repo path (CLAUDE.md's directory map going stale),
 // a skill instructing the model to fire a DISABLED (user-invoked-only)
-// sibling skill (writing-great-skills.md's "defer to the human, never
-// imperatively invoke" rule), and a stray date-stamp in an always-loaded doc.
+// sibling skill (the user-invoked rule in writing-for-agents' SKILL-MECHANICS.md:
+// only the human typing its name can invoke such a skill, and no other skill
+// can), and a stray date-stamp in an always-loaded doc.
 //
 // Repository prose contracts live in scripts/lib/doc-lint-prose-contracts.test.mjs.
 

@@ -224,7 +224,7 @@ disjoint.
 - Drive visual work as the Conventions table's `visual verification` row says, and display the screenshot inline
   in chat. No push authorisation is requested without it.
 - Run every check the Surfaces table's rows name for a surface the diff touches.
-- One fresh review of the final tree, by tier. **Documents** (`docs/`, the root readme, `CONTEXT.md`) and a
+- One fresh review of the final tree, by tier. **Documents** (`docs/`, the root readme, `GLOSSARY.md`) and a
   **setting-only seat change**: the session itself, recorded at tier `document`. A seat change is setting-only when each
   changed seat file differs only in model, effort or turn-limit lines of its settings block (`model`, `effort` or
   `maxTurns` in a Claude seat's frontmatter, changed, added or removed; `model` or `model_reasoning_effort` above a

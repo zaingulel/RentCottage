@@ -6,8 +6,9 @@
 // CLAUDE.md's directory map going stale), a dead relative Markdown link (the
 // same rot with no backticks to catch it), a phantom operating-manual section
 // citation (prose that reads authoritative and points nowhere), a skill instructing the model to fire a DISABLED
-// (user-invoked-only) sibling skill (the writing-great-skills.md "defer to the
-// human, never imperatively invoke" rule), and a stray date-stamp in an
+// (user-invoked-only) sibling skill (the user-invoked rule in writing-for-agents'
+// SKILL-MECHANICS.md: only the human typing its name can invoke such a skill,
+// and no other skill can), and a stray date-stamp in an
 // always-loaded doc (doc-authoring-leanness: strip date-stamps, keep boundary
 // rationale). Skill *registration* is deliberately not validated: provider skill
 // copies are vendored files, re-copied when a newer version is wanted.

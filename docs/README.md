@@ -10,7 +10,7 @@ each document is set out in [DOC-SWEEP.md](DOC-SWEEP.md); the day-after triage i
 
 | Document | Kind | What it is |
 |---|---|---|
-| [CONTEXT.md](../CONTEXT.md) | explanation | The glossary of canonical marketplace terms. |
+| [GLOSSARY.md](../GLOSSARY.md) | explanation | The glossary of canonical marketplace terms. |
 | [AI-WORKFLOW.md](AI-WORKFLOW.md) | explanation | How the software factory that builds RentCottage fits together and why it is shaped this way. |
 | [CODING-STANDARDS.md](CODING-STANDARDS.md) | instruction | How first-party code is written. |
 | [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) | instruction | How the user interface is built: tokens, tolerated literals and the component patterns new work reuses. |

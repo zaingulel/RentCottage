@@ -87,10 +87,28 @@ process list; nothing is inferred from chat.
    volumes, and leave other recorded job-created containers and images for the owner as above.
    Recheck the exact target and inactive use immediately before removal. After all applicable checks pass,
    remove eligible targets autonomously with native exact-target commands such as `rm -- <file>` or
-   `rm -r -- <directory>`. On uncertainty or failure, preserve the target and ask the owner as `AGENTS.md`
-   requires; do not force cleanup. Report each exact removed or retained path and the reason for retention
-   directly in the session, without creating approval-only files. Continue independent cleanup when another
-   target is retained.
+   `rm -r -- <directory>`. A target whose creation evidence fails is a leftover and follows the Leftovers
+   paragraph below. On any other uncertainty or failure, preserve the target and report it; do not force
+   cleanup. Report each exact removed or retained path and the reason for retention directly in the session,
+   without creating approval-only files. Continue independent cleanup when another target is retained.
+   **Leftovers.** Apply `AGENTS.md`'s Disposable job cleanup rule for leftovers to every file, folder, worktree
+   or branch this run finds that is not this job's verified scratch, worktree or branch. Investigate each one
+   before reporting it. For a file or folder, read its contents, timestamps and owner, find the card, pull request
+   or branch its contents name, and run the inactive-use and container checks above. For a worktree, from the
+   verifier checkout, read `git -C <path> status --porcelain --untracked-files=normal` and its branch, and run the
+   same inactive-use and container checks on its path. For a branch, check
+   `git merge-base --is-ancestor <tip> origin/main` and read
+   `gh pr list --head <branch> --state all --json number,state,headRefOid` for the pull request's state; when the
+   ancestry check fails, check the tip against a merged pull request's head with
+   `git merge-base --is-ancestor <tip> <headRefOid>`. For a worktree or branch also read the card with
+   `gh issue view <issue> --json state,comments` for its state and latest `Claim:`. A failed or unavailable check
+   is unavailable evidence, never proof that a leftover is dead. Delete a dead leftover with the exact-target
+   commands and safeguards of this step: `rm -- <file>` or `rm -r -- <directory>` for a file or a wholly verified
+   folder, `git worktree remove <path>` for a worktree, then `git worktree list --porcelain` to confirm, and
+   ordinary `git branch -d <branch>` for a branch. Never force any of them; a refusal keeps the target and is
+   reported with the evidence. Leave a live leftover. For an unsettled one, ask the owner about that exact path
+   with the findings and a recommendation. Report every leftover in one line: the exact path or branch, whether it
+   was deleted, left or raised, and the evidence.
    Leave the job worktree through the available runtime mechanism described in step 3; if the runtime cannot leave
    it or ownership is uncertain, retain it, report why, and stop before worktree removal and branch deletion;
    continue to step 6 and the final report. That report tells the owner that removing the worktree the session sits

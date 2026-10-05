@@ -121,7 +121,7 @@ function createCrissCrossRepository() {
   git(repository, ["switch", "-c", "right", root]);
   const rightOne = commit(
     repository,
-    "CONTEXT.md",
+    "GLOSSARY.md",
     "right context\n",
     "right one",
   );

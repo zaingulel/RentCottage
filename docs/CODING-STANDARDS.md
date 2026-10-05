@@ -1,12 +1,12 @@
 # Coding standards
 
-This is RentCottage's detailed coding authority. `AGENTS.md` governs delivery workflow, `CONTEXT.md` governs domain language, accepted architecture decision records govern architecture, and the selected GitHub issue governs ticket scope. A more specific authority wins on a direct conflict.
+This is RentCottage's detailed coding authority. `AGENTS.md` governs delivery workflow, `GLOSSARY.md` governs domain language, accepted architecture decision records govern architecture, and the selected GitHub issue governs ticket scope. A more specific authority wins on a direct conflict.
 
 These standards apply prospectively. They do not authorize repository-wide renaming, abstraction, typing, documentation, or comment cleanup.
 
 ## Design and naming
 
-- Use the canonical terms from `CONTEXT.md`. Prefer precise role and capability names over generic names such as Manager, Engine, Handler, Helper, or Utils.
+- Use the canonical terms from `GLOSSARY.md`. Prefer precise role and capability names over generic names such as Manager, Engine, Handler, Helper, or Utils.
 - Prefer cohesion over size limits. Extract code when doing so centralizes a business rule, creates a meaningful test seam, separates calculation from effects, or reduces what callers must know.
 - Keep calculations, deadlines, booking transitions, authorization decisions, and complete marketplace actions out of page components and route handlers. Put them behind named domain or application-service interfaces.
 - Keep payment, translation, notification, storage, and identity suppliers behind narrow replaceable interfaces. Supplier Software Development Kit types must not enter domain logic.

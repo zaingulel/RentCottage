@@ -5,7 +5,7 @@ description: Diagnosis loop for hard bugs and performance regressions in this re
 
 # Diagnosing Bugs
 
-A discipline for hard bugs; skip phases only when explicitly justified. Frame the bug first: `CONTEXT.md`,
+A discipline for hard bugs; skip phases only when explicitly justified. Frame the bug first: `GLOSSARY.md`,
 the architecture documents `docs/README.md` indexes, and the applicable scoped rules.
 
 ## Redact

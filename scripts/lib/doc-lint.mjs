@@ -1,7 +1,7 @@
 // doc-lint.mjs — pure detection logic for the doc-prose lint gate.
 //
 // Converts three prose-vigilance rules that had lived as by-hand vigilance
-// (CLAUDE.md's directory map + the writing-great-skills "user-invoked" rule +
+// (CLAUDE.md's directory map + the writing-for-agents "user-invoked" rule +
 // doc-audit's date-stamp stripping) into a deterministic check: a dangling
 // backtick-quoted repo path in prose, a skill instructing the model to fire a
 // DISABLED (user-invoked-only) sibling skill, and a stray date-stamp in an
@@ -29,7 +29,7 @@ const KNOWN_ROOT_FILES = new Set([
   "LICENSE",
   "CLAUDE.md",
   "AGENTS.md",
-  "CONTEXT.md",
+  "GLOSSARY.md",
   "package.json",
   "playwright.config.ts",
   "playwright.worker-prebuilt.config.ts",

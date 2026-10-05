@@ -9,7 +9,7 @@ cloudflare-env.d.ts
 prototype
 docs
 AGENTS.md
-CONTEXT.md
+GLOSSARY.md
 *.docx
 
 # The files .agents/factory-manifest.json lists are shared bytes from the canonical repository;
