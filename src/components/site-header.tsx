@@ -92,7 +92,9 @@ export function SiteHeader({
                       target,
                       returnToParameter,
                     )
-                  : `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
+                  : isLocale(pathLocale)
+                    ? `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
+                    : `/${target}`
             }
           />
           <span className="site-header-rule" aria-hidden="true" />
