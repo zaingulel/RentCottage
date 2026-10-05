@@ -82,6 +82,11 @@ describe("booking refund execution binding", () => {
     ["unreadable lease start", { ...permit, notBefore: "not-a-time" }],
     ["lease end equal to its start", { ...permit, notAfter: permit.notBefore }],
     [
+      "lease start that is not text",
+      { ...permit, notBefore: [permit.notBefore] },
+    ],
+    ["lease end that is not text", { ...permit, notAfter: [permit.notAfter] }],
+    [
       "logical operation name",
       withBinding({ logicalOperationId: `${intentId}:settlement` }),
     ],
@@ -100,6 +105,10 @@ describe("booking refund execution binding", () => {
     [
       "upper-case request fingerprint",
       withBinding({ requestFingerprint: "A".repeat(64) }),
+    ],
+    [
+      "request fingerprint that is not text",
+      withBinding({ requestFingerprint: ["a".repeat(64)] }),
     ],
     ["missing provider identity", withBinding({ providerIdentity: null })],
     [

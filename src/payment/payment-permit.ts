@@ -61,6 +61,8 @@ export function intentExecutionPermitFrom<Permit extends IntentExecutionPermit>(
       binding.paymentLifecycleId,
     ].every(isPermitIdentifier) ||
     !isPositiveInteger(permit.generation) ||
+    typeof permit.notBefore !== "string" ||
+    typeof permit.notAfter !== "string" ||
     !Number.isFinite(Date.parse(permit.notBefore)) ||
     !(Date.parse(permit.notAfter) > Date.parse(permit.notBefore)) ||
     binding.logicalOperationId !== `${intentId}:${kind.operationKind}` ||
@@ -69,9 +71,7 @@ export function intentExecutionPermitFrom<Permit extends IntentExecutionPermit>(
     permit.idempotencyKey !== binding.attemptId ||
     !isPositiveInteger(binding.amountFils) ||
     binding.currency !== "IQD" ||
-    // Tests the coerced value, unlike isRequestFingerprint; requiring a string
-    // here changes a fencing rule.
-    !requestFingerprintShape.test(binding.requestFingerprint) ||
+    !isRequestFingerprint(binding.requestFingerprint) ||
     !binding.providerIdentity ||
     ![
       binding.providerIdentity.provider,
