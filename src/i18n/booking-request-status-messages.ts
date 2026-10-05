@@ -1,5 +1,9 @@
 import type { BookingRequestDeclineReason } from "@/booking-request/booking-request-lifecycle";
 import type { BookingRequestDisplayStatus } from "@/booking-request/booking-request-display";
+import type {
+  BookingRequestProgressState,
+  BookingRequestProgressStep,
+} from "@/booking-request/booking-request-progress";
 import type { BookingRequestStatus } from "@/booking-request/booking-request-status";
 import type { Locale } from "./routing";
 
@@ -54,6 +58,64 @@ export const bookingRequestDisplayStatusMessages: Record<
     "capture-processing": "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
     "payment-required": "پارەدان پێویستە",
     "paid-confirmed": "حجز پشتڕاست کراوەتەوە",
+  },
+};
+
+export const bookingRequestProgressMessages: Record<
+  Locale,
+  {
+    readonly label: string;
+    readonly steps: Record<BookingRequestProgressStep, string>;
+    readonly states: Record<BookingRequestProgressState, string>;
+  }
+> = {
+  en: {
+    label: "Booking Request progress",
+    steps: {
+      requested: "Requested",
+      "owner-decision": "Owner decision",
+      payment: "Payment",
+      confirmed: "Confirmed",
+    },
+    states: {
+      completed: "Completed",
+      current: "In progress",
+      "action-required": "Needs your action",
+      stopped: "Stopped here",
+      upcoming: "Not started",
+    },
+  },
+  ar: {
+    label: "تقدّم طلب الحجز",
+    steps: {
+      requested: "تم الطلب",
+      "owner-decision": "قرار المالك",
+      payment: "الدفع",
+      confirmed: "تم التأكيد",
+    },
+    states: {
+      completed: "مكتمل",
+      current: "قيد التنفيذ",
+      "action-required": "يحتاج إلى إجراء منك",
+      stopped: "توقف هنا",
+      upcoming: "لم يبدأ",
+    },
+  },
+  ckb: {
+    label: "پێشکەوتنی داواکاری حجز",
+    steps: {
+      requested: "داواکراوە",
+      "owner-decision": "بڕیاری خاوەن",
+      payment: "پارەدان",
+      confirmed: "پشتڕاست کراوەتەوە",
+    },
+    states: {
+      completed: "تەواو بووە",
+      current: "لە جێبەجێکردندایە",
+      "action-required": "پێویستی بە کرداری تۆیە",
+      stopped: "لێرە وەستا",
+      upcoming: "دەستی پێنەکردووە",
+    },
   },
 };
 

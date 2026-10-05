@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { actOnBookingRequest, recoverBookingRequestPayment, refresh } =
@@ -85,6 +91,56 @@ describe("Customer Booking Request status", () => {
     expect(screen.getByRole("status")).toHaveTextContent("remain held");
     expect(vi.getTimerCount()).toBe(1);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+  it("shows the four progress steps with the current step and each state in text", () => {
+    const steps = (name: string) =>
+      within(screen.getByRole("list", { name })).getAllByRole("listitem");
+    const currentSteps = (items: HTMLElement[]) =>
+      items.filter((item) => item.hasAttribute("aria-current"));
+    const view = render(
+      <CustomerBookingRequestStatus locale="en" request={request} />,
+    );
+    const pending = steps("Booking Request progress");
+    expect(pending).toHaveLength(4);
+    expect(pending[0]).toHaveTextContent("Requested");
+    expect(pending[1]).toHaveTextContent("Owner decision");
+    expect(pending[2]).toHaveTextContent("Payment");
+    expect(pending[3]).toHaveTextContent("Confirmed");
+    expect(currentSteps(pending)).toEqual([pending[1]]);
+    expect(pending[1]).toHaveAttribute("aria-current", "step");
+    expect(pending[0]).toHaveTextContent("Completed");
+    expect(pending[2]).toHaveTextContent("Not started");
+
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerDisplayFixtures["payment-required-open"]}
+      />,
+    );
+    const paymentRequired = steps("Booking Request progress");
+    expect(currentSteps(paymentRequired)).toEqual([paymentRequired[2]]);
+    expect(paymentRequired[2]).toHaveAttribute("aria-current", "step");
+    expect(paymentRequired[2]).toHaveTextContent("Payment");
+    expect(paymentRequired[2]).toHaveTextContent("Needs your action");
+
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerDisplayFixtures["payment-expiry-expired"]}
+      />,
+    );
+    const expired = steps("Booking Request progress");
+    expect(currentSteps(expired)).toEqual([]);
+    expect(expired[2]).toHaveTextContent("Payment");
+    expect(expired[2]).toHaveTextContent("Stopped here");
+
+    view.unmount();
+    render(<CustomerBookingRequestStatus locale="ar" request={request} />);
+    const arabic = steps("تقدّم طلب الحجز");
+    expect(arabic).toHaveLength(4);
+    expect(currentSteps(arabic)).toHaveLength(1);
+    expect(currentSteps(arabic)[0]).toHaveAttribute("aria-current", "step");
+    expect(currentSteps(arabic)[0]).toHaveTextContent("قرار المالك");
   });
   it("replaces mounted pending and processing state with authoritative confirmation", () => {
     const view = render(

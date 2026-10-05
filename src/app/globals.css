@@ -2848,6 +2848,84 @@ section.request-follow-up {
   display: block;
 }
 
+.booking-request-progress {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.booking-request-progress > li {
+  position: relative;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 0.35rem;
+  padding-inline-end: 0.5rem;
+}
+
+.booking-request-progress > li:not(:last-child)::after {
+  position: absolute;
+  inset-block-start: 1rem;
+  inset-inline: 2.5rem 0.5rem;
+  border-block-start: 1px solid var(--line);
+  content: "";
+}
+
+.booking-request-progress-marker {
+  display: grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.booking-request-progress
+  > [data-state="completed"]
+  > .booking-request-progress-marker {
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--ink-on-green);
+}
+
+.booking-request-progress
+  > [data-state="current"]
+  > .booking-request-progress-marker {
+  border-color: var(--green);
+}
+
+.booking-request-progress
+  > [data-state="current"]
+  > .booking-request-progress-name {
+  font-weight: 700;
+}
+
+.booking-request-progress
+  > [data-state="action-required"]
+  > .booking-request-progress-marker {
+  background: var(--status-attention-bg);
+  color: var(--status-attention-text);
+}
+
+.booking-request-progress
+  > [data-state="stopped"]
+  > .booking-request-progress-marker {
+  background: var(--status-rejected-bg);
+  color: var(--status-rejected-text);
+}
+
+.booking-request-progress
+  > [data-state="upcoming"]
+  > .booking-request-progress-marker,
+.booking-request-progress
+  > [data-state="upcoming"]
+  > .booking-request-progress-name {
+  color: var(--muted);
+}
+
 .booking-request-status-badge {
   width: fit-content;
   padding: 0.35rem 0.7rem;
@@ -2892,6 +2970,29 @@ section.request-follow-up {
   .confirmed-booking-details > header,
   .booking-history > header {
     display: grid;
+  }
+
+  .booking-request-progress {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .booking-request-progress > li {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 0.75rem;
+    padding-inline-end: 0;
+  }
+
+  .booking-request-progress-marker {
+    grid-row: 1 / span 2;
+  }
+
+  .booking-request-progress > li:not(:last-child)::after {
+    inset-block: 2.25rem -0.75rem;
+    inset-inline: 1rem auto;
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--line);
   }
 }
 

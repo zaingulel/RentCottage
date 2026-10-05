@@ -70,6 +70,11 @@ Anything else is a token.
   Missing choices are corrected only through an explicit `ActionButton`; changed availability uses
   `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups, with individual
   price and availability text. Times use `<bdi dir="ltr">` in every locale.
+- Progress steps: the Customer Booking Request status page shows them as an `ol.booking-request-progress` named
+  by `aria-label`, with one `li` per step carrying `data-state` and `aria-current="step"` on the step in progress
+  or needing action. The marker is decorative and `aria-hidden`; the state is always present as text, visually
+  hidden with `.visually-hidden` for completed and not-started steps, so no state is conveyed by colour alone.
+  States are derived by `customerBookingRequestProgress` and never stored.
 - A new button, link-styled action, form field or submit feedback reuses these. A pattern they lack is added
   there, not built inside a feature component.
 

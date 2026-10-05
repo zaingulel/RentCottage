@@ -11,6 +11,10 @@ import {
   type BookingRequestDisplayStatus,
   type CustomerBookingRequestDisplay,
 } from "@/booking-request/booking-request-display";
+import {
+  customerBookingRequestProgress,
+  type BookingRequestProgressState,
+} from "@/booking-request/booking-request-progress";
 import { actOnBookingRequest } from "@/booking-request/lifecycle-actions";
 import { recoverBookingRequestPayment } from "@/booking-request/payment-recovery-actions";
 import {
@@ -18,6 +22,7 @@ import {
   bookingRequestPaymentRecoveryMessages,
   bookingRequestDisplayStatusMessages,
   bookingRequestPaymentRequiredExpiryMessages,
+  bookingRequestProgressMessages,
 } from "@/i18n/booking-request-status-messages";
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
@@ -80,6 +85,12 @@ const messages = {
   },
 } as const;
 
+const progressMarkers: Partial<Record<BookingRequestProgressState, string>> = {
+  completed: "✓",
+  "action-required": "!",
+  stopped: "×",
+};
+
 export function CustomerBookingRequestStatus(props: {
   locale: Locale;
   request: CustomerBookingRequestDisplay;
@@ -101,6 +112,7 @@ function CustomerBookingRequestStatusView({
 }) {
   const copy = messages[locale];
   const recoveryCopy = bookingRequestPaymentRecoveryMessages[locale];
+  const progressCopy = bookingRequestProgressMessages[locale];
   const [commandKey, setCommandKey] = useState(() => crypto.randomUUID());
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
     request.status,
@@ -181,6 +193,36 @@ function CustomerBookingRequestStatusView({
           paymentRequiredExpiry={request.paymentRequiredExpiry}
         />
       </p>
+      <ol className="booking-request-progress" aria-label={progressCopy.label}>
+        {customerBookingRequestProgress(status, request).map(
+          ({ step, state }, index) => (
+            <li
+              key={step}
+              data-state={state}
+              aria-current={
+                state === "current" || state === "action-required"
+                  ? "step"
+                  : undefined
+              }
+            >
+              <span
+                className="booking-request-progress-marker"
+                aria-hidden="true"
+              >
+                {progressMarkers[state] ?? index + 1}
+              </span>
+              <span className="booking-request-progress-name">
+                {progressCopy.steps[step]}
+              </span>
+              <span
+                className={`booking-request-progress-state${state === "completed" || state === "upcoming" ? " visually-hidden" : ""}`}
+              >
+                {progressCopy.states[state]}
+              </span>
+            </li>
+          ),
+        )}
+      </ol>
       <strong>{request.bookingRequestReference}</strong>
       <dl>
         <div>
