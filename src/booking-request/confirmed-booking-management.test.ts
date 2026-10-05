@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AccountContext } from "@/access/account-access";
+import type { PlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import type { BookingParticipantRole } from "./booking-financial-view";
 import {
   createConfirmedBookingManagement,
@@ -105,14 +106,14 @@ function sessionWith(
   overrides: {
     readonly userId?: string | undefined;
     readonly context?: AccountContext | undefined;
-    readonly assuranceLevel?: string | undefined;
+    readonly platformAdministratorAccess?: PlatformAdministratorAccess;
     readonly booking?: { readonly bookingRequestId: string } | null;
   } = {},
 ) {
   const given = {
     userId: signedInUserId,
     context: customer,
-    assuranceLevel: "aal2",
+    platformAdministratorAccess: "allowed",
     booking: { bookingRequestId },
     ...overrides,
   };
@@ -127,7 +128,9 @@ function sessionWith(
   const session: ConfirmedBookingManagementSession = {
     userId: vi.fn().mockResolvedValue(given.userId),
     accountContext: vi.fn().mockResolvedValue(given.context),
-    assuranceLevel: vi.fn().mockResolvedValue(given.assuranceLevel),
+    platformAdministratorAccess: vi
+      .fn()
+      .mockResolvedValue(given.platformAdministratorAccess),
     booking: vi.fn().mockResolvedValue(given.booking),
     ...ports,
   };
@@ -508,29 +511,19 @@ describe("Confirmed Booking management", () => {
     }
   });
 
-  it("refuses a Platform Administrator without second-factor assurance", async () => {
+  it("refuses every command to a session the Platform Administrator gate refuses", async () => {
     for (const kind of kinds) {
       const { management, ports } = sessionWith({
         context: administrator,
-        assuranceLevel: "aal1",
+        platformAdministratorAccess: "refused",
       });
 
       expect(
         await management.run("platform_administrator", commands[kind]),
-        `${kind} at aal1`,
+        `${kind} refused by the gate`,
       ).toEqual({ status: "access-required" });
-      expectNoCommand(ports, `${kind} at aal1`);
+      expectNoCommand(ports, `${kind} refused by the gate`);
     }
-
-    const { management, ports } = sessionWith({
-      context: administrator,
-      assuranceLevel: undefined,
-    });
-
-    await expect(
-      management.run("platform_administrator", commands.settle),
-    ).resolves.toEqual({ status: "access-required" });
-    expectNoCommand(ports, "assurance unreadable");
   });
 
   it("refuses a role that has no view of the booking", async () => {
@@ -560,7 +553,7 @@ describe("Confirmed Booking management", () => {
         context,
         ...(actorRole === "platform_administrator"
           ? {}
-          : { assuranceLevel: undefined }),
+          : { platformAdministratorAccess: "refused" }),
       });
 
       await expect(management.run(actorRole, command)).resolves.toEqual({

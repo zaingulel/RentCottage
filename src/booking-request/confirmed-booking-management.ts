@@ -2,6 +2,7 @@ import {
   hasCustomerCapability,
   type AccountContext,
 } from "@/access/account-access";
+import type { PlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import type { RefundAllocation } from "@/payment/payment-contract";
 import type { BookingCancellationCommand } from "./booking-cancellation";
 import type {
@@ -72,9 +73,10 @@ export interface ConfirmedBookingManagementResult {
 }
 
 export interface ConfirmedBookingManagementSession {
+  // Asked only once an account context has resolved, so a failed read is an outage and rejects.
   userId(): Promise<string | undefined>;
   accountContext(): Promise<AccountContext | undefined>;
-  assuranceLevel(): Promise<string | undefined>;
+  platformAdministratorAccess(): Promise<PlatformAdministratorAccess>;
   booking(
     reference: string,
     actorRole: BookingParticipantRole,
@@ -138,18 +140,18 @@ export function createConfirmedBookingManagement(
         return { status: "access-required" };
       try {
         const session = await openSession();
-        const userId = await session.userId();
         const context = await session.accountContext();
+        if (!context) return { status: "access-required" };
+        const userId = await session.userId();
         if (
           !userId ||
-          !context ||
           context.userId !== userId ||
           !holdsRole(context, actorRole)
         )
           return { status: "access-required" };
         if (
           actorRole === "platform_administrator" &&
-          (await session.assuranceLevel()) !== "aal2"
+          (await session.platformAdministratorAccess()) !== "allowed"
         )
           return { status: "access-required" };
         const booking = await session.booking(command.reference, actorRole);

@@ -1,4 +1,5 @@
 import "server-only";
+import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { createBookingCancellation } from "./booking-cancellation";
@@ -21,14 +22,11 @@ export function createRequestConfirmedBookingManagement() {
     return {
       async userId() {
         const { data, error } = await client.auth.getUser();
-        return error ? undefined : data.user?.id;
+        if (error) throw error;
+        return data.user?.id;
       },
       accountContext: () => new SupabaseAccountContextStore(client).resolve(),
-      async assuranceLevel() {
-        const { data, error } =
-          await client.auth.mfa.getAuthenticatorAssuranceLevel();
-        return error ? undefined : (data?.currentLevel ?? undefined);
-      },
+      platformAdministratorAccess: resolvePlatformAdministratorAccess,
       booking: (reference, actorRole) =>
         getBookingFinancialView(client, reference, actorRole),
       cancel: (command) =>
