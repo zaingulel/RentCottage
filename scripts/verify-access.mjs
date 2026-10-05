@@ -18,16 +18,15 @@ import {
   addAccessJourneyTestOtps,
   LOCAL_PROJECT_PATTERN,
 } from "./lib/access-journey-fixtures.mjs";
+import {
+  accessStepPlan,
+  BROWSER_MODE,
+  DATABASE_MODE,
+  DATABASE_TESTS_MODE,
+  FIXTURE_CONTRACT_MODE,
+  OWNED_JOURNEYS_MODE,
+} from "./verify-access-plan.mjs";
 
-const FIXTURE_CONTRACT_MODE = "--fixture-contract";
-const OWNED_JOURNEYS_MODE = "--owned-journeys";
-const OWNED_JOURNEYS_GREP =
-  "(?:shared sign-in from the homepage returns a prospective owner to their private application|a Cottage Owner saves, resumes and submits a complete private application|Owner Application keeps evidence controls aligned and accessible in every locale|one account returns to customer bookings, enrolls explicitly and signs out only this device)$";
-const OWNED_SUBMISSION_GREP =
-  "a Cottage Owner saves, resumes and submits a complete private application$";
-const DATABASE_MODE = "--database";
-const DATABASE_TESTS_MODE = "--database-tests";
-const BROWSER_MODE = "--browser";
 const USAGE = `Usage: npm run verify:access [${DATABASE_MODE}|${DATABASE_TESTS_MODE}|${BROWSER_MODE}|${FIXTURE_CONTRACT_MODE}|${OWNED_JOURNEYS_MODE}]`;
 const EXCLUDED_SERVICES =
   "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor";
@@ -450,16 +449,10 @@ export async function main(
     stderr("ACCESS_JOURNEY_PHASE must match the finite owned-journeys mode.");
     return 2;
   }
-  const databaseMode =
-    mode === undefined ||
-    mode === DATABASE_MODE ||
-    mode === DATABASE_TESTS_MODE;
   const bookingConcurrency = mode !== DATABASE_TESTS_MODE;
   const databaseRecipe = bookingConcurrency
     ? "verify:access:database"
     : "verify:access:database-tests";
-  const browserMode =
-    mode === undefined || mode === BROWSER_MODE || ownedJourneysMode;
   const partition = environment.VERIFY_CI_PARTITION;
   const shard = environment.VERIFY_CI_SHARD;
   if (partition !== undefined || shard !== undefined) {
@@ -521,6 +514,7 @@ export async function main(
     return 2;
   }
 
+  const plan = accessStepPlan({ mode, phase, partition, shard });
   const originalRecipe = focusedFixtureContract
     ? ["node", "scripts/verify-access.mjs", FIXTURE_CONTRACT_MODE]
     : [
@@ -898,24 +892,28 @@ export async function main(
       if (result.status !== 0) return result.status;
     }
 
-    // The declared schema files must describe exactly what the migration chain builds; any diff is drift.
-    const verifyDeclaredSchema = async () => {
-      result = await execute(
-        "npx",
-        supabaseArguments([
-          "supabase",
-          "db",
-          "diff",
-          "--local",
-          "--output-format",
-          "json",
-        ]),
-        { encoding: "utf8", stdio: "pipe" },
-      );
-      if (result.status !== 0) return result.status;
+    const plannedArguments = (step) =>
+      step.args[0] === "supabase" ? supabaseArguments(step.args) : step.args;
+    const runPlannedStep = async (step, environments) => {
+      group = step.group;
+      const env = environments[step.environment];
+      if (!step.declaredSchemaDiff) {
+        const completed = await execute(step.command, plannedArguments(step), {
+          env,
+          stdio: "inherit",
+        });
+        return completed.status;
+      }
+      // The declared schema files must describe exactly what the migration chain builds; any diff is drift.
+      const diffed = await execute(step.command, plannedArguments(step), {
+        env,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      if (diffed.status !== 0) return diffed.status;
       let report;
       try {
-        report = JSON.parse(String(result.stdout));
+        report = JSON.parse(String(diffed.stdout));
       } catch {
         report = undefined;
       }
@@ -930,26 +928,23 @@ export async function main(
       }
       return 0;
     };
-
-    const verifyDatabasePreflight = async () => {
-      if (!partition || partition === "booking-request") {
-        const declaredSchemaStatus = await verifyDeclaredSchema();
-        if (declaredSchemaStatus !== 0) return declaredSchemaStatus;
-      }
-      if (!partition || partition === "database-core") {
-        result = await execute(
-          "npx",
-          supabaseArguments(["supabase", "test", "db"]),
-        );
-        return result.status;
+    const runPlannedSteps = async (steps, environments) => {
+      for (const [index, step] of steps.entries()) {
+        const status = await runPlannedStep(step, environments);
+        if (status === 0) continue;
+        const next = steps[index + 1];
+        if (next?.runsAfterFailure) {
+          await runPlannedStep(next, environments);
+          lastAttemptedCommand = [step.command, ...plannedArguments(step)];
+        }
+        return status;
       }
       return 0;
     };
-    if (databaseMode) {
-      group = "database";
-      const preflightStatus = await verifyDatabasePreflight();
-      if (preflightStatus !== 0) return preflightStatus;
-    }
+    const preflightStatus = await runPlannedSteps(plan.preflight, {
+      supabase: supabaseEnvironment,
+    });
+    if (preflightStatus !== 0) return preflightStatus;
 
     group = "shared-setup";
     const status = await execute(
@@ -985,396 +980,41 @@ export async function main(
       SUPABASE_SECRET_KEY: secretKey,
       PRIVILEGED_AUDIT_HMAC_KEY: "local-test-audit-hmac-key-32-characters",
     };
-    const verifyFixtureContract = async () => {
-      const fixtureContract = await execute(
-        "node",
-        ["scripts/verify-access-fixture-contract.mjs"],
-        {
-          env: {
-            ...accessEnvironment,
-            ...databaseConcurrencyEnvironment,
-            ACCESS_JOURNEY_PHASE: "boundary",
-          },
-          stdio: "inherit",
-        },
-      );
-      if (fixtureContract.status !== 0) return fixtureContract.status;
-      const journeyReadiness = await execute(
-        "npx",
-        [
-          "playwright",
-          "test",
-          "--config=scripts/access-journey-fixture.config.ts",
-          "--workers=1",
-          "--retries=0",
-          "--grep",
-          "owned access readiness uses production account and application readers",
-        ],
-        {
-          env: {
-            ...accessEnvironment,
-            ...databaseConcurrencyEnvironment,
-            ACCESS_JOURNEY_PHASE: "boundary",
-          },
-          stdio: "inherit",
-        },
-      );
-      return journeyReadiness.status;
+    const scheduleConcurrencyEnvironment = { ...accessEnvironment };
+    delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
+    const inventoryConcurrencyEnvironment = {
+      ...scheduleConcurrencyEnvironment,
+      ...databaseConcurrencyEnvironment,
     };
-    if (focusedFixtureContract) {
-      group = "fixture";
-      return await verifyFixtureContract();
-    }
-
-    const verifyDatabaseChecks = async () => {
-      if (!partition || partition === "database-core") {
-        const fixtureContractStatus = await verifyFixtureContract();
-        if (fixtureContractStatus !== 0) return fixtureContractStatus;
-        const accountConcurrency = await execute(
-          "node",
-          ["scripts/verify-account-access-concurrency.mjs"],
-          { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-        );
-        if (accountConcurrency.status !== 0) return accountConcurrency.status;
-      }
-      const createDraftConcurrencyFixture = await execute(
-        "node",
-        [
-          "scripts/prepare-access-test.mjs",
-          "create",
-          "mobile",
-          // The cross-Cottage observer needs both published fixtures.
-          ...(partition === "booking-request" ? ["worker"] : []),
-        ],
-        { env: accessEnvironment, stdio: "inherit" },
-      );
-      if (createDraftConcurrencyFixture.status !== 0) {
-        return createDraftConcurrencyFixture.status;
-      }
-      const scheduleConcurrencyEnvironment = { ...accessEnvironment };
-      delete scheduleConcurrencyEnvironment.SUPABASE_SECRET_KEY;
-      const inventoryConcurrencyEnvironment = {
-        ...scheduleConcurrencyEnvironment,
+    const browserEnvironment = {
+      ...databaseConcurrencyEnvironment,
+      ...accessEnvironment,
+      APP_ENVIRONMENT: "test",
+      NEXTJS_ENV: "test",
+      SUPABASE_PROJECT_REF: "local-test",
+      PLAYWRIGHT_SERVER: "next",
+    };
+    return await runPlannedSteps(plan.checks, {
+      database: databaseConcurrencyEnvironment,
+      access: accessEnvironment,
+      fixture: {
+        ...accessEnvironment,
         ...databaseConcurrencyEnvironment,
-      };
-      const secretInventoryEnvironment = {
+        ACCESS_JOURNEY_PHASE: "boundary",
+      },
+      schedule: scheduleConcurrencyEnvironment,
+      inventory: inventoryConcurrencyEnvironment,
+      "secret-inventory": {
         ...inventoryConcurrencyEnvironment,
         SUPABASE_SECRET_KEY: secretKey,
-      };
-      const concurrencyPrograms = [
-        {
-          script: "scripts/verify-cottage-profile-draft-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-cottage-shift-schedule-concurrency.mjs",
-          env: scheduleConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-cottage-inventory-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-period-hold-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-request-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-request-lifecycle-concurrency.mjs",
-          env: secretInventoryEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-request-capture-concurrency.mjs",
-          env: secretInventoryEnvironment,
-        },
-        {
-          script:
-            "scripts/verify-booking-request-payment-recovery-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script:
-            "scripts/verify-booking-request-payment-history-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script:
-            "scripts/verify-booking-confirmation-notification-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-event-notification-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-request-notification-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-preparation-reminder-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-cancellation-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-messaging-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-completion-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-customer-review-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-refund-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script: "scripts/verify-booking-payout-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-        {
-          script:
-            "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
-          env: inventoryConcurrencyEnvironment,
-        },
-      ];
-      const partitionPrograms = {
-        "booking-request": [
-          "scripts/verify-booking-request-concurrency.mjs",
-          "scripts/verify-booking-request-lifecycle-concurrency.mjs",
-        ],
-        "booking-capture": [
-          "scripts/verify-booking-request-capture-concurrency.mjs",
-        ],
-        "payment-required-expiry": [
-          "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
-        ],
-      };
-      const excludedCorePrograms = Object.values(partitionPrograms).flat();
-      for (const { script, env } of concurrencyPrograms) {
-        if (!bookingConcurrency && script.startsWith("scripts/verify-booking-"))
-          continue;
-        if (partition) {
-          const selectedScripts = partitionPrograms[partition];
-          if (
-            selectedScripts
-              ? !selectedScripts.includes(script)
-              : excludedCorePrograms.includes(script)
-          )
-            continue;
-        }
-        const concurrency = await execute("node", [script], {
-          env,
-          stdio: "inherit",
-        });
-        if (concurrency.status !== 0) return concurrency.status;
-      }
-      return 0;
-    };
-    if (databaseMode) {
-      group = "database";
-      const databaseStatus = await verifyDatabaseChecks();
-      if (databaseStatus !== 0) return databaseStatus;
-    }
-    if (!browserMode) return 0;
-    if (ownedJourneysMode) {
-      const readinessStatus = await verifyFixtureContract();
-      if (readinessStatus !== 0) return readinessStatus;
-    }
-    const verifyBrowserJourneys = async () => {
-      const browserEnvironment = {
-        ...databaseConcurrencyEnvironment,
-        ...accessEnvironment,
-        APP_ENVIRONMENT: "test",
-        NEXTJS_ENV: "test",
-        SUPABASE_PROJECT_REF: "local-test",
-        PLAYWRIGHT_SERVER: "next",
-      };
-      if (!partition || partition === "next") {
-        for (const action of ["create", "validate"]) {
-          const prepared = await execute(
-            "node",
-            ["scripts/prepare-access-test.mjs", action, "mobile", "desktop"],
-            { env: accessEnvironment, stdio: "inherit" },
-          );
-          if (prepared.status !== 0) return prepared.status;
-        }
-        const nextArgs = ownedJourneysMode
-          ? [
-              "playwright",
-              "test",
-              "tests/access.spec.ts",
-              "--project=mobile",
-              "--project=desktop",
-              "--workers=1",
-              phase === "retry-proof" ? "--retries=1" : "--retries=0",
-              "--grep",
-              phase === "retry-proof"
-                ? OWNED_SUBMISSION_GREP
-                : OWNED_JOURNEYS_GREP,
-              `--output=playwright-report/owned-next-${phase}`,
-            ]
-          : [
-              "playwright",
-              "test",
-              "tests/access.spec.ts",
-              "tests/booking-request-access.spec.ts",
-              "tests/administrator-payment-history.spec.ts",
-              "tests/administrator-records.spec.ts",
-              "tests/booking-history.spec.ts",
-              "tests/messaging.spec.ts",
-              "tests/customer-reviews.spec.ts",
-              "--project=mobile",
-              "--project=desktop",
-              "--workers=1",
-              "--output=playwright-report/access-next",
-            ];
-        if (partition === "next") {
-          const listed = await execute("npx", [...nextArgs, "--list"], {
-            env: browserEnvironment,
-            stdio: "inherit",
-          });
-          if (listed.status !== 0) return listed.status;
-          nextArgs.push(`--shard=${shard}`);
-        }
-        const browser = await execute("npx", nextArgs, {
-          env: browserEnvironment,
-          stdio: "inherit",
-        });
-        if (browser.status !== 0) return browser.status;
-      }
-      if (partition === "next") return 0;
-
-      const createWorkerFixtures = await execute(
-        "node",
-        ["scripts/prepare-access-test.mjs", "create", "worker"],
-        { env: accessEnvironment, stdio: "inherit" },
-      );
-      if (createWorkerFixtures.status !== 0) {
-        return createWorkerFixtures.status;
-      }
-      const validateWorkerFixtures = await execute(
-        "node",
-        ["scripts/prepare-access-test.mjs", "validate", "worker"],
-        { env: accessEnvironment, stdio: "inherit" },
-      );
-      if (validateWorkerFixtures.status !== 0) {
-        return validateWorkerFixtures.status;
-      }
-
-      const workerEnvironment = {
+      },
+      next: browserEnvironment,
+      worker: {
         ...databaseConcurrencyEnvironment,
         ...browserEnvironment,
         PLAYWRIGHT_SERVER: "worker",
-      };
-      const workerBuild = await execute("npm", ["run", "build:worker"], {
-        env: workerEnvironment,
-        stdio: "inherit",
-      });
-      if (workerBuild.status !== 0) return workerBuild.status;
-
-      if (partition !== "scheduled") {
-        let workerArgs;
-        if (ownedJourneysMode) {
-          workerArgs = [
-            "playwright",
-            "test",
-            "tests/access.spec.ts",
-            "--project=worker",
-            "--config=playwright.worker-prebuilt.config.ts",
-            "--workers=1",
-            phase === "retry-proof" ? "--retries=1" : "--retries=0",
-            "--grep",
-            phase === "retry-proof"
-              ? OWNED_SUBMISSION_GREP
-              : OWNED_JOURNEYS_GREP,
-            `--output=playwright-report/owned-worker-${phase}`,
-          ];
-        } else {
-          const workerFiles = [
-            "tests/access.spec.ts",
-            "tests/booking-request-access.spec.ts",
-            "tests/administrator-payment-history.spec.ts",
-            "tests/administrator-records.spec.ts",
-            "tests/booking-cancellation-refund.spec.ts",
-            "tests/messaging.spec.ts",
-            "tests/customer-reviews.spec.ts",
-          ];
-          const selectedWorkerFiles = workerFiles.filter((file) => {
-            if (partition !== "worker") return true;
-            const requestFile =
-              file === "tests/booking-request-access.spec.ts" ||
-              file === "tests/booking-cancellation-refund.spec.ts";
-            return shard === "2/2" ? requestFile : !requestFile;
-          });
-          workerArgs = [
-            "playwright",
-            "test",
-            ...selectedWorkerFiles,
-            "--project=worker",
-            "--config=playwright.worker-prebuilt.config.ts",
-            "--workers=1",
-            "--output=playwright-report/access-worker",
-          ];
-        }
-        if (partition === "worker") {
-          const listed = await execute("npx", [...workerArgs, "--list"], {
-            env: workerEnvironment,
-            stdio: "inherit",
-          });
-          if (listed.status !== 0) return listed.status;
-        }
-        const workerBrowser = await execute("npx", workerArgs, {
-          env: workerEnvironment,
-          stdio: "inherit",
-        });
-        if (workerBrowser.status !== 0) return workerBrowser.status;
-      }
-      if (ownedJourneysMode || partition === "worker") return 0;
-      const scheduledExpiryArgs = [
-        "playwright",
-        "test",
-        "tests/worker-scheduled-expiry.spec.ts",
-        "tests/worker-scheduled-capture.spec.ts",
-        "tests/worker-scheduled-refund.spec.ts",
-        "tests/worker-scheduled-completion.spec.ts",
-        "tests/worker-scheduled-reminder.spec.ts",
-        "tests/worker-scheduled-request-notification.spec.ts",
-        "--project=worker",
-        "--config=playwright.worker-prebuilt.config.ts",
-        "--workers=1",
-        "--output=playwright-report/scheduled-expiry-worker",
-      ];
-      const scheduledExpiry = await execute("npx", scheduledExpiryArgs, {
-        env: workerEnvironment,
-        stdio: "inherit",
-      });
-      // The exactly-once check reports even after a failed scheduled test; the test failure stays authoritative.
-      const scheduledExpiryVerify = await execute(
-        "node",
-        ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
-        { env: databaseConcurrencyEnvironment, stdio: "inherit" },
-      );
-      if (scheduledExpiry.status !== 0) {
-        lastAttemptedCommand = ["npx", ...scheduledExpiryArgs];
-        return scheduledExpiry.status;
-      }
-      if (scheduledExpiryVerify.status !== 0) {
-        return scheduledExpiryVerify.status;
-      }
-      return 0;
-    };
-    group = "browser";
-    return await verifyBrowserJourneys();
+      },
+    });
   };
 
   let retainedResources = false;
