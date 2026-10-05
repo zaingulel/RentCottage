@@ -30,7 +30,7 @@ const {
 vi.mock("server-only", () => ({}));
 vi.mock("@supabase/supabase-js", () => ({ createClient }));
 vi.mock("@/config/server-runtime", () => ({ getServerEnvironment }));
-vi.mock("@/payment/durable-payment-simulator", () => ({
+vi.mock("@/payment/durable-payment-simulator-core", () => ({
   DurablePaymentSimulator,
 }));
 vi.mock("./booking-request-submission", () => ({
@@ -77,7 +77,9 @@ describe("request Booking Request submission factory", () => {
     vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
     vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
     getServerEnvironment.mockReturnValue({
+      name: "test",
       supabase: {
+        projectRef: "local-test",
         url: "http://127.0.0.1:54331",
         secretKey: "test-service-role-key",
       },
@@ -107,7 +109,9 @@ it("records inquiry evidence for pending authorizations before the database expi
   vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
   vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
   getServerEnvironment.mockReturnValue({
+    name: "test",
     supabase: {
+      projectRef: "local-test",
       url: "http://127.0.0.1:54331",
       secretKey: "test-service-role-key",
     },
