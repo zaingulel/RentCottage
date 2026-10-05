@@ -21,16 +21,16 @@ and file nothing.
 ## Scope
 
 Triage reads the exact `| May edit | Never edit |` table from `docs/DOC-SWEEP.md` on the base commit. It modifies
-only the root product overview when it exists, `CONTEXT.md`, or `docs/AI-WORKFLOW.md`, and only an existing file. The same fail-closed path,
+only the root product overview when it exists, `GLOSSARY.md`, or `docs/AI-WORKFLOW.md`, and only an existing file. The same fail-closed path,
 status, link, and hidden-markup checks apply under a `docs-triage/` branch.
 
 Within that allowlist, triage may make three decisions the sweep may not:
 
 | Triage decision | Permitted home |
 |---|---|
-| Align canonical wording with shipped copy when the term's meaning is unchanged | `CONTEXT.md` and a permitted explanation carrying the old phrase |
+| Align canonical wording with shipped copy when the term's meaning is unchanged | `GLOSSARY.md` and a permitted explanation carrying the old phrase |
 | Bring a factual workflow explanation up to a requirement already stated in an authority or tracked workflow, without changing that requirement | `docs/AI-WORKFLOW.md` |
-| Explain an undocumented implemented area in the permitted document that already owns it | the root product overview when it exists, `CONTEXT.md`, or `docs/AI-WORKFLOW.md` |
+| Explain an undocumented implemented area in the permitted document that already owns it | the root product overview when it exists, `GLOSSARY.md`, or `docs/AI-WORKFLOW.md` |
 
 Changing a term's clock, boundary, role, state, or counted set changes meaning and requires owner direction. A new
 document, product behaviour, provider decision, deployment fact, agent instruction, standard, test policy, or

@@ -31,7 +31,7 @@ overstates what was verified. The workflow is built around three answers to that
 The factory runs on Claude Code and on Codex, and switches between them when one runs out of budget. Both read
 the same manual: `AGENTS.md` is the contract, `CLAUDE.md` imports it and adds its own Claude-only notes. Skills
 are written under `.agents/skills/`, which Codex reads directly, and `.claude/skills/` holds a byte-identical
-copy of each for Claude Code; they are real copies rather than symlinks so they survive a Windows checkout. Ten
+copy of each for Claude Code; they are real copies rather than symlinks so they survive a Windows checkout. Twelve
 of those skills are themselves copied whole from `.agents/upstream/mattpocock-skills/`, a verbatim vendored copy
 of an upstream skill set kept with its own licence, so a vendored skill is invoked by the same name and reached
 by the same path as a first-party one. `AGENTS.md` owns which upstream commit that
@@ -197,7 +197,7 @@ The diagram is the whole path from a card to a merged commit. In words:
 - **Verification before review.** Visual work is driven as the Conventions table's `visual verification` row says
   and a current screenshot is shown in chat; any further gate the Surfaces table names runs here.
 - **Review in two layers.** One fresh review of the final tree before the pull request opens, by tier. Documents
-  (`docs/`, the root readme, `CONTEXT.md`) are reviewed by the session itself; the owner is their reader. A setting-only
+  (`docs/`, the root readme, `GLOSSARY.md`) are reviewed by the session itself; the owner is their reader. A setting-only
   seat change, one that alters only a seat's model, effort or turn-limit setting lines and the manifest hash that
   follows them, gets the same session review, because the owner chose the setting and no instruction changed; the
   `resume` skill defines the case. Code and agent instruction, the manual, the rules, the skills and every other

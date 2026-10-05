@@ -10,8 +10,8 @@ owns all state. A rule a test or hook enforces is named here, not restated.
 Claude Code reads this file through `CLAUDE.md`, which adds its own notes; Codex reads it directly and prompts
 before a browser run (`.codex/rules/playwright.rules`). Skills are shared in `.agents/skills/`, and
 `.claude/skills/` holds a byte-identical copy of each; the agent seats in `.claude/agents/` and `.codex/agents/`
-carry the same charters. Ten of those skills are verbatim copies of mattpocock/skills at commit
-5b15a47f2d7150f545fbcacbfe381787fc0230dc, vendored with its licence in `.agents/upstream/mattpocock-skills/`;
+carry the same charters. Twelve of those skills are verbatim copies of mattpocock/skills at commit
+24fe0ef7737efae15c87225755e9f6f5965e4888, vendored with its licence in `.agents/upstream/mattpocock-skills/`;
 they are never edited in place, an update replaces the vendored source and every copy of it whole, and Codex
 invokes any skill as `$<name>`. The tracker and triage vocabulary those copies expect to have been provided is
 [docs/ISSUE-TRACKER.md](docs/ISSUE-TRACKER.md). The root checkout is the integration checkout: it stays on `main`,
@@ -94,13 +94,32 @@ without asking, only for work that genuinely cannot.
 **Disposable job cleanup.** The session must remove verified disposable, inactive files and folders it created
 for its own approved job, inside or outside the job worktree, without further approval and whether or not a
 verifier reported them. This project rule overrides the general machine rule requiring deletion approval only
-for this exception. Session creation evidence must establish the exact path and ownership; a name pattern,
-memory, summary or previous session alone does not establish either. Disposable excludes owner files, another
-job's artifacts, tracked deliverables, and evidence or plans still needed for unfinished work or handoff. Verify
-inactive use and follow [closeout's cleanup steps](.agents/skills/closeout/SKILL.md); existing worktree, branch,
-server and container safeguards remain. On uncertainty or failed verification, preserve the target and ask the
-owner about that exact path. This grants no general deletion or publication authority; other destructive
-actions keep exact-target approval.
+for this exception and the leftovers it covers below. Session creation evidence must establish the exact path and
+ownership; a name pattern, memory, summary or previous session alone does not establish either. Disposable
+excludes owner files, tracked deliverables, and evidence or plans still needed for unfinished work or handoff;
+another job's artifacts are leftovers. Verify inactive use and follow
+[closeout's cleanup steps](.agents/skills/closeout/SKILL.md); existing worktree, branch, server and container
+safeguards remain.
+
+The same rule covers leftovers. A leftover is a file, folder, worktree or branch the workflow made that a session
+finds, in any session, job or not, and that the paragraph above does not settle: another job's or session's
+artifact, or one of its own job's that it cannot prove it created. The session investigates each leftover to a
+conclusion before it reports it, and tells the owner the outcome in every case. It reads the content, timestamps
+and owner and checks whether anything uses it; for a worktree or branch it also reads the card's state and latest
+`Claim:`, the pull request's state, and whether any work is unmerged. Work is unmerged when a commit is neither an
+ancestor of `origin/main` nor contained in the head of a merged pull request, or when a change is uncommitted or
+untracked.
+
+- Dead: the work it belongs to is merged or closed, nothing is unmerged and nothing uses it. The session deletes
+  it without further approval and reports the exact path and the evidence in one line.
+- Live: an open card with a recent claim, unmerged work, or in use. The session leaves it and reports what it is.
+- Unsettled: the investigation cannot show it dead or live, or cannot tie it to a card, pull request or branch.
+  The session leaves it and asks the owner about that exact path, giving its findings and a recommendation.
+
+"Not in use right now" alone is never proof that a leftover is dead, and neither is a name pattern, memory or
+summary. An owner file or a tracked deliverable is never a leftover. A safeguard's refusal keeps the target and is
+reported with the evidence, never forced. This grants no general deletion or publication authority; other
+destructive actions keep exact-target approval.
 
 An approval covers only the question it answered. After a context compaction, reread the owner's latest messages
 before acting on one; an approval whose question is no longer in view is asked again. A memory, summary or earlier
@@ -197,7 +216,7 @@ copy.
 RentCottage is a trilingual cottage marketplace. `src/` contains the Next.js application and product logic;
 `supabase/` owns declared database objects, migrations and Row Level Security; `scripts/` contains product,
 provider, deployment and verification tooling; `custom-worker.ts` and `wrangler.jsonc` define the Cloudflare
-Worker boundary. [CONTEXT.md](CONTEXT.md) owns product meaning and canonical language.
+Worker boundary. [GLOSSARY.md](GLOSSARY.md) owns product meaning and canonical language.
 
 ## Hard constraints
 
@@ -217,7 +236,7 @@ Worker boundary. [CONTEXT.md](CONTEXT.md) owns product meaning and canonical lan
 
 ## Architecture seams
 
-Read [CONTEXT.md](CONTEXT.md), [docs/agents/domain.md](docs/agents/domain.md), and accepted architecture decisions
+Read [GLOSSARY.md](GLOSSARY.md), [docs/agents/domain.md](docs/agents/domain.md), and accepted architecture decisions
 before changing a domain seam. Follow [ADR 0002](docs/adr/0002-database-integrity-application-orchestration.md)
 for the database/application boundary. Change declared database objects under `supabase/schemas/`, generate and
 inspect the migration, and land both together. Preserve the product preparation and cleanup rules in
@@ -225,7 +244,7 @@ inspect the migration, and land both together. Preserve the product preparation 
 
 ## Grounding
 
-[CONTEXT.md](CONTEXT.md) holds canonical product terms and [docs/agents/domain.md](docs/agents/domain.md) explains
+[GLOSSARY.md](GLOSSARY.md) holds canonical product terms and [docs/agents/domain.md](docs/agents/domain.md) explains
 their code boundaries. Accepted architecture decisions own technical boundaries. Ground a live provider or
 platform integration in current official documentation before planning exact permissions, payloads and failure
 semantics. Competitors are interface prior art only and never override RentCottage's agreed product meaning.

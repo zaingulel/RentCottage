@@ -16,7 +16,9 @@ test('closeout removes the linked job worktree before deleting its branch', () =
   const match = CLOSEOUT.match(/^5\. \*\*Branch and worktree\.\*\*([\s\S]*?)(?=^6\. \*\*Rulings\.\*\*)/m);
   assert.ok(match, 'closeout step 5 must exist');
 
-  const step = match[1];
+  const jobCleanup = match[1].indexOf('Leave the job worktree through');
+  assert.notEqual(jobCleanup, -1, 'step 5 must carry the job worktree cleanup passage');
+  const step = match[1].slice(jobCleanup);
   const removeWorktree = step.indexOf('`git worktree remove <path>`');
   const deleteBranch = step.indexOf('`git branch -d job/<issue>`');
   assert.notEqual(removeWorktree, -1, 'step 5 must remove the exact job worktree');
@@ -411,7 +413,7 @@ test('the manual carries one shared workflow region followed by the product head
 });
 
 const FIXED_PRODUCT_DOCUMENTS = [
-  'CONTEXT.md',
+  'GLOSSARY.md',
   'docs/README.md',
   'docs/CODING-STANDARDS.md',
   'docs/TESTING-STRATEGY.md',

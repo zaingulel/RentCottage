@@ -34,7 +34,7 @@ issue with none.
 ### 2. Explore the codebase (optional)
 
 Read enough of the code and documents the manual's Architecture seams name to ground the breakdown in real seams.
-Use `CONTEXT.md` vocabulary and respect the applicable scoped rules. If a slice needs groundwork first, that
+Use `GLOSSARY.md` vocabulary and respect the applicable scoped rules. If a slice needs groundwork first, that
 prefactor is its own slice, ordered first.
 
 ### 3. Draft vertical slices

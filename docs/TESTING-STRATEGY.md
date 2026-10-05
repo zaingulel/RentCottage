@@ -1,7 +1,7 @@
 # Testing strategy
 
 This document owns two questions for RentCottage: which evidence a change needs, and the executed bar that
-evidence must clear. The board card defines the outcome, `CONTEXT.md` the domain invariants, accepted
+evidence must clear. The board card defines the outcome, `GLOSSARY.md` the domain invariants, accepted
 architecture decisions the technical boundaries, [CODING-STANDARDS.md](CODING-STANDARDS.md) how code is written
 and how test economics are judged, and the `resume` skill the mechanics of when a check runs and how its
 receipt is recorded. A more specific product, domain or architecture decision wins on a direct conflict.
@@ -37,7 +37,7 @@ change takes every row it touches.
 
 - Name the claim: a test protects one observable behaviour or invariant; test count and coverage percentage are
   not targets.
-- Keep the oracle independent: expected values come from requirements, `CONTEXT.md`, a hand-worked example, a
+- Keep the oracle independent: expected values come from requirements, `GLOSSARY.md`, a hand-worked example, a
   provider contract or a known-good fixture, never a copy of the production calculation.
 - Each changed behaviour is proven by one executed mutation at the cheapest layer that catches it, a list of inputs
   the code handles the same way being one behaviour: break the implementation, run the focused test with runner

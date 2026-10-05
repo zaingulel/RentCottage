@@ -105,6 +105,8 @@ const baselineOnlyPaths = new Set([
   ".github/pull_request_template.md",
   "AGENTS.md",
   "CLAUDE.md",
+  "GLOSSARY.md",
+  // The glossary's former name, kept so the change that removes it classifies as baseline-only.
   "CONTEXT.md",
   "scripts/run-log.mjs",
   "scripts/lib/run-log.test.mjs",

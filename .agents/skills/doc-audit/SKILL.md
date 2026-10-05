@@ -49,7 +49,7 @@ its files:
 - For the two always-loaded contracts, apply the keep-or-cut test line by line: could new work that passes every
   existing test and hook still break this rule? If not, the line restates something the repo enforces, so cut it or
   shrink it to a pointer naming the guard. A line that binds work no check can see stays.
-- Grade the file against the agent-writing standard (`.agents/skills/writing-great-skills/SKILL.md`): a pointer whose
+- Grade the file against the agent-writing standard (`.agents/skills/writing-for-agents/SKILL.md`): a pointer whose
   wording won't fire, an always-loaded line that belongs behind a pointer, a no-op, sediment, a prohibition where a
   positive target would do, an environment fact cached in prose.
 - Flag redundancy, dangling references, and obsolete files (point-in-time snapshots whose backlog shipped — DELETE

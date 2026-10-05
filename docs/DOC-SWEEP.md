@@ -11,7 +11,7 @@ The documentation should let a reader understand RentCottage without reading the
 activated, the sweep may repair explanations of behaviour already present in the repository. It never designs,
 decides, changes product behaviour, or treats issue and pull-request prose as authority.
 
-Code wins on what the shipped system does. `CONTEXT.md` is the exception: it is the owner-directed glossary. A
+Code wins on what the shipped system does. `GLOSSARY.md` is the exception: it is the owner-directed glossary. A
 disagreement about what a term means is reported, not repaired in either direction.
 
 | The sweep repairs | The sweep never changes |
@@ -25,11 +25,11 @@ moves a file. Anything not named in the left column is out of scope.
 
 | May edit | Never edit |
 |---|---|
-| `CONTEXT.md`, `docs/AI-WORKFLOW.md` | `docs/DOC-SWEEP.md`, `docs/SWEEP-TRIAGE.md`; `AGENTS.md`, `CLAUDE.md`; `.agents/`, `.claude/`, `.codex/`; engineering and agent authorities; specifications, architecture decisions, research, evidence, deployment and demo documents; all code, tests, migrations, fixtures, generated output, configuration, private data, and `.github/` |
+| `GLOSSARY.md`, `docs/AI-WORKFLOW.md` | `docs/DOC-SWEEP.md`, `docs/SWEEP-TRIAGE.md`; `AGENTS.md`, `CLAUDE.md`; `.agents/`, `.claude/`, `.codex/`; engineering and agent authorities; specifications, architecture decisions, research, evidence, deployment and demo documents; all code, tests, migrations, fixtures, generated output, configuration, private data, and `.github/` |
 
 The two permitted documents have distinct ownership:
 
-- `CONTEXT.md` records canonical domain terms. The sweep may align wording only when meaning is unchanged.
+- `GLOSSARY.md` records canonical domain terms. The sweep may align wording only when meaning is unchanged.
 - `docs/AI-WORKFLOW.md` explains how the already-implemented agent workflow fits together. The sweep may repair a
   factual description of mechanics, never a requirement, gate, threshold, permission, role duty, or routing rule.
 

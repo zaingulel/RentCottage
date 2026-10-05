@@ -28,7 +28,7 @@ Guesty's own property-management inbox keeps separate threads for Airbnb, Bookin
 
 ## RentCottage constraints and decision
 
-Issue 36 and `CONTEXT.md` require the inquiry to follow its Booking Request and Confirmed Booking, protect contacts before payment, and make the booking conversation read-only seven days after the Booking Period ends. The product requirements repeat that rule; reviews separately remain available for 14 days. Those were the rules at research time; the owner subsequently approved the 30-day writing window recorded below.
+Issue 36 and `GLOSSARY.md` require the inquiry to follow its Booking Request and Confirmed Booking, protect contacts before payment, and make the booking conversation read-only seven days after the Booking Period ends. The product requirements repeat that rule; reviews separately remain available for 14 days. Those were the rules at research time; the owner subsequently approved the 30-day writing window recorded below.
 
 The thread-identity choice and message cutoff are separate decisions. A conversation per booking makes the relevant dates, payment permission and evidence clear. A single lifetime customer/cottage conversation would require additional rules when one booking is paid and another is unpaid or when an older booking's cutoff passes while a future booking is active.
 
