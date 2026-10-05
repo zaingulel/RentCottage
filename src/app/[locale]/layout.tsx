@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
 import { resolveRequestAccount } from "@/access/request-account-context";
 import type { ReactNode } from "react";
 
-import { directionFor, isLocale, locales } from "@/i18n/routing";
+import { defaultLocale, directionFor, isLocale, locales } from "@/i18n/routing";
 
 import "../globals.css";
 
@@ -24,8 +23,8 @@ export default async function LocaleLayout({
   children: ReactNode;
   params: Promise<{ locale: string }>;
 }) {
-  const { locale } = await params;
-  if (!isLocale(locale)) notFound();
+  const { locale: requested } = await params;
+  const locale = isLocale(requested) ? requested : defaultLocale;
 
   const account = await resolveRequestAccount();
   const navigationAccount =

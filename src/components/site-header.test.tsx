@@ -88,6 +88,22 @@ describe("shared site header", () => {
       "/ar",
     );
   });
+  it("links each language to its home page when the address has no language", () => {
+    location.pathname = "/no-such-language/deeper";
+    render(<SiteHeader locale="ar" account={{ status: "signed_out" }} />);
+    expect(screen.getByRole("link", { name: "العربية" })).toHaveAttribute(
+      "href",
+      "/ar",
+    );
+    expect(screen.getByRole("link", { name: "کوردی" })).toHaveAttribute(
+      "href",
+      "/ckb",
+    );
+    expect(screen.getByRole("link", { name: "English" })).toHaveAttribute(
+      "href",
+      "/en",
+    );
+  });
   it("translates the access page return destination in each language link", () => {
     location.pathname = "/en/access";
     location.query =

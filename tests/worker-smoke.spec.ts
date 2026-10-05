@@ -109,3 +109,84 @@ test("refuses a Server Action posted to the Worker from a foreign origin", async
     expect(body).not.toContain("invalid_phone");
   }
 });
+
+test("shows the translated not-found screen inside the site header and footer", async ({
+  page,
+}) => {
+  const unknownAddresses = [
+    {
+      path: "/en/no-such-page",
+      locale: "en",
+      dir: "ltr",
+      title: "Page not found",
+    },
+    {
+      path: "/ar/no-such-page",
+      locale: "ar",
+      dir: "rtl",
+      title: "الصفحة غير موجودة",
+    },
+    {
+      path: "/ckb/no-such-page",
+      locale: "ckb",
+      dir: "rtl",
+      title: "پەڕەکە نەدۆزرایەوە",
+    },
+    {
+      path: "/en/booking-requests/unknown",
+      locale: "en",
+      dir: "ltr",
+      title: "Page not found",
+    },
+  ];
+  for (const { path, locale, dir, title } of unknownAddresses) {
+    const response = await page.goto(path);
+    expect(response?.status(), path).toBe(404);
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expect(page.locator("html")).toHaveAttribute("dir", dir);
+    await expect(page.getByRole("banner")).toBeVisible();
+    await expect(page.getByRole("contentinfo")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: title, exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("main").getByRole("link")).toHaveAttribute(
+      "href",
+      `/${locale}`,
+    );
+  }
+});
+
+test("shows the Arabic not-found screen when the address has no recognisable language", async ({
+  page,
+}) => {
+  for (const path of ["/no-such-language", "/no-such-language/deeper"]) {
+    const response = await page.goto(path);
+    expect(response?.status(), path).toBe(404);
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    const banner = page.getByRole("banner");
+    await expect(banner).toBeVisible();
+    await expect(page.getByRole("contentinfo")).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: "الصفحة غير موجودة",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole("main").getByRole("link")).toHaveAttribute(
+      "href",
+      "/ar",
+    );
+    const languageLinks = [
+      { name: "العربية", href: "/ar" },
+      { name: "کوردی", href: "/ckb" },
+      { name: "English", href: "/en" },
+    ];
+    for (const { name, href } of languageLinks) {
+      await expect(
+        banner.getByRole("link", { name, exact: true }),
+      ).toHaveAttribute("href", href);
+    }
+  }
+});
