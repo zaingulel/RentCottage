@@ -24,14 +24,10 @@ import type {
   BookingRequestCaptureRecoveryRepository,
   BookingRequestCaptureRecoveryWork,
 } from "./booking-request-capture-recovery";
+import { isTimestamp, rowObject } from "./booking-request-row";
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
   return (
     Object.keys(value).length === keys.length &&
@@ -44,16 +40,13 @@ function isUuid(value: unknown) {
 function positiveInteger(value: unknown) {
   return Number.isSafeInteger(value) && (value as number) > 0;
 }
-function timestamp(value: unknown) {
-  return typeof value === "string" && !Number.isNaN(Date.parse(value));
-}
 
 function bindingFrom(
   value: Record<string, unknown>,
   bookingRequestId: string,
   providerIdentity: PaymentProviderIdentity,
 ): BookingRequestCaptureBinding {
-  const provider = record(value.providerIdentity);
+  const provider = rowObject(value.providerIdentity);
   if (
     value.bookingRequestId !== bookingRequestId ||
     !isUuid(value.bookingRequestId) ||
@@ -113,7 +106,7 @@ function bindingFrom(
 function resultIdentityFrom(
   value: unknown,
 ): BookingRequestCaptureProviderResultIdentity {
-  const identity = record(value);
+  const identity = rowObject(value);
   if (
     !identity ||
     !exactKeys(identity, [
@@ -132,7 +125,7 @@ function resultIdentityFrom(
 function recoveryResultIdentityFrom(
   value: unknown,
 ): import("./booking-request-capture-recovery").BookingRequestCaptureRecoveryLease["providerResult"] {
-  const identity = record(value);
+  const identity = rowObject(value);
   if (
     identity &&
     exactKeys(identity, ["providerRequestId", "providerReference"]) &&
@@ -161,16 +154,16 @@ function recoveryResultIdentityFrom(
 function paymentRequiredFrom(
   value: unknown,
 ): Extract<BookingRequestCaptureResult, { status: "payment-required" }> {
-  const result = record(value);
-  const window = record(result?.paymentRequiredWindow);
+  const result = rowObject(value);
+  const window = rowObject(result?.paymentRequiredWindow);
   if (
     !result ||
     !exactKeys(result, ["status", "paymentRequiredWindow"]) ||
     result.status !== "payment-required" ||
     !window ||
     !exactKeys(window, ["recordedAt", "deadline"]) ||
-    !timestamp(window.recordedAt) ||
-    !timestamp(window.deadline) ||
+    !isTimestamp(window.recordedAt) ||
+    !isTimestamp(window.deadline) ||
     Date.parse(window.deadline as string) -
       Date.parse(window.recordedAt as string) !==
       1_200_000
@@ -192,8 +185,8 @@ function completedFrom(
   permit?: BookingRequestCapturePermitExpectation,
   providerResult?: BookingRequestCaptureProviderResultIdentity,
 ): Extract<BookingRequestCaptureResult, { status: "complete" }> {
-  const result = record(value);
-  const expected = record(result?.expectation);
+  const result = rowObject(value);
+  const expected = rowObject(result?.expectation);
   if (
     !result ||
     !exactKeys(result, ["status", "snapshot", "expectation"]) ||
@@ -210,8 +203,8 @@ function completedFrom(
       "authorizationRecordedAt",
       "captureRecordedAt",
     ]) ||
-    !timestamp(expected.authorizationRecordedAt) ||
-    !timestamp(expected.captureRecordedAt) ||
+    !isTimestamp(expected.authorizationRecordedAt) ||
+    !isTimestamp(expected.captureRecordedAt) ||
     (permit &&
       Object.entries(binding).some(
         ([key, value]) =>
@@ -290,7 +283,7 @@ export class SupabaseBookingRequestCaptureRepository
       },
     );
     if (error) throw new Error("Capture lease is unavailable");
-    const result = record(data);
+    const result = rowObject(data);
     if (result?.status === "complete")
       return completedFrom(data, bookingRequestId, providerIdentity);
     if (result?.status === "payment-required") return paymentRequiredFrom(data);
@@ -302,7 +295,7 @@ export class SupabaseBookingRequestCaptureRepository
         result.status === "unavailable")
     )
       return { status: result.status };
-    const permit = record(result?.permit);
+    const permit = rowObject(result?.permit);
     if (
       !result ||
       !exactKeys(result, ["status", "permit"]) ||
@@ -311,7 +304,7 @@ export class SupabaseBookingRequestCaptureRepository
       permit.workId !== bookingRequestId ||
       !positiveInteger(permit.leaseGeneration) ||
       !isUuid(permit.leaseToken) ||
-      !timestamp(permit.notAfter)
+      !isTimestamp(permit.notAfter)
     )
       throw new Error("Database returned an invalid Capture permit");
     const expected: BookingRequestCapturePermitExpectation = {
@@ -341,9 +334,9 @@ export class SupabaseBookingRequestCaptureRepository
     if (!Array.isArray(data) || data.length > limit)
       throw new Error("Database returned invalid Capture recovery work");
     return data.map((value: unknown): BookingRequestCaptureRecoveryWork => {
-      const result = record(value);
+      const result = rowObject(value);
       if (result?.status === "complete") {
-        const snapshot = record(result.snapshot);
+        const snapshot = rowObject(result.snapshot);
         if (!snapshot || !isUuid(snapshot.bookingRequestId))
           throw new Error(
             "Database returned invalid Capture recovery evidence",
@@ -356,7 +349,7 @@ export class SupabaseBookingRequestCaptureRepository
       }
       if (result?.status === "unavailable" && exactKeys(result, ["status"]))
         return { status: "unavailable" };
-      const lease = record(result?.lease);
+      const lease = rowObject(result?.lease);
       if (
         !result ||
         !exactKeys(result, ["status", "lease"]) ||
@@ -367,7 +360,7 @@ export class SupabaseBookingRequestCaptureRepository
         !positiveInteger(lease.leaseGeneration) ||
         (lease.leaseGeneration as number) < 2 ||
         !isUuid(lease.leaseToken) ||
-        !timestamp(lease.notAfter) ||
+        !isTimestamp(lease.notAfter) ||
         !isUuid(lease.recoveryOperationId)
       )
         throw new Error("Database returned an invalid Capture recovery lease");

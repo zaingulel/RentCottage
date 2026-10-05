@@ -17,18 +17,17 @@ import type {
   BookingRequestPaymentObservationRepository,
   PaymentObservationCommand,
 } from "./booking-request-payment-observation";
+import { isTimestamp, rowObject } from "./booking-request-row";
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const object = (value: unknown): Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Payment facts are invalid");
-  return value as Record<string, unknown>;
+  const row = rowObject(value);
+  if (!row) throw new Error("Payment facts are invalid");
+  return row;
 };
 const text = (value: unknown) => typeof value === "string" && value.length > 0;
 const id = (value: unknown) => typeof value === "string" && uuid.test(value);
-const time = (value: unknown) =>
-  typeof value === "string" && Number.isFinite(Date.parse(value));
 const nullable = (value: unknown, validate: (input: unknown) => boolean) =>
   value === null || validate(value);
 const array = (value: unknown): unknown[] => {
@@ -60,8 +59,8 @@ export function bookingRequestPaymentFactsFrom(
     id(facts.bookingRequestId) &&
       typeof facts.revision === "string" &&
       /^[a-f0-9]{32}$/.test(facts.revision) &&
-      time(facts.observedAt) &&
-      (time(facts.deadline) ||
+      isTimestamp(facts.observedAt) &&
+      (isTimestamp(facts.deadline) ||
         (facts.deadline === null && facts.confirmationValid === true)) &&
       [
         facts.sourceValid,
@@ -121,7 +120,7 @@ export function bookingRequestPaymentFactsFrom(
           operation.occurredAt,
           operation.executedAt,
           operation.recordedAt,
-        ].every((entry) => nullable(entry, time)) &&
+        ].every((entry) => nullable(entry, isTimestamp)) &&
         [
           operation.movementReference,
           operation.providerRequestId,

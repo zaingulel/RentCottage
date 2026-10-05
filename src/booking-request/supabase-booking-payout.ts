@@ -9,6 +9,7 @@ import type {
   ProviderReconciliationQuery,
 } from "@/payment/payment-contract";
 import { parseBookingCompletionEligibility } from "./booking-lifecycle";
+import { isOffsetTimestamp, rowObject } from "./booking-request-row";
 import type {
   BookingPayoutRecovery,
   BookingSettlementFacts,
@@ -29,9 +30,9 @@ import type {
   BookingPayoutRepository,
 } from "./booking-payout";
 const object = (v: unknown): Record<string, unknown> => {
-  if (!v || typeof v !== "object" || Array.isArray(v))
-    throw new Error("Invalid payout evidence");
-  return v as Record<string, unknown>;
+  const row = rowObject(v);
+  if (!row) throw new Error("Invalid payout evidence");
+  return row;
 };
 const uuid = (v: unknown): string => {
   if (
@@ -52,12 +53,7 @@ const list = (v: unknown): unknown[] => {
   return v;
 };
 const timestamp = (v: unknown): string => {
-  if (
-    typeof v !== "string" ||
-    !/(?:Z|[+-]\d{2}:\d{2})$/.test(v) ||
-    !Number.isFinite(Date.parse(v))
-  )
-    throw new Error("Invalid payout timestamp");
+  if (!isOffsetTimestamp(v)) throw new Error("Invalid payout timestamp");
   return v;
 };
 const allocation = (v: unknown) => {

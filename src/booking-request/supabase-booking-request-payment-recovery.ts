@@ -13,6 +13,7 @@ import type {
   PaymentRecoveryAdmission,
   PaymentRecoveryLease,
 } from "./booking-request-payment-recovery";
+import { isTimestamp } from "./booking-request-row";
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -56,8 +57,7 @@ export class SupabaseBookingRequestPaymentRecoveryRepository implements BookingR
       ) ||
       typeof value.attemptId !== "string" ||
       !uuid.test(value.attemptId) ||
-      typeof value.deadline !== "string" ||
-      Number.isNaN(Date.parse(value.deadline))
+      !isTimestamp(value.deadline)
     ) {
       throw new Error("Booking Request payment recovery data is invalid");
     }

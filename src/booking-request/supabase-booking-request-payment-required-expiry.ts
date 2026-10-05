@@ -5,13 +5,10 @@ import type {
   PaymentRequiredExpiryCommand,
   PaymentRequiredExpiryResult,
 } from "./booking-request-payment-required-expiry";
+import { rowObject } from "./booking-request-row";
 import { bookingRequestPaymentFactsFrom } from "./supabase-booking-request-payment-observation";
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements BookingRequestPaymentRequiredExpiryRepository {
   constructor(private readonly serviceClient: SupabaseClient) {}
 
@@ -25,7 +22,7 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
     );
     if (error || !Array.isArray(data) || data.length > limit)
       throw new Error("Payment Required expiry batch is invalid");
-    const ids = data.map((item) => record(item)?.bookingRequestId);
+    const ids = data.map((item) => rowObject(item)?.bookingRequestId);
     if (
       !ids.every((id) => typeof id === "string" && uuid.test(id)) ||
       new Set(ids).size !== ids.length
@@ -84,7 +81,7 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
       "finalize_booking_request_payment_required_expiry",
       { target_booking_request_id: bookingRequestId },
     );
-    const value = record(data);
+    const value = rowObject(data);
     if (
       error ||
       !value ||
