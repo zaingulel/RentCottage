@@ -33,6 +33,7 @@ const settlementPermitKind: IntentPermitKind<BookingSettlementExecutionPermit> =
     purpose: "booking-settlement",
     operationKind: "settlement",
     intentIdOf: (binding) => binding.settlementIntentId,
+    intentIdKey: "settlementIntentId",
     invalidMessage: "Settlement permit is invalid",
   };
 export function bookingSettlementPermitFrom(

@@ -130,6 +130,14 @@ describe("booking settlement execution binding", () => {
       "empty terminal",
       withBinding({ providerIdentity: { ...identity, terminalId: "" } }),
     ],
+    ["extra field", { ...permit, unrelatedEvidence: true }],
+    ["extra binding field", withBinding({ unrelatedEvidence: true })],
+    [
+      "extra provider identity field",
+      withBinding({
+        providerIdentity: { ...identity, unrelatedEvidence: true },
+      }),
+    ],
   ];
   it.each(invalidPermits)(
     "rejects invalid durable execution authority: %s",

@@ -32,6 +32,7 @@ const refundPermitKind: IntentPermitKind<BookingRefundExecutionPermit> = {
   purpose: "booking-refund",
   operationKind: "refund",
   intentIdOf: (binding) => binding.refundIntentId,
+  intentIdKey: "refundIntentId",
   invalidMessage: "Refund permit is invalid",
 };
 export function bookingRefundPermitFrom(
