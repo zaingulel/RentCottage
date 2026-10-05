@@ -559,3 +559,305 @@ describe("payout command authority", () => {
     );
   });
 });
+
+describe("confirmed booking form submission", () => {
+  const customer = { userId: "actor", role: "customer" };
+  const owner = {
+    userId: "actor",
+    role: "cottage_owner",
+    approvalState: "approved",
+  };
+  const administrator = { userId: "actor", role: "platform_administrator" };
+  const subjectId = "90000000-0000-4000-8000-000000002271";
+  const signOut = () => {
+    client.auth.getUser.mockResolvedValue({
+      data: { user: null },
+      error: null,
+    });
+    resolve.mockResolvedValue(undefined);
+  };
+  const malformedRefund = (actorRole: string) =>
+    form({
+      actorRole,
+      action: "refund",
+      reason: "Compensation",
+      price: "1.0001",
+      fee: "0",
+    });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    runtime.mockReturnValue(true);
+    client.auth.getUser.mockResolvedValue({
+      data: { user: { id: "actor" } },
+      error: null,
+    });
+    resolve.mockResolvedValue(administrator);
+    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
+      data: { currentLevel: "aal2" },
+      error: null,
+    });
+    view.mockResolvedValue({ bookingRequestId: request });
+    cancel.mockResolvedValue({ status: "cancelled" });
+    settle.mockResolvedValue({ status: "settled" });
+    client.rpc.mockResolvedValue({
+      data: {
+        status: "recorded",
+        bookingRequestId: request,
+        commandId,
+        occurredAt: "2026-09-12T12:00:00Z",
+      },
+      error: null,
+    });
+  });
+  it.each([
+    {
+      check: "lowercase reference",
+      account: customer,
+      values: { reference: "rc-req-0000000000001001" },
+    },
+    {
+      check: "commandId with version digit 0",
+      account: customer,
+      values: { commandId: "90000000-0000-0000-8000-000000003851" },
+    },
+    {
+      check: "commandId missing",
+      account: customer,
+      values: { commandId: undefined },
+    },
+    {
+      check: "actorRole administrator",
+      account: administrator,
+      values: {
+        actorRole: "administrator",
+        reason: "Review",
+        category: "safety",
+      },
+    },
+    {
+      check: "action delete",
+      account: customer,
+      values: { action: "delete" },
+    },
+    { check: "locale de", account: customer, values: { locale: "de" } },
+    {
+      check: "owner reason blank",
+      account: owner,
+      values: { actorRole: "cottage_owner", reason: "   " },
+    },
+    {
+      check: "owner reason 2001 characters",
+      account: owner,
+      values: { actorRole: "cottage_owner", reason: "x".repeat(2001) },
+    },
+    {
+      check: "administrator cancel category other",
+      account: administrator,
+      values: {
+        actorRole: "platform_administrator",
+        reason: "Review",
+        category: "other",
+      },
+    },
+    {
+      check: "incident category fraud",
+      account: owner,
+      values: {
+        actorRole: "cottage_owner",
+        action: "incident",
+        reason: "Narrative",
+        category: "fraud",
+      },
+    },
+    {
+      check: "refund price 1.0001",
+      account: administrator,
+      values: {
+        actorRole: "platform_administrator",
+        action: "refund",
+        reason: "Compensation",
+        price: "1.0001",
+        fee: "0",
+      },
+    },
+    {
+      check: "refund fee missing",
+      account: administrator,
+      values: {
+        actorRole: "platform_administrator",
+        action: "refund",
+        reason: "Compensation",
+        price: "1",
+      },
+    },
+    {
+      check: "release_hold subject not-an-identifier",
+      account: administrator,
+      values: {
+        actorRole: "platform_administrator",
+        action: "release_hold",
+        reason: "Review",
+        subjectId: "not-an-identifier",
+      },
+    },
+    {
+      check: "resolve_dispute outcome split",
+      account: administrator,
+      values: {
+        actorRole: "platform_administrator",
+        action: "resolve_dispute",
+        reason: "Provider award",
+        subjectId,
+        outcome: "split",
+      },
+    },
+    {
+      check: "partial award price 1.0001",
+      account: administrator,
+      values: {
+        actorRole: "platform_administrator",
+        action: "resolve_dispute",
+        reason: "Provider award",
+        subjectId,
+        outcome: "partial_customer_award",
+        price: "1.0001",
+        fee: "0",
+      },
+    },
+  ])(
+    "refuses a malformed submission as invalid before any account, booking or command work: $check",
+    async ({ account, values }) => {
+      resolve.mockResolvedValue(account);
+      expect(
+        await manageConfirmedBooking({ status: "idle" }, form(values)),
+      ).toEqual({ status: "invalid" });
+      expect(client.auth.getUser).not.toHaveBeenCalled();
+      expect(resolve).not.toHaveBeenCalled();
+      expect(view).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      expect(settle).not.toHaveBeenCalled();
+      expect(client.rpc).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+    },
+  );
+  it("refuses a file where text is expected", async () => {
+    resolve.mockResolvedValue(owner);
+    const submission = form({ actorRole: "cottage_owner" });
+    submission.set("reason", new Blob(["Unavailable"]));
+    expect(
+      await manageConfirmedBooking({ status: "idle" }, submission),
+    ).toEqual({ status: "invalid" });
+    expect(cancel).not.toHaveBeenCalled();
+  });
+  it("refuses a signed-out visitor", async () => {
+    signOut();
+    expect(await manageConfirmedBooking({ status: "idle" }, form())).toEqual({
+      status: "access-required",
+    });
+    expect(cancel).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+  it("trims the reason before it reaches the command", async () => {
+    resolve.mockResolvedValue(owner);
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({ actorRole: "cottage_owner", reason: "  Unavailable \n" }),
+      ),
+    ).toEqual({ status: "cancelled" });
+    expect(cancel).toHaveBeenCalledExactlyOnceWith({
+      bookingRequestId: request,
+      commandId,
+      actorRole: "cottage_owner",
+      reason: "Unavailable",
+      category: null,
+    });
+  });
+  it("records a hold release against the hold it names", async () => {
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          actorRole: "platform_administrator",
+          action: "release_hold",
+          reason: "Review complete",
+          subjectId,
+        }),
+      ),
+    ).toEqual({ status: "recorded" });
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith(
+      "record_booking_payout_command",
+      {
+        target_booking_request_id: request,
+        target_command_id: commandId,
+        target_action: "release_hold",
+        target_reason: "Review complete",
+        target_subject_id: subjectId,
+        target_outcome: null,
+        target_allocation: null,
+      },
+    );
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+  it.each(["blocked", "attention-required", "processing"])(
+    "refreshes the page after every completed settlement attempt: %s",
+    async (status) => {
+      settle.mockResolvedValue({ status });
+      expect(
+        await manageConfirmedBooking(
+          { status: "idle" },
+          form({
+            actorRole: "platform_administrator",
+            action: "settle",
+            reason: "Review",
+          }),
+        ),
+      ).toEqual({ status });
+      expect(refresh).toHaveBeenCalledOnce();
+    },
+  );
+  it.each([
+    {
+      submitted: "by a signed-out visitor",
+      actorRole: "platform_administrator",
+      arrange: signOut,
+    },
+    {
+      submitted: "by a role that may not run refund",
+      actorRole: "customer",
+      arrange: () => resolve.mockResolvedValue(customer),
+    },
+    {
+      submitted: "when the session read would fail",
+      actorRole: "platform_administrator",
+      arrange: () =>
+        client.auth.getUser.mockRejectedValue(new Error("session read")),
+    },
+  ])(
+    "answers a malformed amount invalid before the access and session checks: $submitted",
+    async ({ actorRole, arrange }) => {
+      arrange();
+      expect(
+        await manageConfirmedBooking(
+          { status: "idle" },
+          malformedRefund(actorRole),
+        ),
+      ).toEqual({ status: "invalid" });
+      expect(client.auth.getUser).not.toHaveBeenCalled();
+      expect(resolve).not.toHaveBeenCalled();
+      expect(view).not.toHaveBeenCalled();
+      expect(client.rpc).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+    },
+  );
+  it("stays unavailable for a malformed form when the runtime is off", async () => {
+    runtime.mockReturnValue(false);
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        malformedRefund("platform_administrator"),
+      ),
+    ).toEqual({ status: "unavailable" });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+});
