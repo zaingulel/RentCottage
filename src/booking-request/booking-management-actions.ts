@@ -1,273 +1,173 @@
 "use server";
-import { createRequestBookingSettlement } from "./request-booking-settlement";
 import { refresh } from "next/cache";
-import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
-import { hasCustomerCapability } from "@/access/account-access";
 import { isLocale } from "@/i18n/routing";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
-import {
-  createBookingCancellation,
-  type BookingCancellationCommand,
-} from "./booking-cancellation";
-import { SupabaseBookingRefundRepository } from "./supabase-booking-refund";
-import { SupabaseBookingCancellationRepository } from "./supabase-booking-cancellation";
-import { getBookingFinancialView } from "./booking-financial-view";
-import {
-  createBookingNoShow,
-  type BookingIncidentCommand,
-} from "./booking-completion-commands";
-import {
-  SupabaseBookingNoShowRepository,
-  recordBookingIncident,
-  BookingLifecycleConflict,
-} from "./supabase-booking-lifecycle";
-import {
-  createBookingPayout,
-  type BookingPayoutAction,
-  type BookingDisputeOutcome,
-} from "./booking-payout";
-import { SupabaseBookingPayoutRepository } from "./supabase-booking-payout";
 import { refundInputAllocation } from "./booking-financial-presentation";
+import type { BookingParticipantRole } from "./booking-financial-view";
+import {
+  isBookingRequestReference,
+  isIdentifier,
+} from "./booking-request-identifiers";
+import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
+import type {
+  ConfirmedBookingCommand,
+  ConfirmedBookingManagementResult,
+} from "./confirmed-booking-management";
+import { createRequestConfirmedBookingManagement } from "./request-confirmed-booking-management";
 export type BookingManagementActionState = {
   readonly status:
     | "idle"
-    | "cancelled"
-    | "requested"
-    | "no_show"
-    | "recorded"
-    | "settled"
-    | "blocked"
-    | "attention-required"
-    | "processing"
-    | "conflict"
     | "invalid"
-    | "access-required"
-    | "unavailable";
+    | ConfirmedBookingManagementResult["status"];
 };
+const actorRoles = [
+  "customer",
+  "cottage_owner",
+  "platform_administrator",
+] as const;
+const commandKinds = [
+  "cancel",
+  "refund",
+  "no_show",
+  "incident",
+  "place_hold",
+  "release_hold",
+  "open_dispute",
+  "resolve_dispute",
+  "settle",
+] as const;
+const cancellationCategories = [
+  "safety",
+  "fraud",
+  "legal",
+  "serious_operational",
+] as const;
+const incidentCategories = [
+  "safety",
+  "property_damage",
+  "conduct",
+  "other",
+] as const;
+const disputeOutcomes = [
+  "owner_won",
+  "customer_won",
+  "partial_customer_award",
+] as const;
+function member<const T extends string>(
+  values: readonly T[],
+  value: FormDataEntryValue | null,
+): T | undefined {
+  return values.find((candidate) => candidate === value);
+}
+function reasonFrom(form: FormData) {
+  const reason = form.get("reason");
+  if (typeof reason !== "string") return undefined;
+  const trimmed = reason.trim();
+  return trimmed.length >= 1 && trimmed.length <= 2000 ? trimmed : undefined;
+}
+function identifierFrom(form: FormData, name: string) {
+  const value = form.get(name);
+  return typeof value === "string" && isIdentifier(value) ? value : undefined;
+}
+function allocationFrom(form: FormData) {
+  const price = form.get("price"),
+    fee = form.get("fee");
+  if (typeof price !== "string" || typeof fee !== "string") return undefined;
+  try {
+    return refundInputAllocation(price, fee);
+  } catch {
+    return undefined;
+  }
+}
+function commandFrom(
+  form: FormData,
+  actorRole: BookingParticipantRole,
+  kind: (typeof commandKinds)[number],
+  target: { readonly reference: string; readonly commandId: string },
+): ConfirmedBookingCommand | undefined {
+  if (kind === "cancel" && actorRole === "customer")
+    return { ...target, kind, reason: null, category: null };
+  const reason = reasonFrom(form);
+  if (!reason) return undefined;
+  switch (kind) {
+    case "cancel": {
+      if (actorRole === "cottage_owner")
+        return { ...target, kind, reason, category: null };
+      const category = member(cancellationCategories, form.get("category"));
+      return category && { ...target, kind, reason, category };
+    }
+    case "refund": {
+      const allocation = allocationFrom(form);
+      return allocation && { ...target, kind, reason, allocation };
+    }
+    case "incident": {
+      const category = member(incidentCategories, form.get("category"));
+      return category && { ...target, kind, category, narrative: reason };
+    }
+    case "no_show":
+    case "place_hold":
+    case "open_dispute":
+    case "settle":
+      return { ...target, kind, reason };
+    case "release_hold": {
+      const subjectId = identifierFrom(form, "subjectId");
+      return subjectId ? { ...target, kind, reason, subjectId } : undefined;
+    }
+    case "resolve_dispute": {
+      const subjectId = identifierFrom(form, "subjectId");
+      const outcome = member(disputeOutcomes, form.get("outcome"));
+      if (!subjectId || !outcome) return undefined;
+      if (outcome !== "partial_customer_award")
+        return { ...target, kind, reason, subjectId, outcome };
+      const allocation = allocationFrom(form);
+      return (
+        allocation && {
+          ...target,
+          kind,
+          reason,
+          subjectId,
+          outcome,
+          allocation,
+        }
+      );
+    }
+  }
+}
+function submissionFrom(form: FormData):
+  | {
+      readonly actorRole: BookingParticipantRole;
+      readonly command: ConfirmedBookingCommand;
+    }
+  | undefined {
+  const locale = form.get("locale"),
+    reference = form.get("reference"),
+    commandId = identifierFrom(form, "commandId"),
+    actorRole = member(actorRoles, form.get("actorRole")),
+    kind = member(commandKinds, form.get("action"));
+  if (
+    typeof locale !== "string" ||
+    !isLocale(locale) ||
+    typeof reference !== "string" ||
+    !isBookingRequestReference(reference) ||
+    !commandId ||
+    !actorRole ||
+    !kind
+  )
+    return undefined;
+  const command = commandFrom(form, actorRole, kind, { reference, commandId });
+  return command && { actorRole, command };
+}
 export async function manageConfirmedBooking(
   _previous: BookingManagementActionState,
   form: FormData,
 ): Promise<BookingManagementActionState> {
   if (!bookingRequestTestRuntimeIsEnabled()) return { status: "unavailable" };
-  const locale = form.get("locale"),
-    reference = form.get("reference"),
-    role = form.get("actorRole"),
-    commandId = form.get("commandId"),
-    action = form.get("action"),
-    reason = form.get("reason"),
-    category = form.get("category");
-  if (
-    typeof locale !== "string" ||
-    !isLocale(locale) ||
-    typeof reference !== "string" ||
-    !/^RC-REQ-[A-F0-9]{16}$/.test(reference) ||
-    typeof commandId !== "string" ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      commandId,
-    ) ||
-    !["customer", "cottage_owner", "platform_administrator"].includes(
-      String(role),
-    ) ||
-    ![
-      "cancel",
-      "refund",
-      "no_show",
-      "incident",
-      "place_hold",
-      "release_hold",
-      "open_dispute",
-      "resolve_dispute",
-      "settle",
-    ].includes(String(action))
-  )
-    return { status: "invalid" };
-  const actorRole = role as BookingCancellationCommand["actorRole"];
-  const payoutAction = [
-    "place_hold",
-    "release_hold",
-    "open_dispute",
-    "resolve_dispute",
-  ].includes(String(action));
-  if (
-    (actorRole !== "customer" || action === "refund") &&
-    (typeof reason !== "string" ||
-      reason.trim().length < 1 ||
-      reason.trim().length > 2000)
-  )
-    return { status: "invalid" };
-  if (
-    action === "cancel" &&
-    actorRole === "platform_administrator" &&
-    !["safety", "fraud", "legal", "serious_operational"].includes(
-      String(category),
-    )
-  )
-    return { status: "invalid" };
-  if (
-    action === "incident" &&
-    !["safety", "property_damage", "conduct", "other"].includes(
-      String(category),
-    )
-  )
-    return { status: "invalid" };
-  if (
-    (action === "incident" && actorRole === "customer") ||
-    ((action === "refund" ||
-      action === "no_show" ||
-      action === "settle" ||
-      payoutAction) &&
-      actorRole !== "platform_administrator")
-  )
-    return { status: "access-required" };
-  try {
-    const client = await createRequestSupabaseClient();
-    const user = await client.auth.getUser();
-    const context = await new SupabaseAccountContextStore(client).resolve();
-    if (
-      user.error ||
-      !user.data.user ||
-      !context ||
-      context.userId !== user.data.user.id ||
-      !(actorRole === "customer"
-        ? hasCustomerCapability(context)
-        : actorRole === "cottage_owner"
-          ? context.role === "cottage_owner" &&
-            context.approvalState === "approved"
-          : context.role === "platform_administrator")
-    )
-      return { status: "access-required" };
-    if (actorRole === "platform_administrator") {
-      const assurance = await client.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (assurance.error || assurance.data?.currentLevel !== "aal2")
-        return { status: "access-required" };
-    }
-    const view = await getBookingFinancialView(client, reference, actorRole);
-    if (!view) return { status: "access-required" };
-    if (action === "settle") {
-      const result = await createRequestBookingSettlement(client).settle({
-        bookingRequestId: view.bookingRequestId,
-        commandId,
-        reason: (reason as string).trim(),
-      });
-      refresh();
-      return result;
-    }
-    if (payoutAction) {
-      const subjectId = form.get("subjectId"),
-        outcome = form.get("outcome");
-      const hasSubject =
-        action === "release_hold" || action === "resolve_dispute";
-      if (
-        hasSubject &&
-        (typeof subjectId !== "string" ||
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-            subjectId,
-          ))
-      )
-        return { status: "invalid" };
-      if (
-        action === "resolve_dispute" &&
-        !["owner_won", "customer_won", "partial_customer_award"].includes(
-          String(outcome),
-        )
-      )
-        return { status: "invalid" };
-      let allocation;
-      if (
-        action === "resolve_dispute" &&
-        outcome === "partial_customer_award"
-      ) {
-        const price = form.get("price"),
-          fee = form.get("fee");
-        if (typeof price !== "string" || typeof fee !== "string")
-          return { status: "invalid" };
-        try {
-          allocation = refundInputAllocation(price, fee);
-        } catch {
-          return { status: "invalid" };
-        }
-      }
-      await createBookingPayout(
-        new SupabaseBookingPayoutRepository(client),
-      ).record({
-        bookingRequestId: view.bookingRequestId,
-        commandId,
-        action: action as BookingPayoutAction,
-        reason: (reason as string).trim(),
-        ...(hasSubject ? { subjectId: subjectId as string } : {}),
-        ...(action === "resolve_dispute"
-          ? { outcome: outcome as BookingDisputeOutcome }
-          : {}),
-        ...(allocation ? { allocation } : {}),
-      });
-      refresh();
-      return { status: "recorded" };
-    }
-    if (action === "cancel")
-      await createBookingCancellation(
-        new SupabaseBookingCancellationRepository(client),
-      ).cancel({
-        bookingRequestId: view.bookingRequestId,
-        commandId,
-        actorRole,
-        reason: actorRole === "customer" ? null : (reason as string).trim(),
-        category:
-          actorRole === "platform_administrator"
-            ? (category as BookingCancellationCommand["category"])
-            : null,
-      });
-    else if (action === "no_show")
-      await createBookingNoShow(
-        new SupabaseBookingNoShowRepository(client),
-      ).record({
-        bookingRequestId: view.bookingRequestId,
-        commandId,
-        reason: (reason as string).trim(),
-      });
-    else if (action === "incident")
-      await recordBookingIncident(client, {
-        bookingRequestId: view.bookingRequestId,
-        commandId,
-        actorRole: actorRole as BookingIncidentCommand["actorRole"],
-        category: category as BookingIncidentCommand["category"],
-        narrative: (reason as string).trim(),
-      });
-    else {
-      const price = form.get("price"),
-        fee = form.get("fee");
-      if (typeof price !== "string" || typeof fee !== "string")
-        return { status: "invalid" };
-      let allocation;
-      try {
-        allocation = refundInputAllocation(price, fee);
-      } catch {
-        return { status: "invalid" };
-      }
-      await new SupabaseBookingRefundRepository(client).requestException({
-        bookingRequestId: view.bookingRequestId,
-        commandId,
-        reason: (reason as string).trim(),
-        allocation,
-      });
-    }
+  const submission = submissionFrom(form);
+  if (!submission) return { status: "invalid" };
+  const result = await createRequestConfirmedBookingManagement().run(
+    submission.actorRole,
+    submission.command,
+  );
+  if (!["access-required", "conflict", "unavailable"].includes(result.status))
     refresh();
-    return {
-      status:
-        action === "cancel"
-          ? "cancelled"
-          : action === "refund"
-            ? "requested"
-            : action === "incident"
-              ? "recorded"
-              : "no_show",
-    };
-  } catch (error) {
-    if (error instanceof BookingLifecycleConflict)
-      return { status: "conflict" };
-    console.error("Booking management command failed", {
-      code: "booking_management_unavailable",
-    });
-    return { status: "unavailable" };
-  }
+  return result;
 }

@@ -4,9 +4,7 @@ import { refresh } from "next/cache";
 import { isLocale } from "@/i18n/routing";
 import type { PaymentRecoveryStatus } from "./booking-request-payment-recovery";
 import { createRequestBookingRequestPaymentRecovery } from "./request-booking-request-payment-recovery";
-
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { isIdentifier } from "./booking-request-identifiers";
 
 export async function recoverBookingRequestPayment(
   value: unknown,
@@ -16,9 +14,9 @@ export async function recoverBookingRequestPayment(
   const input = value as Record<string, unknown>;
   if (
     typeof input.bookingRequestId !== "string" ||
-    !uuid.test(input.bookingRequestId) ||
+    !isIdentifier(input.bookingRequestId) ||
     typeof input.commandKey !== "string" ||
-    !uuid.test(input.commandKey) ||
+    !isIdentifier(input.commandKey) ||
     typeof input.locale !== "string" ||
     !isLocale(input.locale)
   )

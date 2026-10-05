@@ -28,9 +28,7 @@ import type {
 import { createRequestBookingRequestSubmission } from "./request-booking-request-submission";
 import { isContactSafeBookingRequestText } from "./booking-request-content";
 import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
-
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { isIdentifier } from "./booking-request-identifiers";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -104,9 +102,9 @@ function inputFrom(
   if (
     !input ||
     typeof input.idempotencyKey !== "string" ||
-    !uuid.test(input.idempotencyKey) ||
+    !isIdentifier(input.idempotencyKey) ||
     (conversationId !== undefined &&
-      (typeof conversationId !== "string" || !uuid.test(conversationId))) ||
+      (typeof conversationId !== "string" || !isIdentifier(conversationId))) ||
     typeof input.locale !== "string" ||
     !isLocale(input.locale) ||
     typeof input.publicSlug !== "string" ||
