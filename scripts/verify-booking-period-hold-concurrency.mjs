@@ -1,3 +1,4 @@
+import { publishedCottageCleanup } from "./lib/booking-fixture.mjs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const ownerId = "98000000-0000-4000-8000-000000000031";
@@ -105,52 +106,10 @@ try {
   `);
   }
 
-  const cleanupSql = `
-  begin;
-  delete from public.cottage_booking_period_commitments
-    where profile_id in ('${profileA}', '${profileB}');
-  delete from public.cottage_inventory_availability
-    where schedule_revision_id in ('${scheduleA}', '${scheduleB}');
-  delete from public.cottage_inventory_standard_prices
-    where schedule_revision_id in ('${scheduleA}', '${scheduleB}');
-  update public.owner_application_cottage_profiles
-    set current_publication_id = null, current_shift_schedule_id = null
-    where id in ('${profileA}', '${profileB}');
-  alter table public.cottage_shifts disable trigger reject_cottage_shift_delete;
-  delete from public.cottage_shifts
-    where schedule_revision_id in ('${scheduleA}', '${scheduleB}');
-  alter table public.cottage_shifts enable trigger reject_cottage_shift_delete;
-  alter table public.cottage_shift_schedule_revisions
-    disable trigger reject_cottage_shift_schedule_revision_delete;
-  delete from public.cottage_shift_schedule_revisions
-    where id in ('${scheduleA}', '${scheduleB}');
-  alter table public.cottage_shift_schedule_revisions
-    enable trigger reject_cottage_shift_schedule_revision_delete;
-  alter table public.cottage_publication_snapshots
-    disable trigger reject_cottage_publication_snapshots_delete;
-  delete from public.cottage_publication_snapshots
-    where profile_id in ('${profileA}', '${profileB}');
-  alter table public.cottage_publication_snapshots
-    enable trigger reject_cottage_publication_snapshots_delete;
-  alter table public.cottage_profile_review_cycles
-    disable trigger reject_cottage_profile_review_cycles_delete;
-  delete from public.cottage_profile_review_cycles
-    where profile_id in ('${profileA}', '${profileB}');
-  alter table public.cottage_profile_review_cycles
-    enable trigger reject_cottage_profile_review_cycles_delete;
-  alter table public.cottage_profile_source_revisions
-    disable trigger reject_cottage_profile_source_delete;
-  delete from public.cottage_profile_source_revisions
-    where profile_id in ('${profileA}', '${profileB}');
-  alter table public.cottage_profile_source_revisions
-    enable trigger reject_cottage_profile_source_delete;
-  delete from public.owner_application_cottage_profiles
-    where id in ('${profileA}', '${profileB}');
-  delete from public.account_contexts
-    where user_id in ('${ownerId}', '${customerA}', '${customerB}');
-  delete from auth.users where id in ('${ownerId}', '${customerA}', '${customerB}');
-  commit;
-`;
+  const cleanupSql = publishedCottageCleanup({
+    profiles: [profileA, profileB],
+    users: [ownerId, customerA, customerB],
+  });
 
   const setupSql = `
   begin;

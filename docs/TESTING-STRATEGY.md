@@ -96,12 +96,15 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
   in the same project; a new check that reuses fixed identifiers does the same. A failed attempt can leave rows
   behind until the next run of that check or that teardown clears them, and synthetic identities carry no
   credentials or sessions.
-- A concurrency program or Playwright specification that clears one of the shared fixed-identifier booking
-  fixtures (the confirmed booking, capture and confirmed-booking-access row sets) takes its reset and cleanup SQL
-  from `scripts/lib/booking-fixture.mjs`, the one home for the delete order of those fixtures and for their
-  cancellation and refund resets, and names its variant through the options of the module. None writes its own
-  copy, reads the source text of another script for SQL, or edits the returned SQL by text replacement; a new
-  Integrity Core table joins the delete order there.
+- A concurrency program or Playwright specification that clears one of the fixed-identifier fixtures owned by
+  `scripts/lib/booking-fixture.mjs` (the confirmed booking, capture, confirmed-booking-access and customer review
+  row sets, and the Published Cottage the Booking Period hold and cottage inventory programs seed) takes its reset
+  and cleanup SQL from that module, the one home for the delete order of those fixtures and for the cancellation
+  and refund resets, and names its variant through the module's options and arguments. None writes its own copy,
+  reads the source text of another script for SQL, or edits the returned SQL by text replacement; a new Integrity
+  Core table joins the delete order there. The Booking Request, Booking Request lifecycle and account access
+  programs keep their own cleanup, because they reach their rows through their own scratch tables or a fixture file
+  no other program loads; a table their flows write joins those chains too.
 - Before running a temporary test configuration, inspect the runner's selected list and correct it before
   execution.
 

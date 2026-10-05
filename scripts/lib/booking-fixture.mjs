@@ -1,4 +1,5 @@
-// One home for the reset and cleanup SQL of the shared fixed-identifier booking fixtures.
+// One home for the reset and cleanup SQL of the fixed-identifier booking, customer review and
+// Published Cottage fixtures.
 const id = (prefix, stem, row = "1") =>
   `${prefix}-0000-4000-8000-00000000${stem}${row}`;
 const rows = (stem) => ({
@@ -71,17 +72,20 @@ delete from public.booking_refund_intents where booking_request_id='${r.request}
 set session_replication_role=origin;`;
 };
 
-export const confirmedBookingCleanup = ({
-  stem = "100",
-  completion = false,
-  settlement = false,
-  terminalRequest = false,
-} = {}) => {
-  const r = rows(stem);
-  // Request events have no receipt; cleanup follows the actual work identity.
-  const workIdentity = terminalRequest ? "notification_id" : "receipt_id";
-  return `${reset(r, { completion, terminalRequest })} set session_replication_role=replica;
-${settlement ? settlementDeletes(r) : ""}delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${r.request}';
+const listedCottageDeletes = (
+  r,
+) => `delete from public.cottage_marketplace_listings where profile_id='${r.profile}';
+delete from public.cottage_publication_localizations where publication_id in (select id from public.cottage_publication_snapshots where profile_id='${r.profile}');
+delete from public.cottage_publication_snapshots where profile_id='${r.profile}';
+delete from public.cottage_profile_publication_decisions where review_cycle_id in (select id from public.cottage_profile_review_cycles where profile_id='${r.profile}');
+delete from public.cottage_profile_localized_revisions where review_cycle_id in (select id from public.cottage_profile_review_cycles where profile_id='${r.profile}');
+delete from public.cottage_profile_review_cycles where profile_id='${r.profile}';
+delete from public.cottage_profile_source_revisions where profile_id='${r.profile}';
+`;
+const confirmedBookingDeletes = (
+  r,
+  { workIdentity, listedCottage, users },
+) => `delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${r.request}';
 delete from public.booking_confirmation_notification_attempts where ${workIdentity} in (select ${workIdentity} from public.booking_confirmation_notification_work where booking_request_id='${r.request}');
 delete from public.booking_confirmation_notification_work where booking_request_id='${r.request}';
 delete from public.booking_request_payment_history where booking_request_id='${r.request}';
@@ -101,12 +105,44 @@ delete from public.cottage_booking_period_occupancies where booking_period_commi
 delete from public.cottage_inventory_commitments where booking_period_commitment_id='${r.commitment}';
 delete from public.cottage_booking_period_commitments where id='${r.commitment}';
 delete from public.booking_snapshots where id='${r.snapshot}';
-delete from public.cottage_shifts where schedule_revision_id='${r.schedule}';
+${listedCottage ? listedCottageDeletes(r) : ""}delete from public.cottage_shifts where schedule_revision_id='${r.schedule}';
 delete from public.cottage_shift_schedule_revisions where id='${r.schedule}';
 delete from public.owner_application_cottage_profiles where id='${r.profile}';
-delete from public.account_contexts where user_id in ('${r.owner}','${r.customer}','${r.third}','${administrator}');
-delete from auth.users where id in ('${r.owner}','${r.customer}','${r.third}','${administrator}');
-set session_replication_role=origin;`;
+delete from public.account_contexts where user_id in (${users});
+delete from auth.users where id in (${users});
+`;
+
+export const confirmedBookingCleanup = ({
+  stem = "100",
+  completion = false,
+  settlement = false,
+  terminalRequest = false,
+} = {}) => {
+  const r = rows(stem);
+  // Request events have no receipt; cleanup follows the actual work identity.
+  const workIdentity = terminalRequest ? "notification_id" : "receipt_id";
+  const users = `'${r.owner}','${r.customer}','${r.third}','${administrator}'`;
+  return `${reset(r, { completion, terminalRequest })} set session_replication_role=replica;
+${settlement ? settlementDeletes(r) : ""}${confirmedBookingDeletes(r, { workIdentity, listedCottage: false, users })}set session_replication_role=origin;`;
+};
+
+export const customerReviewCleanup = (namespace) => {
+  // A review namespace NN is the confirmed booking fixture at stem NN0; rows 81 and 82 are its administrators.
+  const r = rows(`${namespace}0`);
+  const users = [
+    r.owner,
+    r.customer,
+    r.third,
+    id("10000000", `${namespace}8`),
+    id("10000000", `${namespace}8`, "2"),
+  ]
+    .map((user) => `'${user}'`)
+    .join(",");
+  return `set session_replication_role=replica;
+delete from public.customer_review_hides where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
+delete from public.customer_reviews where booking_request_id='${r.request}';
+${completionDeletes(r)}delete from public.booking_notification_events where booking_request_id='${r.request}';
+${confirmedBookingDeletes(r, { workIdentity: "receipt_id", listedCottage: true, users })}set session_replication_role=origin;`;
 };
 
 const lifecycleDeletes = (
@@ -270,5 +306,39 @@ ${publishedCottage ? publishedCottageDeletes(r) : ""}  alter table public.cottag
   delete from public.account_contexts where user_id in ('${r.owner}', '${r.customer}', '${r.third}');
   delete from auth.users where id in ('${r.owner}', '${r.customer}', '${r.third}');
 alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
+commit;`;
+};
+
+export const publishedCottageCleanup = ({ profiles, users }) => {
+  const quoted = (identifiers) =>
+    identifiers.map((identifier) => `'${identifier}'`).join(", ");
+  const profileList = quoted(profiles);
+  const userList = quoted(users);
+  const schedules = `select id from public.cottage_shift_schedule_revisions where profile_id in (${profileList})`;
+  return `begin;
+  delete from public.cottage_booking_period_commitments where profile_id in (${profileList});
+  delete from public.cottage_inventory_availability where schedule_revision_id in (${schedules});
+  delete from public.cottage_inventory_date_price_overrides where schedule_revision_id in (${schedules});
+  delete from public.cottage_inventory_weekday_price_overrides where schedule_revision_id in (${schedules});
+  delete from public.cottage_inventory_standard_prices where schedule_revision_id in (${schedules});
+  update public.owner_application_cottage_profiles set current_shift_schedule_id = null, current_publication_id = null where id in (${profileList});
+  alter table public.cottage_shifts disable trigger reject_cottage_shift_delete;
+  delete from public.cottage_shifts where schedule_revision_id in (${schedules});
+  alter table public.cottage_shifts enable trigger reject_cottage_shift_delete;
+  alter table public.cottage_shift_schedule_revisions disable trigger reject_cottage_shift_schedule_revision_delete;
+  delete from public.cottage_shift_schedule_revisions where profile_id in (${profileList});
+  alter table public.cottage_shift_schedule_revisions enable trigger reject_cottage_shift_schedule_revision_delete;
+  alter table public.cottage_publication_snapshots disable trigger reject_cottage_publication_snapshots_delete;
+  delete from public.cottage_publication_snapshots where profile_id in (${profileList});
+  alter table public.cottage_publication_snapshots enable trigger reject_cottage_publication_snapshots_delete;
+  alter table public.cottage_profile_review_cycles disable trigger reject_cottage_profile_review_cycles_delete;
+  delete from public.cottage_profile_review_cycles where profile_id in (${profileList});
+  alter table public.cottage_profile_review_cycles enable trigger reject_cottage_profile_review_cycles_delete;
+  alter table public.cottage_profile_source_revisions disable trigger reject_cottage_profile_source_delete;
+  delete from public.cottage_profile_source_revisions where profile_id in (${profileList});
+  alter table public.cottage_profile_source_revisions enable trigger reject_cottage_profile_source_delete;
+  delete from public.owner_application_cottage_profiles where id in (${profileList});
+  delete from public.account_contexts where user_id in (${userList});
+  delete from auth.users where id in (${userList});
 commit;`;
 };
