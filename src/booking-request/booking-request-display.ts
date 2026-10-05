@@ -55,7 +55,13 @@ export function ownerBookingRequestNotificationDisplay({
 }
 
 export function canRecoverBookingRequestPayment(
-  request: CustomerBookingRequestDisplay,
+  request: Pick<
+    CustomerBookingRequestDisplay,
+    | "status"
+    | "paymentRequiredWindow"
+    | "paymentRequiredExpiry"
+    | "paymentRecovery"
+  >,
 ): boolean {
   return (
     request.status === "payment-required" &&

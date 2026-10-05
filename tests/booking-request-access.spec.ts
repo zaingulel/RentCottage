@@ -232,6 +232,27 @@ test("a verified Customer double-submit creates one Pending request and one mini
   const unpaidResponseBody = await unpaidResponse!.text();
   expect(unpaidResponseBody).not.toContain(exactAddress);
   expect(unpaidResponseBody).not.toContain(ownerPhone);
+  const progress = page.getByRole("list", { name: "Booking Request progress" });
+  await expect(progress).toBeVisible();
+  await expect(progress.getByRole("listitem")).toHaveCount(4);
+  await expect(
+    progress.getByRole("listitem").filter({ hasText: "Owner decision" }),
+  ).toHaveAttribute("aria-current", "step");
+  await page.screenshot({
+    path: test.info().outputPath("progress-en.png"),
+    fullPage: true,
+  });
+  await page.goto(`/ar/booking-requests/${requestReference}`);
+  const arabicProgress = page.getByRole("list", { name: "تقدّم طلب الحجز" });
+  await expect(arabicProgress).toBeVisible();
+  await expect(arabicProgress.locator('[aria-current="step"]')).toContainText(
+    "قرار المالك",
+  );
+  await page.screenshot({
+    path: test.info().outputPath("progress-ar.png"),
+    fullPage: true,
+  });
+  await page.goto(`/en/booking-requests/${requestReference}`);
   const ownerContext = await browser.newContext({
     baseURL: new URL(page.url()).origin,
   });

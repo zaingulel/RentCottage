@@ -9,6 +9,8 @@ import { notFound, unstable_rethrow } from "next/navigation";
 
 import { loadCustomerBookingRequest } from "@/booking-request/request-customer-booking-request";
 import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-booking-access";
+import { confirmedBookingProgress } from "@/booking-request/booking-request-progress";
+import { BookingRequestProgress } from "@/components/booking-request-progress";
 import { CustomerBookingRequestStatus } from "@/components/customer-booking-request-status";
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { MessagingBookingLink } from "@/components/messaging-booking-link";
@@ -114,6 +116,12 @@ export default async function CustomerBookingRequestPage({
     }
     return (
       <main className="results-page">
+        <div className="booking-request-progress-card">
+          <BookingRequestProgress
+            locale={locale}
+            progress={confirmedBookingProgress}
+          />
+        </div>
         <ConfirmedBookingDetails
           locale={locale}
           {...confirmed}

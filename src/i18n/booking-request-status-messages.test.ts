@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { bookingRequestProgressSteps } from "@/booking-request/booking-request-progress";
 import { bookingRequestStatuses } from "@/booking-request/booking-request-status";
 import { bookingRequestDeclineReasons } from "@/booking-request/booking-request-lifecycle";
 import {
@@ -9,6 +10,7 @@ import {
 import {
   bookingRequestDeclineReasonMessages,
   bookingRequestDisplayStatusMessages,
+  bookingRequestProgressMessages,
   bookingRequestStatusMessages,
   bookingRequestPaymentRequiredExpiryMessages,
 } from "./booking-request-status-messages";
@@ -28,6 +30,33 @@ describe("Booking Request lifecycle copy", () => {
         expect(label).toEqual(expect.any(String));
         expect(label.trim()).not.toBe("");
         expect(label).not.toBe(reason);
+      }
+    },
+  );
+
+  it.each(["en", "ar", "ckb"] as const)(
+    "names every progress step and state in %s",
+    (locale) => {
+      const copy = bookingRequestProgressMessages[locale];
+      expect(copy.label).toEqual(expect.any(String));
+      expect(copy.label.trim()).not.toBe("");
+      for (const step of bookingRequestProgressSteps) {
+        const name = copy.steps[step];
+        expect(name).toEqual(expect.any(String));
+        expect(name.trim()).not.toBe("");
+        expect(name).not.toBe(step);
+      }
+      for (const state of [
+        "completed",
+        "current",
+        "action-required",
+        "stopped",
+        "upcoming",
+      ] as const) {
+        const name = copy.states[state];
+        expect(name).toEqual(expect.any(String));
+        expect(name.trim()).not.toBe("");
+        expect(name).not.toBe(state);
       }
     },
   );

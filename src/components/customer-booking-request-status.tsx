@@ -11,6 +11,7 @@ import {
   type BookingRequestDisplayStatus,
   type CustomerBookingRequestDisplay,
 } from "@/booking-request/booking-request-display";
+import { customerBookingRequestProgress } from "@/booking-request/booking-request-progress";
 import { actOnBookingRequest } from "@/booking-request/lifecycle-actions";
 import { recoverBookingRequestPayment } from "@/booking-request/payment-recovery-actions";
 import {
@@ -22,6 +23,7 @@ import {
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 
+import { BookingRequestProgress } from "./booking-request-progress";
 import { ActionButton, ActionFeedback } from "./interaction-controls";
 
 const messages = {
@@ -181,6 +183,10 @@ function CustomerBookingRequestStatusView({
           paymentRequiredExpiry={request.paymentRequiredExpiry}
         />
       </p>
+      <BookingRequestProgress
+        locale={locale}
+        progress={customerBookingRequestProgress({ ...request, status })}
+      />
       <strong>{request.bookingRequestReference}</strong>
       <dl>
         <div>

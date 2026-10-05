@@ -3,7 +3,7 @@ vi.mock("@/notification/request-notification-status", () => ({
     .fn()
     .mockResolvedValue({ status: "unavailable" }),
 }));
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -241,6 +241,39 @@ it("keeps confirmed booking details visible and shows authoritative review eligi
     screen.getByRole("heading", { name: "Review this cottage" }),
   ).toBeVisible();
   expect(screen.getByText(/Oct 5, 2026/)).toBeVisible();
+});
+
+it("shows the four completed progress steps above a Customer's Confirmed Booking details", async () => {
+  loadConfirmed.mockResolvedValue({
+    access: { actorRole: "customer" },
+    navigation: null,
+  });
+  loadFinancial.mockResolvedValue({ lifecycle: { status: "confirmed" } });
+  loadReview.mockResolvedValue({ status: "unavailable" });
+
+  render(
+    await CustomerBookingRequestPage({
+      params: Promise.resolve({
+        locale: "en",
+        reference: request.bookingRequestReference,
+      }),
+    }),
+  );
+
+  const progress = screen.getByRole("list", {
+    name: "Booking Request progress",
+  });
+  const steps = within(progress).getAllByRole("listitem");
+  expect(steps).toHaveLength(4);
+  for (const step of steps) {
+    expect(step).toHaveTextContent("Completed");
+    expect(step).not.toHaveAttribute("aria-current");
+  }
+  expect(
+    progress.compareDocumentPosition(
+      screen.getByText("Confirmed booking details"),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 it("routes retained cancellation to safe history without reopening private access or pending status", async () => {
