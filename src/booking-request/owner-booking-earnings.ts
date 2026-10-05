@@ -11,6 +11,7 @@ import {
 import type { BookingPayoutRecovery } from "./booking-payout";
 import { bookingFinancialPresentation } from "./booking-financial-presentation";
 import { parseBookingPayoutRecovery } from "./supabase-booking-payout";
+import { isOffsetTimestamp, rowObject } from "./booking-request-row";
 
 type RefundState =
   | "requested"
@@ -107,9 +108,9 @@ export type OwnerBookingEarningsCause =
   | "recovery-required";
 
 const object = (value: unknown): Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid owner earnings facts");
-  return value as Record<string, unknown>;
+  const row = rowObject(value);
+  if (!row) throw new Error("Invalid owner earnings facts");
+  return row;
 };
 const choice = <T extends string>(value: unknown, values: readonly T[]): T => {
   if (!values.includes(value as T))
@@ -132,11 +133,7 @@ const allocation = (value: unknown): RefundAllocation => {
   return result;
 };
 const timestamp = (value: unknown): string => {
-  if (
-    typeof value !== "string" ||
-    !/(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
-    !Number.isFinite(Date.parse(value))
-  )
+  if (!isOffsetTimestamp(value))
     throw new Error("Invalid owner earnings timestamp");
   return value;
 };

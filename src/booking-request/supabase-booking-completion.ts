@@ -5,20 +5,13 @@ import type {
   BookingCompletionRepository,
   BookingCompletionResult,
 } from "./booking-completion";
+import { isOffsetTimestamp, rowObject } from "./booking-request-row";
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const object = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-const timestamp = (value: unknown): value is string =>
-  typeof value === "string" &&
-  /(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
-  Number.isFinite(Date.parse(value));
 
 function candidate(value: unknown): BookingCompletionCandidate {
-  const row = object(value);
+  const row = rowObject(value);
   if (
     !row ||
     typeof row.bookingRequestId !== "string" ||
@@ -26,8 +19,8 @@ function candidate(value: unknown): BookingCompletionCandidate {
     !["complete", "assess_maturity"].includes(String(row.action)) ||
     typeof row.revision !== "string" ||
     !/^[0-9a-f]{32}$/.test(row.revision) ||
-    !timestamp(row.effectivePeriodEnd) ||
-    !timestamp(row.observedAt)
+    !isOffsetTimestamp(row.effectivePeriodEnd) ||
+    !isOffsetTimestamp(row.observedAt)
   )
     throw new Error("Booking completion candidate is invalid");
   return {
@@ -63,7 +56,7 @@ export class SupabaseBookingCompletionRepository implements BookingCompletionRep
       target_revision: target.revision,
     });
     if (error) throw new Error("Booking completion could not be recorded");
-    const result = object(data);
+    const result = rowObject(data);
     if (
       !result ||
       result.bookingRequestId !== target.bookingRequestId ||
@@ -77,7 +70,7 @@ export class SupabaseBookingCompletionRepository implements BookingCompletionRep
       };
     if (
       result.effectivePeriodEnd !== target.effectivePeriodEnd ||
-      !timestamp(result.completedAt)
+      !isOffsetTimestamp(result.completedAt)
     )
       throw new Error("Booking completion result is invalid");
     return {
@@ -99,7 +92,7 @@ export class SupabaseBookingCompletionRepository implements BookingCompletionRep
       },
     );
     if (error) throw new Error("Booking maturity could not be recorded");
-    const result = object(data);
+    const result = rowObject(data);
     if (
       !result ||
       result.bookingRequestId !== target.bookingRequestId ||
@@ -113,7 +106,7 @@ export class SupabaseBookingCompletionRepository implements BookingCompletionRep
       };
     if (
       result.effectivePeriodEnd !== target.effectivePeriodEnd ||
-      !timestamp(result.assessedAt)
+      !isOffsetTimestamp(result.assessedAt)
     )
       throw new Error("Booking maturity result is invalid");
     return {

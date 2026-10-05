@@ -8,6 +8,7 @@ import {
   type BookingRequestPaymentStatus,
   type BookingRequestStatus,
 } from "./booking-request-status";
+import { isOffsetTimestamp } from "./booking-request-row";
 import {
   parseOwnerBookingEarningsAvailability,
   type OwnerBookingEarningsFacts,
@@ -42,10 +43,6 @@ const statuses: readonly BookingHistoryStatus[] = [
   "paid-confirmed",
   ...bookingLifecycleStatuses,
 ];
-const timestamp = (value: unknown): value is string =>
-  typeof value === "string" &&
-  /(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
-  Number.isFinite(Date.parse(value));
 
 export async function listBookingHistory(
   client: SupabaseClient,
@@ -71,10 +68,10 @@ export async function listBookingHistory(
         (typeof v.receiptId !== "string" || !uuid.test(v.receiptId))) ||
       typeof v.cottageName !== "string" ||
       !v.cottageName.trim() ||
-      !timestamp(v.createdAt) ||
-      (v.confirmedAt !== undefined && !timestamp(v.confirmedAt)) ||
-      !timestamp(v.firstStartsAt) ||
-      !timestamp(v.lastEndsAt) ||
+      !isOffsetTimestamp(v.createdAt) ||
+      (v.confirmedAt !== undefined && !isOffsetTimestamp(v.confirmedAt)) ||
+      !isOffsetTimestamp(v.firstStartsAt) ||
+      !isOffsetTimestamp(v.lastEndsAt) ||
       Date.parse(v.lastEndsAt) <= Date.parse(v.firstStartsAt) ||
       !statuses.includes(v.status as BookingHistoryStatus) ||
       (v.actorRole !== "customer" && v.actorRole !== "cottage_owner") ||
