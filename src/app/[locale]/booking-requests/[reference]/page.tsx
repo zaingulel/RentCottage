@@ -1,22 +1,17 @@
-import { loadRequestNotificationStatus } from "@/notification/request-notification-status";
 import { RequestNotificationDetails } from "@/components/request-notification-details";
-import { loadBookingFinancialView } from "@/booking-request/request-booking-financial-view";
 import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import Link from "next/link";
-import { notFound, unstable_rethrow } from "next/navigation";
+import { notFound } from "next/navigation";
 
-import { loadCustomerBookingRequest } from "@/booking-request/request-customer-booking-request";
-import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-booking-access";
+import { loadBookingRequestDetails } from "@/booking-request/request-booking-request-details";
 import { confirmedBookingProgress } from "@/booking-request/booking-request-progress";
 import { BookingRequestProgress } from "@/components/booking-request-progress";
 import { CustomerBookingRequestStatus } from "@/components/customer-booking-request-status";
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { MessagingBookingLink } from "@/components/messaging-booking-link";
 import { CustomerReviewForm } from "@/components/customer-review-form";
-import { createRequestCustomerReview } from "@/customer-review/request-customer-review";
-import type { OwnCustomerReviewResult } from "@/customer-review/customer-review";
 import { isLocale } from "@/i18n/routing";
 
 const unavailableCopy = {
@@ -54,27 +49,16 @@ export default async function CustomerBookingRequestPage({
   const messaging = (
     <MessagingBookingLink locale={locale} reference={reference} />
   );
-  const requestDelivery = await loadRequestNotificationStatus(
-    reference,
-    "customer",
-  );
-  const notices = (
-    <RequestNotificationDetails
-      locale={locale}
-      reference={reference}
-      delivery={requestDelivery}
-    />
-  );
-  let confirmed;
-  let financial;
-  try {
-    confirmed = await loadConfirmedBookingAccess(reference);
-    financial = await loadBookingFinancialView(reference, "customer");
-  } catch (error) {
-    unstable_rethrow(error);
-    console.error("Customer confirmed Booking load failed", {
-      code: "customer_confirmed_booking_failed",
-    });
+  const details = await loadBookingRequestDetails(reference, "customer");
+  if (details.outcome === "denied")
+    return (
+      <AccountAccessRecovery
+        locale={locale}
+        status="denied"
+        returnTo={returnTo}
+      />
+    );
+  if (details.outcome === "unavailable")
     return (
       <main className="results-page">
         <section role="alert">
@@ -83,37 +67,22 @@ export default async function CustomerBookingRequestPage({
         </section>
       </main>
     );
-  }
-  if (
-    confirmed?.access.actorRole !== undefined &&
-    confirmed.access.actorRole !== "customer"
-  )
-    return (
-      <AccountAccessRecovery
-        locale={locale}
-        status="denied"
-        returnTo={returnTo}
-      />
-    );
-  if (financial?.cancellation)
+  const notices = (
+    <RequestNotificationDetails
+      locale={locale}
+      reference={reference}
+      delivery={details.delivery}
+    />
+  );
+  if (details.outcome === "cancelled")
     return (
       <main className="results-page">
-        <BookingFinancialDetails locale={locale} view={financial} />
+        <BookingFinancialDetails locale={locale} view={details.financial} />
         {messaging}
         {notices}
       </main>
     );
-  if (confirmed) {
-    let review: OwnCustomerReviewResult = { status: "unavailable" };
-    try {
-      const customerReview = await createRequestCustomerReview();
-      if (customerReview) review = await customerReview.getOwn(reference);
-    } catch (error) {
-      unstable_rethrow(error);
-      console.error("Customer review load failed", {
-        code: "customer_review_load_unavailable",
-      });
-    }
+  if (details.outcome === "confirmed")
     return (
       <main className="results-page">
         <div className="booking-request-progress-card">
@@ -124,51 +93,24 @@ export default async function CustomerBookingRequestPage({
         </div>
         <ConfirmedBookingDetails
           locale={locale}
-          {...confirmed}
-          lifecycleStatus={financial?.lifecycle.status}
+          {...details.confirmed}
+          lifecycleStatus={details.financial?.lifecycle.status}
         />
         <CustomerReviewForm
           locale={locale}
           bookingRequestReference={reference}
-          initialResult={review}
+          initialResult={details.review}
         />
         {messaging}
-        {financial ? (
-          <BookingFinancialDetails locale={locale} view={financial} />
+        {details.financial ? (
+          <BookingFinancialDetails locale={locale} view={details.financial} />
         ) : null}
         {notices}
       </main>
     );
-  }
-  let request;
-  try {
-    request = await loadCustomerBookingRequest(reference);
-  } catch (error) {
-    unstable_rethrow(error);
-    console.error("Customer Booking Request status failed", {
-      code: "customer_booking_request_status_failed",
-    });
-  }
-  if (request === null)
-    return (
-      <AccountAccessRecovery
-        locale={locale}
-        status="denied"
-        returnTo={returnTo}
-      />
-    );
-  if (!request)
-    return (
-      <main className="results-page">
-        <section role="alert">
-          <h1>{unavailableCopy[locale].title}</h1>
-          <Link href={`/${locale}`}>{unavailableCopy[locale].home}</Link>
-        </section>
-      </main>
-    );
   return (
     <main className="results-page">
-      <CustomerBookingRequestStatus locale={locale} request={request} />
+      <CustomerBookingRequestStatus locale={locale} request={details.request} />
       {messaging}
       {notices}
     </main>
