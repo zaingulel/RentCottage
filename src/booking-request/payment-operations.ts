@@ -26,31 +26,39 @@ export interface PaymentOperations {
   readonly operations: PaymentOperationExecution;
 }
 
+export function preparePaymentOperations(
+  environment: PaymentOperationsEnvironment,
+): (() => PaymentOperations) | undefined {
+  const secretKey = environment.SUPABASE_SECRET_KEY;
+  if (!bookingRequestTestRuntimeIsEnabled(environment) || !secretKey)
+    return undefined;
+  return () => {
+    const serviceClient = createClient(
+      environment.SUPABASE_URL as string,
+      secretKey,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const provider = new DurablePaymentSimulator({
+      effects: new SupabaseSimulatorEffectRepository(serviceClient),
+      now: () => new Date().toISOString(),
+    });
+    const operations = createPaymentOperationExecution({
+      repository: new SupabasePaymentOperationExecutionRepository(
+        serviceClient,
+      ),
+      provider,
+      observation: createBookingRequestPaymentObservation({
+        repository: new SupabaseBookingRequestPaymentObservationRepository(
+          serviceClient,
+        ),
+      }),
+    });
+    return { serviceClient, provider, operations };
+  };
+}
+
 export function createPaymentOperations(
   environment: PaymentOperationsEnvironment,
 ): PaymentOperations | undefined {
-  if (
-    !bookingRequestTestRuntimeIsEnabled(environment) ||
-    !environment.SUPABASE_SECRET_KEY
-  )
-    return undefined;
-  const serviceClient = createClient(
-    environment.SUPABASE_URL as string,
-    environment.SUPABASE_SECRET_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } },
-  );
-  const provider = new DurablePaymentSimulator({
-    effects: new SupabaseSimulatorEffectRepository(serviceClient),
-    now: () => new Date().toISOString(),
-  });
-  const operations = createPaymentOperationExecution({
-    repository: new SupabasePaymentOperationExecutionRepository(serviceClient),
-    provider,
-    observation: createBookingRequestPaymentObservation({
-      repository: new SupabaseBookingRequestPaymentObservationRepository(
-        serviceClient,
-      ),
-    }),
-  });
-  return { serviceClient, provider, operations };
+  return preparePaymentOperations(environment)?.();
 }

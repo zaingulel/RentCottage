@@ -4,7 +4,7 @@ import {
 } from "./booking-request-payment-recovery";
 import { SupabaseBookingRequestPaymentRecoveryRepository } from "./supabase-booking-request-payment-recovery";
 import {
-  createPaymentOperations,
+  preparePaymentOperations,
   type PaymentOperationsEnvironment,
 } from "./payment-operations";
 import { createBookingRequestCaptureProcessing } from "./booking-request-capture-processing";
@@ -27,15 +27,17 @@ export async function runScheduledBookingRequestCapture(
     limit: number,
   ) => Promise<readonly { readonly status: PaymentRecoveryStatus }[]>,
 ) {
-  const payment = createPaymentOperations(environment);
-  if (!payment || !environment.SUPABASE_PUBLISHABLE_KEY)
+  const assemblePayment = environment.SUPABASE_PUBLISHABLE_KEY
+    ? preparePaymentOperations(environment)
+    : undefined;
+  if (!assemblePayment)
     throw new Error(
       "Scheduled capture requires the exact local test runtime and credentials",
     );
   let processDue = injectedProcessDue;
   let processRecoveryDue = injectedRecoveryDue;
   if (!processDue) {
-    const { serviceClient: client, provider, operations } = payment;
+    const { serviceClient: client, provider, operations } = assemblePayment();
     processRecoveryDue = createBookingRequestPaymentRecovery({
       repository: new SupabaseBookingRequestPaymentRecoveryRepository(
         client,

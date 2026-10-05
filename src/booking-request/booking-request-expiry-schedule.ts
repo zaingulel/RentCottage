@@ -11,7 +11,7 @@ import {
   type PaymentRequiredExpiryResult,
 } from "./booking-request-payment-required-expiry";
 import {
-  createPaymentOperations,
+  preparePaymentOperations,
   type PaymentOperationsEnvironment,
 } from "./payment-operations";
 import { SupabaseBookingRequestLifecycleRepository } from "./supabase-booking-request-lifecycle";
@@ -32,8 +32,10 @@ export async function runScheduledBookingRequestExpiry(
   injectedProcessDue?: ProcessDue,
   injectedPaymentRequiredDue?: ProcessDue,
 ) {
-  const payment = createPaymentOperations(environment);
-  if (!payment || !environment.SUPABASE_PUBLISHABLE_KEY) {
+  const assemblePayment = environment.SUPABASE_PUBLISHABLE_KEY
+    ? preparePaymentOperations(environment)
+    : undefined;
+  if (!assemblePayment) {
     throw new Error(
       "Scheduled booking-request expiry requires the exact local test runtime and secret key",
     );
@@ -42,7 +44,7 @@ export async function runScheduledBookingRequestExpiry(
   let processDue = injectedProcessDue;
   let paymentRequiredDue = injectedPaymentRequiredDue;
   if (!processDue || !paymentRequiredDue) {
-    const { serviceClient: client, provider, operations } = payment;
+    const { serviceClient: client, provider, operations } = assemblePayment();
     processDue ??= createBookingRequestLifecycle({
       repository: new SupabaseBookingRequestLifecycleRepository(
         client,
