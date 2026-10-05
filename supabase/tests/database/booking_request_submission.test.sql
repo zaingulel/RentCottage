@@ -4803,11 +4803,11 @@ select results_eq(
 );
 rollback to savepoint booking_request_failed_release_retry;
 
-savepoint booking_request_deadline_equality;
+savepoint booking_request_deadline_overdue;
 update public.booking_requests
 set created_at = timed.deadline - interval '4 hours',
   response_deadline = timed.deadline
-from (select clock_timestamp() as deadline) timed;
+from (select clock_timestamp() - interval '1 millisecond' as deadline) timed;
 set local role service_role;
 select is(
   public.claim_booking_request_action(
@@ -4816,15 +4816,15 @@ select is(
     'accept', null, null
   ) ->> 'status',
   'release-required',
-  'deadline equality belongs to expiry even when the Owner submits acceptance'
+  'an overdue Response Deadline belongs to expiry even when the Owner submits acceptance'
 );
 reset role;
 select is(
   (select outcome from public.booking_request_release_work limit 1),
   'expired',
-  'the database clock records expiry as the winning outcome at the deadline'
+  'the database clock records expiry as the winning outcome after the Response Deadline'
 );
-rollback to savepoint booking_request_deadline_equality;
+rollback to savepoint booking_request_deadline_overdue;
 
 savepoint booking_request_automatic_expiry;
 update public.booking_requests
