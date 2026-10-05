@@ -614,6 +614,57 @@ describe("access verification command", () => {
     ]);
   });
 
+  it("refuses a planned step whose environment the runner does not provide", async () => {
+    const run = successfulRun();
+    const removeTemp = vi.fn();
+    const stderr = vi.fn();
+    const lines = [];
+
+    expect(
+      await mainWithPreparedProject(["--database"], {
+        environment: {},
+        makeTemp: () => "/tmp/access-docker",
+        removeTemp,
+        run,
+        stderr,
+        stdout: (line) => lines.push(JSON.parse(line)),
+        stepPlan: () => ({
+          preflight: [],
+          checks: [
+            {
+              group: "database",
+              command: "node",
+              args: ["scripts/unlisted-check.mjs"],
+              environment: "inherited",
+            },
+          ],
+        }),
+      }),
+    ).toBe(1);
+
+    expect(stderr).toHaveBeenCalledWith(
+      expect.stringContaining("unknown environment inherited"),
+    );
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      statusCommand,
+      ownershipCommand,
+      stopCommand,
+    ]);
+    expect(
+      lines.filter((line) => line.type === "verification-failure"),
+    ).toEqual([
+      {
+        type: "verification-failure",
+        attemptedCommand: ["node", "scripts/unlisted-check.mjs"],
+        reproduceGroup: ["npm", "run", "verify:access:database"],
+      },
+    ]);
+    expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+  });
+
   it("runs the database tests without the booking and payment concurrency programs", async () => {
     const run = successfulRun();
 

@@ -897,6 +897,13 @@ export async function main(
       step.args[0] === "supabase" ? supabaseArguments(step.args) : step.args;
     const runPlannedStep = async (step, environments) => {
       group = step.group;
+      if (!Object.hasOwn(environments, step.environment)) {
+        lastAttemptedCommand = [step.command, ...plannedArguments(step)];
+        stderr(
+          `Access step ${lastAttemptedCommand.join(" ")} names unknown environment ${step.environment}.`,
+        );
+        return 1;
+      }
       const env = environments[step.environment];
       if (!step.declaredSchemaDiff) {
         const completed = await execute(step.command, plannedArguments(step), {
