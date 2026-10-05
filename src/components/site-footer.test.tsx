@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { SiteFooter } from "./site-footer";
 
 describe("SiteFooter", () => {
-  it("links the discover, owner and language destinations for the current page", () => {
+  it("links the discover and owner destinations for the current page and offers no language links", () => {
     const queryString =
       "from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01%3Ashift%3A1";
     render(
@@ -36,14 +36,9 @@ describe("SiteFooter", () => {
       "href",
       `/en/access?returnTo=${encodeURIComponent(`/en/results?${queryString}`)}`,
     );
-    expect(screen.getByRole("link", { name: "کوردی" })).toHaveAttribute(
-      "href",
-      `/ckb/results?${queryString}`,
-    );
-    expect(screen.getByRole("link", { name: "English" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    for (const name of ["English", "کوردی", "العربية"]) {
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
     expect(screen.queryByRole("navigation", { name: "Language" })).toBeNull();
     expect(
       screen.getByText(`© ${new Date().getFullYear()} RentCottage`),
@@ -52,15 +47,14 @@ describe("SiteFooter", () => {
   });
 
   it.each([
-    ["ar", "اكتشف", "المالكون", "اللغة", "ريف كوتج"],
-    ["ckb", "بدۆزەرەوە", "خاوەنەکان", "زمان", "ڕێنت کۆتاج"],
+    ["ar", "اكتشف", "المالكون", "ريف كوتج"],
+    ["ckb", "بدۆزەرەوە", "خاوەنەکان", "ڕێنت کۆتاج"],
   ] as const)(
     "localizes the footer headings and returns landing sign-in to bookings in %s",
-    (locale, discover, owners, language, brand) => {
+    (locale, discover, owners, brand) => {
       render(<SiteFooter locale={locale} path="" queryString="" />);
       expect(screen.getByRole("navigation", { name: discover })).toBeVisible();
       expect(screen.getByRole("navigation", { name: owners })).toBeVisible();
-      expect(screen.getByText(language)).toBeVisible();
       expect(
         screen.getByText(`© ${new Date().getFullYear()} ${brand}`),
       ).toBeVisible();
@@ -72,10 +66,7 @@ describe("SiteFooter", () => {
         "href",
         `/${locale}/access?returnTo=%2F${locale}%2Fbookings`,
       );
-      expect(screen.getByRole("link", { name: "English" })).toHaveAttribute(
-        "href",
-        "/en",
-      );
+      expect(screen.queryByRole("link", { name: "English" })).toBeNull();
     },
   );
 });
