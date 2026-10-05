@@ -3,6 +3,11 @@ import type {
   PaymentProviderIdentity,
   ProviderOperationBinding,
 } from "./payment-contract";
+import {
+  isPermitIdentifier,
+  isPositiveInteger,
+  isRequestFingerprint,
+} from "./payment-permit";
 
 export interface BookingRequestPaymentRequiredExpiryBinding {
   readonly bookingRequestId: string;
@@ -74,7 +79,7 @@ function correctiveRefundPermitFrom(
     ]) ||
     permit.purpose !== "booking-request-payment-required-corrective-refund" ||
     ![permit.expiryWorkId, permit.expiryOperationId].every(
-      (item) => typeof item === "string" && uuid.test(item),
+      isPermitIdentifier,
     ) ||
     typeof permit.notBefore !== "string" ||
     Number.isNaN(Date.parse(permit.notBefore)) ||
@@ -97,7 +102,7 @@ function correctiveRefundPermitFrom(
       binding.bookingRequestId,
       binding.captureProviderOperationId,
       binding.paymentLifecycleId,
-    ].every((item) => typeof item === "string" && uuid.test(item)) ||
+    ].every(isPermitIdentifier) ||
     ![
       binding.captureLogicalOperationId,
       binding.capturePhysicalAttemptId,
@@ -108,7 +113,7 @@ function correctiveRefundPermitFrom(
     typeof binding.captureOccurredAt !== "string" ||
     !(Date.parse(binding.captureOccurredAt) >= Date.parse(permit.notBefore)) ||
     permit.idempotencyKey !== binding.refundPhysicalAttemptId ||
-    !positiveInteger(binding.amountFils) ||
+    !isPositiveInteger(binding.amountFils) ||
     binding.currency !== "IQD" ||
     !provider ||
     !exactKeys(provider, [
@@ -123,8 +128,6 @@ function correctiveRefundPermitFrom(
   return permit as unknown as BookingRequestPaymentRequiredCorrectiveRefundPermit;
 }
 
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -134,8 +137,6 @@ const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) =>
   Object.keys(value).every((key) => keys.includes(key));
 const nonempty = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
-const positiveInteger = (value: unknown) =>
-  Number.isSafeInteger(value) && (value as number) > 0;
 
 export function paymentRequiredExpiryPermitFrom(
   value: unknown,
@@ -160,7 +161,7 @@ export function paymentRequiredExpiryPermitFrom(
     ]) ||
     permit.purpose !== "booking-request-payment-required-expiry" ||
     ![permit.expiryWorkId, permit.expiryOperationId].every(
-      (item) => typeof item === "string" && uuid.test(item),
+      isPermitIdentifier,
     ) ||
     typeof permit.notBefore !== "string" ||
     Number.isNaN(Date.parse(permit.notBefore)) ||
@@ -185,8 +186,8 @@ export function paymentRequiredExpiryPermitFrom(
       binding.bookingRequestId,
       binding.authorizationClaimId,
       binding.authorizationPaymentLifecycleId,
-    ].every((item) => typeof item === "string" && uuid.test(item)) ||
-    !positiveInteger(binding.authorizationClaimGeneration) ||
+    ].every(isPermitIdentifier) ||
+    !isPositiveInteger(binding.authorizationClaimGeneration) ||
     ![
       binding.authorizationLogicalOperationId,
       binding.authorizationPhysicalAttemptId,
@@ -197,10 +198,9 @@ export function paymentRequiredExpiryPermitFrom(
     typeof binding.predecessorOutcomeAt !== "string" ||
     Number.isNaN(Date.parse(binding.predecessorOutcomeAt)) ||
     permit.idempotencyKey !== binding.releasePhysicalAttemptId ||
-    !positiveInteger(binding.amountFils) ||
+    !isPositiveInteger(binding.amountFils) ||
     binding.currency !== "IQD" ||
-    typeof binding.requestFingerprint !== "string" ||
-    !/^[a-f0-9]{64}$/.test(binding.requestFingerprint) ||
+    !isRequestFingerprint(binding.requestFingerprint) ||
     !provider ||
     !exactKeys(provider, [
       "provider",
