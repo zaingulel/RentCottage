@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
+import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
 import { OwnerApplicationReviewQueue } from "@/components/owner-application-review-queue";
 import { accessMessages } from "@/i18n/access-messages";
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
@@ -17,19 +17,9 @@ import type { SubmittedOwnerApplicationReviewCursor } from "@/owner-application/
 async function loadOwnerApplicationReviewPage(
   cursor?: SubmittedOwnerApplicationReviewCursor,
 ) {
+  if ((await resolvePlatformAdministratorAccess()) !== "allowed")
+    return { status: "access_required" as const };
   const client = await createRequestSupabaseClient();
-  const [context, authorization] = await Promise.all([
-    new SupabaseAccountContextStore(client).resolve(),
-    client.rpc("is_platform_administrator", {
-      required_assurance: "aal2",
-    }),
-  ]);
-  if (context?.role !== "platform_administrator") {
-    return { status: "access_required" as const };
-  }
-  if (authorization.error) throw authorization.error;
-  if (authorization.data !== true)
-    return { status: "access_required" as const };
   return {
     status: "ready" as const,
     review: await loadSubmittedOwnerApplicationsForReview(client, cursor),

@@ -88,6 +88,27 @@ it("does not present an administrator authorization RPC error as a denial", asyn
   expect(createCottageProfile).not.toHaveBeenCalled();
 });
 
+it("refuses the editor to a session the Platform Administrator gate refuses", async () => {
+  resolveContext.mockResolvedValue({ role: "platform_administrator" });
+  createClient.mockResolvedValue({
+    rpc: vi.fn().mockResolvedValue({ data: false, error: null }),
+  });
+
+  render(
+    await AdministratorCottageProfilePage({
+      params: Promise.resolve({
+        locale: "en",
+        profileId: "70000000-0000-4000-8000-000000000001",
+      }),
+    }),
+  );
+
+  expect(
+    screen.getByRole("link", { name: "Complete administrator access" }),
+  ).toHaveAttribute("href", "/en/administrator/access");
+  expect(createCottageProfile).not.toHaveBeenCalled();
+});
+
 it("passes the AAL2 translation administration overview to the review surface", async () => {
   resolveContext.mockResolvedValue({ role: "platform_administrator" });
   createClient.mockResolvedValue({

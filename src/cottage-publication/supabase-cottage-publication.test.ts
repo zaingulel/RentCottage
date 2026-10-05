@@ -325,19 +325,6 @@ describe("Supabase Cottage publication adapter", () => {
     },
   );
 
-  it("re-resolves AAL2 administrator authority before privileged generation", async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: false, error: null });
-    const client = { rpc } as unknown as SupabaseClient;
-    const repository = new SupabaseCottagePublicationRepository(client, client);
-
-    await expect(repository.assertTranslationAdministrator()).rejects.toThrow(
-      "AAL2 Platform Administrator access is required",
-    );
-    expect(rpc).toHaveBeenCalledWith("is_platform_administrator", {
-      required_assurance: "aal2",
-    });
-  });
-
   it("uses authenticated atomic RPCs for human review and owner reports", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: {}, error: null });
     const client = { rpc } as unknown as SupabaseClient;

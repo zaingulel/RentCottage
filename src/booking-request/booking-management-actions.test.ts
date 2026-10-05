@@ -1,21 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const { client, resolve, cancel, view, runtime, refresh, settle } = vi.hoisted(
-  () => ({
+const { client, resolve, gate, cancel, view, runtime, refresh, settle } =
+  vi.hoisted(() => ({
     client: {
-      auth: {
-        getUser: vi.fn(),
-        mfa: { getAuthenticatorAssuranceLevel: vi.fn() },
-      },
+      auth: { getUser: vi.fn() },
       rpc: vi.fn(),
     },
     resolve: vi.fn(),
+    gate: vi.fn(),
     cancel: vi.fn(),
     view: vi.fn(),
     runtime: vi.fn(),
     refresh: vi.fn(),
     settle: vi.fn(),
-  }),
-);
+  }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ refresh }));
 vi.mock("@/access/supabase-server", () => ({
@@ -25,6 +22,9 @@ vi.mock("@/access/supabase-account-access", () => ({
   SupabaseAccountContextStore: class {
     resolve = resolve;
   },
+}));
+vi.mock("@/access/platform-administrator-gate", () => ({
+  resolvePlatformAdministratorAccess: gate,
 }));
 vi.mock("./booking-cancellation", () => ({
   createBookingCancellation: () => ({ cancel }),
@@ -77,10 +77,7 @@ describe("confirmed booking command authority", () => {
       },
       error: null,
     });
-    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
-      data: { currentLevel: "aal2" },
-      error: null,
-    });
+    gate.mockResolvedValue("allowed");
   });
   it("routes current administrator settlement through the existing verified booking caller", async () => {
     resolve.mockResolvedValue({
@@ -361,10 +358,7 @@ describe("payout command authority", () => {
       userId: "actor",
       role: "platform_administrator",
     });
-    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
-      data: { currentLevel: "aal2" },
-      error: null,
-    });
+    gate.mockResolvedValue("allowed");
     view.mockResolvedValue({ bookingRequestId: request });
     client.rpc.mockResolvedValue({
       data: {
@@ -399,10 +393,7 @@ describe("payout command authority", () => {
     });
   });
   it("requires current administrator assurance before a payout command", async () => {
-    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
-      data: { currentLevel: "aal1" },
-      error: null,
-    });
+    gate.mockResolvedValue("refused");
     expect(
       await manageConfirmedBooking(
         { status: "idle" },
@@ -476,10 +467,7 @@ describe("confirmed booking form submission", () => {
       error: null,
     });
     resolve.mockResolvedValue(administrator);
-    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
-      data: { currentLevel: "aal2" },
-      error: null,
-    });
+    gate.mockResolvedValue("allowed");
     view.mockResolvedValue({ bookingRequestId: request });
     cancel.mockResolvedValue({ status: "cancelled" });
     settle.mockResolvedValue({ status: "settled" });
@@ -682,6 +670,66 @@ describe("confirmed booking form submission", () => {
       },
     );
     expect(refresh).toHaveBeenCalledOnce();
+  });
+  it.each([
+    [
+      "a failed Platform Administrator check",
+      () => gate.mockRejectedValue(new Error("check failed")),
+    ],
+    [
+      "an identity read that fails for a live account",
+      () =>
+        client.auth.getUser.mockResolvedValue({
+          data: { user: null },
+          error: { name: "AuthRetryableFetchError", status: 503 },
+        }),
+    ],
+  ])(
+    "reports %s as unavailable before any booking operation",
+    async (_, arrange) => {
+      arrange();
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        expect(
+          await manageConfirmedBooking(
+            { status: "idle" },
+            form({
+              actorRole: "platform_administrator",
+              action: "settle",
+              reason: "Review",
+            }),
+          ),
+        ).toEqual({ status: "unavailable" });
+        expect(log).toHaveBeenCalledExactlyOnceWith(
+          "Booking management command failed",
+          { code: "booking_management_unavailable" },
+        );
+      } finally {
+        log.mockRestore();
+      }
+      expect(view).not.toHaveBeenCalled();
+      expect(settle).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps a signed-out session refused, never unavailable", async () => {
+    client.auth.getUser.mockResolvedValue({
+      data: { user: null },
+      error: { name: "AuthSessionMissingError" },
+    });
+    resolve.mockResolvedValue(undefined);
+    expect(
+      await manageConfirmedBooking(
+        { status: "idle" },
+        form({
+          actorRole: "platform_administrator",
+          action: "settle",
+          reason: "Review",
+        }),
+      ),
+    ).toEqual({ status: "access-required" });
+    expect(view).not.toHaveBeenCalled();
+    expect(settle).not.toHaveBeenCalled();
   });
   it.each(["blocked", "attention-required", "processing"])(
     "refreshes the page after every completed settlement attempt: %s",

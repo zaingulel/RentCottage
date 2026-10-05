@@ -81,8 +81,36 @@ describe("Owner Application administrator review page", () => {
       screen.getByText("The private review queue is temporarily unavailable."),
     ).toBeVisible();
     expect(
-      screen.queryByText("Sign in and complete administrator MFA to continue."),
+      screen.queryByText(
+        "Platform Administrator multi-factor access is required to review private evidence.",
+      ),
     ).not.toBeInTheDocument();
+    expect(loadApplications).not.toHaveBeenCalled();
+  });
+
+  it("refuses the review queue to a session the Platform Administrator gate refuses", async () => {
+    resolveContext.mockResolvedValue({
+      userId: "10000000-0000-4000-8000-000000000001",
+      role: "platform_administrator",
+    });
+    createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({ data: false, error: null }),
+    });
+
+    render(
+      await OwnerApplicationReviewPage({
+        params: Promise.resolve({ locale: "en" }),
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Platform Administrator multi-factor access is required to review private evidence.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Verify administrator access" }),
+    ).toHaveAttribute("href", "/en/administrator/access");
     expect(loadApplications).not.toHaveBeenCalled();
   });
 
