@@ -4,6 +4,10 @@ import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { isLocale } from "@/i18n/routing";
 import { SupabaseBookingNotificationStatusRepository } from "./notification-status-repository";
 import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import {
+  isBookingRequestReference,
+  isIdentifier,
+} from "@/booking-request/booking-request-identifiers";
 
 export type RetryPaidConfirmationNotificationState = {
   readonly status: "idle" | "queued" | "invalid" | "unavailable" | "failed";
@@ -24,16 +28,10 @@ export async function retryPaidConfirmationNotification(
     (receiptId !== null && typeof receiptId !== "string") ||
     (receiptId === null && eventId === null) ||
     (eventId !== null &&
-      (typeof eventId !== "string" ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          eventId,
-        ))) ||
+      (typeof eventId !== "string" || !isIdentifier(eventId))) ||
     !isLocale(locale) ||
-    !/^RC-REQ-[A-F0-9]{16}$/.test(reference) ||
-    (receiptId !== null &&
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        receiptId,
-      ))
+    !isBookingRequestReference(reference) ||
+    (receiptId !== null && !isIdentifier(receiptId))
   )
     return { status: "invalid" };
   try {

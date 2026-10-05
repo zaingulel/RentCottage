@@ -7,6 +7,10 @@ import { hasCustomerCapability } from "@/access/account-access";
 import { isLocale } from "@/i18n/routing";
 import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
 import {
+  isBookingRequestReference,
+  isIdentifier,
+} from "./booking-request-identifiers";
+import {
   createBookingCancellation,
   type BookingCancellationCommand,
 } from "./booking-cancellation";
@@ -61,11 +65,9 @@ export async function manageConfirmedBooking(
     typeof locale !== "string" ||
     !isLocale(locale) ||
     typeof reference !== "string" ||
-    !/^RC-REQ-[A-F0-9]{16}$/.test(reference) ||
+    !isBookingRequestReference(reference) ||
     typeof commandId !== "string" ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      commandId,
-    ) ||
+    !isIdentifier(commandId) ||
     !["customer", "cottage_owner", "platform_administrator"].includes(
       String(role),
     ) ||
@@ -160,10 +162,7 @@ export async function manageConfirmedBooking(
         action === "release_hold" || action === "resolve_dispute";
       if (
         hasSubject &&
-        (typeof subjectId !== "string" ||
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-            subjectId,
-          ))
+        (typeof subjectId !== "string" || !isIdentifier(subjectId))
       )
         return { status: "invalid" };
       if (

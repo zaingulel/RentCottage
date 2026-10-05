@@ -12,9 +12,7 @@ import type {
   BookingRequestLifecycleResult,
 } from "./booking-request-lifecycle";
 import { createRequestBookingRequestLifecycle } from "./request-booking-request-lifecycle";
-
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { isIdentifier } from "./booking-request-identifiers";
 
 export async function actOnBookingRequest(
   value: unknown,
@@ -25,7 +23,7 @@ export async function actOnBookingRequest(
   const input = value as Record<string, unknown>;
   if (
     typeof input.bookingRequestId !== "string" ||
-    !uuid.test(input.bookingRequestId) ||
+    !isIdentifier(input.bookingRequestId) ||
     typeof input.locale !== "string" ||
     !isLocale(input.locale) ||
     !["accept", "decline", "withdraw"].includes(String(input.action))
