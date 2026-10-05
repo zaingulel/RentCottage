@@ -308,3 +308,37 @@ ${publishedCottage ? publishedCottageDeletes(r) : ""}  alter table public.cottag
 alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
 commit;`;
 };
+
+export const publishedCottageCleanup = ({ profiles, users }) => {
+  const quoted = (identifiers) =>
+    identifiers.map((identifier) => `'${identifier}'`).join(", ");
+  const profileList = quoted(profiles);
+  const userList = quoted(users);
+  const schedules = `select id from public.cottage_shift_schedule_revisions where profile_id in (${profileList})`;
+  return `begin;
+  delete from public.cottage_booking_period_commitments where profile_id in (${profileList});
+  delete from public.cottage_inventory_availability where schedule_revision_id in (${schedules});
+  delete from public.cottage_inventory_date_price_overrides where schedule_revision_id in (${schedules});
+  delete from public.cottage_inventory_weekday_price_overrides where schedule_revision_id in (${schedules});
+  delete from public.cottage_inventory_standard_prices where schedule_revision_id in (${schedules});
+  update public.owner_application_cottage_profiles set current_shift_schedule_id = null, current_publication_id = null where id in (${profileList});
+  alter table public.cottage_shifts disable trigger reject_cottage_shift_delete;
+  delete from public.cottage_shifts where schedule_revision_id in (${schedules});
+  alter table public.cottage_shifts enable trigger reject_cottage_shift_delete;
+  alter table public.cottage_shift_schedule_revisions disable trigger reject_cottage_shift_schedule_revision_delete;
+  delete from public.cottage_shift_schedule_revisions where profile_id in (${profileList});
+  alter table public.cottage_shift_schedule_revisions enable trigger reject_cottage_shift_schedule_revision_delete;
+  alter table public.cottage_publication_snapshots disable trigger reject_cottage_publication_snapshots_delete;
+  delete from public.cottage_publication_snapshots where profile_id in (${profileList});
+  alter table public.cottage_publication_snapshots enable trigger reject_cottage_publication_snapshots_delete;
+  alter table public.cottage_profile_review_cycles disable trigger reject_cottage_profile_review_cycles_delete;
+  delete from public.cottage_profile_review_cycles where profile_id in (${profileList});
+  alter table public.cottage_profile_review_cycles enable trigger reject_cottage_profile_review_cycles_delete;
+  alter table public.cottage_profile_source_revisions disable trigger reject_cottage_profile_source_delete;
+  delete from public.cottage_profile_source_revisions where profile_id in (${profileList});
+  alter table public.cottage_profile_source_revisions enable trigger reject_cottage_profile_source_delete;
+  delete from public.owner_application_cottage_profiles where id in (${profileList});
+  delete from public.account_contexts where user_id in (${userList});
+  delete from auth.users where id in (${userList});
+commit;`;
+};
