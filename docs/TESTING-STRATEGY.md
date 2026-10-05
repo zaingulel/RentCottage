@@ -186,5 +186,7 @@ narrowing or deleting the test.
 ## What this authority does not do
 
 It sets no coverage target or test quota, imposes no universal red-green-refactor sequence, adds no wall-clock
-gate, and describes no verification machinery internals: `scripts/verify.mjs`, `scripts/verify-access.mjs` and
-`scripts/run-log.mjs` own their own output and record contracts through their tests under `scripts/lib/`.
+gate, and describes no verification machinery internals: `scripts/verify.mjs` and `scripts/verify-access.mjs` own
+their output and record contracts through the tests beside them in `scripts/` (`verify.test.mjs` and
+`verify-access-*.test.mjs`) and their shared command-line test `scripts/lib/verify-ci-partition-cli.test.mjs`, and
+`scripts/run-log.mjs` owns its own through `scripts/lib/run-log.test.mjs`.
