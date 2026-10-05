@@ -12,6 +12,8 @@ const rows = (stem) => ({
   request: id("60000000", stem),
   attempt: id("70000000", stem),
   claim: id("72000000", stem),
+  confirmation: id("80000000", stem),
+  operation: id("81000000", stem),
 });
 const administrator = "10000000-0000-4000-8000-000000003801";
 
@@ -104,5 +106,57 @@ delete from public.cottage_shift_schedule_revisions where id='${r.schedule}';
 delete from public.owner_application_cottage_profiles where id='${r.profile}';
 delete from public.account_contexts where user_id in ('${r.owner}','${r.customer}','${r.third}','${administrator}');
 delete from auth.users where id in ('${r.owner}','${r.customer}','${r.third}','${administrator}');
+set session_replication_role=origin;`;
+};
+
+const lifecycleDeletes = (
+  r,
+) => `delete from public.booking_cancellation_incidents where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${r.request}');
+delete from public.booking_cancellations where booking_request_id='${r.request}';
+delete from public.booking_incidents where booking_request_id='${r.request}';
+delete from public.booking_lifecycle_outcomes where booking_request_id='${r.request}';
+`;
+
+export const confirmedBookingAccessCleanup = ({
+  owner = "10000000-0000-4000-8000-000000003501",
+  customer = "10000000-0000-4000-8000-000000003502",
+  lifecycle = false,
+} = {}) => {
+  const r = rows("350");
+  return `set session_replication_role=replica;
+delete from public.booking_confirmation_notification_attempts where notification_id in (select notification_id from public.booking_confirmation_notification_work where booking_request_id='${r.request}');
+delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${r.request}';
+delete from public.booking_confirmation_notification_work where booking_request_id='${r.request}';
+delete from public.booking_notification_events where booking_request_id='${r.request}';
+${lifecycle ? lifecycleDeletes(r) : ""}delete from public.booking_request_confirmation_invalidations where booking_request_id='${r.request}';
+delete from public.booking_request_payment_required_expiry_work where booking_request_id='${r.request}';
+delete from public.payment_provider_operations where id='${r.operation}';
+delete from public.booking_receipts where booking_confirmation_id='${r.confirmation}'; delete from public.booking_confirmations where id='${r.confirmation}';
+delete from public.booking_request_capture_work where booking_request_id='${r.request}'; delete from public.booking_requests where id='${r.request}';
+delete from public.cottage_booking_period_commitments where id='${r.commitment}'; delete from public.booking_snapshots where id='${r.snapshot}';
+delete from public.owner_application_cottage_profiles where id='${r.profile}'; delete from public.account_contexts where user_id in ('${owner}','${customer}','${r.third}'); delete from auth.users where id in ('${owner}','${customer}','${r.third}'); set session_replication_role=origin;`;
+};
+
+export const preparationReminderCleanup = (event) => {
+  const r = rows("350");
+  return `set session_replication_role=replica;
+delete from public.booking_confirmation_notification_attempts where event_id='${event}';
+delete from public.fictional_booking_confirmation_notification_effects where event_id='${event}';
+delete from public.booking_confirmation_notification_work where event_id='${event}';
+delete from public.booking_notification_events where id='${event}';
+delete from public.booking_incidents where booking_request_id='${r.request}';
+delete from public.booking_cancellation_incidents where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${r.request}');
+delete from public.booking_cancellations where booking_request_id='${r.request}';
+delete from public.booking_request_payment_history where booking_request_id='${r.request}';
+delete from public.booking_receipts where booking_confirmation_id='${r.confirmation}';
+delete from public.booking_confirmations where id='${r.confirmation}';
+delete from public.booking_request_capture_work where booking_request_id='${r.request}';
+delete from public.payment_provider_operations where id='${r.operation}';
+delete from public.booking_requests where id='${r.request}';
+delete from public.cottage_booking_period_commitments where id='${r.commitment}';
+delete from public.booking_snapshots where id='${r.snapshot}';
+delete from public.owner_application_cottage_profiles where id='${r.profile}';
+delete from public.account_contexts where user_id in ('${r.owner}','${r.customer}','${r.third}');
+delete from auth.users where id in ('${r.owner}','${r.customer}','${r.third}');
 set session_replication_role=origin;`;
 };

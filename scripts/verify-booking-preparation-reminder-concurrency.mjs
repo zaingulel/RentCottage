@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { preparationReminderCleanup } from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -12,7 +13,6 @@ let timingOutcome = "failed";
 try {
   harness.markTimingPhase("setup");
   const request = "60000000-0000-4000-8000-000000003501";
-  const customer = "10000000-0000-4000-8000-000000003502";
   const owner = "10000000-0000-4000-8000-000000003501";
   const receipt = "82000000-0000-4000-8000-000000003501";
   const event = "90000000-0000-4000-8000-000000003571";
@@ -40,26 +40,7 @@ try {
     );
   const service = (sql) =>
     parse(harness.runSql(`set role service_role; ${sql}; reset role;`));
-  const cleanup = `set session_replication_role=replica;
-delete from public.booking_confirmation_notification_attempts where event_id='${event}';
-delete from public.fictional_booking_confirmation_notification_effects where event_id='${event}';
-delete from public.booking_confirmation_notification_work where event_id='${event}';
-delete from public.booking_notification_events where id='${event}';
-delete from public.booking_incidents where booking_request_id='${request}';
-delete from public.booking_cancellation_incidents where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${request}');
-delete from public.booking_cancellations where booking_request_id='${request}';
-delete from public.booking_request_payment_history where booking_request_id='${request}';
-delete from public.booking_receipts where booking_confirmation_id='80000000-0000-4000-8000-000000003501';
-delete from public.booking_confirmations where id='80000000-0000-4000-8000-000000003501';
-delete from public.booking_request_capture_work where booking_request_id='${request}';
-delete from public.payment_provider_operations where id='81000000-0000-4000-8000-000000003501';
-delete from public.booking_requests where id='${request}';
-delete from public.cottage_booking_period_commitments where id='${commitment}';
-delete from public.booking_snapshots where id='40000000-0000-4000-8000-000000003501';
-delete from public.owner_application_cottage_profiles where id='20000000-0000-4000-8000-000000003501';
-delete from public.account_contexts where user_id in ('${owner}','${customer}','10000000-0000-4000-8000-000000003503');
-delete from auth.users where id in ('${owner}','${customer}','10000000-0000-4000-8000-000000003503');
-set session_replication_role=origin;`;
+  const cleanup = preparationReminderCleanup(event);
   const sessions = [];
 
   const resetDelivery = (startAfter = "23 hours") => {
