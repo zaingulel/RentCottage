@@ -42,20 +42,94 @@ describe("booking refund execution binding", () => {
       true,
     );
   });
-  it.each([
-    { ...permit, generation: 1 },
-    { ...permit, notAfter: permit.notBefore },
-    {
-      ...permit,
-      binding: { ...permit.binding, captureOperationId: "unbound" },
-    },
-    { ...permit, binding: { ...permit.binding, amountFils: 0 } },
-    { ...permit, binding: { ...permit.binding, amountFils: 0.1 } },
-  ])("rejects invalid durable execution authority", (value) => {
-    expect(() => bookingRefundPermitFrom(value)).toThrow(
-      "Refund permit is invalid",
-    );
+  const withBinding = (change: object) => ({
+    ...permit,
+    binding: { ...permit.binding, ...change },
   });
+  const named = (id: string, generation: number) => ({
+    ...permit,
+    generation,
+    idempotencyKey: `${id}:refund:${generation}`,
+    binding: {
+      ...permit.binding,
+      refundIntentId: id,
+      logicalOperationId: `${id}:refund`,
+      attemptId: `${id}:refund:${generation}`,
+    },
+  });
+  const invalidPermits: [string, unknown][] = [
+    ["no permit", null],
+    ["purpose", { ...permit, purpose: "booking-settlement" }],
+    ["missing binding", { ...permit, binding: null }],
+    ["operation kind", withBinding({ kind: "settlement" })],
+    ["attempt identifier", { ...permit, attemptId: "unbound" }],
+    ["lease token", { ...permit, leaseToken: "unbound" }],
+    [
+      "Booking Request identifier",
+      withBinding({ bookingRequestId: "unbound" }),
+    ],
+    ["refund intent identifier", named("unbound", 2)],
+    [
+      "capture operation identifier",
+      withBinding({ captureOperationId: "unbound" }),
+    ],
+    [
+      "Payment Lifecycle identifier",
+      withBinding({ paymentLifecycleId: "unbound" }),
+    ],
+    ["generation below one", named(intentId, 0)],
+    ["fractional generation", named(intentId, 1.5)],
+    ["unreadable lease start", { ...permit, notBefore: "not-a-time" }],
+    ["lease end equal to its start", { ...permit, notAfter: permit.notBefore }],
+    [
+      "logical operation name",
+      withBinding({ logicalOperationId: `${intentId}:settlement` }),
+    ],
+    [
+      "generation that disagrees with the attempt name",
+      { ...permit, generation: 1 },
+    ],
+    ["idempotency key", { ...permit, idempotencyKey: `${intentId}:refund:3` }],
+    ["zero amount", withBinding({ amountFils: 0 })],
+    ["fractional amount", withBinding({ amountFils: 0.1 })],
+    ["currency", withBinding({ currency: "USD" })],
+    [
+      "short request fingerprint",
+      withBinding({ requestFingerprint: "a".repeat(63) }),
+    ],
+    [
+      "upper-case request fingerprint",
+      withBinding({ requestFingerprint: "A".repeat(64) }),
+    ],
+    ["missing provider identity", withBinding({ providerIdentity: null })],
+    [
+      "empty provider",
+      withBinding({ providerIdentity: { ...identity, provider: "" } }),
+    ],
+    [
+      "empty provider environment",
+      withBinding({ providerIdentity: { ...identity, environment: "" } }),
+    ],
+    [
+      "empty merchant",
+      withBinding({ providerIdentity: { ...identity, merchantId: "" } }),
+    ],
+    [
+      "empty terminal",
+      withBinding({ providerIdentity: { ...identity, terminalId: "" } }),
+    ],
+  ];
+  it.each(invalidPermits)(
+    "rejects invalid durable execution authority: %s",
+    (_rule, value) => {
+      expect(() => bookingRefundPermitFrom(value)).toThrow(
+        "Refund permit is invalid",
+      );
+      expect(bookingRefundRequestMatches(permit.binding, value, identity)).toBe(
+        false,
+      );
+    },
+  );
   it("rejects a changed amount before shared provider execution", () => {
     expect(
       bookingRefundRequestMatches(

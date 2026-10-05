@@ -3,6 +3,11 @@ import type {
   PaymentProviderIdentity,
   ProviderOperationBinding,
 } from "./payment-contract";
+import {
+  isPermitIdentifier,
+  isPositiveInteger,
+  isRequestFingerprint,
+} from "./payment-permit";
 
 export const paymentRecoverySteps = [
   "original-release",
@@ -47,8 +52,6 @@ export type BookingRequestPaymentRecoveryPermit = {
   readonly notAfter: string;
   readonly binding: BookingRequestPaymentRecoveryBinding;
 };
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -60,8 +63,6 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
     Object.keys(value).every((key) => keys.includes(key))
   );
 }
-const positiveInteger = (value: unknown) =>
-  Number.isSafeInteger(value) && (value as number) > 0;
 const nonempty = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
 export function recoveryBindingFrom(
@@ -93,9 +94,9 @@ export function recoveryBindingFrom(
       binding.recoveryAttemptId,
       binding.authorizationClaimId,
       binding.paymentLifecycleId,
-    ].every((value) => typeof value === "string" && uuid.test(value)) ||
-    !positiveInteger(binding.generation) ||
-    !positiveInteger(binding.authorizationClaimGeneration) ||
+    ].every(isPermitIdentifier) ||
+    !isPositiveInteger(binding.generation) ||
+    !isPositiveInteger(binding.authorizationClaimGeneration) ||
     !paymentRecoverySteps.includes(binding.step as PaymentRecoveryStep) ||
     !nonempty(binding.predecessorMovementReference) ||
     typeof binding.predecessorOutcomeAt !== "string" ||
@@ -103,10 +104,9 @@ export function recoveryBindingFrom(
     binding.logicalOperationId !==
       `${binding.recoveryAttemptId}:${binding.step}` ||
     binding.physicalAttemptId !== `${binding.logicalOperationId}:1` ||
-    !positiveInteger(binding.amountFils) ||
+    !isPositiveInteger(binding.amountFils) ||
     binding.currency !== "IQD" ||
-    typeof binding.requestFingerprint !== "string" ||
-    !/^[a-f0-9]{64}$/.test(binding.requestFingerprint) ||
+    !isRequestFingerprint(binding.requestFingerprint) ||
     !identity ||
     !exactKeys(identity, [
       "provider",
@@ -136,9 +136,8 @@ export function recoveryPermitFrom(
       "binding",
     ]) ||
     permit.purpose !== "booking-request-payment-recovery" ||
-    typeof permit.attemptId !== "string" ||
-    !uuid.test(permit.attemptId) ||
-    !positiveInteger(permit.generation) ||
+    !isPermitIdentifier(permit.attemptId) ||
+    !isPositiveInteger(permit.generation) ||
     !paymentRecoverySteps.includes(permit.step as PaymentRecoveryStep) ||
     permit.operationId !== `${permit.attemptId}:${permit.step}` ||
     permit.idempotencyKey !== `${permit.operationId}:1` ||
