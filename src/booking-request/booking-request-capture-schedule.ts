@@ -1,31 +1,21 @@
-import { createBookingRequestPaymentObservation } from "./booking-request-payment-observation";
-import { SupabaseBookingRequestPaymentObservationRepository } from "./supabase-booking-request-payment-observation";
-import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
-import {
-  SupabasePaymentOperationExecutionRepository,
-  SupabaseSimulatorEffectRepository,
-} from "@/payment/supabase-payment-operation-execution";
 import {
   createBookingRequestPaymentRecovery,
   type PaymentRecoveryStatus,
 } from "./booking-request-payment-recovery";
 import { SupabaseBookingRequestPaymentRecoveryRepository } from "./supabase-booking-request-payment-recovery";
-import { createClient } from "@supabase/supabase-js";
-import { DurablePaymentSimulator } from "../payment/durable-payment-simulator-core";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime-core";
+import {
+  createPaymentOperations,
+  type PaymentOperationsEnvironment,
+} from "./payment-operations";
 import { createBookingRequestCaptureProcessing } from "./booking-request-capture-processing";
 import type { BookingRequestCaptureRecoveryResult } from "./booking-request-capture-recovery";
 import { createBookingRequestConfirmation } from "./booking-request-confirmation";
 import { SupabaseBookingRequestCaptureRepository } from "./supabase-booking-request-capture";
 import { SupabaseBookingRequestConfirmationRepository } from "./supabase-booking-request-confirmation";
 
-interface BookingRequestCaptureScheduleEnvironment {
-  readonly APP_ENVIRONMENT?: string;
-  readonly SUPABASE_PROJECT_REF?: string;
-  readonly SUPABASE_URL?: string;
+type BookingRequestCaptureScheduleEnvironment = PaymentOperationsEnvironment & {
   readonly SUPABASE_PUBLISHABLE_KEY?: string;
-  readonly SUPABASE_SECRET_KEY?: string;
-}
+};
 type ProcessDue = (
   limit: number,
 ) => Promise<readonly BookingRequestCaptureRecoveryResult[]>;
@@ -37,37 +27,15 @@ export async function runScheduledBookingRequestCapture(
     limit: number,
   ) => Promise<readonly { readonly status: PaymentRecoveryStatus }[]>,
 ) {
-  if (
-    !bookingRequestTestRuntimeIsEnabled(environment) ||
-    !environment.SUPABASE_PUBLISHABLE_KEY ||
-    !environment.SUPABASE_SECRET_KEY
-  )
+  const payment = createPaymentOperations(environment);
+  if (!payment || !environment.SUPABASE_PUBLISHABLE_KEY)
     throw new Error(
       "Scheduled capture requires the exact local test runtime and credentials",
     );
   let processDue = injectedProcessDue;
   let processRecoveryDue = injectedRecoveryDue;
   if (!processDue) {
-    const client = createClient(
-      environment.SUPABASE_URL as string,
-      environment.SUPABASE_SECRET_KEY,
-      {
-        auth: { autoRefreshToken: false, persistSession: false },
-      },
-    );
-    const provider = new DurablePaymentSimulator({
-      effects: new SupabaseSimulatorEffectRepository(client),
-      now: () => new Date().toISOString(),
-    });
-    const operations = createPaymentOperationExecution({
-      repository: new SupabasePaymentOperationExecutionRepository(client),
-      provider,
-      observation: createBookingRequestPaymentObservation({
-        repository: new SupabaseBookingRequestPaymentObservationRepository(
-          client,
-        ),
-      }),
-    });
+    const { serviceClient: client, provider, operations } = payment;
     processRecoveryDue = createBookingRequestPaymentRecovery({
       repository: new SupabaseBookingRequestPaymentRecoveryRepository(
         client,
