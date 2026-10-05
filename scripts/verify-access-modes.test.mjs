@@ -11,16 +11,63 @@ import {
   databaseCheckCommands,
   databasePreflightCommands,
   declaredSchemaDiffCommand,
+  fixtureContractCommands,
   localCredentials,
   mainWithPreparedProject,
+  nextFixtureCommands,
+  nextJourneyCommand,
   ownedRun,
   ownershipCommand,
   resetCommand,
+  scheduledExpiryVerifyCommand,
+  scheduledJourneyCommand,
+  sqlTestsCommand,
   startCommand,
   statusCommand,
   stopCommand,
   successfulRun,
+  workerPreparationCommands,
 } from "./verify-access-command-doubles.mjs";
+
+function ownedJourneyCommands(phase) {
+  const grep =
+    phase === "retry-proof"
+      ? "a Cottage Owner saves, resumes and submits a complete private application$"
+      : "(?:shared sign-in from the homepage returns a prospective owner to their private application|a Cottage Owner saves, resumes and submits a complete private application|Owner Application keeps evidence controls aligned and accessible in every locale|one account returns to customer bookings, enrolls explicitly and signs out only this device)$";
+  const retries = phase === "retry-proof" ? "--retries=1" : "--retries=0";
+  return {
+    next: [
+      "npx",
+      [
+        "playwright",
+        "test",
+        "tests/access.spec.ts",
+        "--project=mobile",
+        "--project=desktop",
+        "--workers=1",
+        retries,
+        "--grep",
+        grep,
+        `--output=playwright-report/owned-next-${phase}`,
+      ],
+    ],
+    worker: [
+      "npx",
+      [
+        "playwright",
+        "test",
+        "tests/access.spec.ts",
+        "--project=worker",
+        "--config=playwright.worker-prebuilt.config.ts",
+        "--workers=1",
+        retries,
+        "--grep",
+        grep,
+        `--output=playwright-report/owned-worker-${phase}`,
+      ],
+    ],
+  };
+}
 
 describe("access verification command", () => {
   it("skips reset only for a proven fresh GitHub-hosted start", async () => {
@@ -206,7 +253,7 @@ describe("access verification command", () => {
             (args[1] === "test" && args[2] === "db")),
       );
       const expectedPreflight = scenario.sqlFailure
-        ? databasePreflightCommands[1]
+        ? sqlTestsCommand
         : declaredSchemaDiffCommand;
       expect(preflight).toEqual([expectedPreflight]);
       expect(commands(run).slice(0, 5)).toEqual([
@@ -414,49 +461,17 @@ describe("access verification command", () => {
           run,
         }),
       ).toBe(0);
-      const grep =
-        phase === "retry-proof"
-          ? "a Cottage Owner saves, resumes and submits a complete private application$"
-          : "(?:shared sign-in from the homepage returns a prospective owner to their private application|a Cottage Owner saves, resumes and submits a complete private application|Owner Application keeps evidence controls aligned and accessible in every locale|one account returns to customer bookings, enrolls explicitly and signs out only this device)$";
-      const retries = phase === "retry-proof" ? "--retries=1" : "--retries=0";
+      const owned = ownedJourneyCommands(phase);
       expect(commands(run)).toEqual([
         startCommand,
         ownershipCommand,
         resetCommand,
         statusCommand,
-        ...databaseCheckCommands.slice(0, 2),
-        ...browserCommands.slice(0, 2),
-        [
-          "npx",
-          [
-            "playwright",
-            "test",
-            "tests/access.spec.ts",
-            "--project=mobile",
-            "--project=desktop",
-            "--workers=1",
-            retries,
-            "--grep",
-            grep,
-            `--output=playwright-report/owned-next-${phase}`,
-          ],
-        ],
-        ...browserCommands.slice(3, 6),
-        [
-          "npx",
-          [
-            "playwright",
-            "test",
-            "tests/access.spec.ts",
-            "--project=worker",
-            "--config=playwright.worker-prebuilt.config.ts",
-            "--workers=1",
-            retries,
-            "--grep",
-            grep,
-            `--output=playwright-report/owned-worker-${phase}`,
-          ],
-        ],
+        ...fixtureContractCommands,
+        ...nextFixtureCommands,
+        owned.next,
+        ...workerPreparationCommands,
+        owned.worker,
         ownershipCommand,
         stopCommand,
       ]);
@@ -817,8 +832,8 @@ describe("access verification command", () => {
         }),
       ).toBe(5);
       expect(commands(run).slice(-4)).toEqual([
-        browserCommands.at(-2),
-        browserCommands.at(-1),
+        scheduledJourneyCommand,
+        scheduledExpiryVerifyCommand,
         ownershipCommand,
         stopCommand,
       ]);
@@ -827,7 +842,7 @@ describe("access verification command", () => {
       ).toEqual([
         {
           type: "verification-failure",
-          attemptedCommand: ["npx", ...browserCommands.at(-2)[1]],
+          attemptedCommand: ["npx", ...scheduledJourneyCommand[1]],
           reproduceGroup: ["npm", "run", "verify:access:browser"],
         },
       ]);
@@ -859,7 +874,7 @@ describe("access verification command", () => {
       ownershipCommand,
       resetCommand,
       statusCommand,
-      ...databaseCheckCommands.slice(0, 2),
+      ...fixtureContractCommands,
       ownershipCommand,
       stopCommand,
     ]);
@@ -1183,7 +1198,7 @@ describe("access verification command", () => {
       "node",
       "scripts/verify-booking-request-capture-concurrency.mjs",
     ];
-    const nextCommand = [browserCommands[2][0], ...browserCommands[2][1]];
+    const nextCommand = [nextJourneyCommand[0], ...nextJourneyCommand[1]];
     const fixtureCommand = [
       "node",
       "scripts/verify-access-fixture-contract.mjs",
@@ -1199,7 +1214,12 @@ describe("access verification command", () => {
           resetCommand,
           ...databasePreflightCommands,
           statusCommand,
-          ...databaseCheckCommands.slice(0, 11),
+          ...databaseCheckCommands.slice(
+            0,
+            databaseCheckCommands.findIndex(
+              ([, args]) => args[0] === captureCommand[1],
+            ) + 1,
+          ),
         ],
       },
       {
@@ -1213,7 +1233,8 @@ describe("access verification command", () => {
           ...databasePreflightCommands,
           statusCommand,
           ...databaseCheckCommands,
-          ...browserCommands.slice(0, 3),
+          ...nextFixtureCommands,
+          nextJourneyCommand,
         ],
       },
       {
@@ -1225,7 +1246,7 @@ describe("access verification command", () => {
           ownershipCommand,
           resetCommand,
           statusCommand,
-          databaseCheckCommands[0],
+          fixtureContractCommands[0],
         ],
       },
       {

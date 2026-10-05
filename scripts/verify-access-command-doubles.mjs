@@ -50,19 +50,14 @@ export const stopCommand = [
     expect.any(String),
   ],
 ];
-export const declaredSchemaDiffCommand = [
+export function withWorkdir([command, args]) {
+  return [command, [...args, "--workdir", expect.any(String)]];
+}
+export const declaredSchemaDiffStep = [
   "npx",
-  [
-    "supabase",
-    "db",
-    "diff",
-    "--local",
-    "--output-format",
-    "json",
-    "--workdir",
-    expect.any(String),
-  ],
+  ["supabase", "db", "diff", "--local", "--output-format", "json"],
 ];
+export const declaredSchemaDiffCommand = withWorkdir(declaredSchemaDiffStep);
 export const emptyDeclaredSchemaDiff = JSON.stringify({
   diff: "",
   file: null,
@@ -72,11 +67,13 @@ export const emptyDeclaredSchemaDiff = JSON.stringify({
   dropStatements: [],
   message: "Diff complete.",
 });
+export const sqlTestsStep = ["npx", ["supabase", "test", "db"]];
+export const sqlTestsCommand = withWorkdir(sqlTestsStep);
 export const databasePreflightCommands = [
   declaredSchemaDiffCommand,
-  ["npx", ["supabase", "test", "db", "--workdir", expect.any(String)]],
+  sqlTestsCommand,
 ];
-export const databaseCheckCommands = [
+export const fixtureContractCommands = [
   ["node", ["scripts/verify-access-fixture-contract.mjs"]],
   [
     "npx",
@@ -90,6 +87,9 @@ export const databaseCheckCommands = [
       "owned access readiness uses production account and application readers",
     ],
   ],
+];
+export const databaseCheckCommands = [
+  ...fixtureContractCommands,
   ["node", ["scripts/verify-account-access-concurrency.mjs"]],
   ["node", ["scripts/prepare-access-test.mjs", "create", "mobile"]],
   ["node", ["scripts/verify-cottage-profile-draft-concurrency.mjs"]],
@@ -119,69 +119,82 @@ export const databaseCheckCommands = [
     ["scripts/verify-booking-request-payment-required-expiry-concurrency.mjs"],
   ],
 ];
-export const browserCommands = [
+export const nextFixtureCommands = [
   ["node", ["scripts/prepare-access-test.mjs", "create", "mobile", "desktop"]],
   [
     "node",
     ["scripts/prepare-access-test.mjs", "validate", "mobile", "desktop"],
   ],
+];
+export const nextJourneyCommand = [
+  "npx",
   [
-    "npx",
-    [
-      "playwright",
-      "test",
-      "tests/access.spec.ts",
-      "tests/booking-request-access.spec.ts",
-      "tests/administrator-payment-history.spec.ts",
-      "tests/administrator-records.spec.ts",
-      "tests/booking-history.spec.ts",
-      "tests/messaging.spec.ts",
-      "tests/customer-reviews.spec.ts",
-      "--project=mobile",
-      "--project=desktop",
-      "--workers=1",
-      "--output=playwright-report/access-next",
-    ],
+    "playwright",
+    "test",
+    "tests/access.spec.ts",
+    "tests/booking-request-access.spec.ts",
+    "tests/administrator-payment-history.spec.ts",
+    "tests/administrator-records.spec.ts",
+    "tests/booking-history.spec.ts",
+    "tests/messaging.spec.ts",
+    "tests/customer-reviews.spec.ts",
+    "--project=mobile",
+    "--project=desktop",
+    "--workers=1",
+    "--output=playwright-report/access-next",
   ],
+];
+export const workerPreparationCommands = [
   ["node", ["scripts/prepare-access-test.mjs", "create", "worker"]],
   ["node", ["scripts/prepare-access-test.mjs", "validate", "worker"]],
   ["npm", ["run", "build:worker"]],
+];
+export const workerJourneyCommand = [
+  "npx",
   [
-    "npx",
-    [
-      "playwright",
-      "test",
-      "tests/access.spec.ts",
-      "tests/booking-request-access.spec.ts",
-      "tests/administrator-payment-history.spec.ts",
-      "tests/administrator-records.spec.ts",
-      "tests/booking-cancellation-refund.spec.ts",
-      "tests/messaging.spec.ts",
-      "tests/customer-reviews.spec.ts",
-      "--project=worker",
-      "--config=playwright.worker-prebuilt.config.ts",
-      "--workers=1",
-      "--output=playwright-report/access-worker",
-    ],
+    "playwright",
+    "test",
+    "tests/access.spec.ts",
+    "tests/booking-request-access.spec.ts",
+    "tests/administrator-payment-history.spec.ts",
+    "tests/administrator-records.spec.ts",
+    "tests/booking-cancellation-refund.spec.ts",
+    "tests/messaging.spec.ts",
+    "tests/customer-reviews.spec.ts",
+    "--project=worker",
+    "--config=playwright.worker-prebuilt.config.ts",
+    "--workers=1",
+    "--output=playwright-report/access-worker",
   ],
+];
+export const scheduledJourneyCommand = [
+  "npx",
   [
-    "npx",
-    [
-      "playwright",
-      "test",
-      "tests/worker-scheduled-expiry.spec.ts",
-      "tests/worker-scheduled-capture.spec.ts",
-      "tests/worker-scheduled-refund.spec.ts",
-      "tests/worker-scheduled-completion.spec.ts",
-      "tests/worker-scheduled-reminder.spec.ts",
-      "tests/worker-scheduled-request-notification.spec.ts",
-      "--project=worker",
-      "--config=playwright.worker-prebuilt.config.ts",
-      "--workers=1",
-      "--output=playwright-report/scheduled-expiry-worker",
-    ],
+    "playwright",
+    "test",
+    "tests/worker-scheduled-expiry.spec.ts",
+    "tests/worker-scheduled-capture.spec.ts",
+    "tests/worker-scheduled-refund.spec.ts",
+    "tests/worker-scheduled-completion.spec.ts",
+    "tests/worker-scheduled-reminder.spec.ts",
+    "tests/worker-scheduled-request-notification.spec.ts",
+    "--project=worker",
+    "--config=playwright.worker-prebuilt.config.ts",
+    "--workers=1",
+    "--output=playwright-report/scheduled-expiry-worker",
   ],
-  ["node", ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"]],
+];
+export const scheduledExpiryVerifyCommand = [
+  "node",
+  ["scripts/verify-booking-request-scheduled-expiry.mjs", "--verify"],
+];
+export const browserCommands = [
+  ...nextFixtureCommands,
+  nextJourneyCommand,
+  ...workerPreparationCommands,
+  workerJourneyCommand,
+  scheduledJourneyCommand,
+  scheduledExpiryVerifyCommand,
 ];
 
 export function ownedRun(

@@ -4,19 +4,27 @@ import { describe, expect, it, vi } from "vitest";
 
 import { main } from "./verify-access.mjs";
 import {
-  browserCommands,
   commands,
   databaseCheckCommands,
   databasePreflightCommands,
+  declaredSchemaDiffStep,
   localCredentials,
   mainWithPreparedProject,
+  nextFixtureCommands,
+  nextJourneyCommand,
   ownedRun,
   ownershipCommand,
   resetCommand,
+  scheduledExpiryVerifyCommand,
+  scheduledJourneyCommand,
+  sqlTestsStep,
   startCommand,
   statusCommand,
   stopCommand,
   successfulRun,
+  withWorkdir,
+  workerJourneyCommand,
+  workerPreparationCommands,
 } from "./verify-access-command-doubles.mjs";
 
 const workerFilesByShard = {
@@ -34,7 +42,7 @@ const workerFilesByShard = {
 };
 
 function workerArgsFor(shard) {
-  const [command, action, ...rest] = browserCommands[6][1];
+  const [command, action, ...rest] = workerJourneyCommand[1];
   return [
     command,
     action,
@@ -43,21 +51,99 @@ function workerArgsFor(shard) {
   ];
 }
 
+const mobileFixture = [
+  "node",
+  ["scripts/prepare-access-test.mjs", "create", "mobile"],
+];
+const bookingRequestFixture = [
+  "node",
+  ["scripts/prepare-access-test.mjs", "create", "mobile", "worker"],
+];
+const longPrograms = new Map([
+  [
+    "booking-request",
+    [
+      "scripts/verify-booking-request-concurrency.mjs",
+      "scripts/verify-booking-request-lifecycle-concurrency.mjs",
+    ],
+  ],
+  [
+    "booking-capture",
+    ["scripts/verify-booking-request-capture-concurrency.mjs"],
+  ],
+  [
+    "payment-required-expiry",
+    ["scripts/verify-booking-request-payment-required-expiry-concurrency.mjs"],
+  ],
+]);
+
+function longProgramCommands(partition) {
+  return longPrograms.get(partition).map((script) => ["node", [script]]);
+}
+
+const partitionPlans = [
+  {
+    mode: "--database",
+    partition: "database-core",
+    shard: undefined,
+    preflight: [sqlTestsStep],
+    checks: databaseCheckCommands.filter(
+      ([, args]) => ![...longPrograms.values()].flat().includes(args[0]),
+    ),
+  },
+  {
+    mode: "--database",
+    partition: "booking-request",
+    shard: undefined,
+    preflight: [declaredSchemaDiffStep],
+    checks: [bookingRequestFixture, ...longProgramCommands("booking-request")],
+  },
+  ...["booking-capture", "payment-required-expiry"].map((partition) => ({
+    mode: "--database",
+    partition,
+    shard: undefined,
+    preflight: [],
+    checks: [mobileFixture, ...longProgramCommands(partition)],
+  })),
+  ...["1/2", "2/2"].map((shard) => ({
+    mode: "--browser",
+    partition: "next",
+    shard,
+    preflight: [],
+    checks: [
+      ...nextFixtureCommands,
+      ["npx", [...nextJourneyCommand[1], "--list"]],
+      ["npx", [...nextJourneyCommand[1], `--shard=${shard}`]],
+    ],
+  })),
+  ...["1/2", "2/2"].map((shard) => ({
+    mode: "--browser",
+    partition: "worker",
+    shard,
+    preflight: [],
+    checks: [
+      ...workerPreparationCommands,
+      ["npx", [...workerArgsFor(shard), "--list"]],
+      ["npx", workerArgsFor(shard)],
+    ],
+  })),
+  {
+    mode: "--browser",
+    partition: "scheduled",
+    shard: undefined,
+    preflight: [],
+    checks: [
+      ...workerPreparationCommands,
+      scheduledJourneyCommand,
+      scheduledExpiryVerifyCommand,
+    ],
+  },
+];
+
 describe("access verification command", () => {
   it("partitions hosted checks without losing setup, coverage or cleanup", async () => {
-    const cases = [
-      ["--database", "database-core"],
-      ["--database", "booking-request"],
-      ["--database", "booking-capture"],
-      ["--database", "payment-required-expiry"],
-      ["--browser", "next", "1/2"],
-      ["--browser", "next", "2/2"],
-      ["--browser", "worker", "1/2"],
-      ["--browser", "worker", "2/2"],
-      ["--browser", "scheduled"],
-    ];
     const observed = new Map();
-    for (const [mode, partition, shard] of cases) {
+    for (const { mode, partition, shard } of partitionPlans) {
       const run = successfulRun();
       const removeTemp = vi.fn();
       const output = vi.fn();
@@ -159,48 +245,11 @@ describe("access verification command", () => {
       observed.set(`${partition}:${shard ?? ""}`, actual.slice(3, -2));
     }
 
-    const mobileFixture = [
-      "node",
-      ["scripts/prepare-access-test.mjs", "create", "mobile"],
-    ];
-    const bookingRequestFixture = [
-      "node",
-      ["scripts/prepare-access-test.mjs", "create", "mobile", "worker"],
-    ];
-    const longPrograms = new Map([
-      [
-        "booking-request",
-        [
-          "scripts/verify-booking-request-concurrency.mjs",
-          "scripts/verify-booking-request-lifecycle-concurrency.mjs",
-        ],
-      ],
-      [
-        "booking-capture",
-        ["scripts/verify-booking-request-capture-concurrency.mjs"],
-      ],
-      [
-        "payment-required-expiry",
-        [
-          "scripts/verify-booking-request-payment-required-expiry-concurrency.mjs",
-        ],
-      ],
-    ]);
-    expect(observed.get("database-core:")).toEqual([
-      databasePreflightCommands[1],
-      statusCommand,
-      ...databaseCheckCommands.filter(
-        ([, args]) => ![...longPrograms.values()].flat().includes(args[0]),
-      ),
-    ]);
-    for (const [partition, scripts] of longPrograms) {
-      expect(observed.get(`${partition}:`)).toEqual([
-        ...(partition === "booking-request"
-          ? [databasePreflightCommands[0]]
-          : []),
+    for (const { partition, shard, preflight, checks } of partitionPlans) {
+      expect(observed.get(`${partition}:${shard ?? ""}`)).toEqual([
+        ...preflight.map(withWorkdir),
         statusCommand,
-        partition === "booking-request" ? bookingRequestFixture : mobileFixture,
-        ...scripts.map((script) => ["node", [script]]),
+        ...checks,
       ]);
     }
     const failedBookingRequestPreparation = ownedRun((command, args) => ({
@@ -269,21 +318,6 @@ describe("access verification command", () => {
       completeDatabaseChecks.sort(commandOrder),
     );
 
-    for (const shard of ["1/2", "2/2"]) {
-      expect(observed.get(`next:${shard}`)).toEqual([
-        statusCommand,
-        ...browserCommands.slice(0, 2),
-        ["npx", [...browserCommands[2][1], "--list"]],
-        ["npx", [...browserCommands[2][1], `--shard=${shard}`]],
-      ]);
-      const workerArgs = workerArgsFor(shard);
-      expect(observed.get(`worker:${shard}`)).toEqual([
-        statusCommand,
-        ...browserCommands.slice(3, 6),
-        ["npx", [...workerArgs, "--list"]],
-        ["npx", workerArgs],
-      ]);
-    }
     const workerFiles = ["1/2", "2/2"].flatMap((shard) =>
       observed
         .get(`worker:${shard}`)
@@ -291,13 +325,8 @@ describe("access verification command", () => {
         .filter((arg) => arg.startsWith("tests/")),
     );
     expect(workerFiles.sort()).toEqual(
-      browserCommands[6][1].filter((arg) => arg.startsWith("tests/")).sort(),
+      workerJourneyCommand[1].filter((arg) => arg.startsWith("tests/")).sort(),
     );
-    expect(observed.get("scheduled:")).toEqual([
-      statusCommand,
-      ...browserCommands.slice(3, 6),
-      ...browserCommands.slice(7),
-    ]);
     for (const [mode, partition, failedScript] of [
       [
         "--database",
@@ -370,7 +399,7 @@ describe("access verification command", () => {
           ([command, args]) => command === "npx" && args.includes("--list"),
         );
         const journey =
-          partition === "next" ? browserCommands[2] : browserCommands[6];
+          partition === "next" ? nextJourneyCommand : workerJourneyCommand;
         const selectedArgs =
           partition === "next" ? journey[1] : workerArgsFor(shard);
         expect(listed).toEqual([["npx", [...selectedArgs, "--list"]]]);
