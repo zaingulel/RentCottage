@@ -6,6 +6,10 @@ import {
   paymentBindingMatches,
   paymentIdentityMatches,
 } from "./payment-operation-execution";
+import {
+  intentExecutionPermitFrom,
+  type IntentPermitKind,
+} from "./payment-permit";
 
 export interface BookingSettlementExecutionPermit {
   readonly purpose: "booking-settlement";
@@ -24,49 +28,17 @@ export interface BookingSettlementExecutionPermit {
     readonly providerIdentity: PaymentProviderIdentity;
   };
 }
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const settlementPermitKind: IntentPermitKind<BookingSettlementExecutionPermit> =
+  {
+    purpose: "booking-settlement",
+    operationKind: "settlement",
+    intentIdOf: (binding) => binding.settlementIntentId,
+    invalidMessage: "Settlement permit is invalid",
+  };
 export function bookingSettlementPermitFrom(
   value: unknown,
 ): BookingSettlementExecutionPermit {
-  if (!value || typeof value !== "object")
-    throw new Error("Settlement permit is invalid");
-  const permit = value as BookingSettlementExecutionPermit;
-  const binding = permit.binding;
-  if (
-    permit.purpose !== "booking-settlement" ||
-    !binding ||
-    binding.kind !== "settlement" ||
-    ![
-      permit.attemptId,
-      permit.leaseToken,
-      binding.bookingRequestId,
-      binding.settlementIntentId,
-      binding.captureOperationId,
-      binding.paymentLifecycleId,
-    ].every((id) => typeof id === "string" && uuid.test(id)) ||
-    !Number.isSafeInteger(permit.generation) ||
-    permit.generation < 1 ||
-    !Number.isFinite(Date.parse(permit.notBefore)) ||
-    !(Date.parse(permit.notAfter) > Date.parse(permit.notBefore)) ||
-    binding.logicalOperationId !== `${binding.settlementIntentId}:settlement` ||
-    binding.attemptId !==
-      `${binding.settlementIntentId}:settlement:${permit.generation}` ||
-    permit.idempotencyKey !== binding.attemptId ||
-    !Number.isSafeInteger(binding.amountFils) ||
-    binding.amountFils <= 0 ||
-    binding.currency !== "IQD" ||
-    !/^[a-f0-9]{64}$/.test(binding.requestFingerprint) ||
-    !binding.providerIdentity ||
-    ![
-      binding.providerIdentity.provider,
-      binding.providerIdentity.environment,
-      binding.providerIdentity.merchantId,
-      binding.providerIdentity.terminalId,
-    ].every((part) => typeof part === "string" && part.length > 0)
-  )
-    throw new Error("Settlement permit is invalid");
-  return permit;
+  return intentExecutionPermitFrom(value, settlementPermitKind);
 }
 export function bookingSettlementRequestMatches(
   request: ProviderOperationBinding,
