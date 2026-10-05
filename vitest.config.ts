@@ -59,6 +59,7 @@ const domainNodeTests = [
   "src/booking-request/lifecycle-actions.test.ts",
   "src/booking-request/owner-booking-earnings.test.ts",
   "src/booking-request/owner-booking-request-notifications.test.ts",
+  "src/booking-request/payment-operations.test.ts",
   "src/booking-request/payment-recovery-actions.test.ts",
   "src/booking-request/request-booking-request-payment-recovery.test.ts",
   "src/booking-request/request-booking-request-submission.test.ts",
