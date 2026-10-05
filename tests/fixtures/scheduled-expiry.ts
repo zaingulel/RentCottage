@@ -12,10 +12,15 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     guardDisposableLocalDatabase(): void;
   };
 };
-const { withPaymentRecoveryCleanup } = createRequire(import.meta.url)(
-  "./payment-recovery-cleanup.mjs",
+const { captureCleanup } = createRequire(import.meta.url)(
+  "../../scripts/lib/booking-fixture.mjs",
 ) as {
-  withPaymentRecoveryCleanup(cleanup: string, requestId: string): string;
+  captureCleanup(options?: {
+    stem?: string;
+    paymentRecovery?: boolean;
+    releaseOperations?: boolean;
+    publishedCottage?: boolean;
+  }): string;
 };
 
 type SqlHarness = { runSql(sql: string): string };
@@ -157,13 +162,7 @@ export function readScheduledExpiryBaseline(
 }
 
 export const requestId = "60000000-0000-4000-8000-000000001001";
-const cleanup = withPaymentRecoveryCleanup(
-  readFileSync("scripts/verify-booking-request-capture-concurrency.mjs", "utf8")
-    .split("const cleanup = `")[1]
-    .split("`;\n")[0]
-    .replaceAll("${requestId}", requestId),
-  requestId,
-);
+const cleanup = captureCleanup({ paymentRecovery: true });
 
 export function restoreScheduledExpiryDatabase(
   harness: SqlHarness,

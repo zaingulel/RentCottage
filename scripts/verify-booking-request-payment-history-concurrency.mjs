@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { captureCleanup } from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -255,21 +256,7 @@ async function verifyReleaseDependencies() {
       "'pending','2100-12-31 16:00+00'",
     )
     .replace("'2100-12-31 13:00+00');", "null);");
-  const cleanupSource = readFileSync(
-    "scripts/verify-booking-request-capture-concurrency.mjs",
-    "utf8",
-  )
-    .split("const cleanup = `")[1]
-    .split("`;")[0];
-  const cleanup = cleanupSource
-    .replaceAll("${requestId}", request)
-    .replaceAll("00000000100", "00000000143")
-    .replace(
-      "  delete from public.booking_request_release_work",
-      `  update public.booking_request_release_work set active_operation_id=null where booking_request_id='${request}';
-  delete from public.booking_request_release_operations where work_id in (select id from public.booking_request_release_work where booking_request_id='${request}');
-  delete from public.booking_request_release_work`,
-    );
+  const cleanup = captureCleanup({ stem: "143", releaseOperations: true });
   let holder,
     query,
     queryPid,

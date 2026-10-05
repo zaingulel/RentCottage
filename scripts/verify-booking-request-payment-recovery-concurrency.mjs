@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { buildSync } from "esbuild";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
-import { withPaymentRecoveryCleanup } from "../tests/fixtures/payment-recovery-cleanup.mjs";
+import { captureCleanup } from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -139,16 +139,7 @@ try {
   )
     .split("select plan(")[0]
     .replace(/^begin;/, "");
-  const cleanup = withPaymentRecoveryCleanup(
-    readFileSync(
-      "scripts/verify-booking-request-capture-concurrency.mjs",
-      "utf8",
-    )
-      .split("const cleanup = `")[1]
-      .split("`;\n")[0]
-      .replaceAll("${requestId}", requestId),
-    requestId,
-  );
+  const cleanup = captureCleanup({ paymentRecovery: true });
   const sessions = new Set();
   async function start(sql, close = false) {
     const session = await harness.startSessionAfterSetup(
