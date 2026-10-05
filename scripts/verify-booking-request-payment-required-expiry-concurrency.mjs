@@ -3,7 +3,7 @@ import { buildSync } from "esbuild";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
-import { withPaymentRecoveryCleanup } from "../tests/fixtures/payment-recovery-cleanup.mjs";
+import { captureCleanup } from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -238,36 +238,6 @@ cross join (values('2101-01-01'::date),('2101-01-02'::date)) days(day)
 where prices.schedule_revision_id='30000000-0000-4000-8000-000000001001';
 insert into public.booking_snapshots`,
     );
-  const baseCleanup = withPaymentRecoveryCleanup(
-    readFileSync(
-      "scripts/verify-booking-request-capture-concurrency.mjs",
-      "utf8",
-    )
-      .split("const cleanup = `")[1]
-      .split("`;\n")[0]
-      .replaceAll("${requestId}", requestId)
-      .replace(
-        "  alter table public.cottage_shifts disable",
-        "  delete from public.cottage_inventory_availability where schedule_revision_id='30000000-0000-4000-8000-000000001001';\n  delete from public.cottage_inventory_standard_prices where schedule_revision_id='30000000-0000-4000-8000-000000001001';\n  alter table public.cottage_shifts disable",
-      ),
-    requestId,
-  );
-  const publicationCleanup = `
-  update public.owner_application_cottage_profiles set current_publication_id=null,current_shift_schedule_id=null where id='20000000-0000-4000-8000-000000001001';
-  alter table public.cottage_publication_snapshots disable trigger reject_cottage_publication_snapshots_delete;
-  delete from public.cottage_publication_snapshots where profile_id='20000000-0000-4000-8000-000000001001';
-  alter table public.cottage_publication_snapshots enable trigger reject_cottage_publication_snapshots_delete;
-  alter table public.cottage_profile_review_cycles disable trigger reject_cottage_profile_review_cycles_delete;
-  delete from public.cottage_profile_review_cycles where profile_id='20000000-0000-4000-8000-000000001001';
-  alter table public.cottage_profile_review_cycles enable trigger reject_cottage_profile_review_cycles_delete;
-  alter table public.cottage_profile_source_revisions disable trigger reject_cottage_profile_source_delete;
-  delete from public.cottage_profile_source_revisions where profile_id='20000000-0000-4000-8000-000000001001';
-  alter table public.cottage_profile_source_revisions enable trigger reject_cottage_profile_source_delete;
-`;
-  const cleanupSql = baseCleanup.replace(
-    "  alter table public.cottage_shifts disable",
-    publicationCleanup + "  alter table public.cottage_shifts disable",
-  );
   const sessions = new Set();
   const seeded = new Set();
   const definitions = [];
@@ -362,7 +332,11 @@ from foreign_capture_admission cross join foreign_capture_occurrence;`,
     for (const id of seeded)
       await harness.runSqlAfterSetup(
         paymentEvidenceSql,
-        id === requestId ? cleanupSql : second(cleanupSql),
+        captureCleanup({
+          stem: id === requestId ? "100" : "110",
+          paymentRecovery: true,
+          publishedCottage: true,
+        }),
       );
     seeded.clear();
   }

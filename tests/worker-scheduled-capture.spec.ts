@@ -25,10 +25,15 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     ): Promise<void>;
   };
 };
-const { withPaymentRecoveryCleanup } = createRequire(import.meta.url)(
-  "./fixtures/payment-recovery-cleanup.mjs",
+const { captureCleanup } = createRequire(import.meta.url)(
+  "../scripts/lib/booking-fixture.mjs",
 ) as {
-  withPaymentRecoveryCleanup(cleanup: string, requestId: string): string;
+  captureCleanup(options?: {
+    stem?: string;
+    paymentRecovery?: boolean;
+    releaseOperations?: boolean;
+    publishedCottage?: boolean;
+  }): string;
 };
 
 test("the actual Worker settles overlapping capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
@@ -47,13 +52,6 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
     0,
     source.indexOf("insert into public.booking_request_capture_work"),
   );
-  const cleanup = readFileSync(
-    "scripts/verify-booking-request-capture-concurrency.mjs",
-    "utf8",
-  )
-    .split("const cleanup = `")[1]
-    .split("`;")[0]
-    .replaceAll("${requestId}", id);
   const expiryDefinition = harness.runSql(
     paymentEvidenceSql +
       "select pg_get_functiondef('public.claim_due_booking_request_releases(integer)'::regprocedure);",
@@ -148,7 +146,7 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
     harness.runSql(paymentEvidenceSql + expiryDefinition);
     if (seeded)
       harness.runSql(
-        paymentEvidenceSql + withPaymentRecoveryCleanup(cleanup, id),
+        paymentEvidenceSql + captureCleanup({ paymentRecovery: true }),
       );
   }
 });
@@ -169,13 +167,6 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
     0,
     source.indexOf("insert into public.booking_request_capture_work"),
   );
-  const cleanup = readFileSync(
-    "scripts/verify-booking-request-capture-concurrency.mjs",
-    "utf8",
-  )
-    .split("const cleanup = `")[1]
-    .split("`;")[0]
-    .replaceAll("${requestId}", id);
   const observe = () =>
     JSON.parse(
       harness.runSql(
@@ -292,7 +283,7 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
   } finally {
     if (seeded)
       harness.runSql(
-        paymentEvidenceSql + withPaymentRecoveryCleanup(cleanup, id),
+        paymentEvidenceSql + captureCleanup({ paymentRecovery: true }),
       );
   }
 });

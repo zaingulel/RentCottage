@@ -312,7 +312,6 @@ const fullEvidencePaths = new Set([
   "package-lock.json",
   "package.json",
   "supabase/config.toml",
-  "tests/fixtures/payment-recovery-cleanup.mjs",
   "tsconfig.json",
   "vitest.config.ts",
   "vitest.setup.ts",

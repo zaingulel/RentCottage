@@ -1011,11 +1011,6 @@ describe("repository verification command", () => {
       ["scripts/local-supabase-concurrency-harness.mjs"],
       "full",
     ],
-    [
-      "a journey fixture",
-      ["tests/fixtures/payment-recovery-cleanup.mjs"],
-      "full",
-    ],
     ["runtime code", ["custom-worker.ts"], "full without concurrency"],
     [
       "runtime code and the concurrency harness",

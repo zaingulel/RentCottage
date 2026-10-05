@@ -15,6 +15,15 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
+const { confirmedBookingAccessCleanup } = createRequire(import.meta.url)(
+  "../scripts/lib/booking-fixture.mjs",
+) as {
+  confirmedBookingAccessCleanup(options?: {
+    owner?: string;
+    customer?: string;
+    lifecycle?: boolean;
+  }): string;
+};
 
 async function verifyPhone(page: Page, phone: string) {
   await page.getByLabel("Iraqi phone number").fill(phone);
@@ -124,16 +133,7 @@ test("same-phone reauthentication restores the same real history and owner unpai
   const seedEnd =
     source.indexOf("set session_replication_role = origin;", seedStart) +
     "set session_replication_role = origin;".length;
-  const cleanupSource = readFileSync(
-    "scripts/verify-booking-confirmation-notification-concurrency.mjs",
-    "utf8",
-  );
-  const baseCleanup = cleanupSource
-    .split("const cleanup = `")[1]
-    .split("`;\n\n")[0]
-    .replaceAll("${request}", "60000000-0000-4000-8000-000000003501")
-    .replaceAll("${operation}", "81000000-0000-4000-8000-000000003501")
-    .replaceAll("${confirmation}", "80000000-0000-4000-8000-000000003501");
+  const baseCleanup = confirmedBookingAccessCleanup();
   const unpaidCleanup = `set session_replication_role=replica;
     delete from public.booking_notification_events where booking_request_id='${unpaidRequest}';
     delete from public.owner_request_notifications where booking_request_id='${unpaidRequest}';
@@ -232,9 +232,10 @@ test("same-phone reauthentication restores the same real history and owner unpai
       )
       .replaceAll(fixtureCustomerId, customerId)
       .replaceAll(fixtureOwnerId, ownerId);
-    const dynamicBaseCleanup = baseCleanup
-      .replaceAll(fixtureCustomerId, customerId)
-      .replaceAll(fixtureOwnerId, ownerId);
+    const dynamicBaseCleanup = confirmedBookingAccessCleanup({
+      owner: ownerId,
+      customer: customerId,
+    });
     cleanup = `${unpaidCleanup}delete from auth.sessions where user_id in ('${customerId}','${ownerId}'); delete from auth.identities where user_id in ('${customerId}','${ownerId}');${dynamicBaseCleanup}`;
     harness.runSql(dynamicSeed);
     harness.runSql(`set session_replication_role=replica;

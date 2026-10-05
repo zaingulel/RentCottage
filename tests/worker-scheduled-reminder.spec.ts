@@ -11,6 +11,15 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
+const { confirmedBookingAccessCleanup } = createRequire(import.meta.url)(
+  "../scripts/lib/booking-fixture.mjs",
+) as {
+  confirmedBookingAccessCleanup(options?: {
+    owner?: string;
+    customer?: string;
+    lifecycle?: boolean;
+  }): string;
+};
 
 test.describe.configure({ mode: "serial" });
 
@@ -29,16 +38,7 @@ test("scheduled worker delivers both due preparation reminders once", async ({
     source.indexOf("set session_replication_role = origin;", seedStart) +
     "set session_replication_role = origin;".length;
   const seed = source.slice(seedStart, seedEnd);
-  const cleanupSource = readFileSync(
-    "scripts/verify-booking-confirmation-notification-concurrency.mjs",
-    "utf8",
-  );
-  const cleanup = cleanupSource
-    .split("const cleanup = `")[1]
-    .split("`;\n\n")[0]
-    .replaceAll("${request}", request)
-    .replaceAll("${operation}", "81000000-0000-4000-8000-000000003501")
-    .replaceAll("${confirmation}", "80000000-0000-4000-8000-000000003501");
+  const cleanup = confirmedBookingAccessCleanup();
   const observe = () =>
     JSON.parse(
       harness.runSql(
@@ -120,24 +120,7 @@ test("scheduled reminders suppress invalid work and recover existing effects", a
     source.indexOf("set session_replication_role = origin;", seedStart) +
     "set session_replication_role = origin;".length;
   const seed = source.slice(seedStart, seedEnd);
-  const cleanupSource = readFileSync(
-    "scripts/verify-booking-confirmation-notification-concurrency.mjs",
-    "utf8",
-  );
-  const cleanup = cleanupSource
-    .split("const cleanup = `")[1]
-    .split("`;\n\n")[0]
-    .replaceAll("${request}", request)
-    .replaceAll("${operation}", "81000000-0000-4000-8000-000000003501")
-    .replaceAll("${confirmation}", "80000000-0000-4000-8000-000000003501")
-    .replace(
-      "delete from public.booking_request_confirmation_invalidations",
-      `delete from public.booking_cancellation_incidents where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${request}');
-delete from public.booking_cancellations where booking_request_id='${request}';
-delete from public.booking_incidents where booking_request_id='${request}';
-delete from public.booking_lifecycle_outcomes where booking_request_id='${request}';
-delete from public.booking_request_confirmation_invalidations`,
-    );
+  const cleanup = confirmedBookingAccessCleanup({ lifecycle: true });
   const state = () =>
     JSON.parse(
       harness.runSql(

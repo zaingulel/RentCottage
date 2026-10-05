@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import {
+  confirmedBookingCleanup,
+  refundReset,
+} from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -17,26 +21,7 @@ const source = readFileSync(
 const fixtureEnd = source.indexOf("select no_plan();");
 if (fixtureEnd < 0)
   throw new Error("Notification concurrency fixture is missing");
-const cleanupSource = readFileSync(
-  "scripts/verify-booking-refund-concurrency.mjs",
-  "utf8",
-);
-const template = (name) => {
-  const value = cleanupSource.split(`const ${name} = \``)[1]?.split("`;\n")[0];
-  if (!value) throw new Error(`Missing refund cleanup ${name}`);
-  return value;
-};
-let cleanup =
-  template("resetRefunds") +
-  template("resetCancellation") +
-  template("cleanup").replace("${resetCancellation}", "");
-for (const [key, value] of Object.entries({
-  request,
-  claim: "72000000-0000-4000-8000-000000001001",
-  owner: "10000000-0000-4000-8000-000000001001",
-  customer: "10000000-0000-4000-8000-000000001002",
-}))
-  cleanup = cleanup.replaceAll(`\${${key}}`, value);
+const cleanup = refundReset() + confirmedBookingCleanup();
 const parse = (value) => JSON.parse(value.split("\n").filter(Boolean).at(-1));
 const json = (value) =>
   `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;

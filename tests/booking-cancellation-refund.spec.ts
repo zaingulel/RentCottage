@@ -27,6 +27,16 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
+const { confirmedBookingCleanup } = createRequire(import.meta.url)(
+  "../scripts/lib/booking-fixture.mjs",
+) as {
+  confirmedBookingCleanup(options?: {
+    stem?: string;
+    completion?: boolean;
+    settlement?: boolean;
+    terminalRequest?: boolean;
+  }): string;
+};
 const harness = createLocalSupabaseConcurrencyHarness();
 const request = "60000000-0000-4000-8000-000000001001",
   reference = "RC-REQ-0000000000001001";
@@ -85,22 +95,10 @@ const fixture = source
     `'${JSON.stringify(browserQuote)}'::jsonb`,
   );
 let activeAdministratorId: string | null = null;
-const observer = readFileSync(
-  "scripts/verify-booking-payout-concurrency.mjs",
-  "utf8",
-);
-const template = (name: string) =>
-  observer.split(`const ${name} = \``)[1].split("`;")[0];
-let cleanup =
-  template("resetCancellation") +
-  template("cleanup").replace("${resetCancellation}", "");
-for (const [key, value] of Object.entries({
-  request,
-  owner,
-  customer,
-  claim: "72000000-0000-4000-8000-000000001001",
-}))
-  cleanup = cleanup.replaceAll(`\${${key}}`, value);
+const cleanup = confirmedBookingCleanup({
+  completion: true,
+  settlement: true,
+});
 const clear = () => {
   harness.guardDisposableLocalDatabase();
   harness.runSql(

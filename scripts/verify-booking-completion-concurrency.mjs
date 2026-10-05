@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import {
+  cancellationReset,
+  confirmedBookingCleanup,
+} from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -27,7 +31,6 @@ try {
   const request = "60000000-0000-4000-8000-000000001001";
   const customer = "10000000-0000-4000-8000-000000001002";
   const owner = "10000000-0000-4000-8000-000000001001";
-  const claim = "72000000-0000-4000-8000-000000001001";
   const administrator = "10000000-0000-4000-8000-000000003801";
   const actor = (id, aal = "aal1") =>
     `set local role authenticated; select set_config('request.jwt.claim.sub','${id}',true); select set_config('request.jwt.claims','{"sub":"${id}","aal":"${aal}"}',true);`;
@@ -36,45 +39,8 @@ try {
   const incident = `${actor(owner)} select public.record_booking_incident('${request}','90000000-0000-4000-8000-000000003901','cottage_owner','safety','Private concurrent incident');`;
   const noShow = `${actor(administrator, "aal2")} select public.commit_booking_no_show('${request}','90000000-0000-4000-8000-000000003902','Did not arrive',jsonb_build_object('revision',public.get_booking_no_show_facts('${request}')->>'revision','refundObligation','{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb));`;
   const cancel = `${actor(customer)} select public.commit_booking_cancellation('${request}','90000000-0000-4000-8000-000000003903','customer',null,null,jsonb_build_object('revision',public.get_booking_cancellation_facts('${request}','customer')->>'revision','refundObligation','{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb));`;
-  const resetCancellation = `set session_replication_role=replica;
-delete from public.booking_completion_maturity where booking_request_id='${request}';
-delete from public.booking_incidents where booking_request_id='${request}';
-delete from public.booking_lifecycle_outcomes where booking_request_id='${request}';
-delete from public.booking_notification_events where booking_request_id='${request}';
-delete from public.booking_cancellation_administrator_audit where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${request}');
-delete from public.booking_cancellation_incidents where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${request}');
-delete from public.booking_cancellations where booking_request_id='${request}';
-delete from public.booking_request_payment_history where booking_request_id='${request}' and to_state='cancelled';
-update public.cottage_booking_period_commitments set status='confirmed_booking' where id='50000000-0000-4000-8000-000000001001';
-update public.cottage_booking_period_occupancies set active=true where booking_period_commitment_id='50000000-0000-4000-8000-000000001001';
-set session_replication_role=origin;`;
-  const cleanup = `${resetCancellation} set session_replication_role=replica;
-delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${request}';
-delete from public.booking_confirmation_notification_attempts where receipt_id in (select receipt_id from public.booking_confirmation_notification_work where booking_request_id='${request}');
-delete from public.booking_confirmation_notification_work where booking_request_id='${request}';
-delete from public.booking_request_payment_history where booking_request_id='${request}';
-delete from public.simulated_payment_effects where operation_id in (select id from public.payment_provider_operations where claim_id='${claim}');
-delete from public.payment_provider_observations where operation_id in (select id from public.payment_provider_operations where claim_id='${claim}');
-delete from public.payment_provider_operations where claim_id='${claim}';
-delete from public.booking_receipts where booking_confirmation_id in (select id from public.booking_confirmations where booking_request_id='${request}');
-delete from public.booking_confirmations where booking_request_id='${request}';
-delete from public.booking_request_capture_work where booking_request_id='${request}';
-delete from public.booking_request_provider_operation_identities where attempt_id='70000000-0000-4000-8000-000000001001';
-delete from public.booking_request_authorization_claim_items where claim_id='${claim}';
-delete from public.booking_request_authorization_claim_occupancies where claim_id='${claim}';
-delete from public.booking_request_authorization_claims where id='${claim}';
-delete from public.booking_request_submission_attempts where id='70000000-0000-4000-8000-000000001001';
-delete from public.booking_requests where id='${request}';
-delete from public.cottage_booking_period_occupancies where booking_period_commitment_id='50000000-0000-4000-8000-000000001001';
-delete from public.cottage_inventory_commitments where booking_period_commitment_id='50000000-0000-4000-8000-000000001001';
-delete from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001';
-delete from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001';
-delete from public.cottage_shifts where schedule_revision_id='30000000-0000-4000-8000-000000001001';
-delete from public.cottage_shift_schedule_revisions where id='30000000-0000-4000-8000-000000001001';
-delete from public.owner_application_cottage_profiles where id='20000000-0000-4000-8000-000000001001';
-delete from public.account_contexts where user_id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003','10000000-0000-4000-8000-000000003801');
-delete from auth.users where id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003','10000000-0000-4000-8000-000000003801');
-set session_replication_role=origin;`;
+  const resetCancellation = cancellationReset({ completion: true });
+  const cleanup = confirmedBookingCleanup({ completion: true });
 
   const sessions = [];
   harness.guardDisposableLocalDatabase();

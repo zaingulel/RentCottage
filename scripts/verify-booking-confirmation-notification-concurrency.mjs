@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { confirmedBookingAccessCleanup } from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -13,7 +14,6 @@ try {
   const request = "60000000-0000-4000-8000-000000003501";
   const customerReceipt = "82000000-0000-4000-8000-000000003502";
   const ownerReceipt = "82000000-0000-4000-8000-000000003501";
-  const confirmation = "80000000-0000-4000-8000-000000003501";
   const operation = "81000000-0000-4000-8000-000000003501";
   const source = readFileSync(
     new URL(
@@ -63,18 +63,7 @@ try {
     payload: leased.payload,
     payloadSha256: leased.payloadSha256,
   });
-  const cleanup = `set session_replication_role=replica;
-delete from public.booking_confirmation_notification_attempts where notification_id in (select notification_id from public.booking_confirmation_notification_work where booking_request_id='${request}');
-delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${request}';
-delete from public.booking_confirmation_notification_work where booking_request_id='${request}';
-delete from public.booking_notification_events where booking_request_id='${request}';
-delete from public.booking_request_confirmation_invalidations where booking_request_id='${request}';
-delete from public.booking_request_payment_required_expiry_work where booking_request_id='${request}';
-delete from public.payment_provider_operations where id='${operation}';
-delete from public.booking_receipts where booking_confirmation_id='${confirmation}'; delete from public.booking_confirmations where id='${confirmation}';
-delete from public.booking_request_capture_work where booking_request_id='${request}'; delete from public.booking_requests where id='${request}';
-delete from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000003501'; delete from public.booking_snapshots where id='40000000-0000-4000-8000-000000003501';
-delete from public.owner_application_cottage_profiles where id='20000000-0000-4000-8000-000000003501'; delete from public.account_contexts where user_id in ('10000000-0000-4000-8000-000000003501','10000000-0000-4000-8000-000000003502','10000000-0000-4000-8000-000000003503'); delete from auth.users where id in ('10000000-0000-4000-8000-000000003501','10000000-0000-4000-8000-000000003502','10000000-0000-4000-8000-000000003503'); set session_replication_role=origin;`;
+  const cleanup = confirmedBookingAccessCleanup();
 
   harness.guardDisposableLocalDatabase();
   const sessions = [];

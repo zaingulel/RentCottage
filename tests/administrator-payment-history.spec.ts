@@ -14,6 +14,16 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
 )("../scripts/local-supabase-concurrency-harness.mjs") as {
   createLocalSupabaseConcurrencyHarness(): Harness;
 };
+const { captureCleanup } = createRequire(import.meta.url)(
+  "../scripts/lib/booking-fixture.mjs",
+) as {
+  captureCleanup(options?: {
+    stem?: string;
+    paymentRecovery?: boolean;
+    releaseOperations?: boolean;
+    publishedCottage?: boolean;
+  }): string;
+};
 
 const reference = "RC-REQ-0000000000000137";
 const harness = createLocalSupabaseConcurrencyHarness();
@@ -60,14 +70,7 @@ const supportFixture = readFileSync(
     "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
     supportFingerprint,
   );
-const supportCleanup = (
-  "begin;" +
-  readFileSync("scripts/verify-booking-request-capture-concurrency.mjs", "utf8")
-    .split("const cleanup = `begin;")[1]
-    .split("`;\n")[0]
-)
-  .replaceAll("${requestId}", supportRequest)
-  .replaceAll("00000000100", "00000000151");
+const supportCleanup = captureCleanup({ stem: "151" });
 const fixtureCleanup = `begin;
   alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
   delete from public.booking_notification_events where booking_request_id='60000000-0000-4000-8000-000000001371';

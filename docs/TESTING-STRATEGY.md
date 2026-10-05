@@ -93,6 +93,12 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
 - Cleanup belongs to the teardown of the disposable project that `npm run verify:access` starts:
   explicit Supabase stop, or disposal of the GitHub-hosted runner; a journey deletes nothing of its own, a failed
   attempt keeps its rows until that teardown, and synthetic identities carry no credentials or sessions.
+- A concurrency program or Playwright specification that clears one of the shared fixed-identifier booking
+  fixtures (the confirmed booking, capture and confirmed-booking-access row sets) takes its reset and cleanup SQL
+  from `scripts/lib/booking-fixture.mjs`, the one home for the delete order of those fixtures and for their
+  cancellation and refund resets, and names its variant through the options of the module. None writes its own
+  copy, reads the source text of another script for SQL, or edits the returned SQL by text replacement; a new
+  Integrity Core table joins the delete order there.
 - Before running a temporary test configuration, inspect the runner's selected list and correct it before
   execution.
 

@@ -1,4 +1,8 @@
 import { readFileSync } from "node:fs";
+import {
+  confirmedBookingCleanup,
+  refundReset,
+} from "./lib/booking-fixture.mjs";
 // One exact fictional request, shared by its SQL, concurrency and Worker observers.
 export const request = "60000000-0000-4000-8000-000000001001";
 export const owner = "10000000-0000-4000-8000-000000001001";
@@ -15,36 +19,8 @@ export const baselineFixture = source.slice(
   0,
   source.indexOf("create function pg_temp.notice_call"),
 );
-const cleanupSource = readFileSync(
-  "scripts/verify-booking-refund-concurrency.mjs",
-  "utf8",
-);
-const template = (name) => {
-  const value = cleanupSource.split(`const ${name} = \``)[1]?.split("`;\n")[0];
-  if (!value) throw new Error(`Missing refund cleanup ${name}`);
-  return value;
-};
-let sql =
-  template("resetRefunds") +
-  template("resetCancellation") +
-  template("cleanup").replace("${resetCancellation}", "");
-for (const [key, value] of Object.entries({
-  request,
-  owner,
-  customer,
-  claim: "72000000-0000-4000-8000-000000001001",
-}))
-  sql = sql.replaceAll(`\${${key}}`, value);
-// Request events have no receipt; cleanup follows the actual work identity.
-sql = sql.replace(
-  "where receipt_id in (select receipt_id",
-  "where notification_id in (select notification_id",
-);
-sql = sql.replace(
-  "delete from public.booking_request_payment_history",
-  `delete from public.booking_request_release_operations where work_id in (select id from public.booking_request_release_work where booking_request_id='${request}');\ndelete from public.booking_request_release_work where booking_request_id='${request}';\ndelete from public.booking_request_status_notifications where booking_request_id='${request}';\ndelete from public.owner_request_notifications where booking_request_id='${request}';\ndelete from public.booking_request_payment_recovery_operations where recovery_attempt_id in (select id from public.booking_request_payment_recovery_attempts where booking_request_id='${request}');\ndelete from public.booking_request_payment_recovery_attempts where booking_request_id='${request}';\ndelete from public.booking_request_payment_required_expiry_work where booking_request_id='${request}';\ndelete from public.booking_request_payment_history`,
-);
-export const cleanup = sql;
+export const cleanup =
+  refundReset() + confirmedBookingCleanup({ terminalRequest: true });
 export const parse = (value) =>
   JSON.parse(value.split("\n").filter(Boolean).at(-1));
 export const json = (value) =>

@@ -10,6 +10,17 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
+const { confirmedBookingCleanup, refundReset } = createRequire(import.meta.url)(
+  "../scripts/lib/booking-fixture.mjs",
+) as {
+  confirmedBookingCleanup(options?: {
+    stem?: string;
+    completion?: boolean;
+    settlement?: boolean;
+    terminalRequest?: boolean;
+  }): string;
+  refundReset(): string;
+};
 test("scheduled cancellation refunds and notices settle once through the shared workers", async ({
   baseURL,
 }) => {
@@ -24,21 +35,7 @@ test("scheduled cancellation refunds and notices settle once through the shared 
     0,
     source.indexOf("-- END CANCELLATION FIXTURE"),
   );
-  const observerSource = readFileSync(
-    "scripts/verify-booking-refund-concurrency.mjs",
-    "utf8",
-  );
-  const template = (name: string) =>
-    observerSource.split(`const ${name} = \``)[1].split("`;")[0];
-  const reset = template("resetRefunds") + template("resetCancellation");
-  let cleanup = reset + template("cleanup").replace("${resetCancellation}", "");
-  for (const [key, value] of Object.entries({
-    request,
-    claim: "72000000-0000-4000-8000-000000001001",
-    owner: "10000000-0000-4000-8000-000000001001",
-    customer: "10000000-0000-4000-8000-000000001002",
-  }))
-    cleanup = cleanup.replaceAll(`\${${key}}`, value);
+  const cleanup = refundReset() + confirmedBookingCleanup();
   const observe = () =>
     JSON.parse(
       harness.runSql(

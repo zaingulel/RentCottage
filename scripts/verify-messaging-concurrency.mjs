@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
+import { confirmedBookingCleanup } from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: { check: "verify-messaging-concurrency", isolation: "serial" },
@@ -118,33 +119,6 @@ try {
   const owner = "10000000-0000-4000-8000-000000001001";
   const profile = "20000000-0000-4000-8000-000000001001";
   const sessions = [];
-  const cleanupSource = readFileSync(
-    new URL("./verify-booking-cancellation-concurrency.mjs", import.meta.url),
-    "utf8",
-  );
-  const resetCancellation = between(
-    cleanupSource,
-    "const resetCancellation = `",
-    "`;\n  const cleanup",
-    "cancellation reset template",
-  ).slice("const resetCancellation = `".length);
-  const cancellationCleanup = between(
-    cleanupSource,
-    "const cleanup = `",
-    "`;\n  const sessions",
-    "cancellation cleanup template",
-  )
-    .slice("const cleanup = `".length)
-    .replace("${resetCancellation}", resetCancellation)
-    .replaceAll("${request}", request)
-    .replaceAll("${claim}", "72000000-0000-4000-8000-000000001001")
-    .replaceAll("${owner}", "10000000-0000-4000-8000-000000001001")
-    .replaceAll("${customer}", customer);
-  assert.doesNotMatch(
-    cancellationCleanup,
-    /\$\{/,
-    "The reused cleanup template has no unresolved interpolation",
-  );
   const cleanup = `
   set session_replication_role=replica;
   delete from public.messaging_translation_reports where translation_id in (
@@ -186,7 +160,7 @@ try {
   delete from public.booking_request_payment_required_expiry_work
     where booking_request_id='${request}';
   set session_replication_role=origin;
-  ${cancellationCleanup}
+  ${confirmedBookingCleanup()}
 `;
   const resultLine = (session) =>
     session.stdout.split("\n").find((line) => line.startsWith("{"));
