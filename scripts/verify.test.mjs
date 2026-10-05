@@ -746,6 +746,27 @@ describe("repository verification command", () => {
     );
   });
 
+  it("runs the baseline only when the glossary is renamed from its former CONTEXT.md path", () => {
+    const repository = createRepository();
+    const beforeRename = commit(repository, "CONTEXT.md", "glossary\n");
+    git(repository, ["update-ref", "refs/remotes/origin/main", beforeRename]);
+    git(repository, ["mv", "CONTEXT.md", "GLOSSARY.md"]);
+    git(repository, ["commit", "-m", "rename glossary"]);
+
+    const result = runVerification(repository);
+
+    expect(result.status).toBe(0);
+    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+      requiredBaselineSteps,
+    );
+    expect(result.stdout).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "only approved workflow or prose changed: CONTEXT.md, GLOSSARY.md",
+      ),
+    );
+    expect(result.stderr).not.toHaveBeenCalled();
+  });
+
   const added = (path) => ({
     path,
     oldMode: "000000",
