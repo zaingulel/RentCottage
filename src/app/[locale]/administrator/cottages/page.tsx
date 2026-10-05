@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
-import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
-import { createRequestSupabaseClient } from "@/access/supabase-server";
+import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
 import type { CottageProfileAdministratorCursor } from "@/cottage-profile/cottage-profile";
 import { parseAdministratorCottageProfileCursor } from "@/cottage-profile/supabase-cottage-profile";
@@ -15,16 +14,7 @@ import { administratorRecordsMessages } from "@/i18n/administrator-records-messa
 async function loadAdministratorCottages(
   cursor?: CottageProfileAdministratorCursor,
 ) {
-  const client = await createRequestSupabaseClient();
-  const [context, authorization] = await Promise.all([
-    new SupabaseAccountContextStore(client).resolve(),
-    client.rpc("is_platform_administrator", { required_assurance: "aal2" }),
-  ]);
-  if (context?.role !== "platform_administrator") {
-    return { status: "access_required" as const };
-  }
-  if (authorization.error) throw authorization.error;
-  if (authorization.data !== true)
+  if ((await resolvePlatformAdministratorAccess()) !== "allowed")
     return { status: "access_required" as const };
   const cottageProfile = await createRequestCottageProfile();
   return {

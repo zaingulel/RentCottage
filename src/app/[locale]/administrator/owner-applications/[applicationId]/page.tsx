@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
-import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
+import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { OwnerApplicationReviewDetailView } from "@/components/owner-application-review-detail";
 import { ownerApplicationReviewDetailMessages } from "@/i18n/owner-application-review-detail-messages";
@@ -9,20 +9,9 @@ import { isLocale } from "@/i18n/routing";
 import { loadOwnerApplicationReviewDetail } from "@/owner-application/supabase-owner-application-review";
 
 async function loadOwnerApplicationReviewDetailPage(applicationId: string) {
-  const client = await createRequestSupabaseClient();
-  const [context, authorization] = await Promise.all([
-    new SupabaseAccountContextStore(client).resolve(),
-    client.rpc("is_platform_administrator", {
-      required_assurance: "aal2",
-    }),
-  ]);
-  if (
-    context?.role !== "platform_administrator" ||
-    authorization.error ||
-    authorization.data !== true
-  ) {
+  if ((await resolvePlatformAdministratorAccess()) !== "allowed")
     return { status: "access_required" as const };
-  }
+  const client = await createRequestSupabaseClient();
   return {
     status: "ready" as const,
     detail: await loadOwnerApplicationReviewDetail(client, applicationId),

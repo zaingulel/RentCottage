@@ -74,4 +74,59 @@ describe("Owner Application administrator detail page", () => {
       "private@example.test",
     );
   });
+
+  it("refuses the application detail to a session the Platform Administrator gate refuses", async () => {
+    resolveContext.mockResolvedValue({
+      userId: "10000000-0000-4000-8000-000000000001",
+      role: "platform_administrator",
+    });
+    createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({ data: false, error: null }),
+    });
+
+    render(
+      await OwnerApplicationReviewDetailPage({
+        params: Promise.resolve({
+          locale: "en",
+          applicationId: "20000000-0000-4000-8000-000000000001",
+        }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Back to review queue" }),
+    ).toHaveAttribute("href", "/en/administrator/access");
+    expect(loadDetail).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed Platform Administrator check as unavailable, never as a refusal", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    resolveContext.mockResolvedValue({
+      userId: "10000000-0000-4000-8000-000000000001",
+      role: "platform_administrator",
+    });
+    createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: new Error("provider unavailable"),
+      }),
+    });
+
+    render(
+      await OwnerApplicationReviewDetailPage({
+        params: Promise.resolve({
+          locale: "en",
+          applicationId: "20000000-0000-4000-8000-000000000001",
+        }),
+      }),
+    );
+
+    expect(
+      screen.getByText("The review action is temporarily unavailable."),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "Back to review queue" }),
+    ).not.toBeInTheDocument();
+    expect(loadDetail).not.toHaveBeenCalled();
+  });
 });
