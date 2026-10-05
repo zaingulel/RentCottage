@@ -4,6 +4,7 @@ import type {
   ProviderOperationBinding,
 } from "./payment-contract";
 import {
+  exactKeys,
   isPermitIdentifier,
   isPositiveInteger,
   isRequestFingerprint,
@@ -56,12 +57,6 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
-}
-function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
-  return (
-    Object.keys(value).length === keys.length &&
-    Object.keys(value).every((key) => keys.includes(key))
-  );
 }
 const nonempty = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;

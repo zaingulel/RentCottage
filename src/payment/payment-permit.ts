@@ -6,6 +6,40 @@ import type {
 const identifierShape =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const requestFingerprintShape = /^[a-f0-9]{64}$/;
+const permitKeys = [
+  "purpose",
+  "attemptId",
+  "generation",
+  "leaseToken",
+  "idempotencyKey",
+  "notBefore",
+  "notAfter",
+  "binding",
+];
+const sharedBindingKeys = [
+  "bookingRequestId",
+  "captureOperationId",
+  "kind",
+  "paymentLifecycleId",
+  "logicalOperationId",
+  "attemptId",
+  "amountFils",
+  "currency",
+  "requestFingerprint",
+  "providerIdentity",
+];
+const providerIdentityKeys = [
+  "provider",
+  "environment",
+  "merchantId",
+  "terminalId",
+];
+export function exactKeys(value: object, keys: readonly string[]) {
+  const actual = Object.keys(value);
+  return (
+    actual.length === keys.length && actual.every((key) => keys.includes(key))
+  );
+}
 
 export const isPermitIdentifier = (value: unknown): value is string =>
   typeof value === "string" && identifierShape.test(value);
@@ -34,6 +68,7 @@ export interface IntentPermitKind<Permit extends IntentExecutionPermit> {
   readonly purpose: Permit["purpose"];
   readonly operationKind: Permit["binding"]["kind"];
   readonly intentIdOf: (binding: Permit["binding"]) => string;
+  readonly intentIdKey: string;
   readonly invalidMessage: string;
 }
 
@@ -45,8 +80,10 @@ export function intentExecutionPermitFrom<Permit extends IntentExecutionPermit>(
   const permit = value as Permit;
   const binding = permit.binding;
   if (
+    !exactKeys(permit, permitKeys) ||
     permit.purpose !== kind.purpose ||
     !binding ||
+    !exactKeys(binding, [...sharedBindingKeys, kind.intentIdKey]) ||
     binding.kind !== kind.operationKind
   )
     throw new Error(kind.invalidMessage);
@@ -61,6 +98,8 @@ export function intentExecutionPermitFrom<Permit extends IntentExecutionPermit>(
       binding.paymentLifecycleId,
     ].every(isPermitIdentifier) ||
     !isPositiveInteger(permit.generation) ||
+    typeof permit.notBefore !== "string" ||
+    typeof permit.notAfter !== "string" ||
     !Number.isFinite(Date.parse(permit.notBefore)) ||
     !(Date.parse(permit.notAfter) > Date.parse(permit.notBefore)) ||
     binding.logicalOperationId !== `${intentId}:${kind.operationKind}` ||
@@ -69,10 +108,9 @@ export function intentExecutionPermitFrom<Permit extends IntentExecutionPermit>(
     permit.idempotencyKey !== binding.attemptId ||
     !isPositiveInteger(binding.amountFils) ||
     binding.currency !== "IQD" ||
-    // Tests the coerced value, unlike isRequestFingerprint; requiring a string
-    // here changes a fencing rule.
-    !requestFingerprintShape.test(binding.requestFingerprint) ||
+    !isRequestFingerprint(binding.requestFingerprint) ||
     !binding.providerIdentity ||
+    !exactKeys(binding.providerIdentity, providerIdentityKeys) ||
     ![
       binding.providerIdentity.provider,
       binding.providerIdentity.environment,
