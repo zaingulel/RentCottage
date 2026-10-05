@@ -17,6 +17,9 @@ export interface MarketplaceMessages {
   footerOwners: string;
   footerOwnerApplication: string;
   footerCopyright: string;
+  notFoundTitle: string;
+  notFoundDetail: string;
+  notFoundHome: string;
 }
 
 export const messages: Record<Locale, MarketplaceMessages> = {
@@ -43,6 +46,10 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     footerOwners: "المالكون",
     footerOwnerApplication: "طلب المالك",
     footerCopyright: "© {year} ريف كوتج",
+    notFoundTitle: "الصفحة غير موجودة",
+    notFoundDetail:
+      "هذه الصفحة غير موجودة. قد يكون الرابط مكتوبًا بشكلٍ خاطئ أو قديمًا.",
+    notFoundHome: "العودة إلى الصفحة الرئيسية",
   },
   ckb: {
     languageName: "کوردی",
@@ -69,6 +76,10 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     footerOwners: "خاوەنەکان",
     footerOwnerApplication: "داواکاری خاوەن",
     footerCopyright: "© {year} ڕێنت کۆتاج",
+    notFoundTitle: "پەڕەکە نەدۆزرایەوە",
+    notFoundDetail:
+      "ئەم پەڕەیە بوونی نییە. لەوانەیە بەستەرەکە بە هەڵە نووسرابێت یان کۆن بووبێت.",
+    notFoundHome: "گەڕانەوە بۆ پەڕەی سەرەکی",
   },
   en: {
     languageName: "English",
@@ -95,5 +106,9 @@ export const messages: Record<Locale, MarketplaceMessages> = {
     footerOwners: "Owners",
     footerOwnerApplication: "Owner application",
     footerCopyright: "© {year} RentCottage",
+    notFoundTitle: "Page not found",
+    notFoundDetail:
+      "This page does not exist. The link may be mistyped or out of date.",
+    notFoundHome: "Back to the home page",
   },
 };
