@@ -84,6 +84,75 @@ describe("Booking Request recovery provider contract", () => {
       }),
     ).toThrow();
   });
+  const fixtureBinding = recoveryPermitFixture().binding;
+  const invalidBindings: [string, object][] = [
+    ["Booking Request identifier", { bookingRequestId: "unbound" }],
+    [
+      "recovery attempt identifier",
+      {
+        recoveryAttemptId: "unbound",
+        logicalOperationId: `unbound:${fixtureBinding.step}`,
+        physicalAttemptId: `unbound:${fixtureBinding.step}:1`,
+      },
+    ],
+    ["authorization claim identifier", { authorizationClaimId: "unbound" }],
+    ["Payment Lifecycle identifier", { paymentLifecycleId: "unbound" }],
+    ["generation below one", { generation: 0 }],
+    [
+      "authorization claim generation below one",
+      { authorizationClaimGeneration: 0 },
+    ],
+    ["zero amount", { amountFils: 0 }],
+    ["fractional amount", { amountFils: 0.1 }],
+    ["upper-case request fingerprint", { requestFingerprint: "A".repeat(64) }],
+    [
+      "request fingerprint that is not text",
+      { requestFingerprint: ["a".repeat(64)] },
+    ],
+  ];
+  it.each(invalidBindings)(
+    "rejects an invalid recovery binding: %s",
+    (_rule, change) => {
+      expect(() =>
+        recoveryBindingFrom({ ...fixtureBinding, ...change }),
+      ).toThrow("Recovery provider binding is invalid");
+    },
+  );
+  const fixturePermit = recoveryPermitFixture();
+  const unboundOperationId = `unbound:${fixturePermit.step}`;
+  const invalidPermits: [string, unknown][] = [
+    [
+      "attempt identifier",
+      {
+        ...fixturePermit,
+        attemptId: "unbound",
+        operationId: unboundOperationId,
+        idempotencyKey: `${unboundOperationId}:1`,
+        binding: {
+          ...fixturePermit.binding,
+          recoveryAttemptId: "unbound",
+          logicalOperationId: unboundOperationId,
+          physicalAttemptId: `${unboundOperationId}:1`,
+        },
+      },
+    ],
+    [
+      "generation below one",
+      {
+        ...fixturePermit,
+        generation: 0,
+        binding: { ...fixturePermit.binding, generation: 0 },
+      },
+    ],
+  ];
+  it.each(invalidPermits)(
+    "rejects an invalid recovery permit: %s",
+    (_rule, value) => {
+      expect(() => recoveryPermitFrom(value)).toThrow(
+        "Recovery execution permit is invalid",
+      );
+    },
+  );
   it.each([
     { amountFils: 1 },
     { currency: "USD" },

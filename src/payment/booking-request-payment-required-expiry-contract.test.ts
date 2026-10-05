@@ -83,6 +83,51 @@ describe("Payment Required expiry provider contract", () => {
       ),
     ).toBe(false);
   });
+  const withBinding = (change: object) => ({
+    ...permit,
+    binding: { ...permit.binding, ...change },
+  });
+  const invalidReleasePermits: [string, unknown][] = [
+    ["expiry work identifier", { ...permit, expiryWorkId: "unbound" }],
+    [
+      "expiry operation identifier",
+      { ...permit, expiryOperationId: "unbound" },
+    ],
+    [
+      "Booking Request identifier",
+      withBinding({ bookingRequestId: "unbound" }),
+    ],
+    [
+      "authorization claim identifier",
+      withBinding({ authorizationClaimId: "unbound" }),
+    ],
+    [
+      "authorization Payment Lifecycle identifier",
+      withBinding({ authorizationPaymentLifecycleId: "unbound" }),
+    ],
+    [
+      "authorization claim generation below one",
+      withBinding({ authorizationClaimGeneration: 0 }),
+    ],
+    ["zero amount", withBinding({ amountFils: 0 })],
+    ["fractional amount", withBinding({ amountFils: 0.1 })],
+    [
+      "upper-case request fingerprint",
+      withBinding({ requestFingerprint: "A".repeat(64) }),
+    ],
+    [
+      "request fingerprint that is not text",
+      withBinding({ requestFingerprint: ["a".repeat(64)] }),
+    ],
+  ];
+  it.each(invalidReleasePermits)(
+    "rejects an invalid release permit: %s",
+    (_rule, value) => {
+      expect(() => paymentRequiredExpiryPermitFrom(value)).toThrow(
+        "Payment Required expiry permit is invalid",
+      );
+    },
+  );
 });
 
 describe("Durable expiry admission", () => {
@@ -201,6 +246,39 @@ describe("corrective refund provider contract", () => {
       }),
     ).toThrow();
   });
+  const withRefundBinding = (change: object) => ({
+    ...refundPermit,
+    binding: { ...refundPermit.binding, ...change },
+  });
+  const invalidRefundPermits: [string, unknown][] = [
+    ["expiry work identifier", { ...refundPermit, expiryWorkId: "unbound" }],
+    [
+      "expiry operation identifier",
+      { ...refundPermit, expiryOperationId: "unbound" },
+    ],
+    [
+      "Booking Request identifier",
+      withRefundBinding({ bookingRequestId: "unbound" }),
+    ],
+    [
+      "capture provider operation identifier",
+      withRefundBinding({ captureProviderOperationId: "unbound" }),
+    ],
+    [
+      "Payment Lifecycle identifier",
+      withRefundBinding({ paymentLifecycleId: "unbound" }),
+    ],
+    ["zero amount", withRefundBinding({ amountFils: 0 })],
+    ["fractional amount", withRefundBinding({ amountFils: 0.1 })],
+  ];
+  it.each(invalidRefundPermits)(
+    "rejects an invalid corrective refund permit: %s",
+    (_rule, value) => {
+      expect(() => paymentRequiredExpiryPermitFrom(value)).toThrow(
+        "Payment Required corrective refund permit is invalid",
+      );
+    },
+  );
   it.each(["2026-09-07T12:19:59.999Z", "not-a-time"])(
     "rejects a capture before the deadline or with no authoritative occurrence: %s",
     (captureOccurredAt) => {
