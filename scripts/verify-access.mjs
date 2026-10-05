@@ -418,6 +418,7 @@ export async function main(
     removeTemp = defaultRemoveTemp,
     run,
     stderr = console.error,
+    stepPlan = accessStepPlan,
     workingDirectory = process.cwd(),
   } = {},
 ) {
@@ -514,7 +515,7 @@ export async function main(
     return 2;
   }
 
-  const plan = accessStepPlan({ mode, phase, partition, shard });
+  const plan = stepPlan({ mode, phase, partition, shard });
   const originalRecipe = focusedFixtureContract
     ? ["node", "scripts/verify-access.mjs", FIXTURE_CONTRACT_MODE]
     : [

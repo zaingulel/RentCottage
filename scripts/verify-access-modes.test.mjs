@@ -567,6 +567,53 @@ describe("access verification command", () => {
     ]);
   });
 
+  it("runs the steps of the plan it is given between startup and cleanup", async () => {
+    const run = successfulRun();
+    const stepPlan = vi.fn(() => ({
+      preflight: [
+        {
+          group: "database",
+          command: "npx",
+          args: ["supabase", "inspect", "db"],
+          environment: "supabase",
+        },
+      ],
+      checks: [
+        {
+          group: "database",
+          command: "node",
+          args: ["scripts/unlisted-check.mjs"],
+          environment: "database",
+        },
+      ],
+    }));
+
+    expect(
+      await mainWithPreparedProject(["--database"], {
+        environment: {},
+        run,
+        stepPlan,
+      }),
+    ).toBe(0);
+
+    expect(stepPlan).toHaveBeenCalledWith({
+      mode: "--database",
+      phase: "ordinary",
+      partition: undefined,
+      shard: undefined,
+    });
+    expect(commands(run)).toEqual([
+      startCommand,
+      ownershipCommand,
+      resetCommand,
+      ["npx", ["supabase", "inspect", "db", "--workdir", expect.any(String)]],
+      statusCommand,
+      ["node", ["scripts/unlisted-check.mjs"]],
+      ownershipCommand,
+      stopCommand,
+    ]);
+  });
+
   it("runs the database tests without the booking and payment concurrency programs", async () => {
     const run = successfulRun();
 
