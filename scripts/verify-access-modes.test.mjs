@@ -900,6 +900,7 @@ describe("access verification command", () => {
       "verify-booking-cancellation-concurrency",
       "verify-messaging-concurrency",
       "verify-booking-completion-concurrency",
+      "verify-customer-review-concurrency",
       "verify-booking-refund-concurrency",
       "verify-booking-payout-concurrency",
       "verify-booking-request-payment-required-expiry-concurrency",
