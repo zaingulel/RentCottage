@@ -224,6 +224,15 @@ set local role authenticated;
 select is(public.list_booking_request_notification_status('RC-REQ-0000000000001001','cottage_owner')#>>'{0,state}','processing','owner sees current delivery outcome independently of request');
 select throws_ok($$select public.ensure_booking_request_notification_events('60000000-0000-4000-8000-000000001001')$$,'42501',null,'authenticated user cannot materialize private source facts');
 reset role;
+insert into auth.users (id, aud, role, phone, phone_confirmed_at) values ('10000000-0000-4000-8000-000000001004','authenticated','authenticated','+9647500001004',now());
+insert into public.account_contexts (user_id, role, owner_approval_state) values ('10000000-0000-4000-8000-000000001004','cottage_owner','approved');
+insert into public.owner_application_cottage_profiles
+(id,owner_user_id,name,governorate,approximate_location,exact_address,capacity,bedrooms,bathrooms,amenities,source_language,description,house_rules,status)
+values ('20000000-0000-4000-8000-000000001004','10000000-0000-4000-8000-000000001004','Other Owner Cottage','Baghdad','Karrada','Private address',8,3,2,array['garden'],'en','Fixture description','Fixture rules','draft');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001004',true);
+set local role authenticated;
+select throws_ok($$select public.list_booking_request_notification_status('RC-REQ-0000000000001001','cottage_owner')$$,'42501','Request notification status unavailable','an approved Cottage Owner of another cottage cannot read a pending request notification status');
+reset role;
 savepoint historical_effect;
 create temp table new_effect as select pg_temp.request_notice_call('execute',(select lease from new_request_lease)) effect;
 select is((select effect->>'status' from new_effect),'delivered','fictional effect execution is recorded');
