@@ -13,6 +13,11 @@ import type {
   BookingRequestCaptureFailureProviderResultIdentity,
   PaymentProviderIdentity,
 } from "@/payment/payment-contract";
+import {
+  isPermitIdentifier,
+  isPositiveInteger,
+  isRequestFingerprint,
+} from "@/payment/payment-permit";
 
 import type {
   BookingRequestCaptureLeasedWork,
@@ -26,19 +31,11 @@ import type {
 } from "./booking-request-capture-recovery";
 import { isTimestamp, rowObject } from "./booking-request-row";
 
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
   return (
     Object.keys(value).length === keys.length &&
     Object.keys(value).every((key) => keys.includes(key))
   );
-}
-function isUuid(value: unknown) {
-  return typeof value === "string" && uuid.test(value);
-}
-function positiveInteger(value: unknown) {
-  return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
 function bindingFrom(
@@ -49,11 +46,11 @@ function bindingFrom(
   const provider = rowObject(value.providerIdentity);
   if (
     value.bookingRequestId !== bookingRequestId ||
-    !isUuid(value.bookingRequestId) ||
-    !isUuid(value.submissionAttemptId) ||
-    !isUuid(value.authorizationClaimId) ||
-    !positiveInteger(value.authorizationClaimGeneration) ||
-    !isUuid(value.paymentLifecycleId) ||
+    !isPermitIdentifier(value.bookingRequestId) ||
+    !isPermitIdentifier(value.submissionAttemptId) ||
+    !isPermitIdentifier(value.authorizationClaimId) ||
+    !isPositiveInteger(value.authorizationClaimGeneration) ||
+    !isPermitIdentifier(value.paymentLifecycleId) ||
     value.authorizationLogicalOperationId !==
       `${value.paymentLifecycleId}:authorization` ||
     typeof value.authorizationPhysicalAttemptId !== "string" ||
@@ -63,12 +60,11 @@ function bindingFrom(
     value.captureLogicalOperationId !== `${value.paymentLifecycleId}:capture` ||
     value.capturePhysicalAttemptId !==
       `${value.captureLogicalOperationId}:attempt-2` ||
-    !positiveInteger(value.amountFils) ||
+    !isPositiveInteger(value.amountFils) ||
     value.currency !== "IQD" ||
     value.idempotencyKey !==
       `booking-request-capture:${bookingRequestId}:${value.authorizationClaimGeneration}` ||
-    typeof value.requestFingerprint !== "string" ||
-    !/^[0-9a-f]{64}$/.test(value.requestFingerprint) ||
+    !isRequestFingerprint(value.requestFingerprint) ||
     !provider ||
     !exactKeys(provider, [
       "provider",
@@ -265,7 +261,7 @@ export class SupabaseBookingRequestCaptureRepository
     if (
       !Array.isArray(data) ||
       data.length > limit ||
-      data.some((id) => !isUuid(id)) ||
+      data.some((id) => !isPermitIdentifier(id)) ||
       new Set(data).size !== data.length
     )
       throw new Error("Database returned invalid Capture intents");
@@ -302,8 +298,8 @@ export class SupabaseBookingRequestCaptureRepository
       result.status !== "leased" ||
       !permit ||
       permit.workId !== bookingRequestId ||
-      !positiveInteger(permit.leaseGeneration) ||
-      !isUuid(permit.leaseToken) ||
+      !isPositiveInteger(permit.leaseGeneration) ||
+      !isPermitIdentifier(permit.leaseToken) ||
       !isTimestamp(permit.notAfter)
     )
       throw new Error("Database returned an invalid Capture permit");
@@ -337,7 +333,7 @@ export class SupabaseBookingRequestCaptureRepository
       const result = rowObject(value);
       if (result?.status === "complete") {
         const snapshot = rowObject(result.snapshot);
-        if (!snapshot || !isUuid(snapshot.bookingRequestId))
+        if (!snapshot || !isPermitIdentifier(snapshot.bookingRequestId))
           throw new Error(
             "Database returned invalid Capture recovery evidence",
           );
@@ -355,13 +351,13 @@ export class SupabaseBookingRequestCaptureRepository
         !exactKeys(result, ["status", "lease"]) ||
         result.status !== "reconcile" ||
         !lease ||
-        !isUuid(lease.bookingRequestId) ||
+        !isPermitIdentifier(lease.bookingRequestId) ||
         lease.workId !== lease.bookingRequestId ||
-        !positiveInteger(lease.leaseGeneration) ||
+        !isPositiveInteger(lease.leaseGeneration) ||
         (lease.leaseGeneration as number) < 2 ||
-        !isUuid(lease.leaseToken) ||
+        !isPermitIdentifier(lease.leaseToken) ||
         !isTimestamp(lease.notAfter) ||
-        !isUuid(lease.recoveryOperationId)
+        !isPermitIdentifier(lease.recoveryOperationId)
       )
         throw new Error("Database returned an invalid Capture recovery lease");
       const binding = bindingFrom(
