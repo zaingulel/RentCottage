@@ -1,15 +1,12 @@
-import { loadRequestNotificationStatus } from "@/notification/request-notification-status";
 import { RequestNotificationDetails } from "@/components/request-notification-details";
-import { loadBookingFinancialView } from "@/booking-request/request-booking-financial-view";
 import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import Link from "next/link";
-import { notFound, unstable_rethrow } from "next/navigation";
-import { loadConfirmedBookingAccess } from "@/booking-request/request-confirmed-booking-access";
+import { notFound } from "next/navigation";
+import { loadBookingRequestDetails } from "@/booking-request/request-booking-request-details";
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { isLocale } from "@/i18n/routing";
-import { loadOwnerBookingRequest } from "@/booking-request/request-owner-booking-request-notifications";
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
 import { MessagingBookingLink } from "@/components/messaging-booking-link";
 
@@ -39,51 +36,8 @@ export default async function OwnerConfirmedBookingPage({
   const messaging = (
     <MessagingBookingLink locale={locale} reference={reference} />
   );
-  const requestDelivery = await loadRequestNotificationStatus(
-    reference,
-    "cottage_owner",
-  );
-  const notices = (
-    <RequestNotificationDetails
-      locale={locale}
-      reference={reference}
-      delivery={requestDelivery}
-    />
-  );
-  let confirmed;
-  let financial;
-  let request;
-  try {
-    confirmed = await loadConfirmedBookingAccess(reference);
-    financial = await loadBookingFinancialView(reference, "cottage_owner");
-    if (confirmed === null) request = await loadOwnerBookingRequest(reference);
-  } catch (error) {
-    unstable_rethrow(error);
-    confirmed = undefined;
-    console.error("Owner confirmed Booking load failed", {
-      code: "owner_confirmed_booking_failed",
-    });
-  }
-  if (financial?.cancellation)
-    return (
-      <main className="results-page">
-        <BookingFinancialDetails locale={locale} view={financial} />
-        {messaging}
-        {notices}
-      </main>
-    );
-  if (confirmed === null && request)
-    return (
-      <main className="results-page">
-        <OwnerBookingRequestNotifications
-          locale={locale}
-          notifications={[request]}
-        />
-        {messaging}
-        {notices}
-      </main>
-    );
-  if (confirmed === null)
+  const details = await loadBookingRequestDetails(reference, "cottage_owner");
+  if (details.outcome === "denied")
     return (
       <AccountAccessRecovery
         locale={locale}
@@ -91,7 +45,7 @@ export default async function OwnerConfirmedBookingPage({
         returnTo={returnTo}
       />
     );
-  if (!confirmed)
+  if (details.outcome === "unavailable")
     return (
       <main className="results-page">
         <section role="alert">
@@ -100,25 +54,43 @@ export default async function OwnerConfirmedBookingPage({
         </section>
       </main>
     );
-  if (confirmed.access.actorRole !== "cottage_owner")
+  const notices = (
+    <RequestNotificationDetails
+      locale={locale}
+      reference={reference}
+      delivery={details.delivery}
+    />
+  );
+  if (details.outcome === "cancelled")
     return (
-      <AccountAccessRecovery
-        locale={locale}
-        status="denied"
-        returnTo={returnTo}
-      />
+      <main className="results-page">
+        <BookingFinancialDetails locale={locale} view={details.financial} />
+        {messaging}
+        {notices}
+      </main>
+    );
+  if (details.outcome === "confirmed")
+    return (
+      <main className="results-page">
+        <ConfirmedBookingDetails
+          locale={locale}
+          {...details.confirmed}
+          lifecycleStatus={details.financial?.lifecycle.status}
+        />
+        {messaging}
+        {details.financial ? (
+          <BookingFinancialDetails locale={locale} view={details.financial} />
+        ) : null}
+        {notices}
+      </main>
     );
   return (
     <main className="results-page">
-      <ConfirmedBookingDetails
+      <OwnerBookingRequestNotifications
         locale={locale}
-        {...confirmed}
-        lifecycleStatus={financial?.lifecycle.status}
+        notifications={[details.request]}
       />
       {messaging}
-      {financial ? (
-        <BookingFinancialDetails locale={locale} view={financial} />
-      ) : null}
       {notices}
     </main>
   );
