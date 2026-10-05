@@ -8,6 +8,11 @@ import { btrim, charLength } from "@/content/postgres-text";
 
 import { isContactSafeBookingRequestText } from "./booking-request-content";
 import {
+  cloneBookingPeriod,
+  isTimestamp,
+  rowObject,
+} from "./booking-request-row";
+import {
   isBookingRequestPaymentStatus,
   isBookingRequestNotificationStatus,
   isBookingRequestStatus,
@@ -72,17 +77,13 @@ const keys = new Set([
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function validTimestamp(value: unknown): value is string {
-  return typeof value === "string" && !Number.isNaN(Date.parse(value));
-}
-
 function notificationFrom(
   value: unknown,
 ): OwnerBookingRequestNotification | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const notification = rowObject(value);
+  if (!notification) {
     return undefined;
   }
-  const notification = value as Record<string, unknown>;
   const actualKeys = Object.keys(notification);
   const paymentStatus = isBookingRequestPaymentStatus(
     notification.paymentStatus,
@@ -156,36 +157,16 @@ function notificationFrom(
         typeof row.id !== "string" ||
         !uuid.test(row.id) ||
         !isBookingRequestNotificationStatus(row.status) ||
-        !validTimestamp(row.createdAt)
+        !isTimestamp(row.createdAt)
       );
     }) ||
-    !validTimestamp(notification.responseDeadline) ||
-    !validTimestamp(notification.createdAt)
+    !isTimestamp(notification.responseDeadline) ||
+    !isTimestamp(notification.createdAt)
   ) {
     return undefined;
   }
-  const bookingPeriod = (notification.bookingPeriod as BookingQuoteItem[]).map(
-    (item): BookingQuoteItem =>
-      item.kind === "shift"
-        ? {
-            serviceDay: item.serviceDay,
-            displayName: item.displayName,
-            startsAt: item.startsAt,
-            endsAt: item.endsAt,
-            crossesMidnight: item.crossesMidnight,
-            priceIqd: item.priceIqd,
-            kind: "shift",
-            position: item.position,
-          }
-        : {
-            serviceDay: item.serviceDay,
-            displayName: item.displayName,
-            startsAt: item.startsAt,
-            endsAt: item.endsAt,
-            crossesMidnight: item.crossesMidnight,
-            priceIqd: item.priceIqd,
-            kind: "full-day",
-          },
+  const bookingPeriod = cloneBookingPeriod(
+    notification.bookingPeriod as BookingQuoteItem[],
   );
   const statusNotifications = (
     notification.statusNotifications as OwnerBookingRequestNotification["statusNotifications"]

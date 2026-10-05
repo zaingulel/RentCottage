@@ -9,6 +9,11 @@ import {
   type BookingRequestDeclineReason,
 } from "./booking-request-lifecycle";
 import {
+  cloneBookingPeriod,
+  isTimestamp,
+  rowObject,
+} from "./booking-request-row";
+import {
   isBookingRequestPaymentStatus,
   isBookingRequestNotificationStatus,
   isBookingRequestStatus,
@@ -58,8 +63,8 @@ export interface CustomerBookingRequest {
 }
 
 function fromData(value: unknown): CustomerBookingRequest | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return;
-  const request = value as Record<string, unknown>;
+  const request = rowObject(value);
+  if (!request) return;
   const paymentStatus = isBookingRequestPaymentStatus(
     request.paymentStatus,
     request.status as BookingRequestStatus,
@@ -90,8 +95,7 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     paymentRequiredWindow === undefined ||
     paymentRequiredExpiry === undefined ||
     (paymentRecovery !== null &&
-      (typeof paymentRecovery !== "object" ||
-        Array.isArray(paymentRecovery) ||
+      (!rowObject(paymentRecovery) ||
         Object.keys(paymentRecovery).length !== 1 ||
         typeof paymentRecovery.status !== "string" ||
         request.status !== "accepted" ||
@@ -120,8 +124,7 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     ) ||
     (request.customerTotalIqd as number) !==
       (request.bookingPriceIqd as number) + (request.serviceFeeIqd as number) ||
-    typeof request.responseDeadline !== "string" ||
-    Number.isNaN(Date.parse(request.responseDeadline)) ||
+    !isTimestamp(request.responseDeadline) ||
     !Array.isArray(request.statusNotifications) ||
     request.statusNotifications.some((receipt) => {
       const row = receipt as Record<string, unknown>;
@@ -130,8 +133,7 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
         typeof row.id !== "string" ||
         !uuid.test(row.id) ||
         !isBookingRequestNotificationStatus(row.status) ||
-        typeof row.createdAt !== "string" ||
-        Number.isNaN(Date.parse(row.createdAt))
+        !isTimestamp(row.createdAt)
       );
     }) ||
     (request.declineReason !== null &&
@@ -147,28 +149,8 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
         !isContactSafeBookingRequestText(request.declineNote)))
   )
     return;
-  const bookingPeriod = (request.bookingPeriod as BookingQuoteItem[]).map(
-    (item): BookingQuoteItem =>
-      item.kind === "shift"
-        ? {
-            serviceDay: item.serviceDay,
-            displayName: item.displayName,
-            startsAt: item.startsAt,
-            endsAt: item.endsAt,
-            crossesMidnight: item.crossesMidnight,
-            priceIqd: item.priceIqd,
-            kind: "shift",
-            position: item.position,
-          }
-        : {
-            serviceDay: item.serviceDay,
-            displayName: item.displayName,
-            startsAt: item.startsAt,
-            endsAt: item.endsAt,
-            crossesMidnight: item.crossesMidnight,
-            priceIqd: item.priceIqd,
-            kind: "full-day",
-          },
+  const bookingPeriod = cloneBookingPeriod(
+    request.bookingPeriod as BookingQuoteItem[],
   );
   const statusNotifications = (
     request.statusNotifications as CustomerBookingRequest["statusNotifications"]
