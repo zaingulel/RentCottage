@@ -90,9 +90,12 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
 - Keep an expensive fixture alive across related assertions only when isolation is proven and a failure still
   identifies the broken claim; construction-asserting evidence keeps fresh fixtures, per
   [Test economics](CODING-STANDARDS.md#test-economics) in CODING-STANDARDS.md.
-- Cleanup belongs to the teardown of the disposable project that `npm run verify:access` starts:
-  explicit Supabase stop, or disposal of the GitHub-hosted runner; a journey deletes nothing of its own, a failed
-  attempt keeps its rows until that teardown, and synthetic identities carry no credentials or sessions.
+- The teardown of the disposable project that `npm run verify:access` starts is what finally removes test data:
+  explicit Supabase stop, or disposal of the GitHub-hosted runner. A concurrency program or Playwright
+  specification that reuses fixed identifiers also clears its own rows before and after a run, so it can run again
+  in the same project; a new check that reuses fixed identifiers does the same. A failed attempt can leave rows
+  behind until the next run of that check or that teardown clears them, and synthetic identities carry no
+  credentials or sessions.
 - A concurrency program or Playwright specification that clears one of the shared fixed-identifier booking
   fixtures (the confirmed booking, capture and confirmed-booking-access row sets) takes its reset and cleanup SQL
   from `scripts/lib/booking-fixture.mjs`, the one home for the delete order of those fixtures and for their
