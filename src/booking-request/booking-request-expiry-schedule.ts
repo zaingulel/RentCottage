@@ -2,16 +2,6 @@ import { createBookingRequestPaymentRecovery } from "./booking-request-payment-r
 import { SupabaseBookingRequestPaymentRecoveryRepository } from "./supabase-booking-request-payment-recovery";
 import { createBookingRequestConfirmation } from "./booking-request-confirmation";
 import { SupabaseBookingRequestConfirmationRepository } from "./supabase-booking-request-confirmation";
-import { createBookingRequestPaymentObservation } from "./booking-request-payment-observation";
-import { SupabaseBookingRequestPaymentObservationRepository } from "./supabase-booking-request-payment-observation";
-import { createPaymentOperationExecution } from "@/payment/payment-operation-execution";
-import {
-  SupabasePaymentOperationExecutionRepository,
-  SupabaseSimulatorEffectRepository,
-} from "@/payment/supabase-payment-operation-execution";
-import { createClient } from "@supabase/supabase-js";
-
-import { DurablePaymentSimulator } from "../payment/durable-payment-simulator-core";
 import {
   createBookingRequestLifecycle,
   type BookingRequestLifecycleResult,
@@ -20,17 +10,16 @@ import {
   createBookingRequestPaymentRequiredExpiry,
   type PaymentRequiredExpiryResult,
 } from "./booking-request-payment-required-expiry";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime-core";
+import {
+  preparePaymentOperations,
+  type PaymentOperationsEnvironment,
+} from "./payment-operations";
 import { SupabaseBookingRequestLifecycleRepository } from "./supabase-booking-request-lifecycle";
 import { SupabaseBookingRequestPaymentRequiredExpiryRepository } from "./supabase-booking-request-payment-required-expiry";
 
-interface BookingRequestExpiryScheduleEnvironment {
-  readonly APP_ENVIRONMENT?: string;
-  readonly SUPABASE_PROJECT_REF?: string;
-  readonly SUPABASE_URL?: string;
+type BookingRequestExpiryScheduleEnvironment = PaymentOperationsEnvironment & {
   readonly SUPABASE_PUBLISHABLE_KEY?: string;
-  readonly SUPABASE_SECRET_KEY?: string;
-}
+};
 
 type ProcessDue = (
   limit: number,
@@ -43,11 +32,10 @@ export async function runScheduledBookingRequestExpiry(
   injectedProcessDue?: ProcessDue,
   injectedPaymentRequiredDue?: ProcessDue,
 ) {
-  if (
-    !bookingRequestTestRuntimeIsEnabled(environment) ||
-    !environment.SUPABASE_PUBLISHABLE_KEY ||
-    !environment.SUPABASE_SECRET_KEY
-  ) {
+  const assemblePayment = environment.SUPABASE_PUBLISHABLE_KEY
+    ? preparePaymentOperations(environment)
+    : undefined;
+  if (!assemblePayment) {
     throw new Error(
       "Scheduled booking-request expiry requires the exact local test runtime and secret key",
     );
@@ -56,24 +44,7 @@ export async function runScheduledBookingRequestExpiry(
   let processDue = injectedProcessDue;
   let paymentRequiredDue = injectedPaymentRequiredDue;
   if (!processDue || !paymentRequiredDue) {
-    const client = createClient(
-      environment.SUPABASE_URL as string,
-      environment.SUPABASE_SECRET_KEY,
-      { auth: { autoRefreshToken: false, persistSession: false } },
-    );
-    const provider = new DurablePaymentSimulator({
-      effects: new SupabaseSimulatorEffectRepository(client),
-      now: () => new Date().toISOString(),
-    });
-    const operations = createPaymentOperationExecution({
-      repository: new SupabasePaymentOperationExecutionRepository(client),
-      provider,
-      observation: createBookingRequestPaymentObservation({
-        repository: new SupabaseBookingRequestPaymentObservationRepository(
-          client,
-        ),
-      }),
-    });
+    const { serviceClient: client, provider, operations } = assemblePayment();
     processDue ??= createBookingRequestLifecycle({
       repository: new SupabaseBookingRequestLifecycleRepository(
         client,

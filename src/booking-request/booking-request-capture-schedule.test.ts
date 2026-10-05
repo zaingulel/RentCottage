@@ -1,5 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { createClient } from "@supabase/supabase-js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runScheduledBookingRequestCapture } from "./booking-request-capture-schedule";
+vi.mock("@supabase/supabase-js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@supabase/supabase-js")>()),
+  createClient: vi.fn(),
+}));
+beforeEach(() => {
+  vi.mocked(createClient).mockClear();
+});
 const environment = {
   APP_ENVIRONMENT: "test",
   SUPABASE_PROJECT_REF: "local-test",
@@ -27,6 +35,7 @@ describe("Scheduled capture admission", () => {
         ),
       ).rejects.toThrow("local test runtime");
       expect(drain).not.toHaveBeenCalled();
+      expect(createClient).not.toHaveBeenCalled();
     },
   );
   it("runs a bounded drain and distinguishes empty success", async () => {
@@ -35,6 +44,7 @@ describe("Scheduled capture admission", () => {
       runScheduledBookingRequestCapture(environment, drain),
     ).resolves.toEqual([]);
     expect(drain).toHaveBeenCalledExactlyOnceWith(50);
+    expect(createClient).not.toHaveBeenCalled();
   });
   it.each(["unavailable", "invalid"] as const)(
     "fails the scheduled observation for %s work",

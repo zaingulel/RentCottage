@@ -13,7 +13,12 @@ vi.mock("@/access/supabase-server", () => ({
 }));
 vi.mock("@/config/server-runtime", () => ({
   getServerEnvironment: () => ({
-    supabase: { url: "http://127.0.0.1:55331", secretKey: "test-secret" },
+    name: "test",
+    supabase: {
+      projectRef: "local-test",
+      url: "http://127.0.0.1:55331",
+      secretKey: "test-secret",
+    },
   }),
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient }));

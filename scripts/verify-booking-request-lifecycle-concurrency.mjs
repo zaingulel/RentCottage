@@ -1151,21 +1151,6 @@ commit;`;
       platform: "node",
       format: "esm",
       target: "node22",
-      plugins: [
-        {
-          name: "server-only-noop",
-          setup(buildApi) {
-            buildApi.onResolve({ filter: /^server-only$/ }, () => ({
-              path: "server-only",
-              namespace: "server-only-noop",
-            }));
-            buildApi.onLoad(
-              { filter: /.*/, namespace: "server-only-noop" },
-              () => ({ contents: "export {};", loader: "js" }),
-            );
-          },
-        },
-      ],
     });
     if (
       harness.runSql(

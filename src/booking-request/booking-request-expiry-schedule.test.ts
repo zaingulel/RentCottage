@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { createClient } from "@supabase/supabase-js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runScheduledBookingRequestExpiry } from "./booking-request-expiry-schedule";
 
@@ -6,6 +7,13 @@ vi.mock("server-only", () => ({}));
 
 import * as requestBookingRequestLifecycle from "./request-booking-request-lifecycle";
 
+vi.mock("@supabase/supabase-js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@supabase/supabase-js")>()),
+  createClient: vi.fn(),
+}));
+beforeEach(() => {
+  vi.mocked(createClient).mockClear();
+});
 const testEnvironment = {
   APP_ENVIRONMENT: "test",
   SUPABASE_PROJECT_REF: "local-test",
@@ -41,6 +49,7 @@ describe("Booking Request expiry schedule", () => {
     expect(processDue).toHaveBeenCalledWith(50);
     expect(paymentRequiredDue).toHaveBeenCalledOnce();
     expect(paymentRequiredDue).toHaveBeenCalledWith(50);
+    expect(createClient).not.toHaveBeenCalled();
   });
 
   it.each([0, 1])(

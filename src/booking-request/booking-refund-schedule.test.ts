@@ -1,5 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { createClient } from "@supabase/supabase-js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runScheduledBookingRefunds } from "./booking-refund-schedule";
+vi.mock("@supabase/supabase-js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@supabase/supabase-js")>()),
+  createClient: vi.fn(),
+}));
+beforeEach(() => {
+  vi.mocked(createClient).mockClear();
+});
 const environment = {
   APP_ENVIRONMENT: "test",
   SUPABASE_PROJECT_REF: "local-test",
@@ -16,6 +24,7 @@ describe("scheduled booking refunds", () => {
       { status: "attention-required" },
     ]);
     expect(processDue).toHaveBeenCalledExactlyOnceWith(50);
+    expect(createClient).not.toHaveBeenCalled();
   });
   it.each([
     { APP_ENVIRONMENT: "production" },
