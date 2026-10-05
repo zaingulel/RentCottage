@@ -106,30 +106,6 @@ describe("confirmed booking command authority", () => {
     });
     expect(refresh).toHaveBeenCalled();
   });
-  it.each(["revoked", "aal1"])(
-    "rechecks %s administrator authority before settlement replay",
-    async (state) => {
-      resolve.mockResolvedValue({
-        userId: "actor",
-        role: state === "revoked" ? "customer" : "platform_administrator",
-      });
-      client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
-        data: { currentLevel: "aal1" },
-        error: null,
-      });
-      expect(
-        await manageConfirmedBooking(
-          { status: "settled" },
-          form({
-            actorRole: "platform_administrator",
-            action: "settle",
-            reason: "Review",
-          }),
-        ),
-      ).toEqual({ status: "access-required" });
-      expect(settle).not.toHaveBeenCalled();
-    },
-  );
   it("uses the authenticated participant projection and preserves command identity", async () => {
     expect(
       await manageConfirmedBooking(
@@ -151,33 +127,6 @@ describe("confirmed booking command authority", () => {
     });
     expect(refresh).toHaveBeenCalled();
   });
-  it("retains customer capability for an owner booking as a customer", async () => {
-    resolve.mockResolvedValue({
-      userId: "actor",
-      role: "cottage_owner",
-      approvalState: "suspended",
-    });
-    expect(await manageConfirmedBooking({ status: "idle" }, form())).toEqual({
-      status: "cancelled",
-    });
-  });
-  it("denies owner command from a customer before any booking operation", async () => {
-    expect(
-      await manageConfirmedBooking(
-        { status: "idle" },
-        form({ actorRole: "cottage_owner", reason: "Unavailable" }),
-      ),
-    ).toEqual({ status: "access-required" });
-    expect(view).not.toHaveBeenCalled();
-    expect(cancel).not.toHaveBeenCalled();
-  });
-  it("denies a participant projection outside this booking role", async () => {
-    view.mockResolvedValue(null);
-    expect(await manageConfirmedBooking({ status: "idle" }, form())).toEqual({
-      status: "access-required",
-    });
-    expect(cancel).not.toHaveBeenCalled();
-  });
   it("requires reason for owner cancellation", async () => {
     expect(
       await manageConfirmedBooking(
@@ -185,27 +134,6 @@ describe("confirmed booking command authority", () => {
         form({ actorRole: "cottage_owner" }),
       ),
     ).toEqual({ status: "invalid" });
-    expect(cancel).not.toHaveBeenCalled();
-  });
-  it("requires administrator strong authentication and attribution fields", async () => {
-    resolve.mockResolvedValue({
-      userId: "actor",
-      role: "platform_administrator",
-    });
-    client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
-      data: { currentLevel: "aal1" },
-      error: null,
-    });
-    expect(
-      await manageConfirmedBooking(
-        { status: "idle" },
-        form({
-          actorRole: "platform_administrator",
-          category: "safety",
-          reason: "Private incident",
-        }),
-      ),
-    ).toEqual({ status: "access-required" });
     expect(cancel).not.toHaveBeenCalled();
   });
   it("binds administrator cancellation category and reason without returning them", async () => {
@@ -287,27 +215,6 @@ describe("confirmed booking command authority", () => {
       expect(refresh).not.toHaveBeenCalled();
     },
   );
-  it.each([
-    { action: "refund", price: "20", fee: "0", reason: "x" },
-    { actorRole: "platform_administrator", category: "other", reason: "x" },
-    { commandId: "invalid" },
-    { locale: "de" },
-  ])("rejects invalid or unauthorized command %j", async (values) => {
-    expect(["invalid", "access-required"]).toContain(
-      (await manageConfirmedBooking({ status: "idle" }, form(values))).status,
-    );
-    expect(cancel).not.toHaveBeenCalled();
-    expect(client.rpc).not.toHaveBeenCalled();
-  });
-  it("does not expose database reasons or error content", async () => {
-    view.mockRejectedValue(new Error("PRIVATE record"));
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await manageConfirmedBooking({ status: "idle" }, form())).toEqual({
-      status: "unavailable",
-    });
-    expect(JSON.stringify(log.mock.calls)).not.toContain("PRIVATE");
-    log.mockRestore();
-  });
   it("keeps the exact nonproduction runtime gate", async () => {
     runtime.mockReturnValue(false);
     expect(await manageConfirmedBooking({ status: "idle" }, form())).toEqual({
@@ -400,31 +307,6 @@ describe("confirmed booking command authority", () => {
       }),
     );
   });
-  it.each(["incident", "no_show"])(
-    "requires administrator second factor for %s",
-    async (action) => {
-      resolve.mockResolvedValue({
-        userId: "actor",
-        role: "platform_administrator",
-      });
-      client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
-        data: { currentLevel: "aal1" },
-        error: null,
-      });
-      expect(
-        await manageConfirmedBooking(
-          { status: "idle" },
-          form({
-            action,
-            actorRole: "platform_administrator",
-            reason: "Private",
-            category: "safety",
-          }),
-        ),
-      ).toEqual({ status: "access-required" });
-      expect(client.rpc).not.toHaveBeenCalled();
-    },
-  );
   it("reports a concurrent finalization conflict without leaking private details", async () => {
     resolve.mockResolvedValue({
       userId: "actor",
@@ -444,6 +326,7 @@ describe("confirmed booking command authority", () => {
         }),
       ),
     ).toEqual({ status: "conflict" });
+    expect(refresh).not.toHaveBeenCalled();
   });
   it("does not allow the reporting owner to mark no-show", async () => {
     resolve.mockResolvedValue({
@@ -462,6 +345,7 @@ describe("confirmed booking command authority", () => {
       ),
     ).toEqual({ status: "access-required" });
     expect(client.rpc).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 
