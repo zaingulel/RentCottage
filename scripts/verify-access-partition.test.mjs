@@ -3,17 +3,20 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { main } from "./verify-access.mjs";
+import { accessStepPlan } from "./verify-access-plan.mjs";
 import {
   commands,
   databaseCheckCommands,
   databasePreflightCommands,
   declaredSchemaDiffStep,
+  inGroup,
   localCredentials,
   mainWithPreparedProject,
   nextFixtureCommands,
   nextJourneyCommand,
   ownedRun,
   ownershipCommand,
+  plannedCommands,
   resetCommand,
   scheduledExpiryVerifyCommand,
   scheduledJourneyCommand,
@@ -496,6 +499,30 @@ describe("access verification command", () => {
       expect(makeTemp).not.toHaveBeenCalled();
       expect(prepareProject).not.toHaveBeenCalled();
       expect(run).not.toHaveBeenCalled();
+    }
+  });
+
+  it("plans the checks for every hosted partition without starting a process", () => {
+    for (const {
+      mode,
+      partition,
+      shard,
+      preflight,
+      checks,
+    } of partitionPlans) {
+      const plan = accessStepPlan({
+        mode,
+        phase: "ordinary",
+        partition,
+        shard,
+      });
+      const name = `${partition}:${shard ?? ""}`;
+      expect(plannedCommands(plan.preflight), name).toEqual(
+        inGroup("database", preflight),
+      );
+      expect(plannedCommands(plan.checks), name).toEqual(
+        inGroup(mode === "--database" ? "database" : "browser", checks),
+      );
     }
   });
 });

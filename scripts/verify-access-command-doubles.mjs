@@ -250,3 +250,11 @@ export function mainWithPreparedProject(args, options = {}) {
 export function commands(run) {
   return run.mock.calls.map(([command, args]) => [command, args]);
 }
+
+export function plannedCommands(steps) {
+  return steps.map(({ group, command, args }) => [group, command, args]);
+}
+
+export function inGroup(group, commandList) {
+  return commandList.map(([command, args]) => [group, command, args]);
+}

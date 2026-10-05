@@ -5,23 +5,28 @@ import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { main } from "./verify-access.mjs";
+import { accessStepPlan } from "./verify-access-plan.mjs";
 import {
   browserCommands,
   commands,
   databaseCheckCommands,
   databasePreflightCommands,
   declaredSchemaDiffCommand,
+  declaredSchemaDiffStep,
   fixtureContractCommands,
+  inGroup,
   localCredentials,
   mainWithPreparedProject,
   nextFixtureCommands,
   nextJourneyCommand,
   ownedRun,
   ownershipCommand,
+  plannedCommands,
   resetCommand,
   scheduledExpiryVerifyCommand,
   scheduledJourneyCommand,
   sqlTestsCommand,
+  sqlTestsStep,
   startCommand,
   statusCommand,
   stopCommand,
@@ -1406,6 +1411,82 @@ describe("access verification command", () => {
           type: "exit",
           status: 9,
         });
+    }
+  });
+
+  it("plans the checks for every mode without starting a process", () => {
+    const databasePreflight = inGroup("database", [
+      declaredSchemaDiffStep,
+      sqlTestsStep,
+    ]);
+    const modePlans = [
+      {
+        mode: undefined,
+        phase: "ordinary",
+        preflight: databasePreflight,
+        checks: [
+          ...inGroup("database", databaseCheckCommands),
+          ...inGroup("browser", browserCommands),
+        ],
+      },
+      {
+        mode: "--database",
+        phase: "ordinary",
+        preflight: databasePreflight,
+        checks: inGroup("database", databaseCheckCommands),
+      },
+      {
+        mode: "--database-tests",
+        phase: "ordinary",
+        preflight: databasePreflight,
+        checks: inGroup(
+          "database",
+          databaseCheckCommands.filter(
+            ([, [script]]) => !script.startsWith("scripts/verify-booking-"),
+          ),
+        ),
+      },
+      {
+        mode: "--browser",
+        phase: "ordinary",
+        preflight: [],
+        checks: inGroup("browser", browserCommands),
+      },
+      {
+        mode: "--fixture-contract",
+        phase: "ordinary",
+        preflight: [],
+        checks: inGroup("fixture", fixtureContractCommands),
+      },
+      ...["forward", "reverse", "retry-proof"].map((phase) => {
+        const owned = ownedJourneyCommands(phase);
+        return {
+          mode: "--owned-journeys",
+          phase,
+          preflight: [],
+          checks: [
+            ...inGroup("shared-setup", fixtureContractCommands),
+            ...inGroup("browser", [
+              ...nextFixtureCommands,
+              owned.next,
+              ...workerPreparationCommands,
+              owned.worker,
+            ]),
+          ],
+        };
+      }),
+    ];
+    for (const { mode, phase, preflight, checks } of modePlans) {
+      const plan = accessStepPlan({
+        mode,
+        phase,
+        partition: undefined,
+        shard: undefined,
+      });
+      expect(plannedCommands(plan.preflight), `${mode} ${phase}`).toEqual(
+        preflight,
+      );
+      expect(plannedCommands(plan.checks), `${mode} ${phase}`).toEqual(checks);
     }
   });
 });
