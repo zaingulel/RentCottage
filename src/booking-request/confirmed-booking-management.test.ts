@@ -7,6 +7,7 @@ import {
   type ConfirmedBookingCommand,
   type ConfirmedBookingManagementSession,
 } from "./confirmed-booking-management";
+import { BookingLifecycleConflict } from "./supabase-booking-lifecycle";
 
 type Kind = ConfirmedBookingCommand["kind"];
 
@@ -134,17 +135,257 @@ function sessionWith(
   return {
     management: createConfirmedBookingManagement(openSession),
     openSession,
+    session,
     ports,
   };
 }
 
-function expectNoCommand(
-  ports: ReturnType<typeof sessionWith>["ports"],
-  label: string,
-) {
+type Ports = ReturnType<typeof sessionWith>["ports"];
+
+function expectNoCommand(ports: Ports, label: string) {
   for (const [name, port] of Object.entries(ports))
     expect(port, `${label}: ${name}`).not.toHaveBeenCalled();
 }
+
+// Expected service commands are transcribed from the form handler this module replaced, never built from the command.
+const permittedRuns: readonly (readonly [
+  Kind,
+  BookingParticipantRole,
+  {
+    readonly context: AccountContext;
+    readonly command: ConfirmedBookingCommand;
+    readonly port: keyof Ports;
+    readonly expected: Record<string, unknown>;
+    readonly status: string;
+  },
+])[] = [
+  [
+    "cancel",
+    "customer",
+    {
+      context: customer,
+      command: commands.cancel,
+      port: "cancel",
+      expected: {
+        bookingRequestId,
+        commandId,
+        actorRole: "customer",
+        reason: null,
+        category: null,
+      },
+      status: "cancelled",
+    },
+  ],
+  [
+    "cancel",
+    "cottage_owner",
+    {
+      context: owner("approved"),
+      command: {
+        ...envelope,
+        kind: "cancel",
+        reason: "Cottage flooded",
+        category: null,
+      },
+      port: "cancel",
+      expected: {
+        bookingRequestId,
+        commandId,
+        actorRole: "cottage_owner",
+        reason: "Cottage flooded",
+        category: null,
+      },
+      status: "cancelled",
+    },
+  ],
+  [
+    "cancel",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: {
+        ...envelope,
+        kind: "cancel",
+        reason: "Unsafe wiring reported",
+        category: "safety",
+      },
+      port: "cancel",
+      expected: {
+        bookingRequestId,
+        commandId,
+        actorRole: "platform_administrator",
+        reason: "Unsafe wiring reported",
+        category: "safety",
+      },
+      status: "cancelled",
+    },
+  ],
+  [
+    "incident",
+    "cottage_owner",
+    {
+      context: owner("approved"),
+      command: commands.incident,
+      port: "recordIncident",
+      expected: {
+        bookingRequestId,
+        commandId,
+        actorRole: "cottage_owner",
+        category: "conduct",
+        narrative: "Noise after midnight",
+      },
+      status: "recorded",
+    },
+  ],
+  [
+    "incident",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: commands.incident,
+      port: "recordIncident",
+      expected: {
+        bookingRequestId,
+        commandId,
+        actorRole: "platform_administrator",
+        category: "conduct",
+        narrative: "Noise after midnight",
+      },
+      status: "recorded",
+    },
+  ],
+  [
+    "refund",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: commands.refund,
+      port: "requestRefundException",
+      expected: {
+        bookingRequestId,
+        commandId,
+        reason: "Goodwill refund",
+        allocation: { bookingPriceFils: 1_000, bookingServiceFeeFils: 50 },
+      },
+      status: "requested",
+    },
+  ],
+  [
+    "no_show",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: commands.no_show,
+      port: "recordNoShow",
+      expected: { bookingRequestId, commandId, reason: "Nobody arrived" },
+      status: "no_show",
+    },
+  ],
+  [
+    "place_hold",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: commands.place_hold,
+      port: "recordPayout",
+      expected: {
+        bookingRequestId,
+        commandId,
+        action: "place_hold",
+        reason: "Under review",
+      },
+      status: "recorded",
+    },
+  ],
+  [
+    "release_hold",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: commands.release_hold,
+      port: "recordPayout",
+      expected: {
+        bookingRequestId,
+        commandId,
+        action: "release_hold",
+        reason: "Review closed",
+        subjectId,
+      },
+      status: "recorded",
+    },
+  ],
+  [
+    "open_dispute",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: commands.open_dispute,
+      port: "recordPayout",
+      expected: {
+        bookingRequestId,
+        commandId,
+        action: "open_dispute",
+        reason: "Damage claim",
+      },
+      status: "recorded",
+    },
+  ],
+  [
+    "resolve_dispute",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: commands.resolve_dispute,
+      port: "recordPayout",
+      expected: {
+        bookingRequestId,
+        commandId,
+        action: "resolve_dispute",
+        reason: "Claim unsupported",
+        subjectId,
+        outcome: "owner_won",
+      },
+      status: "recorded",
+    },
+  ],
+  [
+    "resolve_dispute",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: {
+        ...envelope,
+        kind: "resolve_dispute",
+        reason: "Claim partly upheld",
+        subjectId,
+        outcome: "partial_customer_award",
+        allocation: { bookingPriceFils: 1_000, bookingServiceFeeFils: 50 },
+      },
+      port: "recordPayout",
+      expected: {
+        bookingRequestId,
+        commandId,
+        action: "resolve_dispute",
+        reason: "Claim partly upheld",
+        subjectId,
+        outcome: "partial_customer_award",
+        allocation: { bookingPriceFils: 1_000, bookingServiceFeeFils: 50 },
+      },
+      status: "recorded",
+    },
+  ],
+  [
+    "settle",
+    "platform_administrator",
+    {
+      context: administrator,
+      command: commands.settle,
+      port: "settle",
+      expected: { bookingRequestId, commandId, reason: "Stay completed" },
+      status: "settled",
+    },
+  ],
+];
 
 describe("Confirmed Booking management", () => {
   it.each(refusedRoleCommands)(
@@ -309,6 +550,97 @@ describe("Confirmed Booking management", () => {
         actorRole,
       ).toEqual({ status: "access-required" });
       expectNoCommand(ports, actorRole);
+    }
+  });
+
+  it.each(permittedRuns)(
+    "runs %s as %s once with the command identifier unchanged",
+    async (_kind, actorRole, { context, command, port, expected, status }) => {
+      const { management, ports } = sessionWith({
+        context,
+        ...(actorRole === "platform_administrator"
+          ? {}
+          : { assuranceLevel: undefined }),
+      });
+
+      await expect(management.run(actorRole, command)).resolves.toEqual({
+        status,
+      });
+      // Strict, so an absent key cannot pass as an undefined one.
+      expect(ports[port].mock.calls).toStrictEqual([[expected]]);
+      for (const [name, other] of Object.entries(ports))
+        if (name !== port) expect(other, name).not.toHaveBeenCalled();
+    },
+  );
+
+  it("passes each settlement outcome through unchanged", async () => {
+    for (const status of [
+      "settled",
+      "blocked",
+      "attention-required",
+      "processing",
+    ]) {
+      const { management, ports } = sessionWith({ context: administrator });
+      ports.settle.mockResolvedValue({ status });
+
+      expect(
+        await management.run("platform_administrator", commands.settle),
+        status,
+      ).toEqual({ status });
+    }
+  });
+
+  it("reports a conflict when the booking's outcome changed underneath the command", async () => {
+    const { management, ports } = sessionWith();
+    ports.cancel.mockRejectedValue(new BookingLifecycleConflict());
+
+    await expect(management.run("customer", commands.cancel)).resolves.toEqual({
+      status: "conflict",
+    });
+  });
+
+  it("reports unavailable and logs no private detail when a step fails", async () => {
+    const failure = new Error("PRIVATE record");
+    const failingSteps: readonly (readonly [
+      string,
+      (stubs: ReturnType<typeof sessionWith>) => void,
+    ])[] = [
+      [
+        "session open",
+        ({ openSession }) => openSession.mockRejectedValue(failure),
+      ],
+      [
+        "account lookup",
+        ({ session }) =>
+          vi.mocked(session.accountContext).mockRejectedValue(failure),
+      ],
+      [
+        "booking lookup",
+        ({ session }) => vi.mocked(session.booking).mockRejectedValue(failure),
+      ],
+      ["command port", ({ ports }) => ports.cancel.mockRejectedValue(failure)],
+    ];
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const [label, fail] of failingSteps) {
+        log.mockClear();
+        const stubs = sessionWith();
+        fail(stubs);
+
+        expect(
+          await stubs.management.run("customer", commands.cancel),
+          label,
+        ).toEqual({ status: "unavailable" });
+        expect(log.mock.calls, label).toStrictEqual([
+          [
+            "Booking management command failed",
+            { code: "booking_management_unavailable" },
+          ],
+        ]);
+        expect(JSON.stringify(log.mock.calls), label).not.toContain("PRIVATE");
+      }
+    } finally {
+      log.mockRestore();
     }
   });
 });
