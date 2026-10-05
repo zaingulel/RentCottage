@@ -3,14 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   createRequestCottagePublication,
   createRequestCottageTranslation,
+  resolvePlatformAdministratorAccess,
   revalidatePath,
 } = vi.hoisted(() => ({
   createRequestCottagePublication: vi.fn(),
   createRequestCottageTranslation: vi.fn(),
+  resolvePlatformAdministratorAccess: vi.fn(),
   revalidatePath: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("@/access/platform-administrator-gate", () => ({
+  resolvePlatformAdministratorAccess,
+}));
 vi.mock("./request-cottage-publication", () => ({
   createRequestCottagePublication,
   createRequestCottageTranslation,
@@ -37,7 +42,10 @@ function baseForm() {
 }
 
 describe("Cottage publication actions", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvePlatformAdministratorAccess.mockResolvedValue("allowed");
+  });
 
   it.each([
     ["approved", "yes"],
@@ -144,14 +152,10 @@ describe("Cottage publication actions", () => {
   ] as const)(
     "re-resolves administrator authority before %s translation",
     async (route, expectedRoute) => {
-      const assertTranslationAdministrator = vi
-        .fn()
-        .mockResolvedValue(undefined);
       const generateTranslation = vi
         .fn()
         .mockResolvedValue({ status: "completed" });
       createRequestCottageTranslation.mockResolvedValue({
-        assertTranslationAdministrator,
         generateTranslation,
       });
       const form = baseForm();
@@ -159,13 +163,48 @@ describe("Cottage publication actions", () => {
 
       await generateCottageTranslationAction(form);
 
-      expect(assertTranslationAdministrator).toHaveBeenCalledOnce();
+      expect(resolvePlatformAdministratorAccess).toHaveBeenCalledOnce();
       expect(generateTranslation).toHaveBeenCalledWith(
         cycleId,
         "ar",
         expectedRoute,
       );
       expect(revalidatePath).toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [
+      "refused",
+      () => resolvePlatformAdministratorAccess.mockResolvedValue("refused"),
+      "AAL2 Platform Administrator access is required",
+    ],
+    [
+      "failed",
+      () =>
+        resolvePlatformAdministratorAccess.mockRejectedValue(
+          new Error("Platform Administrator check failed"),
+        ),
+      "Platform Administrator check failed",
+    ],
+  ] as const)(
+    "never generates a translation when the Platform Administrator gate has %s",
+    async (_outcome, arrangeGate, message) => {
+      arrangeGate();
+      const generateTranslation = vi
+        .fn()
+        .mockResolvedValue({ status: "completed" });
+      createRequestCottageTranslation.mockResolvedValue({
+        generateTranslation,
+      });
+      const form = baseForm();
+      form.set("route", "ordinary");
+
+      await expect(generateCottageTranslationAction(form)).rejects.toThrow(
+        message,
+      );
+      expect(generateTranslation).not.toHaveBeenCalled();
+      expect(revalidatePath).not.toHaveBeenCalled();
     },
   );
 

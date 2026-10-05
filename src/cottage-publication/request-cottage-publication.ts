@@ -77,9 +77,5 @@ export async function createRequestCottageTranslation() {
     translator,
     leaseDurationMilliseconds,
   });
-  return {
-    assertTranslationAdministrator: () =>
-      repository.assertTranslationAdministrator(),
-    generateTranslation: publication.generateTranslation,
-  };
+  return { generateTranslation: publication.generateTranslation };
 }

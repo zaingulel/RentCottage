@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { charLength } from "@/content/postgres-text";
 import { isLocale } from "@/i18n/routing";
 import {
@@ -129,7 +130,8 @@ export async function generateCottageTranslationAction(formData: FormData) {
   if (!values || (route !== "ordinary" && route !== "stronger_model"))
     invalid();
   const translation = await createRequestCottageTranslation();
-  await translation.assertTranslationAdministrator();
+  if ((await resolvePlatformAdministratorAccess()) !== "allowed")
+    throw new Error("AAL2 Platform Administrator access is required");
   await translation.generateTranslation(
     values.reviewCycleId,
     values.targetLocale,

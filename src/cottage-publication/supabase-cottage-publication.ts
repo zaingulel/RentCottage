@@ -156,16 +156,6 @@ export class SupabaseCottagePublicationRepository {
     return result.data;
   }
 
-  async assertTranslationAdministrator(): Promise<void> {
-    const result = await this.client.rpc("is_platform_administrator", {
-      required_assurance: "aal2",
-    });
-    assertSuccess(result.error);
-    if (result.data !== true) {
-      throw new Error("AAL2 Platform Administrator access is required");
-    }
-  }
-
   async routeHumanReview(
     reviewCycleId: string,
     locale: LaunchLanguage,
