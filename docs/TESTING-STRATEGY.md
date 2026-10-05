@@ -71,6 +71,14 @@ that floor.
 | `evidence-required` | Any other new or changed behaviour or policy. The construction order is flexible, but the change lands with an executed regression proof that fails when the behaviour is broken and passes when restored. |
 | `preservation` | Mechanical changes and refactors with no changed behaviour and an unchanged protected contract. Existing evidence protects the named contract; no new test or mutation is created. |
 
+A refactor may move a rule that no existing test observes: breaking that rule in the unchanged code leaves every
+existing test green, so existing evidence does not protect the contract. The missing observer then lands first,
+against the unchanged code, as its own `evidence-required` claim with its test and executed mutation. The refactor
+that follows is a separate `preservation` claim, protected by that observer, and creates no further test or
+mutation. The plan names the existing tests it checked and found not to observe the rule. This route covers
+unchanged behaviour only: where existing evidence does observe the contract, `preservation` still adds nothing,
+and a change that alters the rule takes the mode its subject matter sets.
+
 A documentation or agent-instruction change has no executable observer for its meaning. One that changes what a
 reader must do is `evidence-required`: `npm run lint:docs` is its mechanical check, and the fresh review of the
 final tree is the named alternative to the executed mutation. One that only rewords is `preservation`, and
