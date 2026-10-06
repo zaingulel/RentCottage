@@ -46,16 +46,16 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 it.each([
-  ["en", "Confirmed booking is unavailable"],
-  ["ar", "الحجز المؤكد غير متاح"],
-  ["ckb", "حجزی پشتڕاستکراو بەردەست نییە"],
+  ["en", "Booking details are unavailable", "Your cottages"],
+  ["ar", "تفاصيل الحجز غير متاحة", "أكواخك"],
+  ["ckb", "وردەکارییەکانی حجز بەردەست نییە", "کۆتێجەکانت"],
 ])(
   "shows financial-load failure and a recovery link in %s",
-  async (locale, message) => {
+  async (locale, message, linkLabel) => {
     loadDetails.mockResolvedValue({ outcome: "unavailable" });
     render(await Page({ params: params(locale) }));
     expect(screen.getByRole("alert")).toHaveTextContent(message);
-    expect(screen.getByRole("link", { name: "RentCottage" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: linkLabel })).toHaveAttribute(
       "href",
       `/${locale}/owner/cottages`,
     );

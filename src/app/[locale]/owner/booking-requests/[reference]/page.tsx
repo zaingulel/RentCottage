@@ -8,12 +8,13 @@ import { loadBookingRequestDetails } from "@/booking-request/request-booking-req
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { isLocale } from "@/i18n/routing";
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
+import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { MessagingBookingLink } from "@/components/messaging-booking-link";
 
 const unavailableCopy = {
-  en: "Confirmed booking is unavailable",
-  ar: "الحجز المؤكد غير متاح",
-  ckb: "حجزی پشتڕاستکراو بەردەست نییە",
+  en: "Booking details are unavailable",
+  ar: "تفاصيل الحجز غير متاحة",
+  ckb: "وردەکارییەکانی حجز بەردەست نییە",
 } as const;
 
 export default async function OwnerConfirmedBookingPage({
@@ -50,7 +51,9 @@ export default async function OwnerConfirmedBookingPage({
       <main className="results-page">
         <section role="alert">
           <h1>{unavailableCopy[locale]}</h1>
-          <Link href={`/${locale}/owner/cottages`}>RentCottage</Link>
+          <Link href={`/${locale}/owner/cottages`}>
+            {cottageProfileMessages[locale].overviewTitle}
+          </Link>
         </section>
       </main>
     );
