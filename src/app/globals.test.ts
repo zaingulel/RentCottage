@@ -33,6 +33,23 @@ const tolerated = new Set([
 ]);
 const probe = document.createElement("span");
 
+const toleratedSection = (
+  readFileSync(join(process.cwd(), "docs", "DESIGN-SYSTEM.md"), "utf8").match(
+    /^## Tolerated literals\n([\s\S]*?)(?=^## )/m,
+  )?.[1] ?? ""
+).replace(/\s+/g, " ");
+const listedDeclarations = new Set(
+  [...toleratedSection.matchAll(/`([a-z-]+: [^`]+)`/g)].map(
+    ([, declaration]) => declaration,
+  ),
+);
+const listedTokens = new Set(
+  [...toleratedSection.matchAll(/`--([\w-]+)`/g)].map(([, name]) => name),
+);
+const scaledProperty =
+  /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
+const scaleToken = /^(?:space|font-size)-\d+$/;
+
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
 }
@@ -50,6 +67,15 @@ function isNamedColour(word: string) {
 
 function lineOf(source: string, index: number) {
   return source.slice(0, index).split("\n").length;
+}
+
+function lengthLiterals(property: string, value: string) {
+  return [
+    ...value
+      .replace(/var\([^()]*\)|"[^"]*"|'[^']*'/g, blank)
+      .replace(/,\s*[\d.]+v[a-z]+\s*,/g, blank)
+      .matchAll(/(?<![\w.#-])-?\d*\.?\d+([a-z]+)/gi),
+  ].filter(([, unit]) => !(property === "letter-spacing" && unit === "em"));
 }
 
 describe("stylesheet colour tokens", () => {
@@ -95,5 +121,65 @@ describe("stylesheet colour tokens", () => {
     );
 
     expect(undeclared).toEqual([]);
+  });
+});
+
+describe("stylesheet length tokens", () => {
+  it("keeps every spacing and text size length on the scale or in the tolerated list", () => {
+    const declarations = stylesheets.flatMap(({ file, source }) => {
+      const rest =
+        file === globalsFile ? source.replace(rootBlockPattern, blank) : source;
+      return [...rest.matchAll(/([\w-]+)\s*:([^;{}]*)(?=[;}])/g)]
+        .map((declaration) => ({
+          property: declaration[1],
+          value: declaration[2].replace(/\s+/g, " ").trim(),
+          line: lineOf(rest, declaration.index),
+        }))
+        .filter(
+          ({ property, value }) =>
+            scaledProperty.test(property) &&
+            !listedDeclarations.has(`${property}: ${value}`) &&
+            lengthLiterals(property, value).length > 0,
+        )
+        .map(
+          ({ property, value, line }) =>
+            `${file}:${line} ${property}: ${value}`,
+        );
+    });
+    const tokens = [...rootBlock.matchAll(/--([\w-]+)\s*:([^;{}]*)(?=[;}])/g)]
+      .filter(
+        ([, name, value]) =>
+          !scaleToken.test(name) &&
+          !listedTokens.has(name) &&
+          lengthLiterals(`--${name}`, value).length > 0,
+      )
+      .map(([, name]) => `--${name}`);
+    const hits = [...declarations, ...tokens];
+
+    expect(hits).toEqual([]);
+  });
+
+  it("lists no tolerated length the stylesheets do not write", () => {
+    const written = new Set(
+      stylesheets.flatMap(({ source }) =>
+        [...source.matchAll(/([\w-]+)\s*:([^;{}]*)(?=[;}])/g)].map(
+          ([, property, value]) =>
+            `${property}: ${value.replace(/\s+/g, " ").trim()}`,
+        ),
+      ),
+    );
+    const declared = new Set(
+      [...rootBlock.matchAll(/--([\w-]+)\s*:/g)].map(([, name]) => name),
+    );
+    const stale = [
+      ...[...listedDeclarations].filter(
+        (declaration) => !written.has(declaration),
+      ),
+      ...[...listedTokens]
+        .filter((name) => !declared.has(name))
+        .map((name) => `--${name}`),
+    ];
+
+    expect(stale).toEqual([]);
   });
 });
