@@ -43,7 +43,6 @@ const input: SubmissionInput = {
   acceptedInside48HourNoRefund: false,
   acceptanceEvidence: bookingRequestAcceptanceEvidence({
     locale: "en",
-    termsVersion: "fictional-local-test-2026-08-22-v1",
     requiresInside48HourNoRefundAcceptance: false,
   }),
 };

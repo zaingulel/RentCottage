@@ -57,7 +57,6 @@ const bookingRequestProps = {
   },
   bookingRequestAcceptanceEvidence: bookingRequestAcceptanceEvidence({
     locale: "en",
-    termsVersion: result.quote.termsVersion,
     requiresInside48HourNoRefundAcceptance: true,
   }),
 };

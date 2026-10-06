@@ -43,11 +43,9 @@ export function bookingRequestUiPolicy({
 
 export function bookingRequestAcceptanceEvidence({
   locale,
-  termsVersion,
   requiresInside48HourNoRefundAcceptance,
 }: {
   readonly locale: Locale;
-  readonly termsVersion: string;
   readonly requiresInside48HourNoRefundAcceptance: boolean;
 }): BookingRequestAcceptanceEvidence {
   const copy = bookingRequestMessages[locale];
@@ -55,7 +53,7 @@ export function bookingRequestAcceptanceEvidence({
     locale,
     cancellationPolicy: copy.cancellationPolicy,
     cancellationAcceptance: copy.acceptCancellation,
-    marketplaceTermsAcceptance: `${copy.acceptTerms} (${termsVersion})`,
+    marketplaceTermsAcceptance: copy.acceptTerms,
     inside48Warning: requiresInside48HourNoRefundAcceptance
       ? copy.inside48Warning
       : null,

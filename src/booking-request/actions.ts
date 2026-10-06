@@ -152,7 +152,6 @@ function inputFrom(
     evidence as unknown as BookingRequestAcceptanceEvidence;
   const expectedEvidence = bookingRequestAcceptanceEvidence({
     locale: input.locale,
-    termsVersion: BOOKING_TERMS_VERSION,
     requiresInside48HourNoRefundAcceptance:
       acceptanceEvidence.inside48Warning !== null,
   });
