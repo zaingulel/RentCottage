@@ -112,26 +112,10 @@
 
   --hero-headline-gap-rtl: 0.5em;
 
-  /* Booking Period disclosures and day groups */
-  --booking-period-space: 1rem;
-  --booking-period-inset: 0.75rem;
-  --booking-period-heading: 0.88rem;
-  --booking-period-target: 2.75rem;
-  --booking-period-focus-width: 2px;
-  --booking-period-focus-offset: 2px;
-  --booking-period-gap: 0.55rem;
-  --booking-option-gap: 0.2rem;
-  --booking-option-text: 0.92rem;
-  --booking-time-text: 0.82rem;
-
   /* Booking Request progress steps */
   --booking-progress-marker: 2rem;
-  --booking-progress-gap: 0.35rem;
-  --booking-progress-inset: 0.5rem;
-  --booking-progress-row-gap: 1rem;
-  --booking-progress-text-gap: 0.75rem;
-  --booking-progress-connector-gap: 0.25rem;
-  --booking-progress-card-gap: 1rem;
+  --booking-progress-inset: var(--space-2);
+  --booking-progress-row-gap: var(--space-4);
 }
 
 * {
@@ -1199,7 +1183,7 @@ a {
 
 .booking-summary .result-shifts {
   display: grid;
-  gap: var(--booking-period-gap);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1207,16 +1191,16 @@ a {
 
 .booking-summary .result-shifts > li {
   display: grid;
-  gap: var(--booking-option-gap);
-  padding-block-end: var(--booking-period-gap);
+  gap: var(--space-1);
+  padding-block-end: var(--space-2);
   border-block-end: 1px solid var(--line);
-  font-size: var(--booking-option-text);
+  font-size: var(--font-size-2);
   font-weight: 700;
 }
 
 .booking-summary .result-shifts bdi {
   color: var(--muted);
-  font-size: var(--booking-time-text);
+  font-size: var(--font-size-1);
   font-weight: 400;
 }
 
@@ -1413,21 +1397,21 @@ html[lang="ckb"] .booking-summary h2 {
 }
 
 .booking-period-disclosure {
-  margin-block-start: var(--booking-period-space);
+  margin-block-start: var(--space-4);
 }
 
 .booking-period-disclosure > summary {
   display: list-item;
-  min-block-size: var(--booking-period-target);
-  padding-block: var(--booking-period-inset);
+  min-block-size: 2.75rem;
+  padding-block: var(--space-3);
   color: var(--green);
   cursor: pointer;
   font-weight: 700;
 }
 
 .booking-period-disclosure > summary:focus-visible {
-  outline: var(--booking-period-focus-width) solid var(--gold);
-  outline-offset: var(--booking-period-focus-offset);
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .booking-period-disclosure > p {
@@ -1437,8 +1421,8 @@ html[lang="ckb"] .booking-summary h2 {
 .booking-period-options {
   min-inline-size: 0;
   margin: 0;
-  margin-block: var(--booking-period-space);
-  padding: var(--booking-period-inset);
+  margin-block: var(--space-4);
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: 0.75rem;
 }
@@ -1446,16 +1430,16 @@ html[lang="ckb"] .booking-summary h2 {
 .booking-period-options > legend,
 .result-service-day h3 {
   color: var(--green);
-  font-size: var(--booking-period-heading);
+  font-size: var(--font-size-2);
   font-weight: 700;
 }
 
 .result-service-day {
-  margin-block-start: var(--booking-period-space);
+  margin-block-start: var(--space-4);
 }
 
 .result-service-day h3 {
-  margin-block: 0 var(--booking-period-gap);
+  margin-block: 0 var(--space-2);
 }
 
 .booking-period-options .action,
@@ -2873,7 +2857,7 @@ section.request-follow-up {
 }
 
 .booking-request-progress-card {
-  margin-block-end: var(--booking-progress-card-gap);
+  margin-block-end: var(--space-4);
 }
 
 .booking-request-progress {
@@ -2889,7 +2873,7 @@ section.request-follow-up {
   display: grid;
   align-content: start;
   justify-items: start;
-  gap: var(--booking-progress-gap);
+  gap: var(--space-1);
   padding-inline-end: var(--booking-progress-inset);
 }
 
@@ -3011,7 +2995,7 @@ section.request-follow-up {
   .booking-request-progress > li {
     grid-template-columns: auto 1fr;
     align-items: center;
-    column-gap: var(--booking-progress-text-gap);
+    column-gap: var(--space-3);
     padding-inline-end: 0;
   }
 
@@ -3030,12 +3014,8 @@ section.request-follow-up {
   }
 
   .booking-request-progress > li:not(:last-child)::after {
-    inset-block: calc(
-        var(--booking-progress-marker) + var(--booking-progress-connector-gap)
-      )
-      calc(
-        var(--booking-progress-connector-gap) - var(--booking-progress-row-gap)
-      );
+    inset-block: calc(var(--booking-progress-marker) + var(--space-1))
+      calc(var(--space-1) - var(--booking-progress-row-gap));
     inset-inline: calc(var(--booking-progress-marker) / 2) auto;
     border-block-start: 0;
     border-inline-start: 1px solid var(--line);
