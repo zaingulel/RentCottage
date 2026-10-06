@@ -10,13 +10,14 @@ the code keeps them.
 - The only token block is `:root` in [globals.css](../src/app/globals.css). It holds every interface colour: the
   base palette `--background`, `--card`, `--ink`, `--muted`, `--green`, `--gold` and `--line`, then the groups
   Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
-  families `--display` and `--body`, the right-to-left hero headline gap `--hero-headline-gap-rtl`, and
-  `color-scheme: light`. Booking Period disclosures and day groups use the `--booking-period-*`,
-  `--booking-option-*` and `--booking-time-text` dimension tokens in that same block, and the progress steps use
-  its `--booking-progress-*` dimension tokens. There is no Tailwind and no theme object.
-- Interface colours and font families come from these tokens through `var(--…)`.
+  families `--display` and `--body`, the spacing scale `--space-1` to `--space-7`, the text size scale
+  `--font-size-1` to `--font-size-6`, the component tokens named under Spacing and text size, and
+  `color-scheme: light`. There is no Tailwind and no theme object.
+- Interface colours, font families, spacing and text sizes come from these tokens through `var(--…)`.
   [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside `:root` other than in an elevation
-  shadow, and on a custom property a stylesheet uses that `:root` does not declare.
+  shadow, on a custom property a stylesheet uses that `:root` does not declare, on a spacing or text size length
+  that is neither a scale step nor listed under Tolerated literals, and on a listed length that no stylesheet
+  writes.
 - A colour or font a change needs that the block lacks is added to `:root` in the same change, named for its role
   (what it is for, not what it looks like). Two roles may share a value, each with its own token; one role never
   has two tokens.
@@ -28,16 +29,62 @@ the code keeps them.
   `booking-financial-details`, `customer-reviews` and `owner-booking-earnings` in `src/components/`. A change
   styles a component where that component's styles already live.
 
+## Spacing and text size
+
+- Spacing steps `--space-1` to `--space-7` are 4, 8, 12, 16, 24, 32 and 48 pixels. Text size steps `--font-size-1`
+  to `--font-size-6` are 13, 15, 17, 20, 26 and 34 pixels. They are written in `rem`, so they follow the reader's
+  browser text size and the pixel figures are those at the browser default. `font-size` is never set on `html`,
+  which would redefine every step.
+- Every length in `margin`, `padding`, `gap` and `inset`, in any longhand or logical form, is a spacing step, and
+  every `font-size` is a text size step. A value between two steps takes the nearer one, and the larger one when it
+  is exactly halfway.
+- Body text is `--font-size-3`, set on `body`.
+- A fluid length is `clamp()` between two steps, and only its middle term is a viewport unit. A negative step is
+  `calc(-1 * var(--space-N))`. `calc()`, `min()` and `max()` combine steps, percentages and unitless numbers.
+- `line-height` is a unitless ratio and `letter-spacing` is written in `em`; neither is on a scale.
+- Sizing lengths are literals: `width`, `height`, `inline-size`, `block-size`, their `min-` and `max-` forms,
+  `flex-basis` and grid track sizes, including a gutter written inside one such as `calc(100% - 2.25rem)`. They are
+  the dimensions of controls, images, columns and reading widths, which a seven-step spacing scale cannot express.
+  New work reuses a size already in use.
+- A component token holds a length only when several declarations must share it. `--booking-progress-marker` is the
+  size of the progress step marker, which the connector line is positioned from. `--booking-progress-inset` and
+  `--booking-progress-row-gap` are names for `--space-2` and `--space-4`: the connector is positioned from the
+  step's end padding and the gap between rows, so each is declared once. `--hero-headline-gap-rtl` is `0.5em`, so
+  the gap under the Arabic-script hero headline follows the fluid headline size, which no step can do. New work
+  adds no component token for a spacing or text size value.
+
 ## Tolerated literals
 
 A stylesheet may write these as literals:
 
-- `0`, hairline `1px` borders, `50%` and `999px` for circles and pills.
-- Percentages and `fr` or flex sizing in layout.
+- `0`, `auto` and `inherit`, hairline `1px` borders, `50%` and `999px` for circles and pills.
+- Percentages and `fr` or flex sizing in layout, and the sizing lengths described under Spacing and text size.
 - `currentColor` and `transparent`.
 - Radius, stacking order and breakpoint values, and elevation `box-shadow` values including their colours, until
   #435 settles their scale. New work reuses a value already in use rather than inventing one.
 - A focus ring written as a `box-shadow` that starts `0 0 0` is not an elevation shadow: its colour is a token.
+- Border and outline widths and offsets, and lengths inside `background`, `transform`, `backdrop-filter` and
+  text-decoration properties. New work reuses a value already in use.
+- Unitless `line-height` ratios and `letter-spacing` in `em`.
+- The two component tokens that hold a length, `--hero-headline-gap-rtl` and `--booking-progress-marker`.
+- The home page hero composition, whose three lengths lie beyond the largest step. The search card overlaps the
+  photograph, and the copy clears the fixed header above it and the card below:
+  - `.retreat-copy { padding-block: 11rem 8.5rem }`
+  - `.retreat-copy { padding-block-end: 7.5rem }`
+  - `.retreat-search { margin-block-start: -4rem }`
+- Six display heading size declarations larger than the largest step, kept until #559 settles the page title style.
+  Two of them are written on a rule that two headings share, so each entry names the whole rule:
+  - `.retreat-copy h1 { font-size: clamp(2.5rem, 6vw, 4.4rem) }`
+  - `.retreat-copy h1 { font-size: clamp(2.25rem, 12vw, 3.3rem) }`
+  - `.results-intro h1 { font-size: clamp(2.6rem, 6vw, 4.5rem) }`
+  - `.profile-heading h1, .request-layout h1 { font-size: clamp(2.5rem, 6vw, 4rem) }`
+  - `.access-required-card h1 { font-size: clamp(2.2rem, 6vw, 3.5rem) }`
+  - `.section-heading h2, .trusted-copy h2 { font-size: clamp(2rem, 4vw, 3rem) }`
+
+The last three bullets are the complete list of spacing and text size exceptions.
+[globals.test.ts](../src/app/globals.test.ts) reads the backticked rule entries and token names in this section, and
+tolerates an entry's declaration only on the rule the entry names, so an entry is removed here when its declaration
+leaves that rule. New work uses a step and adds no entry.
 
 Anything else is a token.
 

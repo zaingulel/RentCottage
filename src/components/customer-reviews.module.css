@@ -1,8 +1,8 @@
 .section {
   display: grid;
-  gap: 0.875rem;
+  gap: var(--space-4);
   min-inline-size: 0;
-  padding: clamp(1rem, 3vw, 1.5rem);
+  padding: clamp(var(--space-4), 3vw, var(--space-5));
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--surface-bright);
@@ -11,10 +11,10 @@
 
 .page {
   display: grid;
-  gap: 1.25rem;
+  gap: var(--space-5);
   inline-size: min(100% - 2rem, 72rem);
   margin-inline: auto;
-  padding-block: clamp(2rem, 6vw, 5rem);
+  padding-block: clamp(var(--space-6), 6vw, var(--space-7));
   overflow-wrap: anywhere;
 }
 
@@ -24,12 +24,12 @@
 .identifiers,
 .audit {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-inline-size: 0;
 }
 
 .card {
-  padding: clamp(1rem, 3vw, 1.5rem);
+  padding: clamp(var(--space-4), 3vw, var(--space-5));
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--surface-bright);
@@ -39,7 +39,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .card small {
@@ -61,7 +61,7 @@
 
 .form {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .form fieldset {
@@ -74,15 +74,15 @@
 .rating {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-block-start: 0.5rem;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
 }
 
 .rating label {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.45rem 0.65rem;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: 0.6rem;
 }
