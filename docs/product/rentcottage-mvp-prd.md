@@ -176,7 +176,7 @@ These are launch gates, not missing product decisions:
 - Validate the proposed IQD 5,000 customer service fee with prospective customers.
 - Contract a licensed provider after sandbox and commercial validation. Qi Card is the first candidate; ZainCash and AsiaPay are alternatives.
 - Confirm the owner document checklist and retention schedule for federal Iraq and the Kurdistan Region.
-- Quality-test the selected AI translation approach with Arabic and Sorani reviewers, and approve its privacy and user-content handling terms, before launch.
+- Quality-test the selected AI translation approach through the AI evaluation in [#479](https://github.com/zaingulel/RentCottage/issues/479), with no human translation reviewer, and approve its privacy and user-content handling terms, before launch.
 - Confirm phone verification, urgent notification and map suppliers.
 
 ## 10. Sign-off
