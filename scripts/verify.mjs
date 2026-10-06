@@ -106,8 +106,6 @@ const baselineOnlyPaths = new Set([
   "AGENTS.md",
   "CLAUDE.md",
   "GLOSSARY.md",
-  // The glossary's former name, kept so the change that removes it classifies as baseline-only.
-  "CONTEXT.md",
   "scripts/run-log.mjs",
   "scripts/lib/run-log.test.mjs",
   // The licences the self-hosted font unit test reads. npm test proves them in
