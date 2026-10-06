@@ -39,5 +39,5 @@ A prospective owner applies directly without an invitation, prepares a private f
 - Validate online-payment willingness and the proposed IQD 5,000 customer fee with prospective Iraqi customers.
 - Select a Central Bank of Iraq-licensed payment provider only after it proves authorisation, later collection, release, refunds, disputes and lawful owner settlement.
 - Confirm the owner-document checklist and retention schedule for federal Iraq and the Kurdistan Region.
-- Quality-test the agreed AI translation approach with Arabic and Sorani reviewers, approve its privacy and user-content handling terms, and select phone verification, notification and map suppliers.
+- Quality-test the agreed AI translation approach through AI-only review under the [owner ruling on #99](https://github.com/zaingulel/RentCottage/issues/99#issuecomment-5929150305), approve its privacy and user-content handling terms, and select phone verification, notification and map suppliers.
 - Approve the cancellation, refund, customer, owner and support terms before launch.
