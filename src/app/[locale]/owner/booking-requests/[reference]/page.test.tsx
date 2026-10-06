@@ -54,7 +54,9 @@ it.each([
   async (locale, message, linkLabel) => {
     loadDetails.mockResolvedValue({ outcome: "unavailable" });
     render(await Page({ params: params(locale) }));
-    expect(screen.getByRole("alert")).toHaveTextContent(message);
+    expect(
+      within(screen.getByRole("alert")).getByRole("heading", { name: message }),
+    ).toBeVisible();
     expect(screen.getByRole("link", { name: linkLabel })).toHaveAttribute(
       "href",
       `/${locale}/owner/cottages`,
