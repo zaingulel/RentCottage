@@ -85,9 +85,82 @@ describe("PublicCottageResults", () => {
       expect(screen.getByRole("heading", { name: day })).toBeVisible();
       expect(screen.getByText(available)).toBeVisible();
       expect(screen.getByText(noPrice)).toBeVisible();
-      expect(screen.getByText(price)).toBeVisible();
+      expect(
+        within(screen.getAllByRole("listitem")[0]).getByText(price),
+      ).toBeVisible();
     },
   );
+
+  it("shows the from price with its fee note in every launch language", () => {
+    for (const [locale, label, price, note] of [
+      [
+        "en",
+        "From",
+        "IQD 60,000",
+        "Lowest price for one available shift on your dates, excluding the Booking Service Fee.",
+      ],
+      [
+        "ar",
+        "ابتداءً من",
+        "IQD 60,000",
+        "أقل سعر لمناوبة واحدة متاحة في تواريخك، دون احتساب رسوم خدمة الحجز.",
+      ],
+      [
+        "ckb",
+        "دەستپێک لە",
+        "IQD ٦٠٬٠٠٠",
+        "کەمترین نرخ بۆ یەک شیفتی بەردەست لە ڕۆژەکانی تۆ، بەبێ کرێی خزمەتگوزاریی حجز.",
+      ],
+    ] as const) {
+      const { unmount } = render(
+        <PublicCottageResults
+          locale={locale}
+          result={{ status: "loaded", cottages: [cottage] }}
+          query={query}
+          queryString=""
+        />,
+      );
+      const fromLine = screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent === `${label} ${price}`,
+      );
+      expect(fromLine).toHaveClass("result-from-price");
+      expect(within(fromLine).getByText(price).tagName).toBe("B");
+      expect(screen.getByText(note)).toBeVisible();
+      unmount();
+    }
+  });
+
+  it("shows the price unavailable wording instead of a from price when no available shift is priced", () => {
+    const unpriced = {
+      ...cottage,
+      inventory: [
+        { ...cottage.inventory[0], priceIqd: 60000, available: false },
+        {
+          ...cottage.inventory[1],
+          serviceDay: "2026-09-22",
+          priceIqd: 110000,
+          available: true,
+        },
+      ],
+    };
+    render(
+      <PublicCottageResults
+        locale="en"
+        result={{ status: "loaded", cottages: [unpriced] }}
+        query={query}
+        queryString=""
+      />,
+    );
+    const card = screen.getByRole("article");
+    const fromLine = within(card).getByText("Price unavailable");
+    expect(fromLine.tagName).toBe("P");
+    expect(fromLine).toHaveClass("result-from-price");
+    expect(within(card).queryByText(/From/)).toBeNull();
+    expect(within(card).queryByText(/Lowest price/)).toBeNull();
+    expect(card).not.toHaveTextContent(/IQD 0\b/);
+  });
   it("shows every individually priced option and partial availability without an aggregate", () => {
     const query = {
       from: "2026-09-22",

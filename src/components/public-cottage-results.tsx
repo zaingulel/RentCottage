@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
+import { fromPriceIqd } from "@/cottage-discovery/from-price";
 import type { CottageDiscoveryResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import { formatIqd, formatServiceDay } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
@@ -21,6 +22,9 @@ const copy = {
     noPrice: "السعر غير متاح",
     selected: "مرشح محدد",
     prices: "الأسعار لكل خيار. يشمل عرض السعر الدقيق رسوم خدمة الحجز.",
+    from: "ابتداءً من",
+    fromNote:
+      "أقل سعر لمناوبة واحدة متاحة في تواريخك، دون احتساب رسوم خدمة الحجز.",
   },
   ckb: {
     title: "کۆتێجە بەردەستەکان",
@@ -37,6 +41,9 @@ const copy = {
     selected: "پاڵاوتەی دیاریکراو",
     prices:
       "نرخەکان بۆ هەر هەڵبژاردەیەکن. پێشنیاری نرخی ورد کرێی خزمەتگوزاریی حجز لەخۆ دەگرێت.",
+    from: "دەستپێک لە",
+    fromNote:
+      "کەمترین نرخ بۆ یەک شیفتی بەردەست لە ڕۆژەکانی تۆ، بەبێ کرێی خزمەتگوزاریی حجز.",
   },
   en: {
     title: "Available cottages",
@@ -53,6 +60,9 @@ const copy = {
     selected: "Selected filter",
     prices:
       "Prices are per option. The exact quote includes the Booking Service Fee.",
+    from: "From",
+    fromNote:
+      "Lowest price for one available shift on your dates, excluding the Booking Service Fee.",
   },
 } as const;
 
@@ -85,79 +95,94 @@ export function PublicCottageResults({
         <p className="empty-results">{messages.empty}</p>
       ) : (
         <section className="results-grid" aria-label={messages.title}>
-          {result.cottages.map((cottage) => (
-            <article key={cottage.slug}>
-              {cottage.mediaUrls[0] ? (
-                <div className="result-image">
-                  <Image
-                    src={cottage.mediaUrls[0]}
-                    alt={cottage.name}
-                    fill
-                    sizes="(min-width: 900px) 33vw, 100vw"
-                  />
-                </div>
-              ) : null}
-              <div className="result-content">
-                <h2>{cottage.name}</h2>
-                <p>
-                  {messages.location}: {cottage.approximateLocation},{" "}
-                  {cottage.governorate}
-                </p>
-                <p>{messages.prices}</p>
-                {[
-                  ...new Set(cottage.inventory.map((unit) => unit.serviceDay)),
-                ].map((day) => (
-                  <section
-                    className="result-service-day"
-                    key={day}
-                    aria-label={formatServiceDay(day, locale)}
+          {result.cottages.map((cottage) => {
+            const fromPrice = fromPriceIqd(cottage.inventory);
+            return (
+              <article key={cottage.slug}>
+                {cottage.mediaUrls[0] ? (
+                  <div className="result-image">
+                    <Image
+                      src={cottage.mediaUrls[0]}
+                      alt={cottage.name}
+                      fill
+                      sizes="(min-width: 900px) 33vw, 100vw"
+                    />
+                  </div>
+                ) : null}
+                <div className="result-content">
+                  <h2>{cottage.name}</h2>
+                  <p>
+                    {messages.location}: {cottage.approximateLocation},{" "}
+                    {cottage.governorate}
+                  </p>
+                  {fromPrice === null ? (
+                    <p className="result-from-price">{messages.noPrice}</p>
+                  ) : (
+                    <>
+                      <p className="result-from-price">
+                        {messages.from} <b>{formatIqd(fromPrice, locale)}</b>
+                      </p>
+                      <p>{messages.fromNote}</p>
+                    </>
+                  )}
+                  <p>{messages.prices}</p>
+                  {[
+                    ...new Set(
+                      cottage.inventory.map((unit) => unit.serviceDay),
+                    ),
+                  ].map((day) => (
+                    <section
+                      className="result-service-day"
+                      key={day}
+                      aria-label={formatServiceDay(day, locale)}
+                    >
+                      <h3>{formatServiceDay(day, locale)}</h3>
+                      <ul className="result-shifts">
+                        {cottage.inventory
+                          .filter((unit) => unit.serviceDay === day)
+                          .map((unit) => (
+                            <li key={`${unit.kind}-${unit.position ?? "full"}`}>
+                              <span>
+                                {unit.kind === "full-day"
+                                  ? messages.fullDay
+                                  : unit.name}
+                              </span>
+                              <bdi dir="ltr">
+                                {unit.startTime}–{unit.endTime}
+                              </bdi>
+                              <b>
+                                {unit.priceIqd === null
+                                  ? messages.noPrice
+                                  : formatIqd(unit.priceIqd, locale)}
+                              </b>
+                              <span>
+                                {unit.available
+                                  ? messages.available
+                                  : messages.unavailableOption}
+                              </span>
+                              {query.selections.some(
+                                (selection) =>
+                                  selection.serviceDay === day &&
+                                  selection.kind === unit.kind &&
+                                  (selection.kind === "full-day" ||
+                                    selection.position === unit.position),
+                              ) && <span>{messages.selected}</span>}
+                            </li>
+                          ))}
+                      </ul>
+                    </section>
+                  ))}
+                  <ActionLink
+                    kind="secondary"
+                    width="full"
+                    href={`/${locale}/cottages/${cottage.slug}?${queryString}`}
                   >
-                    <h3>{formatServiceDay(day, locale)}</h3>
-                    <ul className="result-shifts">
-                      {cottage.inventory
-                        .filter((unit) => unit.serviceDay === day)
-                        .map((unit) => (
-                          <li key={`${unit.kind}-${unit.position ?? "full"}`}>
-                            <span>
-                              {unit.kind === "full-day"
-                                ? messages.fullDay
-                                : unit.name}
-                            </span>
-                            <bdi dir="ltr">
-                              {unit.startTime}–{unit.endTime}
-                            </bdi>
-                            <b>
-                              {unit.priceIqd === null
-                                ? messages.noPrice
-                                : formatIqd(unit.priceIqd, locale)}
-                            </b>
-                            <span>
-                              {unit.available
-                                ? messages.available
-                                : messages.unavailableOption}
-                            </span>
-                            {query.selections.some(
-                              (selection) =>
-                                selection.serviceDay === day &&
-                                selection.kind === unit.kind &&
-                                (selection.kind === "full-day" ||
-                                  selection.position === unit.position),
-                            ) && <span>{messages.selected}</span>}
-                          </li>
-                        ))}
-                    </ul>
-                  </section>
-                ))}
-                <ActionLink
-                  kind="secondary"
-                  width="full"
-                  href={`/${locale}/cottages/${cottage.slug}?${queryString}`}
-                >
-                  {messages.view}
-                </ActionLink>
-              </div>
-            </article>
-          ))}
+                    {messages.view}
+                  </ActionLink>
+                </div>
+              </article>
+            );
+          })}
         </section>
       )}
     </main>

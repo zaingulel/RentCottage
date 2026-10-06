@@ -284,6 +284,10 @@ _Avoid_: Payment-processing surcharge, hidden fee, owner commission
 The full amount authorized and captured from the customer, equal to the Booking Price plus the Booking Service Fee. The breakdown and total are preserved in the Booking Snapshot.
 _Avoid_: Booking Price, owner payout, refundable damage deposit
 
+**From Price**:
+The lowest applicable price of one available Cottage Shift across the Service Days of a Cottage Search, shown on each search result so customers can compare cottages. It applies the Date Price Override, Day-of-Week Price Override and Shift Price precedence, excludes the Booking Service Fee and never uses a Full-Day Bundle price.
+_Avoid_: Booking Price, Customer Total, quote total, cheapest Full-Day Bundle
+
 **Marketplace Commission**:
 RentCottage's share of the Booking Price, deducted from the cottage owner's payout. The MVP rate is 10%; the rate and amount are preserved in the Booking Snapshot. Payment-provider costs and the separate Booking Service Fee do not change the commission basis.
 _Avoid_: Customer service fee, payment-processing surcharge, percentage of Customer Total

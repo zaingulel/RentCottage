@@ -1026,6 +1026,12 @@ a {
   font-size: var(--font-size-2);
 }
 
+.result-content .result-from-price {
+  margin-block: var(--space-2) var(--space-1);
+  color: var(--ink);
+  font-size: var(--font-size-3);
+}
+
 .result-shifts {
   display: grid;
   gap: var(--space-1);
