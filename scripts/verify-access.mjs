@@ -1131,6 +1131,7 @@ export async function main(
     } catch (error) {
       failedCleanup = true;
       reportFailure("shared-cleanup", lastAttemptedCommand);
+      // eslint-disable-next-line no-unsafe-finally -- a cleanup that threw must fail loudly after it is reported
       throw error;
     } finally {
       process.off("SIGINT", handleSigint);
