@@ -38,7 +38,7 @@ the code keeps them.
 - Every length in `margin`, `padding`, `gap` and `inset`, in any longhand or logical form, is a spacing step, and
   every `font-size` is a text size step. A value between two steps takes the nearer one, and the larger one when it
   is exactly halfway.
-- Body text is `--font-size-3`, set on `body`; form fields inherit it.
+- Body text is `--font-size-3`, set on `body`.
 - A fluid length is `clamp()` between two steps, and only its middle term is a viewport unit. A negative step is
   `calc(-1 * var(--space-N))`. `calc()`, `min()` and `max()` combine steps, percentages and unitless numbers.
 - `line-height` is a unitless ratio and `letter-spacing` is written in `em`; neither is on a scale.
@@ -67,18 +67,24 @@ A stylesheet may write these as literals:
   text-decoration properties. New work reuses a value already in use.
 - Unitless `line-height` ratios and `letter-spacing` in `em`.
 - The two component tokens that hold a length, `--hero-headline-gap-rtl` and `--booking-progress-marker`.
-- The home page hero composition, whose lengths lie beyond the largest step: `padding-block: 11rem 8.5rem`,
-  `padding-block-end: 7.5rem` and `margin-block-start: -4rem`. The search card overlaps the photograph, and the
-  copy clears the fixed header above it and the card below.
-- Six display heading sizes larger than the largest step, kept until #559 settles the page title style:
-  `font-size: clamp(2.5rem, 6vw, 4.4rem)` and `font-size: clamp(2.25rem, 12vw, 3.3rem)` on `.retreat-copy h1`,
-  `font-size: clamp(2.6rem, 6vw, 4.5rem)` on `.results-intro h1`, `font-size: clamp(2.5rem, 6vw, 4rem)` on
-  `.request-layout h1`, `font-size: clamp(2.2rem, 6vw, 3.5rem)` on `.access-required-card h1` and
-  `font-size: clamp(2rem, 4vw, 3rem)` on `.trusted-copy h2`.
+- The home page hero composition, whose three lengths lie beyond the largest step. The search card overlaps the
+  photograph, and the copy clears the fixed header above it and the card below:
+  - `.retreat-copy { padding-block: 11rem 8.5rem }`
+  - `.retreat-copy { padding-block-end: 7.5rem }`
+  - `.retreat-search { margin-block-start: -4rem }`
+- Six display heading size declarations larger than the largest step, kept until #559 settles the page title style.
+  Two of them are written on a rule that two headings share, so each entry names the whole rule:
+  - `.retreat-copy h1 { font-size: clamp(2.5rem, 6vw, 4.4rem) }`
+  - `.retreat-copy h1 { font-size: clamp(2.25rem, 12vw, 3.3rem) }`
+  - `.results-intro h1 { font-size: clamp(2.6rem, 6vw, 4.5rem) }`
+  - `.profile-heading h1, .request-layout h1 { font-size: clamp(2.5rem, 6vw, 4rem) }`
+  - `.access-required-card h1 { font-size: clamp(2.2rem, 6vw, 3.5rem) }`
+  - `.section-heading h2, .trusted-copy h2 { font-size: clamp(2rem, 4vw, 3rem) }`
 
 The last three bullets are the complete list of spacing and text size exceptions.
-[globals.test.ts](../src/app/globals.test.ts) reads the backticked declarations and token names in this section, so
-an entry is removed here when its declaration leaves the stylesheets. New work uses a step and adds no entry.
+[globals.test.ts](../src/app/globals.test.ts) reads the backticked rule entries and token names in this section, and
+tolerates an entry's declaration only on the rule the entry names, so an entry is removed here when its declaration
+leaves that rule. New work uses a step and adds no entry.
 
 Anything else is a token.
 
