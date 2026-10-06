@@ -164,7 +164,12 @@ the browser matrix runs two Next.js shards, two Worker file groups, the schedule
 Each Worker group lists and executes its selected files without native sharding.
 The required `test` check passes only when the baseline and every matrix portion succeed. The database and browser
 matrices select every check, except for a change touching only documentation or workflow instructions, where they
-run nothing. The hosted preview is smoked with
+run nothing. For the `resume` skill's deliver step, the hosted `test` check therefore runs the full local check,
+`npm run verify`: the same baseline steps, and, unless the change touches only documentation or workflow
+instructions, every database and browser check, which is at least the groups a local run selects from the same
+changed paths, on a rebased head as on any other. For a change touching only documentation or workflow instructions
+both run the baseline alone. No hosted job runs `npm run verify -- --full` as one command or `npm run lint:docs`;
+each reruns locally on a new head. The hosted preview is smoked with
 `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
 
 The authoritative desktop exclusion list is in [playwright.config.ts](../playwright.config.ts). These eleven
