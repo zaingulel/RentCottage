@@ -8,23 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { gitEnvironment, MANIFEST_PATH, readManifest, regionText, verifyManifest } from './factory-sync.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const CLOSEOUT = readFileSync(resolve(ROOT, '.agents/skills/closeout/SKILL.md'), 'utf8');
 const RESUME = readFileSync(resolve(ROOT, '.agents/skills/resume/SKILL.md'), 'utf8');
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-test('closeout removes the linked job worktree before deleting its branch', () => {
-  const match = CLOSEOUT.match(/^5\. \*\*Branch and worktree\.\*\*([\s\S]*?)(?=^6\. \*\*Rulings\.\*\*)/m);
-  assert.ok(match, 'closeout step 5 must exist');
-
-  const jobCleanup = match[1].indexOf('Leave the job worktree through');
-  assert.notEqual(jobCleanup, -1, 'step 5 must carry the job worktree cleanup passage');
-  const step = match[1].slice(jobCleanup);
-  const removeWorktree = step.indexOf('`git worktree remove <path>`');
-  const deleteBranch = step.indexOf('`git branch -d job/<issue>`');
-  assert.notEqual(removeWorktree, -1, 'step 5 must remove the exact job worktree');
-  assert.notEqual(deleteBranch, -1, 'step 5 must ordinarily delete the job branch');
-  assert.ok(removeWorktree < deleteBranch, 'step 5 must remove the linked worktree before deleting its branch');
-});
 
 // Independent oracle for the resume skill's parallel-slice route: Git runs its commands verbatim. Recurring cost: one
 // disposable repository and about fifteen Git subprocesses. Remove if builders no longer run parallel slices.
@@ -142,6 +127,20 @@ test('Git permits job branch deletion only after its linked worktree is removed'
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
+});
+
+// `git worktree remove` deletes ignored files without refusing, so each status read that precedes one must list
+// them. Recurring cost: one file read.
+test('every worktree status read in closeout also lists ignored files', () => {
+  const closeout = readFileSync(resolve(ROOT, '.agents/skills/closeout/SKILL.md'), 'utf8').replace(/\s+/g, ' ');
+  const statusReads = [...closeout.matchAll(/`([^`]*)`/g)].map(match => match[1]).filter(span => span.includes('status --porcelain'));
+
+  assert.ok(statusReads.length >= 2, 'closeout must read worktree status for a leftover worktree and for the job worktree');
+  assert.deepEqual(
+    statusReads,
+    statusReads.map(() => 'git -C <path> status --porcelain --untracked-files=normal --ignored=matching'),
+    'a worktree status read in closeout omits ignored files, which `git worktree remove` deletes without refusing',
+  );
 });
 
 test('the resume work-pick query requests parent and up to 50 blockers', () => {

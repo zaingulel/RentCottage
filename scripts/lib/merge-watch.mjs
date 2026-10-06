@@ -1,13 +1,15 @@
 // merge-watch.mjs — watches one pull request until it merges or can no longer merge unattended.
 //
-// Read-only: every `gh` call reads pull request state, branch protection, rulesets or checks.
+// Read-only: every `gh` call reads pull request state, branch protection, rulesets, checks or workflow runs.
 // `gh pr checks --required` lists a check only once GitHub has created its run, so the full
 // required set is read first, from the base branch's classic protection and every page of its
-// rules; a required name the checks have not listed yet counts as `unreported`. The first `gh`
+// rules; a required name the checks have not listed yet counts as `unreported`. So does a failed
+// required check while a newer run of the same workflow on the same head commit has not finished,
+// because that run will report the check again. The first `gh`
 // failure stops the watch with no retry and no further read, and so does a successful reply it cannot read: a
 // required-check list that is not a list of names, a pull request state or merge state it does not know,
-// or a required check without a known bucket. There is no wall-clock cap: the caller's runtime
-// waits on the process itself.
+// a required check without a known bucket, or a workflow run or run list without the fields the
+// watch compares. There is no wall-clock cap: the caller's runtime waits on the process itself.
 
 export const WATCH_INTERVAL_MS = 30_000;
 
@@ -55,11 +57,39 @@ function readRequiredSet(pr, ghExec) {
   return { classic, ruled };
 }
 
-// One bucket per reported required check, plus `unreported` for each required name not listed yet.
+// A check's link names its Actions run; a check from outside Actions has no such link.
+const ACTIONS_RUN_LINK = /\/actions\/runs\/(\d+)(?:\/|$)/;
+
+// The workflow run statuses GitHub reports before a run completes.
+const UNFINISHED_RUN_STATUSES = new Set(['requested', 'queued', 'pending', 'waiting', 'in_progress']);
+
+// True when a newer run of the failed check's own workflow on the same head commit has not finished,
+// so the check will be reported again. `run_number` rises with each new run of one workflow.
+function supersededByNewerRun(link, ghExec) {
+  const runId = ACTIONS_RUN_LINK.exec(link)?.[1];
+  if (runId === undefined) return false;
+  const { workflow_id, run_number, head_sha } = JSON.parse(ghExec(['api', `repos/{owner}/{repo}/actions/runs/${runId}`]));
+  if (!Number.isInteger(workflow_id) || !Number.isInteger(run_number) || !/^[0-9a-f]{40}$/.test(head_sha)) {
+    throw new Error(`unreadable workflow run ${runId}: ${JSON.stringify({ workflow_id, run_number, head_sha })}`);
+  }
+  const { workflow_runs } = JSON.parse(
+    ghExec(['api', `repos/{owner}/{repo}/actions/workflows/${workflow_id}/runs?head_sha=${head_sha}`]),
+  );
+  if (
+    !Array.isArray(workflow_runs)
+    || !workflow_runs.every((run) => Number.isInteger(run?.run_number) && typeof run.status === 'string')
+  ) {
+    throw new Error(`unreadable workflow runs: ${JSON.stringify(workflow_runs ?? null)}`);
+  }
+  return workflow_runs.some((run) => run.run_number > run_number && UNFINISHED_RUN_STATUSES.has(run.status));
+}
+
+// One bucket per reported required check, plus `unreported` for each required name not listed yet. A
+// failed check superseded by a newer unfinished run of its workflow counts as `unreported` too.
 function readRequiredBuckets(pr, required, ghExec) {
   let checks;
   try {
-    checks = JSON.parse(ghExec(['pr', 'checks', pr, '--required', '--json', 'name,bucket']));
+    checks = JSON.parse(ghExec(['pr', 'checks', pr, '--required', '--json', 'name,bucket,link']));
   } catch (err) {
     if (!failureText(err).includes(NOTHING_REPORTED)) throw err;
     return required.size === 0 ? [] : ['unreported'];
@@ -72,7 +102,10 @@ function readRequiredBuckets(pr, required, ghExec) {
   }
   const reported = new Set(checks.map((check) => check.name));
   const unreported = [...required].filter((name) => !reported.has(name)).map(() => 'unreported');
-  return [...unreported, ...checks.map((check) => check.bucket)];
+  const buckets = checks.map((check) => (
+    check.bucket === 'fail' && supersededByNewerRun(check.link, ghExec) ? 'unreported' : check.bucket
+  ));
+  return [...unreported, ...buckets];
 }
 
 // Resolves to { exitCode, reason }: 0 only when the pull request merged, 1 for every other stop.

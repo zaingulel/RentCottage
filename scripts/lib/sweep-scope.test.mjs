@@ -504,21 +504,24 @@ test('the check refuses raw text the parser swallows that hides markup (E14b)', 
 });
 
 // The guard's own sources list destinations that must not be trusted, so they are excluded from the
-// search that decides what the repository vouches for. Pinned through the real check script, whose
-// `knownInTree` calls the shared argument builder. The second run plants the same content at an
-// ordinary path, so the first cannot pass on a search that finds nothing anywhere.
-test('the tree does not vouch for a destination only a guard source carries (E12)', () => {
+// search that decides what the repository vouches for, in whatever folder they sit. Pinned through the
+// real check script, whose `knownInTree` calls the shared argument builder. The root plants pin that
+// `**/` matches the root; the `copy/` plants pin a second copy of the sources kept in another folder.
+// The last run plants the same content at an ordinary path, so the others cannot pass on a search that
+// finds nothing anywhere.
+test('the tree does not vouch for a destination only a guard source carries (E12)', async (t) => {
   const PLANT = 'export const ROWS = [{ id: \'X\', line: \'[x](https://evil.icu/in)\' }];\n';
   const EDIT = 'See [docs](https://evil.icu/in).\n';
-
-  const guarded = repo({
-    documents: { 'docs/ALLOWED.md': '', 'scripts/lib/sweep-scope-corpus.mjs': PLANT },
-    mayEdit: ['docs/ALLOWED.md'],
-  });
-  guarded.write('docs/ALLOWED.md', EDIT);
-  const refused = guarded.check(guarded.commit('edit vouched only by a guard source'));
-  assert.equal(refused.status, 1, refused.stdout);
-  assert.match(refused.stderr, /https:\/\/evil\.icu\/in/);
+  for (const path of ['scripts/lib/sweep-scope-corpus.mjs', 'scripts/sweep-scope-check.mjs',
+    'copy/scripts/lib/sweep-scope-corpus.mjs', 'copy/scripts/sweep-scope-check.mjs']) {
+    await t.test(path, () => {
+      const guarded = repo({ documents: { 'docs/ALLOWED.md': '', [path]: PLANT }, mayEdit: ['docs/ALLOWED.md'] });
+      guarded.write('docs/ALLOWED.md', EDIT);
+      const refused = guarded.check(guarded.commit('edit vouched only by a guard source'));
+      assert.equal(refused.status, 1, refused.stdout);
+      assert.match(refused.stderr, /https:\/\/evil\.icu\/in/);
+    });
+  }
 
   const ordinary = repo({
     documents: { 'docs/ALLOWED.md': '', 'docs/NOTES.md': PLANT },

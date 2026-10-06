@@ -33,7 +33,7 @@ function scenarioReply(args, scenario) {
       scenario.n += 1;
       return step(scenario.n).view;
     }
-    if (args[1] === 'checks' && args.includes('--required') && flag('--json') === 'name,bucket') {
+    if (args[1] === 'checks' && args.includes('--required') && flag('--json') === 'name,bucket,link') {
       return step(scenario.n).checks;
     }
     return refuse('unexpected pr call');
@@ -48,6 +48,9 @@ function scenarioReply(args, scenario) {
       if (code !== 0) return scenario.rules;
       if (!args.includes('--paginate')) return [0, JSON.stringify(pages[0])];
       return [0, args.includes('--slurp') ? JSON.stringify(pages) : pages.map((page) => JSON.stringify(page)).join('')];
+    }
+    if (path.startsWith('repos/{owner}/{repo}/actions/')) {
+      return scenario.actions[path.slice('repos/{owner}/{repo}/actions/'.length)] ?? refuse('unknown actions path');
     }
     return refuse('the base branch was not substituted');
   }
@@ -79,11 +82,12 @@ const MERGED = { view: view('MERGED', 'CLEAN'), checks: checks({ test: 'pass', '
 // The base branch requires `classic` through classic protection and `ruled` through a ruleset; the default union is
 // split across the two sources so dropping either read shows. The rules come as two pages, the ruleset's checks on
 // page two so reading page one alone shows; `extraRules` joins page two. `branch` or `rules` replaces that read's
-// reply, and `base` the base-branch read's.
-function createScenario(steps, { classic = ['test'], ruled = ['sweep-scope'], extraRules = [], base, branch, rules } = {}) {
+// reply, and `base` the base-branch read's. `actions` maps a path under `actions/` to its reply.
+function createScenario(steps, { classic = ['test'], ruled = ['sweep-scope'], extraRules = [], base, branch, rules, actions = {} } = {}) {
   return {
     steps,
     n: 0,
+    actions,
     base: base ?? [0, JSON.stringify({ baseRefName: 'trunk' })],
     branch: branch ?? [0, JSON.stringify({ protection: { required_status_checks: { contexts: classic } } })],
     rules: rules ?? [0, [
@@ -112,6 +116,7 @@ function callKind([group, command, ...rest]) {
   if (group === 'pr' && command === 'view') return rest.includes('baseRefName') ? 'base' : 'view';
   if (group === 'pr' && command === 'checks') return 'checks';
   if (group === 'api' && command === 'rate_limit') return 'rate_limit';
+  if (group === 'api' && [command, ...rest].some((arg) => arg.startsWith('repos/{owner}/{repo}/actions/'))) return 'actions';
   if (group === 'api') return [command, ...rest].some((arg) => arg.includes('/rules/branches/')) ? 'rules' : 'branch';
   return 'other';
 }
@@ -294,6 +299,136 @@ test('the watch keeps waiting through BLOCKED while a required check from either
     assert.equal(waiting.reads, 3);
     assert.equal(waiting.sleeps.length, 2);
     assert.equal(waiting.last, 'merged');
+  }
+});
+
+test('the watch keeps waiting on a failed required check while a newer unfinished run of the same workflow on the same head will report it again', async () => {
+  const head = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+  const staleFailure = [0, JSON.stringify([
+    { name: 'test', bucket: 'fail', link: 'https://github.com/owner/repo/actions/runs/41/job/77' },
+    { name: 'sweep-scope', bucket: 'pass', link: 'https://github.com/owner/repo/actions/runs/52/job/78' },
+  ])];
+  for (const status of ['requested', 'queued', 'pending', 'waiting', 'in_progress']) {
+    const superseded = await watch(
+      [
+        { view: OPEN_BLOCKED, checks: staleFailure },
+        { view: OPEN_BLOCKED, checks: checks({ test: 'pending', 'sweep-scope': 'pass' }) },
+        MERGED,
+      ],
+      {
+        actions: {
+          'runs/41': [0, JSON.stringify({ workflow_id: 9, run_number: 4, head_sha: head })],
+          [`workflows/9/runs?head_sha=${head}`]: [0, JSON.stringify({
+            workflow_runs: [{ run_number: 5, status }, { run_number: 4, status: 'completed' }],
+          })],
+        },
+      },
+    );
+    assert.equal(superseded.last, 'merged', `a failure superseded by a ${status} run must not stop the wait`);
+    assert.equal(superseded.status, 0);
+    assert.deepEqual(superseded.sleeps, [30_000, 30_000]);
+    assert.deepEqual(
+      superseded.calls.filter((call) => callKind(call) === 'actions'),
+      [['api', 'repos/{owner}/{repo}/actions/runs/41'], ['api', `repos/{owner}/{repo}/actions/workflows/9/runs?head_sha=${head}`]],
+      'the failed check must be judged by its own run, then by its workflow\'s runs on that head',
+    );
+  }
+});
+
+test('a failed required check still stops the watch when no newer unfinished run of its own workflow exists', async () => {
+  const head = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+  const testLink = 'https://github.com/owner/repo/actions/runs/41/job/77';
+  const sweepLink = 'https://github.com/owner/repo/actions/runs/52/job/78';
+  const failedTest = (link) => [
+    { name: 'test', bucket: 'fail', ...(link === undefined ? {} : { link }) },
+    { name: 'sweep-scope', bucket: 'pass', link: sweepLink },
+  ];
+  // The failed `test` check's own run is run number 4 of workflow 9; `runs` is that workflow's list on the head.
+  const testRuns = (runs) => ({
+    'runs/41': [0, JSON.stringify({ workflow_id: 9, run_number: 4, head_sha: head })],
+    [`workflows/9/runs?head_sha=${head}`]: [0, JSON.stringify({ workflow_runs: runs })],
+  });
+  const sweepRuns = {
+    'runs/52': [0, JSON.stringify({ workflow_id: 12, run_number: 8, head_sha: head })],
+    [`workflows/12/runs?head_sha=${head}`]: [0, JSON.stringify({ workflow_runs: [{ run_number: 8, status: 'completed' }] })],
+  };
+  for (const [label, rows, actions, reason] of [
+    ['only its own run, completed', failedTest(testLink), testRuns([{ run_number: 4, status: 'completed' }]), 'a required check failed: fail pass'],
+    ['its own run still in progress', failedTest(testLink), testRuns([{ run_number: 4, status: 'in_progress' }]), 'a required check failed: fail pass'],
+    ['a newer run that completed', failedTest(testLink), testRuns([{ run_number: 5, status: 'completed' }, { run_number: 4, status: 'completed' }]), 'a required check failed: fail pass'],
+    ['an older run in progress', failedTest(testLink), testRuns([{ run_number: 4, status: 'completed' }, { run_number: 3, status: 'in_progress' }]), 'a required check failed: fail pass'],
+    ['a link outside Actions', failedTest('https://ci.example.com/builds/41'), undefined, 'a required check failed: fail pass'],
+    ['no link at all', failedTest(undefined), undefined, 'a required check failed: fail pass'],
+    [
+      'a superseded test beside a failed sweep-scope whose own run is not superseded',
+      [{ name: 'test', bucket: 'fail', link: testLink }, { name: 'sweep-scope', bucket: 'fail', link: sweepLink }],
+      { ...testRuns([{ run_number: 5, status: 'in_progress' }, { run_number: 4, status: 'completed' }]), ...sweepRuns },
+      'a required check failed: unreported fail',
+    ],
+  ]) {
+    const failed = await watch([{ view: OPEN_BLOCKED, checks: [0, JSON.stringify(rows)] }, MERGED], { actions });
+    assert.equal(failed.last, reason, `${label} must print the failure as the last line`);
+    assert.equal(failed.status, 1, `${label} must stop the wait`);
+    assert.equal(failed.reads, 1, `${label} must stop on the first pass`);
+    assert.deepEqual(failed.sleeps, [], `${label} must not wait and read again`);
+    if (actions === undefined) {
+      assert.equal(failed.calls.filter((call) => callKind(call) === 'actions').length, 0, `${label} must read no workflow run`);
+    }
+  }
+});
+
+test('the watch exits 1 on its first pass when a workflow run reply it needs cannot be read', async () => {
+  const head = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+  const failedTest = [0, JSON.stringify([
+    { name: 'test', bucket: 'fail', link: 'https://github.com/owner/repo/actions/runs/41/job/77' },
+    { name: 'sweep-scope', bucket: 'pass', link: 'https://github.com/owner/repo/actions/runs/52/job/78' },
+  ])];
+  const runRead = ['api', 'repos/{owner}/{repo}/actions/runs/41'];
+  const listRead = ['api', `repos/{owner}/{repo}/actions/workflows/9/runs?head_sha=${head}`];
+  const readableRun = [0, JSON.stringify({ workflow_id: 9, run_number: 4, head_sha: head })];
+  const badGateway = [1, 'HTTP 502: Bad Gateway (https://api.github.com/repos/owner/repo/actions/runs/41)'];
+  // A run list the watch must refuse, given as the JSON GitHub would send so the reason quotes it back exactly.
+  const unreadableList = (label, runs) => [
+    label,
+    { 'runs/41': readableRun, [`workflows/9/runs?head_sha=${head}`]: [0, `{"workflow_runs":${runs}}`] },
+    `unreadable workflow runs: ${runs}`,
+    [runRead, listRead],
+  ];
+  for (const [label, actions, reason, reads] of [
+    ['a run reply without its fields', { 'runs/41': [0, '{}'] }, 'unreadable workflow run 41: {}', [runRead]],
+    [
+      'a run reply whose head is a branch name',
+      { 'runs/41': [0, JSON.stringify({ workflow_id: 9, run_number: 4, head_sha: 'main' })] },
+      'unreadable workflow run 41: {"workflow_id":9,"run_number":4,"head_sha":"main"}',
+      [runRead],
+    ],
+    [
+      'a run list reply without its list',
+      { 'runs/41': readableRun, [`workflows/9/runs?head_sha=${head}`]: [0, '{}'] },
+      'unreadable workflow runs: null',
+      [runRead, listRead],
+    ],
+    [
+      'a run list that is not a list',
+      { 'runs/41': readableRun, [`workflows/9/runs?head_sha=${head}`]: [0, JSON.stringify({ workflow_runs: {} })] },
+      'unreadable workflow runs: {}',
+      [runRead, listRead],
+    ],
+    unreadableList('a run list entry without a run number', '[{"status":"queued"}]'),
+    unreadableList('a run list entry whose run number is a string', '[{"run_number":"5","status":"queued"}]'),
+    unreadableList('a null entry after a newer queued run', '[{"run_number":5,"status":"queued"},null]'),
+    unreadableList('a null entry before a newer queued run', '[null,{"run_number":5,"status":"queued"}]'),
+    unreadableList('a run list entry without a status', '[{"run_number":5}]'),
+    unreadableList('a newer run whose status is null', '[{"run_number":5,"status":null},{"run_number":4,"status":"completed"}]'),
+    ['a gh failure on the run read',{ 'runs/41': badGateway }, badGateway[1], [runRead]],
+  ]) {
+    const unreadable = await watch([{ view: OPEN_BLOCKED, checks: failedTest }, MERGED], { actions });
+    assert.equal(unreadable.last, reason, `${label} must print its reason as the last line`);
+    assert.equal(unreadable.status, 1, `${label} must stop the wait`);
+    assert.equal(unreadable.reads, 1, `${label} must stop on the first pass`);
+    assert.deepEqual(unreadable.sleeps, [], `${label} must not wait and read again`);
+    assert.deepEqual(unreadable.calls.filter((call) => callKind(call) === 'actions'), reads, `${label} must make no further workflow run read`);
+    assert.equal(callKind(unreadable.calls.at(-1)), 'actions', `nothing may be read after ${label}`);
   }
 });
 

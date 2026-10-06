@@ -103,18 +103,23 @@ safeguards remain.
 
 The same rule covers leftovers. A leftover is a file, folder, worktree or branch the workflow made that a session
 finds, in any session, job or not, and that the paragraph above does not settle: another job's or session's
-artifact, or one of its own job's that it cannot prove it created. The session investigates each leftover to a
-conclusion before it reports it, and tells the owner the outcome in every case. It reads the content, timestamps
-and owner and checks whether anything uses it; for a worktree or branch it also reads the card's state and latest
-`Claim:`, the pull request's state, and whether any work is unmerged. Work is unmerged when a commit is neither an
-ancestor of `origin/main` nor contained in the head of a merged pull request, or when a change is uncommitted or
-untracked.
+artifact, or one of its own job's that it cannot prove it created. What makes something a leftover is where it
+sits and what made it, never what its text mentions: a job worktree, a job or slice branch, or a file or folder in
+a place the workflow writes job artifacts, which are a job worktree, a worklog folder and a session's scratch
+folder. A runtime's memory, settings or configuration is never a leftover, wherever it sits and whichever card it
+names. The session investigates each leftover to a conclusion before it reports it, and tells the owner the
+outcome in every case. It reads the content, timestamps and owner and checks whether anything uses it; for a
+worktree or branch it also reads the card's state and latest `Claim:`, the pull request's state, and whether any
+work is unmerged. Work is unmerged when a commit is neither an ancestor of `origin/main` nor contained in the head
+of a merged pull request, or when a change is uncommitted or untracked.
 
-- Dead: the work it belongs to is merged or closed, nothing is unmerged and nothing uses it. The session deletes
-  it without further approval and reports the exact path and the evidence in one line.
+- Dead: the work it belongs to is merged or closed, nothing is unmerged, nothing uses it, and no open card or open
+  pull request names it. The session deletes it without further approval and reports the exact path and the
+  evidence in one line.
 - Live: an open card with a recent claim, unmerged work, or in use. The session leaves it and reports what it is.
-- Unsettled: the investigation cannot show it dead or live, or cannot tie it to a card, pull request or branch.
-  The session leaves it and asks the owner about that exact path, giving its findings and a recommendation.
+- Unsettled: the investigation cannot show it dead or live, cannot show the workflow made it, or cannot tie it to
+  a card, pull request or branch. The session leaves it and asks the owner about that exact path, giving its
+  findings and a recommendation.
 
 "Not in use right now" alone is never proof that a leftover is dead, and neither is a name pattern, memory or
 summary. An owner file or a tracked deliverable is never a leftover. A safeguard's refusal keeps the target and is
@@ -169,45 +174,55 @@ from the job worktree (`git push origin HEAD:main`), its commit carrying `Closes
 workflow runs. The gate alone decides what qualifies: documentation by its path and, where the gate judges changed
 lines, a setting-only seat change. A repository without that gate has no direct route. The documentation sweep and its
 day-after triage follow [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) when the
-Conventions table marks them active. New executable machinery in the workflow itself, including test scripts, harnesses,
-runners, and test-only tools (product code and ordinary tests added to existing suites are exempt), needs one of: a
-control failure a sentence here or in a skill could not prevent twice, the same measurable friction across three
-independent jobs, a required new runtime or provider integration, or externally imposed security or platform drift. The
-friction route admits machinery only after the card's What to build names the friction and what doing less was tried
-first: fewer checks, deleted work, or a native feature. A store, cache, capture, retry, route, tracked input or repeated
-run added to existing machinery meets the same bar as new machinery. Prefer a native feature over custom code, a hook
-over a script, and a sentence over a hook. Rewriting, shrinking or deleting existing code, tests or tooling is always
-allowed when it is the right change for speed or quality, planned and reviewed like any other change, with the owner
-gates and exact-target approval for destructive actions unchanged; no standard, strategy, skill or charter may forbid
-it. This rule is the one home for how machinery leaves: a job that removes a friction another way deletes the machinery
-that friction admitted, and a card that rewrites a testing strategy, a coding standard or this manual's workflow text
-lists the machinery it keeps and settles keep, shrink or delete for each. The `resume` intake reports the tooling's size
-so growth is seen, never gated.
+Conventions table marks them active. The weekly retro follows [docs/WEEKLY-RETRO.md](docs/WEEKLY-RETRO.md) in a
+repository whose `docs/ISSUE-TRACKER.md` records it: it reads the week's merged pull requests, files at most five
+proposal cards in Backlog for the owner to pick or close, and changes nothing else. New executable machinery in the
+workflow itself, including test scripts, harnesses, runners, and test-only tools (product code and ordinary tests added
+to existing suites are exempt), needs one of: a control failure a sentence here or in a skill could not prevent twice,
+the same measurable friction across three independent jobs, a required new runtime or provider integration, or
+externally imposed security or platform drift. The friction route admits machinery only after the card's What to build
+names the friction and what doing less was tried first: fewer checks, deleted work, or a native feature. A store, cache,
+capture, retry, route, tracked input or repeated run added to existing machinery meets the same bar as new machinery.
+Prefer a native feature over custom code, a hook over a script, and a sentence over a hook. Rewriting, shrinking or
+deleting existing code, tests or tooling is always allowed when it is the right change for speed or quality, planned and
+reviewed like any other change, with the owner gates and exact-target approval for destructive actions unchanged; no
+standard, strategy, skill or charter may forbid it. This rule is the one home for how machinery leaves: a job that
+removes a friction another way deletes the machinery that friction admitted, and a card that rewrites a testing
+strategy, a coding standard or this manual's workflow text lists the machinery it keeps and settles keep, shrink or
+delete for each. The `resume` intake reports the tooling's size so growth is seen, never gated.
 
 ## Shared workflow adoption
 
-The files `.agents/factory-manifest.json` lists are shared workflow bytes. The manifest's `canonical` repository owns
-them, every repository in its `adopters` list carries identical copies, and `AGENTS.md` shares only the text between
-its `factory-shared` markers. A shared change is a card in the canonical repository plus one sync card per adopter;
-the sync card runs `node scripts/factory-sync.mjs --from <canonical checkout>` from the adopter's job worktree against
-a clean canonical checkout at its fetched `main`. That run copies every shared change already on the canonical `main`,
-so one sync job resolves every open sync card in the adopter whose change it carried. A card is covered when `git
-merge-base --is-ancestor` shows its canonical merge commit is an ancestor of the canonical commit the run copied from,
-and its acceptance criteria hold in the adopter; the job's pull request body lists each covered card with that
-evidence. After the merge, the job's own card closes as completed and closeout closes each covered card as not
+The files `.agents/factory-manifest.json` lists are shared workflow bytes, and `AGENTS.md` shares only the text between
+its `factory-shared` markers. The manifest's `canonical` repository authors each shared file under `src/` and keeps an
+installed copy at its root in the same commit, fingerprinted with `node scripts/factory-sync.mjs --write`; a test in
+its suite refuses a difference. Each repository in `adopters` holds a copy pinned at the commit its manifest records as
+`syncedFrom`. An ordinary shared change opens no sync card: `resume` reports at intake, as information, whether this
+repository lags the canonical copy. An urgent fix is authored in the canonical repository first and pulled by a sync
+card on the owner's decision. A sync card runs `node scripts/factory-sync.mjs --from <canonical checkout>` from the
+adopter's job worktree against a clean canonical checkout at its fetched `main`. That run copies everything on the
+canonical `main`, so one sync job resolves every open sync card in the adopter whose change it carried. A card is
+covered when `git merge-base --is-ancestor` shows its canonical merge commit is an ancestor of the canonical commit the
+run copied from, and its acceptance criteria hold in the adopter; the job's pull request body lists each covered card
+with that evidence. After the merge, the job's own card closes as completed and closeout closes each covered card as not
 planned, with a comment naming the card that did the sync and quoting its evidence. A card whose change merged after
-the run, or whose evidence the job cannot show, stays open. The change stays partial until every adopter's sync lands. A
-Claude Code session started in the root checkout keeps that checkout's git guard after it enters a job worktree, while
+the run, or whose evidence the job cannot show, stays open.
+
+The supported profile is self-use, Claude Code plus Codex with cross-family review; nothing installs the workflow for
+a customer. It needs a private repository, the two branch rulesets with the administrator bypass of the required check
+that the direct documentation route depends on, the required `test` check, the board, `npm ci` for the hooks, and each
+runtime having trusted the repository's hooks, since a hook file a runtime has not trusted does not run.
+
+A Claude Code session started in the root checkout keeps that checkout's git guard after it enters a job worktree, while
 it reads the permission allow list from the worktree, so a change that widens the allow list is its own card, started
-only once the guard change that bounds it is on `main` in the root checkout of the canonical repository and, through its
-sync card, of every adopter. A shared file edited without its manifest hash following fails the contract test; `node
-scripts/factory-sync.mjs --write` refreshes the hashes, and only in the canonical repository. Shared files are real
-files, never symlinks, since a symlink reaches a Windows checkout as plain text: a skill is written in `.agents/skills/`
-and copied whole to `.claude/skills/`, and each hook directory carries its own `.gitattributes` so hooks keep LF endings
-wherever line endings are converted; the contract test fails on a symlink, a copy that differs from its source, or a
-missing rule. A git hook's run permission is its committed file mode. An intentional adopter exception needs owner
-agreement and lives outside the shared files. `resume` reports at intake whether this repository lags the canonical
-copy.
+only once the guard change that bounds it is on `main` in the root checkout of the canonical repository and, through a
+sync, of every adopter. A shared file edited without its manifest hash following fails the contract test; `--write`
+refreshes the hashes, and only in the canonical repository. Shared files are real files, never symlinks, since a symlink
+reaches a Windows checkout as plain text: a skill lives in `.agents/skills/` and is copied whole to `.claude/skills/`,
+and each hook directory carries its own `.gitattributes` so hooks keep LF endings wherever line endings are converted;
+the contract test fails on a symlink, a copy that differs from its source, or a missing rule. A git hook's run
+permission is its committed file mode. An intentional adopter exception needs owner agreement and lives outside the
+shared files.
 
 <!-- factory-shared:end -->
 

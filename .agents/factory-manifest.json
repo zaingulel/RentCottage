@@ -1,13 +1,14 @@
 {
-  "canonical": "zaingulel/flow-metrics-dashboard",
+  "canonical": "zaingulel/fabraik",
   "adopters": [
+    "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "863e13ff99cab2d5c25c7562404a5bb18cfd4c06",
+  "syncedFrom": "50f0f26e33eeb5f9c4e67480b68a0f0285b92e57",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "19c5bb5539ebb0eea354e71117768c7c37ffe70ad65bfe431947bf917e3adfe8"
+      "sha256": "a547a1544e54e6cdfc1dd3b2ab97929df7f015aae43e6b20dae0e1f1a9cf5209"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -27,7 +28,7 @@
     },
     {
       "path": ".agents/skills/cross-review/SKILL.md",
-      "sha256": "01f80d6fa97e9e5b4b6eef7d84981218a1b426dfb67a6cce904e11636151bac0"
+      "sha256": "6d12b816b9295c14bb66dc12f67ae18996412dee4011f8c9bd525a87267df66a"
     },
     {
       "path": ".agents/skills/diagnosing-bugs/SKILL.md",
@@ -119,7 +120,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "f056262d230547872962e89443b969cac9451ffd90cbdb16a2707e097b848ad1"
+      "sha256": "f9a6b1b11fe6680d3df2bb4363df8b7a83d5989f9f8c2051962b4237b2d6a168"
     },
     {
       "path": ".agents/skills/retro/SKILL.md",
@@ -307,15 +308,15 @@
     },
     {
       "path": ".claude/agents/builder-lite.md",
-      "sha256": "c0e4230157cfaae26fcce650be6290b526307a669ac38871681c1456b4727e86"
+      "sha256": "74d32746f1438825921c00cf4973b40468f2968494bfd84d4fd539d217ff58b0"
     },
     {
       "path": ".claude/agents/builder-max.md",
-      "sha256": "b1859023d98132bada660e8688fed63c1b004fc1c4462d5cc71a0a844c8871d0"
+      "sha256": "ca49242dfdf29bead36cafe85cd573b69a9ea4d0775fe72b338b7f7c257fe2f6"
     },
     {
       "path": ".claude/agents/builder.md",
-      "sha256": "b5a745ef1f7139cc62ee199851c99f507c82f238950e8bbb96bd3e60599292f7"
+      "sha256": "cfa543a9f8ab47a785d37f7abc050c68c2964d120278ecee0062dd9416e4d20d"
     },
     {
       "path": ".claude/agents/explorer.md",
@@ -367,7 +368,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "19c5bb5539ebb0eea354e71117768c7c37ffe70ad65bfe431947bf917e3adfe8"
+      "sha256": "a547a1544e54e6cdfc1dd3b2ab97929df7f015aae43e6b20dae0e1f1a9cf5209"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -387,7 +388,7 @@
     },
     {
       "path": ".claude/skills/cross-review/SKILL.md",
-      "sha256": "01f80d6fa97e9e5b4b6eef7d84981218a1b426dfb67a6cce904e11636151bac0"
+      "sha256": "6d12b816b9295c14bb66dc12f67ae18996412dee4011f8c9bd525a87267df66a"
     },
     {
       "path": ".claude/skills/diagnosing-bugs/SKILL.md",
@@ -479,7 +480,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "f056262d230547872962e89443b969cac9451ffd90cbdb16a2707e097b848ad1"
+      "sha256": "f9a6b1b11fe6680d3df2bb4363df8b7a83d5989f9f8c2051962b4237b2d6a168"
     },
     {
       "path": ".claude/skills/retro/SKILL.md",
@@ -535,15 +536,15 @@
     },
     {
       "path": ".codex/agents/builder-lite.toml",
-      "sha256": "d4ac19515951a7cbc75d123ef17823e40e8bbc0b63e8398415bd9b47e4ae189b"
+      "sha256": "cbb2bae4f5a09604744908fddcd06e48a752bbe414d4b9f52fc3dd5550375846"
     },
     {
       "path": ".codex/agents/builder-max.toml",
-      "sha256": "6cb6acf359bcf814dfe38075182dcfbf0d95d7ac88cf9de6032c032aec2469f5"
+      "sha256": "9db4f7b766e456331c47bb06ae93c7a319e80f3718a88728ce6f9e05be9678d3"
     },
     {
       "path": ".codex/agents/builder.toml",
-      "sha256": "14ea21a9804efc4d81e123aaa4c694ecdb8081bd2cf128b062057dc4f83f9e44"
+      "sha256": "0b2913ea9542950a8a7be12baf35432367f221daca63213023b0e7eee64c1433"
     },
     {
       "path": ".codex/agents/explorer.toml",
@@ -627,7 +628,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "29f4c8ea39453aaf3df976663b75354a81dab7b4034d674341b84d3449a472fc"
+      "sha256": "30d8f08fb8307949f6a2a0eeb292251295dd5a61164cccd7f550f728511d9982"
     },
     {
       "path": "CLAUDE.md",
@@ -635,7 +636,11 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "afc77f3b6afb5f4886adcb76008b523640814dc897cc1831802555a371153c48"
+      "sha256": "fe45bfe79f4c28b5ef2c84bea5fe1ff6f539ef863e412b698e90ee5ef6fc7190"
+    },
+    {
+      "path": "docs/WEEKLY-RETRO.md",
+      "sha256": "8b89c438dc45ce420e059e0090d4feb88ffa51350ba17fb2f6e3e80fe293e7e7"
     },
     {
       "path": "scripts/board-add.mjs",
@@ -788,11 +793,11 @@
     },
     {
       "path": "scripts/lib/merge-watch.mjs",
-      "sha256": "6e2c1cfa8548e0e8088d2c30c874a6ccfe0d0c6ba92dbdfb32003def04ed4f34"
+      "sha256": "d85ffc4de4d185ec4ca3b04cee407e374d911c47f6346f42e2d869936bc1178d"
     },
     {
       "path": "scripts/lib/merge-watch.test.mjs",
-      "sha256": "7578ccc03ac9cd71ab8ea93b9dfe91be01403f18692956bce1a4e7b855ba038a"
+      "sha256": "e1d67db5f4db4ad9b1de8934062a980cc96d695ccbc305c20203ea5b00228b5c"
     },
     {
       "path": "scripts/lib/posix-shell.mjs",
@@ -828,11 +833,11 @@
     },
     {
       "path": "scripts/lib/sweep-scope.mjs",
-      "sha256": "a211f516350eab8979d2f3839c93c05389435f75daa980b7fcdeab4dc410e2a6"
+      "sha256": "22c88ea9d37084426f9aea3c3b2e73b781be9097bb0c0b5a3a6f9314e0618a70"
     },
     {
       "path": "scripts/lib/sweep-scope.test.mjs",
-      "sha256": "03a4ec292ce74c4b653b4899f1c6e8195cefa2e9b841da88862998973b0d5ff9"
+      "sha256": "9c18b511da8a67f43e4b57f7f65ce0932c9baaa4213b904e85f727e83d70d6d6"
     },
     {
       "path": "scripts/lib/test-output-filter.mjs",
@@ -856,11 +861,11 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "a4d295eba2705644b6653810ca70bec5e14a53a26446b8ebc1d5ef2c36eece44"
+      "sha256": "008b461410bd85ddc74e0e4491e083c8d513169605548ba0ab73965e2b83cba5"
     },
     {
       "path": "scripts/merge-watch.mjs",
-      "sha256": "308bb36babc6f08891691241c657d1fc5e44b45863208536d271ce50620deca0"
+      "sha256": "0ffb2d23c9836d76bca754319f919d2bcb5643832ac21b7b72243f4d9d7941b6"
     },
     {
       "path": "scripts/run-log.mjs",
