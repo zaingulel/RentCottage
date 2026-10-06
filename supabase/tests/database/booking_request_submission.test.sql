@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(292);
+select plan(293);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -108,6 +108,15 @@ select ok(
   and not has_function_privilege('authenticated',
     'public.finalize_booking_request_release(uuid,bigint,uuid)', 'execute'),
   'only the service role can finalize a Booking Request release'
+);
+select ok(
+  not has_function_privilege('anon',
+    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,text,boolean)', 'execute')
+  and not has_function_privilege('authenticated',
+    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,text,boolean)', 'execute')
+  and not has_function_privilege('service_role',
+    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,text,boolean)', 'execute'),
+  'no API role can call the acceptance evidence builder directly'
 );
 select has_column(
   'public', 'booking_request_submission_attempts', 'intent_dedupe_active',
