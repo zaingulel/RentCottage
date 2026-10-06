@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(293);
+select plan(294);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -111,11 +111,11 @@ select ok(
 );
 select ok(
   not has_function_privilege('anon',
-    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,text,boolean)', 'execute')
+    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,boolean)', 'execute')
   and not has_function_privilege('authenticated',
-    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,text,boolean)', 'execute')
+    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,boolean)', 'execute')
   and not has_function_privilege('service_role',
-    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,text,boolean)', 'execute'),
+    'public.booking_request_acceptance_evidence(public.cottage_profile_source_language,boolean)', 'execute'),
   'no API role can call the acceptance evidence builder directly'
 );
 select has_column(
@@ -505,7 +505,7 @@ select jsonb_build_object(
       'locale', 'en',
       'cancellationPolicy', 'Cancel at least 48 hours before the first shift for a full refund. Cancellation inside 48 hours and no-shows receive no refund.',
       'cancellationAcceptance', 'I accept the cancellation policy.',
-      'marketplaceTermsAcceptance', 'I accept the marketplace booking terms. (fictional-local-test-2026-08-22-v1)',
+      'marketplaceTermsAcceptance', 'I accept the marketplace booking terms.',
       'inside48Warning', null,
       'inside48Acceptance', null
     )
@@ -711,6 +711,19 @@ select is(
   ) ->> 'status',
   'invalid',
   'missing acceptance evidence is rejected before Payment Authorization'
+);
+select is(
+  public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003202',
+    '11111111-1111-4111-8111-111111113284',
+    (select jsonb_set(
+      submission,
+      '{intent,acceptanceEvidence,marketplaceTermsAcceptance}',
+      '"I accept the marketplace booking terms. (fictional-local-test-2026-08-22-v1)"'::jsonb
+    ) from valid_submission)
+  ) ->> 'status',
+  'invalid',
+  'an acceptance sentence that differs from the database wording is refused before Payment Authorization'
 );
 reset role;
 
@@ -4965,7 +4978,7 @@ select results_eq(
       'locale', 'en',
       'cancellationPolicy', 'Cancel at least 48 hours before the first shift for a full refund. Cancellation inside 48 hours and no-shows receive no refund.',
       'cancellationAcceptance', 'I accept the cancellation policy.',
-      'marketplaceTermsAcceptance', 'I accept the marketplace booking terms. (fictional-local-test-2026-08-22-v1)',
+      'marketplaceTermsAcceptance', 'I accept the marketplace booking terms.',
       'inside48Warning', null,
       'inside48Acceptance', null
     ), true)$$,
