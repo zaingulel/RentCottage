@@ -299,8 +299,22 @@ request route, never a workaround.
    `git diff --name-only --no-renames <receipt-head> <current-head>` lists only documentation paths under that gate's
    existing path definition, excluding its setting-only seat and manifest exceptions; missing commits, unavailable
    classification, or any other changed path require the full rerun, the fast checks still require the current head,
-   and the pull request body names the reused receipt's head and the documentation-only difference. The pre-push hook
-   still runs its own gates on every push. Then push;
+   and the pull request body names the reused receipt's head and the documentation-only difference. Second exception,
+   on the pull request route only, because the direct route has no hosted check: after a rebase onto a moved `main`,
+   any convergence check, fast or slow, may reuse its latest same-command receipt from a different known head when all
+   of these hold. The receipt reads `exit 0` and `tree=clean`, and the current worktree is still clean. The
+   repository's testing strategy records that the hosted required check runs that check; a check it does not so record
+   still reruns on the current head. No commit of the job changed: with `<old-base>` as
+   `git merge-base <receipt-head> origin/main` and `<new-base>` as `git merge-base HEAD origin/main`,
+   `git range-diff <old-base>..<receipt-head> <new-base>..HEAD` succeeds and every row is `=`, and, because
+   `range-diff` compares no merge commit, `git rev-list --merges <old-base>..<receipt-head>` and
+   `git rev-list --merges <new-base>..HEAD` both succeed and print nothing. The incoming changes do not overlap the
+   job's: `git diff --name-only --no-renames <old-base> <new-base>` and
+   `git diff --name-only --no-renames <new-base> HEAD` both succeed and no path appears in both lists. A missing
+   commit, a failed command, any `!`, `<` or `>` row, a merge commit in either range, or a shared path requires the
+   rerun. The comparison is always against the receipt's own head, however many times `main` moved since. The hosted
+   required check on the rebased head is then the proof for that head, and the pull request body names the reused
+   receipt's head, the current head and both comparisons. The pre-push hook still runs its own gates on every push. Then push;
    `gh pr create --draft --body-file <body>` with `Closes #<issue>` in the body. Greptile is requested only for the
    sign-off tier in section 6; the other tiers go straight to step 3. Move the card to `In review`.
 2. Read the current allowance in the signed-in built-in browser at

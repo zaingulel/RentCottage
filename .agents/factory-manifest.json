@@ -4,11 +4,11 @@
     "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "50f0f26e33eeb5f9c4e67480b68a0f0285b92e57",
+  "syncedFrom": "22fccd6569827fba22c15cf26f4f45bc9ba5d82a",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "a547a1544e54e6cdfc1dd3b2ab97929df7f015aae43e6b20dae0e1f1a9cf5209"
+      "sha256": "b53bf61306cb52ca5c7771900729d815c3bb13d9a23986c16853ddf4939751fd"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -120,7 +120,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "f9a6b1b11fe6680d3df2bb4363df8b7a83d5989f9f8c2051962b4237b2d6a168"
+      "sha256": "2a28370e23c4d4c43b1b56bc740b31d742ed91f4d3769582e76bb4ca1827f4af"
     },
     {
       "path": ".agents/skills/retro/SKILL.md",
@@ -368,7 +368,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "a547a1544e54e6cdfc1dd3b2ab97929df7f015aae43e6b20dae0e1f1a9cf5209"
+      "sha256": "b53bf61306cb52ca5c7771900729d815c3bb13d9a23986c16853ddf4939751fd"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -480,7 +480,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "f9a6b1b11fe6680d3df2bb4363df8b7a83d5989f9f8c2051962b4237b2d6a168"
+      "sha256": "2a28370e23c4d4c43b1b56bc740b31d742ed91f4d3769582e76bb4ca1827f4af"
     },
     {
       "path": ".claude/skills/retro/SKILL.md",
@@ -635,8 +635,12 @@
       "sha256": "7073e17e83293a26bd26cfc0e2d1fa906fa393a63d0a442f86dece3ccd480249"
     },
     {
+      "path": "docs/AI-WORKFLOW-diagram.html",
+      "sha256": "0af5dda28a72b6c50ac0126850661680a6156de239eca865d205b07f7b5ad3ad"
+    },
+    {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "fe45bfe79f4c28b5ef2c84bea5fe1ff6f539ef863e412b698e90ee5ef6fc7190"
+      "sha256": "85829e1fd104f7fcbe55abe9f38bf279a52778bfe3df142d8c819e07fe5e8c37"
     },
     {
       "path": "docs/WEEKLY-RETRO.md",

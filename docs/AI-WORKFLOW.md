@@ -9,6 +9,9 @@ change moves through them, what is enforced by a machine and what is only instru
 parts transfer to another product. `AGENTS.md` is the contract every agent loads; the skills under
 `.agents/skills/` own the exact commands. This guide explains; it never duplicates a command sequence.
 
+[The workflow diagram](./AI-WORKFLOW-diagram.html) draws this workflow on one page, as an overview and in detail.
+It is a web page, so open the file from a checkout in a browser; a repository host shows only its source.
+
 ## Why it is shaped this way
 
 An AI agent's characteristic failure is a plausible mistake, not a visible one: a result that is
@@ -391,7 +394,10 @@ goes red, the change is restored, the test goes green, and all four exit codes l
 stays green when the feature breaks is not evidence.
 
 CI runs the suites `docs/TESTING-STRATEGY.md` names. CI runs from the merge result, not the branch head, so it
-tests what would land.
+tests what would land. After a rebase onto a moved `main` that changed no commit of the job and touched none of its
+files, the `resume` skill's deliver step lets a passed local receipt stand for a convergence check the hosted required
+check also runs, with that hosted run on the rebased head as the proof for it; a check the hosted run does not cover
+reruns locally, and the pull request body says the rule was used.
 
 A second check, `sweep-scope` in `.github/workflows/sweep-scope.yml`, required where the documentation routines are
 active, exists because the documentation sweep and its day-after triage land their own pull requests and no one reads
