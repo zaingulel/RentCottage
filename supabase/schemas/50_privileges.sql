@@ -1246,6 +1246,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES FROM "anon", "authenticated", "service_role";
 
+-- Sequence whose default UPDATE privilege the migration revoked.
+REVOKE ALL ON SEQUENCE public.booking_request_payment_history_sequence_seq FROM PUBLIC,anon,authenticated,service_role;
+
 REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."payment_provider_observations" FROM "anon";
 
 REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."payment_provider_observations" FROM "authenticated";
