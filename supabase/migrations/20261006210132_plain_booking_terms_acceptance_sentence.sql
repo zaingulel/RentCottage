@@ -43,8 +43,6 @@ CREATE FUNCTION public.booking_request_acceptance_evidence (
   end;
 $function$;
 
-REVOKE ALL ON FUNCTION public.booking_request_acceptance_evidence(public.cottage_profile_source_language, boolean) FROM PUBLIC;
-
 CREATE OR REPLACE FUNCTION public.finalize_booking_request_submission (
   target_attempt_id       uuid,
   target_payment_snapshot jsonb
