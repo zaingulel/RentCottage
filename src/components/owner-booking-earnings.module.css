@@ -1,9 +1,9 @@
 .summary,
 .details {
   display: grid;
-  gap: 0.85rem;
+  gap: var(--space-3);
   min-width: 0;
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px solid var(--line-panel);
   border-radius: 0.8rem;
   background: var(--surface-panel);
@@ -24,14 +24,14 @@
   flex-wrap: wrap;
   align-items: start;
   justify-content: space-between;
-  gap: 0.6rem 1rem;
+  gap: var(--space-2) var(--space-4);
 }
 
 .status {
-  padding: 0.35rem 0.65rem;
+  padding: var(--space-1) var(--space-3);
   border-radius: 999px;
   background: var(--status-earnings-bg);
-  font-size: 0.9rem;
+  font-size: var(--font-size-2);
 }
 
 .status[data-status="blocked"],
@@ -49,15 +49,15 @@
 .amounts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
-  gap: 0.55rem;
+  gap: var(--space-2);
   margin: 0;
 }
 
 .amounts > div {
   display: grid;
-  gap: 0.2rem;
+  gap: var(--space-1);
   min-width: 0;
-  padding: 0.65rem;
+  padding: var(--space-3);
   border-radius: 0.55rem;
   background: var(--surface-bright);
 }
@@ -65,7 +65,7 @@
 .amounts dt,
 .note {
   color: var(--ink-panel-note);
-  font-size: 0.86rem;
+  font-size: var(--font-size-1);
 }
 
 .amounts dd {
@@ -75,20 +75,20 @@
 
 .causes {
   display: grid;
-  gap: 0.45rem;
-  padding-block-start: 0.2rem;
+  gap: var(--space-2);
+  padding-block-start: var(--space-1);
 }
 
 .causes ul {
   display: grid;
-  gap: 0.35rem;
-  padding-inline-start: 1.25rem;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-5);
 }
 
 @media (max-width: 36rem) {
   .summary,
   .details {
-    padding: 0.8rem;
+    padding: var(--space-3);
   }
 
   .amounts {

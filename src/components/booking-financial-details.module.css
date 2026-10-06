@@ -1,8 +1,8 @@
 .panel {
   display: grid;
-  gap: 1.4rem;
-  margin-block: 1.5rem;
-  padding: clamp(1rem, 3vw, 2rem);
+  gap: var(--space-5);
+  margin-block: var(--space-5);
+  padding: clamp(var(--space-4), 3vw, var(--space-6));
   border: 1px solid var(--line-panel);
   border-radius: 1rem;
   background: var(--surface-bright);
@@ -20,68 +20,68 @@
 }
 .panel header {
   display: grid;
-  gap: 0.6rem;
+  gap: var(--space-2);
 }
 .summary,
 .amounts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-  gap: 1rem;
+  gap: var(--space-4);
   margin: 0;
 }
 .summary > div {
   display: grid;
-  gap: 0.3rem;
-  padding: 0.85rem;
+  gap: var(--space-1);
+  padding: var(--space-3);
   background: var(--surface-panel-row);
   border-radius: 0.6rem;
 }
 .summary dt {
-  font-size: 0.9rem;
+  font-size: var(--font-size-2);
 }
 .summary dd {
   margin: 0;
   font-weight: 650;
-  font-size: 1.05rem;
+  font-size: var(--font-size-3);
 }
 .policy {
   display: grid;
-  gap: 0.55rem;
-  padding: 1rem;
+  gap: var(--space-2);
+  padding: var(--space-4);
   border-inline-start: 0.25rem solid var(--accent-policy);
   background: var(--surface-policy);
 }
 .form {
   display: grid;
-  gap: 1rem;
-  padding-block: 1.2rem;
+  gap: var(--space-4);
+  padding-block: var(--space-4);
   border-block-start: 1px solid var(--line-panel);
 }
 .form label {
   display: grid;
-  gap: 0.4rem;
+  gap: var(--space-2);
 }
 .form .acknowledge {
   display: flex;
   align-items: flex-start;
-  gap: 0.65rem;
+  gap: var(--space-3);
 }
 .acknowledge input {
-  margin-block-start: 0.3rem;
+  margin-block-start: var(--space-1);
   min-width: 1.2rem;
   min-height: 1.2rem;
 }
 .history {
   list-style: none;
   display: grid;
-  gap: 1rem;
+  gap: var(--space-4);
   padding: 0;
   margin: 0;
 }
 .history > li {
   display: grid;
-  gap: 0.7rem;
-  padding: 1rem;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--line-panel);
   border-radius: 0.7rem;
 }
@@ -89,5 +89,5 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0.7rem;
+  gap: var(--space-3);
 }

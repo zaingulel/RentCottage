@@ -1,8 +1,8 @@
 .history {
   width: min(64rem, calc(100% - 2.25rem));
-  margin: 2rem auto;
+  margin: var(--space-6) auto;
   display: grid;
-  gap: 1.25rem;
+  gap: var(--space-5);
 }
 
 .heading,
@@ -11,14 +11,14 @@
   border: 1px solid var(--line);
   border-radius: 0.9rem;
   background: var(--card);
-  padding: 1.2rem;
+  padding: var(--space-4);
 }
 
 .heading,
 .eventTitle {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
   align-items: start;
 }
 
@@ -32,7 +32,7 @@
 .events dl {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .card dl > div,
@@ -43,12 +43,12 @@
 .card dt,
 .events dt {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
 }
 
 .card dd,
 .events dd {
-  margin: 0.2rem 0 0;
+  margin: var(--space-1) 0 0;
   overflow-wrap: anywhere;
 }
 
@@ -56,18 +56,14 @@
   list-style: none;
   padding: 0;
   display: grid;
-  gap: 0.9rem;
+  gap: var(--space-4);
 }
 
 .references {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-  gap: 0.55rem;
-  margin-block-start: 0.8rem;
-  font-size: 0.78rem;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+  font-size: var(--font-size-1);
   overflow-wrap: anywhere;
-}
-
-.references dd {
-  font-size: 0.86rem;
 }

@@ -1,16 +1,16 @@
 .page {
   width: min(100% - 2rem, 72rem);
   margin-inline: auto;
-  padding-block: 3rem 5rem;
+  padding-block: var(--space-7);
 }
 
 .page h1 {
-  margin-block: 1rem 1.5rem;
+  margin-block: var(--space-4) var(--space-5);
   font-family: var(--display);
 }
 
 .page h2 {
-  margin-block: 0 0.6rem;
+  margin-block: 0 var(--space-2);
   font-family: var(--display);
 }
 
@@ -24,7 +24,7 @@
 .records {
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  padding: 1.5rem;
+  padding: var(--space-5);
   background: var(--card);
 }
 
@@ -33,25 +33,25 @@
 }
 
 .notice p {
-  margin-block-start: 0.5rem;
+  margin-block-start: var(--space-2);
 }
 
 .topics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  margin-block: 1rem;
+  gap: var(--space-4);
+  margin-block: var(--space-4);
 }
 
 .records a {
   display: block;
   width: fit-content;
-  margin-block-start: 0.8rem;
+  margin-block-start: var(--space-3);
 }
 
 @media (max-width: 42rem) {
   .page {
-    padding-block: 2rem 3rem;
+    padding-block: var(--space-6) var(--space-7);
   }
 
   .topics {
@@ -61,6 +61,6 @@
   .notice,
   .topics section,
   .records {
-    padding: 1rem;
+    padding: var(--space-4);
   }
 }
