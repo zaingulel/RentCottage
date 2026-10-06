@@ -889,6 +889,7 @@ async function preparePublishedProfile({
       .from("cottage_translation_runtime_control")
       .update(originalRuntime ?? { production_ready: false })
       .eq("singleton", true);
+    // eslint-disable-next-line no-unsafe-finally -- a translation runtime control left unrestored must fail loudly
     if (error) throw error;
   }
 }

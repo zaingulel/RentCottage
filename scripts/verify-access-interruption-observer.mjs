@@ -680,6 +680,7 @@ if (args[1] === "status") {
       }
     }
     if (cleanupErrors.length > 0) {
+      // eslint-disable-next-line no-unsafe-finally -- a fixture process that could not be stopped must fail loudly
       throw new AggregateError(
         cleanupErrors,
         "Fixture process cleanup failed.",

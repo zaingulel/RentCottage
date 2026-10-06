@@ -697,6 +697,7 @@ try {
       cleanupErrors.push(error);
     }
     if (failure || cleanupErrors.length > 0) {
+      // eslint-disable-next-line no-unsafe-finally -- reports the verification failure together with any cleanup failure
       throw new AggregateError(
         [failure, ...cleanupErrors].filter(Boolean),
         "Messaging concurrency verification or cleanup failed",
