@@ -93,10 +93,20 @@ process list; nothing is inferred from chat.
    without creating approval-only files. Continue independent cleanup when another target is retained.
    **Leftovers.** Apply `AGENTS.md`'s Disposable job cleanup rule for leftovers to every file, folder, worktree
    or branch this run finds that is not this job's verified scratch, worktree or branch. Investigate each one
-   before reporting it. For a file or folder, read its contents, timestamps and owner, find the card, pull request
-   or branch its contents name, and run the inactive-use and container checks above. For a worktree, from the
-   verifier checkout, read `git -C <path> status --porcelain --untracked-files=normal` and its branch, and run the
-   same inactive-use and container checks on its path. For a branch, check
+   before reporting it. For a file or folder, first confirm it sits where `AGENTS.md` says the workflow writes job
+   artifacts; a runtime's memory, settings or configuration is left alone. Then read its contents, timestamps and
+   owner, and find the card, pull request or branch it belongs to from the worktree it sits in or the branch its
+   file name carries. A card its contents name is only a lead: the tie holds when that card, its pull request or
+   its branch also accounts for the file, and otherwise the leftover is unsettled. Search open cards and pull
+   requests for its file name with
+   `gh search issues --repo <owner>/<repo> --state open --include-prs "<file name>"`; a hit
+   that names it makes it live. Run the inactive-use and container checks above. For a worktree, from the verifier
+   checkout, read `git -C <path> status --porcelain --untracked-files=normal --ignored=matching` and its branch,
+   and run the same inactive-use and container checks on its path. `git worktree remove` deletes ignored files
+   without refusing, so investigate each `!!` entry as a file or folder leftover of its own, apart from a
+   dependency or build directory a command regenerates, such as `node_modules`. The worktree is dead only when
+   each of those entries is dead; an entry that is not a leftover, such as a hand-placed environment or settings
+   file, makes the worktree unsettled. For a branch, check
    `git merge-base --is-ancestor <tip> origin/main` and read
    `gh pr list --head <branch> --state all --json number,state,headRefOid` for the pull request's state; when the
    ancestry check fails, check the tip against a merged pull request's head with
@@ -112,12 +122,14 @@ process list; nothing is inferred from chat.
    Leave the job worktree through the available runtime mechanism described in step 3; if the runtime cannot leave
    it or ownership is uncertain, retain it, report why, and stop before worktree removal and branch deletion;
    continue to step 6 and the final report. That report tells the owner that removing the worktree the session sits
-   in ends the session's shell, so run `git worktree remove <path>` only after the session is finished. From the
-   verifier checkout, outside the target worktree, run `git worktree remove <path>` on that exact approved job
-   path. If removal is refused, stop before branch deletion and report the refusal. Confirm
-   `git worktree list --porcelain` no longer registers that path, then run ordinary `git branch -d job/<issue>`;
-   report a refusal and never force deletion. The remote branch is deleted by the merge setting or
-   `git push origin --delete <branch>`. Finish with `git worktree prune`.
+   in ends the session's shell, so run `git worktree remove <path>` only after the session is finished. First read
+   `git -C <path> status --porcelain --untracked-files=normal --ignored=matching` from the verifier checkout: an
+   `!!` entry that is neither this job's verified scratch nor a dependency or build directory a command
+   regenerates retains the worktree, and the report names it. From the verifier checkout, outside the target
+   worktree, run `git worktree remove <path>` on that exact approved job path. If removal is refused, stop before
+   branch deletion and report the refusal. Confirm `git worktree list --porcelain` no longer registers that
+   path, then run ordinary `git branch -d job/<issue>`; report a refusal and never force deletion. The remote
+   branch is deleted by the merge setting or `git push origin --delete <branch>`. Finish with `git worktree prune`.
 6. **Rulings.** Anything the owner settled this session that should outlive it goes where it belongs: a comment
    on the issue, or the manual or rule that owns the topic. Never as a new document.
 

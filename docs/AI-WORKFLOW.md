@@ -164,7 +164,7 @@ flowchart TD
     DR -->|documents, code, agent instruction: no Greptile| RD[Marked ready: CI runs on the merge result]
     DR -->|sign-off tier: explicit Greptile request| GR[Review attempt settled, findings resolved]
     GR --> RD
-    RD -->|required test and sweep-scope checks green| MG[GitHub auto-merge, squash, branch deleted]
+    RD -->|required checks green| MG[GitHub auto-merge, squash, branch deleted]
     MG --> CO[Closeout: issue closed, card to Done, worktree removed]
     FF --> CO
 ```
@@ -217,12 +217,13 @@ The diagram is the whole path from a card to a merged commit. In words:
   round and an owner decision.
 - **Delivery by GitHub.** Marking the pull request ready after any required review attempt settles starts continuous
   integration. An unchanged-commit CI retry needs no further Greptile review. The merge is always queued as a GitHub
-  auto-merge, which GitHub completes only when the required `test` and `sweep-scope` checks are green; no agent merges
-  directly. The two documentation routines, when the Conventions table marks them active, are the one exception their
-  manuals state: the sweep and its day-after triage each squash-merge their own pull request through the GitHub API
-  tooling, and only once both required checks have succeeded on its exact head. A change `scripts/gates/pre-push-main`
-  admits whole, qualifying documentation and, where the gate judges changed lines, a setting-only seat change, skips the
-  pull request entirely, pushed straight to `main` on the same push authorisation (`resume`, section 8).
+  auto-merge, which GitHub completes only when the checks the repository's branch rules require are green: `test`
+  everywhere, and `sweep-scope` as well where the documentation routines are active; no agent merges directly. The two
+  documentation routines, when the Conventions table marks them active, are the one exception their manuals state: the
+  sweep and its day-after triage each squash-merge their own pull request through the GitHub API tooling, and only once
+  both required checks have succeeded on its exact head. A change `scripts/gates/pre-push-main` admits whole, qualifying
+  documentation and, where the gate judges changed lines, a setting-only seat change, skips the pull request entirely,
+  pushed straight to `main` on the same push authorisation (`resume`, section 8).
 - **Closeout.** The moment the merge lands, the same session confirms it, moves the card, pulls main, and
   removes the branch and worktree. Rulings the owner made during the session go to the issue or the manual
   that owns the topic, never to a new document.
@@ -285,9 +286,19 @@ board's own automation, so no agent moves a card for these cases:
 | Code review approved | Off | | The same evidence bar as Code changes requested |
 | Auto-close issue | Off | | Closing an issue follows the pull request's `Closes #` line, never inferred from a card's column |
 
+A board copied from another starts with Auto-add off; where it is off, every issue joins the board through
+`node scripts/board-add.mjs`.
+
 On a board with a routing field, a card that automation adds has no routing value; `scripts/board.mjs` reports it
 until `node scripts/board-add.mjs <issue> Backlog <value>` fills the field on the existing card, choosing the value
 by the convention in `docs/ISSUE-TRACKER.md`.
+
+The weekly retro, in a repository that runs it, reaches the board the same way. Once a week a scheduled cloud session
+follows `docs/WEEKLY-RETRO.md`: it reads the week's merged pull requests, their review sections, review rounds and
+failed checks, and files at most five issues titled `Retro proposal:`, each naming one recurring problem, how often it
+was seen and the cheapest fix. It proposes and never edits, because the fix for a recurring problem is a decision: the
+owner picks the card or closes it. The cloud session cannot reach the board, so the board's own auto-add lands each
+proposal in Backlog and the next local session fills its routing value.
 
 ## The review line
 
@@ -324,6 +335,10 @@ Greptile review or every attempt was `UNAVAILABLE`, carries `greptile_rounds=0` 
 that reads as Greptile did not look, never as a clean Greptile review. Lines inside fenced code blocks or HTML
 comments are not review lines, and a body carrying more than one valid line is invalid.
 
+Below the line, the Review section carries the fresh reviewer's verdict, every finding with its disposition, and
+one usage line for each reviewer pass the Usage view cannot show, as the `cross-review` skill specifies; raw usage
+blocks stay out of the body.
+
 ## Enforced or instructed
 
 Most of the workflow is a sentence an agent follows. A short list is enforced by a machine, chosen because a
@@ -336,12 +351,13 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 | Green before a turn ends | `.claude/hooks/verify-green.sh` at turn end, in the checkout the session is working in (Codex twin under `.codex/hooks/`) | Finishing with a lint error; a check it could not run, because no project root resolved or a tool is absent, is stated as unverified rather than passed silently |
 | The product's own checks pass | The product gates `scripts/gates/{stop,pre-commit}`: `stop` run by both Stop hooks on every turn end, and `pre-commit` run by `.githooks/pre-commit` on every commit | A turn end or commit whose product gate, when present, exits non-zero or is not executable; an absent gate changes nothing |
 | Runner output stays readable | `.claude/hooks/filter-test-output.mjs` | Condenses a green run, passes a red run through in full |
-| The artifact matches its source | The product gates `scripts/gates/{stop,pre-commit}` (run on a merge that auto-commits through `.githooks/pre-merge-commit`), and CI | A turn end, commit or merge whose generated artifact, as the Conventions table names it, is not the byte-identical build of its source |
+| The artifact matches its source | The product gates `scripts/gates/{stop,pre-commit}`, where the repository supplies them (run on a merge that auto-commits through `.githooks/pre-merge-commit`), and CI | A turn end, commit or merge whose generated artifact, as the Conventions table names it, is not the byte-identical build of its source; a repository that supplies none enforces its generated artifacts by the checks its Conventions table names |
+| The installed copy matches its source | In the canonical repository, a test in its script suite, run by `.githooks/pre-push` and CI | A push or merge where a shared file's source and the manifest disagree |
 | Agent definitions parse and the reviewer charter matches | `.githooks/pre-commit` | A staged seat file the runtime would drop silently, and Claude and Codex reviewer charters that differ beyond the skill-invocation sigil |
 | Lint and the script suite pass | `.githooks/pre-push` | A push with a red script suite |
 | Shared workflow files match the manifest | `scripts/lib/workflow-contract.test.mjs`, run by `.githooks/pre-push` and CI | A push or merge where any file `.agents/factory-manifest.json` lists differs from its recorded hash; the failure names both fix routes, `--write` in the canonical repository and a sync in an adopter |
-| Only green code merges | Branch protection on `main` requiring the `test` and `sweep-scope` checks, and auto-merge | A merge before both checks are green; on a draft the `test` gate reports under a different name so it can never satisfy the rule |
-| Metered suites run on purpose | `.codex/rules/playwright.rules` | A browser run on Codex without a prompt |
+| Only green code merges | Branch protection on `main` requiring the checks the repository's branch rules name, `test` everywhere and `sweep-scope` as well where the documentation routines are active, and auto-merge | A merge before every required check is green; on a draft the `test` gate reports under a different name so it can never satisfy the rule |
+| Metered suites run on purpose | `.codex/rules/playwright.rules`, where the repository supplies that rule file | A browser run on Codex without a prompt |
 
 Committed and registered hook configuration proves this repository contract; it does not prove that an
 already-running runtime loaded or trusted that configuration. When the active runtime cannot be observed,
@@ -377,9 +393,9 @@ stays green when the feature breaks is not evidence.
 CI runs the suites `docs/TESTING-STRATEGY.md` names. CI runs from the merge result, not the branch head, so it
 tests what would land.
 
-A second required check, `sweep-scope` in `.github/workflows/sweep-scope.yml`, exists because the
-documentation sweep and its day-after triage, when active, land their own pull requests and no one reads them first. It runs
-from `main` on every pull request rather than from the pull request it judges, passes at once off a
+A second check, `sweep-scope` in `.github/workflows/sweep-scope.yml`, required where the documentation routines are
+active, exists because the documentation sweep and its day-after triage land their own pull requests and no one reads
+them first. It runs from `main` on every pull request rather than from the pull request it judges, passes at once off a
 `docs-sweep/` or `docs-triage/` branch, and on one runs `scripts/sweep-scope-check.mjs`, which reads the
 sweep's scope table from the base commit, the one allowlist both routines answer to, and fails the branch's
 own changes on anything but a modification of a may-edit file, on any URI, or host name on a common top-level
@@ -427,3 +443,20 @@ The transferable core is compact:
 
 Product-specific protections are the surfaces the Surfaces table names; each product that adopts the workflow
 fills that table with its own highest-consequence invariants.
+
+The workflow itself travels as the files `.agents/factory-manifest.json` lists:
+
+- **Source and installed copy.** The manifest's `canonical` repository authors each shared file under `src/` and keeps
+  an installed copy at its root in the same commit, fingerprinted with `node scripts/factory-sync.mjs --write`; a test
+  in its suite refuses a difference.
+- **Pinned copies.** Each repository in `adopters` holds a copy pinned at the commit its manifest records as
+  `syncedFrom`.
+- **Lag is information.** An ordinary shared change opens no sync card; `resume` reports at intake whether the
+  repository lags the canonical copy.
+- **Urgent fixes.** An urgent fix is authored in the canonical repository first and pulled by a sync card on the
+  owner's decision; that run copies everything on the canonical `main`.
+- **Supported profile.** Self-use, Claude Code plus Codex with cross-family review. It needs a private repository, the
+  two branch rulesets with the administrator bypass of the required check that the direct documentation route depends
+  on, the required `test` check, the board, `npm ci` for the hooks, and each runtime having trusted the repository's
+  hooks, since a hook file a runtime has not trusted does not run.
+- **No customer install.** Nothing installs the workflow for a customer.

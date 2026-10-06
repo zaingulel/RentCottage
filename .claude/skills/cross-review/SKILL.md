@@ -1,6 +1,6 @@
 ---
 name: cross-review
-description: The fresh reviewer pass for a code diff, run by the model family that did not write it, the Codex reviewer seat from a Claude session and the Claude reviewer seat from a Codex session, dispatched as configured, with its usage quoted in the pull request body; and the plan review of a plan-first card, run on the Codex plan-reviewer seat before any build.
+description: The fresh reviewer pass for a code diff, run by the model family that did not write it, the Codex reviewer seat from a Claude session and the Claude reviewer seat from a Codex session, dispatched as configured; and the plan review of a plan-first card, run on the Codex plan-reviewer seat before any build.
 ---
 
 # cross-review
@@ -17,6 +17,11 @@ on the Codex `plan-reviewer` seat before any build.
 Read the seat file and pass its settings unchanged; the manual's model routing rule forbids raising or lowering
 them. The read-only sandbox has no network, so the prompt carries the card, body and comments, that the charter's spec lens needs,
 and the charter's own `gh` and web calls fail harmlessly. `<out>` is a directory outside the worktree.
+
+`<pending>` names every check and review still running or already scheduled for this branch, the full suite, a
+convergence check, `security-reviewer` or Greptile among them, or reads `none`. Every reviewer dispatch carries it,
+a native dispatch of this family's own seat included, so the reviewer treats those as in hand and reports findings
+only on what is already settled.
 
 **Claude wrote the diff**: the Codex `reviewer` seat, `.codex/agents/reviewer.toml`. Codex's native
 `exec review --base` accepts no custom instructions, so the charter goes through plain `codex exec`, read from
@@ -46,8 +51,9 @@ value it reads as a literal into the later steps.
 4. Append the review request:
 
    ```sh
-   printf '\nReview branch %s against main for issue #<issue>, whose card follows. The sandbox has no network,
-   so use this copy instead of gh, and return the JSON object as your final message.\n\n' '<branch>' >> <out>/prompt.md
+   printf '\nReview branch %s against main for issue #<issue>, whose card follows. Still running or already
+   scheduled, so in hand and outside your findings: <pending>. The sandbox has no network, so use this copy
+   instead of gh, and return the JSON object as your final message.\n\n' '<branch>' >> <out>/prompt.md
    ```
 
 5. Append the card:
@@ -70,7 +76,7 @@ model, effort, tools and charter. Read `<branch>` with `git branch --show-curren
 
 ```sh
 claude -p --agent reviewer --permission-mode plan --output-format json \
-  "Review branch <branch> against main for issue #<issue>." > <out>/result.json
+  "Review branch <branch> against main for issue #<issue>. Still running or already scheduled, so in hand and outside your findings: <pending>." > <out>/result.json
 ```
 
 Read-only is not instruction isolation: the reviewer reads the checkout's manual, rules and skills as its charter
@@ -86,10 +92,13 @@ proposing one.
 
 ## 3. Quote the price
 
-Copy the usage into the pull request body's Review section as raw fields, never summed, so cached input is not
-counted twice: for Codex, the `turn.completed` event's `usage` in `events.jsonl` (`input_tokens`,
-`cached_input_tokens`, `output_tokens`, `reasoning_output_tokens`); for Claude, `usage` and `total_cost_usd` in
-`result.json`. A run that fails is reported as failed, never as zero cost.
+Write one line in the pull request body's Review section for each pass the Usage view cannot show: a Codex
+command-line pass, whose `--ephemeral` run writes no session log. The line holds the raw fields of the
+`turn.completed` event's `usage` in `events.jsonl`, side by side and never summed, so cached input is not counted
+twice; for example,
+`Usage, pass 1, Codex reviewer: input_tokens=N cached_input_tokens=N output_tokens=N reasoning_output_tokens=N`.
+The JSON itself stays in `<out>`. A Claude pass and a natively dispatched seat each leave a session file the Usage
+view reads, so the body carries no usage for them. A run that fails is reported as failed, never as zero cost.
 
 ## 4. Review a plan before the build
 
@@ -170,7 +179,6 @@ claude -p --agent plan-reviewer --permission-mode plan --output-format json \
 ```
 
 Quote the review in the pull request body's Review section, below the review line: the seat that reviewed the
-plan, the number of findings at each severity, and its usage. A command-line run's usage is quoted as section 3
-says, from `<out>/plan-events.jsonl` for Codex or `<out>/plan-result.json` for Claude. A natively dispatched
-seat writes neither file: quote the usage the runtime reports for that dispatch, or say that it reported none.
-A plan review is no round of the review line, which counts passes over the tree.
+plan, the number of findings at each severity, and, for a Codex command-line run, its usage line as section 3
+says, read from `<out>/plan-events.jsonl`. A plan review is no round of the review line, which counts passes over
+the tree.

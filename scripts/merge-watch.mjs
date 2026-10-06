@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // merge-watch.mjs — waits on one pull request, reading GitHub only, until it merges or stops.
 // Exit 0 only when merged; 1 when closed, a required check failed, the merge is blocked, the
-// required set is unknown, a pull request state or check reply is unreadable, or `gh` failed;
-// 2 on a bad argument, before any `gh` call. The reason is always the last line of output.
+// required set is unknown, a pull request state, check or workflow run reply is unreadable, or
+// `gh` failed; 2 on a bad argument, before any `gh` call. The reason is always the last line of output.
 // The watch uses the probe-free `runGh`, so a `gh` failure makes no further read.
 // Run: node scripts/merge-watch.mjs <pull-request-number>
 

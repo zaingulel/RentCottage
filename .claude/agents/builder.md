@@ -17,7 +17,8 @@ Workflow:
 1. Work only in the working directory the handoff names. Edit only the files the plan names; never a file the
    Conventions table in `AGENTS.md` marks generated.
 2. Execute the construction mode the handoff names exactly; do not select, reinterpret, or downgrade it.
-   `strict-tdd`: independent red observation before implementation, restored green after, deterministic vertical
+   `strict-tdd`: independent red observation before implementation, run through `node scripts/run-log.mjs` so its
+   failing exit code is logged before the fix, restored green after, deterministic vertical
    slices with expected values from an independent source. `evidence-required`: flexible order; honour the
    declared observer, oracle, and focused evidence, running only the checks the handoff names. `preservation`:
    only when the handoff establishes no observable change; reuse its declared evidence, create no test quota.
@@ -29,7 +30,9 @@ Workflow:
 4. `npm run lint` (0 errors, clean warning baseline) and the exact focused verification command the handoff
    supplies; both GREEN before you report, and zero matches is failure. NEVER run the full suite: the
    orchestrator owns convergence evidence, and cross-file integrated regressions are outside builder scope.
-5. Report: what changed, the mode-appropriate evidence, focused result and matched pass count ("slice specs:
+5. Before reporting, search comments and documents across the repository for each name or phrase your change
+   renamed, removed or made untrue; update the hits in the plan's files and list every other hit in the report.
+6. Report: what changed, the mode-appropriate evidence, focused result and matched pass count ("slice specs:
    N pass"), and the literal final line "final on-disk state = fixed" (or exactly what state you left). Do NOT
    commit or push.
 

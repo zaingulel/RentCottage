@@ -224,6 +224,9 @@ disjoint.
 - Drive visual work as the Conventions table's `visual verification` row says, and display the screenshot inline
   in chat. No push authorisation is requested without it.
 - Run every check the Surfaces table's rows name for a surface the diff touches.
+- Before dispatching the review, find in the worklog the failing run each `strict-tdd` claim logged before its fix.
+  A claim with none goes to the owner, before the review runs, as a decision on accepting it without that red run;
+  the mutation's red run, logged after the fix, never stands in for it.
 - One fresh review of the final tree, by tier. **Documents** (`docs/`, the root readme, `GLOSSARY.md`) and a
   **setting-only seat change**: the session itself, recorded at tier `document`. A seat change is setting-only when each
   changed seat file differs only in model, effort or turn-limit lines of its settings block (`model`, `effort` or
@@ -301,13 +304,16 @@ request route, never a workaround.
    `gh pr create --draft --body-file <body>` with `Closes #<issue>` in the body. Greptile is requested only for the
    sign-off tier in section 6; the other tiers go straight to step 3. Move the card to `In review`.
 2. Read the current allowance in the signed-in built-in browser at
-   https://app.greptile.com/flowgauge/-/settings/billing. Record the Flex Usage Limit bar (`$N of $M`), remaining
-   allowance, invoice period, observation source and time in the pull request body. A login or join redirect from any other
-   address means the address is wrong, not that the owner is signed out or the allowance is exhausted; a command-line
-   fetch is never signed in. If the signed-in built-in browser is unavailable or this exact page cannot be read, ask
-   the owner for the bar and invoice period; never infer sign-out or exhaustion from a failed read. Greptile is metered
-   from one pool shared by every adopter. Confirmed exhaustion is the `UNAVAILABLE` evidence below and skips the
-   request. Then read the open draft's `headRefOid`
+   https://app.greptile.com/flowgauge/-/settings/billing. The page states the allowance for the plan in force as an
+   amount used out of a limit, in whatever unit that plan meters: `2 of 50 free credits this period` on the free
+   plan, a `$N of $M` usage limit on a paid one. Record that figure in the page's own words, the plan the page
+   names, the period it names, the observation source and time in the pull request body. The allowance is exhausted
+   only when the figure read from the page shows the amount used has reached its limit. A login or join redirect
+   from any other address means the address is wrong, not that the owner is signed out or the allowance is
+   exhausted; a command-line fetch is never signed in. If the signed-in built-in browser is unavailable, this exact
+   page cannot be read, or it shows no allowance figure, ask the owner for the figure and its period; never infer
+   sign-out or exhaustion from a failed read. Greptile is metered from one pool shared by every adopter. Confirmed
+   exhaustion is the `UNAVAILABLE` evidence below and skips the request. Then read the open draft's `headRefOid`
    and request the final review once for that commit: `gh pr comment <pr> --body "@greptileai review this draft"`.
    Record the request URL, time and exact head. `.greptile/config.json` disables automatic reviews; labels are
    metadata. `COMPLETE` requires Greptile's completed review for that exact head, its summary, and disposition of
@@ -357,8 +363,9 @@ request route, never a workaround.
    Merged: run `closeout` in the same session; the owner's yes already covers it. Failed, blocked or closed:
    report the printed reason and repair per step 3.
 
-Greptile is metered from one pool shared by every adopter: one organisation, one developer seat, the included
-credits per billing period plus the owner's overage. There is no per-repository split; the tiers ration the pool,
+Greptile is metered from one pool shared by every adopter: one organisation, one developer seat, the credits its
+plan includes per billing period plus any overage a paid plan allows. There is no per-repository split; the tiers
+ration the pool,
 every adopter spends from it, and once it is exhausted every adopter records `UNAVAILABLE` until the period resets.
 So the shape of the rule is one shared policy, and a change to it lands in every adopter: risk and
 uncertainty override category and line count, a skip is neither `UNAVAILABLE` nor a clean review, the allowance

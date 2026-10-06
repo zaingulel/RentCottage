@@ -112,17 +112,19 @@ export function treeGrepCandidates(text) {
 // The whole `git grep` argument vector, after `git`, that searches one tree for one candidate
 // spelling. One builder, so the check and its tests cannot search different trees. The guard's own
 // sources are excluded: they are a list of destinations that must not be trusted, spelled out as whole
-// extractor tokens, so they are not evidence that the repository points anywhere. Test code is excluded
-// for the same reason, because a negative fixture names hosts precisely so they can be refused; Rust
-// keeps its tests inline, so the whole crate is excluded and a real host named only in Rust fails
-// closed. `**/` matches the root directory as well as every subdirectory. Every pathspec spells its
-// magic out, so `GIT_GLOB_PATHSPECS` and `GIT_NOGLOB_PATHSPECS` cannot change what is excluded, while
-// `GIT_LITERAL_PATHSPECS` would make every pathspec literal, so the search would match nothing and the
-// check would refuse: it fails closed. The search runs at the base commit, so a pull request cannot
-// widen or narrow it. A pathspec that excludes nothing is not an error, so this is safe in any tree.
+// extractor tokens, so they are not evidence that the repository points anywhere. They are excluded in
+// whatever folder they sit, so a repository that keeps a second copy of them does not vouch through the
+// copy. Test code is excluded for the same reason, because a negative fixture names hosts precisely so
+// they can be refused; Rust keeps its tests inline, so the whole crate is excluded and a real host named
+// only in Rust fails closed. `**/` matches the root directory as well as every subdirectory. Every
+// pathspec spells its magic out, so `GIT_GLOB_PATHSPECS` and `GIT_NOGLOB_PATHSPECS` cannot change what
+// is excluded, while `GIT_LITERAL_PATHSPECS` would make every pathspec literal, so the search would
+// match nothing and the check would refuse: it fails closed. The search runs at the base commit, so a
+// pull request cannot widen or narrow it. A pathspec that excludes nothing is not an error, so this is
+// safe in any tree.
 export function treeGrepArgs(candidate, ref) {
   return ['grep', '--ignore-case', '--fixed-strings', '--null', '-e', candidate, ref,
-    '--', ':(exclude,glob)scripts/lib/sweep-scope*', ':(exclude,literal)scripts/sweep-scope-check.mjs',
+    '--', ':(exclude,glob)**/scripts/lib/sweep-scope*', ':(exclude,glob)**/scripts/sweep-scope-check.mjs',
     ':(exclude,glob)src-tauri/**', ':(exclude,glob)tests/**', ':(exclude,glob)**/*.test.*'];
 }
 
