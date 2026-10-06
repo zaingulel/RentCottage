@@ -74,9 +74,6 @@ export function BookingQuoteView({
           {copy.quoteFor} {quote.cottageName}
         </p>
         <h1>{copy.title}</h1>
-        <small>
-          {copy.contentVersion} {quote.contentVersion}
-        </small>
       </header>
       <div className="quote-layout">
         <div>
@@ -130,20 +127,6 @@ export function BookingQuoteView({
           <section className="quote-card booking-terms-fixture">
             <h2>{copy.marketplaceTerms}</h2>
             <pre aria-label={copy.termsBody}>{quote.marketplaceTerms.body}</pre>
-            <dl>
-              <div>
-                <dt>{copy.termsVersion}</dt>
-                <dd>{quote.marketplaceTerms.version}</dd>
-              </div>
-              <div>
-                <dt>{copy.termsLocale}</dt>
-                <dd>{quote.marketplaceTerms.locale}</dd>
-              </div>
-              <div>
-                <dt>{copy.termsHash}</dt>
-                <dd>{quote.marketplaceTerms.sha256}</dd>
-              </div>
-            </dl>
           </section>
           <BookingRequestForm
             locale={locale}
@@ -174,9 +157,6 @@ export function BookingQuoteView({
               <dd>{formatIqd(quote.customerTotalIqd, locale)}</dd>
             </div>
           </dl>
-          <p>
-            <strong>{copy.termsVersion}:</strong> {quote.termsVersion}
-          </p>
         </aside>
       </div>
     </main>

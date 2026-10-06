@@ -5,7 +5,6 @@ export const bookingQuoteMessages = {
     unavailable: "تعذر تحميل عرض السعر الآن.",
     selectionUnavailable: "الفترة المحددة لم تعد متاحة. ارجع واختر فترة أخرى.",
     quoteFor: "عرض السعر لـ",
-    contentVersion: "نسخة المحتوى",
     bookingPeriod: "فترة الحجز",
     shifts: { 1: "الوردية 1", 2: "الوردية 2", 3: "الوردية 3" },
     fullDay: "باقة اليوم الكامل",
@@ -17,9 +16,6 @@ export const bookingQuoteMessages = {
     houseRules: "قواعد البيت",
     marketplaceTerms: "شروط المنصة الخيالية",
     termsBody: "النص الكامل للشروط الخيالية",
-    termsLocale: "لغة الشروط",
-    termsHash: "بصمة SHA-256 للشروط",
-    termsVersion: "نسخة شروط الحجز",
     notice:
       "عرض السعر هذا لا يحجز الفترة. سيُعاد التحقق من التوفر والسعر قبل حجز المبلغ وإرسال طلب الحجز.",
   },
@@ -30,7 +26,6 @@ export const bookingQuoteMessages = {
     selectionUnavailable:
       "ماوە هەڵبژێردراوەکە چیتر بەردەست نییە. بگەڕێوە و ماوەیەکی تر هەڵبژێرە.",
     quoteFor: "پێشنیاری نرخ بۆ",
-    contentVersion: "وەشانی ناوەڕۆک",
     bookingPeriod: "ماوەی حجزکردن",
     shifts: { 1: "شەفتی 1", 2: "شەفتی 2", 3: "شەفتی 3" },
     fullDay: "پاکێجی ڕۆژی تەواو",
@@ -42,9 +37,6 @@ export const bookingQuoteMessages = {
     houseRules: "یاساکانی کۆتێج",
     marketplaceTerms: "مەرجە خەیاڵییەکانی پلاتفۆرم",
     termsBody: "دەقی تەواوی مەرجە خەیاڵییەکان",
-    termsLocale: "زمانی مەرجەکان",
-    termsHash: "پەنجەمۆری SHA-256ی مەرجەکان",
-    termsVersion: "وەشانی مەرجەکانی حجزکردن",
     notice:
       "ئەم پێشنیاری نرخە ماوەکە ناگرێت. پێش ڕێگەپێدانی پارە و ناردنی داواکاری، بەردەستبوون و نرخ دووبارە پشکنین دەکرێن.",
   },
@@ -55,7 +47,6 @@ export const bookingQuoteMessages = {
     selectionUnavailable:
       "Your selected period is no longer available. Go back and choose another period.",
     quoteFor: "Quote for",
-    contentVersion: "Content version",
     bookingPeriod: "Booking Period",
     shifts: { 1: "Shift 1", 2: "Shift 2", 3: "Shift 3" },
     fullDay: "Full-Day Bundle",
@@ -67,9 +58,6 @@ export const bookingQuoteMessages = {
     houseRules: "House Rules",
     marketplaceTerms: "Fictional marketplace terms",
     termsBody: "Complete fictional terms content",
-    termsLocale: "Terms locale",
-    termsHash: "Terms SHA-256",
-    termsVersion: "Booking terms version",
     notice:
       "This quote does not reserve the period. Availability and price are checked again before payment authorisation and Booking Request submission.",
   },
