@@ -157,6 +157,7 @@ html {
 body {
   margin: 0;
   min-width: 20rem;
+  font-size: var(--font-size-3);
 }
 
 button,
@@ -216,7 +217,7 @@ textarea {
 .action-compact {
   min-height: 2.25rem;
   padding-inline: var(--space-3);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
 }
 
 .action-regular {
@@ -313,7 +314,7 @@ input[type="file"].form-control::file-selector-button {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -351,14 +352,14 @@ input[type="file"].form-control::file-selector-button {
 .owner-application-header a {
   color: var(--green);
   font-family: var(--display);
-  font-size: 1.35rem;
+  font-size: var(--font-size-4);
   font-weight: 700;
   text-decoration: none;
 }
 
 .owner-application-header span {
   color: var(--gold);
-  font-size: 0.76rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -387,7 +388,7 @@ input[type="file"].form-control::file-selector-button {
 .application-progress-card h1 {
   margin: var(--space-4) 0 var(--space-3);
   font-family: var(--display);
-  font-size: 2.15rem;
+  font-size: var(--font-size-6);
   line-height: 1.12;
 }
 
@@ -401,7 +402,7 @@ input[type="file"].form-control::file-selector-button {
   padding-block-start: var(--space-4);
   border-block-start: 1px solid var(--line-on-progress);
   color: var(--ink-on-progress-note);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
 }
 
 .application-status {
@@ -410,7 +411,7 @@ input[type="file"].form-control::file-selector-button {
   gap: var(--space-2);
   border-radius: 999px;
   padding: var(--space-2) var(--space-3);
-  font-size: 0.73rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -469,7 +470,7 @@ input[type="file"].form-control::file-selector-button {
   border: 1px solid var(--line);
   border-radius: 50%;
   color: var(--gold);
-  font-size: 0.73rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -477,7 +478,7 @@ input[type="file"].form-control::file-selector-button {
   margin: 0;
   color: var(--green);
   font-family: var(--display);
-  font-size: 1.75rem;
+  font-size: var(--font-size-5);
   line-height: 1.2;
 }
 
@@ -506,7 +507,7 @@ input[type="file"].form-control::file-selector-button {
   display: grid;
   gap: var(--space-2);
   color: var(--green);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -518,7 +519,7 @@ input[type="file"].form-control::file-selector-button {
 .application-fields small,
 .document-upload-form span {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--font-size-1);
   font-weight: 400;
 }
 
@@ -532,7 +533,7 @@ input[type="file"].form-control::file-selector-button {
 .amenities-fieldset legend {
   margin-block-end: var(--space-2);
   color: var(--green);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -550,7 +551,7 @@ input[type="file"].form-control::file-selector-button {
   border-radius: 999px;
   background: var(--surface-field);
   padding: var(--space-2) var(--space-3);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
 }
 
 .application-primary-action {
@@ -596,13 +597,13 @@ input[type="file"].form-control::file-selector-button {
 .verification-document-card h3 {
   margin: 0;
   color: var(--green);
-  font-size: 1rem;
+  font-size: var(--font-size-3);
 }
 
 .verification-document-card p {
   margin: var(--space-1) 0 0;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
   line-height: 1.45;
 }
 
@@ -610,7 +611,7 @@ input[type="file"].form-control::file-selector-button {
   display: block;
   margin-block-start: var(--space-3);
   color: var(--gold);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
   overflow-wrap: anywhere;
 }
 
@@ -724,7 +725,7 @@ input[type="file"].form-control::file-selector-button {
   gap: var(--space-2);
   margin: 0;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -898,7 +899,7 @@ a {
 
 .results-header > a {
   color: var(--green);
-  font-size: 0.92rem;
+  font-size: var(--font-size-2);
   font-weight: 700;
 }
 
@@ -919,7 +920,7 @@ a {
   align-items: center;
   border-radius: 999px;
   padding-inline: var(--space-3);
-  font-size: 0.76rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   text-decoration: none;
 }
@@ -936,7 +937,7 @@ a {
 .results-intro p {
   margin: 0;
   color: var(--gold);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1024,7 +1025,7 @@ a {
   background: var(--green-tint);
   padding: var(--space-1) var(--space-2);
   color: var(--green);
-  font-size: 0.72rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -1032,13 +1033,13 @@ a {
   margin: var(--space-3) 0 var(--space-1);
   color: var(--green);
   font-family: var(--display);
-  font-size: 1.55rem;
+  font-size: var(--font-size-5);
 }
 
 .result-content p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: var(--font-size-2);
 }
 
 .result-shifts {
@@ -1047,7 +1048,7 @@ a {
   margin: 0 0 var(--space-4);
   padding: 0;
   list-style: none;
-  font-size: 0.8rem;
+  font-size: var(--font-size-1);
 }
 
 .result-shifts li {
@@ -1140,7 +1141,7 @@ a {
 
 .profile-facts dt {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--font-size-1);
 }
 
 .profile-facts dd {
@@ -1158,7 +1159,7 @@ a {
 .request-cottage h2 {
   color: var(--green);
   font-family: var(--display);
-  font-size: 1.6rem;
+  font-size: var(--font-size-5);
 }
 
 .profile-section li {
@@ -1192,7 +1193,7 @@ a {
   margin: 0 0 var(--space-4);
   color: var(--green);
   font-family: var(--display);
-  font-size: 1.35rem;
+  font-size: var(--font-size-4);
   line-height: 1.25;
 }
 
@@ -1253,7 +1254,7 @@ html[lang="ckb"] .booking-summary h2 {
   border-radius: 0.75rem;
   background: var(--gold-tint);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--font-size-1);
   line-height: 1.6;
 }
 
@@ -1282,7 +1283,7 @@ html[lang="ckb"] .booking-summary h2 {
   display: grid;
   gap: var(--space-2);
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -1331,7 +1332,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .request-cottage p {
   color: var(--green);
-  font-size: 1.25rem;
+  font-size: var(--font-size-4);
   font-weight: 700;
 }
 
@@ -1360,7 +1361,7 @@ html[lang="ckb"] .booking-summary h2 {
   max-width: 46ch;
   margin: 0;
   color: var(--ink-on-dark-soft);
-  font-size: 1.05rem;
+  font-size: var(--font-size-3);
   line-height: 1.65;
 }
 
@@ -1395,7 +1396,7 @@ html[lang="ckb"] .booking-summary h2 {
   display: block;
   margin-block-end: var(--space-2);
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -1484,7 +1485,7 @@ html[lang="ckb"] .booking-summary h2 {
 .booking-period-filter > [role="group"] > span {
   flex: 0 0 7rem;
   color: var(--green);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -1497,13 +1498,13 @@ html[lang="ckb"] .booking-summary h2 {
 .booking-period-defaults .action-toggle {
   min-height: 2.4rem;
   padding-inline: var(--space-3);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
 }
 
 .booking-period-filter > p {
   margin: var(--space-2) 0 0;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
 }
 
 .amenity-filter label {
@@ -1534,7 +1535,7 @@ html[lang="ckb"] .booking-summary h2 {
 .counter-field .action {
   width: 3.25rem;
   height: 3.25rem;
-  font-size: 1.35rem;
+  font-size: var(--font-size-4);
 }
 
 .counter-field strong {
@@ -1555,7 +1556,7 @@ html[lang="ckb"] .booking-summary h2 {
 }
 
 .amenity-filter .action-toggle {
-  font-size: 0.88rem;
+  font-size: var(--font-size-2);
 }
 
 .retreat-search > .action-primary {
@@ -1563,7 +1564,7 @@ html[lang="ckb"] .booking-summary h2 {
   min-height: 3.5rem;
   margin-block-start: var(--space-5);
   font-family: var(--display);
-  font-size: 1.05rem;
+  font-size: var(--font-size-3);
   font-weight: 600;
 }
 
@@ -1586,7 +1587,7 @@ html[lang="ckb"] .booking-summary h2 {
 .trusted-copy > p:first-child {
   margin: 0;
   color: var(--gold);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1659,7 +1660,7 @@ html[lang="ckb"] .booking-summary h2 {
   border-radius: 50%;
   background: var(--background);
   color: var(--green);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
 }
 
 button:focus-visible,
@@ -1739,7 +1740,7 @@ a:focus-visible {
 
 .review-detail-grid dt {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1838,7 +1839,7 @@ a:focus-visible {
 
 .cottage-publication-review > h2 {
   font-family: var(--display);
-  font-size: clamp(1.35rem, 3vw, 1.8rem);
+  font-size: clamp(var(--font-size-4), 3vw, var(--font-size-5));
 }
 
 .cottage-localization-grid {
@@ -1924,7 +1925,7 @@ a:focus-visible {
   flex-wrap: wrap;
   gap: var(--space-2);
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -2000,7 +2001,7 @@ a:focus-visible {
 .cottage-profile-photos h2,
 .cottage-profile-source-revision h2 {
   font-family: var(--display);
-  font-size: clamp(1.15rem, 3vw, 1.5rem);
+  font-size: clamp(var(--font-size-3), 3vw, var(--font-size-5));
   font-weight: 700;
 }
 
@@ -2079,7 +2080,7 @@ a:focus-visible {
 .cottage-shift-row label {
   display: grid;
   gap: var(--space-2);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -2165,13 +2166,13 @@ a:focus-visible {
 
 .cottage-inventory-unit-title {
   margin-block-end: var(--space-1);
-  font-size: 1rem;
+  font-size: var(--font-size-3);
 }
 
 .cottage-inventory-unit label,
 .cottage-inventory-service-day,
 .cottage-inventory-state {
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   text-align: start;
 }
@@ -2212,7 +2213,7 @@ a:focus-visible {
 .cottage-inventory-override strong {
   grid-column: 1 / -1;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--font-size-1);
 }
 
 .cottage-inventory-add-override,
@@ -2224,7 +2225,7 @@ a:focus-visible {
 .cottage-inventory-add-override > summary {
   color: var(--green);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   line-height: 1.4;
   text-align: start;
@@ -2510,7 +2511,7 @@ a:focus-visible {
 }
 
 .quote-totals .quote-total {
-  font-size: 1.08rem;
+  font-size: var(--font-size-3);
 }
 
 .quote-notice {
@@ -2680,7 +2681,7 @@ a:focus-visible {
   background: var(--gold-tint-strong);
   padding: var(--space-1) var(--space-2);
   color: var(--gold);
-  font-size: 0.8rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
@@ -2696,7 +2697,7 @@ a:focus-visible {
 
 .owner-booking-request-card dt {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--font-size-1);
 }
 
 .owner-booking-request-card dd {
@@ -2974,7 +2975,7 @@ section.request-follow-up {
   border-radius: 0.75rem;
   padding: var(--space-3) var(--space-4);
   color: var(--green);
-  font-size: 1rem;
+  font-size: var(--font-size-3);
   overflow-wrap: anywhere;
 }
 
@@ -3105,17 +3106,13 @@ section.request-follow-up {
 
 .site-brand strong {
   font-family: var(--display);
-  font-size: 1.45rem;
+  font-size: var(--font-size-5);
   line-height: 1.15;
-}
-
-.site-header-landing:not(.site-header-solid) .site-brand strong {
-  font-size: 1.5rem;
 }
 
 .site-brand span {
   color: var(--ink-on-dark-muted);
-  font-size: 0.7rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3172,7 +3169,7 @@ section.request-follow-up {
   border: 1px solid var(--line-on-dark-strong);
   border-radius: 999px;
   padding-inline: var(--space-4);
-  font-size: 0.92rem;
+  font-size: var(--font-size-2);
   font-weight: 700;
   text-decoration: none;
 }
@@ -3255,7 +3252,7 @@ section.request-follow-up {
 
 .site-footer-grid nav > p {
   color: var(--green);
-  font-size: 0.8rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -3264,7 +3261,7 @@ section.request-follow-up {
 .site-footer-grid nav > a {
   width: fit-content;
   color: var(--ink-soft);
-  font-size: 0.92rem;
+  font-size: var(--font-size-2);
   text-decoration: none;
 }
 
@@ -3276,12 +3273,12 @@ section.request-follow-up {
 .site-footer-brand strong {
   color: var(--green);
   font-family: var(--display);
-  font-size: 1.35rem;
+  font-size: var(--font-size-4);
 }
 
 .site-footer-brand span {
   color: var(--gold);
-  font-size: 0.72rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3290,7 +3287,7 @@ section.request-follow-up {
 .site-footer-brand p {
   max-width: 24ch;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: var(--font-size-2);
   line-height: 1.6;
 }
 
@@ -3302,7 +3299,7 @@ section.request-follow-up {
   padding-block: var(--space-5) var(--space-7);
   border-block-start: 1px solid var(--line);
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--font-size-1);
 }
 
 .messaging-shell {
@@ -3349,7 +3346,7 @@ section.request-follow-up {
 
 .translation-label {
   color: var(--ink-translation);
-  font-size: 0.85rem;
+  font-size: var(--font-size-1);
   font-weight: 700;
 }
 
