@@ -80,14 +80,11 @@ same way.
 - **Verification before review.** Visual work is driven as the Conventions table's `visual verification` row says
   and a current screenshot is shown in chat; any further gate the Surfaces table names runs here.
 - **Review in two layers.** One fresh review of the final tree comes before push authorisation, and its depth
-  follows the kind of change. Documents are reviewed by the session itself, because the owner is their reader. A
-  setting-only seat change gets the same session review, because the owner chose the setting and no instruction
-  changed. Code and agent instruction get the `reviewer` charter run by the model family that did not write the
-  diff, because a writer's own family shares its blind spots. The highest-consequence surfaces also get an
-  external review on the finished draft. [`AGENTS.md`](../AGENTS.md) owns the tiers under "Review and visual
-  verification"; [the `resume` skill](../.agents/skills/resume/SKILL.md) owns how each is run, what happens when
-  a reviewer cannot be reached, and how repairs are reviewed again, under "5. Build", "6. Verify and review" and
-  "8. Deliver".
+  follows the kind of change: the session itself, the model family that did not write the diff, because a writer's own
+  family shares its blind spots, or that pass and an external review on the finished draft.
+  [The `resume` skill](../.agents/skills/resume/SKILL.md) owns the tiers, which change gets which, how each is run,
+  what happens when a reviewer cannot be reached, and how repairs are reviewed again, under "5. Build",
+  "6. Verify and review" and "8. Deliver".
 - **Delivery by GitHub.** On the pull request route, marking the pull request ready, after any required review
   attempt has settled, starts continuous integration, and the merge is always queued as a GitHub auto-merge, which
   GitHub completes only when the checks the repository's branch rules require are green; no agent merges a job's
@@ -104,18 +101,19 @@ same way.
   dirty, active or uncertain is preserved. Servers and containers bound to the worktree are stopped, and the job's own
   disposable scratch is removed; when removal cannot be proven safe the worktree is kept and the reason reported. A
   leftover the session finds, another job's artifact or one it cannot prove it created, is investigated to a
-  conclusion: dead, it is deleted and reported; live, it is left and reported; unsettled, it is left and the owner is
-  asked. `AGENTS.md` owns that rule under "Owner gates", and the `closeout` skill owns the steps. Rulings the owner
-  made during the session go to the issue or the manual that owns the topic, never to a new document.
+  conclusion and the owner is told the outcome. `AGENTS.md` owns that rule under "Owner gates", and the `closeout`
+  skill owns the steps. Rulings the owner made during the session go to the issue or the manual that owns the topic,
+  never to a new document.
 
 ## Where the rules live
 
 - [The `resume` skill](../.agents/skills/resume/SKILL.md): every step from intake to the queued merge, in the order a
-  session runs them.
+  session runs them, the review tiers and the external review included.
 - [The `closeout` skill](../.agents/skills/closeout/SKILL.md): every step after the merge.
 - [`AGENTS.md`](../AGENTS.md) under "Owner gates": what work-pick and push authorisation approve, and the cleanup
   rule.
-- [`AGENTS.md`](../AGENTS.md) under "Review and visual verification": the review tiers and the visual check.
+- [`AGENTS.md`](../AGENTS.md) under "Review and visual verification": the one fresh review before the pull request
+  opens, and the visual check.
 - [`AGENTS.md`](../AGENTS.md) under "Publication and machinery": the pull request route and the direct route.
 - The Surfaces and Conventions tables in [`AGENTS.md`](../AGENTS.md): the repository's own gates, generated
   artifacts and visual verification.
@@ -126,9 +124,8 @@ same way.
 
 - **A session stops mid-build.** Every green slice is already committed on the job branch, so at most the slice in
   progress is lost.
-- **A reviewer cannot be reached.** The review runs on the writing family's own seat and the pull request body
-  declares the substitution; an undeclared substitution is a skip.
-  [The `resume` skill](../.agents/skills/resume/SKILL.md) owns the route under "6. Verify and review".
+- **A reviewer cannot be reached.** [The `resume` skill](../.agents/skills/resume/SKILL.md) owns the substitution
+  route and the declaration it requires, under "6. Verify and review".
 - **Two repair rounds still produce true findings.** [The `resume` skill](../.agents/skills/resume/SKILL.md)
   decides between one more round and an owner decision, under "5. Build".
 - **A required check fails, or the pull request is blocked or closed.** The waiting command ends with its reason,
