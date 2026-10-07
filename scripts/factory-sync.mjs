@@ -111,7 +111,7 @@ function check() {
   console.error(`factory-sync: behind ${canonical} main:`);
   for (const difference of differences) console.error(`  ${difference}`);
   console.error(
-    `factory-sync: to catch up, open a sync card and run \`node scripts/factory-sync.mjs --from <checkout of ${canonical} on current main>\``,
+    `factory-sync: lag is information and blocks nothing; to catch up on the owner's decision, a sync job runs \`node scripts/factory-sync.mjs --from <checkout of ${canonical} on current main>\``,
   );
   return 1;
 }

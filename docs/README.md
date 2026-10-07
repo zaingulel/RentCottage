@@ -12,6 +12,7 @@ each document is set out in [DOC-SWEEP.md](DOC-SWEEP.md); the day-after triage i
 |---|---|---|
 | [GLOSSARY.md](../GLOSSARY.md) | explanation | The glossary of canonical marketplace terms. |
 | [AI-WORKFLOW.md](AI-WORKFLOW.md) | explanation | How the software factory that builds RentCottage fits together and why it is shaped this way. |
+| [AI-WORKFLOW-diagram.html](AI-WORKFLOW-diagram.html) | explanation | The workflow diagram: the guide's one-page picture of the workflow, as an overview and in detail. A web page; open it in a browser. |
 | [CODING-STANDARDS.md](CODING-STANDARDS.md) | instruction | How first-party code is written. |
 | [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) | instruction | How the user interface is built: tokens, tolerated literals and the component patterns new work reuses. |
 | [demo.md](demo.md) | instruction | How to start, present, record and recover the local MVP demonstration, and what it shows is delivered. |

@@ -1094,4 +1094,6 @@ test('--check exits 1 and lists the changed path when one canonical entry differ
     run.stderr.split('\n').filter((line) => line.startsWith('  ')),
     [`  ${changed.path}: changed`],
   );
+  assert.match(run.stderr, /^factory-sync: lag is information .*--from <checkout of /m);
+  assert.doesNotMatch(run.stderr, /open a sync card/);
 });

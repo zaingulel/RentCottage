@@ -10,6 +10,23 @@ Git is the state. A branch is a job; a draft pull request is its handoff; the bo
 
 ## Before intake
 
+Check first that this runtime is running the repository's hooks: one it has not loaded or trusted does nothing,
+and no notice from the runtime can be relied on to reach the owner. Run `git commit --no-verify --dry-run` as one
+command on its own; it commits nothing. The git guard is running only when the result is the guard's own
+refusal, carrying the words `Blocked: git commit`; then say nothing about hooks and continue. Any other result,
+whether git's output, a permission prompt or a refusal in other words, means it is not running. Tell the owner so
+before anything else, in plain words: this session's git guard is off, the turn-end check may be off with it, and
+the fix for this runtime. On Codex the owner has Codex trust the project, removes any `hooks = false` or
+`codex_hooks = false` under `[features]` in the Codex `config.toml`, then runs `/hooks` in the Codex command line
+at the repository root and trusts the repository's hooks; on Windows add the Codex shell-command limit
+`docs/AI-WORKFLOW.md` names, which trust does not lift. On Claude Code, which has no hook trust step, the owner
+starts the session at the repository root or a job worktree root with `disableAllHooks` turned on in no settings
+file or start option; `/hooks` there lists the hooks that session has configured. When the result itself reports
+that a hook failed to start, name that failure and its remedy in place of the fix above, such as restoring Node
+to the command path. Run the command again when the owner reports the fix done. A refusal shows the git guard
+alone, because Codex trusts each hook separately: never report the handoff check or the turn-end check as
+verified.
+
 Fetch `origin/main` with `git fetch --no-prune origin main` and record the fetched commit. If fetching fails,
 report freshness unavailable and do not select work from stale board evidence. Load `AGENTS.md`, this skill, and
 [Update local main](../closeout/SKILL.md#update-local-main) from that commit under `AGENTS.md`'s Instruction reuse
@@ -44,9 +61,10 @@ available, report board freshness unavailable rather than presenting stale local
   Claude Code, `EnterWorktree` records the shell's current folder as the one `ExitWorktree` later returns to, and
   a sibling job's closeout may remove that folder, leaving this session unable to leave its own worktree.
 - Run `node scripts/factory-sync.mjs --check` in the same refreshed checkout and report its result at work-pick in
-  one advisory line: exit 0 is in sync; exit 1 is lag, naming the paths it lists, which one sync job clears at
-  once, resolving every sync card its run carries (`AGENTS.md`, Shared workflow adoption); exit 2 is lag unknown
-  with its stated cause, never reported as in sync. The result never blocks work-pick.
+  one advisory line: exit 0 is in sync; exit 1 is lag, naming the paths it lists, reported as information: an
+  ordinary shared change opens no sync card, and a sync card is opened only on the owner's decision, when one sync
+  job clears every listed path at once (`AGENTS.md`, Shared workflow adoption); exit 2 is lag unknown with its
+  stated cause, never reported as in sync. The result never blocks work-pick.
 - Report in one advisory line, with no threshold, the size of the workflow tooling (scripts, tools and hooks, their
   tests counted apart) and its time-limit declarations, each a test or suite setting its own time limit on one line,
   at the recorded `origin/main` commit and at the newest `main` commit at least 30 days old,
@@ -299,8 +317,22 @@ request route, never a workaround.
    `git diff --name-only --no-renames <receipt-head> <current-head>` lists only documentation paths under that gate's
    existing path definition, excluding its setting-only seat and manifest exceptions; missing commits, unavailable
    classification, or any other changed path require the full rerun, the fast checks still require the current head,
-   and the pull request body names the reused receipt's head and the documentation-only difference. The pre-push hook
-   still runs its own gates on every push. Then push;
+   and the pull request body names the reused receipt's head and the documentation-only difference. Second exception,
+   on the pull request route only, because the direct route has no hosted check: after a rebase onto a moved `main`,
+   any convergence check, fast or slow, may reuse its latest same-command receipt from a different known head when all
+   of these hold. The receipt reads `exit 0` and `tree=clean`, and the current worktree is still clean. The
+   repository's testing strategy records that the hosted required check runs that check; a check it does not so record
+   still reruns on the current head. No commit of the job changed: with `<old-base>` as
+   `git merge-base <receipt-head> origin/main` and `<new-base>` as `git merge-base HEAD origin/main`,
+   `git range-diff <old-base>..<receipt-head> <new-base>..HEAD` succeeds and every row is `=`, and, because
+   `range-diff` compares no merge commit, `git rev-list --merges <old-base>..<receipt-head>` and
+   `git rev-list --merges <new-base>..HEAD` both succeed and print nothing. The incoming changes do not overlap the
+   job's: `git diff --name-only --no-renames <old-base> <new-base>` and
+   `git diff --name-only --no-renames <new-base> HEAD` both succeed and no path appears in both lists. A missing
+   commit, a failed command, any `!`, `<` or `>` row, a merge commit in either range, or a shared path requires the
+   rerun. The comparison is always against the receipt's own head, however many times `main` moved since. The hosted
+   required check on the rebased head is then the proof for that head, and the pull request body names the reused
+   receipt's head, the current head and both comparisons. The pre-push hook still runs its own gates on every push. Then push;
    `gh pr create --draft --body-file <body>` with `Closes #<issue>` in the body. Greptile is requested only for the
    sign-off tier in section 6; the other tiers go straight to step 3. Move the card to `In review`.
 2. Read the current allowance in the signed-in built-in browser at

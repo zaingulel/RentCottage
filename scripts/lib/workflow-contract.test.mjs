@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { gitEnvironment, MANIFEST_PATH, readManifest, regionText, verifyManifest } from './factory-sync.mjs';
+import { blockReason } from './unsafe-git.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const RESUME = readFileSync(resolve(ROOT, '.agents/skills/resume/SKILL.md'), 'utf8');
@@ -445,6 +446,27 @@ test('npm install activates the git hooks through the prepare script', (t) => {
     '.githooks',
     'package.json scripts.prepare does not set core.hooksPath to .githooks, so `npm install` would not activate the git hooks',
   );
+});
+
+// The resume skill reads one result as "the hooks are running": a guard hook refusing this command in these words.
+// Both real hooks run, because the words are theirs, and the rule is judged in both kinds of checkout, because the
+// suite runs in only one. Recurring cost: two Node starts.
+test('ANTI-REGRESSION: both git guard hooks refuse the hook check the resume skill names, in the words it reads', () => {
+  const HOOK_CHECK = 'git commit --no-verify --dry-run';
+  const REFUSAL = 'Blocked: git commit';
+  for (const literal of [HOOK_CHECK, REFUSAL]) {
+    assert.ok(RESUME.includes(`\`${literal}\``), `the resume skill must name \`${literal}\` on one line`);
+  }
+  const input = JSON.stringify({ cwd: ROOT, tool_input: { command: HOOK_CHECK } });
+  for (const hook of ['.claude/hooks/block-unsafe-git.mjs', '.codex/hooks/block-unsafe-git.mjs']) {
+    const run = spawnSync(process.execPath, [resolve(ROOT, hook)], { input, encoding: 'utf8', env: gitEnvironment() });
+    assert.equal(run.status, 2, `${hook} must refuse the hook check before git runs: ${run.stderr}`);
+    assert.ok(run.stderr.includes(REFUSAL), `${hook} must refuse in the words the skill reads: ${run.stderr}`);
+  }
+  for (const cwd of ['/root', '/job']) {
+    const checkout = { cwd, isRootCheckout: (dir) => dir === '/root', platform: process.platform };
+    assert.match(blockReason(HOOK_CHECK, checkout), /^git commit /, `the guard must refuse the hook check in ${cwd}`);
+  }
 });
 
 test('the review line has one specified format, and the template and skills point at it', () => {

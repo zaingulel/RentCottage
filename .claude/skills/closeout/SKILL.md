@@ -99,8 +99,10 @@ process list; nothing is inferred from chat.
    file name carries. A card its contents name is only a lead: the tie holds when that card, its pull request or
    its branch also accounts for the file, and otherwise the leftover is unsettled. Search open cards and pull
    requests for its file name with
-   `gh search issues --repo <owner>/<repo> --state open --include-prs "<file name>"`; a hit
-   that names it makes it live. Run the inactive-use and container checks above. For a worktree, from the verifier
+   `gh api -X GET --paginate search/issues -f q='repo:<owner>/<repo> is:open "<file name>"' --jq '{incomplete_results, hits: [.items[] | {number, title}]}'`,
+   which prints one line for each page of results; a hit that names it makes it live. No hit shows that nothing
+   names it only when the command succeeded and every line reads `"incomplete_results":false`; a failed or
+   incomplete search leaves the leftover unsettled. Run the inactive-use and container checks above. For a worktree, from the verifier
    checkout, read `git -C <path> status --porcelain --untracked-files=normal --ignored=matching` and its branch,
    and run the same inactive-use and container checks on its path. `git worktree remove` deletes ignored files
    without refusing, so investigate each `!!` entry as a file or folder leftover of its own, apart from a
