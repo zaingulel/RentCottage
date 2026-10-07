@@ -27,7 +27,9 @@ import {
   ActionButton,
   ActionFeedback,
   ActionLink,
+  ChoiceControl,
   FormControl,
+  OptionGroup,
 } from "./interaction-controls";
 import { PhoneAccessForm } from "./phone-access-form";
 import { useExclusiveAction } from "./use-exclusive-action";
@@ -172,29 +174,30 @@ export function BookingRequestForm({
       <h2>{copy.formTitle}</h2>
       <p>{copy.formIntro}</p>
       <p className="quote-notice">{quoteNotice}</p>
-      <fieldset className="booking-request-enquiry">
-        <legend>{messagingMessages[locale].continueEnquiry}</legend>
-        <label>
-          <input
-            type="radio"
-            name="conversation"
-            value="new"
-            checked={conversationId === "new"}
-            onChange={() => setConversationId("new")}
-          />
+      <OptionGroup
+        legend={messagingMessages[locale].continueEnquiry}
+        layout="stack"
+      >
+        <ChoiceControl
+          kind="radio"
+          name="conversation"
+          value="new"
+          checked={conversationId === "new"}
+          onChange={() => setConversationId("new")}
+        >
           {messagingMessages[locale].newEnquiry}
-        </label>
+        </ChoiceControl>
         {enquiryOptions.map((option) => (
-          <label key={option.conversationId}>
-            <input
-              type="radio"
-              name="conversation"
-              value={option.conversationId}
-              checked={conversationId === option.conversationId}
-              onChange={() => setConversationId(option.conversationId)}
-            />
+          <ChoiceControl
+            key={option.conversationId}
+            kind="radio"
+            name="conversation"
+            value={option.conversationId}
+            checked={conversationId === option.conversationId}
+            onChange={() => setConversationId(option.conversationId)}
+          >
             {messagingMessages[locale].continueEnquiry}: {option.label}
-          </label>
+          </ChoiceControl>
         ))}
         <p>{messagingMessages[locale].newEnquiryHelp}</p>
         <ActionLink
@@ -203,7 +206,7 @@ export function BookingRequestForm({
         >
           {messagingMessages[locale].browseEnquiries}
         </ActionLink>
-      </fieldset>
+      </OptionGroup>
       {uiPolicy.insideCutoff ? (
         <ActionFeedback kind="error">{copy.cutoffPassed}</ActionFeedback>
       ) : (
@@ -249,54 +252,50 @@ export function BookingRequestForm({
             />
             <small>{copy.noteHint}</small>
           </label>
-          <label className="booking-request-acceptance">
-            <input
-              type="checkbox"
-              required
-              checked={acceptedHouseRules}
-              onChange={(event) => setAcceptedHouseRules(event.target.checked)}
-            />
-            <span>{copy.acceptHouseRules}</span>
-          </label>
+          <ChoiceControl
+            kind="checkbox"
+            required
+            checked={acceptedHouseRules}
+            onChange={(event) => setAcceptedHouseRules(event.target.checked)}
+          >
+            {copy.acceptHouseRules}
+          </ChoiceControl>
           <div className="booking-request-policy">
             <p>{acceptanceEvidence.cancellationPolicy}</p>
-            <label className="booking-request-acceptance">
-              <input
-                type="checkbox"
-                required
-                checked={acceptedCancellationPolicy}
-                onChange={(event) =>
-                  setAcceptedCancellationPolicy(event.target.checked)
-                }
-              />
-              <span>{acceptanceEvidence.cancellationAcceptance}</span>
-            </label>
-          </div>
-          <label className="booking-request-acceptance">
-            <input
-              type="checkbox"
+            <ChoiceControl
+              kind="checkbox"
               required
-              checked={acceptedMarketplaceTerms}
+              checked={acceptedCancellationPolicy}
               onChange={(event) =>
-                setAcceptedMarketplaceTerms(event.target.checked)
+                setAcceptedCancellationPolicy(event.target.checked)
               }
-            />
-            <span>{acceptanceEvidence.marketplaceTermsAcceptance}</span>
-          </label>
+            >
+              {acceptanceEvidence.cancellationAcceptance}
+            </ChoiceControl>
+          </div>
+          <ChoiceControl
+            kind="checkbox"
+            required
+            checked={acceptedMarketplaceTerms}
+            onChange={(event) =>
+              setAcceptedMarketplaceTerms(event.target.checked)
+            }
+          >
+            {acceptanceEvidence.marketplaceTermsAcceptance}
+          </ChoiceControl>
           {uiPolicy.requiresInside48HourNoRefundAcceptance ? (
             <div className="booking-request-warning">
               <p>{acceptanceEvidence.inside48Warning}</p>
-              <label className="booking-request-acceptance">
-                <input
-                  type="checkbox"
-                  required
-                  checked={acceptedInside48HourNoRefund}
-                  onChange={(event) =>
-                    setAcceptedInside48HourNoRefund(event.target.checked)
-                  }
-                />
-                <span>{acceptanceEvidence.inside48Acceptance}</span>
-              </label>
+              <ChoiceControl
+                kind="checkbox"
+                required
+                checked={acceptedInside48HourNoRefund}
+                onChange={(event) =>
+                  setAcceptedInside48HourNoRefund(event.target.checked)
+                }
+              >
+                {acceptanceEvidence.inside48Acceptance}
+              </ChoiceControl>
             </div>
           ) : null}
           {result ? (

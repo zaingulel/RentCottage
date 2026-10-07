@@ -48,7 +48,7 @@ const listedTokens = new Set(
 const scaledProperty =
   /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
 const scaleToken =
-  /^(?:(?:space|font-size)-\d+|radius-(?:control|card)|shadow-(?:focus|invalid|pressed))$/;
+  /^(?:(?:space|font-size)-\d+|radius-(?:control|card|mark)|shadow-(?:focus|invalid|pressed))$/;
 
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
@@ -280,6 +280,21 @@ describe("stylesheet shape and layer tokens", () => {
     ).toEqual([]);
   });
 
+  it("keeps the pill off selectable options", () => {
+    const pills = stylesheets.flatMap(({ source }) =>
+      [...source.matchAll(/border-radius:\s*999px/g)].map((match) =>
+        ruleSelector(source, match.index),
+      ),
+    );
+
+    expect(pills.length).toBeGreaterThan(0);
+    expect(
+      pills.filter((selector) =>
+        /\.action-toggle|\.amenity-options/.test(selector),
+      ),
+    ).toEqual([]);
+  });
+
   it("keeps every box shadow a state ring token", () => {
     expect(
       offScaleHits(/^box-shadow$/, /^(?:var\(--shadow-[a-z]+\)|none|inherit)$/),
@@ -303,6 +318,7 @@ describe("stylesheet shape and layer tokens", () => {
     expect(declared.filter((token) => token.startsWith("--radius-"))).toEqual(
       expect.arrayContaining([
         "--radius-control: 0.5rem",
+        "--radius-mark: 0.25rem",
         "--radius-card: 0.625rem",
       ]),
     );

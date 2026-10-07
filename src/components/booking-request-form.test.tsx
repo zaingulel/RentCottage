@@ -273,4 +273,43 @@ describe("Booking Request form", () => {
       ).not.toBeInTheDocument();
     },
   );
+
+  it.each(["en", "ar", "ckb"] satisfies Locale[])(
+    "renders its enquiry choice and acceptances through the shared controls in %s",
+    (locale) => {
+      render(
+        <BookingRequestForm
+          customerReady
+          discoveryQuery={{
+            from: "2099-08-21",
+            to: "2099-08-21",
+            guests: 4,
+            amenities: [],
+            selections: [
+              { serviceDay: "2099-08-21", kind: "shift", position: 2 },
+            ],
+          }}
+          idempotencyKey="11111111-1111-4111-8111-111111111111"
+          locale={locale}
+          quote={quote}
+          {...policyProps(locale)}
+        />,
+      );
+
+      const radios = screen.getAllByRole("radio");
+      const checkboxes = screen.getAllByRole("checkbox");
+      expect(radios).toHaveLength(1);
+      expect(checkboxes).toHaveLength(4);
+      for (const radio of radios) {
+        expect(radio.parentElement).toBe(radio.closest("label.choice-control"));
+        expect(radio.closest("fieldset.option-group-stack")).not.toBeNull();
+      }
+      for (const checkbox of checkboxes) {
+        expect(checkbox.parentElement).toBe(
+          checkbox.closest("label.choice-control"),
+        );
+        expect(checkbox).toBeRequired();
+      }
+    },
+  );
 });

@@ -244,4 +244,33 @@ describe("CottageDiscoveryForm booking period picker", () => {
     ).toHaveAttribute("role", "alert");
     expect(push).not.toHaveBeenCalled();
   });
+
+  it.each(["en", "ar", "ckb"] as const)(
+    "renders its fields, filters and amenities through the shared controls in %s",
+    (locale) => {
+      const { container } = render(
+        <CottageDiscoveryForm locale={locale} facets={facets} />,
+      );
+      expect(container.querySelectorAll('input[type="date"]')).toHaveLength(2);
+      expect(container.querySelectorAll('input[type="number"]')).toHaveLength(
+        1,
+      );
+      expect(container.querySelectorAll("select")).toHaveLength(2);
+      const fields = container.querySelectorAll(
+        'input[type="date"], input[type="number"], select',
+      );
+      expect(fields).toHaveLength(5);
+      for (const field of fields) expect(field).toHaveClass("form-control");
+      const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+      expect(checkboxes).toHaveLength(1);
+      expect(
+        checkboxes[0].closest(
+          "fieldset.option-group-wrap label.choice-control",
+        ),
+      ).not.toBeNull();
+      expect(
+        container.querySelectorAll("details.disclosure > summary"),
+      ).toHaveLength(1);
+    },
+  );
 });

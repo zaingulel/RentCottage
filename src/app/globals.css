@@ -112,6 +112,7 @@
 
   /* Corner radius */
   --radius-control: 0.5rem;
+  --radius-mark: 0.25rem;
   --radius-card: 0.625rem;
 
   /* State rings */
@@ -193,17 +194,11 @@ textarea {
   color: var(--ink-on-green);
 }
 
-.action-secondary {
+.action-secondary,
+.action-toggle {
   border-color: var(--line);
   background: var(--card);
   color: var(--green);
-}
-
-.action-toggle {
-  border-color: var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
 }
 
 .action-toggle[aria-pressed="true"] {
@@ -250,12 +245,15 @@ textarea {
 
 .action:focus-visible,
 .action-link:focus-visible,
-.form-control:focus-visible {
+.form-control:focus-visible,
+.choice-control > input:focus-visible,
+.disclosure > summary:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
 }
 
-.form-control:focus-visible {
+.form-control:focus-visible,
+.disclosure > summary:focus-visible {
   border-color: var(--gold);
   box-shadow: var(--shadow-focus);
 }
@@ -264,6 +262,10 @@ textarea {
   cursor: not-allowed;
   border-color: currentcolor;
   opacity: 0.76;
+}
+
+.action-toggle:disabled {
+  border-style: dashed;
 }
 
 .action[aria-busy="true"]::after {
@@ -306,6 +308,143 @@ input[type="file"].form-control::file-selector-button {
 .form-control[aria-invalid="true"] {
   border-color: var(--error);
   box-shadow: var(--shadow-invalid);
+}
+
+.choice-control {
+  min-block-size: 2.75rem;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.choice-control > input {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+  margin: 0;
+  margin-block-start: var(--space-1);
+  border: 1px solid var(--green);
+  border-radius: var(--radius-mark);
+  background: var(--surface-field);
+  cursor: pointer;
+}
+
+.choice-control > input[type="radio"] {
+  border-radius: 50%;
+}
+
+.choice-control > input:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+.choice-control > input:checked::before {
+  content: "";
+  position: absolute;
+}
+
+.choice-control > input[type="checkbox"]:checked {
+  background: var(--green);
+}
+
+/* Physical borders: two sides of a rotated box draw the tick, the same way in every direction. */
+.choice-control > input[type="checkbox"]:checked::before {
+  inset-block: 11% 22%;
+  inset-inline: 30%;
+  border: solid var(--ink-on-green);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.choice-control > input[type="radio"]:checked::before {
+  inset: 0;
+  inline-size: 0;
+  block-size: 0;
+  margin: auto;
+  border: 0.3rem solid var(--green);
+  border-radius: 50%;
+}
+
+.choice-control > input[aria-invalid="true"] {
+  border-width: 2px;
+  border-color: var(--error);
+  box-shadow: var(--shadow-invalid);
+}
+
+.choice-control > input:disabled {
+  border-style: dashed;
+}
+
+.choice-control > input:disabled,
+.choice-control > input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.76;
+}
+
+.option-group {
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.option-group > legend {
+  padding: 0;
+  font-weight: 700;
+}
+
+.option-group > div {
+  display: flex;
+}
+
+.option-group-stack > div {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.option-group-wrap > div {
+  flex-wrap: wrap;
+  column-gap: var(--space-5);
+}
+
+.disclosure > summary {
+  position: relative;
+  min-block-size: 2.75rem;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-field);
+  padding: var(--space-3);
+  padding-inline-end: var(--space-6);
+  color: var(--green);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Physical borders: two sides of a rotated box draw the chevron, which points down or up in every direction. */
+.disclosure > summary::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--space-4);
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  margin-block: auto;
+  border: solid currentcolor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.disclosure[open] > summary::after {
+  transform: rotate(-135deg);
 }
 
 .action-feedback {
@@ -561,7 +700,7 @@ input[type="file"].form-control::file-selector-button {
   align-items: center;
   gap: var(--space-2);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: var(--surface-field);
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-1);
@@ -1261,8 +1400,7 @@ html[lang="ckb"] .booking-summary h2 {
 }
 
 .booking-summary > .action-link,
-.booking-summary > .action,
-.request-form > .action {
+.booking-summary > .action {
   margin-block-start: var(--space-5);
   font-family: var(--display);
   font-weight: 600;
@@ -1292,46 +1430,6 @@ html[lang="ckb"] .booking-summary h2 {
   margin: 0;
   color: var(--gold);
   font-weight: 700;
-}
-
-.request-form {
-  max-width: 42rem;
-  margin-block-start: var(--space-5);
-  padding: var(--space-5);
-  display: grid;
-  gap: var(--space-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--card);
-}
-
-.request-form label:not(.terms-field) {
-  display: grid;
-  gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--font-size-1);
-  font-weight: 700;
-}
-
-.request-form .form-control {
-  background: var(--background);
-}
-
-.request-form input[type="text"] {
-  min-height: 3.25rem;
-}
-
-.terms-field {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  line-height: 1.5;
-}
-
-.terms-field input {
-  width: 1.2rem;
-  height: 1.2rem;
-  margin-block-start: var(--space-1);
 }
 
 .request-success {
@@ -1415,7 +1513,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .search-fields label > span,
 .counter-field > span,
-.amenity-filter legend,
+.retreat-search .option-group > legend,
 .booking-period-filter > legend,
 .search-fields label {
   display: block;
@@ -1425,37 +1523,11 @@ html[lang="ckb"] .booking-summary h2 {
   font-weight: 700;
 }
 
-.search-fields input,
-.search-fields select {
-  width: 100%;
-  min-height: 3.25rem;
-  margin-block-start: var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--background);
-  padding-inline: var(--space-3);
-  color: inherit;
-}
-
-.booking-period-disclosure {
+.retreat-search .disclosure {
   margin-block-start: var(--space-4);
 }
 
-.booking-period-disclosure > summary {
-  display: list-item;
-  min-block-size: 2.75rem;
-  padding-block: var(--space-3);
-  color: var(--green);
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.booking-period-disclosure > summary:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 2px;
-}
-
-.booking-period-disclosure > p {
+.retreat-search .disclosure > p {
   color: var(--muted);
 }
 
@@ -1532,12 +1604,6 @@ html[lang="ckb"] .booking-summary h2 {
   font-size: var(--font-size-1);
 }
 
-.amenity-filter label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
 .counter-field > div {
   width: 100%;
   height: 3.25rem;
@@ -1548,6 +1614,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .search-fields .form-control {
   min-height: 3.25rem;
+  margin-block-start: var(--space-2);
   background: var(--background);
 }
 
@@ -1568,20 +1635,13 @@ html[lang="ckb"] .booking-summary h2 {
   text-align: center;
 }
 
-.amenity-filter {
-  margin: var(--space-4) 0 0;
-  padding: 0;
-  border: 0;
+.retreat-search .option-group {
+  margin-block-start: var(--space-4);
 }
 
-.amenity-filter > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.amenity-filter .action-toggle {
-  font-size: var(--font-size-2);
+.retreat-search .disclosure > summary,
+.retreat-search .choice-control > input {
+  background: var(--background);
 }
 
 .retreat-search > .action-primary {
@@ -2546,32 +2606,13 @@ a:focus-visible {
   line-height: 1.5;
 }
 
-.booking-request-enquiry {
-  min-inline-size: 0;
-  margin: 0;
-  border: 0;
-  padding: 0;
-}
-
-.booking-request-enquiry > legend {
-  padding: 0;
-  font-weight: 700;
-}
-
-.booking-request-enquiry > label {
-  min-block-size: 2.75rem;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .booking-request-form {
   display: grid;
   gap: var(--space-4);
   margin-block-start: var(--space-5);
 }
 
-.booking-request-form > label:not(.booking-request-acceptance) {
+.booking-request-form > label:not(.choice-control) {
   display: grid;
   gap: var(--space-2);
   min-inline-size: 0;
@@ -2583,18 +2624,8 @@ a:focus-visible {
   background: var(--background);
 }
 
-.booking-request-acceptance {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  line-height: 1.5;
-}
-
-.booking-request-acceptance input {
-  flex: 0 0 auto;
-  inline-size: 1.2rem;
-  block-size: 1.2rem;
-  margin-block-start: var(--space-1);
+.booking-request-panel .choice-control > input {
+  background: var(--background);
 }
 
 .booking-request-policy,
