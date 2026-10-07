@@ -18,8 +18,9 @@ Infer the repo from `git remote -v` — `gh` does this automatically when run in
 ## Type labels
 
 Every issue carries exactly one `type:` label, the vocabulary Flowgauge uses, so Flowgauge's Breakdown by type can
-place every item on this board. Labels come only from the repository's existing set (`gh label list`); a skill never
-creates one.
+place every item on this board. `to-issues` step 6 says which type an issue gets, and
+`scripts/verify-issue-publish.mjs`, run at its step 8, fails an issue that carries none or more than one. Labels come
+only from the repository's existing set (`gh label list`); a skill never creates one.
 
 | Label | Issue shape |
 |---|---|
