@@ -110,6 +110,21 @@
   --font-size-5: 1.625rem;
   --font-size-6: 2.125rem;
 
+  /* Corner radius */
+  --radius-control: 0.5rem;
+  --radius-card: 0.625rem;
+
+  /* State rings */
+  --shadow-focus: 0 0 0 3px var(--focus-ring);
+  --shadow-invalid: 0 0 0 2px var(--error-ring);
+  --shadow-pressed: inset 0 0 0 1px var(--green);
+
+  /* Stacking order */
+  --layer-raised: 1;
+  --layer-overlap: 3;
+  --layer-header: 40;
+  --layer-menu: 50;
+
   --hero-headline-gap-rtl: 0.5em;
 
   /* Booking Request progress steps */
@@ -160,7 +175,7 @@ textarea {
   justify-content: center;
   gap: var(--space-2);
   border: 1px solid transparent;
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   padding-inline: var(--space-4);
   font-weight: 700;
   line-height: 1.2;
@@ -194,7 +209,7 @@ textarea {
 .action-toggle[aria-pressed="true"] {
   border-color: var(--green);
   background: var(--action-pressed);
-  box-shadow: inset 0 0 0 1px var(--green);
+  box-shadow: var(--shadow-pressed);
   color: var(--green);
 }
 
@@ -242,7 +257,7 @@ textarea {
 
 .form-control:focus-visible {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  box-shadow: var(--shadow-focus);
 }
 
 .action:disabled {
@@ -262,7 +277,7 @@ textarea {
   width: 100%;
   min-height: 2.75rem;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   background: var(--surface-field);
   padding: var(--space-3);
   outline: 2px solid transparent;
@@ -281,7 +296,7 @@ input[type="file"].form-control::file-selector-button {
   min-height: 2.25rem;
   margin-inline-end: var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 0.55rem;
+  border-radius: var(--radius-control);
   background: var(--background);
   color: var(--green);
   padding-inline: var(--space-3);
@@ -290,7 +305,7 @@ input[type="file"].form-control::file-selector-button {
 
 .form-control[aria-invalid="true"] {
   border-color: var(--error);
-  box-shadow: 0 0 0 2px var(--error-ring);
+  box-shadow: var(--shadow-invalid);
 }
 
 .action-feedback {
@@ -363,10 +378,9 @@ input[type="file"].form-control::file-selector-button {
   inset-block-start: var(--space-5);
   padding: var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-card);
   background: var(--green);
   color: var(--ink-on-progress);
-  box-shadow: 0 1.25rem 3rem rgb(34 64 47 / 12%);
 }
 
 .application-progress-card h1 {
@@ -434,9 +448,8 @@ input[type="file"].form-control::file-selector-button {
 .access-required-card {
   padding: clamp(var(--space-5), 3vw, var(--space-6));
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-card);
   background: var(--card);
-  box-shadow: 0 0.7rem 2rem rgb(52 45 31 / 5%);
 }
 
 .application-section-heading {
@@ -497,7 +510,7 @@ input[type="file"].form-control::file-selector-button {
 
 .amenities-fieldset[aria-invalid="true"] .amenity-options label {
   border-color: var(--error);
-  box-shadow: 0 0 0 2px var(--error-ring);
+  box-shadow: var(--shadow-invalid);
 }
 
 .application-fields small,
@@ -570,7 +583,7 @@ input[type="file"].form-control::file-selector-button {
   grid-row: span 4;
   gap: var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-card);
   background: var(--card);
 }
 
@@ -656,7 +669,7 @@ input[type="file"].form-control::file-selector-button {
 .administrator-review-card {
   padding: var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 1.15rem;
+  border-radius: var(--radius-card);
   background: var(--card);
 }
 
@@ -750,7 +763,7 @@ input[type="file"].form-control::file-selector-button {
   margin-block-start: var(--space-4);
 }
 
-@media (max-width: 850px) {
+@media (max-width: 53rem) {
   .owner-application-layout {
     grid-template-columns: 1fr;
   }
@@ -760,7 +773,7 @@ input[type="file"].form-control::file-selector-button {
   }
 }
 
-@media (max-width: 620px) {
+@media (max-width: 40rem) {
   .owner-application-layout,
   .owner-application-header {
     width: min(100% - 1.25rem, 78rem);
@@ -945,7 +958,7 @@ a {
   margin: var(--space-6) auto;
   padding: var(--space-4);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--card);
   color: var(--muted);
   text-align: center;
@@ -960,7 +973,7 @@ a {
 .results-grid article {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-card);
   background: var(--card);
 }
 
@@ -984,7 +997,7 @@ a {
   margin-block: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--card);
 }
 
@@ -1089,7 +1102,7 @@ a {
   position: relative;
   min-height: 11rem;
   overflow: hidden;
-  border-radius: 0.9rem;
+  border-radius: var(--radius-card);
   background: var(--surface-placeholder);
 }
 
@@ -1129,7 +1142,7 @@ a {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-card);
   background: var(--card);
 }
 
@@ -1170,9 +1183,8 @@ a {
   inset-block-start: var(--space-5);
   padding: var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 1.2rem;
+  border-radius: var(--radius-card);
   background: var(--card);
-  box-shadow: 0 1.5rem 3rem -2.25rem rgb(34 64 47 / 45%);
 }
 
 .booking-summary > p {
@@ -1249,7 +1261,7 @@ html[lang="ckb"] .booking-summary h2 {
 .request-notice {
   margin: 0;
   padding: var(--space-3);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-card);
   background: var(--gold-tint);
   color: var(--muted);
   font-size: var(--font-size-1);
@@ -1273,7 +1285,7 @@ html[lang="ckb"] .booking-summary h2 {
   display: grid;
   gap: var(--space-4);
   border: 1px solid var(--line);
-  border-radius: 1.2rem;
+  border-radius: var(--radius-card);
   background: var(--card);
 }
 
@@ -1311,7 +1323,7 @@ html[lang="ckb"] .booking-summary h2 {
   margin-block-start: var(--space-5);
   padding: var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--green-tint);
   color: var(--green);
   font-weight: 700;
@@ -1321,7 +1333,7 @@ html[lang="ckb"] .booking-summary h2 {
   position: relative;
   min-height: 13rem;
   overflow: hidden;
-  border-radius: 0.8rem;
+  border-radius: var(--radius-card);
 }
 
 .request-cottage h2 {
@@ -1336,7 +1348,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .retreat-copy {
   position: relative;
-  z-index: 1;
+  z-index: var(--layer-raised);
   padding-block: 11rem 8.5rem;
 }
 
@@ -1365,14 +1377,13 @@ html[lang="ckb"] .booking-summary h2 {
 
 .retreat-search {
   position: relative;
-  z-index: 3;
+  z-index: var(--layer-overlap);
   max-width: 40rem;
   margin-block-start: -4rem;
   padding: var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-card);
   background: var(--card);
-  box-shadow: 0 1.5rem 3.75rem -2.1rem rgb(34 64 47 / 48%);
 }
 
 .search-fields {
@@ -1404,7 +1415,7 @@ html[lang="ckb"] .booking-summary h2 {
   min-height: 3.25rem;
   margin-block-start: var(--space-2);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   background: var(--background);
   padding-inline: var(--space-3);
   color: inherit;
@@ -1438,7 +1449,7 @@ html[lang="ckb"] .booking-summary h2 {
   margin-block: var(--space-4);
   padding: var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-card);
 }
 
 .booking-period-options > legend,
@@ -1475,7 +1486,7 @@ html[lang="ckb"] .booking-summary h2 {
   align-items: center;
   gap: var(--space-2);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-3);
   background: var(--surface-field);
 }
@@ -1515,7 +1526,7 @@ html[lang="ckb"] .booking-summary h2 {
   width: 100%;
   height: 3.25rem;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   background: var(--background);
 }
 
@@ -1604,7 +1615,7 @@ html[lang="ckb"] .booking-summary h2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   overflow: hidden;
-  border-radius: 1.5rem;
+  border-radius: var(--radius-card);
   background: var(--green);
   color: var(--ink-on-trusted);
 }
@@ -1646,7 +1657,7 @@ html[lang="ckb"] .booking-summary h2 {
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--line-on-trusted);
-  border-radius: 0.85rem;
+  border-radius: var(--radius-card);
   background: var(--surface-on-trusted);
 }
 
@@ -1670,7 +1681,7 @@ a:focus-visible {
   outline-offset: 3px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 47.5rem) {
   .retreat-hero {
     min-height: 76vh;
   }
@@ -1702,7 +1713,7 @@ a:focus-visible {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 40rem) {
   .retreat-copy,
   .retreat-search,
   .retreat-blurb,
@@ -1732,7 +1743,7 @@ a:focus-visible {
 .review-action-card,
 .owner-response-card {
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   padding: var(--space-4);
 }
 
@@ -1788,7 +1799,7 @@ a:focus-visible {
   color: var(--status-approved-text);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 40rem) {
   .review-detail-grid {
     grid-template-columns: 1fr;
   }
@@ -1823,10 +1834,9 @@ a:focus-visible {
 .cottage-shift-schedule-editor,
 .cottage-pricing-availability-editor {
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-card);
   background: var(--card);
   padding: clamp(var(--space-4), 3vw, var(--space-5));
-  box-shadow: 0 0.8rem 2.5rem rgb(38 50 44 / 7%);
 }
 
 .cottage-publication-review {
@@ -1851,10 +1861,9 @@ a:focus-visible {
   display: grid;
   gap: var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-card);
   background: var(--card);
   padding: clamp(var(--space-4), 3vw, var(--space-5));
-  box-shadow: 0 0.8rem 2.5rem rgb(38 50 44 / 7%);
 }
 
 .cottage-localization-grid form,
@@ -1875,7 +1884,7 @@ a:focus-visible {
 .cottage-publication-review > form input {
   inline-size: 100%;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   padding: var(--space-3);
   font: inherit;
 }
@@ -1888,7 +1897,7 @@ a:focus-visible {
 .cottage-publication-review button {
   min-block-size: 2.75rem;
   border: 1px solid var(--green);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   background: var(--green);
   color: var(--ink-on-green-bright);
   padding: var(--space-3) var(--space-4);
@@ -1945,7 +1954,7 @@ a:focus-visible {
 .cottage-profile-card a {
   min-block-size: 2.75rem;
   border: 1px solid var(--green);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   background: var(--green);
   color: var(--ink-on-green-bright);
   padding: var(--space-3) var(--space-4);
@@ -2020,7 +2029,7 @@ a:focus-visible {
 .cottage-photo-upload-form input {
   inline-size: 100%;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   background: var(--surface-bright);
   color: var(--ink);
   padding: var(--space-3);
@@ -2064,7 +2073,7 @@ a:focus-visible {
 .cottage-shift-row {
   align-content: start;
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--surface-field);
   padding: var(--space-4);
 }
@@ -2086,7 +2095,7 @@ a:focus-visible {
   inline-size: 100%;
   min-block-size: 2.75rem;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   background: var(--surface-bright);
   padding: var(--space-3);
 }
@@ -2157,7 +2166,7 @@ a:focus-visible {
 .cottage-inventory-unit {
   align-content: start;
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--surface-field);
   padding: var(--space-4);
 }
@@ -2182,7 +2191,7 @@ a:focus-visible {
   inline-size: 100%;
   min-block-size: 2.75rem;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   background: var(--surface-bright);
   padding: var(--space-3);
 }
@@ -2291,7 +2300,7 @@ a:focus-visible {
   align-items: center;
   gap: var(--space-2);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-control);
   padding: var(--space-3);
 }
 
@@ -2345,7 +2354,7 @@ a:focus-visible {
   white-space: pre-wrap;
 }
 
-@media (max-width: 620px) {
+@media (max-width: 40rem) {
   .cottage-profile-number-grid,
   .cottage-profile-coordinate-grid {
     grid-template-columns: 1fr;
@@ -2421,7 +2430,7 @@ a:focus-visible {
 .quote-card {
   margin-block-end: var(--space-4);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--surface-field);
   padding: clamp(var(--space-4), 3vw, var(--space-5));
 }
@@ -2502,7 +2511,7 @@ a:focus-visible {
 .booking-request-receipt {
   margin-block-end: var(--space-4);
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--surface-field);
   padding: clamp(var(--space-4), 3vw, var(--space-5));
 }
@@ -2575,7 +2584,7 @@ a:focus-visible {
 .booking-request-policy,
 .booking-request-warning {
   border-inline-start: 0.3rem solid var(--gold);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-card);
   background: var(--surface-notice);
   padding: var(--space-3) var(--space-4);
 }
@@ -2637,7 +2646,7 @@ a:focus-visible {
 .owner-booking-request-card {
   min-inline-size: 0;
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--card);
   padding: var(--space-4);
 }
@@ -2694,7 +2703,7 @@ a:focus-visible {
   margin-inline: auto;
   padding: clamp(var(--space-5), 4vw, var(--space-7));
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-card);
   background: var(--surface-bright);
 }
 
@@ -2764,7 +2773,7 @@ a:focus-visible {
   display: grid;
   gap: var(--space-1);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-card);
   padding: var(--space-4);
 }
 
@@ -2787,7 +2796,7 @@ section.request-follow-up {
   margin-inline: auto;
   padding: clamp(var(--space-5), 4vw, var(--space-7));
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-card);
   background: var(--surface-bright);
 }
 
@@ -2949,7 +2958,7 @@ section.request-follow-up {
 
 .booking-request-status-badge.booking-request-payment-status,
 .owner-booking-request-card > header > .booking-request-payment-status {
-  border-radius: 0.75rem;
+  border-radius: var(--radius-card);
   padding: var(--space-3) var(--space-4);
   color: var(--green);
   font-size: var(--font-size-3);
@@ -3015,7 +3024,7 @@ section.request-follow-up {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 47.5rem) {
   .quote-layout {
     grid-template-columns: 1fr;
   }
@@ -3027,12 +3036,10 @@ section.request-follow-up {
 }
 
 .site-header {
-  z-index: 40;
+  z-index: var(--layer-header);
   background: transparent;
   color: var(--ink-on-dark);
-  transition:
-    background 220ms ease,
-    box-shadow 220ms ease;
+  transition: background 220ms ease;
 }
 
 .site-header-landing {
@@ -3045,10 +3052,6 @@ section.request-follow-up {
   background: var(--surface-raised);
   color: var(--ink);
   border-block-end: 1px solid var(--line);
-}
-
-.site-header-landing.site-header-solid {
-  box-shadow: 0 0.5rem 1.5rem rgb(34 64 47 / 8%);
 }
 
 .site-header-row {
@@ -3168,15 +3171,14 @@ section.request-follow-up {
 
 .account-navigation details > div {
   position: absolute;
-  z-index: 50;
+  z-index: var(--layer-menu);
   inset-inline-end: 0;
   min-width: 14.5rem;
   margin-block-start: var(--space-2);
   padding: var(--space-2);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-card);
   background: var(--surface-raised);
-  box-shadow: 0 0.5rem 1.5rem rgb(34 64 47 / 12%);
   color: var(--ink);
 }
 
@@ -3281,7 +3283,7 @@ section.request-follow-up {
   padding: clamp(var(--space-4), 3vw, var(--space-6));
   background: var(--surface-raised);
   border: 1px solid var(--line-messaging);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
 }
 
 .messaging-inbox-list,
@@ -3298,7 +3300,7 @@ section.request-follow-up {
   gap: var(--space-1);
   padding: var(--space-4);
   border: 1px solid var(--line-messaging);
-  border-radius: 0.8rem;
+  border-radius: var(--radius-card);
   overflow-wrap: anywhere;
 }
 

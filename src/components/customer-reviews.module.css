@@ -4,7 +4,7 @@
   min-inline-size: 0;
   padding: clamp(var(--space-4), 3vw, var(--space-5));
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--surface-bright);
   overflow-wrap: anywhere;
 }
@@ -31,7 +31,7 @@
 .card {
   padding: clamp(var(--space-4), 3vw, var(--space-5));
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--surface-bright);
 }
 
@@ -84,7 +84,7 @@
   gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-control);
 }
 
 .form textarea {

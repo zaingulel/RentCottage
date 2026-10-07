@@ -30,10 +30,12 @@ const tolerated = new Set([
 ]);
 const probe = document.createElement("span");
 
+const designSystem = readFileSync(
+  join(process.cwd(), "docs", "DESIGN-SYSTEM.md"),
+  "utf8",
+);
 const toleratedSection = (
-  readFileSync(join(process.cwd(), "docs", "DESIGN-SYSTEM.md"), "utf8").match(
-    /^## Tolerated literals\n([\s\S]*?)(?=^## )/m,
-  )?.[1] ?? ""
+  designSystem.match(/^## Tolerated literals\n([\s\S]*?)(?=^## )/m)?.[1] ?? ""
 ).replace(/\s+/g, " ");
 const listedRules = new Set(
   [...toleratedSection.matchAll(/`([^`]+ \{ [^`]+ \})`/g)].map(
@@ -45,7 +47,8 @@ const listedTokens = new Set(
 );
 const scaledProperty =
   /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
-const scaleToken = /^(?:space|font-size)-\d+$/;
+const scaleToken =
+  /^(?:(?:space|font-size)-\d+|radius-(?:control|card)|shadow-(?:focus|invalid|pressed))$/;
 
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
@@ -139,12 +142,31 @@ function lengthHits(sheets: typeof stylesheets) {
   return [...declarations, ...tokens];
 }
 
+function offScaleHits(property: RegExp, allowedTerm: RegExp): string[] {
+  return stylesheets.flatMap(({ file, source }) =>
+    [...source.matchAll(/([\w-]+)\s*:([^;{}]*)(?=[;}])/g)]
+      .map((declaration) => ({
+        name: declaration[1],
+        value: declaration[2].replace(/\s+/g, " ").trim(),
+        index: declaration.index,
+      }))
+      .filter(
+        ({ name, value }) =>
+          property.test(name) &&
+          value.split(" ").some((term) => !allowedTerm.test(term)),
+      )
+      .map(
+        ({ name, value, index }) =>
+          `${file}:${lineOf(source, index)} ${name}: ${value}`,
+      ),
+  );
+}
+
 describe("stylesheet colour tokens", () => {
   it("keeps every stylesheet colour in the :root token block", () => {
     const hits = stylesheets.flatMap(({ file, source }) => {
-      const rest = (
-        file === globalsFile ? source.replace(rootBlockPattern, blank) : source
-      ).replace(/box-shadow:(?!\s*0 0 0 )[^;]+;/g, blank);
+      const rest =
+        file === globalsFile ? source.replace(rootBlockPattern, blank) : source;
       const literals = [
         ...rest.matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi),
       ].map((match) => `${file}:${lineOf(rest, match.index)} ${match[0]}`);
@@ -245,5 +267,87 @@ describe("stylesheet length tokens", () => {
     ];
 
     expect(stale).toEqual([]);
+  });
+});
+
+describe("stylesheet shape and layer tokens", () => {
+  it("keeps every corner radius on the radius scale or a tolerated shape", () => {
+    expect(
+      offScaleHits(
+        /^border-(?:[a-z-]+-)?radius$/,
+        /^(?:var\(--radius-[a-z]+\)|999px|50%|0|inherit)$/,
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps every box shadow a state ring token", () => {
+    expect(
+      offScaleHits(/^box-shadow$/, /^(?:var\(--shadow-[a-z]+\)|none|inherit)$/),
+    ).toEqual([]);
+  });
+
+  it("keeps every z-index a stacking order token", () => {
+    expect(
+      offScaleHits(/^z-index$/, /^(?:var\(--layer-[a-z]+\)|0|auto|inherit)$/),
+    ).toEqual([]);
+  });
+
+  it("declares the agreed radius sizes and offset-free state rings", () => {
+    const declared = [
+      ...rootBlock.matchAll(/--([\w-]+)\s*:([^;{}]*)(?=[;}])/g),
+    ].map(
+      ([, name, value]) => `--${name}: ${value.replace(/\s+/g, " ").trim()}`,
+    );
+    const rings = declared.filter((token) => token.startsWith("--shadow-"));
+
+    expect(declared.filter((token) => token.startsWith("--radius-"))).toEqual(
+      expect.arrayContaining([
+        "--radius-control: 0.5rem",
+        "--radius-card: 0.625rem",
+      ]),
+    );
+    expect(rings.map((token) => token.split(":")[0])).toEqual(
+      expect.arrayContaining([
+        "--shadow-focus",
+        "--shadow-invalid",
+        "--shadow-pressed",
+      ]),
+    );
+    expect(
+      rings.filter(
+        (token) =>
+          !/^--[\w-]+: (?:inset )?0 0 0 \d+px var\(--[a-z-]+\)$/.test(token),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("stylesheet breakpoints", () => {
+  it("uses exactly the breakpoints the design system lists", () => {
+    const section =
+      designSystem.match(
+        /^## Breakpoints\n([\s\S]*?)(?=^## |(?![\s\S]))/m,
+      )?.[1] ?? "";
+    const listed = [...section.matchAll(/`(\d*\.?\d+rem)`/g)].map(
+      ([, value]) => value,
+    );
+    const allowed = new Set(listed.map((value) => `(max-width: ${value})`));
+    const conditions = stylesheets.flatMap(({ file, source }) =>
+      [...source.matchAll(/@media\s*([^{]+)\{/gi)].map((query) => ({
+        condition: query[1].replace(/\s+/g, " ").trim().toLowerCase(),
+        where: `${file}:${lineOf(source, query.index)}`,
+      })),
+    );
+    const unlisted = conditions
+      .filter(
+        ({ condition }) =>
+          condition.includes("width") && !allowed.has(condition),
+      )
+      .map(({ condition, where }) => `${where} ${condition}`);
+    const used = new Set(conditions.map(({ condition }) => condition));
+    const unused = listed.filter((value) => !used.has(`(max-width: ${value})`));
+
+    expect(unlisted).toEqual([]);
+    expect(unused).toEqual([]);
   });
 });
