@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(122);
+select plan(123);
 
 create function pg_temp.configure_translation_runtime(target_ready boolean)
 returns void language sql as $$
@@ -765,6 +765,11 @@ select results_eq(
   $$select profile_id from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
   array['30000000-0000-4000-8000-000000002401'::uuid],
   'the Cottage Owner gets an unpublished Content Change answer for their own Cottage Profile');
+select results_eq(
+  $$select profile_version from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  $$select version from public.owner_application_cottage_profiles
+    where id = '30000000-0000-4000-8000-000000002401' and version > 1$$,
+  'the unpublished Content Change answer names the Cottage Profile version it judged');
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002403","role":"authenticated","aal":"aal1"}', true);
 select is_empty(
   $$select profile_id from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,

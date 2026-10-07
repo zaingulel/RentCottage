@@ -553,7 +553,13 @@ describe("Supabase Cottage Profile adapter", () => {
     expect(unpublishedRpc).not.toHaveBeenCalled();
 
     const publishedRpc = vi.fn(() =>
-      result([{ profile_id: profileId, has_unpublished_content_change: true }]),
+      result([
+        {
+          profile_id: profileId,
+          has_unpublished_content_change: true,
+          profile_version: 1,
+        },
+      ]),
     );
 
     await expect(
@@ -619,6 +625,7 @@ describe("Supabase Cottage Profile adapter", () => {
         requested.map((profileId) => ({
           profile_id: profileId,
           has_unpublished_content_change: changedProfileIds.includes(profileId),
+          profile_version: 1,
         })),
       );
     });
@@ -659,6 +666,7 @@ describe("Supabase Cottage Profile adapter", () => {
       {
         profile_id: "70000000-0000-4000-8000-000000000001",
         has_unpublished_content_change: true,
+        profile_version: 1,
       },
     ],
     ["omits the profile", []],
@@ -668,10 +676,12 @@ describe("Supabase Cottage Profile adapter", () => {
         {
           profile_id: "70000000-0000-4000-8000-000000000001",
           has_unpublished_content_change: true,
+          profile_version: 1,
         },
         {
           profile_id: "70000000-0000-4000-8000-000000000002",
           has_unpublished_content_change: true,
+          profile_version: 1,
         },
       ],
     ],
@@ -681,10 +691,12 @@ describe("Supabase Cottage Profile adapter", () => {
         {
           profile_id: "70000000-0000-4000-8000-000000000001",
           has_unpublished_content_change: true,
+          profile_version: 1,
         },
         {
           profile_id: "70000000-0000-4000-8000-000000000001",
           has_unpublished_content_change: true,
+          profile_version: 1,
         },
       ],
     ],
@@ -694,6 +706,7 @@ describe("Supabase Cottage Profile adapter", () => {
         {
           profile_id: "70000000-0000-4000-8000-000000000001",
           has_unpublished_content_change: "true",
+          profile_version: 1,
         },
       ],
     ],
@@ -706,6 +719,83 @@ describe("Supabase Cottage Profile adapter", () => {
             current_publication_id: "74000000-0000-4000-8000-000000000001",
           },
           rpc: vi.fn(() => result(answer)),
+        }),
+      ).rejects.toThrow(
+        "Cottage Profile unpublished Content Change data is invalid",
+      );
+    },
+  );
+
+  describe("refuses an unpublished Content Change answer judged against another Cottage Profile version", () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const profile = {
+      current_publication_id: "74000000-0000-4000-8000-000000000001",
+      version: 2,
+    };
+    const answer = [
+      {
+        profile_id: profileId,
+        has_unpublished_content_change: false,
+        profile_version: 3,
+      },
+    ];
+
+    it("on the single-profile path", async () => {
+      await expect(
+        loadProviderProfile({ profile, rpc: vi.fn(() => result(answer)) }),
+      ).rejects.toThrow("Cottage Profile changed while it was being read");
+    });
+
+    it("on the list path", async () => {
+      const client = {
+        from: vi.fn(() => ({
+          select: vi.fn().mockReturnValue({
+            in: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({ order: vi.fn(() => result([])) }),
+            }),
+          }),
+        })),
+        rpc: vi.fn((functionName: string) =>
+          result(
+            functionName === "list_owner_cottage_profiles"
+              ? [
+                  {
+                    id: profileId,
+                    submitted_source_revision_id: null,
+                    ...profile,
+                  },
+                ]
+              : answer,
+          ),
+        ),
+      } as unknown as SupabaseClient;
+
+      await expect(
+        new SupabaseCottageProfileRepository(client, client).listOwner(),
+      ).rejects.toThrow("Cottage Profile changed while it was being read");
+    });
+  });
+
+  it.each([
+    ["omitted", undefined],
+    ["text", "1"],
+  ])(
+    "refuses an unpublished Content Change answer without a numeric Cottage Profile version (%s)",
+    async (_, profileVersion) => {
+      await expect(
+        loadProviderProfile({
+          profile: {
+            current_publication_id: "74000000-0000-4000-8000-000000000001",
+          },
+          rpc: vi.fn(() =>
+            result([
+              {
+                profile_id: "70000000-0000-4000-8000-000000000001",
+                has_unpublished_content_change: true,
+                profile_version: profileVersion,
+              },
+            ]),
+          ),
         }),
       ).rejects.toThrow(
         "Cottage Profile unpublished Content Change data is invalid",

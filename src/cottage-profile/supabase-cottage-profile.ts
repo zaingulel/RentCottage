@@ -335,20 +335,28 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
         "Cottage Profile unpublished Content Change data is invalid",
       );
     }
+    const requestedVersions = new Map(
+      profiles.map((profile) => [profile.id, profile.version]),
+    );
     const requestedProfileIds = new Set(publishedProfileIds);
     for (const value of data) {
       const answer = record(value);
       const profileId = answer.profile_id;
       const hasChange = answer.has_unpublished_content_change;
+      const profileVersion = answer.profile_version;
       if (
         typeof profileId !== "string" ||
         !requestedProfileIds.has(profileId) ||
         changes.has(profileId) ||
-        typeof hasChange !== "boolean"
+        typeof hasChange !== "boolean" ||
+        typeof profileVersion !== "number"
       ) {
         throw new Error(
           "Cottage Profile unpublished Content Change data is invalid",
         );
+      }
+      if (profileVersion !== requestedVersions.get(profileId)) {
+        throw new Error("Cottage Profile changed while it was being read");
       }
       changes.set(profileId, hasChange);
     }

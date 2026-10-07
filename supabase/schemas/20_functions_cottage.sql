@@ -1216,10 +1216,17 @@ $$;
 
 ALTER FUNCTION "public"."is_cottage_publicly_discoverable"("target_profile_id" "uuid") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."list_cottage_profile_unpublished_content_changes"("target_profile_ids" "uuid"[]) RETURNS TABLE("profile_id" "uuid", "has_unpublished_content_change" boolean)
-    LANGUAGE "sql" STABLE SECURITY INVOKER
+CREATE OR REPLACE FUNCTION "public"."list_cottage_profile_unpublished_content_changes"("target_profile_ids" "uuid"[]) RETURNS TABLE("profile_id" "uuid", "has_unpublished_content_change" boolean, "profile_version" bigint)
+    LANGUAGE "plpgsql" STABLE SECURITY INVOKER
     SET "search_path" TO ''
     AS $$
+begin
+  if target_profile_ids is null or cardinality(target_profile_ids) > 100 then
+    raise exception 'Cottage Profile unpublished Content Change request is invalid'
+      using errcode = '22023';
+  end if;
+
+  return query
   select
     profiles.id,
     (profiles.name, profiles.governorate, profiles.approximate_location,
@@ -1255,7 +1262,8 @@ CREATE OR REPLACE FUNCTION "public"."list_cottage_profile_unpublished_content_ch
             and photos.is_active
             and photos.state = 'ready'::public.cottage_profile_photo_state
         )
-    )
+    ),
+    profiles.version
   from public.owner_application_cottage_profiles profiles
   join public.cottage_profile_review_cycles cycles
     on cycles.profile_id = profiles.id
@@ -1277,6 +1285,7 @@ CREATE OR REPLACE FUNCTION "public"."list_cottage_profile_unpublished_content_ch
   ) revisions
     on revisions.id = heads.localized_revision_id
   where profiles.id = any (target_profile_ids);
+end;
 $$;
 
 ALTER FUNCTION "public"."list_cottage_profile_unpublished_content_changes"("target_profile_ids" "uuid"[]) OWNER TO "postgres";

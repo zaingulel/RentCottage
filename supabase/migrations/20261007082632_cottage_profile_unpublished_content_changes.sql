@@ -9,12 +9,20 @@ CREATE FUNCTION public.list_cottage_profile_unpublished_content_changes (
 )
   RETURNS TABLE (
     profile_id                     uuid,
-    has_unpublished_content_change boolean
+    has_unpublished_content_change boolean,
+    profile_version                bigint
   )
-  LANGUAGE sql
+  LANGUAGE plpgsql
   STABLE
   SET search_path TO ''
   AS $function$
+begin
+  if target_profile_ids is null or cardinality(target_profile_ids) > 100 then
+    raise exception 'Cottage Profile unpublished Content Change request is invalid'
+      using errcode = '22023';
+  end if;
+
+  return query
   select
     profiles.id,
     (profiles.name, profiles.governorate, profiles.approximate_location,
@@ -50,7 +58,8 @@ CREATE FUNCTION public.list_cottage_profile_unpublished_content_changes (
             and photos.is_active
             and photos.state = 'ready'::public.cottage_profile_photo_state
         )
-    )
+    ),
+    profiles.version
   from public.owner_application_cottage_profiles profiles
   join public.cottage_profile_review_cycles cycles
     on cycles.profile_id = profiles.id
@@ -72,6 +81,7 @@ CREATE FUNCTION public.list_cottage_profile_unpublished_content_changes (
   ) revisions
     on revisions.id = heads.localized_revision_id
   where profiles.id = any (target_profile_ids);
+end;
 $function$;
 
 REVOKE ALL ON FUNCTION public.list_cottage_profile_unpublished_content_changes(uuid[]) FROM PUBLIC;
