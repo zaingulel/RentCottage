@@ -2505,32 +2505,13 @@ a:focus-visible {
   line-height: 1.5;
 }
 
-.booking-request-enquiry {
-  min-inline-size: 0;
-  margin: 0;
-  border: 0;
-  padding: 0;
-}
-
-.booking-request-enquiry > legend {
-  padding: 0;
-  font-weight: 700;
-}
-
-.booking-request-enquiry > label {
-  min-block-size: 2.75rem;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .booking-request-form {
   display: grid;
   gap: var(--space-4);
   margin-block-start: var(--space-5);
 }
 
-.booking-request-form > label:not(.booking-request-acceptance) {
+.booking-request-form > label:not(.choice-control) {
   display: grid;
   gap: var(--space-2);
   min-inline-size: 0;
@@ -2542,18 +2523,8 @@ a:focus-visible {
   background: var(--background);
 }
 
-.booking-request-acceptance {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  line-height: 1.5;
-}
-
-.booking-request-acceptance input {
-  flex: 0 0 auto;
-  inline-size: 1.2rem;
-  block-size: 1.2rem;
-  margin-block-start: var(--space-1);
+.booking-request-panel .choice-control > input {
+  background: var(--background);
 }
 
 .booking-request-policy,
