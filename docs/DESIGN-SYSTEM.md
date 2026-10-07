@@ -121,6 +121,17 @@ Anything else is a token.
   flight and supplies the `pending` state the buttons show.
 - Site chrome is `site-header.tsx`, `site-footer.tsx` and `marketplace-shell.tsx` in `src/components/`; the
   language selector is `locale-links.tsx`.
+- Backoffice navigation: `BackofficeNavigation` in
+  [backoffice-navigation.tsx](../src/components/backoffice-navigation.tsx) is the one navigation of the Owner
+  Backoffice and the Platform Administrator pages, and owns each area's list of destinations. It is a server
+  component. A page renders it as the first child of `<main>`, only in a branch that has passed that page's own
+  access check, names its destination with `current`, and adds `nested` on a page beneath that destination. It
+  renders `nav.backoffice-navigation`, named by its visible area label through `aria-labelledby`, with each
+  destination a secondary content-width `ActionLink`, so every link keeps the shared control height and focus
+  outline. The current destination carries `aria-current="page"`, or `aria-current="true"` on a nested page, and
+  is underlined as well as tinted, so it is never shown by colour alone. The links wrap; the block has no
+  breakpoint and no direction selector. A page renders at most one and never adds a brand link, which the site
+  header owns; a page with no access check of its own does not render it.
 - Read back and confirm: [cottage-location-fields.tsx](../src/components/cottage-location-fields.tsx) is the
   pattern for a value the interface cannot show and a mistake in which is costly. The entry is read back in words
   in a `role="status"` element named by `aria-label`, with its numbers in `<bdi dir="ltr">`; a problem is a
