@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -72,6 +72,39 @@ describe("owner Cottage Profiles page", () => {
     );
     expect(listOwner).toHaveBeenCalledOnce();
     expect(loadOwnerBookingRequestNotifications).not.toHaveBeenCalled();
+  });
+
+  it("shows the Owner Backoffice navigation on the cottages list with no brand link of its own", async () => {
+    listOwner.mockResolvedValue([]);
+    loadOwnerCottageAccess.mockImplementation(async (load) => ({
+      status: "ready",
+      value: await load({ listOwner }, "approved"),
+    }));
+    vi.stubEnv("APP_ENVIRONMENT", "development");
+    vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
+    vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
+
+    render(
+      await OwnerCottagesPage({
+        params: Promise.resolve({ locale: "en" }),
+      }),
+    );
+
+    const navigation = within(
+      screen.getByRole("navigation", { name: "Owner Backoffice" }),
+    );
+    expect(
+      navigation.getByRole("link", { name: "Manage my cottages" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getAllByRole("link", { name: "Bookings for my cottages" }),
+    ).toHaveLength(1);
+    expect(
+      navigation.getByRole("link", { name: "Bookings for my cottages" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "RentCottage" }),
+    ).not.toBeInTheDocument();
   });
 
   afterEach(() => {

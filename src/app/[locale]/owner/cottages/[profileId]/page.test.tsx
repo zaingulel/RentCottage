@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { loadOwnerCottageEditor, notFound, unstableRethrow } = vi.hoisted(
@@ -177,9 +177,14 @@ describe("Cottage Profile owner detail page", () => {
       }),
     );
 
+    const manageCottages = within(
+      screen.getByRole("navigation", { name: "Owner Backoffice" }),
+    ).getByRole("link", { name: "Manage my cottages" });
+    expect(manageCottages).toHaveAttribute("href", "/en/owner/cottages");
+    expect(manageCottages).toHaveAttribute("aria-current", "true");
     expect(
-      screen.getByRole("link", { name: "Back to cottages" }),
-    ).toHaveAttribute("href", "/en/owner/cottages");
+      screen.queryByRole("link", { name: "Back to cottages" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByLabelText("Cottage name")).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Save Shift Schedule" }),

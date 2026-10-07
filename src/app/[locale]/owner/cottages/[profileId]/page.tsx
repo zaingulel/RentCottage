@@ -1,10 +1,10 @@
 import { requireRequestAccount } from "@/access/request-account-context";
 import { accountAccessHref } from "@/access/return-destination";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
-import Link from "next/link";
 import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
 import { loadOwnerCottageEditor } from "@/cottage-profile/owner-cottage-editor";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
 import { CottageProfileLifecycleControls } from "@/components/cottage-profile-lifecycle-controls";
 import { CottagePricingAvailabilityEditor } from "@/components/cottage-pricing-availability-editor";
@@ -74,10 +74,12 @@ export default async function OwnerCottageProfilePage({
   if (!page.value.profile) notFound();
   return (
     <main className="owner-application-page cottage-profile-page">
-      <header className="owner-application-header">
-        <Link href={`/${locale}/owner/cottages`}>{copy.back}</Link>
-        <span>{copy.eyebrow}</span>
-      </header>
+      <BackofficeNavigation
+        locale={locale}
+        area="owner"
+        current="cottages"
+        nested
+      />
       <CottageProfileEditor
         locale={locale}
         profile={page.value.profile}

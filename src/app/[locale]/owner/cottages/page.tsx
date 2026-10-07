@@ -1,13 +1,12 @@
 import { requireRequestAccount } from "@/access/request-account-context";
 import { accountAccessHref } from "@/access/return-destination";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
-import { accessMessages } from "@/i18n/access-messages";
-import Link from "next/link";
 import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
 import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
 import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
 import { loadOwnerBookingRequestNotifications } from "@/booking-request/request-owner-booking-request-notifications";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { CottageProfileOverview } from "@/components/cottage-profile-overview";
 import { OwnerCottageAccessFallback } from "@/components/owner-cottage-access-fallback";
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
@@ -87,13 +86,7 @@ export default async function OwnerCottagesPage({
   }
   return (
     <main className="owner-application-page cottage-profile-page">
-      <header className="owner-application-header">
-        <Link href={`/${locale}`}>RentCottage</Link>
-        <span>{copy.eyebrow}</span>
-      </header>
-      <Link href={`/${locale}/bookings?workspace=owner`}>
-        {accessMessages[locale].ownerBookings}
-      </Link>
+      <BackofficeNavigation locale={locale} area="owner" current="cottages" />
       <CottageProfileOverview
         locale={locale}
         actor="owner"
