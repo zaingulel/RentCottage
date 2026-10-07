@@ -4,7 +4,7 @@
   margin-block: var(--space-5);
   padding: clamp(var(--space-4), 3vw, var(--space-6));
   border: 1px solid var(--line-panel);
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   background: var(--surface-bright);
   color: var(--ink-panel);
   overflow-wrap: anywhere;
@@ -34,7 +34,7 @@
   gap: var(--space-1);
   padding: var(--space-3);
   background: var(--surface-panel-row);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
 }
 .summary dt {
   font-size: var(--font-size-2);
@@ -83,7 +83,7 @@
   gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--line-panel);
-  border-radius: 0.7rem;
+  border-radius: var(--radius-card);
 }
 .notice {
   display: flex;

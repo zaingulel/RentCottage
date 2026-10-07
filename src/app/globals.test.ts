@@ -45,7 +45,7 @@ const listedTokens = new Set(
 );
 const scaledProperty =
   /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
-const scaleToken = /^(?:space|font-size)-\d+$/;
+const scaleToken = /^(?:(?:space|font-size)-\d+|radius-(?:control|card))$/;
 
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
@@ -137,6 +137,26 @@ function lengthHits(sheets: typeof stylesheets) {
     )
     .map(([, name]) => `--${name}`);
   return [...declarations, ...tokens];
+}
+
+function offScaleHits(property: RegExp, allowedTerm: RegExp): string[] {
+  return stylesheets.flatMap(({ file, source }) =>
+    [...source.matchAll(/([\w-]+)\s*:([^;{}]*)(?=[;}])/g)]
+      .map((declaration) => ({
+        name: declaration[1],
+        value: declaration[2].replace(/\s+/g, " ").trim(),
+        index: declaration.index,
+      }))
+      .filter(
+        ({ name, value }) =>
+          property.test(name) &&
+          value.split(" ").some((term) => !allowedTerm.test(term)),
+      )
+      .map(
+        ({ name, value, index }) =>
+          `${file}:${lineOf(source, index)} ${name}: ${value}`,
+      ),
+  );
 }
 
 describe("stylesheet colour tokens", () => {
@@ -245,5 +265,16 @@ describe("stylesheet length tokens", () => {
     ];
 
     expect(stale).toEqual([]);
+  });
+});
+
+describe("stylesheet shape and layer tokens", () => {
+  it("keeps every corner radius on the radius scale or a tolerated shape", () => {
+    expect(
+      offScaleHits(
+        /^border-(?:[a-z-]+-)?radius$/,
+        /^(?:var\(--radius-[a-z]+\)|999px|50%|0|inherit)$/,
+      ),
+    ).toEqual([]);
   });
 });

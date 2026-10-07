@@ -9,7 +9,7 @@
 .card,
 .events > li {
   border: 1px solid var(--line);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-card);
   background: var(--card);
   padding: var(--space-4);
 }

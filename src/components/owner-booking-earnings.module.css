@@ -5,7 +5,7 @@
   min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--line-panel);
-  border-radius: 0.8rem;
+  border-radius: var(--radius-card);
   background: var(--surface-panel);
   color: var(--ink-panel);
   overflow-wrap: anywhere;
@@ -58,7 +58,7 @@
   gap: var(--space-1);
   min-width: 0;
   padding: var(--space-3);
-  border-radius: 0.55rem;
+  border-radius: var(--radius-card);
   background: var(--surface-bright);
 }
 
