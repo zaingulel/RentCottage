@@ -32,8 +32,47 @@ const profile = {
   houseRules: "Rules",
   photos: [],
   submittedSourceRevision: null,
+  hasUnpublishedContentChange: false,
   updatedAt: "2026-08-17T09:00:00.000Z",
 } satisfies CottageProfile;
+
+const publicationId = "80000000-0000-4000-8000-000000000001";
+
+type StatusFields = Pick<
+  CottageProfile,
+  "status" | "currentPublicationId" | "hasUnpublishedContentChange"
+>;
+
+const neverPublishedDraft: StatusFields = {
+  status: "draft",
+  currentPublicationId: null,
+  hasUnpublishedContentChange: false,
+};
+const neverPublishedSubmitted: StatusFields = {
+  status: "submitted_for_content_approval",
+  currentPublicationId: null,
+  hasUnpublishedContentChange: false,
+};
+const abandoned: StatusFields = {
+  status: "abandoned",
+  currentPublicationId: null,
+  hasUnpublishedContentChange: false,
+};
+const published: StatusFields = {
+  status: "draft",
+  currentPublicationId: publicationId,
+  hasUnpublishedContentChange: false,
+};
+const publishedWithUnpublishedChanges: StatusFields = {
+  status: "draft",
+  currentPublicationId: publicationId,
+  hasUnpublishedContentChange: true,
+};
+const publishedUpdateAwaitingApproval: StatusFields = {
+  status: "submitted_for_content_approval",
+  currentPublicationId: publicationId,
+  hasUnpublishedContentChange: true,
+};
 
 describe("Cottage Profile overview", () => {
   it("shows the continued application profile and allows approved owners to add another draft", () => {
@@ -147,6 +186,108 @@ describe("Cottage Profile overview", () => {
     expect(screen.getByText("وازهێنراو")).toBeVisible();
     expect(screen.queryByLabelText("هۆکاری بەڕێوەبەر")).toBeNull();
   });
+
+  it.each([
+    ["owner", "en", "Published", "Private draft"],
+    ["owner", "ar", "منشور", "مسودة خاصة"],
+    ["owner", "ckb", "بڵاوکراوەتەوە", "ڕەشنووسی تایبەت"],
+    ["administrator", "en", "Published", "Private draft"],
+    ["administrator", "ar", "منشور", "مسودة خاصة"],
+    ["administrator", "ckb", "بڵاوکراوەتەوە", "ڕەشنووسی تایبەت"],
+  ] as const)(
+    "never labels a published Cottage Profile as a draft in the %s list in %s",
+    (actor, locale, publishedLabel, draftLabel) => {
+      render(
+        <CottageProfileOverview
+          locale={locale}
+          actor={actor}
+          profiles={[{ ...profile, currentPublicationId: publicationId }]}
+        />,
+      );
+
+      expect(screen.getByText(publishedLabel)).toBeVisible();
+      expect(screen.queryByText(draftLabel)).toBeNull();
+    },
+  );
+
+  it.each([
+    ["a never-published draft", "en", neverPublishedDraft, "Private draft"],
+    ["a never-published draft", "ar", neverPublishedDraft, "مسودة خاصة"],
+    ["a never-published draft", "ckb", neverPublishedDraft, "ڕەشنووسی تایبەت"],
+    [
+      "never published and submitted",
+      "en",
+      neverPublishedSubmitted,
+      "Submitted for content approval",
+    ],
+    [
+      "never published and submitted",
+      "ar",
+      neverPublishedSubmitted,
+      "مُرسل للموافقة على المحتوى",
+    ],
+    [
+      "never published and submitted",
+      "ckb",
+      neverPublishedSubmitted,
+      "نێردراوە بۆ پەسەندکردنی ناوەڕۆک",
+    ],
+    ["abandoned", "en", abandoned, "Abandoned"],
+    ["abandoned", "ar", abandoned, "متروك"],
+    ["abandoned", "ckb", abandoned, "وازهێنراو"],
+    ["published", "en", published, "Published"],
+    ["published", "ar", published, "منشور"],
+    ["published", "ckb", published, "بڵاوکراوەتەوە"],
+    [
+      "published with unpublished changes",
+      "en",
+      publishedWithUnpublishedChanges,
+      "Published; unpublished changes",
+    ],
+    [
+      "published with unpublished changes",
+      "ar",
+      publishedWithUnpublishedChanges,
+      "منشور؛ تعديلات غير منشورة",
+    ],
+    [
+      "published with unpublished changes",
+      "ckb",
+      publishedWithUnpublishedChanges,
+      "بڵاوکراوەتەوە؛ گۆڕانکاریی بڵاونەکراوە هەیە",
+    ],
+    [
+      "published with an update awaiting approval",
+      "en",
+      publishedUpdateAwaitingApproval,
+      "Published; update awaiting approval",
+    ],
+    [
+      "published with an update awaiting approval",
+      "ar",
+      publishedUpdateAwaitingApproval,
+      "منشور؛ التحديث بانتظار الموافقة",
+    ],
+    [
+      "published with an update awaiting approval",
+      "ckb",
+      publishedUpdateAwaitingApproval,
+      "بڵاوکراوەتەوە؛ نوێکردنەوەکە چاوەڕێی پەسەندکردنە",
+    ],
+  ] as const)(
+    "labels a Cottage Profile that is %s in %s",
+    (_state, locale, fields, label) => {
+      render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[{ ...profile, ...fields }]}
+        />,
+      );
+
+      expect(screen.getByText(label)).toBeVisible();
+    },
+  );
 
   it("shows a localized administrator continuation link", () => {
     render(

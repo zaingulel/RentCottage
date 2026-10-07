@@ -10,12 +10,16 @@ function result<T>(data: T, error: unknown = null) {
   return Promise.resolve({ data, error });
 }
 
-function loadMalformedProviderProfile({
+const readyPhotoId = "71000000-0000-4000-8000-000000000001";
+
+function loadProviderProfile({
   profile = {},
   photo = {},
+  rpc = vi.fn(),
 }: {
   profile?: Record<string, unknown>;
   photo?: Record<string, unknown>;
+  rpc?: ReturnType<typeof vi.fn>;
 }) {
   const profileId = "70000000-0000-4000-8000-000000000001";
   const profileResult = result({
@@ -45,7 +49,7 @@ function loadMalformedProviderProfile({
   });
   const photosResult = result([
     {
-      id: "71000000-0000-4000-8000-000000000001",
+      id: readyPhotoId,
       original_filename: "cottage.webp",
       media_type: "image/webp",
       size_bytes: 128,
@@ -75,7 +79,7 @@ function loadMalformedProviderProfile({
         }),
       };
     }),
-    rpc: vi.fn(),
+    rpc,
   } as unknown as SupabaseClient;
   return new SupabaseCottageProfileRepository(client, client).load(profileId);
 }
@@ -535,9 +539,419 @@ describe("Supabase Cottage Profile adapter", () => {
   ])(
     "rejects malformed provider data containing %s",
     async (_, profile, photo) => {
+      await expect(loadProviderProfile({ profile, photo })).rejects.toThrow(
+        /Cottage Profile/,
+      );
+    },
+  );
+
+  it("reads the unpublished Content Change answer only for a published Cottage Profile", async () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const unpublishedRpc = vi.fn();
+
+    await expect(
+      loadProviderProfile({ rpc: unpublishedRpc }),
+    ).resolves.toMatchObject({ hasUnpublishedContentChange: false });
+    expect(unpublishedRpc).not.toHaveBeenCalled();
+
+    const publishedRpc = vi.fn(() =>
+      result([
+        {
+          profile_id: profileId,
+          has_unpublished_content_change: true,
+          profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
+        },
+      ]),
+    );
+
+    await expect(
+      loadProviderProfile({
+        profile: {
+          current_publication_id: "74000000-0000-4000-8000-000000000001",
+        },
+        rpc: publishedRpc,
+      }),
+    ).resolves.toMatchObject({ hasUnpublishedContentChange: true });
+    expect(publishedRpc).toHaveBeenCalledOnce();
+    expect(publishedRpc).toHaveBeenCalledWith(
+      "list_cottage_profile_unpublished_content_changes",
+      { target_profile_ids: [profileId] },
+    );
+  });
+
+  it("asks once per list page for the published profiles' unpublished Content Change answers", async () => {
+    const profileIdFor = (suffix: number) =>
+      `70000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`;
+    const profiles = Array.from({ length: 101 }, (_, index) => 101 - index).map(
+      (suffix) => ({
+        id: profileIdFor(suffix),
+        owner_user_id: "10000000-0000-4000-8000-000000000701",
+        application_id: null,
+        current_publication_id:
+          suffix % 2 === 1
+            ? `74000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`
+            : null,
+        status: "draft",
+        version: 1,
+        name: `Cottage ${suffix}`,
+        governorate: "Erbil",
+        approximate_location: "Near Shaqlawa",
+        exact_address: "Private address",
+        exact_latitude: null,
+        exact_longitude: null,
+        private_directions: "",
+        capacity: 4,
+        bedrooms: 2,
+        bathrooms: 1,
+        amenities: ["garden"],
+        source_language: "en",
+        description: "Description",
+        house_rules: "Rules",
+        submitted_source_revision_id: null,
+        updated_at: "2026-08-17T09:15:00.000Z",
+      }),
+    );
+    const changedProfileIds = [profileIdFor(99), profileIdFor(1)];
+    const contentChangeRequests: string[][] = [];
+    const rpc = vi.fn((functionName: string, args: Record<string, unknown>) => {
+      if (functionName === "list_owner_cottage_profiles") {
+        return result(
+          args.target_after_id === profiles[99]?.id
+            ? profiles.slice(100)
+            : profiles.slice(0, 100),
+        );
+      }
+      const requested = args.target_profile_ids as string[];
+      contentChangeRequests.push(requested);
+      return result(
+        requested.map((profileId) => ({
+          profile_id: profileId,
+          has_unpublished_content_change: changedProfileIds.includes(profileId),
+          profile_version: 1,
+          ready_photo_ids: [],
+        })),
+      );
+    });
+    const photosQuery = {
+      in: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({ order: vi.fn(() => result([])) }),
+      }),
+    };
+    const client = {
+      from: vi.fn(() => ({ select: vi.fn().mockReturnValue(photosQuery) })),
+      rpc,
+    } as unknown as SupabaseClient;
+
+    const loaded = await new SupabaseCottageProfileRepository(
+      client,
+      client,
+    ).listOwner();
+
+    expect(
+      loaded
+        .filter((profile) => profile.hasUnpublishedContentChange)
+        .map(({ id }) => id),
+    ).toEqual(changedProfileIds);
+    expect(contentChangeRequests).toEqual([
+      profiles
+        .slice(0, 100)
+        .filter((profile) => profile.current_publication_id !== null)
+        .map(({ id }) => id),
+      [profileIdFor(1)],
+    ]);
+    expect(contentChangeRequests[0]).toHaveLength(50);
+    expect(rpc).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    [
+      "is not a list",
+      {
+        profile_id: "70000000-0000-4000-8000-000000000001",
+        has_unpublished_content_change: true,
+        profile_version: 1,
+        ready_photo_ids: [readyPhotoId],
+      },
+    ],
+    ["omits the profile", []],
+    [
+      "names another profile",
+      [
+        {
+          profile_id: "70000000-0000-4000-8000-000000000001",
+          has_unpublished_content_change: true,
+          profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
+        },
+        {
+          profile_id: "70000000-0000-4000-8000-000000000002",
+          has_unpublished_content_change: true,
+          profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
+        },
+      ],
+    ],
+    [
+      "repeats the profile",
+      [
+        {
+          profile_id: "70000000-0000-4000-8000-000000000001",
+          has_unpublished_content_change: true,
+          profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
+        },
+        {
+          profile_id: "70000000-0000-4000-8000-000000000001",
+          has_unpublished_content_change: true,
+          profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
+        },
+      ],
+    ],
+    [
+      "is not a boolean",
+      [
+        {
+          profile_id: "70000000-0000-4000-8000-000000000001",
+          has_unpublished_content_change: "true",
+          profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
+        },
+      ],
+    ],
+  ])(
+    "refuses an unpublished Content Change answer that %s",
+    async (_, answer) => {
       await expect(
-        loadMalformedProviderProfile({ profile, photo }),
-      ).rejects.toThrow(/Cottage Profile/);
+        loadProviderProfile({
+          profile: {
+            current_publication_id: "74000000-0000-4000-8000-000000000001",
+          },
+          rpc: vi.fn(() => result(answer)),
+        }),
+      ).rejects.toThrow(
+        "Cottage Profile unpublished Content Change data is invalid",
+      );
+    },
+  );
+
+  describe("refuses an unpublished Content Change answer judged against another Cottage Profile version", () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const profile = {
+      current_publication_id: "74000000-0000-4000-8000-000000000001",
+      version: 2,
+    };
+    const answer = (readyPhotoIds: string[]) => [
+      {
+        profile_id: profileId,
+        has_unpublished_content_change: false,
+        profile_version: 3,
+        ready_photo_ids: readyPhotoIds,
+      },
+    ];
+
+    it("on the single-profile path", async () => {
+      await expect(
+        loadProviderProfile({
+          profile,
+          rpc: vi.fn(() => result(answer([readyPhotoId]))),
+        }),
+      ).rejects.toThrow("Cottage Profile changed while it was being read");
+    });
+
+    it("on the list path", async () => {
+      const client = {
+        from: vi.fn(() => ({
+          select: vi.fn().mockReturnValue({
+            in: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({ order: vi.fn(() => result([])) }),
+            }),
+          }),
+        })),
+        rpc: vi.fn((functionName: string) =>
+          result(
+            functionName === "list_owner_cottage_profiles"
+              ? [
+                  {
+                    id: profileId,
+                    submitted_source_revision_id: null,
+                    ...profile,
+                  },
+                ]
+              : answer([]),
+          ),
+        ),
+      } as unknown as SupabaseClient;
+
+      await expect(
+        new SupabaseCottageProfileRepository(client, client).listOwner(),
+      ).rejects.toThrow("Cottage Profile changed while it was being read");
+    });
+  });
+
+  describe("refuses an unpublished Content Change answer judged against another photo set", () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const otherPhotoId = "71000000-0000-4000-8000-000000000002";
+    const published = {
+      current_publication_id: "74000000-0000-4000-8000-000000000001",
+    };
+    const answer = (readyPhotoIds: string[]) => [
+      {
+        profile_id: profileId,
+        has_unpublished_content_change: true,
+        profile_version: 1,
+        ready_photo_ids: readyPhotoIds,
+      },
+    ];
+    const listOwnerHolding = (
+      heldPhotos: { id: string; state: string }[],
+      readyPhotoIds: string[],
+    ) => {
+      const client = {
+        from: vi.fn(() => ({
+          select: vi.fn().mockReturnValue({
+            in: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn(() =>
+                  result(
+                    heldPhotos.map((photo) => ({
+                      profile_id: profileId,
+                      original_filename: "cottage.webp",
+                      media_type: "image/webp",
+                      size_bytes: 128,
+                      updated_at: "2026-08-17T09:05:00.000Z",
+                      ...photo,
+                    })),
+                  ),
+                ),
+              }),
+            }),
+          }),
+        })),
+        rpc: vi.fn((functionName: string) =>
+          result(
+            functionName === "list_owner_cottage_profiles"
+              ? [
+                  {
+                    id: profileId,
+                    owner_user_id: "10000000-0000-4000-8000-000000000701",
+                    application_id: null,
+                    status: "draft",
+                    version: 1,
+                    amenities: ["garden"],
+                    source_language: "en",
+                    submitted_source_revision_id: null,
+                    updated_at: "2026-08-17T09:15:00.000Z",
+                    ...published,
+                  },
+                ]
+              : answer(readyPhotoIds),
+          ),
+        ),
+      } as unknown as SupabaseClient;
+      return new SupabaseCottageProfileRepository(client, client).listOwner();
+    };
+
+    it("on the single-profile path", async () => {
+      await expect(
+        loadProviderProfile({
+          profile: published,
+          rpc: vi.fn(() => result(answer([]))),
+        }),
+      ).rejects.toThrow("Cottage Profile changed while it was being read");
+    });
+
+    it("on the list path", async () => {
+      await expect(
+        listOwnerHolding(
+          [
+            { id: readyPhotoId, state: "ready" },
+            { id: otherPhotoId, state: "ready" },
+          ],
+          [readyPhotoId],
+        ),
+      ).rejects.toThrow("Cottage Profile changed while it was being read");
+    });
+
+    it("accepts the same ready photos in another order", async () => {
+      await expect(
+        listOwnerHolding(
+          [
+            { id: readyPhotoId, state: "ready" },
+            { id: otherPhotoId, state: "ready" },
+          ],
+          [otherPhotoId, readyPhotoId],
+        ),
+      ).resolves.toMatchObject([{ hasUnpublishedContentChange: true }]);
+    });
+
+    it("ignores a held photo that is not ready", async () => {
+      await expect(
+        listOwnerHolding(
+          [
+            { id: readyPhotoId, state: "ready" },
+            { id: otherPhotoId, state: "pending" },
+          ],
+          [readyPhotoId],
+        ),
+      ).resolves.toMatchObject([{ hasUnpublishedContentChange: true }]);
+    });
+  });
+
+  it.each([
+    ["omitted", undefined],
+    ["a list holding a non-string", [readyPhotoId, 7]],
+  ])(
+    "refuses an unpublished Content Change answer without a list of ready photo ids (%s)",
+    async (_, readyPhotoIds) => {
+      await expect(
+        loadProviderProfile({
+          profile: {
+            current_publication_id: "74000000-0000-4000-8000-000000000001",
+          },
+          rpc: vi.fn(() =>
+            result([
+              {
+                profile_id: "70000000-0000-4000-8000-000000000001",
+                has_unpublished_content_change: true,
+                profile_version: 1,
+                ready_photo_ids: readyPhotoIds,
+              },
+            ]),
+          ),
+        }),
+      ).rejects.toThrow(
+        "Cottage Profile unpublished Content Change data is invalid",
+      );
+    },
+  );
+
+  it.each([
+    ["omitted", undefined],
+    ["text", "1"],
+  ])(
+    "refuses an unpublished Content Change answer without a numeric Cottage Profile version (%s)",
+    async (_, profileVersion) => {
+      await expect(
+        loadProviderProfile({
+          profile: {
+            current_publication_id: "74000000-0000-4000-8000-000000000001",
+          },
+          rpc: vi.fn(() =>
+            result([
+              {
+                profile_id: "70000000-0000-4000-8000-000000000001",
+                has_unpublished_content_change: true,
+                profile_version: profileVersion,
+                ready_photo_ids: [readyPhotoId],
+              },
+            ]),
+          ),
+        }),
+      ).rejects.toThrow(
+        "Cottage Profile unpublished Content Change data is invalid",
+      );
     },
   );
 

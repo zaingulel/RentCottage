@@ -791,6 +791,10 @@ GRANT ALL ON FUNCTION "public"."lease_booking_request_payment_recovery_step"("ta
 
 REVOKE ALL ON FUNCTION "public"."lease_booking_request_release_work"("target_work_id" "uuid") FROM PUBLIC;
 
+REVOKE ALL ON FUNCTION "public"."list_cottage_profile_unpublished_content_changes"("target_profile_ids" "uuid"[]) FROM PUBLIC;
+
+GRANT ALL ON FUNCTION "public"."list_cottage_profile_unpublished_content_changes"("target_profile_ids" "uuid"[]) TO "authenticated";
+
 REVOKE ALL ON FUNCTION "public"."list_due_booking_request_capture_intents"("target_limit" integer, "target_provider_identity" "jsonb") FROM PUBLIC;
 
 GRANT ALL ON FUNCTION "public"."list_due_booking_request_capture_intents"("target_limit" integer, "target_provider_identity" "jsonb") TO "service_role";

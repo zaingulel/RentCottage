@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(65);
+select plan(69);
 
 select has_table(
   'public',
@@ -165,6 +165,35 @@ select ok(
     and not has_function_privilege('authenticated', 'public.reads_as_coordinate_pair(text)', 'EXECUTE')
     and not has_function_privilege('service_role', 'public.reads_as_coordinate_pair(text)', 'EXECUTE'),
   'API roles cannot call the coordinate pair predicate directly'
+);
+
+select ok(
+  not has_function_privilege('anon', 'public.list_cottage_profile_unpublished_content_changes(uuid[])', 'EXECUTE')
+    and has_function_privilege('authenticated', 'public.list_cottage_profile_unpublished_content_changes(uuid[])', 'EXECUTE'),
+  'anonymous callers cannot and signed-in callers can ask for unpublished Content Change answers'
+);
+
+select throws_ok(
+  $$select * from public.list_cottage_profile_unpublished_content_changes(
+    array(select gen_random_uuid() from generate_series(1, 101))
+  )$$,
+  '22023',
+  null,
+  'more than 100 Cottage Profiles in one unpublished Content Change request is refused'
+);
+
+select throws_ok(
+  $$select * from public.list_cottage_profile_unpublished_content_changes(null)$$,
+  '22023',
+  null,
+  'a null unpublished Content Change request is refused'
+);
+
+select is_empty(
+  $$select * from public.list_cottage_profile_unpublished_content_changes(
+    array(select gen_random_uuid() from generate_series(1, 100))
+  )$$,
+  '100 Cottage Profiles in one unpublished Content Change request is accepted'
 );
 
 select throws_ok(

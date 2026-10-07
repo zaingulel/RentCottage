@@ -973,7 +973,9 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       `/en/owner/cottages/${demo.cottages[0].profile.id}`,
     );
     const ownerCottageUrl = page.url();
-    const publishedStatus = page.getByText("Published", { exact: true });
+    const publishedStatus = page
+      .getByRole("region", { name: "Language review" })
+      .getByText("Published", { exact: true });
     await publishedStatus.scrollIntoViewIfNeeded();
     await expectScene(publishedStatus);
     const inventory = page.getByRole("heading", {

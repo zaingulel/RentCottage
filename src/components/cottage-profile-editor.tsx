@@ -172,7 +172,7 @@ export function CottageProfileEditor({
         </div>
       </div>
       <p className={`cottage-profile-status ${profile.status}`}>
-        {cottageProfileStatusLabel(locale, profile.status)}
+        {cottageProfileStatusLabel(locale, profile)}
       </p>
       {profile.status === "abandoned" ? (
         <p className="private-location-warning" role="status">

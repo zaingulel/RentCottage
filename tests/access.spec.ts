@@ -1758,7 +1758,11 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       );
       await publish.click();
       expect((await actionResponse).ok()).toBe(true);
-      await expect(page.getByText("Published", { exact: true })).toBeVisible();
+      await expect(
+        page
+          .getByRole("region", { name: "Language review" })
+          .getByText("Published", { exact: true }),
+      ).toBeVisible();
     } finally {
       await setWorkerTranslationRuntimeReady(false);
     }
@@ -1880,6 +1884,15 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(
     page.getByRole("heading", { name: "Private Cottage Profiles" }),
   ).toBeVisible();
+  const publishedCottageCard = page
+    .getByRole("article")
+    .filter({ has: page.locator(`a[href="${cottageHref}"]`) });
+  await expect(
+    publishedCottageCard.getByText("Published", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    publishedCottageCard.getByText("Private draft", { exact: true }),
+  ).toHaveCount(0);
 
   await page.goto("/en/administrator/owner-applications");
   const accessedAfter = new Date(Date.now() - 5_000).toISOString();

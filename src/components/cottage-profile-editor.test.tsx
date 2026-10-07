@@ -41,6 +41,7 @@ const profile: CottageProfile = {
   houseRules: "Owner working-copy House Rules",
   photos: [],
   submittedSourceRevision: null,
+  hasUnpublishedContentChange: false,
   updatedAt: "2026-08-17T09:00:00.000Z",
 };
 

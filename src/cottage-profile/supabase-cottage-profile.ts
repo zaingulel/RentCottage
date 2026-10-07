@@ -178,6 +178,7 @@ function parseProfile(
   value: unknown,
   photos: CottageProfilePhoto[],
   submittedSourceRevision: CottageProfileSourceRevision | null,
+  hasUnpublishedContentChange: boolean,
 ): CottageProfile {
   const profile = record(value);
   const id = requiredString(profile.id);
@@ -284,6 +285,7 @@ function parseProfile(
     houseRules: textFields.houseRules,
     photos,
     submittedSourceRevision,
+    hasUnpublishedContentChange,
     updatedAt: requiredString(profile.updated_at),
   };
 }
@@ -312,6 +314,73 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
     private readonly client: SupabaseClient,
     private readonly privilegedClient: SupabaseClient,
   ) {}
+
+  private async loadUnpublishedContentChanges(
+    profiles: Record<string, unknown>[],
+    photosByProfile: Map<string, CottageProfilePhoto[]>,
+  ): Promise<Map<string, boolean>> {
+    const publishedProfileIds = profiles.flatMap((profile) =>
+      typeof profile.current_publication_id === "string"
+        ? [requiredString(profile.id)]
+        : [],
+    );
+    const changes = new Map<string, boolean>();
+    if (publishedProfileIds.length === 0) return changes;
+    const { data, error } = await this.client.rpc(
+      "list_cottage_profile_unpublished_content_changes",
+      { target_profile_ids: publishedProfileIds },
+    );
+    assertProviderSuccess(error);
+    if (!Array.isArray(data)) {
+      throw new Error(
+        "Cottage Profile unpublished Content Change data is invalid",
+      );
+    }
+    const requestedVersions = new Map(
+      profiles.map((profile) => [profile.id, profile.version]),
+    );
+    const requestedProfileIds = new Set(publishedProfileIds);
+    for (const value of data) {
+      const answer = record(value);
+      const profileId = answer.profile_id;
+      const hasChange = answer.has_unpublished_content_change;
+      const profileVersion = answer.profile_version;
+      const readyPhotoIds = answer.ready_photo_ids;
+      if (
+        typeof profileId !== "string" ||
+        !requestedProfileIds.has(profileId) ||
+        changes.has(profileId) ||
+        typeof hasChange !== "boolean" ||
+        typeof profileVersion !== "number" ||
+        !Array.isArray(readyPhotoIds) ||
+        !readyPhotoIds.every((photoId) => typeof photoId === "string")
+      ) {
+        throw new Error(
+          "Cottage Profile unpublished Content Change data is invalid",
+        );
+      }
+      const judgedPhotoIds = new Set<string>(readyPhotoIds);
+      const heldPhotoIds = new Set(
+        (photosByProfile.get(profileId) ?? []).flatMap((photo) =>
+          photo.state === "ready" ? [photo.id] : [],
+        ),
+      );
+      if (
+        profileVersion !== requestedVersions.get(profileId) ||
+        judgedPhotoIds.size !== heldPhotoIds.size ||
+        [...judgedPhotoIds].some((photoId) => !heldPhotoIds.has(photoId))
+      ) {
+        throw new Error("Cottage Profile changed while it was being read");
+      }
+      changes.set(profileId, hasChange);
+    }
+    if (changes.size !== requestedProfileIds.size) {
+      throw new Error(
+        "Cottage Profile unpublished Content Change data is invalid",
+      );
+    }
+    return changes;
+  }
 
   private async hydrate(value: unknown): Promise<CottageProfile> {
     const profile = record(value);
@@ -349,7 +418,12 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
       }
       source = parseSource(sourceResult.data);
     }
-    return parseProfile(value, photosResult.data.map(parsePhoto), source);
+    const photos = photosResult.data.map(parsePhoto);
+    const changes = await this.loadUnpublishedContentChanges(
+      [profile],
+      new Map([[profileId, photos]]),
+    );
+    return parseProfile(value, photos, source, changes.get(profileId) ?? false);
   }
 
   private async hydrateList(values: unknown[]): Promise<CottageProfile[]> {
@@ -427,6 +501,10 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
         sourcesById.set(sourceId, parseSource(source));
       }
     }
+    const changes = await this.loadUnpublishedContentChanges(
+      profiles,
+      photosByProfile,
+    );
     return profiles.map((profile, index) => {
       const sourceRevisionId = profile.submitted_source_revision_id;
       const source =
@@ -440,6 +518,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
         profile,
         photosByProfile.get(profileIds[index]!) ?? [],
         source,
+        changes.get(profileIds[index]!) ?? false,
       );
     });
   }
