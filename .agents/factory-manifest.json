@@ -4,7 +4,7 @@
     "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "d28ca32403471ab0fd43f347926a0ae0a0ceb5cd",
+  "syncedFrom": "710c9bd9ee327d4e97f04fde521bfb6c669d291a",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -120,7 +120,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "8422fa32f67b1657e0756816302e5923e6844716b5d558ab52280c66752e32b5"
+      "sha256": "c6d6156615722a90a615e9b9c40598e94abeaf6c726824507da0d39e62f34d99"
     },
     {
       "path": ".agents/skills/retro/SKILL.md",
@@ -480,7 +480,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "8422fa32f67b1657e0756816302e5923e6844716b5d558ab52280c66752e32b5"
+      "sha256": "c6d6156615722a90a615e9b9c40598e94abeaf6c726824507da0d39e62f34d99"
     },
     {
       "path": ".claude/skills/retro/SKILL.md",
@@ -865,7 +865,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "008b461410bd85ddc74e0e4491e083c8d513169605548ba0ab73965e2b83cba5"
+      "sha256": "175e5a624d43d61154cee211418839d8bc4417af8fb58e692347921cac75f936"
     },
     {
       "path": "scripts/merge-watch.mjs",

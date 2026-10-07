@@ -10,6 +10,23 @@ Git is the state. A branch is a job; a draft pull request is its handoff; the bo
 
 ## Before intake
 
+Check first that this runtime is running the repository's hooks: one it has not loaded or trusted does nothing,
+and no notice from the runtime can be relied on to reach the owner. Run `git commit --no-verify --dry-run` as one
+command on its own; it commits nothing. The git guard is running only when the result is the guard's own
+refusal, carrying the words `Blocked: git commit`; then say nothing about hooks and continue. Any other result,
+whether git's output, a permission prompt or a refusal in other words, means it is not running. Tell the owner so
+before anything else, in plain words: this session's git guard is off, the turn-end check may be off with it, and
+the fix for this runtime. On Codex the owner has Codex trust the project, removes any `hooks = false` or
+`codex_hooks = false` under `[features]` in the Codex `config.toml`, then runs `/hooks` in the Codex command line
+at the repository root and trusts the repository's hooks; on Windows add the Codex shell-command limit
+`docs/AI-WORKFLOW.md` names, which trust does not lift. On Claude Code, which has no hook trust step, the owner
+starts the session at the repository root or a job worktree root with `disableAllHooks` turned on in no settings
+file or start option; `/hooks` there lists the hooks that session has configured. When the result itself reports
+that a hook failed to start, name that failure and its remedy in place of the fix above, such as restoring Node
+to the command path. Run the command again when the owner reports the fix done. A refusal shows the git guard
+alone, because Codex trusts each hook separately: never report the handoff check or the turn-end check as
+verified.
+
 Fetch `origin/main` with `git fetch --no-prune origin main` and record the fetched commit. If fetching fails,
 report freshness unavailable and do not select work from stale board evidence. Load `AGENTS.md`, this skill, and
 [Update local main](../closeout/SKILL.md#update-local-main) from that commit under `AGENTS.md`'s Instruction reuse
