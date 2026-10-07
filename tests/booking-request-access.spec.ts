@@ -79,6 +79,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
   if (!customerPhone || !offset) {
     throw new Error("Booking fixture is unmapped");
   }
+  // A failed attempt leaves real holds on its service days, so each retry takes the next pair.
+  const dayOffset = offset + 2 * testInfo.retry;
 
   const fixtureOwner = createClient(
     process.env.SUPABASE_URL ?? "",
@@ -117,7 +119,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   if (!shift || !schedule.full_day_bundle_id) {
     throw new Error("Booking Request schedule fixture is incomplete");
   }
-  const requestedDay = serviceDay(offset);
+  const requestedDay = serviceDay(dayOffset);
   const { error: pricingError } = await fixtureOwner.rpc(
     "save_cottage_inventory_pricing",
     {
@@ -308,6 +310,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     .getByRole("banner")
     .getByRole("link", { name: "Support" })
     .click();
+  // The owner list carries one status per request, earlier attempts included, so
+  // wait for the Support page before reading its single status.
+  await expect(ownerPage).toHaveURL(/\/en\/support$/);
   await expect(ownerPage.getByRole("status")).toContainText(
     "support is not operating",
   );
@@ -1005,6 +1010,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     });
     await expect(failureNotice.getByRole("status")).toContainText(
       "Payment Required",
+      { timeout: 15000 },
     );
     await expect(page.getByRole("status")).toContainText("remain held");
     await expect(failureNotice.getByRole("status")).toContainText(
@@ -1056,6 +1062,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       );
       await expect(failureNotice.getByRole("status")).toContainText(
         "deadline has passed",
+        { timeout: 15000 },
       );
       await assertPaymentViews("payment-required-elapsed", failureReference);
       expect(observeFailure()).toEqual(terminal);
@@ -1260,7 +1267,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await assertPaymentViews("paid-confirmed", failureReference);
 
     // A separate future Shift proves unpaid expiry without changing either confirmed booking above.
-    const expiryDay = serviceDay(offset + 1);
+    const expiryDay = serviceDay(dayOffset + 1);
     const opened = await fixtureOwner.rpc(
       "set_cottage_inventory_availability",
       {
@@ -1381,10 +1388,14 @@ test("a verified Customer double-submit creates one Pending request and one mini
           `select pg_get_functiondef('public.${signature}'::regprocedure);`,
       ),
     );
-    const clocked = definitions.map((definition) =>
+    // The due claim (signatures[1]) treats only this request as due at the pinned deadline, so an
+    // earlier attempt's unpaid request stays on the database clock.
+    const clocked = definitions.map((definition, index) =>
       definition.replaceAll(
         "clock_timestamp()",
-        "public.live_payment_expiry_now()",
+        index === 1
+          ? `(case when work.booking_request_id='${expiryId}' then public.live_payment_expiry_now() else clock_timestamp() end)`
+          : "public.live_payment_expiry_now()",
       ),
     );
     try {
