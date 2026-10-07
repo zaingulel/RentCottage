@@ -10,7 +10,8 @@ CREATE FUNCTION public.list_cottage_profile_unpublished_content_changes (
   RETURNS TABLE (
     profile_id                     uuid,
     has_unpublished_content_change boolean,
-    profile_version                bigint
+    profile_version                bigint,
+    ready_photo_ids                uuid[]
   )
   LANGUAGE plpgsql
   STABLE
@@ -59,7 +60,17 @@ begin
             and photos.state = 'ready'::public.cottage_profile_photo_state
         )
     ),
-    profiles.version
+    profiles.version,
+    coalesce(
+      (
+        select array_agg(ready_photos.id order by ready_photos.id)
+        from public.cottage_profile_photos ready_photos
+        where ready_photos.profile_id = profiles.id
+          and ready_photos.is_active
+          and ready_photos.state = 'ready'::public.cottage_profile_photo_state
+      ),
+      '{}'::uuid[]
+    )
   from public.owner_application_cottage_profiles profiles
   join public.cottage_profile_review_cycles cycles
     on cycles.profile_id = profiles.id

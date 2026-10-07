@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(123);
+select plan(125);
 
 create function pg_temp.configure_translation_runtime(target_ready boolean)
 returns void language sql as $$
@@ -921,6 +921,15 @@ select results_eq(
   $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
   array[true],
   'a ready photo outside the current publication is an unpublished Content Change');
+select results_eq(
+  $$select array(select unnest(ready_photo_ids) order by 1)
+    from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  $$select array_agg(photos.id order by photos.id)
+    from public.cottage_profile_photos photos
+    where photos.profile_id = '30000000-0000-4000-8000-000000002401'
+      and photos.is_active and photos.state = 'ready'
+    having count(*) > 1$$,
+  'the unpublished Content Change answer names the ready photos it judged');
 select lives_ok(
   $$select public.prepare_cottage_profile_photo_deletion(
     '40000000-0000-4000-8000-000000002403'
@@ -939,6 +948,10 @@ select results_eq(
   $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
   array[true],
   'a published photo missing from the working copy is an unpublished Content Change');
+select results_eq(
+  $$select ready_photo_ids from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  $$values ('{}'::uuid[])$$,
+  'the unpublished Content Change answer names no ready photos once they are removed');
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
 select results_eq(
   $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,

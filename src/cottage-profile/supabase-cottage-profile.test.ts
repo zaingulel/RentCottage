@@ -10,6 +10,8 @@ function result<T>(data: T, error: unknown = null) {
   return Promise.resolve({ data, error });
 }
 
+const readyPhotoId = "71000000-0000-4000-8000-000000000001";
+
 function loadProviderProfile({
   profile = {},
   photo = {},
@@ -47,7 +49,7 @@ function loadProviderProfile({
   });
   const photosResult = result([
     {
-      id: "71000000-0000-4000-8000-000000000001",
+      id: readyPhotoId,
       original_filename: "cottage.webp",
       media_type: "image/webp",
       size_bytes: 128,
@@ -558,6 +560,7 @@ describe("Supabase Cottage Profile adapter", () => {
           profile_id: profileId,
           has_unpublished_content_change: true,
           profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
         },
       ]),
     );
@@ -626,6 +629,7 @@ describe("Supabase Cottage Profile adapter", () => {
           profile_id: profileId,
           has_unpublished_content_change: changedProfileIds.includes(profileId),
           profile_version: 1,
+          ready_photo_ids: [],
         })),
       );
     });
@@ -667,6 +671,7 @@ describe("Supabase Cottage Profile adapter", () => {
         profile_id: "70000000-0000-4000-8000-000000000001",
         has_unpublished_content_change: true,
         profile_version: 1,
+        ready_photo_ids: [readyPhotoId],
       },
     ],
     ["omits the profile", []],
@@ -677,11 +682,13 @@ describe("Supabase Cottage Profile adapter", () => {
           profile_id: "70000000-0000-4000-8000-000000000001",
           has_unpublished_content_change: true,
           profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
         },
         {
           profile_id: "70000000-0000-4000-8000-000000000002",
           has_unpublished_content_change: true,
           profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
         },
       ],
     ],
@@ -692,11 +699,13 @@ describe("Supabase Cottage Profile adapter", () => {
           profile_id: "70000000-0000-4000-8000-000000000001",
           has_unpublished_content_change: true,
           profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
         },
         {
           profile_id: "70000000-0000-4000-8000-000000000001",
           has_unpublished_content_change: true,
           profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
         },
       ],
     ],
@@ -707,6 +716,7 @@ describe("Supabase Cottage Profile adapter", () => {
           profile_id: "70000000-0000-4000-8000-000000000001",
           has_unpublished_content_change: "true",
           profile_version: 1,
+          ready_photo_ids: [readyPhotoId],
         },
       ],
     ],
@@ -732,17 +742,21 @@ describe("Supabase Cottage Profile adapter", () => {
       current_publication_id: "74000000-0000-4000-8000-000000000001",
       version: 2,
     };
-    const answer = [
+    const answer = (readyPhotoIds: string[]) => [
       {
         profile_id: profileId,
         has_unpublished_content_change: false,
         profile_version: 3,
+        ready_photo_ids: readyPhotoIds,
       },
     ];
 
     it("on the single-profile path", async () => {
       await expect(
-        loadProviderProfile({ profile, rpc: vi.fn(() => result(answer)) }),
+        loadProviderProfile({
+          profile,
+          rpc: vi.fn(() => result(answer([readyPhotoId]))),
+        }),
       ).rejects.toThrow("Cottage Profile changed while it was being read");
     });
 
@@ -765,7 +779,7 @@ describe("Supabase Cottage Profile adapter", () => {
                     ...profile,
                   },
                 ]
-              : answer,
+              : answer([]),
           ),
         ),
       } as unknown as SupabaseClient;
@@ -775,6 +789,143 @@ describe("Supabase Cottage Profile adapter", () => {
       ).rejects.toThrow("Cottage Profile changed while it was being read");
     });
   });
+
+  describe("refuses an unpublished Content Change answer judged against another photo set", () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const otherPhotoId = "71000000-0000-4000-8000-000000000002";
+    const published = {
+      current_publication_id: "74000000-0000-4000-8000-000000000001",
+    };
+    const answer = (readyPhotoIds: string[]) => [
+      {
+        profile_id: profileId,
+        has_unpublished_content_change: true,
+        profile_version: 1,
+        ready_photo_ids: readyPhotoIds,
+      },
+    ];
+    const listOwnerHolding = (
+      heldPhotos: { id: string; state: string }[],
+      readyPhotoIds: string[],
+    ) => {
+      const client = {
+        from: vi.fn(() => ({
+          select: vi.fn().mockReturnValue({
+            in: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn(() =>
+                  result(
+                    heldPhotos.map((photo) => ({
+                      profile_id: profileId,
+                      original_filename: "cottage.webp",
+                      media_type: "image/webp",
+                      size_bytes: 128,
+                      updated_at: "2026-08-17T09:05:00.000Z",
+                      ...photo,
+                    })),
+                  ),
+                ),
+              }),
+            }),
+          }),
+        })),
+        rpc: vi.fn((functionName: string) =>
+          result(
+            functionName === "list_owner_cottage_profiles"
+              ? [
+                  {
+                    id: profileId,
+                    owner_user_id: "10000000-0000-4000-8000-000000000701",
+                    application_id: null,
+                    status: "draft",
+                    version: 1,
+                    amenities: ["garden"],
+                    source_language: "en",
+                    submitted_source_revision_id: null,
+                    updated_at: "2026-08-17T09:15:00.000Z",
+                    ...published,
+                  },
+                ]
+              : answer(readyPhotoIds),
+          ),
+        ),
+      } as unknown as SupabaseClient;
+      return new SupabaseCottageProfileRepository(client, client).listOwner();
+    };
+
+    it("on the single-profile path", async () => {
+      await expect(
+        loadProviderProfile({
+          profile: published,
+          rpc: vi.fn(() => result(answer([]))),
+        }),
+      ).rejects.toThrow("Cottage Profile changed while it was being read");
+    });
+
+    it("on the list path", async () => {
+      await expect(
+        listOwnerHolding(
+          [
+            { id: readyPhotoId, state: "ready" },
+            { id: otherPhotoId, state: "ready" },
+          ],
+          [readyPhotoId],
+        ),
+      ).rejects.toThrow("Cottage Profile changed while it was being read");
+    });
+
+    it("accepts the same ready photos in another order", async () => {
+      await expect(
+        listOwnerHolding(
+          [
+            { id: readyPhotoId, state: "ready" },
+            { id: otherPhotoId, state: "ready" },
+          ],
+          [otherPhotoId, readyPhotoId],
+        ),
+      ).resolves.toMatchObject([{ hasUnpublishedContentChange: true }]);
+    });
+
+    it("ignores a held photo that is not ready", async () => {
+      await expect(
+        listOwnerHolding(
+          [
+            { id: readyPhotoId, state: "ready" },
+            { id: otherPhotoId, state: "pending" },
+          ],
+          [readyPhotoId],
+        ),
+      ).resolves.toMatchObject([{ hasUnpublishedContentChange: true }]);
+    });
+  });
+
+  it.each([
+    ["omitted", undefined],
+    ["a list holding a non-string", [readyPhotoId, 7]],
+  ])(
+    "refuses an unpublished Content Change answer without a list of ready photo ids (%s)",
+    async (_, readyPhotoIds) => {
+      await expect(
+        loadProviderProfile({
+          profile: {
+            current_publication_id: "74000000-0000-4000-8000-000000000001",
+          },
+          rpc: vi.fn(() =>
+            result([
+              {
+                profile_id: "70000000-0000-4000-8000-000000000001",
+                has_unpublished_content_change: true,
+                profile_version: 1,
+                ready_photo_ids: readyPhotoIds,
+              },
+            ]),
+          ),
+        }),
+      ).rejects.toThrow(
+        "Cottage Profile unpublished Content Change data is invalid",
+      );
+    },
+  );
 
   it.each([
     ["omitted", undefined],
@@ -793,6 +944,7 @@ describe("Supabase Cottage Profile adapter", () => {
                 profile_id: "70000000-0000-4000-8000-000000000001",
                 has_unpublished_content_change: true,
                 profile_version: profileVersion,
+                ready_photo_ids: [readyPhotoId],
               },
             ]),
           ),
