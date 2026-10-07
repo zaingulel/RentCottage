@@ -11,13 +11,14 @@ the code keeps them.
   base palette `--background`, `--card`, `--ink`, `--muted`, `--green`, `--gold` and `--line`, then the groups
   Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
   families `--display` and `--body`, the spacing scale `--space-1` to `--space-7`, the text size scale
-  `--font-size-1` to `--font-size-6`, the component tokens named under Spacing and text size, and
-  `color-scheme: light`. There is no Tailwind and no theme object.
-- Interface colours, font families, spacing and text sizes come from these tokens through `var(--…)`.
-  [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside `:root` other than in an elevation
-  shadow, on a custom property a stylesheet uses that `:root` does not declare, on a spacing or text size length
-  that is neither a scale step nor listed under Tolerated literals, and on a listed length that no stylesheet
-  writes.
+  `--font-size-1` to `--font-size-6`, the corner radius, state ring and stacking order tokens named under Radius,
+  shadow and stacking order, the component tokens named under Spacing and text size, and `color-scheme: light`. There is no Tailwind and no theme object.
+- Interface colours, font families, spacing, text sizes, corner radii, state rings and stacking order come from
+  these tokens through `var(--…)`. [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside
+  `:root`, on a custom property a stylesheet uses that `:root` does not declare, on a spacing or text size length
+  that is neither a scale step nor listed under Tolerated literals, on a listed length that no stylesheet writes,
+  on a `border-radius`, `box-shadow` or `z-index` value that is neither its token nor a tolerated literal, and on a
+  width media query outside the list under Breakpoints.
 - A colour or font a change needs that the block lacks is added to `:root` in the same change, named for its role
   (what it is for, not what it looks like). Two roles may share a value, each with its own token; one role never
   has two tokens.
@@ -53,16 +54,33 @@ the code keeps them.
   the gap under the Arabic-script hero headline follows the fluid headline size, which no step can do. New work
   adds no component token for a spacing or text size value.
 
+## Radius, shadow and stacking order
+
+- Corner radius has two sizes, written in `rem`. `--radius-control` is 8 pixels and rounds what a person
+  operates: a button, a link styled as a button, a form field, a stepper and a selectable option.
+  `--radius-card` is 10 pixels and rounds every other surface: a card, panel, notice, tile, image frame, menu and
+  list row.
+- A pill is `999px`, a circle is `50%` and a square corner is `0`. They are shapes, not sizes, so they are
+  literals.
+- There is no elevation shadow. A surface is set apart by its background and its `1px` `--line` border;
+  `text-shadow` and `drop-shadow()` are not used.
+- `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` around a focused form
+  field, `--shadow-invalid` around an invalid field or option, and `--shadow-pressed` inside a pressed toggle. A
+  ring adds to the focus outline described under Accessibility conventions and never replaces it.
+- Every `z-index` is one of four layers, lowest first: `--layer-raised` for content above a backdrop in its own
+  block, as the hero copy is above its shade; `--layer-overlap` for a block that overlaps the one before it, as
+  the search card overlaps the hero; `--layer-header` for the site header; and `--layer-menu` for a menu that
+  opens over everything else.
+- New work uses these tokens. A third radius, an elevation shadow or a fifth layer is decided in this document
+  before a stylesheet writes it.
+
 ## Tolerated literals
 
 A stylesheet may write these as literals:
 
-- `0`, `auto` and `inherit`, hairline `1px` borders, `50%` and `999px` for circles and pills.
+- `0`, `auto`, `none` and `inherit`, hairline `1px` borders, `50%` and `999px` for circles and pills.
 - Percentages and `fr` or flex sizing in layout, and the sizing lengths described under Spacing and text size.
 - `currentColor` and `transparent`.
-- Radius, stacking order and breakpoint values, and elevation `box-shadow` values including their colours, until
-  #435 settles their scale. New work reuses a value already in use rather than inventing one.
-- A focus ring written as a `box-shadow` that starts `0 0 0` is not an elevation shadow: its colour is a token.
 - Border and outline widths and offsets, and lengths inside `background`, `transform`, `backdrop-filter` and
   text-decoration properties. New work reuses a value already in use.
 - Unitless `line-height` ratios and `letter-spacing` in `em`.
@@ -179,4 +197,3 @@ These are known gaps, not standards to copy.
 
 - #442: several near-identical colours are separate tokens, such as four error reds and several success greens;
   which of them are one role is not yet decided.
-- #435: there is no shared scale for radius, shadow, stacking order or breakpoints.
