@@ -358,7 +358,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     ).toBeVisible();
     await ownerPage.reload();
     await expect(
-      ownerPage.getByText("إشعار الحالة", { exact: true }),
+      arabicNotice.getByText("إشعار الحالة", { exact: true }),
     ).toBeVisible();
     await page.goto(`/ar/booking-requests/${requestReference}`);
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -392,7 +392,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     ).toBeVisible();
     await ownerPage.reload();
     await expect(
-      ownerPage.getByText("Status notification", { exact: true }),
+      ownerNotice.getByText("Status notification", { exact: true }),
     ).toBeVisible();
     await page.goto(`/en/booking-requests/${requestReference}`);
     await expect(
