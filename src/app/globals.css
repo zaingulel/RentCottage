@@ -1027,9 +1027,17 @@ a {
 }
 
 .result-content .result-from-price {
-  margin-block: var(--space-2) var(--space-1);
+  margin-block: var(--space-3) var(--space-1);
   color: var(--ink);
   font-size: var(--font-size-3);
+}
+
+.result-content .result-from-price b {
+  font-size: var(--font-size-4);
+}
+
+.result-content .result-prices-note {
+  margin-block-start: var(--space-3);
 }
 
 .result-shifts {

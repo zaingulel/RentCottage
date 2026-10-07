@@ -125,7 +125,7 @@ export function PublicCottageResults({
                       <p>{messages.fromNote}</p>
                     </>
                   )}
-                  <p>{messages.prices}</p>
+                  <p className="result-prices-note">{messages.prices}</p>
                   {[
                     ...new Set(
                       cottage.inventory.map((unit) => unit.serviceDay),
