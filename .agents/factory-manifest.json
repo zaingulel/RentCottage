@@ -4,7 +4,7 @@
     "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "22fccd6569827fba22c15cf26f4f45bc9ba5d82a",
+  "syncedFrom": "d28ca32403471ab0fd43f347926a0ae0a0ceb5cd",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -120,7 +120,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "2a28370e23c4d4c43b1b56bc740b31d742ed91f4d3769582e76bb4ca1827f4af"
+      "sha256": "8422fa32f67b1657e0756816302e5923e6844716b5d558ab52280c66752e32b5"
     },
     {
       "path": ".agents/skills/retro/SKILL.md",
@@ -480,7 +480,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "2a28370e23c4d4c43b1b56bc740b31d742ed91f4d3769582e76bb4ca1827f4af"
+      "sha256": "8422fa32f67b1657e0756816302e5923e6844716b5d558ab52280c66752e32b5"
     },
     {
       "path": ".claude/skills/retro/SKILL.md",
@@ -636,11 +636,11 @@
     },
     {
       "path": "docs/AI-WORKFLOW-diagram.html",
-      "sha256": "0af5dda28a72b6c50ac0126850661680a6156de239eca865d205b07f7b5ad3ad"
+      "sha256": "ce2bac14199e10fc4f192c958afb16606687950233a36e4694948699b96a26b7"
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "85829e1fd104f7fcbe55abe9f38bf279a52778bfe3df142d8c819e07fe5e8c37"
+      "sha256": "7038db7aa590460b22db97eb1713637fddf26b34e761ef2b6f7ae22fd9e34d06"
     },
     {
       "path": "docs/WEEKLY-RETRO.md",
@@ -661,7 +661,7 @@
     },
     {
       "path": "scripts/factory-sync.mjs",
-      "sha256": "009292ecd0293b26688fc776d28b050547e272c61ea28f38f466c48475ace280"
+      "sha256": "f24a986e6e6acd565dffabee9425efda3541ff74e4a2dab8dcf9a83fc36b6c06"
     },
     {
       "path": "scripts/lib/board-add.mjs",
@@ -765,7 +765,7 @@
     },
     {
       "path": "scripts/lib/factory-sync.test.mjs",
-      "sha256": "ced627673a07982de54baba1ca853a865358c26e83961fdd170baae71c9987a4"
+      "sha256": "96cd074931e8a982d7456f0a4da2550f98cb2287efdd0dd89985ad8b7836c49c"
     },
     {
       "path": "scripts/lib/fake-gh.mjs",

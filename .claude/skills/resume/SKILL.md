@@ -44,9 +44,10 @@ available, report board freshness unavailable rather than presenting stale local
   Claude Code, `EnterWorktree` records the shell's current folder as the one `ExitWorktree` later returns to, and
   a sibling job's closeout may remove that folder, leaving this session unable to leave its own worktree.
 - Run `node scripts/factory-sync.mjs --check` in the same refreshed checkout and report its result at work-pick in
-  one advisory line: exit 0 is in sync; exit 1 is lag, naming the paths it lists, which one sync job clears at
-  once, resolving every sync card its run carries (`AGENTS.md`, Shared workflow adoption); exit 2 is lag unknown
-  with its stated cause, never reported as in sync. The result never blocks work-pick.
+  one advisory line: exit 0 is in sync; exit 1 is lag, naming the paths it lists, reported as information: an
+  ordinary shared change opens no sync card, and a sync card is opened only on the owner's decision, when one sync
+  job clears every listed path at once (`AGENTS.md`, Shared workflow adoption); exit 2 is lag unknown with its
+  stated cause, never reported as in sync. The result never blocks work-pick.
 - Report in one advisory line, with no threshold, the size of the workflow tooling (scripts, tools and hooks, their
   tests counted apart) and its time-limit declarations, each a test or suite setting its own time limit on one line,
   at the recorded `origin/main` commit and at the newest `main` commit at least 30 days old,
