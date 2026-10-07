@@ -348,20 +348,36 @@ input[type="file"].form-control::file-selector-button {
   border-block-end: 1px solid var(--line);
 }
 
-.owner-application-header a {
-  color: var(--green);
-  font-family: var(--display);
-  font-size: var(--font-size-4);
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.owner-application-header span {
+.owner-application-header span,
+.backoffice-navigation-area {
   color: var(--gold);
   font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.backoffice-navigation {
+  width: min(100% - 2rem, 70rem);
+  margin-inline: auto;
+  display: grid;
+  gap: var(--space-2);
+  padding-block: var(--space-4);
+  border-block-end: 1px solid var(--line);
+}
+
+.backoffice-navigation-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.backoffice-navigation a[aria-current] {
+  border-color: var(--green);
+  background: var(--action-pressed);
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.2em;
 }
 
 .owner-application-layout {

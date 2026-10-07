@@ -1649,6 +1649,43 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(
     page.getByRole("heading", { name: "Private Cottage Profiles" }),
   ).toBeVisible();
+  const administratorNavigation = page.getByRole("navigation", {
+    name: "Platform administration",
+  });
+  await expect(administratorNavigation.getByRole("link")).toHaveText([
+    "Review submitted Owner Applications",
+    "Manage Cottage Profiles",
+    "Payment support history",
+    "Records",
+  ]);
+  await expect
+    .poll(() =>
+      administratorNavigation.evaluate((navigation) => {
+        const content = navigation.nextElementSibling?.getBoundingClientRect();
+        if (!content) return "no content after the navigation";
+        const links = [...navigation.querySelectorAll("a")].map((link) =>
+          link.getBoundingClientRect(),
+        );
+        return {
+          insideContent: links.every(
+            (link) =>
+              link.left >= content.left - 1 && link.right <= content.right + 1,
+          ),
+          separate: links.every((first, index) =>
+            links
+              .slice(index + 1)
+              .every(
+                (second) =>
+                  first.right + 6 <= second.left ||
+                  second.right + 6 <= first.left ||
+                  first.bottom + 6 <= second.top ||
+                  second.bottom + 6 <= first.top,
+              ),
+          ),
+        };
+      }),
+    )
+    .toEqual({ insideContent: true, separate: true });
   const abandonedProfile = page
     .getByRole("article")
     .filter({ hasText: "Abandoned" });
