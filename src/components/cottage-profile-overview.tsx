@@ -52,7 +52,7 @@ export function CottageProfileOverview({
         {profiles.map((profile) => (
           <article className="cottage-profile-card" key={profile.id}>
             <div>
-              <span>{cottageProfileStatusLabel(locale, profile.status)}</span>
+              <span>{cottageProfileStatusLabel(locale, profile)}</span>
               {profile.applicationId ? (
                 <span>{copy.applicationProfile}</span>
               ) : null}

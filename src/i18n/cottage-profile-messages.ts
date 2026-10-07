@@ -1,5 +1,8 @@
 import type { Locale } from "./routing";
-import type { CottageProfileStatus } from "@/cottage-profile/cottage-profile";
+import type {
+  CottageProfile,
+  CottageProfileStatus,
+} from "@/cottage-profile/cottage-profile";
 
 const en = {
   eyebrow: "Owner Backoffice",
@@ -18,6 +21,9 @@ const en = {
   draft: "Private draft",
   submitted: "Submitted for content approval",
   abandoned: "Abandoned",
+  published: "Published",
+  publishedWithUnpublishedChanges: "Published; unpublished changes",
+  publishedUpdateAwaitingApproval: "Published; update awaiting approval",
   abandonedReadOnly:
     "This private Cottage Profile is abandoned and remains available as a read-only record.",
   readOnly:
@@ -145,6 +151,9 @@ const ar: Copy = {
   draft: "مسودة خاصة",
   submitted: "مُرسل للموافقة على المحتوى",
   abandoned: "متروك",
+  published: "منشور",
+  publishedWithUnpublishedChanges: "منشور؛ تعديلات غير منشورة",
+  publishedUpdateAwaitingApproval: "منشور؛ التحديث بانتظار الموافقة",
   abandonedReadOnly: "ملف الكوخ الخاص هذا متروك ويبقى متاحاً كسجل للقراءة فقط.",
   readOnly:
     "يبقى ملفك الخاص متاحاً، لكن التغييرات غير متاحة أثناء انتهاء أو تعليق حساب المالك.",
@@ -267,6 +276,10 @@ const ckb: Copy = {
   draft: "ڕەشنووسی تایبەت",
   submitted: "نێردراوە بۆ پەسەندکردنی ناوەڕۆک",
   abandoned: "وازهێنراو",
+  published: "بڵاوکراوەتەوە",
+  publishedWithUnpublishedChanges: "بڵاوکراوەتەوە؛ گۆڕانکاریی بڵاونەکراوە هەیە",
+  publishedUpdateAwaitingApproval:
+    "بڵاوکراوەتەوە؛ نوێکردنەوەکە چاوەڕێی پەسەندکردنە",
   abandonedReadOnly:
     "ئەم پرۆفایلە تایبەتەی کۆتێج وازهێنراوە و وەک تۆمارێکی تەنها خوێندنەوە بەردەست دەمێنێتەوە.",
   readOnly:
@@ -385,9 +398,17 @@ const cottageProfileStatusMessageKeys = {
 
 export function cottageProfileStatusLabel(
   locale: Locale,
-  status: CottageProfileStatus,
+  profile: Pick<
+    CottageProfile,
+    "status" | "currentPublicationId" | "hasUnpublishedContentChange"
+  >,
 ): string {
-  return cottageProfileMessages[locale][
-    cottageProfileStatusMessageKeys[status]
-  ];
+  const copy = cottageProfileMessages[locale];
+  if (profile.status === "abandoned" || profile.currentPublicationId === null)
+    return copy[cottageProfileStatusMessageKeys[profile.status]];
+  if (profile.status === "submitted_for_content_approval")
+    return copy.publishedUpdateAwaitingApproval;
+  return profile.hasUnpublishedContentChange
+    ? copy.publishedWithUnpublishedChanges
+    : copy.published;
 }
