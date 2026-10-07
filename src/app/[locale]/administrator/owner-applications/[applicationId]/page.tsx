@@ -3,6 +3,7 @@ import { notFound, unstable_rethrow } from "next/navigation";
 
 import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { OwnerApplicationReviewDetailView } from "@/components/owner-application-review-detail";
 import { ownerApplicationReviewDetailMessages } from "@/i18n/owner-application-review-detail-messages";
 import { isLocale } from "@/i18n/routing";
@@ -64,12 +65,12 @@ export default async function OwnerApplicationReviewDetailPage({
   if (!page.detail) notFound();
   return (
     <main className="owner-application-page">
-      <header className="owner-application-header">
-        <Link href={`/${locale}/administrator/owner-applications`}>
-          {copy.back}
-        </Link>
-        <span>{copy.title}</span>
-      </header>
+      <BackofficeNavigation
+        locale={locale}
+        area="administrator"
+        current="owner-applications"
+        nested
+      />
       <OwnerApplicationReviewDetailView locale={locale} detail={page.detail} />
     </main>
   );

@@ -41,7 +41,6 @@ export const administratorPaymentHistoryMessages = {
     physicalAttempt: "Physical attempt",
     providerReference: "Provider reference",
     amount: "Amount",
-    back: "New lookup",
   },
   ar: {
     internalSupportReference: "مرجع دعم داخلي",
@@ -83,7 +82,6 @@ export const administratorPaymentHistoryMessages = {
     physicalAttempt: "محاولة التنفيذ",
     providerReference: "مرجع المزود",
     amount: "المبلغ",
-    back: "بحث جديد",
   },
   ckb: {
     internalSupportReference: "ژمارەی ئاماژەی ناوخۆیی پشتگیری",
@@ -126,7 +124,6 @@ export const administratorPaymentHistoryMessages = {
     physicalAttempt: "هەوڵی جێبەجێکردن",
     providerReference: "ژمارەی ئاماژەی دابینکەر",
     amount: "بڕ",
-    back: "گەڕانێکی نوێ",
   },
 } as const;
 

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { createClient, createCottageProfile, resolveContext, unstableRethrow } =
@@ -111,5 +111,41 @@ describe("Cottage Profile administrator overview page", () => {
       "href",
       "/en/administrator/cottages?afterUpdatedAt=2026-08-17T09%3A15%3A00.123456Z&afterProfileId=70000000-0000-4000-8000-000000000002",
     );
+  });
+
+  it("shows the Platform administration navigation on the Cottage Profiles list with no brand link of its own", async () => {
+    resolveContext.mockResolvedValue({ role: "platform_administrator" });
+    createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
+    });
+    createCottageProfile.mockResolvedValue({
+      listAdministrator: vi
+        .fn()
+        .mockResolvedValue({ profiles: [], nextCursor: null }),
+    });
+
+    render(
+      await AdministratorCottagesPage({
+        params: Promise.resolve({ locale: "en" }),
+      }),
+    );
+
+    const navigation = within(
+      screen.getByRole("navigation", { name: "Platform administration" }),
+    );
+    expect(
+      navigation.getAllByRole("link").map((link) => link.textContent),
+    ).toEqual([
+      "Review submitted Owner Applications",
+      "Manage Cottage Profiles",
+      "Payment support history",
+      "Records",
+    ]);
+    expect(
+      navigation.getByRole("link", { name: "Manage Cottage Profiles" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.queryByRole("link", { name: "RentCottage" }),
+    ).not.toBeInTheDocument();
   });
 });

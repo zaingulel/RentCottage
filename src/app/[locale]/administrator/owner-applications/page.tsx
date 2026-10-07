@@ -3,9 +3,8 @@ import { notFound, unstable_rethrow } from "next/navigation";
 
 import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { OwnerApplicationReviewQueue } from "@/components/owner-application-review-queue";
-import { accessMessages } from "@/i18n/access-messages";
-import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { ownerApplicationReviewMessages } from "@/i18n/owner-application-review-messages";
 import { isLocale } from "@/i18n/routing";
 import {
@@ -36,7 +35,6 @@ export default async function OwnerApplicationReviewPage({
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const copy = ownerApplicationReviewMessages[locale];
-  const accessCopy = accessMessages[locale];
   let page:
     | Awaited<ReturnType<typeof loadOwnerApplicationReviewPage>>
     | undefined;
@@ -72,7 +70,6 @@ export default async function OwnerApplicationReviewPage({
     return (
       <main className="owner-application-page access-required-page">
         <header className="owner-application-header">
-          <Link href={`/${locale}`}>RentCottage</Link>
           <span>{copy.eyebrow}</span>
         </header>
         <section className="access-required-card">
@@ -86,18 +83,11 @@ export default async function OwnerApplicationReviewPage({
 
   return (
     <main className="owner-application-page">
-      <header className="owner-application-header">
-        <Link href={`/${locale}`}>RentCottage</Link>
-        <nav aria-label={copy.eyebrow}>
-          <span>{copy.eyebrow}</span>
-          <Link href={`/${locale}/administrator/cottages`}>
-            {accessCopy.manageCottageProfiles}
-          </Link>
-          <Link href={`/${locale}/administrator/records`}>
-            {administratorRecordsMessages[locale].records}
-          </Link>
-        </nav>
-      </header>
+      <BackofficeNavigation
+        locale={locale}
+        area="administrator"
+        current="owner-applications"
+      />
       <section className="administrator-review-page">
         <div className="application-section-heading">
           <span>01</span>

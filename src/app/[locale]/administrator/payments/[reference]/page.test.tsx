@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 const { load, notFound, unstableRethrow } = vi.hoisted(() => ({
@@ -12,6 +12,9 @@ vi.mock("@/booking-request/request-booking-financial-view", () => ({
 vi.mock("server-only", () => ({}));
 vi.mock("@/booking-request/request-administrator-payment-history", () => ({
   loadAdministratorPaymentHistory: load,
+}));
+vi.mock("@/components/administrator-payment-history", () => ({
+  AdministratorPaymentHistoryView: () => null,
 }));
 vi.mock("next/navigation", () => ({
   notFound,
@@ -50,4 +53,17 @@ it("uses the framework not-found boundary for an unknown reference", async () =>
   load.mockResolvedValue({ status: "not_found" });
   await AdministratorPaymentHistoryPage({ params });
   expect(notFound).toHaveBeenCalledOnce();
+});
+
+it("shows the Platform administration navigation on a payment history with its section marked", async () => {
+  load.mockResolvedValue({ status: "ready", history: {} });
+  render(await AdministratorPaymentHistoryPage({ params }));
+  const section = within(
+    screen.getByRole("navigation", { name: "Platform administration" }),
+  ).getByRole("link", { name: "Payment support history" });
+  expect(section).toHaveAttribute("href", "/en/administrator/payments");
+  expect(section).toHaveAttribute("aria-current", "true");
+  expect(
+    screen.queryByRole("link", { name: "New lookup" }),
+  ).not.toBeInTheDocument();
 });

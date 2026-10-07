@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -112,6 +112,12 @@ describe("Owner Application administrator review page", () => {
       screen.getByRole("link", { name: "Verify administrator access" }),
     ).toHaveAttribute("href", "/en/administrator/access");
     expect(loadApplications).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("navigation", { name: "Platform administration" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "RentCottage" }),
+    ).not.toBeInTheDocument();
   });
 
   it("fails closed on a malformed pagination cursor", async () => {
@@ -165,5 +171,13 @@ describe("Owner Application administrator review page", () => {
     expect(
       screen.getByRole("link", { name: "Manage Cottage Profiles" }),
     ).toHaveAttribute("href", "/en/administrator/cottages");
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Platform administration" }),
+      ).getByRole("link", { name: "Review submitted Owner Applications" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.queryByRole("link", { name: "RentCottage" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 const {
@@ -148,4 +148,12 @@ it("passes the AAL2 translation administration overview to the review surface", 
   expect(canManageLifecycle).toHaveBeenCalledWith("profile");
   expect(screen.getByText("lifecycle eligible true")).toBeVisible();
   expect(screen.getByText("actual spend 1200")).toBeVisible();
+  const section = within(
+    screen.getByRole("navigation", { name: "Platform administration" }),
+  ).getByRole("link", { name: "Manage Cottage Profiles" });
+  expect(section).toHaveAttribute("href", "/en/administrator/cottages");
+  expect(section).toHaveAttribute("aria-current", "true");
+  expect(
+    screen.queryByRole("link", { name: "Back to cottages" }),
+  ).not.toBeInTheDocument();
 });

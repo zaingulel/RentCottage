@@ -1675,7 +1675,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect(
     page.getByRole("button", { name: "Abandon draft" }),
   ).toBeEnabled();
-  await page.getByRole("link", { name: "Back to cottages" }).click();
+  await page.getByRole("link", { name: "Manage Cottage Profiles" }).click();
   const submittedProfile = page
     .getByRole("article")
     .filter({ hasText: "Submitted for content approval" })
@@ -1880,7 +1880,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     }
     await page.goto(`/en${cottagePath}`);
   }
-  await page.getByRole("link", { name: "Back to cottages" }).click();
+  await page.getByRole("link", { name: "Manage Cottage Profiles" }).click();
   await expect(
     page.getByRole("heading", { name: "Private Cottage Profiles" }),
   ).toBeVisible();

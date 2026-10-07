@@ -5,11 +5,10 @@ import { resolvePlatformAdministratorAccess } from "@/access/platform-administra
 import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
 import type { CottageProfileAdministratorCursor } from "@/cottage-profile/cottage-profile";
 import { parseAdministratorCottageProfileCursor } from "@/cottage-profile/supabase-cottage-profile";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { CottageProfileOverview } from "@/components/cottage-profile-overview";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
-import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
-import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 
 async function loadAdministratorCottages(
   cursor?: CottageProfileAdministratorCursor,
@@ -69,18 +68,11 @@ export default async function AdministratorCottagesPage({
   }
   return (
     <main className="owner-application-page cottage-profile-page">
-      <header className="owner-application-header">
-        <Link href={`/${locale}`}>RentCottage</Link>
-        <div>
-          <Link href={`/${locale}/administrator/payments`}>
-            {administratorPaymentHistoryMessages[locale].title}
-          </Link>
-          <Link href={`/${locale}/administrator/records`}>
-            {administratorRecordsMessages[locale].records}
-          </Link>
-          <span>{copy.adminEyebrow}</span>
-        </div>
-      </header>
+      <BackofficeNavigation
+        locale={locale}
+        area="administrator"
+        current="cottages"
+      />
       <CottageProfileOverview
         locale={locale}
         actor="administrator"
