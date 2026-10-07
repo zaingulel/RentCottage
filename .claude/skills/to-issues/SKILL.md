@@ -80,10 +80,17 @@ a Workstream.
 ```bash
 gh issue create \
   --title "..." \
-  --label "type:<epic|feature|task|bug>,area:<...>" \
+  --label "type:<epic|feature|task|bug|docs>,area:<...>" \
   --blocked-by <N>[,<N>...] \
   --body "..."
 ```
+
+Every issue carries exactly one `type:` label, chosen by what the issue is: `type:epic` for a parent whose work is
+its native child issues; `type:bug` for behaviour that contradicts what the code, a test or a document says it
+does; `type:feature` for a new or changed capability for the people using the product; `type:docs` for a change to
+documents or prose alone; `type:task` for any other bounded work, such as tooling, a refactor, research or a
+recorded decision. When two fit, the first in that order wins. Step 8's verifier fails an issue with none or more
+than one.
 
 `--blocked-by` takes each owner-approved blocker and needs gh 2.94 or later; omit it when the slice has none. A
 blocker and a parent live only in GitHub's built-in links, never in the body. The link is a second call after
@@ -100,6 +107,13 @@ node scripts/board-add.mjs <ISSUE_N> <Status> <Workstream>
 ```
 
 Use `board-move.mjs` only to move an existing card, never to create one.
+
+**A card for another repository** is filed from a checkout of that repository, never from this one:
+`board-add.mjs` and the step 8 verifier act on the board of the checkout they run in. Run steps a, b and 8 there,
+with labels from that repository's own set and the Workstream by its convention, so the card arrives with its
+labels, column and Workstream together. With no checkout of that repository, create the issue with
+`gh issue create --repo <owner>/<repo>` and that repository's labels, then tell the owner the card still needs its
+Workstream, set by running step b in that repository; never report it as filed complete.
 
 **c. Link each child to its parent Epic as a native sub-issue** (a markdown checklist is NOT a sub-issue):
 
@@ -171,11 +185,13 @@ Run the shared verifier once with the Epic followed by every child (a standalone
 node scripts/verify-issue-publish.mjs <EPIC_N> <CHILD_N...>
 ```
 
-Report its three results: board presence, Statuses and Workstreams, native child count. On failure, read WHICH
-failure: `absent from the board` means the publication genuinely failed — fix before reporting ready; `is archived
-on the board` means unarchive that card, never add a second; `is on the board but not in this board read` and
-`is not on this board read` mean the read lagged — re-run the verifier, never add again; `could not confirm
-whether` means fix the named cause. A silent skip here is the exact failure this skill already made once.
+Report its four results: board presence, Statuses and Workstreams, the one `type:` label, native child count. On
+failure, read WHICH failure: `absent from the board` means the publication genuinely failed — fix before reporting
+ready; `needs exactly one type: label` means correct that issue's labels with `gh issue edit <N> --add-label` or
+`--remove-label`, then re-run; `is archived on the board` means unarchive that card, never add a second;
+`is on the board but not in this board read` and `is not on this board read` mean the read lagged — re-run the
+verifier, never add again; `could not confirm whether` means fix the named cause. A silent skip here is the exact
+failure this skill already made once.
 
 Then read every published issue's blockers back from GitHub and report them against the owner-approved list; a
 missing or extra link is a failure to fix before reporting ready:

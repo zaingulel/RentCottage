@@ -4,9 +4,10 @@
 //
 // Price tag: every tree is a real temporary directory; each sync test builds and commits two small git
 // repositories, and the CLI tests spawn git and node a handful of times. No network: the sync tests inject the
-// source's fetch of origin main, which is proven on its own against a local bare origin; the --from wire test runs
-// with GIT_ALLOW_PROTOCOL=file; and the --check wire tests put a fake gh first on the PATH. Retire this file with
-// scripts/lib/factory-sync.mjs.
+// source's fetch of origin main, which is proven on its own against a local bare origin; the two --from wire tests
+// run one with GIT_ALLOW_PROTOCOL=file, so its fetch fails, and one with GIT_SSH_COMMAND serving the source from its
+// own repository, so its fetch succeeds; and the --check wire tests put a fake gh first on the PATH. Retire this file
+// with scripts/lib/factory-sync.mjs.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -55,6 +56,8 @@ const NEEDS_FILE_SYMLINK = { skip: !FILE_SYMLINKS && 'creating a file symlink on
 
 // Computed by `printf 'hello\n' | shasum -a 256`, never by the code under test.
 const HELLO_SHA256 = '5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03';
+// Computed by `printf 'hello\r\n' | shasum -a 256`: the same line as a checkout with CRLF line endings holds it.
+const HELLO_CRLF_SHA256 = 'cd2eca3535741f27a8ae40c31b0c41d4057a7a7b912b33b9aed86485d1c84676';
 // Computed by `printf 'x\ny\n' | shasum -a 256`: the region text excludes both marker lines.
 const REGION_SHA256 = '09834d488008f5f1ef589a2d7cedc52425bee9dd23b2212e4c1d673c5cbb54e4';
 const START = '<!-- factory-shared:start -->';
@@ -78,11 +81,17 @@ function matchingTree(t) {
   return root;
 }
 
-for (const path of ['../x', 'a/../b', '/abs', '', './x']) {
+for (const path of ['../x', 'a/../b', '/abs', '', './x', '.git/hooks/pre-commit', 'a/.GIT/x']) {
   test(`the manifest path ${JSON.stringify(path)} is rejected by name`, () => {
     assert.throws(() => checkManifestPath(path), /invalid manifest path/);
   });
 }
+
+test('a manifest path holding a backslash is rejected by name, whether or not it climbs', () => {
+  for (const path of ['..\\file', 'docs\\a.txt']) {
+    assert.throws(() => checkManifestPath(path), /invalid manifest path/, JSON.stringify(path));
+  }
+});
 
 test('a plain relative manifest path is accepted', () => {
   assert.equal(checkManifestPath('.agents/skills/tdd/SKILL.md'), '.agents/skills/tdd/SKILL.md');
@@ -486,12 +495,18 @@ function assertRefused(fixture, cause, options) {
   assert.deepEqual([snapshot(fixture.target), snapshot(fixture.outside)], before, 'a refused sync must write nothing');
 }
 
+// Commits the whole target with a manifest that lists entries, as the sync that last shared them recorded them.
+function listInTarget(fixture, entries) {
+  put(fixture.target, MANIFEST, JSON.stringify({ canonical: CANONICAL, adopters: [], entries }));
+  commitAll(fixture.target);
+}
+
 test('a sync writes every shared file and region into the adopter and records the source commit', (t) => {
   const fixture = syncFixture(t);
   const at = (path) => join(fixture.target, path);
   const outsideBefore = snapshot(fixture.outside);
 
-  assert.deepEqual(fixture.sync(), { files: 2, regions: 1 });
+  assert.deepEqual(fixture.sync(), { files: 2, regions: 1, removed: [] });
 
   assert.equal(readFileSync(at('AGENTS.md'), 'utf8'), `# Adopter manual\n${START}\nshared v2\n${END}\n## Adopter rules\n`);
   assert.ok(lstatSync(at('docs/a.txt')).isFile(), 'a shared file that was a symlink must become a regular file');
@@ -509,14 +524,141 @@ test('a sync writes every shared file and region into the adopter and records th
   assert.deepEqual(verifyManifest(fixture.target), []);
 });
 
-test('a sync leaves in place, byte for byte, a file the target\'s previous manifest listed and the fetched one does not', (t) => {
+test('a sync removes a file the target\'s previous manifest listed and the fetched one does not, reports it, and removes nothing else', (t) => {
   const fixture = syncFixture(t);
-  put(fixture.target, 'docs/retired.txt', 'retired\n', 0o755);
-  put(fixture.target, MANIFEST, JSON.stringify({ canonical: CANONICAL, adopters: [], entries: [{ path: 'docs/retired.txt', sha256: ZERO_SHA256 }] }));
+  put(fixture.target, 'retired.sh', 'hello\n', 0o755);
+  put(fixture.target, 'own.sh', 'own\n', 0o755);
+  listInTarget(fixture, [
+    { path: 'retired.sh', sha256: HELLO_SHA256, executable: true },
+    { path: 'gone.txt', sha256: HELLO_SHA256 },
+  ]);
+  const before = snapshot(fixture.target);
+
+  assert.deepEqual(fixture.sync().removed, ['retired.sh']);
+
+  const after = snapshot(fixture.target);
+  assert.deepEqual(Object.keys(after), Object.keys(before).filter((path) => path !== 'retired.sh'));
+  assert.equal(after['own.sh'], before['own.sh']);
+
   commitAll(fixture.target);
-  const before = snapshot(fixture.target)['docs/retired.txt'];
-  fixture.sync();
-  assert.equal(snapshot(fixture.target)['docs/retired.txt'], before);
+  assert.deepEqual(fixture.sync().removed, []);
+  assert.deepEqual(snapshot(fixture.target), after);
+});
+
+// A line-ending attribute gives a path disk bytes that differ from HEAD's while git status is clean and the index
+// carries no mark: the one state where only one of the two byte comparisons can refuse.
+const CRLF_ON_DISK = 'retired.sh text eol=crlf\n';
+
+test('a retired path whose bytes on disk are not the recorded ones, while HEAD holds the recorded ones, is refused by name, and nothing is removed', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.target, '.gitattributes', CRLF_ON_DISK);
+  put(fixture.target, 'first.sh', 'hello\n');
+  put(fixture.target, 'retired.sh', 'hello\r\n');
+  listInTarget(fixture, [
+    { path: 'first.sh', sha256: HELLO_SHA256 },
+    { path: 'retired.sh', sha256: HELLO_SHA256 },
+  ]);
+  assert.equal(git(fixture.target, 'status', '--porcelain'), '', 'the line-ending difference must be invisible to git status');
+  assert.equal(git(fixture.target, 'rev-parse', 'HEAD:retired.sh'), git(fixture.target, 'rev-parse', 'HEAD:first.sh'), 'HEAD must hold the recorded bytes');
+  assertRefused(fixture, /retired\.sh: the manifest no longer shares it, .*but this is a file with other bytes/);
+});
+
+test('a retired path under a parent symlinked outside the target is refused, and the file outside is not removed', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.outside, 'hello.txt', 'hello\n');
+  link(fixture.target, 'gone', '../outside');
+  listInTarget(fixture, [{ path: 'gone/hello.txt', sha256: HELLO_SHA256 }]);
+  assertRefused(fixture, /gone\/hello\.txt: its parent .*[\\/]gone is a symlink/);
+});
+
+test('a retired path with a change staged but not committed is refused as uncommitted', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.target, 'retired.sh', 'hello\n');
+  listInTarget(fixture, [{ path: 'retired.sh', sha256: HELLO_SHA256 }]);
+  put(fixture.target, 'retired.sh', 'edited\n');
+  git(fixture.target, 'add', 'retired.sh');
+  put(fixture.target, 'retired.sh', 'hello\n');
+  assertRefused(fixture, /the target has uncommitted changes at shared paths: .*retired\.sh/);
+});
+
+test('a target whose committed manifest lists a path that climbs out of the tree is refused, and nothing outside it is removed', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.outside, 'hello.txt', 'hello\n');
+  listInTarget(fixture, [{ path: '../outside/hello.txt', sha256: HELLO_SHA256 }]);
+  assertRefused(fixture, /invalid manifest path "\.\.\/outside\/hello\.txt"/);
+});
+
+test('a region the fetched manifest no longer shares is refused by name, and the adopter\'s file is left whole', (t) => {
+  const fixture = syncFixture(t);
+  recordSource(fixture.source, SOURCE_ENTRIES.filter((entry) => !('region' in entry)));
+  put(fixture.target, 'AGENTS.md', `# Adopter manual\n${START}\nx\ny\n${END}\n## Adopter rules\n`);
+  listInTarget(fixture, [{ path: 'AGENTS.md', region: 'factory-shared', sha256: REGION_SHA256 }]);
+  assertRefused(fixture, /AGENTS\.md: the manifest no longer shares this file's factory-shared region/);
+});
+
+test('a retired path holding the recorded bytes in a file that is ignored and was never committed is refused, and the file stays', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.target, '.gitignore', 'retired.sh\n');
+  listInTarget(fixture, [{ path: 'retired.sh', sha256: HELLO_SHA256 }]);
+  put(fixture.target, 'retired.sh', 'hello\n');
+  assert.equal(git(fixture.target, 'status', '--porcelain', '--untracked-files=all'), '', 'the ignored file must be hidden from git status');
+  assertRefused(fixture, /retired\.sh: the manifest no longer shares it, .*HEAD does not hold those bytes as a regular file/);
+});
+
+test('a retired path holding the recorded bytes while HEAD holds other bytes is refused, and the file stays', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.target, '.gitattributes', CRLF_ON_DISK);
+  put(fixture.target, 'retired.sh', 'hello\r\n');
+  listInTarget(fixture, [{ path: 'retired.sh', sha256: HELLO_CRLF_SHA256 }]);
+  assert.equal(git(fixture.target, 'status', '--porcelain'), '', 'the difference from HEAD must be invisible to git status');
+  assertRefused(fixture, /retired\.sh: the manifest no longer shares it, .*HEAD does not hold those bytes as a regular file/);
+});
+
+for (const [mark, state, gone] of [
+  ['skip-worktree', 'its file gone from the disk', true],
+  ['assume-unchanged', 'its file intact', false],
+]) {
+  test(`a retired path whose index entry is marked ${mark}, ${state}, is refused by name, and nothing is written or removed`, (t) => {
+    const fixture = syncFixture(t);
+    put(fixture.target, 'retired.sh', 'hello\n');
+    listInTarget(fixture, [{ path: 'retired.sh', sha256: HELLO_SHA256 }]);
+    git(fixture.target, 'update-index', `--${mark}`, 'retired.sh');
+    if (gone) rmSync(join(fixture.target, 'retired.sh'));
+    assert.equal(git(fixture.target, 'status', '--porcelain'), '', 'the mark must keep the path out of git status');
+    assertRefused(fixture, /retired\.sh: the manifest no longer shares it, but the target's index marks it skip-worktree or assume-unchanged/);
+  });
+}
+
+test('a retired path whose committed object cannot be read is refused by name, and the file stays', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.target, 'retired.sh', 'hello\n');
+  listInTarget(fixture, [{ path: 'retired.sh', sha256: HELLO_SHA256 }]);
+  const object = git(fixture.target, 'rev-parse', 'HEAD:retired.sh');
+  rmSync(join(fixture.target, '.git', 'objects', object.slice(0, 2), object.slice(2)));
+  assertRefused(fixture, /^Error: retired\.sh: the manifest no longer shares it, but the sync cannot read the object /);
+});
+
+test('a retired path that differs only in letter case from a path the fetched manifest shares is refused by name, and nothing is removed', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.target, 'agents.md', 'hello\n');
+  listInTarget(fixture, [{ path: 'agents.md', sha256: HELLO_SHA256 }]);
+  assertRefused(fixture, /agents\.md: the manifest no longer shares it but now shares AGENTS\.md/);
+});
+
+test('a target whose committed manifest cannot be read is refused by name, never synced as a first sync', (t) => {
+  const fixture = syncFixture(t);
+  const object = git(fixture.target, 'rev-parse', `HEAD:${MANIFEST}`);
+  rmSync(join(fixture.target, '.git', 'objects', object.slice(0, 2), object.slice(2)));
+  assertRefused(fixture, /cannot read the target's \.agents\/factory-manifest\.json at HEAD/, { canonical: CANONICAL });
+});
+
+test('a target with no commit is refused by name, never synced as a first sync', (t) => {
+  const fixture = syncFixture(t);
+  // With no region to write, a sync that took the failed listing for a first sync would complete and write.
+  recordSource(fixture.source, SOURCE_ENTRIES.filter((entry) => !('region' in entry)));
+  rmSync(fixture.target, { recursive: true, force: true });
+  repository(fixture.target, ADOPTER_URL);
+  assertRefused(fixture, /cannot list \.agents\/factory-manifest\.json in the target's HEAD, .*a target with no commit needs one first/, { canonical: CANONICAL });
 });
 
 test('a manifest entry that climbs out of the tree is refused', (t) => {
@@ -846,8 +988,6 @@ test('fetchMain throws for an unreachable origin, and a sync that uses it writes
   });
 });
 
-// A successful --from cannot be proven here without the network: the origin check reads `git remote get-url`, which
-// expands any insteadOf rewrite, so a local origin can never pass as github.com/<canonical>.
 test('--from reaches the real fetch and, when it fails, exits 1 naming it and leaves the target unchanged', (t) => {
   const fixture = syncFixture(t);
   const before = snapshot(fixture.target);
@@ -859,6 +999,32 @@ test('--from reaches the real fetch and, when it fails, exits 1 naming it and le
   assert.equal(run.status, 1, run.stderr);
   assert.match(run.stderr, /^factory-sync: cannot fetch the source's origin main \(.*transport 'https' not allowed/);
   assert.deepEqual(snapshot(fixture.target), before, 'a refused --from must write nothing');
+});
+
+// An insteadOf rewrite cannot stand in for the network, since the origin check reads `git remote get-url`, which
+// expands it. The transport can: with the source's origin set to the canonical's ssh address, GIT_SSH_COMMAND makes
+// git run a local command in place of ssh. git runs it in the source, so `git upload-pack .` serves the source's own
+// repository: the real fetch runs and nothing leaves the machine.
+const SERVED_BY_ITSELF = { GIT_SSH_VARIANT: 'simple', GIT_SSH_COMMAND: 'serve() { git upload-pack .; }; serve' };
+
+test('--from prints what it wrote and each retired file it removed, and exits 0', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.target, 'retired.sh', 'hello\n');
+  listInTarget(fixture, [{ path: 'retired.sh', sha256: HELLO_SHA256 }]);
+  git(fixture.source, 'remote', 'set-url', 'origin', `git@github.com:${CANONICAL}.git`);
+  const run = spawnSync(process.execPath, [CLI, '--from', fixture.source], {
+    cwd: fixture.target,
+    encoding: 'utf8',
+    env: { ...process.env, ...SERVED_BY_ITSELF },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.stdout.split('\n'), [
+    `factory-sync: wrote 2 files and 1 regions from ${fixture.source} into ${fixture.target}`,
+    'factory-sync: removed 1 retired files',
+    '  retired.sh',
+    '',
+  ]);
+  assert.equal(existsSync(join(fixture.target, 'retired.sh')), false, 'the printed file must be gone');
 });
 
 test('--from with no value, or an unknown flag, prints the usage for both modes and exits 2', (t) => {

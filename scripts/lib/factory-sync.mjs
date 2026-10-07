@@ -5,7 +5,10 @@
 //                                                100755 and is absent for 100644
 //   { path, region: 'factory-shared', sha256 }   the text strictly between the file's two region marker lines
 //
-// Every path is relative, POSIX and free of `.`, `..` and empty segments, and is checked before any read.
+// Every path is relative, POSIX and free of `.`, `..` and empty segments, and is checked before any read. A `.git`
+// segment in any letter case is refused too: it would name a file inside a repository's own git directory, where
+// the status check and the tree listings see nothing. A path holding a backslash is refused too: Windows reads it
+// as a separator, so `..\x` would climb out of the tree.
 // Disk state is read with lstat, so a symlink or directory where a file is expected is drift, never followed. The
 // executable bit is read from the disk, except where the checkout does not honour file modes (core.fileMode false,
 // as on Windows), whose disk cannot hold that bit: there it is read from git's index.
@@ -15,7 +18,9 @@
 // syncInto copies the entries from a canonical source checkout into an adopter target. Everything it writes comes
 // from the source's freshly fetched origin main commit, never from the source's working tree, index or disk
 // manifest, and every git call ignores inherited repository-scoped variables such as GIT_DIR and GIT_INDEX_FILE.
-// It validates everything before it writes any byte, so every refusal leaves the target untouched: the canonical
+// It validates everything before it writes or removes anything, so every refusal leaves the target untouched: the
+// target's committed manifest, when HEAD's tree lists one, is read and validated like any other, and a HEAD that
+// cannot be listed or a manifest that cannot be read is refused, never taken for a first sync; the canonical
 // comes from the target's committed manifest or, only when there is none, the caller, and the fetched manifest
 // names it too, in any letter case; the source's origin is that canonical and the target's is not; the source's
 // HEAD is the fetched commit; source and target are clean at every shared path, so the source's uncommitted edits
@@ -24,9 +29,17 @@
 // symlink, even one pointing inside the target, so every write lands at its manifest path and never through a
 // symlink; and each region file, in the commit and as a regular file in the target, carries well-formed region
 // markers. It then writes each file with the commit's bytes and mode and each region between the target's own markers, and records the commit's manifest, with the target's canonical, plus
-// `syncedFrom`, the fetched commit. Files the manifest no longer lists are left in place. On a target that does not
-// honour file modes the sync stages the file entries it writes, because the index is the only place such a checkout
-// can hold the executable bit.
+// `syncedFrom`, the fetched commit. On a target that does not honour file modes the sync stages the file entries it
+// writes, because the index is the only place such a checkout can hold the executable bit.
+//
+// A retired entry is one the target's committed manifest lists at a path the fetched manifest does not. The target
+// must be clean at every retired path too, and before any write the sync removes each retired file it can prove: a
+// regular file under no symlinked parent whose bytes, on disk and committed at the target's HEAD, are the ones that
+// manifest recorded. A retired path the target's index marks skip-worktree or assume-unchanged is refused by name
+// whatever it holds, even nothing: git status reports no change there, and a commit would not record the removal.
+// Any other retired path holding nothing is left alone; anything else there, a retired region, or a retired path
+// that a case-insensitive or Unicode-normalising disk reads as one the fetched manifest shares, is refused by name.
+// It removes no directory and no other file.
 //
 // checkLag compares this repository's manifest on disk with the canonical's manifest on main, never
 // the working-tree files (local file drift is the workflow contract test's job). It ignores `syncedFrom` and
@@ -64,9 +77,9 @@ export function isGithubRepository(url, repository) {
 }
 
 export function checkManifestPath(path) {
-  if (typeof path !== 'string' || path.split('/').some((segment) => ['', '.', '..'].includes(segment))) {
+  if (typeof path !== 'string' || path.includes('\\') || path.split('/').some((segment) => ['', '.', '..', '.git'].includes(segment.toLowerCase()))) {
     throw new Error(
-      `invalid manifest path ${JSON.stringify(path)}: it must be a relative POSIX path with no empty, "." or ".." segment`,
+      `invalid manifest path ${JSON.stringify(path)}: it must be a relative POSIX path with no empty, ".", ".." or ".git" segment`,
     );
   }
   return path;
@@ -96,6 +109,9 @@ export function readManifest(root) {
   return parseManifest(text, MANIFEST_PATH);
 }
 
+// The path as a case-insensitive, Unicode-normalising disk compares it.
+const folded = (path) => path.normalize('NFC').toLowerCase();
+
 // The manifest held in text, validated; label names where the text came from in every error.
 function parseManifest(text, label) {
   let manifest;
@@ -114,12 +130,12 @@ function parseManifest(text, label) {
     throw new Error(`malformed ${label}: it must hold canonical "owner/repo", adopters ["owner/repo", ...] and entries [...]`);
   }
   entries.forEach(checkEntry);
-  // Keyed by each path folded as a case-insensitive, Unicode-normalising disk compares it: files maps the key to its
-  // path, directories maps each folded ancestor directory to a path beneath it.
+  // Keyed by each path folded: files maps the key to its path, directories maps each folded ancestor directory to a
+  // path beneath it.
   const files = new Map();
   const directories = new Map();
   for (const { path } of entries) {
-    const key = path.normalize('NFC').toLowerCase();
+    const key = folded(path);
     const other = files.get(key);
     if (other === path) throw new Error(`${label} lists ${path} more than once`);
     if (other !== undefined) {
@@ -274,20 +290,20 @@ function blob(root, object) {
   return run.stdout;
 }
 
-function committedManifest(root, commit) {
-  const label = `the source's ${MANIFEST_PATH} at ${commit}`;
+// The manifest the commit holds, validated; whose names the repository in every error.
+function committedManifest(root, commit, whose) {
+  const label = `${whose} ${MANIFEST_PATH} at ${commit}`;
   const text = git(root, 'show', `${commit}:${MANIFEST_PATH}`);
   if (text === null) throw new Error(`cannot read ${label}`);
   return parseManifest(text, label);
 }
 
-// Each entry's content in the commit, keyed by path, as { data, mode }: the file bytes or the region text, and the
-// git mode. Refuses, naming every such path, an entry whose committed kind or content differs from
-// its record.
-function committedContents(root, commit, manifest) {
-  const listing = git(root, '--literal-pathspecs', 'ls-tree', '-z', commit, '--', ...manifest.entries.map(({ path }) => path));
-  if (listing === null) throw new Error(`cannot list the shared paths in the source's commit ${commit}`);
-  const tree = new Map(
+// What the commit's tree holds at each of the paths, keyed by path, as { mode, object }; a path the commit lacks
+// has no key. what names the listing in the error thrown when it fails.
+function committedTree(root, commit, paths, what) {
+  const listing = git(root, '--literal-pathspecs', 'ls-tree', '-z', commit, '--', ...paths);
+  if (listing === null) throw new Error(`cannot list ${what}`);
+  return new Map(
     listing
       .split('\0')
       .filter(Boolean)
@@ -297,6 +313,13 @@ function committedContents(root, commit, manifest) {
         return [line.slice(tab + 1), { mode, object }];
       }),
   );
+}
+
+// Each entry's content in the commit, keyed by path, as { data, mode }: the file bytes or the region text, and the
+// git mode. Refuses, naming every such path, an entry whose committed kind or content differs from
+// its record.
+function committedContents(root, commit, manifest) {
+  const tree = committedTree(root, commit, manifest.entries.map(({ path }) => path), `the shared paths in the source's commit ${commit}`);
   const contents = new Map();
   const mismatched = [];
   for (const entry of manifest.entries) {
@@ -321,22 +344,38 @@ function uncommitted(root, paths) {
   return status;
 }
 
-function resolveCanonical(target, requested) {
-  const committed = git(target, 'show', `HEAD:${MANIFEST_PATH}`);
-  if (committed === null) {
+// The paths among those given whose index entry is marked skip-worktree or assume-unchanged: git status reports no
+// change at such a path, whatever the disk holds, and a commit does not record its removal. git tags a plain tracked
+// entry `H`; every other tag counts as marked, so one this code does not know refuses. A directory among the paths
+// lists the entries beneath it, which the caller's lookup by exact path never matches.
+function hiddenFromStatus(root, paths) {
+  const listing = git(root, '--literal-pathspecs', 'ls-files', '-v', '-z', '--', ...paths);
+  if (listing === null) throw new Error(`cannot read the index flags of ${root}`);
+  return new Set(
+    listing
+      .split('\0')
+      .filter((line) => line && line[0] !== 'H')
+      .map((line) => line.slice(2)),
+  );
+}
+
+// The target's committed manifest, validated, or null when HEAD verifiably holds none: a listing of HEAD's tree
+// settles which, so a manifest that cannot be read is refused, never taken for a first sync.
+function previousManifest(target) {
+  const what = `${MANIFEST_PATH} in the target's HEAD, which the sync reads to know what it last shared there; a target with no commit needs one first`;
+  if (!committedTree(target, 'HEAD', [MANIFEST_PATH], what).has(MANIFEST_PATH)) return null;
+  return committedManifest(target, 'HEAD', "the target's");
+}
+
+function resolveCanonical(previous, requested) {
+  if (previous === null) {
     if (requested === undefined) {
       throw new Error(`no canonical repository: the target has no committed ${MANIFEST_PATH}, so name one with --canonical <owner/repo>`);
     }
     if (!REPOSITORY.test(requested)) throw new Error(`--canonical ${requested} is not "owner/repo"`);
     return requested;
   }
-  let canonical;
-  try {
-    ({ canonical } = JSON.parse(committed));
-  } catch {
-    // Unparsable is reported below with the missing canonical.
-  }
-  if (!REPOSITORY.test(canonical)) throw new Error(`the target's committed ${MANIFEST_PATH} names no canonical "owner/repo"`);
+  const { canonical } = previous;
   if (requested !== undefined && requested.toLowerCase() !== canonical.toLowerCase()) {
     throw new Error(`--canonical ${requested} disagrees with ${canonical}, the canonical in the target's committed ${MANIFEST_PATH}`);
   }
@@ -392,6 +431,55 @@ function clear(full) {
   else unlinkSync(full);
 }
 
+// The paths, sorted, of the retired entries the sync may remove: each holds a regular file, under no symlinked
+// parent, whose bytes on disk and at the target's HEAD are the entry's record. An entry the index marks
+// skip-worktree or assume-unchanged is refused whatever its path holds. Any other retired path that holds nothing
+// is skipped, and anything else at one is refused by name. It removes nothing itself, so every entry is proven
+// before any file goes. The disk and HEAD are both checked because the status check sees neither an ignored file
+// nor a byte difference a line-ending conversion hides from it.
+function provenRetired(root, retired, manifest) {
+  // With no path the listings would hold the whole tree and the whole index.
+  if (retired.length === 0) return [];
+  const paths = retired.map(({ path }) => path);
+  const tree = committedTree(root, 'HEAD', paths, "the retired paths in the target's HEAD");
+  const hidden = hiddenFromStatus(root, paths);
+  const twins = new Map(manifest.entries.map(({ path }) => [folded(path), path]));
+  const proven = [];
+  for (const entry of retired) {
+    const { path } = entry;
+    if ('region' in entry) {
+      throw new Error(`${path}: the manifest no longer shares this file's ${entry.region} region, and the sync never removes text from a file the adopter owns around it; retiring a region needs its own change to the sync`);
+    }
+    if (hidden.has(path)) {
+      throw new Error(`${path}: the manifest no longer shares it, but the target's index marks it skip-worktree or assume-unchanged, which hides it from git status, so the sync cannot prove it clean and the next commit would not record its removal; clear both marks with git update-index --no-skip-worktree -- ${path} and git update-index --no-assume-unchanged -- ${path}, commit or restore whatever git status then shows there, then sync`);
+    }
+    const { value, problem } = entryState(root, entry, null);
+    if (problem === 'missing') continue;
+    const twin = twins.get(folded(path));
+    if (twin !== undefined) {
+      throw new Error(`${path}: the manifest no longer shares it but now shares ${twin}, which names the same file on a case-insensitive or Unicode-normalising disk, so the sync cannot remove one without the other; remove ${path}, commit, then sync`);
+    }
+    checkContained(root, path);
+    if (value !== entry.sha256) {
+      throw new Error(`${path}: the manifest no longer shares it, and the sync removes only the exact bytes it last recorded there, but this is ${problem ?? 'a file with other bytes'}; remove it or move it to a path of the adopter's own, commit, then sync`);
+    }
+    const { mode, object } = tree.get(path) ?? {};
+    let committed = null;
+    if (['100644', '100755'].includes(mode)) {
+      try {
+        committed = sha256(blob(root, object));
+      } catch (error) {
+        throw new Error(`${path}: the manifest no longer shares it, but the sync ${error.message}, so it cannot prove the bytes the target's HEAD holds there; repair the repository's object store, then sync`);
+      }
+    }
+    if (committed !== entry.sha256) {
+      throw new Error(`${path}: the manifest no longer shares it, and the sync removes only a file committed with the exact bytes it last recorded there, but the target's HEAD does not hold those bytes as a regular file at this path; commit the file or remove it, then sync`);
+    }
+    proven.push(path);
+  }
+  return proven.sort();
+}
+
 function writeRegular(full, data, mode) {
   clear(full);
   mkdirSync(dirname(full), { recursive: true });
@@ -410,9 +498,10 @@ export function fetchMain(source) {
 
 // Syncs the source's manifest entries into the target, per the contract at the top of this file. fetchMain, the
 // function above or a stand-in, fetches the source's origin main and returns its commit; it throws when the fetch
-// fails. Returns the counts written, as { files, regions }.
+// fails. Returns the counts written and the retired paths removed, sorted, as { files, regions, removed }.
 export function syncInto({ source, target, canonical: requested, fetchMain }) {
-  const canonical = resolveCanonical(target, requested);
+  const previous = previousManifest(target);
+  const canonical = resolveCanonical(previous, requested);
 
   const sourceOrigin = git(source, 'remote', 'get-url', 'origin');
   if (sourceOrigin === null) throw new Error(`the source has no origin remote; it must be a clone of github.com/${canonical}`);
@@ -435,15 +524,16 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
     throw new Error(`the source is not on its freshly fetched origin main: HEAD is ${head ?? '(none)'}, origin main is ${fetched}`);
   }
 
-  const manifest = committedManifest(source, fetched);
+  const manifest = committedManifest(source, fetched, "the source's");
   if (manifest.canonical.toLowerCase() !== canonical.toLowerCase()) {
     throw new Error(`the source's manifest names the canonical ${manifest.canonical}, not ${canonical}`);
   }
   const shared = [...manifest.entries.map((entry) => entry.path), MANIFEST_PATH];
+  const retired = previous === null ? [] : previous.entries.filter(({ path }) => !manifest.entries.some((entry) => entry.path === path));
   const sourceChanges = uncommitted(source, shared);
   if (sourceChanges) throw new Error(`the source has uncommitted changes at shared paths: ${sourceChanges}`);
   const contents = committedContents(source, fetched, manifest);
-  const targetChanges = uncommitted(target, shared);
+  const targetChanges = uncommitted(target, [...shared, ...retired.map(({ path }) => path)]);
   if (targetChanges) throw new Error(`the target has uncommitted changes at shared paths: ${targetChanges}`);
 
   const root = realpathSync(target);
@@ -453,6 +543,7 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
   }
   checkContained(root, MANIFEST_PATH);
   checkReplaceable(join(root, MANIFEST_PATH), MANIFEST_PATH);
+  const removed = provenRetired(root, retired, manifest);
   const regions = new Map(
     manifest.entries
       .filter((entry) => 'region' in entry)
@@ -465,6 +556,7 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
       }),
   );
 
+  for (const path of removed) unlinkSync(join(root, path));
   const written = { files: 0, regions: 0 };
   for (const entry of manifest.entries) {
     const full = join(root, entry.path);
@@ -489,7 +581,7 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
       }
     }
   }
-  return written;
+  return { ...written, removed };
 }
 
 const sameEntry = (a, b) => a.sha256 === b.sha256 && a.region === b.region && a.executable === b.executable;
