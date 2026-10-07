@@ -112,6 +112,7 @@
 
   /* Corner radius */
   --radius-control: 0.5rem;
+  --radius-mark: 0.25rem;
   --radius-card: 0.625rem;
 
   /* State rings */
@@ -250,12 +251,15 @@ textarea {
 
 .action:focus-visible,
 .action-link:focus-visible,
-.form-control:focus-visible {
+.form-control:focus-visible,
+.choice-control > input:focus-visible,
+.disclosure > summary:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
 }
 
-.form-control:focus-visible {
+.form-control:focus-visible,
+.disclosure > summary:focus-visible {
   border-color: var(--gold);
   box-shadow: var(--shadow-focus);
 }
@@ -306,6 +310,143 @@ input[type="file"].form-control::file-selector-button {
 .form-control[aria-invalid="true"] {
   border-color: var(--error);
   box-shadow: var(--shadow-invalid);
+}
+
+.choice-control {
+  min-block-size: 2.75rem;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.choice-control > input {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+  margin: 0;
+  margin-block-start: var(--space-1);
+  border: 1px solid var(--green);
+  border-radius: var(--radius-mark);
+  background: var(--surface-field);
+  cursor: pointer;
+}
+
+.choice-control > input[type="radio"] {
+  border-radius: 50%;
+}
+
+.choice-control > input:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+.choice-control > input:checked::before {
+  content: "";
+  position: absolute;
+}
+
+.choice-control > input[type="checkbox"]:checked {
+  background: var(--green);
+}
+
+/* Physical borders: two sides of a rotated box draw the tick, the same way in every direction. */
+.choice-control > input[type="checkbox"]:checked::before {
+  inset-block: 11% 22%;
+  inset-inline: 30%;
+  border: solid var(--ink-on-green);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.choice-control > input[type="radio"]:checked::before {
+  inset: 0;
+  inline-size: 0;
+  block-size: 0;
+  margin: auto;
+  border: 0.3rem solid var(--green);
+  border-radius: 50%;
+}
+
+.choice-control > input[aria-invalid="true"] {
+  border-width: 2px;
+  border-color: var(--error);
+  box-shadow: var(--shadow-invalid);
+}
+
+.choice-control > input:disabled {
+  border-style: dashed;
+}
+
+.choice-control > input:disabled,
+.choice-control > input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.76;
+}
+
+.option-group {
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.option-group > legend {
+  padding: 0;
+  font-weight: 700;
+}
+
+.option-group > div {
+  display: flex;
+}
+
+.option-group-stack > div {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.option-group-wrap > div {
+  flex-wrap: wrap;
+  column-gap: var(--space-5);
+}
+
+.disclosure > summary {
+  position: relative;
+  min-block-size: 2.75rem;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-field);
+  padding: var(--space-3);
+  padding-inline-end: var(--space-6);
+  color: var(--green);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Physical borders: two sides of a rotated box draw the chevron, which points down or up in every direction. */
+.disclosure > summary::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--space-4);
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  margin-block: auto;
+  border: solid currentcolor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.disclosure[open] > summary::after {
+  transform: rotate(-135deg);
 }
 
 .action-feedback {

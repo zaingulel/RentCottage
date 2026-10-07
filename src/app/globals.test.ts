@@ -48,7 +48,7 @@ const listedTokens = new Set(
 const scaledProperty =
   /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
 const scaleToken =
-  /^(?:(?:space|font-size)-\d+|radius-(?:control|card)|shadow-(?:focus|invalid|pressed))$/;
+  /^(?:(?:space|font-size)-\d+|radius-(?:control|card|mark)|shadow-(?:focus|invalid|pressed))$/;
 
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
@@ -303,6 +303,7 @@ describe("stylesheet shape and layer tokens", () => {
     expect(declared.filter((token) => token.startsWith("--radius-"))).toEqual(
       expect.arrayContaining([
         "--radius-control: 0.5rem",
+        "--radius-mark: 0.25rem",
         "--radius-card: 0.625rem",
       ]),
     );

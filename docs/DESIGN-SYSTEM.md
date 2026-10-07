@@ -56,22 +56,24 @@ the code keeps them.
 
 ## Radius, shadow and stacking order
 
-- Corner radius has two sizes, written in `rem`. `--radius-control` is 8 pixels and rounds what a person
-  operates: a button, a link styled as a button, a form field, a stepper and a selectable option.
-  `--radius-card` is 10 pixels and rounds every other surface: a card, panel, notice, tile, image frame, menu and
-  list row.
+- Corner radius has three sizes, written in `rem`. `--radius-control` is 8 pixels and rounds what a person
+  operates: a button, a link styled as a button, a form field, a stepper, a disclosure toggle and a selectable
+  option. `--radius-mark` is 4 pixels and rounds the checkbox mark, which is too small to carry 8 pixels without
+  reading as a radio button. `--radius-card` is 10 pixels and rounds every other surface: a card, panel, notice,
+  tile, image frame, menu and list row.
 - A pill is `999px`, a circle is `50%` and a square corner is `0`. They are shapes, not sizes, so they are
-  literals.
+  literals. The radio button mark is a circle.
 - There is no elevation shadow. A surface is set apart by its background and its `1px` `--line` border;
   `text-shadow` and `drop-shadow()` are not used.
 - `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` around a focused form
-  field, `--shadow-invalid` around an invalid field or option, and `--shadow-pressed` inside a pressed toggle. A
-  ring adds to the focus outline described under Accessibility conventions and never replaces it.
+  field, checkbox or radio button mark, or disclosure toggle, `--shadow-invalid` around an invalid field, mark or
+  option, and `--shadow-pressed` inside a pressed toggle. A ring adds to the focus outline described under
+  Accessibility conventions and never replaces it.
 - Every `z-index` is one of four layers, lowest first: `--layer-raised` for content above a backdrop in its own
   block, as the hero copy is above its shade; `--layer-overlap` for a block that overlaps the one before it, as
   the search card overlaps the hero; `--layer-header` for the site header; and `--layer-menu` for a menu that
   opens over everything else.
-- New work uses these tokens. A third radius, an elevation shadow or a fifth layer is decided in this document
+- New work uses these tokens. A fourth radius, an elevation shadow or a fifth layer is decided in this document
   before a stylesheet writes it.
 
 ## Tolerated literals
@@ -115,6 +117,19 @@ Anything else is a token.
   - `ActionLink`: a link styled as a primary, secondary or text action (`.action-link`, `.action-text`).
   - `FormControl`: an input, select or textarea with `.form-control`, which shows `aria-invalid` as an error
     border.
+  - `FormControl` with `type="date"` is the date field. It keeps the platform's date picker; the date text and the
+    calendar glyph the browser draws inside the field are not restyled.
+  - `ChoiceControl`: a native checkbox or radio button inside its label (`.choice-control`). The label is the
+    touch target. The mark has the form field's fill and focus treatment and a full-strength `--green` outline,
+    because the field's `--line` hairline is too faint to show a mark this small. No state is shown by colour
+    alone: a checked checkbox is filled and carries a drawn tick, a checked radio button carries a drawn dot, a
+    disabled mark has a dashed outline, and `aria-invalid` thickens the outline as well as colouring it, beside a
+    `.field-error` message.
+  - `OptionGroup`: a native `fieldset` and `legend` around a set of choices (`.option-group`), one per line
+    (`.option-group-stack`) or wrapping along a row (`.option-group-wrap`). An option is a row of mark and text.
+  - `Disclosure`: native `details` and `summary` (`.disclosure`). The summary is a bordered control with the form
+    field's border, corner, fill and focus treatment, and a drawn chevron that points down when closed and up when
+    open.
   - `ActionFeedback`: the success or error message after an action (`.action-feedback`).
 - `.field-error` in `src/app/globals.css` styles the message beside an invalid field.
 - [use-exclusive-action.ts](../src/components/use-exclusive-action.ts) blocks a second submit while one is in
@@ -153,16 +168,18 @@ Anything else is a token.
   not-started steps, so no state is conveyed by colour alone. The Customer Booking Request status page shows the
   steps, and a Customer's Confirmed Booking page shows them all completed inside `.booking-request-progress-card`
   above the Confirmed Booking details. States are derived by `customerBookingRequestProgress` and never stored.
-- A new button, link-styled action, form field or submit feedback reuses these. A pattern they lack is added
-  there, not built inside a feature component.
+- A new button, link-styled action, form field, checkbox, radio button, option group, disclosure or submit
+  feedback reuses these. A pattern they lack is added there, not built inside a feature component.
 
 ## Direction and language
 
 - The locales are `ar`, `ckb` and `en`. The `[locale]` layout sets `dir` on `<html>` from `directionFor(locale)` in
   [routing.ts](../src/i18n/routing.ts).
 - Layout uses logical properties only: `margin-inline`, `padding-inline`, `inset-inline`, `border-inline-start`,
-  `start` and `end`. No physical left or right margin, padding, inset, border or text alignment is used today, and
-  new work keeps it that way.
+  `start` and `end`. No physical left or right margin, padding, inset, border or text alignment is used for layout,
+  and new work keeps it that way. The two drawn glyphs are the one exception: the tick on a checked checkbox and
+  the chevron on a disclosure are each two physical borders of a rotated box, so they are drawn the same way in
+  every direction.
 - A property with no logical form is mirrored with a direction selector. The one case today is the
   `background-position` of `.cottage-inventory-state select`, flipped under `[dir="rtl"]`.
 - Direction- or language-specific adjustments use `[dir="rtl"]` or `html[lang="…"]` selectors in
@@ -174,11 +191,12 @@ Anything else is a token.
 ## Accessibility conventions
 
 - Hide text visually but keep it for assistive technology with `.visually-hidden`.
-- Focus is a visible gold outline: `2px` with a `2px` offset on `.action`, `.action-link` and `.form-control`, and
-  `3px` with a `3px` offset on any focused button, input, select, textarea or link.
+- Focus is a visible gold outline: `2px` with a `2px` offset on `.action`, `.action-link`, `.form-control`, the
+  `.choice-control` mark and the `.disclosure` summary, and `3px` with a `3px` offset on any other focused button,
+  input, select, textarea or link.
 - The `prefers-reduced-motion: reduce` rule turns off transitions and smooth scrolling.
-- `.action`, `.action-link`, `.action-regular` and `.form-control` are at least `2.75rem` tall; only
-  `.action-compact` (`2.25rem`) and the inline `.action-text` link are smaller.
+- `.action`, `.action-link`, `.action-regular`, `.form-control`, `.choice-control` and the `.disclosure` summary
+  are at least `2.75rem` tall; only `.action-compact` (`2.25rem`) and the inline `.action-text` link are smaller.
 - Status and errors are announced through `ActionFeedback`, which renders `role="status"` for success and
   `role="alert"` for errors.
 - No new interaction ships without a visible focus state.
