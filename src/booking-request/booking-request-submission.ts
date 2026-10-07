@@ -159,7 +159,6 @@ function validInput(input: SubmissionInput): boolean {
   const note = input.bookingNote ?? "";
   const expectedEvidence = bookingRequestAcceptanceEvidence({
     locale: input.locale,
-    termsVersion: input.displayedQuote.termsVersion,
     requiresInside48HourNoRefundAcceptance:
       input.acceptanceEvidence.inside48Warning !== null,
   });

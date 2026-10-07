@@ -2392,8 +2392,7 @@ a:focus-visible {
   margin-block: var(--space-1);
 }
 
-.quote-heading p,
-.quote-heading small {
+.quote-heading p {
   color: var(--muted);
 }
 
@@ -2440,8 +2439,7 @@ a:focus-visible {
 }
 
 .quote-items span,
-.quote-access,
-.quote-totals p {
+.quote-access {
   color: var(--muted);
   line-height: 1.5;
 }
@@ -2456,25 +2454,6 @@ a:focus-visible {
   white-space: pre-wrap;
   font: inherit;
   line-height: 1.65;
-}
-
-.booking-terms-fixture dl {
-  display: grid;
-  gap: var(--space-2);
-  margin-block-end: 0;
-  border-block-start: 1px solid var(--line);
-  padding-block-start: var(--space-4);
-}
-
-.booking-terms-fixture dl > div {
-  display: grid;
-  grid-template-columns: minmax(8rem, auto) 1fr;
-  gap: var(--space-3);
-}
-
-.booking-terms-fixture dd {
-  margin: 0;
-  overflow-wrap: anywhere;
 }
 
 .quote-totals dl,

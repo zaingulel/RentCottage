@@ -479,8 +479,6 @@ GRANT ALL ON FUNCTION "public"."begin_cottage_profile_translation_execution"("ta
 
 REVOKE ALL ON FUNCTION "public"."block_published_cottage_photo_deletion"() FROM PUBLIC;
 
-REVOKE ALL ON FUNCTION "public"."booking_request_acceptance_evidence"("target_locale" "public"."cottage_profile_source_language", "target_terms_version" "text", "requires_inside_48" boolean) FROM PUBLIC;
-
 REVOKE ALL ON FUNCTION "public"."booking_request_active_claim_conflicts_unit"("target_schedule_revision_id" "uuid", "target_unit_kind" "public"."cottage_inventory_unit_kind", "target_unit_id" "uuid", "target_service_day" "date") FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION "public"."booking_request_claim_state_after_payment"("current_state" "public"."booking_request_authorization_claim_state", "next_attempt_state" "text", "authorization_has_provider_request" boolean, "release_status" "text") FROM PUBLIC;
@@ -1497,3 +1495,5 @@ REVOKE ALL ON FUNCTION public.search_administrator_records(text,text,text,date,d
 GRANT EXECUTE ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.reads_as_coordinate_pair(text) FROM PUBLIC,anon,authenticated,service_role;
+
+REVOKE ALL ON FUNCTION public.booking_request_acceptance_evidence(public.cottage_profile_source_language,boolean) FROM PUBLIC,anon,authenticated,service_role;

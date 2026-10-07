@@ -84,7 +84,6 @@ export default async function RequestPage({
     result.status === "quoted" && uiPolicy
       ? bookingRequestAcceptanceEvidence({
           locale,
-          termsVersion: result.quote.termsVersion,
           requiresInside48HourNoRefundAcceptance:
             uiPolicy.requiresInside48HourNoRefundAcceptance,
         })

@@ -129,6 +129,9 @@ The quote page shows "Content version 1", a long terms fingerprint code and a te
 request form reads "I accept the marketplace booking terms. (fictional-local-test-2026-08-22-v1)". These matter for the
 record, but they should not be in front of a customer.
 
+#556 removed these identifiers from the quote and request pages, and the acceptance sentence shown and recorded for new
+requests is now `I accept the marketplace booking terms.`
+
 Owned by: [#556](https://github.com/zaingulel/RentCottage/issues/556).
 
 ### 8. Long forms with no structure (Weak)

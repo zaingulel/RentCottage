@@ -485,7 +485,7 @@ $_$;
 
 ALTER FUNCTION "public"."begin_booking_request_submission_cleanup_release"("target_attempt_id" "uuid", "target_payment_snapshot" "jsonb", "target_provider_identity" "jsonb") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."booking_request_acceptance_evidence"("target_locale" "public"."cottage_profile_source_language", "target_terms_version" "text", "requires_inside_48" boolean) RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."booking_request_acceptance_evidence"("target_locale" "public"."cottage_profile_source_language", "requires_inside_48" boolean) RETURNS "jsonb"
     LANGUAGE "sql" IMMUTABLE
     SET "search_path" TO ''
     AS $$
@@ -494,7 +494,7 @@ CREATE OR REPLACE FUNCTION "public"."booking_request_acceptance_evidence"("targe
       'locale', 'en',
       'cancellationPolicy', 'Cancel at least 48 hours before the first shift for a full refund. Cancellation inside 48 hours and no-shows receive no refund.',
       'cancellationAcceptance', 'I accept the cancellation policy.',
-      'marketplaceTermsAcceptance', 'I accept the marketplace booking terms. (' || target_terms_version || ')',
+      'marketplaceTermsAcceptance', 'I accept the marketplace booking terms.',
       'inside48Warning', case when requires_inside_48 then 'This request begins inside 48 hours and will be non-refundable immediately if accepted.' else null end,
       'inside48Acceptance', case when requires_inside_48 then 'I understand and accept the inside-48-hours no-refund rule.' else null end
     )
@@ -502,7 +502,7 @@ CREATE OR REPLACE FUNCTION "public"."booking_request_acceptance_evidence"("targe
       'locale', 'ar',
       'cancellationPolicy', 'الإلغاء قبل 48 ساعة على الأقل يعيد المبلغ كاملاً. لا استرداد عند الإلغاء خلال 48 ساعة أو عدم الحضور.',
       'cancellationAcceptance', 'أوافق على سياسة الإلغاء.',
-      'marketplaceTermsAcceptance', 'أوافق على شروط الحجز في المنصة. (' || target_terms_version || ')',
+      'marketplaceTermsAcceptance', 'أوافق على شروط الحجز في المنصة.',
       'inside48Warning', case when requires_inside_48 then 'يبدأ هذا الطلب خلال 48 ساعة وسيصبح غير قابل للاسترداد فور قبوله.' else null end,
       'inside48Acceptance', case when requires_inside_48 then 'أفهم وأوافق على عدم الاسترداد خلال 48 ساعة.' else null end
     )
@@ -510,14 +510,14 @@ CREATE OR REPLACE FUNCTION "public"."booking_request_acceptance_evidence"("targe
       'locale', 'ckb',
       'cancellationPolicy', 'هەڵوەشاندنەوە لانیکەم 48 کاتژمێر پێش شەفت پارەکە بە تەواوی دەگەڕێنێتەوە. لە ناو 48 کاتژمێر یان نەهاتندا پارە ناگەڕێتەوە.',
       'cancellationAcceptance', 'سیاسەتی هەڵوەشاندنەوە قبوڵ دەکەم.',
-      'marketplaceTermsAcceptance', 'مەرجەکانی حجزکردنی پلاتفۆرم قبوڵ دەکەم. (' || target_terms_version || ')',
+      'marketplaceTermsAcceptance', 'مەرجەکانی حجزکردنی پلاتفۆرم قبوڵ دەکەم.',
       'inside48Warning', case when requires_inside_48 then 'ئەم داواکارییە لە ناو 48 کاتژمێردا دەست پێدەکات و دوای پەسەندکردن پارەکە ناگەڕێتەوە.' else null end,
       'inside48Acceptance', case when requires_inside_48 then 'یاسای نەگەڕاندنەوەی پارە لە ناو 48 کاتژمێردا قبوڵ دەکەم.' else null end
     )
   end;
 $$;
 
-ALTER FUNCTION "public"."booking_request_acceptance_evidence"("target_locale" "public"."cottage_profile_source_language", "target_terms_version" "text", "requires_inside_48" boolean) OWNER TO "postgres";
+ALTER FUNCTION "public"."booking_request_acceptance_evidence"("target_locale" "public"."cottage_profile_source_language", "requires_inside_48" boolean) OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."booking_request_active_claim_conflicts_unit"("target_schedule_revision_id" "uuid", "target_unit_kind" "public"."cottage_inventory_unit_kind", "target_unit_id" "uuid", "target_service_day" "date") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
@@ -3768,7 +3768,6 @@ begin
   end if;
   expected_acceptance_evidence := public.booking_request_acceptance_evidence(
     attempt.locale,
-    current_quote ->> 'termsVersion',
     (policy ->> 'requiresInside48HourNoRefundAcceptance')::boolean
   );
   if attempt.intent_payload -> 'acceptanceEvidence'
@@ -5378,7 +5377,6 @@ begin
   end if;
   expected_acceptance_evidence := public.booking_request_acceptance_evidence(
     target_locale,
-    current_quote ->> 'termsVersion',
     (policy ->> 'requiresInside48HourNoRefundAcceptance')::boolean
   );
   if intent -> 'acceptanceEvidence' is distinct from expected_acceptance_evidence then

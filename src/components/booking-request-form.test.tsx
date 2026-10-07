@@ -54,7 +54,6 @@ function policyProps(locale: Locale) {
     uiPolicy,
     acceptanceEvidence: bookingRequestAcceptanceEvidence({
       locale,
-      termsVersion: quote.termsVersion,
       requiresInside48HourNoRefundAcceptance: true,
     }),
   };

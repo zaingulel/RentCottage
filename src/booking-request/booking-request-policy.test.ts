@@ -42,7 +42,6 @@ describe("Booking Request policy", () => {
     expect(
       bookingRequestAcceptanceEvidence({
         locale: "ar",
-        termsVersion: "fictional-local-test-2026-08-22-v1",
         requiresInside48HourNoRefundAcceptance: true,
       }),
     ).toEqual({
@@ -50,8 +49,7 @@ describe("Booking Request policy", () => {
       cancellationPolicy:
         "الإلغاء قبل 48 ساعة على الأقل يعيد المبلغ كاملاً. لا استرداد عند الإلغاء خلال 48 ساعة أو عدم الحضور.",
       cancellationAcceptance: "أوافق على سياسة الإلغاء.",
-      marketplaceTermsAcceptance:
-        "أوافق على شروط الحجز في المنصة. (fictional-local-test-2026-08-22-v1)",
+      marketplaceTermsAcceptance: "أوافق على شروط الحجز في المنصة.",
       inside48Warning:
         "يبدأ هذا الطلب خلال 48 ساعة وسيصبح غير قابل للاسترداد فور قبوله.",
       inside48Acceptance: "أفهم وأوافق على عدم الاسترداد خلال 48 ساعة.",
@@ -59,17 +57,14 @@ describe("Booking Request policy", () => {
   });
 
   it.each(["en", "ar", "ckb"] as const)(
-    "keeps the self-contained database migration in parity with %s acceptance copy",
+    "keeps the declared database acceptance evidence in parity with %s acceptance copy",
     (locale) => {
-      const migration = readFileSync(
-        resolve(
-          process.cwd(),
-          "supabase/migrations/20260821110000_booking_request_submission.sql",
-        ),
+      const declaredSchema = readFileSync(
+        resolve(process.cwd(), "supabase/schemas/20_functions_booking.sql"),
         "utf8",
       );
-      const functionBody = migration.match(
-        /create function public\.booking_request_acceptance_evidence[\s\S]+?revoke all on function public\.booking_request_acceptance_evidence/,
+      const functionBody = declaredSchema.match(
+        /CREATE OR REPLACE FUNCTION "public"\."booking_request_acceptance_evidence"[\s\S]+?ALTER FUNCTION "public"\."booking_request_acceptance_evidence"/,
       )?.[0];
       expect(functionBody).toBeDefined();
       const branch = functionBody?.match(
@@ -80,12 +75,10 @@ describe("Booking Request policy", () => {
       expect(branch).toBeDefined();
       const outside48 = bookingRequestAcceptanceEvidence({
         locale,
-        termsVersion: "fictional-local-test-2026-08-22-v1",
         requiresInside48HourNoRefundAcceptance: false,
       });
       const inside48 = bookingRequestAcceptanceEvidence({
         locale,
-        termsVersion: "fictional-local-test-2026-08-22-v1",
         requiresInside48HourNoRefundAcceptance: true,
       });
       const sqlLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -97,12 +90,7 @@ describe("Booking Request policy", () => {
         `'cancellationAcceptance', ${sqlLiteral(outside48.cancellationAcceptance)}`,
       );
       expect(branch).toContain(
-        `'marketplaceTermsAcceptance', ${sqlLiteral(
-          outside48.marketplaceTermsAcceptance.replace(
-            "fictional-local-test-2026-08-22-v1)",
-            "",
-          ),
-        )} || target_terms_version || ')'`,
+        `'marketplaceTermsAcceptance', ${sqlLiteral(outside48.marketplaceTermsAcceptance)},`,
       );
       expect(branch).toContain(sqlLiteral(inside48.inside48Warning ?? ""));
       expect(branch).toContain(sqlLiteral(inside48.inside48Acceptance ?? ""));

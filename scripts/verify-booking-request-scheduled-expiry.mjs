@@ -84,7 +84,7 @@ begin
     'intent', jsonb_build_object('customerName', 'Scheduled Expiry Customer', 'partySize', 2,
       'acceptedHouseRules', true, 'acceptedCancellationPolicy', true, 'acceptedMarketplaceTerms', true,
       'acceptedInside48HourNoRefund', requires_inside_48, 'cancellationPolicyVersion', 'rentcottage-mvp-2026-08-04',
-      'acceptanceEvidence', public.booking_request_acceptance_evidence('en', quote ->> 'termsVersion', requires_inside_48)));
+      'acceptanceEvidence', public.booking_request_acceptance_evidence('en', requires_inside_48)));
   price_fils := (submission ->> 'bookingPriceIqd')::bigint * 1000;
   fee_fils := (submission ->> 'serviceFeeIqd')::bigint * 1000;
   total_fils := (submission ->> 'customerTotalIqd')::bigint * 1000;

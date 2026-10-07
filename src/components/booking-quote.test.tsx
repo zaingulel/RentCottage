@@ -57,13 +57,12 @@ const bookingRequestProps = {
   },
   bookingRequestAcceptanceEvidence: bookingRequestAcceptanceEvidence({
     locale: "en",
-    termsVersion: result.quote.termsVersion,
     requiresInside48HourNoRefundAcceptance: true,
   }),
 };
 
 describe("Booking Quote view", () => {
-  it("renders the complete non-operative terms fixture and identity before acceptance", () => {
+  it("renders the complete terms body before acceptance", () => {
     render(
       <BookingQuoteView
         locale="en"
@@ -79,24 +78,57 @@ describe("Booking Quote view", () => {
     const acceptance = screen.getByLabelText(
       /accept the marketplace booking terms/i,
     );
-    const termsSection = screen
-      .getByRole("heading", { name: "Fictional marketplace terms" })
-      .closest("section");
-    expect(termsSection).not.toBeNull();
-    const terms = within(termsSection as HTMLElement);
     expect(body.textContent).toBe(fixture.body);
-    expect(
-      terms.getByText(fixture.version, { exact: true }),
-    ).toBeInTheDocument();
-    expect(
-      terms.getByText(fixture.sha256, { exact: true }),
-    ).toBeInTheDocument();
-    expect(terms.getByText("en", { exact: true })).toBeInTheDocument();
     expect(
       body.compareDocumentPosition(acceptance) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
+
+  it.each([
+    ["English", "en", "I accept the marketplace booking terms."],
+    ["Arabic", "ar", "أوافق على شروط الحجز في المنصة."],
+    ["Sorani", "ckb", "مەرجەکانی حجزکردنی پلاتفۆرم قبوڵ دەکەم."],
+  ] as const)(
+    "shows no internal record identifier to a %s Customer",
+    (_language, locale, acceptanceSentence) => {
+      const fixture = bookingTermsFixture(locale);
+      const { container } = render(
+        <BookingQuoteView
+          locale={locale}
+          queryString="from=2099-08-21&selection=2099-08-21%3Ashift%3A2&guests=4"
+          result={{
+            ...result,
+            quote: {
+              ...result.quote,
+              contentVersion: 987654,
+              marketplaceTerms: fixture,
+            },
+          }}
+          slug={result.quote.slug}
+          {...bookingRequestProps}
+          bookingRequestAcceptanceEvidence={bookingRequestAcceptanceEvidence({
+            locale,
+            requiresInside48HourNoRefundAcceptance: true,
+          })}
+        />,
+      );
+
+      expect(container).not.toHaveTextContent(fixture.version);
+      expect(container).not.toHaveTextContent(fixture.sha256);
+      expect(container).not.toHaveTextContent("987654");
+      const termsCard = screen
+        .getByText(fixture.body.split("\n")[0], { exact: false })
+        .closest("section");
+      expect(termsCard).not.toBeNull();
+      expect(
+        within(termsCard as HTMLElement).queryByRole("term"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("checkbox", { name: acceptanceSentence }),
+      ).toBeInTheDocument();
+    },
+  );
 
   it("shows every priced unit, next-day timing, exact breakdown and non-reservation notice", () => {
     render(

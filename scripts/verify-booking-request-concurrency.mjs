@@ -305,7 +305,7 @@ try {
           'acceptedInside48HourNoRefund', requires_inside_48,
           'cancellationPolicyVersion', 'rentcottage-mvp-2026-08-04',
           'acceptanceEvidence', public.booking_request_acceptance_evidence(
-            'en', quote ->> 'termsVersion', requires_inside_48
+            'en', requires_inside_48
           )
         )
       ) as submission
@@ -1056,7 +1056,7 @@ commit;`;
         'acceptedInside48HourNoRefund', true,
         'cancellationPolicyVersion', 'rentcottage-mvp-2026-08-04',
         'acceptanceEvidence', public.booking_request_acceptance_evidence(
-          'en', quote ->> 'termsVersion', false
+          'en', false
         )
       )
       ) as submission
