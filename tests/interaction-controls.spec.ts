@@ -179,6 +179,18 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
     "outline-color",
     "box-shadow",
   ];
+  const borderWidths = [
+    "border-top-width",
+    "border-right-width",
+    "border-bottom-width",
+    "border-left-width",
+  ];
+  const cornerRadii = [
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-bottom-right-radius",
+    "border-bottom-left-radius",
+  ];
 
   await expect(reference).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
@@ -254,6 +266,22 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
     expect(await computed(garden, ["content"], "::before")).toEqual(["none"]);
     expect(await computed(continueEnquiry, ["content"], "::before")).toEqual([
       "none",
+    ]);
+    const [tickTop, tickRight, tickBottom, tickLeft, tickTransform] =
+      await computed(pool, [...borderWidths, "transform"], "::before");
+    expect(Number.parseFloat(tickRight)).toBeGreaterThan(0);
+    expect(Number.parseFloat(tickBottom)).toBeGreaterThan(0);
+    expect(Number.parseFloat(tickTop)).toBe(0);
+    expect(Number.parseFloat(tickLeft)).toBe(0);
+    expect(tickTransform).not.toBe("none");
+    for (const width of await computed(newEnquiry, borderWidths, "::before")) {
+      expect(Number.parseFloat(width)).toBeGreaterThan(0);
+    }
+    expect(await computed(newEnquiry, cornerRadii, "::before")).toEqual([
+      "50%",
+      "50%",
+      "50%",
+      "50%",
     ]);
     expect(await computed(closed, ["border-top-style"])).toEqual(["dashed"]);
     expect(await computed(garden, ["border-top-style"])).toEqual(["solid"]);
