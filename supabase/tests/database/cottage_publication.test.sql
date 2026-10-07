@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(94);
+select plan(98);
 
 create function pg_temp.configure_translation_runtime(target_ready boolean)
 returns void language sql as $$
@@ -749,6 +749,24 @@ select throws_ok(
   )$$,
   'RC203', 'Reviewed Approximate Location reads as a coordinate pair',
   'publication approval refuses a legacy review cycle whose Approximate Location reads as a coordinate pair');
+
+select results_eq(
+  $$select profile_id from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array['30000000-0000-4000-8000-000000002401'::uuid],
+  'an aal2 Platform Administrator gets an unpublished Content Change answer');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002401","role":"authenticated","aal":"aal1"}', true);
+select results_eq(
+  $$select profile_id from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array['30000000-0000-4000-8000-000000002401'::uuid],
+  'the Cottage Owner gets an unpublished Content Change answer for their own Cottage Profile');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002403","role":"authenticated","aal":"aal1"}', true);
+select is_empty(
+  $$select profile_id from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  'another Cottage Owner gets no unpublished Content Change answer');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal1"}', true);
+select is_empty(
+  $$select profile_id from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  'a Platform Administrator below aal2 gets no unpublished Content Change answer');
 
 select * from finish();
 rollback;
