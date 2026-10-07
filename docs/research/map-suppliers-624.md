@@ -1,6 +1,6 @@
 # Map suppliers: research for issue 624
 
-Status: recommendation made; the owner decided on 7 October 2026 that a place-name search box is included; the owner's supplier choice is pending and will be recorded on issue 624. Research date: 7 October 2026. Inspected RentCottage base: `748a91fdf0a0da7192594a1c76be5472ab153cde`. Scope: the owner's private map picker (#508) and the paid Confirmed Booking map (#509). No account was opened, no key was created and no code was changed.
+Status: recommendation made; the owner decided on 7 October 2026 that a place-name search box is included; the owner left the supplier choice with Yasir on 7 October 2026, and it will be recorded on issue 645. Research date: 7 October 2026. Inspected RentCottage base: `748a91fdf0a0da7192594a1c76be5472ab153cde`. Scope: the owner's private map picker (#508) and the paid Confirmed Booking map (#509). No account was opened, no key was created and no code was changed.
 
 ## Recommendation
 
@@ -180,11 +180,12 @@ The owner can still pan and zoom the satellite map and type the numbers.
 
 ## Owner decision
 
-One decision is made: a place-name search box is included. The owner decided this on 7 October 2026.
+Two decisions are made, both by the owner on 7 October 2026 and both recorded on issue 624:
 
-One question is open: which supplier is used.
+- A place-name search box is included.
+- The choice of supplier is left with Yasir.
 
-The answer is recorded on issue 624. The architecture decision record for the chosen supplier is written by #508.
+One question is open: which supplier is used. Issue 645 carries the options for Yasir and records the answer. The architecture decision record for the chosen supplier is written by #508.
 
 ## Verification and limits
 
