@@ -119,6 +119,12 @@
   --shadow-invalid: 0 0 0 2px var(--error-ring);
   --shadow-pressed: inset 0 0 0 1px var(--green);
 
+  /* Stacking order */
+  --layer-raised: 1;
+  --layer-overlap: 3;
+  --layer-header: 40;
+  --layer-menu: 50;
+
   --hero-headline-gap-rtl: 0.5em;
 
   /* Booking Request progress steps */
@@ -1342,7 +1348,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .retreat-copy {
   position: relative;
-  z-index: 1;
+  z-index: var(--layer-raised);
   padding-block: 11rem 8.5rem;
 }
 
@@ -1371,7 +1377,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .retreat-search {
   position: relative;
-  z-index: 3;
+  z-index: var(--layer-overlap);
   max-width: 40rem;
   margin-block-start: -4rem;
   padding: var(--space-5);
@@ -3030,7 +3036,7 @@ section.request-follow-up {
 }
 
 .site-header {
-  z-index: 40;
+  z-index: var(--layer-header);
   background: transparent;
   color: var(--ink-on-dark);
   transition: background 220ms ease;
@@ -3165,7 +3171,7 @@ section.request-follow-up {
 
 .account-navigation details > div {
   position: absolute;
-  z-index: 50;
+  z-index: var(--layer-menu);
   inset-inline-end: 0;
   min-width: 14.5rem;
   margin-block-start: var(--space-2);

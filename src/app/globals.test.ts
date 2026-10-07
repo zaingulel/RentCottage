@@ -283,4 +283,10 @@ describe("stylesheet shape and layer tokens", () => {
       offScaleHits(/^box-shadow$/, /^(?:var\(--shadow-[a-z]+\)|none|inherit)$/),
     ).toEqual([]);
   });
+
+  it("keeps every z-index a stacking order token", () => {
+    expect(
+      offScaleHits(/^z-index$/, /^(?:var\(--layer-[a-z]+\)|0|auto|inherit)$/),
+    ).toEqual([]);
+  });
 });
