@@ -1,5 +1,6 @@
 export type ExactPoint = { latitude: number; longitude: number };
 
+// Twin of the cottage_profile_private_location_pair CHECK in supabase/schemas/10_tables_cottage.sql.
 export const supportedCoordinateBounds = {
   latitude: { minimum: 29.0, maximum: 37.4 },
   longitude: { minimum: 38.7, maximum: 49.2 },
