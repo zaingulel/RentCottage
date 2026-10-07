@@ -30,16 +30,11 @@
   --ink-panel: #18352b;
   --ink-panel-note: #4b6158;
   --ink-translation: #675129;
-  --ink-on-green: #f6f1e3;
   --ink-on-green-bright: #fff;
   --ink-on-dark: #f7f1e1;
   --ink-on-dark-soft: rgb(247 241 225 / 88%);
   --ink-on-dark-muted: rgb(247 241 225 / 72%);
-  --ink-on-progress: #f9f3e7;
-  --ink-on-progress-soft: rgb(249 243 231 / 76%);
   --ink-on-progress-note: #f7d8af;
-  --ink-on-trusted: #f2f1ea;
-  --ink-on-trusted-soft: rgb(242 241 234 / 78%);
 
   /* Lines and accents */
   --line-on-dark: rgb(247 241 225 / 22%);
@@ -48,7 +43,6 @@
   --line-on-trusted: rgb(244 238 226 / 20%);
   --surface-on-trusted: rgb(244 238 226 / 7%);
   --line-menu: rgb(34 64 47 / 28%);
-  --line-messaging: #d7dfd5;
   --line-panel: #d5ddd7;
   --line-records: #b9b9b9;
   --accent-policy: #386954;
@@ -56,7 +50,6 @@
   /* Brand tints */
   --green-tint: rgb(34 64 47 / 8%);
   --gold-tint: rgb(198 138 69 / 12%);
-  --gold-tint-strong: rgb(198 138 69 / 15%);
 
   /* Shade over hero imagery */
   --shade: rgb(22 19 13 / 82%);
@@ -66,8 +59,6 @@
 
   /* Status */
   --error: #a33425;
-  --error-text: #9b2727;
-  --error-text-strong: #7f241a;
   --error-ring: rgb(163 52 37 / 12%);
   --success-text: #2f734b;
   --focus-ring: rgb(198 138 69 / 14%);
@@ -79,16 +70,11 @@
   --status-rejected-text: #8a3216;
   --status-review-bg: #eef3ff;
   --status-review-text: #264b8c;
-  --status-approved-bg: #e7f6ec;
-  --status-approved-text: #176638;
-  --status-profile-bg: #eef3ef;
-  --status-confirmed-bg: #e9f5ee;
-  --status-confirmed-text: #175c36;
-  --status-earnings-bg: #e6eee8;
+  --status-approved-bg: #e9f5ee;
+  --status-approved-text: #175c36;
+  --status-neutral-bg: #eef3ef;
   --status-attention-bg: #fff0d7;
   --status-attention-text: #623d00;
-  --status-eligible-bg: #dff1e5;
-  --status-eligible-text: #164d2d;
 
   --display: "Changa", sans-serif;
   --body: "Karla", "Almarai", sans-serif;
@@ -191,7 +177,7 @@ textarea {
 .action-primary {
   min-height: 2.75rem;
   background: var(--green);
-  color: var(--ink-on-green);
+  color: var(--ink-on-dark);
 }
 
 .action-secondary,
@@ -355,7 +341,7 @@ input[type="file"].form-control::file-selector-button {
 .choice-control > input[type="checkbox"]:checked::before {
   inset-block: 11% 22%;
   inset-inline: 30%;
-  border: solid var(--ink-on-green);
+  border: solid var(--ink-on-dark);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
@@ -465,7 +451,7 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .action-feedback-error {
-  color: var(--error-text);
+  color: var(--error);
 }
 
 .owner-application-page {
@@ -535,7 +521,7 @@ input[type="file"].form-control::file-selector-button {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--green);
-  color: var(--ink-on-progress);
+  color: var(--ink-on-dark);
 }
 
 .application-progress-card h1 {
@@ -546,7 +532,7 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .application-progress-card > p {
-  color: var(--ink-on-progress-soft);
+  color: var(--ink-on-dark-soft);
   line-height: 1.55;
 }
 
@@ -787,7 +773,7 @@ input[type="file"].form-control::file-selector-button {
 .application-missing {
   border-inline-start: 3px solid var(--error);
   padding-inline-start: var(--space-3);
-  color: var(--error-text-strong);
+  color: var(--error);
 }
 
 .application-missing strong {
@@ -800,7 +786,7 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .field-error {
-  color: var(--error-text);
+  color: var(--error);
   font-weight: 700;
 }
 
@@ -1079,7 +1065,7 @@ a {
 
 .language-links a[aria-current="page"] {
   background: var(--green);
-  color: var(--ink-on-green);
+  color: var(--ink-on-dark);
 }
 
 .results-intro {
@@ -1693,7 +1679,7 @@ html[lang="ckb"] .booking-summary h2 {
   overflow: hidden;
   border-radius: var(--radius-card);
   background: var(--green);
-  color: var(--ink-on-trusted);
+  color: var(--ink-on-dark);
 }
 
 .trusted-photo {
@@ -1710,12 +1696,12 @@ html[lang="ckb"] .booking-summary h2 {
 }
 
 .trusted-copy h2 {
-  color: var(--ink-on-trusted);
+  color: var(--ink-on-dark);
 }
 
 .trusted-copy > p:nth-child(3) {
   margin-block: var(--space-3) var(--space-5);
-  color: var(--ink-on-trusted-soft);
+  color: var(--ink-on-dark-soft);
   line-height: 1.7;
 }
 
@@ -2016,7 +2002,7 @@ a:focus-visible {
 .cottage-profile-status {
   width: fit-content;
   border-radius: 999px;
-  background: var(--status-profile-bg);
+  background: var(--status-neutral-bg);
   padding: var(--space-1) var(--space-3);
 }
 
@@ -2711,7 +2697,7 @@ a:focus-visible {
 
 .owner-booking-request-card > header > span {
   border-radius: 999px;
-  background: var(--gold-tint-strong);
+  background: var(--gold-tint);
   padding: var(--space-1) var(--space-2);
   color: var(--gold);
   font-size: var(--font-size-1);
@@ -2952,7 +2938,7 @@ section.request-follow-up {
   > .booking-request-progress-marker {
   border-color: var(--green);
   background: var(--green);
-  color: var(--ink-on-green);
+  color: var(--ink-on-dark);
 }
 
 .booking-request-progress
@@ -2994,8 +2980,8 @@ section.request-follow-up {
   width: fit-content;
   padding: var(--space-1) var(--space-3);
   border-radius: 999px;
-  background: var(--status-confirmed-bg);
-  color: var(--status-confirmed-text);
+  background: var(--status-approved-bg);
+  color: var(--status-approved-text);
   font-weight: 700;
 }
 
@@ -3329,7 +3315,7 @@ section.request-follow-up {
   margin-inline: auto;
   padding: clamp(var(--space-4), 3vw, var(--space-6));
   background: var(--surface-raised);
-  border: 1px solid var(--line-messaging);
+  border: 1px solid var(--line-panel);
   border-radius: var(--radius-card);
 }
 
@@ -3346,7 +3332,7 @@ section.request-follow-up {
   display: grid;
   gap: var(--space-1);
   padding: var(--space-4);
-  border: 1px solid var(--line-messaging);
+  border: 1px solid var(--line-panel);
   border-radius: var(--radius-card);
   overflow-wrap: anywhere;
 }

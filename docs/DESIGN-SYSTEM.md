@@ -22,6 +22,24 @@ the code keeps them.
 - A colour or font a change needs that the block lacks is added to `:root` in the same change, named for its role
   (what it is for, not what it looks like). Two roles may share a value, each with its own token; one role never
   has two tokens.
+- Colours that look alike are one token when they do one job and separate tokens when the jobs differ:
+  - `--error` is the one error red: the border of an invalid field, mark or option, the bar beside a list of
+    missing items, and the text of an error message. `--error-ring` is its translucent ring.
+  - A status label takes a background and text pair chosen together. `--status-approved-bg` and
+    `--status-approved-text` are the pair for a good outcome: an approved application, the Customer's Booking
+    Request status label, and paid or eligible earnings. `--status-neutral-bg` is the background of a label that
+    is neither good nor bad.
+  - `--status-rejected-text` stays separate from `--error`, and `--success-text` from `--status-approved-text`: a
+    label's text is chosen with its tint, and a message's text sits on whatever surface its form is on.
+  - `--surface-policy` and `--surface-message-customer` stay separate: the policy box is chosen with
+    `--accent-policy` and the Customer's message with `--surface-message-owner`, and neither is a status tint.
+  - `--ink-on-dark` is the text colour on every dark surface, the green panels and buttons and the shaded hero
+    photograph alike. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
+    label.
+  - `--line-panel` is the outline of a panel and of a message.
+  - `--gold-tint` is the one gold wash, behind a notice, a label or a page corner. `--green-tint` is the green
+    wash behind content; `--action-pressed` stays separate because it is a state, the fill of a pressed toggle
+    and of the current backoffice destination.
 - A translucent variant of a colour is its own token written as `rgb(r g b / a%)`. `color-mix()` and relative colour
   syntax are not used: they are newer than the browsers Next.js supports (Chrome, Edge and Firefox 111, Safari
   16.4).
@@ -227,5 +245,5 @@ Anything else is a token.
 
 These are known gaps, not standards to copy.
 
-- #442: several near-identical colours are separate tokens, such as four error reds and several success greens;
-  which of them are one role is not yet decided.
+- #657: text in `--muted` and in `--gold` is below 4.5:1 on every surface, the Cottage profile status label and
+  the Cottage Owner's Booking Request status label included.

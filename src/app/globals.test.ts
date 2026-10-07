@@ -205,6 +205,36 @@ describe("stylesheet colour tokens", () => {
 
     expect(undeclared).toEqual([]);
   });
+
+  it("keeps each merged colour role to one token", () => {
+    const retired = new Set([
+      "error-text",
+      "error-text-strong",
+      "status-confirmed-bg",
+      "status-confirmed-text",
+      "status-eligible-bg",
+      "status-eligible-text",
+      "status-profile-bg",
+      "status-earnings-bg",
+      "ink-on-green",
+      "ink-on-progress",
+      "ink-on-progress-soft",
+      "ink-on-trusted",
+      "ink-on-trusted-soft",
+      "line-messaging",
+      "gold-tint-strong",
+    ]);
+    const declared = [...rootBlock.matchAll(/--([\w-]+)\s*:/g)]
+      .filter(([, name]) => retired.has(name))
+      .map(([, name]) => `--${name}`);
+    const used = stylesheets.flatMap(({ file, source }) =>
+      [...source.matchAll(/var\(--([\w-]+)/g)]
+        .filter(([, name]) => retired.has(name))
+        .map((match) => `${file}:${lineOf(source, match.index)} --${match[1]}`),
+    );
+
+    expect([...declared, ...used]).toEqual([]);
+  });
 });
 
 describe("stylesheet length tokens", () => {
