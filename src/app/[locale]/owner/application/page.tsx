@@ -67,7 +67,6 @@ export default async function OwnerApplicationPage({
     return (
       <main className="owner-application-page access-required-page">
         <header className="owner-application-header">
-          <Link href={`/${locale}`}>RentCottage</Link>
           <span>{copy.eyebrow}</span>
         </header>
         <section className="access-required-card" role="alert">
@@ -82,7 +81,6 @@ export default async function OwnerApplicationPage({
     return (
       <main className="owner-application-page access-required-page">
         <header className="owner-application-header">
-          <Link href={`/${locale}`}>RentCottage</Link>
           <span>{copy.eyebrow}</span>
         </header>
         <section className="access-required-card">
@@ -97,7 +95,6 @@ export default async function OwnerApplicationPage({
   return (
     <main className="owner-application-page">
       <header className="owner-application-header">
-        <Link href={`/${locale}`}>RentCottage</Link>
         <span>{copy.eyebrow}</span>
       </header>
       {page.application && page.review ? (

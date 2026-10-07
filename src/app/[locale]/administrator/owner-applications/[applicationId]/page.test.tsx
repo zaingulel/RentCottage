@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { createClient, loadDetail, resolveContext, unstableRethrow } =
@@ -22,6 +22,9 @@ vi.mock("@/access/supabase-account-access", () => ({
 }));
 vi.mock("@/owner-application/supabase-owner-application-review", () => ({
   loadOwnerApplicationReviewDetail: loadDetail,
+}));
+vi.mock("@/components/owner-application-review-detail", () => ({
+  OwnerApplicationReviewDetailView: () => null,
 }));
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
@@ -128,5 +131,34 @@ describe("Owner Application administrator detail page", () => {
       screen.queryByRole("link", { name: "Back to review queue" }),
     ).not.toBeInTheDocument();
     expect(loadDetail).not.toHaveBeenCalled();
+  });
+
+  it("shows the Platform administration navigation on an Owner Application with its section marked", async () => {
+    resolveContext.mockResolvedValue({
+      userId: "10000000-0000-4000-8000-000000000001",
+      role: "platform_administrator",
+    });
+    createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
+    });
+    loadDetail.mockResolvedValue({});
+
+    render(
+      await OwnerApplicationReviewDetailPage({
+        params: Promise.resolve({
+          locale: "en",
+          applicationId: "20000000-0000-4000-8000-000000000001",
+        }),
+      }),
+    );
+
+    const section = within(
+      screen.getByRole("navigation", { name: "Platform administration" }),
+    ).getByRole("link", { name: "Review submitted Owner Applications" });
+    expect(section).toHaveAttribute(
+      "href",
+      "/en/administrator/owner-applications",
+    );
+    expect(section).toHaveAttribute("aria-current", "true");
   });
 });

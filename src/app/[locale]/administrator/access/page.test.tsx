@@ -29,6 +29,9 @@ describe("AdministratorAccessPage", () => {
     expect(screen.getByTestId("administrator-access-form")).toHaveTextContent(
       "/en/administrator/records",
     );
+    expect(
+      screen.queryByRole("link", { name: "RentCottage" }),
+    ).not.toBeInTheDocument();
   });
   it.each(["en", "ar", "ckb"] as const)(
     "passes the safe same-locale %s moderation destination to the form",

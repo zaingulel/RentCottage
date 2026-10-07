@@ -37,7 +37,6 @@ const en = {
   ownerAccessAction: "Verify Cottage Owner access",
   adminAccessRequired: "Authenticator multi-factor access is required.",
   administratorAccessAction: "Complete administrator access",
-  back: "Back to cottages",
   editorTitle: "Cottage Profile",
   completion:
     "Complete every required field and add 1–12 ready photos before submission.",
@@ -165,7 +164,6 @@ const ar: Copy = {
   ownerAccessAction: "تحقق من دخول مالك الكوخ",
   adminAccessRequired: "يلزم دخول متعدد العوامل عبر تطبيق المصادقة.",
   administratorAccessAction: "أكمل دخول المسؤول",
-  back: "العودة إلى الأكواخ",
   editorTitle: "ملف الكوخ",
   completion:
     "أكمل جميع الحقول المطلوبة وأضف من 1 إلى 12 صورة جاهزة قبل الإرسال.",
@@ -292,7 +290,6 @@ const ckb: Copy = {
   ownerAccessAction: "دەستگەیشتنی خاوەن کۆتێج پشتڕاست بکەرەوە",
   adminAccessRequired: "دەستگەیشتنی دوو-هەنگاوی ئەدمین پێویستە.",
   administratorAccessAction: "دەستگەیشتنی ئەدمین تەواو بکە",
-  back: "گەڕانەوە بۆ کۆتێجەکان",
   editorTitle: "پرۆفایلی کۆتێج",
   completion:
     "هەموو خانە پێویستەکان پڕ بکەوە و 1 تا 12 وێنەی ئامادە زیاد بکە پێش ناردن.",

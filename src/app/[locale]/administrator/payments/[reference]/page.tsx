@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
 import { loadAdministratorPaymentHistory } from "@/booking-request/request-administrator-payment-history";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { AdministratorPaymentHistoryView } from "@/components/administrator-payment-history";
 import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
 import { isLocale } from "@/i18n/routing";
@@ -61,10 +62,12 @@ export default async function AdministratorPaymentHistoryPage({
   }
   return (
     <main className="owner-application-page payment-history-page">
-      <header className="owner-application-header">
-        <Link href={`/${locale}/administrator/payments`}>{copy.back}</Link>
-        <span>{copy.eyebrow}</span>
-      </header>
+      <BackofficeNavigation
+        locale={locale}
+        area="administrator"
+        current="payments"
+        nested
+      />
       {financial ? (
         <BookingFinancialDetails locale={locale} view={financial} />
       ) : financialUnavailable ? (

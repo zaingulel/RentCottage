@@ -4,6 +4,7 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
 import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
 import { CottageProfileLifecycleControls } from "@/components/cottage-profile-lifecycle-controls";
 import { CottagePublicationReview } from "@/components/cottage-publication-review";
@@ -71,10 +72,12 @@ export default async function AdministratorCottageProfilePage({
   if (!page.profile) notFound();
   return (
     <main className="owner-application-page cottage-profile-page">
-      <header className="owner-application-header">
-        <Link href={`/${locale}/administrator/cottages`}>{copy.back}</Link>
-        <span>{copy.adminEyebrow}</span>
-      </header>
+      <BackofficeNavigation
+        locale={locale}
+        area="administrator"
+        current="cottages"
+        nested
+      />
       <CottageProfileEditor
         locale={locale}
         profile={page.profile}
