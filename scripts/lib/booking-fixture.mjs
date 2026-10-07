@@ -78,6 +78,7 @@ const listedCottageDeletes = (
 delete from public.cottage_publication_localizations where publication_id in (select id from public.cottage_publication_snapshots where profile_id='${r.profile}');
 delete from public.cottage_publication_snapshots where profile_id='${r.profile}';
 delete from public.cottage_profile_publication_decisions where review_cycle_id in (select id from public.cottage_profile_review_cycles where profile_id='${r.profile}');
+delete from public.cottage_profile_localized_heads where review_cycle_id in (select id from public.cottage_profile_review_cycles where profile_id='${r.profile}');
 delete from public.cottage_profile_localized_revisions where review_cycle_id in (select id from public.cottage_profile_review_cycles where profile_id='${r.profile}');
 delete from public.cottage_profile_review_cycles where profile_id='${r.profile}';
 delete from public.cottage_profile_source_revisions where profile_id='${r.profile}';

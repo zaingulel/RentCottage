@@ -214,6 +214,12 @@ insert into public.cottage_profile_localized_revisions(
   ('${localizedIds[0]}','${reviewCycleId}','en',1,'owner_source','English description','English rules',null,null,null,null),
   ('${localizedIds[1]}','${reviewCycleId}','ar',1,'generated','وصف عربي','قواعد عربية','fictional','fixture-model','low','fixture-v1'),
   ('${localizedIds[2]}','${reviewCycleId}','ckb',1,'generated','وەسفی کوردی','یاساکانی کوردی','fictional','fixture-model','low','fixture-v1');
+insert into public.cottage_profile_localized_heads(
+  review_cycle_id,locale,localized_revision_id
+) values
+  ('${reviewCycleId}','en','${localizedIds[0]}'),
+  ('${reviewCycleId}','ar','${localizedIds[1]}'),
+  ('${reviewCycleId}','ckb','${localizedIds[2]}');
 insert into public.cottage_profile_publication_decisions(
   review_cycle_id,administrator_user_id,approved,reason
 ) values ('${reviewCycleId}','${administratorUserId}',true,'Approved fictional review fixture');

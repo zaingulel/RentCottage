@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(98);
+select plan(122);
 
 create function pg_temp.configure_translation_runtime(target_ready boolean)
 returns void language sql as $$
@@ -622,6 +622,12 @@ select lives_ok(
   )$$,
   'the later cycle receives its own Arabic and Sorani revisions');
 select lives_ok(
+  $$select public.correct_cottage_profile_localization(
+    (select id from public.cottage_profile_review_cycles where cycle_number = 2), 'en',
+    'A corrected later Content Change', 'New private rules', 'English review'
+  )$$,
+  'an administrator corrects the source-language text of the later cycle before publication');
+select lives_ok(
   $$select public.decide_cottage_profile_localization(
     (select id from public.cottage_profile_review_cycles where cycle_number = 2), 'en', true, 'English approved'
   ), public.decide_cottage_profile_localization(
@@ -767,6 +773,172 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 select is_empty(
   $$select profile_id from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
   'a Platform Administrator below aal2 gets no unpublished Content Change answer');
+
+reset role;
+select results_eq(
+  $$select publications.name, publications.governorate, publications.approximate_location,
+      publications.capacity, publications.bedrooms, publications.bathrooms, publications.amenities,
+      localizations.description, localizations.house_rules,
+      array(
+        select media.photo_id from public.cottage_publication_media media
+        where media.publication_id = publications.id order by media.position
+      )
+    from public.owner_application_cottage_profiles profiles
+    join public.cottage_publication_snapshots publications
+      on publications.id = profiles.current_publication_id
+    join public.cottage_publication_localizations localizations
+      on localizations.publication_id = publications.id and localizations.locale = 'en'
+    where profiles.id = '30000000-0000-4000-8000-000000002401'$$,
+  $$values ('Later Private Name'::text, 'Erbil'::text, 'Later private location'::text,
+    8, 3, 2, array['garden','wifi']::text[],
+    'A corrected later Content Change'::text, 'New private rules'::text,
+    array['40000000-0000-4000-8000-000000002402'::uuid])$$,
+  'the current publication carries the administrator''s corrected source-language text');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002401","role":"authenticated","aal":"aal1"}', true);
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'the owner''s uncorrected source-language text is an unpublished Content Change');
+select lives_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    '30000000-0000-4000-8000-000000002401',
+    (select version from public.owner_application_cottage_profiles
+      where id = '30000000-0000-4000-8000-000000002401'),
+    'Later Private Name', 'Erbil', 'Later private location', 'private address', 36.4, 44.3,
+    'changed private directions', 8, 3, 2, array['wifi','garden'], 'en',
+    'A corrected later Content Change', 'New private rules'
+  )$$,
+  'an owner can save the published content with changed private directions and reordered amenities');
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[false],
+  'saved content equal to the current publication is not an unpublished Content Change');
+select lives_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    '30000000-0000-4000-8000-000000002401',
+    (select version from public.owner_application_cottage_profiles
+      where id = '30000000-0000-4000-8000-000000002401'),
+    'Renamed Privately', 'Erbil', 'Later private location', 'private address', 36.4, 44.3,
+    'new private directions', 8, 3, 2, array['garden','wifi'], 'en',
+    'A corrected later Content Change', 'New private rules'
+  )$$,
+  'an owner can rename the published cottage privately');
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'a private rename is an unpublished Content Change');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
+select lives_ok(
+  $$select public.reject_cottage_profile_publication(
+    (select id from public.cottage_profile_review_cycles where cycle_number = 3), 'Legacy cycle rejected'
+  )$$,
+  'an administrator rejects the legacy review cycle');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002401","role":"authenticated","aal":"aal1"}', true);
+select lives_ok(
+  $$select public.submit_cottage_profile_for_content_approval(
+    '30000000-0000-4000-8000-000000002401',
+    (select version from public.owner_application_cottage_profiles
+      where id = '30000000-0000-4000-8000-000000002401')
+  )$$,
+  'the privately renamed cottage starts a further review cycle');
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'a later cycle in review does not replace the current publication as the baseline');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
+select lives_ok(
+  $$select public.reject_cottage_profile_publication(
+    (select id from public.cottage_profile_review_cycles where cycle_number = 4), 'Rename rejected'
+  )$$,
+  'an administrator rejects the update in review');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002401","role":"authenticated","aal":"aal1"}', true);
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'a rejected update still reads as an unpublished Content Change');
+select lives_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    '30000000-0000-4000-8000-000000002401',
+    (select version from public.owner_application_cottage_profiles
+      where id = '30000000-0000-4000-8000-000000002401'),
+    'Later Private Name', 'Erbil', 'Later private location', 'private address', 36.4, 44.3,
+    'new private directions', 8, 3, 2, array['garden'], 'en',
+    'A corrected later Content Change', 'New private rules'
+  )$$,
+  'an owner can save the published content with one amenity removed');
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'a removed amenity is an unpublished Content Change');
+select lives_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    '30000000-0000-4000-8000-000000002401',
+    (select version from public.owner_application_cottage_profiles
+      where id = '30000000-0000-4000-8000-000000002401'),
+    'Later Private Name', 'Erbil', 'Later private location', 'private address', 36.4, 44.3,
+    'new private directions', 8, 3, 2, array['garden','wifi'], 'en',
+    'A private later Content Change', 'New private rules'
+  )$$,
+  'an owner can save the published content with their uncorrected description');
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'a description differing from the corrected published text is an unpublished Content Change');
+select lives_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    '30000000-0000-4000-8000-000000002401',
+    (select version from public.owner_application_cottage_profiles
+      where id = '30000000-0000-4000-8000-000000002401'),
+    'Later Private Name', 'Erbil', 'Later private location', 'private address', 36.4, 44.3,
+    'new private directions', 8, 3, 2, array['garden','wifi'], 'en',
+    'A corrected later Content Change', 'New private rules'
+  )$$,
+  'an owner can restore the published content after rejected later cycles');
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[false],
+  'restoring the published content clears the unpublished Content Change beside rejected later cycles');
+reset role;
+insert into public.cottage_profile_photos (
+  id, profile_id, owner_user_id, actor_user_id, object_path,
+  original_filename, media_type, size_bytes, state
+) values (
+  '40000000-0000-4000-8000-000000002403',
+  '30000000-0000-4000-8000-000000002401',
+  '00000000-0000-0000-0000-000000002401',
+  '00000000-0000-0000-0000-000000002401',
+  'private/profile/unpublished.webp', 'unpublished.webp', 'image/webp', 256, 'ready'
+);
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002401","role":"authenticated","aal":"aal1"}', true);
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'a ready photo outside the current publication is an unpublished Content Change');
+select lives_ok(
+  $$select public.prepare_cottage_profile_photo_deletion(
+    '40000000-0000-4000-8000-000000002403'
+  )$$,
+  'an owner can remove the unpublished photo');
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[false],
+  'removing the unpublished photo clears the unpublished Content Change');
+select lives_ok(
+  $$select public.prepare_cottage_profile_photo_deletion(
+    '40000000-0000-4000-8000-000000002402'
+  )$$,
+  'an owner can remove the published photo from the working copy');
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'a published photo missing from the working copy is an unpublished Content Change');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002402","role":"authenticated","aal":"aal2"}', true);
+select results_eq(
+  $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
+  array[true],
+  'an aal2 Platform Administrator reads the same unpublished Content Change answer');
 
 select * from finish();
 rollback;
