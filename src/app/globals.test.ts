@@ -30,10 +30,12 @@ const tolerated = new Set([
 ]);
 const probe = document.createElement("span");
 
+const designSystem = readFileSync(
+  join(process.cwd(), "docs", "DESIGN-SYSTEM.md"),
+  "utf8",
+);
 const toleratedSection = (
-  readFileSync(join(process.cwd(), "docs", "DESIGN-SYSTEM.md"), "utf8").match(
-    /^## Tolerated literals\n([\s\S]*?)(?=^## )/m,
-  )?.[1] ?? ""
+  designSystem.match(/^## Tolerated literals\n([\s\S]*?)(?=^## )/m)?.[1] ?? ""
 ).replace(/\s+/g, " ");
 const listedRules = new Set(
   [...toleratedSection.matchAll(/`([^`]+ \{ [^`]+ \})`/g)].map(
@@ -288,5 +290,35 @@ describe("stylesheet shape and layer tokens", () => {
     expect(
       offScaleHits(/^z-index$/, /^(?:var\(--layer-[a-z]+\)|0|auto|inherit)$/),
     ).toEqual([]);
+  });
+});
+
+describe("stylesheet breakpoints", () => {
+  it("uses exactly the breakpoints the design system lists", () => {
+    const section =
+      designSystem.match(
+        /^## Breakpoints\n([\s\S]*?)(?=^## |(?![\s\S]))/m,
+      )?.[1] ?? "";
+    const listed = [...section.matchAll(/`(\d*\.?\d+rem)`/g)].map(
+      ([, value]) => value,
+    );
+    const allowed = new Set(listed.map((value) => `(max-width: ${value})`));
+    const conditions = stylesheets.flatMap(({ file, source }) =>
+      [...source.matchAll(/@media\s*([^{]+)\{/g)].map((query) => ({
+        condition: query[1].replace(/\s+/g, " ").trim(),
+        where: `${file}:${lineOf(source, query.index)}`,
+      })),
+    );
+    const unlisted = conditions
+      .filter(
+        ({ condition }) =>
+          condition.includes("width") && !allowed.has(condition),
+      )
+      .map(({ condition, where }) => `${where} ${condition}`);
+    const used = new Set(conditions.map(({ condition }) => condition));
+    const unused = listed.filter((value) => !used.has(`(max-width: ${value})`));
+
+    expect(unlisted).toEqual([]);
+    expect(unused).toEqual([]);
   });
 });

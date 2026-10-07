@@ -85,7 +85,7 @@
   padding-inline-start: var(--space-5);
 }
 
-@media (max-width: 36rem) {
+@media (max-width: 40rem) {
   .summary,
   .details {
     padding: var(--space-3);

@@ -763,7 +763,7 @@ input[type="file"].form-control::file-selector-button {
   margin-block-start: var(--space-4);
 }
 
-@media (max-width: 850px) {
+@media (max-width: 53rem) {
   .owner-application-layout {
     grid-template-columns: 1fr;
   }
@@ -773,7 +773,7 @@ input[type="file"].form-control::file-selector-button {
   }
 }
 
-@media (max-width: 620px) {
+@media (max-width: 40rem) {
   .owner-application-layout,
   .owner-application-header {
     width: min(100% - 1.25rem, 78rem);
@@ -1681,7 +1681,7 @@ a:focus-visible {
   outline-offset: 3px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 47.5rem) {
   .retreat-hero {
     min-height: 76vh;
   }
@@ -1713,7 +1713,7 @@ a:focus-visible {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 40rem) {
   .retreat-copy,
   .retreat-search,
   .retreat-blurb,
@@ -1799,7 +1799,7 @@ a:focus-visible {
   color: var(--status-approved-text);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 40rem) {
   .review-detail-grid {
     grid-template-columns: 1fr;
   }
@@ -2354,7 +2354,7 @@ a:focus-visible {
   white-space: pre-wrap;
 }
 
-@media (max-width: 620px) {
+@media (max-width: 40rem) {
   .cottage-profile-number-grid,
   .cottage-profile-coordinate-grid {
     grid-template-columns: 1fr;
@@ -3024,7 +3024,7 @@ section.request-follow-up {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 47.5rem) {
   .quote-layout {
     grid-template-columns: 1fr;
   }

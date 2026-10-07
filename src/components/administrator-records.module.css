@@ -108,7 +108,7 @@
   outline-offset: 3px;
 }
 
-@media (max-width: 37rem) {
+@media (max-width: 40rem) {
   .card dl div,
   .detailList div {
     grid-template-columns: 1fr;

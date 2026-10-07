@@ -157,10 +157,21 @@ Anything else is a token.
 
 ## Breakpoints
 
-- Media queries are `max-width`. Custom properties cannot be used in media queries, so breakpoints are literals.
-- In use in `src/app/globals.css`: `850px`, `760px`, `700px`, `620px`, `420px` and `40rem`. The CSS modules also
-  use `42rem`, `37rem`, `36rem` and `24rem`.
-- New work reuses one of these until #435 names a set.
+- A media query that tests width is `max-width` with one of the four values below. Custom properties cannot be
+  used in media queries, so the values are literals, written in `rem` so a layout follows the reader's browser
+  text size; the pixel figures are those at the browser default.
+
+| Name | `max-width` | Pixels | At or below it |
+|---|---|---|---|
+| compact | `24rem` | 384 | a two-up grid of short values becomes one column |
+| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and buttons fill the width |
+| tablet | `47.5rem` | 760 | a main column and its side column stack |
+| wide | `53rem` | 848 | a form and its fixed side panel stack |
+
+- New work reaches for `phone` first and adds no value. [globals.test.ts](../src/app/globals.test.ts) reads the
+  `rem` values in this section, so a breakpoint is added or removed here in the same change as its media query.
+- A query that tests no width, such as `prefers-reduced-motion`, is not a breakpoint, and neither is the `sizes`
+  hint on an image, which describes the image's rendered width.
 
 ## Existing debt
 

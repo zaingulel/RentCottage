@@ -49,7 +49,7 @@
   margin-block-start: var(--space-3);
 }
 
-@media (max-width: 42rem) {
+@media (max-width: 40rem) {
   .page {
     padding-block: var(--space-6) var(--space-7);
   }
