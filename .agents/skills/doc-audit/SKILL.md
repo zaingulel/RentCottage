@@ -24,8 +24,8 @@ what the script can't catch.
 
 **Always skip:** the external memory directory; it is not repository prose.
 
-`docs/AI-WORKFLOW.md` is the workflow teaching authority: preserve its deliberate owner framing while checking its
-factual claims and references.
+`docs/AI-WORKFLOW.md` and the topic pages its routing table links are the workflow teaching authority: preserve their
+deliberate owner framing while checking their factual claims and references.
 
 ## 2. Fan out readers per cluster (Workflow)
 

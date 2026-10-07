@@ -14,6 +14,8 @@ const REASON_MERGE = 'gh pr merge: only the delivery form `gh pr merge --auto --
 const REASON_READY = 'gh pr ready: only `gh pr ready <number>` and `gh pr ready <number> --undo`, alone in their command segment, are allowed; the allow list runs that prefix unprompted, so anything else in the segment (a quoted, substituted or variable word, a redirection, a wrapper) is refused';
 const REASON_COMMIT_NO_VERIFY = 'git commit --no-verify skips the pre-commit gates';
 const REASON_PUSH_NO_VERIFY = 'git push --no-verify skips the lint pre-push gate';
+const REASON_HOOKS_PATH = 'a core.hooksPath override skips the pre-commit and pre-push gates';
+const REASON_HOOKS_PATH_CONFIG = 'git config core.hooksPath: only the arming step `git config core.hooksPath .githooks` and a read that ends at the key are allowed; another value or an unset skips the pre-commit and pre-push gates, and git can store a word after the key as the value even when it looks like an option, so put options before the key';
 const REASON_PUSH_FORCE = 'git push --force is unsafe (use --force-with-lease for a rebase)';
 const REASON_FILTER_BRANCH = 'git filter-branch rewrites history';
 
@@ -234,6 +236,360 @@ test('git push --no-verify is blocked across direct reordered assignment-led and
     'git --git-dir .git push origin HEAD --no-verify',
   ];
   for (const command of blocked) assert.equal(blockReason(command), REASON_PUSH_NO_VERIFY, command);
+});
+
+// A plain `env` prefix runs the git command after it, so every git rule judges that command. An
+// unset name is whatever word follows `-u`, and a flag inside an assignment's value is a value, so
+// neither is read as a flag of the git command.
+test('ANTI-REGRESSION: git behind an env prefix meets the flag, hooks-path and history rules, and an env prefix on an ordinary command passes', () => {
+  for (const [reason, commands] of [
+    [REASON_PUSH_NO_VERIFY, [
+      'env FOO=1 git push --no-verify origin HEAD',
+      'env git push --no-verify',
+      'env FOO=1 BAR=2 git push origin HEAD --no-verify',
+      'npm test && env FOO=1 git push --no-verify',
+    ]],
+    [REASON_COMMIT_NO_VERIFY, [
+      'env FOO=1 git commit --no-verify -m x',
+      'env -i -u FOO BAR=1 git commit -m x --no-verify',
+    ]],
+    [REASON_PUSH_FORCE, [
+      'env FOO=1 git push --force origin HEAD',
+      'env -i git push -f origin main',
+      'env - git push --force',
+      'env --ignore-environment git push --force',
+      'env -u FOO git push --force',
+      'env -uFOO git push --force',
+      'env --unset=FOO git push --force',
+      'env --unset FOO git push --force',
+      'env -- git push --force',
+      '/usr/bin/env FOO=1 git push --force',
+      'ENV FOO=1 git push --force',
+      'FOO=1 env BAR=2 git push --force',
+      'env FOO=1 /usr/bin/git push --force',
+      'env FOO="a b" git push --force',
+    ]],
+    [REASON_HOOKS_PATH, [
+      'env FOO=1 git -c core.hooksPath=/dev/null push',
+      'env FOO=1 git --config-env=core.hooksPath=H push',
+    ]],
+    [REASON_HOOKS_PATH_CONFIG, [
+      'env FOO=1 git config core.hooksPath /dev/null',
+      'env FOO=1 git config --unset core.hooksPath',
+    ]],
+    [REASON_FILTER_BRANCH, [
+      'env FOO=1 git filter-branch --tree-filter x',
+    ]],
+  ]) for (const command of commands) assert.equal(blockReason(command), reason, command);
+  for (const command of [
+    'env FOO=1 git push origin HEAD',
+    'env git status',
+    'env FOO=1 git push --force-with-lease origin HEAD',
+    'env -i git push --force-with-lease',
+    'env FOO=1 git commit -m "mentions --no-verify"',
+    'env FOO=1 git config core.hooksPath .githooks',
+    'env FOO=1 git config --get core.hooksPath',
+    'env FOO=1 npm test',
+    'env | grep git',
+    'env FOO=1 echo git push --force',
+    'echo "env FOO=1 git push --force"',
+    // Unsets a variable named git and runs `push`, which is no git command.
+    'env -u git push --force',
+    // An unset name that looks like a flag is a name, and the command is a plain push or commit.
+    'env -u --force git push origin HEAD',
+    'env -u --no-verify git commit -m x',
+    'env --unset=--force git push origin HEAD',
+    'env --unset --no-verify git push origin HEAD',
+    // A flag inside an assignment's value is a value.
+    'env A=--force git push origin HEAD',
+  ]) assert.equal(blockReason(command), '', command);
+});
+
+// ── hooks-path override ─────────────────────────────────────────────────────
+
+// Pointing git at other hooks skips the gates exactly as --no-verify does, and git takes the
+// setting from an option or from the environment, on any subcommand. The value is not judged.
+test('ANTI-REGRESSION: a hooks-path override is refused by option and by environment, and the arming step and ordinary commands pass', () => {
+  for (const command of [
+    'git -c core.hooksPath=/dev/null push origin HEAD',
+    'git -c core.hooksPath=/dev/null commit -m x',
+    'git -c core.hooksPath=/dev/null merge --no-ff feature',
+    'Git -c CORE.HOOKSPATH=/dev/null push',
+    'git -c core.hooksPath= push',
+    'git -c core.hooksPath=.githooks push',
+    'git --config-env=core.hooksPath=H push origin HEAD',
+    'git --config-env core.hooksPath=H push origin HEAD',
+    'git -C . -c user.name=x -c core.hooksPath=/dev/null push',
+    '/usr/bin/git -c core.hooksPath=/dev/null push',
+    'git status && git -c core.hooksPath=/dev/null push',
+    'git -c "core.hooksPath=/dev/null" push',
+    "git -c 'core.hooksPath=/dev/null' commit -m x",
+    'git -c core.hooksPath="/dev/null" push',
+    'git --config-env="core.hooksPath=H" push',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git push',
+    'GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=CORE.HOOKSPATH GIT_CONFIG_VALUE_1=/x git push',
+    'export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null; git push',
+    'env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/x git push',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="core.hooksPath" GIT_CONFIG_VALUE_0=/dev/null git push',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null npm run deliver',
+    '(export GIT_CONFIG_KEY_0=core.hooksPath)',
+    '(GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_COUNT=1 GIT_CONFIG_VALUE_0=/x git push)',
+    'export GIT_CONFIG_COUNT=1 GIT_CONFIG_VALUE_0=/dev/null "GIT_CONFIG_KEY_0=core.hooksPath"; git push origin HEAD',
+    'env "GIT_CONFIG_KEY_0=core.hooksPath" GIT_CONFIG_COUNT=1 GIT_CONFIG_VALUE_0=/x git push',
+    "/usr/bin/ENV 'GIT_CONFIG_KEY_0=CORE.HOOKSPATH' GIT_CONFIG_COUNT=1 GIT_CONFIG_VALUE_0=/x git push",
+    'declare -x "GIT_CONFIG_KEY_0=core.hooksPath"',
+    'GIT_CONFIG_PARAMETERS="\'core.hooksPath\'=\'/dev/null\'" git commit -m a',
+    'export GIT_CONFIG_PARAMETERS="\'core.hooksPath=/dev/null\'"; git push',
+    'GIT_CONFIG_PARAMETERS="\'user.name=x\' \'CORE.HOOKSPATH=/dev/null\'" git push',
+    'export "GIT_CONFIG_PARAMETERS=\'core.hooksPath=/dev/null\'"; git push',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath>/dev/null GIT_CONFIG_VALUE_0=/dev/null git push origin HEAD',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath</dev/null GIT_CONFIG_VALUE_0=/dev/null git push origin HEAD',
+    'git_config_count=1 git_config_key_0=core.hooksPath git_config_value_0=/dev/null git push origin HEAD',
+    'git_config_parameters="\'core.hooksPath=/dev/null\'" git push origin HEAD',
+    'export "Git_Config_Key_0=core.hooksPath" GIT_CONFIG_COUNT=1 GIT_CONFIG_VALUE_0=/x; git push',
+    String.raw`GIT_CONFIG_PARAMETERS=\'core.hooksPath\'=\'/dev/null\' git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS=\'core.hooksPath=/dev/null\' git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS=\'user.name=x\'\ \'core.hooksPath=/dev/null\' git push origin HEAD`,
+  ]) assert.equal(blockReason(command), REASON_HOOKS_PATH, command);
+  for (const command of [
+    'git push origin HEAD',
+    'git commit -m x',
+    'git config core.hooksPath .githooks',
+    'git config --get core.hooksPath',
+    'git -c user.name=x -c user.email=y commit -m z',
+    'git -c core.quotePath=false diff',
+    'git -c core.hooksPathology=x status',
+    'git -C core.hooksPath=/tmp status',
+    'git grep -c core.hooksPath= scripts',
+    'git commit -m "explain why git -c core.hooksPath=/dev/null push is refused"',
+    'git commit -m "core.hooksPath=/dev/null is refused"',
+    'echo "GIT_CONFIG_KEY_0=core.hooksPath"',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=false git push origin HEAD',
+    'GIT_CONFIG_GLOBAL=/dev/null git push origin HEAD',
+    'MY_GIT_CONFIG_KEY_0=core.hooksPath npm test',
+    'grep -rn "GIT_CONFIG_KEY_0=core.hooksPath" scripts',
+    'env | grep "GIT_CONFIG_KEY_0=core.hooksPath"',
+    'GIT_CONFIG_PARAMETERS= git status',
+    'GIT_CONFIG_PARAMETERS="\'color.ui=false\'" git push origin HEAD',
+    'echo "GIT_CONFIG_PARAMETERS=\'core.hooksPath=/dev/null\'"',
+    'MY_GIT_CONFIG_PARAMETERS="\'core.hooksPath=/dev/null\'" npm test',
+    'GIT_CONFIG_PARAMETERS="\'alias.hooks=config --get core.hooksPath\'" git push origin HEAD',
+    'GIT_CONFIG_PARAMETERS="\'core.hooksPathology=x\'" git push origin HEAD',
+    'export "GIT_CONFIG_PARAMETERS=\'core.hooksPathology=x\'"; git push origin HEAD',
+    'GIT_CONFIG_PARAMETERS="\'user.name\'=\'core.hooksPath\'" git push origin HEAD',
+    'export "GIT_CONFIG_PARAMETERS=\'user.name\'=\'core.hooksPath\'"; git push origin HEAD',
+    String.raw`GIT_CONFIG_PARAMETERS=\'user.name\'=\'core.hooksPath\' git push origin HEAD`,
+  ]) assert.equal(blockReason(command), '', command);
+});
+
+// The shell joins the quoted pieces of one word before git sees it, so a payload cut into pieces
+// is the payload it joins to. Each refused value joins to a payload the test above pins as refused.
+test('ANTI-REGRESSION: a hooks-path payload split across quoted pieces is refused, and a split payload that only mentions the key passes', () => {
+  for (const command of [
+    String.raw`GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'core.hooksPath"=/dev/null"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/"null"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'user.name=x' "\''core.hooksPath=/dev/null'\' git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'core."'hooksPath=/dev/null'"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'user.name=x'"" 'core.hooksPath=/dev/null'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'"CORE.HOOKSPATH=/dev/null"'" git commit -m a`,
+    String.raw`git_config_parameters="'"core.hooksPath=/dev/null"'" git push origin HEAD`,
+    String.raw`env GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'" git push origin HEAD`,
+    String.raw`export GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'"; git push`,
+    String.raw`(GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'" git push)`,
+    String.raw`FOO=1 GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'" git push`,
+    String.raw`GIT_CONFIG_PARAMETERS="'"core.hooksPath"'" git push`,
+    String.raw`GIT_CONFIG_PARAMETERS="'"core.hooksPath"'='/dev/null'" git push`,
+    String.raw`GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'"`,
+    // A partly quoted key inside the payload.
+    String.raw`GIT_CONFIG_PARAMETERS=\'core.hooks"Path=/dev/null"\' git push`,
+    // A quoted `gh` or `pr` piece inside the value is a piece of the payload, not a command word.
+    String.raw`GIT_CONFIG_PARAMETERS="'user.name=""gh""' 'core.hooksPath=/dev/null'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'user.name="'pr'"' 'core.hooksPath=/dev/null'" git push origin HEAD`,
+  ]) assert.equal(blockReason(command), REASON_HOOKS_PATH, command);
+  for (const [reason, command] of [
+    // The name counts only where the environment rule counts it.
+    [REASON_PUSH_FORCE, String.raw`echo MY_GIT_CONFIG_PARAMETERS="'core.hooksPath=x'"\;git push --force`],
+    [REASON_MERGE, String.raw`MY_GIT_CONFIG_PARAMETERS="'core.hooksPath=$(gh pr merge 5)'" true`],
+    // The flag rule is checked first, so the reason does not move.
+    [REASON_PUSH_NO_VERIFY, String.raw`GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'" git push --no-verify`],
+    // A quoted command word inside the value is still unquoted and read.
+    [REASON_MERGE, 'GIT_CONFIG_PARAMETERS="$("gh" pr merge 5)" git push'],
+    // The single-span read stays: the name follows a quoted piece here, where the joined read does not count it.
+    [REASON_HOOKS_PATH, String.raw`'pr'GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" git push origin HEAD`],
+  ]) assert.equal(blockReason(command), reason, command);
+  for (const command of [
+    // The key is only a value.
+    String.raw`GIT_CONFIG_PARAMETERS="'"user.name=core.hooksPath"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'user.name'=""'core.hooksPath'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'"color.ui=false"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'"core.hooksPathology=x"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'alias.h=config --get "core.hooksPath"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'alias.h=config --get "'core.hooksPath'"'" git push origin HEAD`,
+    String.raw`GIT_CONFIG_PARAMETERS="'user.name=a b'"" 'color.ui=false'" git log`,
+    String.raw`GIT_CONFIG_PARAMETERS="'"user.name=x"'" git push origin HEAD`,
+    // A quoted `gh` piece and no hooks-path entry.
+    String.raw`GIT_CONFIG_PARAMETERS="'user.name=""gh""'" git push origin HEAD`,
+    // Another variable.
+    String.raw`MY_GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'" npm test`,
+    // The name is a value.
+    String.raw`x=GIT_CONFIG_PARAMETERS="'"core.hooksPath=/dev/null"'" npm test`,
+    // The name sits inside a quoted span.
+    String.raw`echo "GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'`,
+    'GIT_CONFIG_PARAMETERS= git push',
+    'GIT_CONFIG_PARAMETERS="" git push',
+  ]) assert.equal(blockReason(command), '', command);
+});
+
+// A stored change disarms the hooks for every later command, in every worktree. The older syntax
+// stores the word after the key as the value even when it looks like an option, so the last
+// refused row is a write.
+test('ANTI-REGRESSION: a stored hooks-path repoint or unset is refused, and the arming step and a read that ends at the key pass', () => {
+  for (const command of [
+    'git config core.hooksPath /dev/null',
+    'git config core.hooksPath /dev/null && git push',
+    'git config --local core.hooksPath /tmp/hooks',
+    'git config set core.hooksPath /dev/null',
+    'git config --unset core.hooksPath',
+    'git config unset core.hooksPath',
+    'git config --unset-all core.hooksPath',
+    'git config --global core.hooksPath /dev/null',
+    'git config "core.hooksPath" /dev/null',
+    'git config core.hooksPath "/dev/null"',
+    'git -C . config core.hookspath /dev/null',
+    'Git config CORE.HOOKSPATH /dev/null',
+    'git config core.hooksPath --get',
+    'git config --unset core.hooksPath>/dev/null',
+    'git config core.hooksPath>/dev/null /dev/null',
+    'git config core.hooksPath /dev/null>/dev/null 2>&1',
+    'git config --unset-a core.hooksPath',
+    'git config --unset-al core.hooksPath',
+    'git config core.hooksPath /dev/null # reset',
+    String.raw`git config core.hooksPath >/tmp/guard\ #log /dev/null`,
+    String.raw`git config core.hooksPath /tmp/my\ #hooks`,
+  ]) assert.equal(blockReason(command), REASON_HOOKS_PATH_CONFIG, command);
+  for (const command of [
+    'git config core.hooksPath .githooks',
+    'git config --local core.hooksPath .githooks',
+    'git config set core.hooksPath .githooks',
+    'git config --get core.hooksPath',
+    'git config get core.hooksPath',
+    'git config core.hooksPath',
+    'git config --get core.hooksPath 2>/dev/null',
+    'git config core.hooksPath .githooks > /dev/null 2>&1',
+    'git config --show-origin --show-scope --get-all core.hooksPath',
+    'git config user.name x',
+    'git config --list',
+    'git config --get core.hooksPath        # → .githooks',
+    'git config --get core.hooksPath>/dev/null',
+    'git config core.hooksPath .githooks>/dev/null 2>&1',
+    String.raw`git config --get core.hooksPath >/tmp/guard\ log`,
+    String.raw`git config --get core.hooksPath >/tmp/guard\ #log`,
+  ]) assert.equal(blockReason(command), '', command);
+});
+
+// Git takes the first word that is neither an option nor an option's value as the key, so the
+// hooks path named after another key is data. A command the guard cannot read in full as written
+// is judged by the stored rule above, never exempted.
+test('ANTI-REGRESSION: a config command whose own key is another setting passes, and one that writes or unsets the hooks path or cannot be read stays refused', () => {
+  for (const command of [
+    'git config --unset user.name core.hooksPath',
+    'git config --unset-all user.name core.hooksPath',
+    'git config --local --unset user.name core.hooksPath',
+    'git config --global --unset-all user.name core.hooksPath',
+    'git config --system --unset user.name core.hooksPath',
+    'git config --replace-all user.name core.hooksPath old',
+    'git config user.name core.hooksPath old',
+    'git config --add user.name core.hooksPath extra',
+    'git config unset --value core.hooksPath user.name',
+    'git config unset user.name core.hooksPath',
+    'git config set --all user.name core.hooksPath extra',
+    'git config --default core.hooksPath --get user.name',
+    'git config --file other.cfg --unset user.name core.hooksPath',
+    'git config -f other.cfg --unset user.name core.hooksPath',
+    'git config --file=other.cfg --unset user.name core.hooksPath',
+    'git config --type path --unset user.name core.hooksPath',
+    'git config --fixed-value --unset user.name core.hooksPath',
+    'git config --unset user.name core.hooksPath 2>/dev/null',
+    'git config --unset user.name core.hooksPath # tidy',
+    'git -C . config --unset user.name core.hooksPath',
+    'git config --unset user.name "core.hooksPath"',
+    'git config --file core.hooksPath user.name x',
+    'env FOO=1 git config --unset user.name core.hooksPath',
+    'git config --unset user.name core.hooksPath\n',
+  ]) assert.equal(blockReason(command), '', command);
+  // The command's own key is the hooks path.
+  for (const command of [
+    'git config --file .git/config core.hooksPath /dev/null',
+    'git config -f .git/config core.hooksPath /dev/null',
+    'git config --file=.git/config core.hooksPath /dev/null',
+    'git config --type path core.hooksPath /dev/null',
+    'git config --type=path core.hooksPath /dev/null',
+    'git config --fixed-value core.hooksPath x .githooks',
+    'git config set --value .githooks core.hooksPath /dev/null',
+    'git config --local --replace-all core.hooksPath /dev/null',
+    'git config --add core.hooksPath /dev/null',
+    'git config --default x --get core.hooksPath y',
+    'git config --get core.hooksPath pattern',
+    'git config --unset core.hooksPath user.name',
+    'git config unset --all core.hooksPath',
+    'git config --unset --file other.cfg core.hooksPath',
+    'git config set core.hooksPath user.name',
+    // `--type` takes `user.name` as its value.
+    'git config --type user.name core.hooksPath x',
+  ]) assert.equal(blockReason(command), REASON_HOOKS_PATH_CONFIG, command);
+  // The reader cannot read the command.
+  for (const command of [
+    // An abbreviated or unlisted option, and a first word that is no subcommand.
+    'git config --fil x.y core.hooksPath /dev/null',
+    'git config --unset-a user.name core.hooksPath',
+    'git config add core.hooksPath /dev/null',
+    'git config --comment note user.name core.hooksPath x',
+    'git config --local set core.hooksPath /dev/null',
+    'git config rename-section core.hooksPath x',
+    // A key with a character outside the key's set.
+    'git config --unset branch.job/75.merge core.hooksPath',
+    'git config --type --unset user.name core.hooksPath',
+    // A variable, a quoted word, a backslash and a glob.
+    'git config --unset "$K" core.hooksPath',
+    'git config --unset $K core.hooksPath',
+    'git config --replace-all "$K" core.hooksPath x',
+    'git config -f $F a.b core.hooksPath /dev/null',
+    'git config set --value $V g.t core.hooksPath x',
+    "git config --unset 'user.name' core.hooksPath",
+    'git config --file "my cfg" --unset user.name core.hooksPath',
+    String.raw`git config --unset user.na\me core.hooksPath`,
+    'git config --unset user.* core.hooksPath',
+    // A dash word or a quoted word after the key.
+    'git config --unset user.name core.hooksPath --fixed-value',
+    'git config --replace-all user.name core.hooksPath "old value"',
+    'git config --unset user.name -- core.hooksPath',
+    'git config --unset -- user.name core.hooksPath',
+    'git config --fixed-value=x user.name core.hooksPath y',
+    // A lone `&` is no segment break, and the second command disarms the hooks.
+    'git config user.name x & git config core.hooksPath /dev/null',
+    'git config --unset user.name & git config core.hooksPath /dev/null',
+    'git config --unset user.name core.hooksPath & git config core.hooksPath /dev/null',
+    'git config --unset user.name >out&git config core.hooksPath /dev/null',
+    // A process substitution runs the disarm.
+    'git config --unset user.name >(git config core.hooksPath /dev/null >x)',
+    // A combined redirection or a here-string in front of the key, and a descriptor copy.
+    'git config >& a.b core.hooksPath /dev/null',
+    'git config --unset user.name core.hooksPath 2>&1',
+    // The shell joins `gh` and `x.y` into one option value, so the key is the hooks path.
+    'git config set --value="gh"x.y core.hooksPath /dev/null',
+    'git config <<< a.b core.hooksPath /dev/null',
+    // Harmless: a command holding a quoted `gh`, `pr`, `merge` or `ready` word is not read.
+    'git config --unset user.name core.hooksPath && git commit -m "merge"',
+    // A vertical tab is no blank to the shell.
+    'git config --unset user.name\vcore.hooksPath x',
+    'git config --unset user.name core.hooksPath\v',
+    'git config --unset user.name core.hooksPath\f',
+    'git config --unset user.name core.hooksPath\r',
+    'git config --unset user.name core.hooksPath\u00a0',
+    '\u00a0git config --unset user.name core.hooksPath',
+    String.raw`git config --unset user.na\ me core.hooksPath`,
+  ]) assert.equal(blockReason(command), REASON_HOOKS_PATH_CONFIG, command);
 });
 
 // ── git push --force ────────────────────────────────────────────────────────
@@ -560,6 +916,31 @@ test('ANTI-REGRESSION: branch work in the root checkout is refused; the same cal
   }
   // The rule sits in front of the others, not in place of them.
   assert.equal(blockReason('git commit --no-verify', inJob), REASON_COMMIT_NO_VERIFY);
+});
+
+test('ANTI-REGRESSION: branch work behind an env prefix is refused in the root checkout, and env in front of cd moves nothing', () => {
+  const branchWork = {
+    'env FOO=1 git commit -m "wip"': 'commit',
+    'env git checkout -b job/1170': 'checkout',
+    'env -i git switch -c job/1170': 'switch',
+    'env FOO=1 git -C src commit -m "wip"': 'commit',
+    '/usr/bin/env git rebase job/1170': 'rebase',
+  };
+  for (const [command, subcommand] of Object.entries(branchWork)) {
+    assert.equal(blockReason(command, inRoot), rootReason(subcommand), command);
+    assert.equal(blockReason(command, inJob), '', command);
+  }
+  for (const command of [
+    'env FOO=1 git switch main',
+    'env git pull --ff-only',
+    'env FOO=1 git status',
+    `cd "${JOB}" && env FOO=1 git commit -m "wip"`,
+    `env FOO=1 git -C "${JOB}" commit -m "wip"`,
+  ]) {
+    assert.equal(blockReason(command, inRoot), '', command);
+  }
+  // `env cd` is not read as a move, so the commit is judged where the command started.
+  assert.equal(blockReason(`env cd "${JOB}" && git commit -m "wip"`, inRoot), rootReason('commit'));
 });
 
 test('pulling main forward, deleting branches, worktree upkeep, and reads pass in the root checkout', () => {

@@ -16,9 +16,9 @@ import {
 import { main } from '../verify-issue-publish.mjs';
 
 const BOARD = [
-  { content: { number: 475 }, status: 'Ready', routing: 'Platform' },
-  { content: { number: 476 }, status: 'Ready', routing: 'Product' },
-  { content: { number: 477 }, status: 'Backlog', routing: 'Go-to-market' },
+  { content: { number: 475 }, status: 'Ready', routing: 'Platform', labels: ['type:epic', 'area:board'] },
+  { content: { number: 476 }, status: 'Ready', routing: 'Product', labels: ['type:task', 'area:board'] },
+  { content: { number: 477 }, status: 'Backlog', routing: 'Go-to-market', labels: ['area:board', 'type:bug'] },
 ];
 
 // `totalCount` defaults to the returned numbers so a fixture is complete unless a
@@ -74,6 +74,7 @@ test('issue-publish: reports exact board presence, Statuses, Workstreams, and th
   assert.deepEqual(report, [
     'issue-publish: board presence verified for #475, #476, #477.',
     'issue-publish: Statuses and Workstreams verified for #475, #476, #477.',
+    'issue-publish: exactly one type: label verified for #475, #476, #477.',
     'issue-publish: native child set verified: #475 has exactly the 2 supplied child issues.',
   ]);
   assert.equal(calls.filter(([name]) => name === 'fetchBoard').length, 1);
@@ -337,6 +338,57 @@ test('issue-publish: fails when a requested board card has a missing or blank St
   }
 });
 
+function boardWithLabels(number, labels) {
+  const board = structuredClone(BOARD);
+  board.find((card) => card.content.number === number).labels = labels;
+  return board;
+}
+
+test('issue-publish: fails an issue with no type: label, naming the issue and the labels found', () => {
+  assert.throws(
+    () => verify(['475', '476', '477'], { board: boardWithLabels(476, ['area:board']) }),
+    { message: 'requested issue #476 needs exactly one type: label but has 0 (labels found: area:board)' },
+  );
+  assert.throws(
+    () => verify(['475', '476', '477'], { board: boardWithLabels(476, []) }),
+    { message: 'requested issue #476 needs exactly one type: label but has 0 (labels found: none)' },
+  );
+
+  // Through the real board parser and the command: the labels the check reads are the ones
+  // the board read delivers, and the failure reaches the exit status and the error stream.
+  const unlabelled = leanNode({
+    id: 'PVTI_unlabelled',
+    content: { __typename: 'Issue', number: 480, title: 'Unlabelled card', labels: ['area:board'] },
+    status: 'Ready',
+    routing: 'Platform',
+  });
+  const errors = [];
+  const status = main(['480'], {
+    ...boardRead([unlabelled]).dependencies,
+    output: { log: () => { throw new Error('no success line may be printed'); }, error: (line) => errors.push(line) },
+  });
+  assert.equal(status, 1);
+  assert.deepEqual(errors, [
+    'issue-publish: requested issue #480 needs exactly one type: label but has 0 (labels found: area:board)',
+  ]);
+});
+
+test('issue-publish: fails an issue with two type: labels, naming the issue and the labels found', () => {
+  assert.throws(
+    () => verify(['475', '476', '477'], { board: boardWithLabels(477, ['type:bug', 'area:board', 'type:task']) }),
+    { message: 'requested issue #477 needs exactly one type: label but has 2 (labels found: type:bug, area:board, type:task)' },
+  );
+});
+
+test('issue-publish: passes an issue with exactly one type: label among other labels', () => {
+  const { report } = verify(['475'], {
+    board: boardWithLabels(475, ['area:board', 'type:feature', 'priority:high']),
+    graph: graphChildren([]),
+  });
+
+  assert.equal(report[2], 'issue-publish: exactly one type: label verified for #475.');
+});
+
 test('issue-publish: fails loud when duplicate board cards share a requested issue number', () => {
   const board = structuredClone(BOARD);
   board.splice(1, 0, { content: { number: 476 }, routing: 'Product' });
@@ -458,6 +510,7 @@ test('issue-publish: verifies a standalone issue and reports its zero native chi
   assert.deepEqual(report, [
     'issue-publish: board presence verified for #475.',
     'issue-publish: Statuses and Workstreams verified for #475.',
+    'issue-publish: exactly one type: label verified for #475.',
     'issue-publish: #475 verified as a standalone issue; it has 0 native child issues (none supplied; pass them as arguments to verify an Epic).',
   ]);
 });
@@ -465,8 +518,8 @@ test('issue-publish: verifies a standalone issue and reports its zero native chi
 test('issue-publish: reports rather than asserts a nonzero native child count for a standalone issue', () => {
   const { report, calls } = verify(['475'], { graph: graphChildren([476, 477, 478]) });
 
-  assert.match(report[2], /standalone issue/);
-  assert.match(report[2], /3 native child issues/);
+  assert.match(report[3], /standalone issue/);
+  assert.match(report[3], /3 native child issues/);
   // The reported count is only honest if it came from the issue being named. Pin the
   // subject number in the query, or a count fetched for a different issue reads as this
   // issue's — the exact confidently-wrong output this line exists to prevent.
@@ -480,8 +533,8 @@ test('issue-publish: reports a standalone count from totalCount even when more c
   // where truncation must still fail loud.
   const { report } = verify(['475'], { graph: graphChildren([476, 477], 130) });
 
-  assert.match(report[2], /standalone issue/);
-  assert.match(report[2], /130 native child issues/);
+  assert.match(report[3], /standalone issue/);
+  assert.match(report[3], /130 native child issues/);
 });
 
 test('issue-publish: still fails loud for an Epic with the truncated shape a standalone tolerates', () => {

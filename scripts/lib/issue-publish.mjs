@@ -4,17 +4,20 @@
 // linked in a body rather than as a native child. This verifier keeps publication
 // honest: every named issue must be on the board with a real Status and, when
 // board-config.mjs configures a routing field (Workstream here), a real routing
-// value; a board with no routing field is checked for Status only. Given an Epic
-// plus child numbers, its native children must be exactly that set — a count
-// alone passes when a forgotten child is offset by a stray one. Given a single
-// number, the count is reported rather than asserted, because a lone number
-// cannot distinguish a standalone issue from an Epic whose children were
-// forgotten: showing the count resolves that ambiguity visibly.
+// value; a board with no routing field is checked for Status only. Every named
+// issue must also carry exactly one `type:` label: none leaves its kind unstated
+// and two state it twice. Given an Epic plus child numbers, its native children
+// must be exactly that set — a count alone passes when a forgotten child is
+// offset by a stray one. Given a single number, the count is reported rather
+// than asserted, because a lone number cannot distinguish a standalone issue
+// from an Epic whose children were forgotten: showing the count resolves that
+// ambiguity visibly.
 
 import { BOARD_OWNER, BOARD_PROJECT_NUMBER, BOARD_REPOSITORY, ROUTING_FIELD } from './board-config.mjs';
 import { isContentUnresolved, normalizeItem } from './board.mjs';
 
 const FIELDS_VERIFIED = ROUTING_FIELD ? `Statuses and ${ROUTING_FIELD}s` : 'Statuses';
+const TYPE_LABEL_PREFIX = 'type:';
 
 export function parseIssuePublishArgs(args) {
   if (!Array.isArray(args) || args.length < 1) {
@@ -222,6 +225,12 @@ function verifyBoardCards(numbers, cardsByNumber, unresolvedCount, ghExec) {
     if (typeof card.status !== 'string' || card.status.trim() === '') {
       throw new Error(`requested issue #${number} has no non-empty Status`);
     }
+    const typeLabelCount = card.labels.filter((label) => label.startsWith(TYPE_LABEL_PREFIX)).length;
+    if (typeLabelCount !== 1) {
+      throw new Error(
+        `requested issue #${number} needs exactly one ${TYPE_LABEL_PREFIX} label but has ${typeLabelCount} (labels found: ${card.labels.length === 0 ? 'none' : card.labels.join(', ')})`,
+      );
+    }
   }
 }
 
@@ -253,6 +262,7 @@ export function verifyIssuePublication(args, { fetchBoard, ghExec }) {
     return [
       `issue-publish: board presence verified for ${requested}.`,
       `issue-publish: ${FIELDS_VERIFIED} verified for ${requested}.`,
+      `issue-publish: exactly one ${TYPE_LABEL_PREFIX} label verified for ${requested}.`,
       `issue-publish: #${subjectNumber} verified as a standalone issue; it has ${totalCount} native child issues (none supplied; pass them as arguments to verify an Epic).`,
     ];
   }
@@ -279,6 +289,7 @@ export function verifyIssuePublication(args, { fetchBoard, ghExec }) {
   return [
     `issue-publish: board presence verified for ${requested}.`,
     `issue-publish: ${FIELDS_VERIFIED} verified for ${requested}.`,
+    `issue-publish: exactly one ${TYPE_LABEL_PREFIX} label verified for ${requested}.`,
     `issue-publish: native child set verified: #${subjectNumber} has exactly the ${childNumbers.length} supplied child issues.`,
   ];
 }

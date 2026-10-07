@@ -14,6 +14,8 @@
 //
 // --from fetches the source's origin main, then syncs into --into (default: this repository) under the
 // contract in scripts/lib/factory-sync.mjs: every check runs before any write, so a refusal writes nothing.
+// It removes, and prints, each file the target's committed manifest listed and the fetched one no longer shares,
+// when the target holds it committed with the exact bytes last recorded; anything else at such a path is a refusal.
 // --canonical is needed only for a target with no committed manifest. Source and target must be different
 // repositories. Exit 0 on success, 1 on a refusal with its cause, 2 on a usage error.
 //
@@ -72,8 +74,10 @@ function write() {
 function sync({ from, into = '.', canonical }) {
   const [source, target] = [topLevel(from), topLevel(into)];
   if (source === target) throw new Error(`the source and target are the same repository (${source})`);
-  const { files, regions } = syncInto({ source, target, canonical, fetchMain });
+  const { files, regions, removed } = syncInto({ source, target, canonical, fetchMain });
   console.log(`factory-sync: wrote ${files} files and ${regions} regions from ${source} into ${target}`);
+  console.log(`factory-sync: removed ${removed.length} retired files`);
+  for (const path of removed) console.log(`  ${path}`);
 }
 
 function fetchCanonicalManifest(canonical) {

@@ -2,9 +2,18 @@
 // .codex/hooks/block-unsafe-git.mjs (the PreToolUse(Bash) guards). Extracted so the rules get unit
 // test coverage; each hook stays a thin stdin/stderr/exit-code shell around blockReason().
 //
-// Eight plain rules, judged on the actual command segments of an agent's shell call:
+// Ten plain rules, judged on the actual command segments of an agent's shell call:
 //   git commit --no-verify   -> skips the pre-commit gates
 //   git push --no-verify     -> skips the lint pre-push hook
+//   git -c core.hooksPath=… / git --config-env core.hooksPath=… /
+//   GIT_CONFIG_KEY_<n>=core.hooksPath / GIT_CONFIG_PARAMETERS=…'core.hooksPath=…'…
+//                            -> points git at other hooks for that command, so the commit, merge
+//                                and push hooks are skipped; refused on any git subcommand and
+//                                whatever the value
+//   git config core.hooksPath <other than .githooks> / --unset / unset
+//                            -> disarms the hooks for every later command in the repository, its
+//                                worktrees included; only the arming step and a read that ends at
+//                                the key pass
 //   git push --force / -f    -> unsafe overwrite (--force-with-lease is ALLOWED)
 //   git filter-branch        -> history rewrite
 //   gh pr create (no --draft)-> skips the draft review before the metered suite
@@ -29,9 +38,16 @@
 // quote opens and closes no span and an escaped `<` opens no heredoc, so neither can turn a live
 // command into data. The guard reads the command text with regular expressions and does not
 // tokenise it, and it does not look inside a shell wrapper, a command substitution, or an `env -S`
-// string: it is an accident-catcher for an agent's own plainly written tool calls, not a security
-// boundary. Server-side branch protection is the boundary, and a manual command in your own
-// terminal is not a tool call, so your escape hatch survives.
+// string. A plain `env` prefix is the one wrapper it reads: `env`, then any of `-i`, `-`,
+// `--ignore-environment`, `--`, `-u NAME`, `-uNAME`, `--unset=NAME` or `--unset NAME`, where NAME
+// is letters, digits and underscores, then `NAME=value` words, then git, is judged as the git
+// command it runs by every git rule, the root-checkout rule included. Any other `env` form (`-S`,
+// `-C`, `--chdir`, joined short options, an unset name of any other shape, an option after an
+// assignment, a whole quoted assignment, a second `env`) is not read, and `env` in front of `cd`
+// or `gh pr create` is not read either. The guard is an accident-catcher for an agent's own
+// plainly written tool calls, not a security boundary. Server-side branch protection is the
+// boundary, and a manual command in your own terminal is not a tool call, so your escape hatch
+// survives.
 // The `gh pr merge` and `gh pr ready` rules are the exception: the allow rules in
 // `.claude/settings.json` run those prefixes unprompted, so these two rules bound what the prefixes
 // admit and fail closed on any segment that invokes either and that they cannot fully read (a
@@ -74,6 +90,81 @@
 // case-insensitive volume, so `Git push --force` runs the real binary. Only the name is widened;
 // subcommands and flags stay exact (`git COMMIT` is not a command, `-F` is not `-f`), and `cd` stays
 // lowercase because a capitalised `CD` runs /usr/bin/cd in a child process and moves nothing.
+// The hooks-path rule reads four carriers of the setting: `-c core.hooksPath=<value>` and
+// `--config-env core.hooksPath=<variable>` (or `--config-env=…`) among a git invocation's own
+// options, before the subcommand; the word `GIT_CONFIG_KEY_<n>=core.hooksPath` anywhere in a
+// segment, so an `export`, an `env` prefix and a command that names no git are read too; and an
+// assignment of `GIT_CONFIG_PARAMETERS`, the variable git uses to hand `-c` to its own child
+// processes, one of whose entries has the key as its complete key. Git takes the payload as a
+// blank-separated list of single-quoted entries (`'key=value'`, `'key'` or `'key'='value'`), so
+// the key counts only in an entry's key position: straight after a single quote that opens the
+// payload or follows a blank, and straight before a `=` or a single quote. A longer key
+// (`core.hooksPathology`), a value that mentions the key
+// (`'alias.hooks=config --get core.hooksPath'`) and a value that is the quoted key
+// (`'user.name'='core.hooksPath'`) pass. A payload written outside quotes has each of its single
+// quotes and blanks backslash-escaped (`GIT_CONFIG_PARAMETERS=\'core.hooksPath\'=\'/dev/null\'`)
+// and is read by the same key position. Git reads the key in any letter case, so the rule does,
+// and the two environment names are read in any letter case too, because Git for Windows reads
+// them so; `-c` stays exact, because `-C` is a directory.
+// A redirection glued to the key word (`GIT_CONFIG_KEY_0=core.hooksPath>/dev/null`) ends it as a
+// blank does. The value is not judged: no tool call needs the override, and the arming step
+// `git config core.hooksPath .githooks` is a different command.
+// Quoting hides none of the usual spellings. A quoted span that is the key alone, or the key and
+// its value, keeps the key. One quoted span straight after `GIT_CONFIG_PARAMETERS=` that holds such
+// an entry keeps the key. The whole value word of a `GIT_CONFIG_PARAMETERS` assignment is also read
+// as the shell hands it to git, before anything else is rewritten: its quoted spans,
+// backslash-escaped characters and bare characters are joined up to the first unquoted blank or
+// operator, so a payload split across several quoted pieces (`"'"core.hooksPath=/dev/null"'"`) is
+// read as the one payload it is, and a word that holds such an entry keeps the key. A quoted span
+// that is a whole assignment (`"GIT_CONFIG_KEY_0=core.hooksPath"`,
+// `"GIT_CONFIG_PARAMETERS='core.hooksPath=…'"`) is refused when its segment holds `export`,
+// `declare`, `typeset` or `env` before it, and is a mention otherwise (`echo`, `grep`). Refused
+// with the rule although harmless: an unquoted mention of either environment word (`grep
+// GIT_CONFIG_KEY_0=core.hooksPath`), so quote the mention, an unquoted mention whose payload is
+// split across quoted pieces, as the single-span mention is, a malformed payload git itself rejects
+// whose joined word still holds the entry (`"'core.hooksPath=x'"extra`), and a quoted whole
+// assignment used as plain text after one of those four words. An empty `GIT_CONFIG_PARAMETERS=`
+// and one whose entries have other keys pass. Not refused, because git itself rejects them: a glued
+// `-ccore.hooksPath=…` and a `-c core.hooksPath` with no `=`. Not refused, because the repository's
+// own armed setting outranks them: `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`. Residuals: a key or
+// a payload behind a variable or a substitution (`-c "$KEY=…"`, `GIT_CONFIG_PARAMETERS=$P`), a
+// partly quoted or backslash-escaped key, name, option or assignment outside the value word of a
+// `GIT_CONFIG_PARAMETERS` assignment (`core."hooksPath"`, `"GIT_CONFIG_KEY_0"=core.hooksPath`, `-c
+// core.hooksPath"=/dev/null"`, `-c core.hooks\Path=/dev/null`, `"-c" core.hooksPath=/dev/null`), a
+// payload written as an ANSI-C `$'…'` span, a configuration file that carries the key (`-c
+// include.path=<file>`) and a shell alias given by `-c alias.<name>=!…` whose body carries the
+// override are not read; and an option carrier on a git that is subshelled, substituted, or wrapped
+// by anything but a plain `env` prefix is not seen, as a `--no-verify` there is not.
+// An edit of the configuration file itself, a `git config --edit`, and a `git config` that removes
+// or renames the whole `core` section are not judged.
+// The `git config` rule reads the words after `config`. When one of them is the key, the command
+// passes only as a read (no word follows the key), as the arming step (the word after the key is
+// `.githooks`, unquoted), or when its own key is read as another setting, as described below; every
+// other unset form is refused. A word after the key is refused even when it looks like an option,
+// because the older syntax stores it as the value: `git config core.hooksPath --get` sets the hooks
+// path to `--get`. Put options before the key. The command's own key is read when the text after
+// `config` is readable as written, character by character. Blanks are spaces and tabs. The words
+// are an optional first word `set`, `unset` or `get`; then only these options, spelled in full:
+// `--global`, `--system`, `--local`, `--worktree`, `--get`, `--get-all`, `--add`, `--replace-all`,
+// `--unset`, `--unset-all`, `--all`, `--fixed-value`, and `-f`, `--file`, `--type`, `--default` and
+// `--value`, each with a plain word, the long ones also glued with `=`; then a plain dotted key;
+// then plain words that do not start with a dash; then, at the end only, plain redirections (`>`,
+// `>>` or `<` with a plain target, one descriptor digit allowed) and a comment. A plain word is
+// letters, digits and `_ . / : @ + , -`; a quoted span that is exactly the key counts as the key.
+// When the command's key is another setting the command passes, although it names `core.hooksPath`
+// as a value, a pattern or an option's value: `git config --unset user.name core.hooksPath` unsets
+// `user.name`. Anything else is not read and keeps the refusal: an abbreviated or unlisted option,
+// any other quoted word, a backslash, a variable, a glob, a word after the key that starts with a
+// dash, an ampersand, a parenthesis, a descriptor copy (`2>&1`), a here-string, any other blank
+// character anywhere in the command, and any command in which a quoted `gh`, `pr`, `merge` or
+// `ready` was unquoted, because that reading leaves a blank where the shell joins two pieces. The
+// scope is not judged, so a `--global` write is refused although the repository's own armed setting
+// outranks it. A redirection is not a word, whether a blank precedes it or it is glued to the word
+// before it (`core.hooksPath>/dev/null`), and neither is a trailing comment, so a read followed by
+// either passes. A backslash-escaped blank does not end a word, so a redirection target that holds
+// one (`>/tmp/my\ log`) is one target, and a `#` after it starts no comment. An abbreviated
+// `--unset-all` (`--unset-a`, `--unset-al`) is an unset, because git takes a unique prefix of a
+// long option.
 import { posix, win32 } from 'node:path';
 
 // Returns a reason string when `cmd` should be blocked, or "" when it's allowed. `checkout` is the
@@ -176,7 +267,8 @@ export function blockReason(cmd, checkout) {
     return out;
   })();
   // Every rule anchors on the git or gh invocation, path-qualified or bare, after any leading
-  // variable assignments (`GIT_AUTHOR_NAME=x git commit`, `GH_TOKEN=x gh pr merge`).
+  // variable assignments (`GIT_AUTHOR_NAME=x git commit`, `GH_TOKEN=x gh pr merge`); a git
+  // invocation may also follow one plain `env` prefix (`env FOO=1 git push`).
   const EXEC_PATH = String.raw`(?:\S*\/)?`;
   // -R/--repo is inherited by `gh pr`, so it is valid before `pr` or before the subcommand.
   const GH_REPO_OPT = String.raw`(?:-R\S+|--repo=\S+|(?:-R|--repo)\s+\S+)\s+`;
@@ -188,18 +280,43 @@ export function blockReason(cmd, checkout) {
   const GH_PR_READY = new RegExp(String.raw`(?:^|[\s(\`&])${GH_EXEC}\s+(?:${GH_REPO_OPT})*pr\s+(?:${GH_REPO_OPT})*ready\b`);
   const REASON_MERGE = "gh pr merge: only the delivery form `gh pr merge --auto --squash --delete-branch <number>`, alone in its command segment, is allowed; --auto lets GitHub merge once the required test check is green, and because the allow list runs that prefix unprompted anything else in the segment (--admin, a reordered or missing flag, a quoted, substituted or variable word, a wrapper) is refused";
   const REASON_READY = "gh pr ready: only `gh pr ready <number>` and `gh pr ready <number> --undo`, alone in their command segment, are allowed; the allow list runs that prefix unprompted, so anything else in the segment (a quoted, substituted or variable word, a redirection, a wrapper) is refused";
-  // Blank every quoted span ONCE, before any splitting or matching. A quoted mention is data
-  // (`git commit -m "mentions --no-verify"`, a PR body citing `--draft`), and blanking a quoted
-  // newline keeps a multi-line body from stranding a later `--draft` in its own segment. Both span
-  // patterns match newlines, so a multi-line span is blanked whole. A backslash outside single
-  // quotes is matched together with the character it escapes and returned as written, in the
-  // command-word unquote and in the blanker alike, so an escaped quote opens and closes no span and
-  // both agree with the scan above. A quoted path after `cd` or `-C` is a relocation the
-  // root-checkout walk below must follow, and this checkout's own directory carries a space, so it
-  // is blanked to a whitespace-free ␀<n>␀ placeholder instead of `""` and kept aside for
-  // relocate(). Planted inside the one pass so quote pairing stays the blanker's own: a separate
-  // scan once paired an apostrophe inside a double-quoted span with a later single quote and
-  // swallowed live argv (pinned by test).
+  // Git reads a configuration key in any letter case. A quoted span keeps the hooks-path key where
+  // a carrier puts it, so the hooks-path rule reads the usual quoted spellings; a value stays
+  // blanked. The key alone, or the key and its value (`-c "core.hooksPath=/dev/null"`,
+  // `GIT_CONFIG_KEY_0="core.hooksPath"`), is kept unquoted. A whole environment assignment
+  // (`"GIT_CONFIG_KEY_0=core.hooksPath"`) is kept in its quotes, because it is live only as an
+  // argument of `export`, `declare`, `typeset` or `env`. A payload straight after
+  // `GIT_CONFIG_PARAMETERS=` that holds the key as an entry's complete key is kept as the key. The
+  // value word is first joined across its pieces by a read of its own, where the name counts only
+  // where the environment rule counts it (the start of the text or after a blank, `(`, a backtick,
+  // `&`, `;` or `|`); that read runs before the command-word unquote, because the unquote leaves a
+  // blank the command never held, which would end the word early. Git takes the payload as
+  // blank-separated single-quoted entries (`'key=value'`, `'key'` or `'key'='value'`), so the key
+  // is an entry's complete key only between a single quote that opens the payload or follows a
+  // blank and a `=` or a single quote; a quote after `=` opens a value. `HOOKS_PATH_ENTRY` reads a
+  // payload from its first character. Git for Windows reads an environment variable name in any
+  // letter case, so both names are widened.
+  const HOOKS_PATH_KEY = String.raw`${ci('core')}\.${ci('hookspath')}`;
+  const HOOKS_PATH_ENTRY = String.raw`(?:[\s\S]*\s)?'${HOOKS_PATH_KEY}['=]`;
+  const CONFIG_KEY_NAME = String.raw`${ci('git_config_key_')}\d+`;
+  const CONFIG_PARAMETERS_NAME = ci('git_config_parameters');
+  const HOLDS_HOOKS_PATH_ENTRY = new RegExp(String.raw`^${HOOKS_PATH_ENTRY}`);
+  const ASSIGNS_CONFIG_PARAMETERS = new RegExp(String.raw`${CONFIG_PARAMETERS_NAME}=$`);
+  const QUOTED_HOOKS_PATH_KEY = new RegExp(String.raw`^${HOOKS_PATH_KEY}(?:(=)[\s\S]*)?$`);
+  const QUOTED_HOOKS_PATH_ASSIGNMENT = new RegExp(String.raw`^(${CONFIG_KEY_NAME}(?==${HOOKS_PATH_KEY}$)|${CONFIG_PARAMETERS_NAME}(?==${HOOKS_PATH_ENTRY}))`);
+  // Blank every quoted span ONCE, before any splitting or matching. A quoted mention is data (`git
+  // commit -m "mentions --no-verify"`, a PR body citing `--draft`), and blanking a quoted newline
+  // keeps a multi-line body from stranding a later `--draft` in its own segment. Both span patterns
+  // match newlines, so a multi-line span is blanked whole. A backslash outside single quotes is
+  // matched together with the character it escapes and returned as written, in the command-word
+  // unquote and in the blanker alike, so an escaped quote opens and closes no span and both agree
+  // with the scan above. The value-word read takes escaped pairs and quoted spans with the
+  // blanker's own two patterns, so the two cannot disagree about where a span ends. A quoted path
+  // after `cd` or `-C` is a relocation the root-checkout walk below must follow, and this
+  // checkout's own directory carries a space, so it is blanked to a whitespace-free ␀<n>␀
+  // placeholder instead of `""` and kept aside for relocate(). Planted inside the one pass so quote
+  // pairing stays the blanker's own: a separate scan once paired an apostrophe inside a
+  // double-quoted span with a later single quote and swallowed live argv (pinned by test).
   // Two readings serve the merge and ready rules alone. Quote removal makes `"merge"` the word
   // `merge`, so a quoted span that is exactly one of their four command words is unquoted first,
   // and left followed by a space the command never held: the rules see the invocation, and its
@@ -212,7 +329,16 @@ export function blockReason(cmd, checkout) {
   // body and is left as data.
   let substitutedReason = '';
   const quotedPaths = [];
-  const sanitized = deheredoc.replace(/\\[\s\S]|(['"])(gh|pr|merge|ready)\1/g, (match, quote, word) => (word ? `${word} ` : match)).replace(/\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*"/g, (span, offset, whole) => {
+  const ESCAPED = String.raw`\\[\s\S]`;
+  const QUOTED_SPAN = String.raw`'[^']*'|"(?:[^"\\]|\\[\s\S])*"`;
+  const WORD_PIECE = String.raw`${ESCAPED}|${QUOTED_SPAN}|[^\s;&|<>()]`;
+  const payloadKeyed = deheredoc.replace(new RegExp(String.raw`${ESCAPED}|(?<=^|[\s(\`&;|])(${CONFIG_PARAMETERS_NAME}=)((?:${WORD_PIECE})*)|${QUOTED_SPAN}`, 'g'), (match, name, value) => {
+    if (name === undefined) return match;
+    const payload = value.replace(new RegExp(WORD_PIECE, 'g'), (piece) => (piece.length === 1 ? piece : piece[0] === '\\' ? piece[1] : piece.slice(1, -1)));
+    return HOLDS_HOOKS_PATH_ENTRY.test(payload) ? `${name}core.hooksPath` : match;
+  });
+  const wordsUnquoted = payloadKeyed.replace(/\\[\s\S]|(['"])(gh|pr|merge|ready)\1/g, (match, quote, word) => (word ? `${word} ` : match));
+  const sanitized = wordsUnquoted.replace(new RegExp(String.raw`${ESCAPED}|${QUOTED_SPAN}`, 'g'), (span, offset, whole) => {
     if (span[0] === '\\') return span;
     if (span[0] === '"' && !span.includes('<<')) {
       const body = span.slice(1, -1);
@@ -234,13 +360,21 @@ export function blockReason(cmd, checkout) {
         index = end;
       }
     }
-    return /(?:^|[\s;&|(])(?:cd|-C)[ \t]+$/.test(whole.slice(0, offset)) && /^(?:[\s;&|)]|$)/.test(whole.slice(offset + span.length))
-      ? `␀${quotedPaths.push(span.slice(1, -1)) - 1}␀`
-      : '""';
+    if (/(?:^|[\s;&|(])(?:cd|-C)[ \t]+$/.test(whole.slice(0, offset)) && /^(?:[\s;&|)]|$)/.test(whole.slice(offset + span.length))) {
+      return `␀${quotedPaths.push(span.slice(1, -1)) - 1}␀`;
+    }
+    const content = span.slice(1, -1);
+    const key = QUOTED_HOOKS_PATH_KEY.exec(content);
+    if (key) return `core.hooksPath${key[1] ? '=""' : ''}`;
+    const assignment = QUOTED_HOOKS_PATH_ASSIGNMENT.exec(content);
+    if (assignment) return `"${assignment[1]}=core.hooksPath"`;
+    return HOLDS_HOOKS_PATH_ENTRY.test(content) && ASSIGNS_CONFIG_PARAMETERS.test(whole.slice(0, offset)) ? 'core.hooksPath' : '""';
   });
   const GIT_OPT_WITH_ARG = String.raw`(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)\s+\S+\s+`;
   const GIT_EXEC = String.raw`${EXEC_PATH}${ci('git')}`;
-  const GIT_INVOCATION_PREFIX = String.raw`^${GIT_EXEC}\s+(?:${GIT_OPT_WITH_ARG}|-\S+\s+)*`;
+  const ENV_PREFIX = String.raw`${EXEC_PATH}${ci('env')}\s+(?:(?:-i|-|--ignore-environment|--|-u\s*\w+|--unset(?:=|\s+)\w+)\s+)*(?:\w+=\S*\s+)*`;
+  const GIT_START = String.raw`^(?:${ENV_PREFIX})?${GIT_EXEC}`;
+  const GIT_INVOCATION_PREFIX = String.raw`${GIT_START}\s+(?:${GIT_OPT_WITH_ARG}|-\S+\s+)*`;
   const GIT_COMMIT = new RegExp(String.raw`${GIT_INVOCATION_PREFIX}commit\b`);
   const GIT_PUSH = new RegExp(String.raw`${GIT_INVOCATION_PREFIX}push\b`);
   const GIT_FILTER_BRANCH = new RegExp(String.raw`${GIT_INVOCATION_PREFIX}filter-branch\b`);
@@ -248,12 +382,61 @@ export function blockReason(cmd, checkout) {
   const DELIVERY_MERGE = /^gh pr merge --auto --squash --delete-branch \d+$/;
   const DELIVERY_READY = /^gh pr ready (?:\d+(?: --undo)?|--undo \d+)$/;
   const NO_VERIFY = /(?:^|\s)--no-verify(?:\s|=|$)/;
+  // The option carriers sit among git's own options, so they anchor as every git rule does. The
+  // environment words are read on the unstripped segment, because an `export` or `env` prefix
+  // carries them; a whole quoted assignment, which the blanker kept in its quotes, counts only
+  // after a word that takes an assignment as its argument. A `<` or `>` ends the key word as a blank
+  // does, because a redirection glued to it is not part of the value. After
+  // `GIT_CONFIG_PARAMETERS=` the key counts as the bare key the blanker kept or as an entry's
+  // complete key in a payload written outside quotes, where a backslash may precede each single
+  // quote and the `=` and a backslash-escaped blank separates the entries: the key's quote opens
+  // the payload or follows such a blank.
+  const GIT_HOOKS_PATH_OPTION = new RegExp(String.raw`${GIT_INVOCATION_PREFIX}(?:-c\s+|--config-env(?:=|\s+))${HOOKS_PATH_KEY}=`);
+  const HOOKS_PATH_ENVIRONMENT = new RegExp(String.raw`(?:^|[\s(\`&])(?:${CONFIG_KEY_NAME}=${HOOKS_PATH_KEY}(?:[\s)\`&<>]|$)|${CONFIG_PARAMETERS_NAME}=(?:${HOOKS_PATH_KEY}\b|(?:(?:\S|\\\s)*\\\s)?\\?'${HOOKS_PATH_KEY}\\?['=]))`);
+  const QUOTED_HOOKS_PATH_ENVIRONMENT = new RegExp(String.raw`(?:^|[\s(\`&])${EXEC_PATH}(?:export|declare|typeset|${ci('env')})\s(?:.*\s)?"(?:${CONFIG_KEY_NAME}|${CONFIG_PARAMETERS_NAME})=${HOOKS_PATH_KEY}"`);
+  const GIT_CONFIG = new RegExp(String.raw`${GIT_INVOCATION_PREFIX}config(?=\s)(.*)$`);
+  const HOOKS_PATH_WORD = new RegExp(String.raw`^${HOOKS_PATH_KEY}$`);
+  const REDIRECTION = /\s(?:\d*[<>]{1,2}|&>>?)(?:&\d+|\s*\S+)/g;
+  // An operator ends the word before it with or without a blank, and takes its target with it. A
+  // file-descriptor digit run is the operator's only after a blank; glued digits are the word's.
+  // Only the config rule reads the glued form: widening `REDIRECTION` would let through a
+  // `git switch main>/dev/null` the root-checkout rule refuses today. A backslash takes the next
+  // character into the word, a blank included, so a target or a value that holds an escaped blank
+  // stays one word and a `#` after that blank starts no comment.
+  const CONFIG_WORD = String.raw`(?:\\.|\S)+`;
+  const CONFIG_REDIRECTION = new RegExp(String.raw`(?:\s\d+)?(?:[<>]{1,2}|&>>?)\s*${CONFIG_WORD}`, 'g');
+  const CONFIG_PLAIN = String.raw`(?!-)[\w./:@+,-]+`;
+  const CONFIG_OPTION = String.raw`--(?:global|system|local|worktree|get|get-all|add|replace-all|unset|unset-all|all|fixed-value)|--(?:file|type|default|value)=[\w./:@+,-]*|(?:-f|--file|--type|--default|--value)[ \t]+${CONFIG_PLAIN}`;
+  // Reads the command's own key when the whole text after `config` is plain words, listed options
+  // and trailing plain redirections. An unread command is judged by the older rule, never exempted.
+  const CONFIG_KEY_READ = new RegExp(String.raw`^[ \t]+(?:(?:set|unset|get)[ \t]+)?(?:(?:${CONFIG_OPTION})[ \t]+)*((?!-)[\w-]+\.[\w.-]+)(?:[ \t]+${CONFIG_PLAIN})*(?:(?:[ \t]+\d)?[ \t]*(?:>>?|<)[ \t]*${CONFIG_PLAIN})*(?:[ \t]+#)?[ \t]*$`);
+  // The segment walk trims every white-space character, and the shell takes only a space, a tab and
+  // a newline as blanks, so a command holding any other one is not read.
+  const ODD_BLANK = /[^\S \t\n]/;
+  const rewritesHooksPath = (args) => {
+    const written = args.replace(CONFIG_REDIRECTION, ' ').match(new RegExp(CONFIG_WORD, 'g')) ?? [];
+    const comment = written.findIndex((word) => word.startsWith('#'));
+    const words = comment === -1 ? written : written.slice(0, comment);
+    const at = words.findIndex((word) => HOOKS_PATH_WORD.test(word));
+    if (at === -1) return false;
+    // Git takes a unique prefix of a long option; anything shorter than `--unset` is ambiguous.
+    const unset = words.some((word) => word === 'unset' || (word.startsWith('--unset') && '--unset-all'.startsWith(word)));
+    const key = wordsUnquoted === payloadKeyed && !ODD_BLANK.test(cmd) ? CONFIG_KEY_READ.exec(args)?.[1] : undefined;
+    return (unset || (at + 1 < words.length && words[at + 1] !== '.githooks')) && (key === undefined || HOOKS_PATH_WORD.test(key));
+  };
   const ruleReason = (s, raw) => {
     if (GIT_COMMIT.test(s) && NO_VERIFY.test(s)) {
       return "git commit --no-verify skips the pre-commit gates";
     }
     if (GIT_PUSH.test(s) && NO_VERIFY.test(s)) {
       return "git push --no-verify skips the lint pre-push gate";
+    }
+    if (GIT_HOOKS_PATH_OPTION.test(s) || HOOKS_PATH_ENVIRONMENT.test(raw) || QUOTED_HOOKS_PATH_ENVIRONMENT.test(raw)) {
+      return "a core.hooksPath override skips the pre-commit and pre-push gates";
+    }
+    const config = GIT_CONFIG.exec(s);
+    if (config && rewritesHooksPath(config[1])) {
+      return "git config core.hooksPath: only the arming step `git config core.hooksPath .githooks` and a read that ends at the key are allowed; another value or an unset skips the pre-commit and pre-push gates, and git can store a word after the key as the value even when it looks like an option, so put options before the key";
     }
     if (GIT_PUSH.test(s) && /(?:^|\s)(?:--force(?!-with-lease)|-f)(?:\s|$)/.test(s)) {
       return "git push --force is unsafe (use --force-with-lease for a rebase)";
@@ -305,7 +488,7 @@ export function blockReason(cmd, checkout) {
   // taken it, and so does `cd <root>; cd <worktree>; git commit`, because a `;`-chained cd is never
   // known to have succeeded. All are visible and recoverable: chain with `&&`.
   const CD_SEGMENT = /^cd(?:\s+(\S+))?(?:\s|$)/;
-  const GIT_BRANCH_WORK = new RegExp(String.raw`^${GIT_EXEC}\s+((?:${GIT_OPT_WITH_ARG}|-\S+\s+)*)(commit|checkout|switch|branch|merge|cherry-pick|revert|rebase|am)(?=\s|$)(.*)$`);
+  const GIT_BRANCH_WORK = new RegExp(String.raw`${GIT_START}\s+((?:${GIT_OPT_WITH_ARG}|-\S+\s+)*)(commit|checkout|switch|branch|merge|cherry-pick|revert|rebase|am)(?=\s|$)(.*)$`);
   const onWindows = checkout?.platform === 'win32';
   const { isAbsolute, resolve } = onWindows ? win32 : posix;
   const relocate = (from, target) => {
@@ -333,7 +516,7 @@ export function blockReason(cmd, checkout) {
     if (tokens.some((token) => token === '--abort' || token === '--quit')) return false;
     if (subcommand === 'merge') return !tokens.includes('--ff-only');
     if (subcommand !== 'checkout' && subcommand !== 'switch') return true;
-    const words = args.replace(/\s(?:\d*[<>]{1,2}|&>>?)(?:&\d+|\s*\S+)/g, '').trim().split(/\s+/).filter(Boolean);
+    const words = args.replace(REDIRECTION, '').trim().split(/\s+/).filter(Boolean);
     const positional = words.filter((token) => !token.startsWith('-'));
     const options = words.filter((token) => token.startsWith('-'));
     return positional.join(' ') !== 'main'

@@ -19,7 +19,7 @@ before anything else, in plain words: this session's git guard is off, the turn-
 the fix for this runtime. On Codex the owner has Codex trust the project, removes any `hooks = false` or
 `codex_hooks = false` under `[features]` in the Codex `config.toml`, then runs `/hooks` in the Codex command line
 at the repository root and trusts the repository's hooks; on Windows add the Codex shell-command limit
-`docs/AI-WORKFLOW.md` names, which trust does not lift. On Claude Code, which has no hook trust step, the owner
+`docs/AI-WORKFLOW-runtimes.md` names, which trust does not lift. On Claude Code, which has no hook trust step, the owner
 starts the session at the repository root or a job worktree root with `disableAllHooks` turned on in no settings
 file or start option; `/hooks` there lists the hooks that session has configured. When the result itself reports
 that a hook failed to start, name that failure and its remedy in place of the fix above, such as restoring Node
@@ -281,10 +281,11 @@ route section 8 describes, that shown body becomes the squash commit's message, 
 to hold it. The job's own `Closes #<issue>` line is the only closing word in a pull request body or a
 direct-route commit message: GitHub closes, as completed, any issue whose link follows close, fix or resolve in any
 tense, another repository's `owner/repo#N` included. Every other mention, such as a covered sync card or the
-canonical repository's card for a deferred finding, keeps those words from directly before its link. The owner's
-yes, or any instruction to push, covers every step of section 8: the push, the draft pull request, the
-`@greptileai` comments, repairs on the same branch, rebasing onto `main`, marking ready, and the auto-merge. Nothing
-in section 8 stops to ask again; a public comment there is delivery, not a new action. Push only after it.
+canonical repository's card for a deferred finding, which `to-issues` step 6 says how to file, keeps those words
+from directly before its link. The owner's yes, or any instruction to push, covers every step of section 8: the
+push, the draft pull request, the `@greptileai` comments, repairs on the same branch, rebasing onto `main`, marking
+ready, and the auto-merge. Nothing in section 8 stops to ask again; a public comment there is delivery, not a new
+action. Push only after it.
 
 ## 8. Deliver
 
