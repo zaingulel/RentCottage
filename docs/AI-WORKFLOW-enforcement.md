@@ -70,7 +70,7 @@ stale guidance rather than adding a second authority.
 
 - `.claude/hooks/` and `.codex/hooks/`: the runtime hooks.
 - `.githooks/`: the commit, merge and push hooks.
-- `scripts/gates/`: the repository's own optional gates.
+- `scripts/gates/{stop,pre-commit}` and `scripts/gates/pre-push-main`: the repository's own optional gates.
 - `scripts/lib/unsafe-git.mjs`: the git guard's rules.
 - `scripts/lib/workflow-contract.test.mjs` and `.agents/factory-manifest.json`: the shared-file contract and the
   list it checks.

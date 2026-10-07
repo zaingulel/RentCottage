@@ -27,4 +27,4 @@ git config --get core.hooksPath        # → .githooks
 ```
 
 CI does not rely on these hooks: it runs the same checks as explicit steps. The product's own
-checks live in `scripts/gates/`.
+checks are the optional gates `scripts/gates/{stop,pre-commit}` and `scripts/gates/pre-push-main`.

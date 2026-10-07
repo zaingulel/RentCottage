@@ -4,7 +4,7 @@
     "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "483e755f28db53dd8c6fbaada46ca1aa4b213394",
+  "syncedFrom": "681305dfb85ca31bbb14708758c795c294936337",
   "entries": [
     {
       "path": ".agents/skills/closeout/SKILL.md",
@@ -596,7 +596,7 @@
     },
     {
       "path": ".githooks/README.md",
-      "sha256": "ffb693e8ae29c095c20907e07590bb60778bc568b0b05451e8da330768fba0ff"
+      "sha256": "ea19f231fc13dabdc313629e3116bfe86cba70a762f6b2594d27fba4f8a2c988"
     },
     {
       "path": ".githooks/pre-commit",
@@ -644,7 +644,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW-enforcement.md",
-      "sha256": "bfd15605ad556955c3a81e61bf62d35ec0aa910ea631bc51e20d79e2c72b13cf"
+      "sha256": "c570930d6a9e021347c27d6a1e657237f60358f834993d646c767bc9ad69fff8"
     },
     {
       "path": "docs/AI-WORKFLOW-evidence.md",
