@@ -135,6 +135,59 @@ export function FormControl(props: FormControlProps) {
   return <textarea {...textareaProps} className="form-control" />;
 }
 
+type ChoiceControlProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "children" | "className" | "type"
+> & {
+  kind: "checkbox" | "radio";
+  children: ReactNode;
+};
+
+export function ChoiceControl({
+  kind,
+  children,
+  ...inputProps
+}: ChoiceControlProps) {
+  return (
+    <label className="choice-control">
+      <input {...inputProps} type={kind} />
+      <span>{children}</span>
+    </label>
+  );
+}
+
+export function OptionGroup({
+  legend,
+  layout,
+  children,
+}: {
+  legend: ReactNode;
+  layout: "stack" | "wrap";
+  children: ReactNode;
+}) {
+  return (
+    <fieldset className={`option-group option-group-${layout}`}>
+      <legend>{legend}</legend>
+      <div>{children}</div>
+    </fieldset>
+  );
+}
+
+export function Disclosure({
+  summary,
+  children,
+}: {
+  summary: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <details className="disclosure">
+      <summary>{summary}</summary>
+      {children}
+    </details>
+  );
+}
+
 export function ActionFeedback({
   kind,
   children,

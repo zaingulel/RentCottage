@@ -5,7 +5,10 @@ import {
   ActionButton,
   ActionFeedback,
   ActionLink,
+  ChoiceControl,
+  Disclosure,
   FormControl,
+  OptionGroup,
 } from "./interaction-controls";
 
 describe("shared interaction controls", () => {
@@ -104,5 +107,62 @@ describe("shared interaction controls", () => {
     expect(screen.getByLabelText("Evidence")).toHaveAttribute("type", "file");
     expect(screen.getByRole("status")).toHaveTextContent("✓ Saved");
     expect(screen.getByRole("alert")).toHaveTextContent("! Could not save");
+  });
+
+  it("renders choices, option groups and disclosures as native named controls", () => {
+    const { container } = render(
+      <>
+        <OptionGroup legend="Amenities" layout="wrap">
+          <ChoiceControl kind="checkbox" name="amenity" defaultChecked>
+            Pool
+          </ChoiceControl>
+        </OptionGroup>
+        <OptionGroup legend="Enquiry" layout="stack">
+          <ChoiceControl
+            kind="radio"
+            name="enquiry"
+            value="dates"
+            defaultChecked
+          >
+            Specific dates
+          </ChoiceControl>
+          <ChoiceControl kind="radio" name="enquiry" value="flexible">
+            Flexible dates
+          </ChoiceControl>
+        </OptionGroup>
+        <Disclosure summary="Filters">
+          <p>Filter options</p>
+        </Disclosure>
+      </>,
+    );
+
+    const amenities = screen.getByRole("group", { name: "Amenities" });
+    expect(amenities).toHaveProperty("tagName", "FIELDSET");
+    expect(amenities).toHaveClass("option-group", "option-group-wrap");
+    expect(screen.getByRole("group", { name: "Enquiry" })).toHaveClass(
+      "option-group",
+      "option-group-stack",
+    );
+
+    const pool = screen.getByRole("checkbox", { name: "Pool" });
+    expect(pool).toHaveAttribute("type", "checkbox");
+    expect(pool).toBeChecked();
+
+    const specific = screen.getByRole("radio", { name: "Specific dates" });
+    const flexible = screen.getByRole("radio", { name: "Flexible dates" });
+    expect(specific).toHaveAttribute("type", "radio");
+    expect(flexible).toHaveAttribute("type", "radio");
+    expect(specific).toHaveAttribute("name", "enquiry");
+    expect(flexible).toHaveAttribute("name", "enquiry");
+    expect(specific).toBeChecked();
+    expect(flexible).not.toBeChecked();
+
+    for (const input of [pool, specific, flexible]) {
+      expect(input.closest("label")).toHaveClass("choice-control");
+    }
+
+    expect(
+      container.querySelector("details.disclosure > summary"),
+    ).toHaveTextContent("Filters");
   });
 });
