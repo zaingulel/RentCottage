@@ -114,6 +114,11 @@
   --radius-control: 0.5rem;
   --radius-card: 0.625rem;
 
+  /* State rings */
+  --shadow-focus: 0 0 0 3px var(--focus-ring);
+  --shadow-invalid: 0 0 0 2px var(--error-ring);
+  --shadow-pressed: inset 0 0 0 1px var(--green);
+
   --hero-headline-gap-rtl: 0.5em;
 
   /* Booking Request progress steps */
@@ -198,7 +203,7 @@ textarea {
 .action-toggle[aria-pressed="true"] {
   border-color: var(--green);
   background: var(--action-pressed);
-  box-shadow: inset 0 0 0 1px var(--green);
+  box-shadow: var(--shadow-pressed);
   color: var(--green);
 }
 
@@ -246,7 +251,7 @@ textarea {
 
 .form-control:focus-visible {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  box-shadow: var(--shadow-focus);
 }
 
 .action:disabled {
@@ -294,7 +299,7 @@ input[type="file"].form-control::file-selector-button {
 
 .form-control[aria-invalid="true"] {
   border-color: var(--error);
-  box-shadow: 0 0 0 2px var(--error-ring);
+  box-shadow: var(--shadow-invalid);
 }
 
 .action-feedback {
@@ -370,7 +375,6 @@ input[type="file"].form-control::file-selector-button {
   border-radius: var(--radius-card);
   background: var(--green);
   color: var(--ink-on-progress);
-  box-shadow: 0 1.25rem 3rem rgb(34 64 47 / 12%);
 }
 
 .application-progress-card h1 {
@@ -440,7 +444,6 @@ input[type="file"].form-control::file-selector-button {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--card);
-  box-shadow: 0 0.7rem 2rem rgb(52 45 31 / 5%);
 }
 
 .application-section-heading {
@@ -501,7 +504,7 @@ input[type="file"].form-control::file-selector-button {
 
 .amenities-fieldset[aria-invalid="true"] .amenity-options label {
   border-color: var(--error);
-  box-shadow: 0 0 0 2px var(--error-ring);
+  box-shadow: var(--shadow-invalid);
 }
 
 .application-fields small,
@@ -1176,7 +1179,6 @@ a {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--card);
-  box-shadow: 0 1.5rem 3rem -2.25rem rgb(34 64 47 / 45%);
 }
 
 .booking-summary > p {
@@ -1376,7 +1378,6 @@ html[lang="ckb"] .booking-summary h2 {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--card);
-  box-shadow: 0 1.5rem 3.75rem -2.1rem rgb(34 64 47 / 48%);
 }
 
 .search-fields {
@@ -1830,7 +1831,6 @@ a:focus-visible {
   border-radius: var(--radius-card);
   background: var(--card);
   padding: clamp(var(--space-4), 3vw, var(--space-5));
-  box-shadow: 0 0.8rem 2.5rem rgb(38 50 44 / 7%);
 }
 
 .cottage-publication-review {
@@ -1858,7 +1858,6 @@ a:focus-visible {
   border-radius: var(--radius-card);
   background: var(--card);
   padding: clamp(var(--space-4), 3vw, var(--space-5));
-  box-shadow: 0 0.8rem 2.5rem rgb(38 50 44 / 7%);
 }
 
 .cottage-localization-grid form,
@@ -3034,9 +3033,7 @@ section.request-follow-up {
   z-index: 40;
   background: transparent;
   color: var(--ink-on-dark);
-  transition:
-    background 220ms ease,
-    box-shadow 220ms ease;
+  transition: background 220ms ease;
 }
 
 .site-header-landing {
@@ -3049,10 +3046,6 @@ section.request-follow-up {
   background: var(--surface-raised);
   color: var(--ink);
   border-block-end: 1px solid var(--line);
-}
-
-.site-header-landing.site-header-solid {
-  box-shadow: 0 0.5rem 1.5rem rgb(34 64 47 / 8%);
 }
 
 .site-header-row {
@@ -3180,7 +3173,6 @@ section.request-follow-up {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface-raised);
-  box-shadow: 0 0.5rem 1.5rem rgb(34 64 47 / 12%);
   color: var(--ink);
 }
 

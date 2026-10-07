@@ -45,7 +45,8 @@ const listedTokens = new Set(
 );
 const scaledProperty =
   /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
-const scaleToken = /^(?:(?:space|font-size)-\d+|radius-(?:control|card))$/;
+const scaleToken =
+  /^(?:(?:space|font-size)-\d+|radius-(?:control|card)|shadow-(?:focus|invalid|pressed))$/;
 
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
@@ -162,9 +163,8 @@ function offScaleHits(property: RegExp, allowedTerm: RegExp): string[] {
 describe("stylesheet colour tokens", () => {
   it("keeps every stylesheet colour in the :root token block", () => {
     const hits = stylesheets.flatMap(({ file, source }) => {
-      const rest = (
-        file === globalsFile ? source.replace(rootBlockPattern, blank) : source
-      ).replace(/box-shadow:(?!\s*0 0 0 )[^;]+;/g, blank);
+      const rest =
+        file === globalsFile ? source.replace(rootBlockPattern, blank) : source;
       const literals = [
         ...rest.matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi),
       ].map((match) => `${file}:${lineOf(rest, match.index)} ${match[0]}`);
@@ -275,6 +275,12 @@ describe("stylesheet shape and layer tokens", () => {
         /^border-(?:[a-z-]+-)?radius$/,
         /^(?:var\(--radius-[a-z]+\)|999px|50%|0|inherit)$/,
       ),
+    ).toEqual([]);
+  });
+
+  it("keeps every box shadow a state ring token", () => {
+    expect(
+      offScaleHits(/^box-shadow$/, /^(?:var\(--shadow-[a-z]+\)|none|inherit)$/),
     ).toEqual([]);
   });
 });
