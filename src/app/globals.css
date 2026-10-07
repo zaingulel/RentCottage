@@ -1261,8 +1261,7 @@ html[lang="ckb"] .booking-summary h2 {
 }
 
 .booking-summary > .action-link,
-.booking-summary > .action,
-.request-form > .action {
+.booking-summary > .action {
   margin-block-start: var(--space-5);
   font-family: var(--display);
   font-weight: 600;
@@ -1292,46 +1291,6 @@ html[lang="ckb"] .booking-summary h2 {
   margin: 0;
   color: var(--gold);
   font-weight: 700;
-}
-
-.request-form {
-  max-width: 42rem;
-  margin-block-start: var(--space-5);
-  padding: var(--space-5);
-  display: grid;
-  gap: var(--space-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--card);
-}
-
-.request-form label:not(.terms-field) {
-  display: grid;
-  gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--font-size-1);
-  font-weight: 700;
-}
-
-.request-form .form-control {
-  background: var(--background);
-}
-
-.request-form input[type="text"] {
-  min-height: 3.25rem;
-}
-
-.terms-field {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  line-height: 1.5;
-}
-
-.terms-field input {
-  width: 1.2rem;
-  height: 1.2rem;
-  margin-block-start: var(--space-1);
 }
 
 .request-success {
