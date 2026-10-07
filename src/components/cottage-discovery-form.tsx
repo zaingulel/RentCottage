@@ -12,7 +12,13 @@ import type { CottageDiscoveryFacetsResult } from "@/cottage-discovery/supabase-
 import { formatServiceDay } from "@/i18n/format";
 import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
-import { ActionButton } from "./interaction-controls";
+import {
+  ActionButton,
+  ChoiceControl,
+  Disclosure,
+  FormControl,
+  OptionGroup,
+} from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -200,7 +206,8 @@ export function CottageDiscoveryForm({
       <div className="search-fields">
         <label>
           {messages.from}
-          <input
+          <FormControl
+            kind="input"
             type="date"
             required
             min={baghdadToday()}
@@ -210,7 +217,8 @@ export function CottageDiscoveryForm({
         </label>
         <label>
           {messages.to}
-          <input
+          <FormControl
+            kind="input"
             type="date"
             required
             min={from}
@@ -220,7 +228,8 @@ export function CottageDiscoveryForm({
         </label>
         <label>
           {messages.guests}
-          <input
+          <FormControl
+            kind="input"
             type="number"
             min="1"
             max="100"
@@ -231,7 +240,8 @@ export function CottageDiscoveryForm({
         </label>
         <label>
           {messages.governorate}
-          <select
+          <FormControl
+            kind="select"
             value={governorate}
             onChange={(event) => setGovernorate(event.target.value)}
           >
@@ -241,11 +251,12 @@ export function CottageDiscoveryForm({
                 {value}
               </option>
             ))}
-          </select>
+          </FormControl>
         </label>
         <label>
           {messages.area}
-          <select
+          <FormControl
+            kind="select"
             value={area}
             onChange={(event) => setArea(event.target.value)}
           >
@@ -255,11 +266,10 @@ export function CottageDiscoveryForm({
                 {value}
               </option>
             ))}
-          </select>
+          </FormControl>
         </label>
       </div>
-      <details className="booking-period-disclosure">
-        <summary>{messages.filters}</summary>
+      <Disclosure summary={messages.filters}>
         <p>{messages.timesHint}</p>
         <fieldset className="booking-period-filter">
           <legend>{messages.shifts}</legend>
@@ -317,28 +327,25 @@ export function CottageDiscoveryForm({
             </>
           )}
         </fieldset>
-      </details>
-      <fieldset className="amenity-filter">
-        <legend>{messages.amenities}</legend>
-        <div>
-          {facets.amenities.map((amenity) => (
-            <label key={amenity}>
-              <input
-                type="checkbox"
-                checked={amenities.includes(amenity)}
-                onChange={(event) =>
-                  setAmenities((current) =>
-                    event.target.checked
-                      ? [...current, amenity]
-                      : current.filter((item) => item !== amenity),
-                  )
-                }
-              />
-              {publicCottageAmenityName(locale, amenity)}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      </Disclosure>
+      <OptionGroup legend={messages.amenities} layout="wrap">
+        {facets.amenities.map((amenity) => (
+          <ChoiceControl
+            key={amenity}
+            kind="checkbox"
+            checked={amenities.includes(amenity)}
+            onChange={(event) =>
+              setAmenities((current) =>
+                event.target.checked
+                  ? [...current, amenity]
+                  : current.filter((item) => item !== amenity),
+              )
+            }
+          >
+            {publicCottageAmenityName(locale, amenity)}
+          </ChoiceControl>
+        ))}
+      </OptionGroup>
       {invalid ? <p role="alert">{messages.invalidRange}</p> : null}
       <ActionButton kind="primary" width="content" type="submit">
         {messages.submit}

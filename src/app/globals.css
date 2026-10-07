@@ -1374,7 +1374,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .search-fields label > span,
 .counter-field > span,
-.amenity-filter legend,
+.retreat-search .option-group > legend,
 .booking-period-filter > legend,
 .search-fields label {
   display: block;
@@ -1384,37 +1384,11 @@ html[lang="ckb"] .booking-summary h2 {
   font-weight: 700;
 }
 
-.search-fields input,
-.search-fields select {
-  width: 100%;
-  min-height: 3.25rem;
-  margin-block-start: var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--background);
-  padding-inline: var(--space-3);
-  color: inherit;
-}
-
-.booking-period-disclosure {
+.retreat-search .disclosure {
   margin-block-start: var(--space-4);
 }
 
-.booking-period-disclosure > summary {
-  display: list-item;
-  min-block-size: 2.75rem;
-  padding-block: var(--space-3);
-  color: var(--green);
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.booking-period-disclosure > summary:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 2px;
-}
-
-.booking-period-disclosure > p {
+.retreat-search .disclosure > p {
   color: var(--muted);
 }
 
@@ -1491,12 +1465,6 @@ html[lang="ckb"] .booking-summary h2 {
   font-size: var(--font-size-1);
 }
 
-.amenity-filter label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
 .counter-field > div {
   width: 100%;
   height: 3.25rem;
@@ -1507,6 +1475,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .search-fields .form-control {
   min-height: 3.25rem;
+  margin-block-start: var(--space-2);
   background: var(--background);
 }
 
@@ -1527,20 +1496,13 @@ html[lang="ckb"] .booking-summary h2 {
   text-align: center;
 }
 
-.amenity-filter {
-  margin: var(--space-4) 0 0;
-  padding: 0;
-  border: 0;
+.retreat-search .option-group {
+  margin-block-start: var(--space-4);
 }
 
-.amenity-filter > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.amenity-filter .action-toggle {
-  font-size: var(--font-size-2);
+.retreat-search .disclosure > summary,
+.retreat-search .choice-control > input {
+  background: var(--background);
 }
 
 .retreat-search > .action-primary {

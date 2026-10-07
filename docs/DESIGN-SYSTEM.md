@@ -138,9 +138,8 @@ Anything else is a token.
   `.field-error` message there and `aria-invalid` on the fields; a correction is offered as an `ActionButton` and
   never applied unasked; and a native `required` checkbox, shown only for a valid reading and unticked by any
   edit, confirms it before the form submits.
-- Optional Booking Period filters use native `details`/`summary` with `.booking-period-disclosure`; the summary
-  keeps the native disclosure marker, a visible gold focus outline and the regular control target height.
-  Filter controls keep their existing `ActionButton` toggle pattern. Actual profile options use one native
+- Optional Booking Period filters sit inside a `Disclosure`. Filter controls keep their existing `ActionButton`
+  toggle pattern. Actual profile options use one native
   `fieldset`/`legend` per Service Day with `.booking-period-options` and regular `ActionButton` toggles;
   `aria-pressed` exposes the selection. Disable the fieldset and onward actions during URL navigation.
   Missing choices are corrected only through an explicit `ActionButton`; changed availability uses
