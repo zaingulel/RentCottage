@@ -87,6 +87,7 @@ export interface CottageProfile {
   houseRules: string;
   photos: CottageProfilePhoto[];
   submittedSourceRevision: CottageProfileSourceRevision | null;
+  hasUnpublishedContentChange: boolean;
   updatedAt: string;
 }
 
