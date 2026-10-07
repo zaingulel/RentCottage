@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(103);
+select plan(111);
 
 insert into auth.users (
   id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at
@@ -148,6 +148,105 @@ select throws_ok(
   )$$,
   '23514', null,
   'a Cottage Profile rejects longitude without latitude at the database boundary'
+);
+
+select throws_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    (select version from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    'Outside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
+    28.999999, 38.7, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  '23514',
+  'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_private_location_pair"',
+  'the owner draft save refuses an exact point south of the supported area'
+);
+
+select throws_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    (select version from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    'Outside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
+    37.400001, 49.2, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  '23514',
+  'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_private_location_pair"',
+  'the owner draft save refuses an exact point north of the supported area'
+);
+
+select throws_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    (select version from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    'Outside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
+    29.0, 38.699999, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  '23514',
+  'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_private_location_pair"',
+  'the owner draft save refuses an exact point west of the supported area'
+);
+
+select throws_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    (select version from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    'Outside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
+    37.4, 49.200001, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  '23514',
+  'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_private_location_pair"',
+  'the owner draft save refuses an exact point east of the supported area'
+);
+
+select lives_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    (select version from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    'Inside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
+    29.0, 38.7, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  'the owner draft save stores an exact point on the lowest corner of the supported area'
+);
+
+select lives_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    (select version from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    'Inside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
+    37.4, 49.2, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  'the owner draft save stores an exact point on the highest corner of the supported area'
+);
+
+select lives_ok(
+  $$select public.update_owner_cottage_profile_draft(
+    (select id from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    (select version from public.owner_application_cottage_profiles
+      where application_id is null and owner_user_id = auth.uid()),
+    'Inside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
+    null, null, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  'the owner draft save stores a draft with no exact point'
 );
 
 select throws_ok(
@@ -886,6 +985,21 @@ select throws_ok(
   '23514',
   'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_approximate_location_not_coordinate_pair"',
   'the administrator edit refuses a bare coordinate pair as the Approximate Location'
+);
+
+select throws_ok(
+  $$select public.update_administrator_cottage_profile(
+    (select id from public.owner_application_cottage_profiles
+      where application_id is null),
+    (select version from public.owner_application_cottage_profiles
+      where application_id is null),
+    'Outside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
+    51.507351, -0.127758, 'Directions', 10, 4, 3,
+    array['wifi'], 'en', 'Description', 'Rules'
+  )$$,
+  '23514',
+  'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_private_location_pair"',
+  'the administrator edit refuses an exact point outside the supported area'
 );
 
 select lives_ok(
