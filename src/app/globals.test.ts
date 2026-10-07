@@ -291,6 +291,35 @@ describe("stylesheet shape and layer tokens", () => {
       offScaleHits(/^z-index$/, /^(?:var\(--layer-[a-z]+\)|0|auto|inherit)$/),
     ).toEqual([]);
   });
+
+  it("declares the agreed radius sizes and offset-free state rings", () => {
+    const declared = [
+      ...rootBlock.matchAll(/--([\w-]+)\s*:([^;{}]*)(?=[;}])/g),
+    ].map(
+      ([, name, value]) => `--${name}: ${value.replace(/\s+/g, " ").trim()}`,
+    );
+    const rings = declared.filter((token) => token.startsWith("--shadow-"));
+
+    expect(declared.filter((token) => token.startsWith("--radius-"))).toEqual(
+      expect.arrayContaining([
+        "--radius-control: 0.5rem",
+        "--radius-card: 0.625rem",
+      ]),
+    );
+    expect(rings.map((token) => token.split(":")[0])).toEqual(
+      expect.arrayContaining([
+        "--shadow-focus",
+        "--shadow-invalid",
+        "--shadow-pressed",
+      ]),
+    );
+    expect(
+      rings.filter(
+        (token) =>
+          !/^--[\w-]+: (?:inset )?0 0 0 \d+px var\(--[a-z-]+\)$/.test(token),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("stylesheet breakpoints", () => {
@@ -304,8 +333,8 @@ describe("stylesheet breakpoints", () => {
     );
     const allowed = new Set(listed.map((value) => `(max-width: ${value})`));
     const conditions = stylesheets.flatMap(({ file, source }) =>
-      [...source.matchAll(/@media\s*([^{]+)\{/g)].map((query) => ({
-        condition: query[1].replace(/\s+/g, " ").trim(),
+      [...source.matchAll(/@media\s*([^{]+)\{/gi)].map((query) => ({
+        condition: query[1].replace(/\s+/g, " ").trim().toLowerCase(),
         where: `${file}:${lineOf(source, query.index)}`,
       })),
     );
