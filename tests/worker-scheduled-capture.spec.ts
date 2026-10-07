@@ -184,6 +184,15 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
       );`,
       ),
     );
+  const unsettledNotificationEvents = () =>
+    JSON.parse(
+      harness.runSql(
+        `select count(*) from public.booking_notification_events event
+      left join public.booking_confirmation_notification_work work on work.event_id = event.id
+      where event.booking_request_id = '${id}'
+        and (work.event_id is null or work.state not in ('delivered', 'suppressed'));`,
+      ),
+    ) as number;
   let seeded = false;
   try {
     harness.runSql(
@@ -200,8 +209,14 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
       with leased as (select public.lease_booking_request_capture_work('${id}',
         '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result)
       select pg_temp.capture_execute(result->'permit','failed') from leased;
-      reset role;
-      update public.booking_request_capture_work set lease_expires_at=clock_timestamp()-interval '1 second' where booking_request_id='${id}';`,
+      reset role;`,
+    );
+    // The capture claim skips a request row a sibling drain holds, so the
+    // accepted notices settle while the lease still fences recovery.
+    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+    expect(unsettledNotificationEvents()).toBe(0);
+    harness.runSql(
+      `update public.booking_request_capture_work set lease_expires_at=clock_timestamp()-interval '1 second' where booking_request_id='${id}';`,
     );
     const before = observe();
     expect(before.execution.original_outcome).toBe("failed");
