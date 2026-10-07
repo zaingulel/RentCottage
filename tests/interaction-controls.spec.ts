@@ -166,6 +166,9 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
   });
   const disclosure = page.locator("details.disclosure");
   const summary = disclosure.locator("summary");
+  const restingToggle = page.getByRole("button", { name: "Shift 1" });
+  const disabledToggle = page.getByRole("button", { name: "Shift 3" });
+  const secondary = page.getByRole("button", { name: "Secondary" });
   const choices = page.locator(".choice-control");
   const resting = [
     "border-top-width",
@@ -202,7 +205,7 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
       document.documentElement.dir = dir;
     }, direction);
     await expect(page.locator("html")).toHaveAttribute("dir", direction);
-    await expect(choices).toHaveCount(6);
+    await expect(choices).toHaveCount(7);
 
     const root = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
@@ -290,6 +293,15 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
     expect(Number.parseFloat(invalidBorder)).toBeGreaterThan(
       Number.parseFloat(validBorder),
     );
+    expect(
+      await computed(restingToggle, ["color", "background-color"]),
+    ).toEqual(await computed(secondary, ["color", "background-color"]));
+    expect(await computed(disabledToggle, ["border-top-style"])).toEqual([
+      "dashed",
+    ]);
+    expect(await computed(restingToggle, ["border-top-style"])).toEqual([
+      "solid",
+    ]);
     const closedChevron = await computed(summary, ["transform"], "::after");
     await disclosure.evaluate((details: HTMLDetailsElement) => {
       details.open = true;

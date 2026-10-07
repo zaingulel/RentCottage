@@ -280,6 +280,21 @@ describe("stylesheet shape and layer tokens", () => {
     ).toEqual([]);
   });
 
+  it("keeps the pill off selectable options", () => {
+    const pills = stylesheets.flatMap(({ source }) =>
+      [...source.matchAll(/border-radius:\s*999px/g)].map((match) =>
+        ruleSelector(source, match.index),
+      ),
+    );
+
+    expect(pills.length).toBeGreaterThan(0);
+    expect(
+      pills.filter((selector) =>
+        /\.action-toggle|\.amenity-options/.test(selector),
+      ),
+    ).toEqual([]);
+  });
+
   it("keeps every box shadow a state ring token", () => {
     expect(
       offScaleHits(/^box-shadow$/, /^(?:var\(--shadow-[a-z]+\)|none|inherit)$/),

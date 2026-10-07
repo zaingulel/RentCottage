@@ -194,17 +194,11 @@ textarea {
   color: var(--ink-on-green);
 }
 
-.action-secondary {
+.action-secondary,
+.action-toggle {
   border-color: var(--line);
   background: var(--card);
   color: var(--green);
-}
-
-.action-toggle {
-  border-color: var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
 }
 
 .action-toggle[aria-pressed="true"] {
@@ -268,6 +262,10 @@ textarea {
   cursor: not-allowed;
   border-color: currentcolor;
   opacity: 0.76;
+}
+
+.action-toggle:disabled {
+  border-style: dashed;
 }
 
 .action[aria-busy="true"]::after {
@@ -702,7 +700,7 @@ input[type="file"].form-control::file-selector-button {
   align-items: center;
   gap: var(--space-2);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: var(--surface-field);
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-1);

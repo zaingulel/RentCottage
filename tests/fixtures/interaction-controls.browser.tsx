@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import {
+  ActionButton,
   ChoiceControl,
   Disclosure,
   FormControl,
@@ -19,6 +20,7 @@ createRoot(rootElement).render(
         Pool
       </ChoiceControl>
       <ChoiceControl kind="checkbox">Garden</ChoiceControl>
+      <ChoiceControl kind="checkbox">Terrace</ChoiceControl>
       <ChoiceControl kind="checkbox" disabled>
         Closed
       </ChoiceControl>
@@ -38,5 +40,23 @@ createRoot(rootElement).render(
     <Disclosure summary="Filters">
       <p>Optional filters narrow the search.</p>
     </Disclosure>
+    <ActionButton kind="toggle" type="button" pressed={false} size="regular">
+      Shift 1
+    </ActionButton>
+    <ActionButton kind="toggle" type="button" pressed size="regular">
+      Shift 2
+    </ActionButton>
+    <ActionButton
+      kind="toggle"
+      type="button"
+      pressed={false}
+      size="regular"
+      disabled
+    >
+      Shift 3
+    </ActionButton>
+    <ActionButton kind="secondary" type="button" size="regular">
+      Secondary
+    </ActionButton>
   </>,
 );

@@ -61,6 +61,9 @@ the code keeps them.
   option. `--radius-mark` is 4 pixels and rounds the checkbox mark, which is too small to carry 8 pixels without
   reading as a radio button. `--radius-card` is 10 pixels and rounds every other surface: a card, panel, notice,
   tile, image frame, menu and list row.
+- A selectable option in a group, whether a toggle button (`.action-toggle`) or a bordered option label
+  (`.amenity-options label`), is a control and takes `--radius-control`. The pill is the shape of a status label
+  and of a site header item, never of a selectable option.
 - A pill is `999px`, a circle is `50%` and a square corner is `0`. They are shapes, not sizes, so they are
   literals. The radio button mark is a circle.
 - There is no elevation shadow. A surface is set apart by its background and its `1px` `--line` border;
@@ -113,7 +116,8 @@ Anything else is a token.
 - [interaction-controls.tsx](../src/components/interaction-controls.tsx) holds the shared controls:
   - `ActionButton`: a primary, secondary or toggle button (`.action`, `.action-primary`, `.action-secondary`,
     `.action-toggle`, sized by `.action-compact` or `.action-regular` and `.action-content` or `.action-full`). A pending button sets
-    `aria-busy` and is disabled.
+    `aria-busy` and is disabled. A toggle at rest looks like a secondary button, a pressed one carries the
+    `--shadow-pressed` ring, and a disabled one has a dashed outline.
   - `ActionLink`: a link styled as a primary, secondary or text action (`.action-link`, `.action-text`).
   - `FormControl`: an input, select or textarea with `.form-control`, which shows `aria-invalid` as an error
     border.
