@@ -112,6 +112,10 @@
   --layer-header: 40;
   --layer-menu: 50;
 
+  /* Page template */
+  --page-width: 70rem;
+  --page-width-record: 47.5rem;
+
   --hero-headline-gap-rtl: 0.5em;
 
   /* Booking Request progress steps */
@@ -1017,6 +1021,36 @@ a {
   min-height: 100vh;
   padding-block-end: var(--space-6);
   background: var(--background);
+}
+
+.page {
+  inline-size: calc(100% - 2.25rem);
+  max-inline-size: var(--page-width);
+  margin-inline: auto;
+  padding-block-start: var(--space-6);
+}
+
+.page-record {
+  max-inline-size: var(--page-width-record);
+}
+
+.page-title {
+  margin: 0;
+  color: var(--green);
+  font-family: var(--display);
+  font-size: var(--font-size-6);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+html[lang="ckb"] .page-title {
+  line-height: 1.4;
+}
+
+@media (max-width: 40rem) {
+  .page-title {
+    font-size: var(--font-size-5);
+  }
 }
 
 .results-header,
@@ -2740,8 +2774,7 @@ a:focus-visible {
   background: var(--surface-bright);
 }
 
-.confirmed-booking-details > header,
-.booking-history > header {
+.confirmed-booking-details > header {
   display: flex;
   align-items: start;
   justify-content: space-between;
@@ -2795,6 +2828,12 @@ a:focus-visible {
   margin-block-start: var(--space-3);
 }
 
+.booking-history > header {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
 .booking-history ul {
   display: grid;
   gap: var(--space-3);
@@ -2846,6 +2885,10 @@ section.request-follow-up {
 
 .confirmed-booking-details ~ .request-follow-up {
   inline-size: min(100% - 2rem, 52rem);
+}
+
+.page > .request-follow-up {
+  inline-size: auto;
 }
 
 .request-follow-up > p[role="status"] {
@@ -3017,8 +3060,7 @@ section.request-follow-up {
     gap: var(--space-1);
   }
 
-  .confirmed-booking-details > header,
-  .booking-history > header {
+  .confirmed-booking-details > header {
     display: grid;
   }
 
@@ -3384,7 +3426,7 @@ section.request-follow-up {
 }
 
 @media (max-width: 40rem) {
-  .messaging-shell {
+  :not(.page) > .messaging-shell {
     border-inline: 0;
     border-radius: 0;
   }

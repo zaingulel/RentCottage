@@ -109,7 +109,7 @@ export default async function CustomerBookingRequestPage({
       </main>
     );
   return (
-    <main className="results-page">
+    <main className="results-page page page-record">
       <CustomerBookingRequestStatus locale={locale} request={details.request} />
       {messaging}
       {notices}

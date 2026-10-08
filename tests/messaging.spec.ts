@@ -66,6 +66,10 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(
     page.getByRole("heading", { name: "Message this cottage" }),
   ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("page-messages-en.png"),
+    fullPage: true,
+  });
   await expect(
     page.getByText("Use a new enquiry for a different stay."),
   ).toBeVisible();
