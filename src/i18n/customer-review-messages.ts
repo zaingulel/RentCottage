@@ -66,6 +66,7 @@ export const customerReviewMessages = {
     replyPublished: "Your reply was published.",
     replyNotPublic:
       "Your reply is not shown to visitors because the review is hidden.",
+    ownerReply: "Cottage Owner reply",
   },
   ar: {
     title: "قيّم هذا البيت",
@@ -128,6 +129,7 @@ export const customerReviewMessages = {
     replyDuplicate: "يوجد رد على هذا التقييم بالفعل. حدّث الصفحة لعرضه.",
     replyPublished: "تم نشر ردّك.",
     replyNotPublic: "ردّك لا يظهر للزوار لأن التقييم مخفي.",
+    ownerReply: "رد مالك البيت",
   },
   ckb: {
     title: "هەڵسەنگاندن بۆ ئەم کۆتێجە",
@@ -197,5 +199,6 @@ export const customerReviewMessages = {
     replyPublished: "وەڵامەکەت بڵاوکرایەوە.",
     replyNotPublic:
       "وەڵامەکەت بۆ سەردانکەران دیار نییە چونکە هەڵسەنگاندنەکە شاردراوەتەوە.",
+    ownerReply: "وەڵامی خاوەن کۆتێج",
   },
 } as const;
