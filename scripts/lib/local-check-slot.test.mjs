@@ -1,12 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
   LOCAL_CHECK_LIMIT,
   LOCAL_CHECK_LIMIT_MESSAGE,
+  PLACE_DATABASE_LISTING_FORMAT,
   bindLoopbackPort,
   claimDatabaseSlot,
   claimRunSlot,
+  classifyPlaceDatabase,
   isHostedCheck,
   isLocalCheckSlotProject,
   localCheckServerBusyMessage,
@@ -14,6 +19,7 @@ import {
   localCheckSlotBusyMessage,
   loopbackPortAnswers,
   parseLocalCheckSlot,
+  removeStaleLocalCheckFolders,
 } from './local-check-slot.mjs';
 
 // Hand-listed from the plan's table, never computed with the module's own arithmetic.
@@ -204,6 +210,123 @@ test('tells a loopback port that answers from one that refuses', async () => {
     localCheckServerBusyMessage(1, 3010),
     'Something still answers on port 3010, which place 1 of the full local check uses for its test server. A server from an earlier check may still be running. Nothing was removed and nothing ran. Run it again when the port is free; if it stays in use, stop what is using it.',
   );
+});
+
+test('proves a leftover database only by its place\'s exact project label and a folder this tool made beside the run\'s own', () => {
+  assert.equal(
+    PLACE_DATABASE_LISTING_FORMAT,
+    '{{.Names}}|{{.Label "com.supabase.cli.project"}}|{{.Label "com.supabase.cli.workdir"}}',
+  );
+
+  const container = 'supabase_db_rentcottage-verification-1';
+  const ownWorkdir = '/tmp/rentcottage-docker-config-1-Own001/project';
+  const unreadable = { state: 'unproven', found: 'its labels could not be read' };
+  const unproven = (project, workdir) => ({
+    listing: `${container}|${project}|${workdir}\n`,
+    expected: { state: 'unproven', found: `its project label is "${project}" and its folder label is "${workdir}"` },
+  });
+  const rows = {
+    'empty listing': { listing: '', expected: { state: 'absent' } },
+    'a longer container name that only contains ours': {
+      listing: `${container}_copy|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project\n`,
+      expected: { state: 'absent' },
+    },
+    'made here': {
+      listing: `${container}|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project\n`,
+      expected: { state: 'made-here' },
+    },
+    'another project label': unproven('rentcottage-verification-2', '/tmp/rentcottage-docker-config-1-Old001/project'),
+    'another place\'s folder': unproven('rentcottage-verification-1', '/tmp/rentcottage-docker-config-2-Old001/project'),
+    'an old-style folder name': unproven('rentcottage-verification-1', '/tmp/rentcottage-docker-config-Old001/project'),
+    'another parent folder': unproven('rentcottage-verification-1', '/home/someone/rentcottage-docker-config-1-Old001/project'),
+    'no project ending': unproven('rentcottage-verification-1', '/tmp/rentcottage-docker-config-1-Old001'),
+    'a deeper path': unproven('rentcottage-verification-1', '/tmp/rentcottage-docker-config-1-Old001/nested/project'),
+    'five suffix characters': unproven('rentcottage-verification-1', '/tmp/rentcottage-docker-config-1-Old01/project'),
+    'seven suffix characters': unproven('rentcottage-verification-1', '/tmp/rentcottage-docker-config-1-Old0001/project'),
+    'empty labels': unproven('', ''),
+    // Beside the run's own folder once resolved against the working directory, so only the
+    // absolute-path condition refuses it.
+    'a relative folder label': {
+      listing: `${container}|rentcottage-verification-1|rentcottage-docker-config-1-Old001/project\n`,
+      expected: {
+        state: 'unproven',
+        found: 'its project label is "rentcottage-verification-1" and its folder label is "rentcottage-docker-config-1-Old001/project"',
+      },
+      ownWorkdir: resolve('rentcottage-docker-config-1-Own001/project'),
+    },
+    'a fourth field': {
+      listing: `${container}|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project|extra\n`,
+      expected: unreadable,
+    },
+    'two exact-name lines': {
+      listing: `${container}|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project\n`.repeat(2),
+      expected: unreadable,
+    },
+  };
+
+  for (const [row, { listing, expected, ownWorkdir: rowWorkdir = ownWorkdir }] of Object.entries(rows)) {
+    assert.deepEqual(classifyPlaceDatabase({ slot: 1, container, listing, ownWorkdir: rowWorkdir }), expected, row);
+  }
+});
+
+test('removes only its own place\'s stale folders, keeps the run\'s own, and never follows a link', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'local-check-slot-test-'));
+  try {
+    const sentinel = join(fixture, 'sentinel');
+    const temp = join(fixture, 'temp');
+    const own = join(temp, 'rentcottage-docker-config-1-Own001');
+    const stale = join(temp, 'rentcottage-docker-config-1-Old001');
+    mkdirSync(sentinel);
+    writeFileSync(join(sentinel, 'keep.txt'), 'keep');
+    for (const folder of [own, stale]) mkdirSync(join(folder, 'project'), { recursive: true });
+    symlinkSync(sentinel, join(stale, 'project', 'link'));
+    mkdirSync(join(temp, 'rentcottage-docker-config-2-Old002'));
+    mkdirSync(join(temp, 'rentcottage-docker-config-Old003'));
+    writeFileSync(join(temp, 'rentcottage-docker-config-1-File01'), 'file');
+    symlinkSync(sentinel, join(temp, 'rentcottage-docker-config-1-Link01'));
+
+    assert.deepEqual(removeStaleLocalCheckFolders(1, own), [stale]);
+
+    assert.deepEqual(readdirSync(temp).toSorted(), [
+      'rentcottage-docker-config-1-File01',
+      'rentcottage-docker-config-1-Link01',
+      'rentcottage-docker-config-1-Own001',
+      'rentcottage-docker-config-2-Old002',
+      'rentcottage-docker-config-Old003',
+    ]);
+    assert.equal(existsSync(join(own, 'project')), true);
+    assert.equal(lstatSync(join(temp, 'rentcottage-docker-config-1-Link01')).isSymbolicLink(), true);
+    assert.deepEqual(readdirSync(sentinel), ['keep.txt']);
+  } finally {
+    rmSync(fixture, { recursive: true });
+  }
+});
+
+test('fails at the first stale folder it cannot remove', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'local-check-slot-test-'));
+  try {
+    const own = join(fixture, 'rentcottage-docker-config-1-Own001');
+    const stale = ['rentcottage-docker-config-1-Old001', 'rentcottage-docker-config-1-Old002'].map((name) => join(fixture, name));
+    for (const folder of [own, ...stale]) mkdirSync(folder);
+    const attempted = [];
+    const refusal = new Error('permission denied');
+
+    assert.throws(
+      () =>
+        removeStaleLocalCheckFolders(1, own, {
+          remove: (path) => {
+            attempted.push(path);
+            throw refusal;
+          },
+        }),
+      refusal,
+    );
+
+    assert.equal(attempted.length, 1);
+    assert.ok(stale.includes(attempted[0]), `${attempted[0]} is not a stale folder of place 1`);
+  } finally {
+    rmSync(fixture, { recursive: true });
+  }
 });
 
 test('accepts only a place number within the limit', () => {

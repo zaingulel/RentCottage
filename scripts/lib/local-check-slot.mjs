@@ -4,7 +4,10 @@
 // operating system releases the port when the process dies, however it dies. Each place has a run
 // lock, held by the whole run, and a database lock, held by the database step. A place is free only
 // when both are free. Every place port stays below 32768, outside each system's automatic port range.
+// A free lock shows no live check holds the place, not who made what is in it.
+import { readdirSync, rmSync } from 'node:fs';
 import { connect, createServer } from 'node:net';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 export const LOCAL_CHECK_LIMIT = 2;
 
@@ -12,6 +15,8 @@ export const LOCAL_CHECK_LIMIT_MESSAGE = `The full local check runs at most ${LO
 
 const HOSTED_PROJECT = 'rentcottage-verification';
 const HOSTED_TEMP_PREFIX = 'rentcottage-docker-config-';
+
+export const PLACE_DATABASE_LISTING_FORMAT = '{{.Names}}|{{.Label "com.supabase.cli.project"}}|{{.Label "com.supabase.cli.workdir"}}';
 
 const heldLocks = [];
 
@@ -152,4 +157,36 @@ export async function claimDatabaseSlot(inheritedSlot, { bind = bindLoopbackPort
     return slot;
   }
   return undefined;
+}
+
+function placeFolderPattern(slot) {
+  return new RegExp(`^${localCheckSettings(slot).tempPrefix}[A-Za-z0-9]{6}$`);
+}
+
+export function classifyPlaceDatabase({ slot, container, listing, ownWorkdir }) {
+  const lines = listing
+    .split('\n')
+    .map((line) => line.split('|'))
+    .filter(([name]) => name === container);
+  if (lines.length === 0) return { state: 'absent' };
+  if (lines.length > 1 || lines[0].length !== 3) return { state: 'unproven', found: 'its labels could not be read' };
+  const [, project, workdir] = lines[0];
+  const madeHere =
+    project === localCheckSettings(slot).project &&
+    isAbsolute(workdir) &&
+    basename(workdir) === 'project' &&
+    placeFolderPattern(slot).test(basename(dirname(workdir))) &&
+    dirname(dirname(resolve(workdir))) === dirname(dirname(resolve(ownWorkdir)));
+  if (madeHere) return { state: 'made-here' };
+  return { state: 'unproven', found: `its project label is "${project}" and its folder label is "${workdir}"` };
+}
+
+export function removeStaleLocalCheckFolders(slot, ownFolder, { remove = (path) => rmSync(path, { recursive: true }) } = {}) {
+  const parent = dirname(ownFolder);
+  const pattern = placeFolderPattern(slot);
+  const stale = readdirSync(parent, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && pattern.test(entry.name) && entry.name !== basename(ownFolder))
+    .map((entry) => join(parent, entry.name));
+  for (const path of stale) remove(path);
+  return stale;
 }
