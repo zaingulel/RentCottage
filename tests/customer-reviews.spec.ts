@@ -279,7 +279,7 @@ async function signInPhone(page: Page, phone: string, returnTo: string) {
   const origin =
     process.env.PLAYWRIGHT_SERVER === "worker"
       ? `http://127.0.0.1:${process.env.PLAYWRIGHT_WORKER_PORT ?? "8788"}`
-      : "http://127.0.0.1:3000";
+      : `http://127.0.0.1:${process.env.PLAYWRIGHT_NEXT_PORT ?? "3000"}`;
   await page.context().addCookies([
     {
       name: "rentcottage-auth",

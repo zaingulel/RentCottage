@@ -2,12 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const originalWorkerServer = process.env.PLAYWRIGHT_SERVER;
 const originalWorkerPort = process.env.PLAYWRIGHT_WORKER_PORT;
+const originalNextPort = process.env.PLAYWRIGHT_NEXT_PORT;
 
 async function loadConfig(port) {
   vi.resetModules();
   process.env.PLAYWRIGHT_SERVER = "worker";
   if (port === undefined) delete process.env.PLAYWRIGHT_WORKER_PORT;
   else process.env.PLAYWRIGHT_WORKER_PORT = port;
+  return (await import("../playwright.config.ts")).default;
+}
+
+async function loadNextConfig(port) {
+  vi.resetModules();
+  process.env.PLAYWRIGHT_SERVER = "next";
+  process.env.PLAYWRIGHT_NEXT_PORT = port;
   return (await import("../playwright.config.ts")).default;
 }
 
@@ -19,6 +27,8 @@ afterEach(() => {
   if (originalWorkerPort === undefined)
     delete process.env.PLAYWRIGHT_WORKER_PORT;
   else process.env.PLAYWRIGHT_WORKER_PORT = originalWorkerPort;
+  if (originalNextPort === undefined) delete process.env.PLAYWRIGHT_NEXT_PORT;
+  else process.env.PLAYWRIGHT_NEXT_PORT = originalNextPort;
 });
 
 describe("Playwright Worker port isolation", () => {
@@ -48,8 +58,30 @@ describe("Playwright Worker port isolation", () => {
   });
 });
 
+describe("Playwright Next port isolation", () => {
+  it("uses one validated override for the browser and the Next server", async () => {
+    const config = await loadNextConfig("3107");
+
+    expect(config.use.baseURL).toBe("http://127.0.0.1:3107");
+    expect(config.webServer.url).toBe("http://127.0.0.1:3107/ar");
+    expect(config.webServer.command).toBe(
+      "npm run build && npm run start -- -p 3107",
+    );
+  });
+
+  it.each(["0", "1024", "65536", "not-a-port", "3107 --help"])(
+    "rejects an unsafe Next port: %s",
+    async (port) => {
+      await expect(loadNextConfig(port)).rejects.toThrow(
+        "PLAYWRIGHT_NEXT_PORT must be an integer from 1025 to 65535",
+      );
+    },
+  );
+});
+
 describe("Playwright build freshness", () => {
   it("rebuilds by default and never accepts an existing Next or Worker server", async () => {
+    delete process.env.PLAYWRIGHT_NEXT_PORT;
     const worker = await loadConfig();
     expect(worker.webServer.command).toMatch(/^npm run build:worker && /);
     expect(worker.webServer.reuseExistingServer).toBe(false);
