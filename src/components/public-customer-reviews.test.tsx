@@ -23,6 +23,7 @@ describe("PublicCustomerReviews", () => {
               originalLanguage: "ckb",
               originalBody: "شوێنێکی ئارام و جوانە",
               submittedAt: "2026-09-21T12:00:00.000Z",
+              ownerReply: null,
             },
           ],
           nextCursor: {
@@ -66,6 +67,7 @@ describe("PublicCustomerReviews", () => {
                 originalLanguage: "en",
                 originalBody: hostile,
                 submittedAt: "2026-09-21T12:00:00.000Z",
+                ownerReply: null,
               },
             ],
             nextCursor: null,

@@ -28,6 +28,7 @@ const review = {
   submittedAt: "2026-09-21T12:00:00.000Z",
   moderationState: "unhidden" as const,
   hide: null,
+  reply: null,
 };
 
 describe("CustomerReviewModeration", () => {
