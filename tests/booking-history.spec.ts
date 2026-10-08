@@ -66,7 +66,7 @@ test("complete customer and owner history stays role-specific, private, translat
   });
   await page.goto("/api/health");
   await page.setContent(
-    '<meta name="viewport" content="width=device-width, initial-scale=1"><main class="results-page"><section class="booking-history" id="fixture-root"></section></main>',
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><main class="results-page page page-record"><section class="booking-history"><header><a href="/">RentCottage home</a><h1 class="page-title">My bookings</h1></header><div id="fixture-root"></div></section></main>',
   );
   await page.addStyleTag({ content: await readApplicationStylesheet() });
   await page.addStyleTag({
@@ -85,8 +85,18 @@ test("complete customer and owner history stays role-specific, private, translat
         "dir",
         locale === "en" ? "ltr" : "rtl",
       );
-      const links = page.getByRole("link");
+      const links = page.locator("#fixture-root").getByRole("link");
       await expect(links).toHaveCount(7);
+      const [titleEdge, rowEdge] = await Promise.all(
+        [page.locator(".booking-history .page-title"), links.first()].map(
+          (locator) =>
+            locator.evaluate(
+              (element, edge) => element.getBoundingClientRect()[edge],
+              locale === "en" ? ("left" as const) : ("right" as const),
+            ),
+        ),
+      );
+      expect(titleEdge).toBeCloseTo(rowEdge, 0);
       await expect(
         page.getByRole("region", {
           name:

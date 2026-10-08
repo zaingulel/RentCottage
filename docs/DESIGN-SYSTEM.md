@@ -143,7 +143,8 @@ Anything else is a token.
   breakpoint and no direction selector.
 - A page has one of two content widths. `--page-width` is 1120 pixels and is the default. `--page-width-record`
   is 760 pixels, chosen by adding `page-record`, for a record page: one that shows a single record, such as a
-  Booking Request status or a receipt. A third width is decided in this document before a stylesheet writes it.
+  Booking Request status or a receipt, or a single-column list of a person's own records, such as My bookings or
+  the Messages inbox. A third width is decided in this document before a stylesheet writes it.
 - A block directly inside the column fills it: inside the column no block adds a gutter or a narrower width of
   its own.
 - The page title is the page's `h1` with `page-title`: `--display` at weight 700 in `--green`, at `--font-size-6`

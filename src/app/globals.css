@@ -2774,8 +2774,7 @@ a:focus-visible {
   background: var(--surface-bright);
 }
 
-.confirmed-booking-details > header,
-.booking-history > header {
+.confirmed-booking-details > header {
   display: flex;
   align-items: start;
   justify-content: space-between;
@@ -2827,6 +2826,12 @@ a:focus-visible {
 
 .confirmed-booking-details form {
   margin-block-start: var(--space-3);
+}
+
+.booking-history > header {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
 }
 
 .booking-history ul {
@@ -3055,8 +3060,7 @@ section.request-follow-up {
     gap: var(--space-1);
   }
 
-  .confirmed-booking-details > header,
-  .booking-history > header {
+  .confirmed-booking-details > header {
     display: grid;
   }
 
