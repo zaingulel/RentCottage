@@ -5,10 +5,14 @@ import {
   LOCAL_CHECK_LIMIT,
   LOCAL_CHECK_LIMIT_MESSAGE,
   bindLoopbackPort,
+  claimDatabaseSlot,
   claimRunSlot,
   isHostedCheck,
   isLocalCheckSlotProject,
+  localCheckServerBusyMessage,
   localCheckSettings,
+  localCheckSlotBusyMessage,
+  loopbackPortAnswers,
   parseLocalCheckSlot,
 } from './local-check-slot.mjs';
 
@@ -136,6 +140,70 @@ test('skips a place whose database step is still alive', async () => {
 
   assert.equal(await claimRunSlot({ bind }), 2);
   assert.deepEqual([...held].toSorted(), [15346, 15355]);
+});
+
+test('takes the database lock of the place its run holds, and the run lock too when that run is gone', async () => {
+  const runAlive = bindDouble(new Set([15345]));
+  assert.equal(await claimDatabaseSlot(1, { bind: runAlive.bind }), 1);
+  assert.deepEqual([...runAlive.held].toSorted(), [15345, 15346]);
+
+  const runGone = bindDouble();
+  assert.equal(await claimDatabaseSlot(2, { bind: runGone.bind }), 2);
+  assert.deepEqual([...runGone.held].toSorted(), [15355, 15356]);
+});
+
+test('refuses a place whose database lock port is taken and names that port', async () => {
+  const runAlive = bindDouble(new Set([15345, 15346]));
+  assert.equal(await claimDatabaseSlot(1, { bind: runAlive.bind }), undefined);
+  assert.deepEqual([...runAlive.held].toSorted(), [15345, 15346]);
+
+  const runGone = bindDouble(new Set([15356]));
+  assert.equal(await claimDatabaseSlot(2, { bind: runGone.bind }), undefined);
+  assert.deepEqual([...runGone.held], [15356]);
+
+  assert.equal(
+    localCheckSlotBusyMessage(1),
+    'Port 15346, the database lock of place 1 of the full local check, is taken. An earlier check\'s database step may still be running or shutting down. Nothing ran. Run it again in a moment; if the port stays taken, find what is using it.',
+  );
+  assert.equal(
+    localCheckSlotBusyMessage(2),
+    'Port 15356, the database lock of place 2 of the full local check, is taken. An earlier check\'s database step may still be running or shutting down. Nothing ran. Run it again in a moment; if the port stays taken, find what is using it.',
+  );
+});
+
+test('claims run lock then database lock of the first free place when run alone, and keeps nothing from a place it could not take', async () => {
+  const free = bindDouble();
+  assert.equal(await claimDatabaseSlot(undefined, { bind: free.bind }), 1);
+  assert.deepEqual([...free.held].toSorted(), [15345, 15346]);
+
+  const firstDatabaseBusy = bindDouble(new Set([15346]));
+  assert.equal(await claimDatabaseSlot(undefined, { bind: firstDatabaseBusy.bind }), 2);
+  assert.deepEqual([...firstDatabaseBusy.held].toSorted(), [15346, 15355, 15356]);
+
+  const noneFree = bindDouble(new Set([15346, 15355]));
+  assert.equal(await claimDatabaseSlot(undefined, { bind: noneFree.bind }), undefined);
+  assert.deepEqual([...noneFree.held].toSorted(), [15346, 15355]);
+});
+
+test('tells a loopback port that answers from one that refuses', async () => {
+  const loopbackOnly = createServer();
+  await new Promise((resolve) => loopbackOnly.listen(0, '127.0.0.1', resolve));
+  const everyAddress = createServer();
+  await new Promise((resolve) => everyAddress.listen(0, resolve));
+  const loopbackPort = loopbackOnly.address().port;
+  try {
+    assert.equal(await loopbackPortAnswers(loopbackPort), true);
+    assert.equal(await loopbackPortAnswers(everyAddress.address().port), true);
+  } finally {
+    await new Promise((resolve) => loopbackOnly.close(resolve));
+    await new Promise((resolve) => everyAddress.close(resolve));
+  }
+  assert.equal(await loopbackPortAnswers(loopbackPort), false);
+
+  assert.equal(
+    localCheckServerBusyMessage(1, 3010),
+    'Something still answers on port 3010, which place 1 of the full local check uses for its test server. A server from an earlier check may still be running. Nothing was removed and nothing ran. Run it again when the port is free; if it stays in use, stop what is using it.',
+  );
 });
 
 test('accepts only a place number within the limit', () => {

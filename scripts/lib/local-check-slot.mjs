@@ -4,7 +4,7 @@
 // operating system releases the port when the process dies, however it dies. Each place has a run
 // lock, held by the whole run, and a database lock, held by the database step. A place is free only
 // when both are free. Every place port stays below 32768, outside each system's automatic port range.
-import { createServer } from 'node:net';
+import { connect, createServer } from 'node:net';
 
 export const LOCAL_CHECK_LIMIT = 2;
 
@@ -16,7 +16,11 @@ const HOSTED_TEMP_PREFIX = 'rentcottage-docker-config-';
 const heldLocks = [];
 
 export function localCheckSlotBusyMessage(slot) {
-  return `The database step of an earlier check in place ${slot} is still running or shutting down. Nothing ran. Run it again in a moment.`;
+  return `Port ${localCheckSettings(slot).locks.database}, the database lock of place ${slot} of the full local check, is taken. An earlier check's database step may still be running or shutting down. Nothing ran. Run it again in a moment; if the port stays taken, find what is using it.`;
+}
+
+export function localCheckServerBusyMessage(slot, port) {
+  return `Something still answers on port ${port}, which place ${slot} of the full local check uses for its test server. A server from an earlier check may still be running. Nothing was removed and nothing ran. Run it again when the port is free; if it stays in use, stop what is using it.`;
 }
 
 export function isHostedCheck(environment) {
@@ -92,6 +96,22 @@ export function bindLoopbackPort(port) {
   });
 }
 
+// A connection attempt, not a bind: on macOS a bind to 127.0.0.1 can succeed beside a server
+// listening on every address.
+export function loopbackPortAnswers(port) {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1');
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', (error) => {
+      if (error.code === 'ECONNREFUSED') resolve(false);
+      else reject(error);
+    });
+  });
+}
+
 function release(lock) {
   return new Promise((resolve) => lock.close(resolve));
 }
@@ -109,6 +129,26 @@ export async function claimRunSlot({ bind = bindLoopbackPort } = {}) {
     }
     await release(databaseProbe);
     heldLocks.push(runLock);
+    return slot;
+  }
+  return undefined;
+}
+
+export async function claimDatabaseSlot(inheritedSlot, { bind = bindLoopbackPort } = {}) {
+  const first = inheritedSlot ?? 1;
+  const last = inheritedSlot ?? LOCAL_CHECK_LIMIT;
+  for (let slot = first; slot <= last; slot += 1) {
+    const { locks } = localCheckSettings(slot);
+    // An inherited place's run lock binds only when the run that passed the place on has died.
+    const runLock = await bind(locks.run);
+    if (!runLock && inheritedSlot === undefined) continue;
+    const databaseLock = await bind(locks.database);
+    if (!databaseLock) {
+      if (runLock) await release(runLock);
+      continue;
+    }
+    if (runLock) heldLocks.push(runLock);
+    heldLocks.push(databaseLock);
     return slot;
   }
   return undefined;
