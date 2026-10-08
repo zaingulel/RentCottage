@@ -127,7 +127,10 @@ export const confirmedBookingCleanup = ({
 ${settlement ? settlementDeletes(r) : ""}${confirmedBookingDeletes(r, { workIdentity, listedCottage: false, users })}set session_replication_role=origin;`;
 };
 
-export const customerReviewCleanup = (namespace) => {
+export const customerReviewCleanup = (
+  namespace,
+  { reusedAuthUsers = [] } = {},
+) => {
   // A review namespace NN is the confirmed booking fixture at stem NN0; rows 81 and 82 are its administrators.
   const r = rows(`${namespace}0`);
   const users = [
@@ -139,13 +142,19 @@ export const customerReviewCleanup = (namespace) => {
   ]
     .map((user) => `'${user}'`)
     .join(",");
+  // Reused authentication users keep their auth.users rows, which the caller finds again by phone;
+  // only the account contexts the seed inserts afresh are cleared.
+  const reusedAccountContextDeletes = reusedAuthUsers.length
+    ? `delete from public.account_contexts where user_id in (${reusedAuthUsers.map((user) => `'${user}'`).join(",")});
+`
+    : "";
   return `set session_replication_role=replica;
 delete from public.customer_review_reply_hides where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
 delete from public.customer_review_replies where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
 delete from public.customer_review_hides where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
 delete from public.customer_reviews where booking_request_id='${r.request}';
 ${completionDeletes(r)}delete from public.booking_notification_events where booking_request_id='${r.request}';
-${confirmedBookingDeletes(r, { workIdentity: "receipt_id", listedCottage: true, users })}set session_replication_role=origin;`;
+${confirmedBookingDeletes(r, { workIdentity: "receipt_id", listedCottage: true, users })}${reusedAccountContextDeletes}set session_replication_role=origin;`;
 };
 
 const lifecycleDeletes = (
