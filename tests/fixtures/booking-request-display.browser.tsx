@@ -40,17 +40,26 @@ function renderBookingRequestDisplay({
   document.documentElement.lang = locale;
   document.documentElement.dir = locale === "en" ? "ltr" : "rtl";
   root.render(
-    <main className="booking-request-page">
+    <main
+      className={
+        role === "customer"
+          ? "results-page page page-record"
+          : "booking-request-page"
+      }
+    >
       {role === "customer" ? (
-        <CustomerBookingRequestStatus
-          key={`${status}:${recovery ?? "none"}`}
-          locale={locale}
-          request={
-            recovery
-              ? customerRecoveryDisplayFixtures[recovery]
-              : customerDisplayFixtures[status]
-          }
-        />
+        <>
+          <CustomerBookingRequestStatus
+            key={`${status}:${recovery ?? "none"}`}
+            locale={locale}
+            request={
+              recovery
+                ? customerRecoveryDisplayFixtures[recovery]
+                : customerDisplayFixtures[status]
+            }
+          />
+          <div className="request-follow-up" />
+        </>
       ) : (
         <OwnerBookingRequestNotifications
           key={`${status}:${recovery ?? "none"}`}

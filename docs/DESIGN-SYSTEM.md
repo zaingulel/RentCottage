@@ -12,7 +12,8 @@ the code keeps them.
   Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
   families `--display` and `--body`, the spacing scale `--space-1` to `--space-7`, the text size scale
   `--font-size-1` to `--font-size-6`, the corner radius, state ring and stacking order tokens named under Radius,
-  shadow and stacking order, the component tokens named under Spacing and text size, and `color-scheme: light`. There is no Tailwind and no theme object.
+  shadow and stacking order, the component tokens named under Spacing and text size, the page width tokens named
+  under Page template, and `color-scheme: light`. There is no Tailwind and no theme object.
 - Interface colours, font families, spacing, text sizes, corner radii, state rings and stacking order come from
   these tokens through `var(--…)`. [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside
   `:root`, on a custom property a stylesheet uses that `:root` does not declare, on a spacing or text size length
@@ -64,7 +65,8 @@ the code keeps them.
 - Sizing lengths are literals: `width`, `height`, `inline-size`, `block-size`, their `min-` and `max-` forms,
   `flex-basis` and grid track sizes, including a gutter written inside one such as `calc(100% - 2.25rem)`. They are
   the dimensions of controls, images, columns and reading widths, which a seven-step spacing scale cannot express.
-  New work reuses a size already in use.
+  New work reuses a size already in use. The one exception is a page's content width, which is a token named
+  under Page template.
 - A component token holds a length only when several declarations must share it. `--booking-progress-marker` is the
   size of the progress step marker, which the connector line is positioned from. `--booking-progress-inset` and
   `--booking-progress-row-gap` are names for `--space-2` and `--space-4`: the connector is positioned from the
@@ -107,6 +109,8 @@ A stylesheet may write these as literals:
 - Border and outline widths and offsets, and lengths inside `background`, `transform`, `backdrop-filter` and
   text-decoration properties. New work reuses a value already in use.
 - Unitless `line-height` ratios and `letter-spacing` in `em`.
+- The two page width tokens, `--page-width` and `--page-width-record`, which hold the sizing lengths named under
+  Page template.
 - The two component tokens that hold a length, `--hero-headline-gap-rtl` and `--booking-progress-marker`.
 - The home page hero composition, whose three lengths lie beyond the largest step. The search card overlaps the
   photograph, and the copy clears the fixed header above it and the card below:
@@ -128,6 +132,19 @@ tolerates an entry's declaration only on the rule the entry names, so an entry i
 leaves that rule. New work uses a step and adds no entry.
 
 Anything else is a token.
+
+## Page template
+
+- A page on the template puts `page` on its `<main>`, beside the class that gives the page its background and
+  height. The column is centred, leaves a `2.25rem` gutter (18 pixels on each side, the site header's) and starts
+  `--space-6` (32 pixels) below the site header. It is the same at every width and in both directions, with no
+  breakpoint and no direction selector.
+- A page has one of two content widths. `--page-width` is 1120 pixels and is the default. `--page-width-record`
+  is 760 pixels, chosen by adding `page-record`, for a record page: one that shows a single record, such as a
+  Booking Request status or a receipt. A third width is decided in this document before a stylesheet writes it.
+- A block directly inside the column fills it: inside the column no block adds a gutter or a narrower width of
+  its own.
+- A page that is not on the template keeps its own width and heading rules until its screen is moved onto it.
 
 ## Component patterns
 

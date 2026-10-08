@@ -1,5 +1,5 @@
 import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-request-status-messages";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { build } from "esbuild";
 
 import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
@@ -26,9 +26,10 @@ declare global {
   }
 }
 
-test("real Customer and Cottage Owner payment states stay semantic and within the viewport", async ({
-  page,
-}, testInfo) => {
+async function mountBookingRequestDisplay(
+  page: Page,
+  testInfo: TestInfo,
+): Promise<void> {
   const bundlePath = testInfo.outputPath("booking-request-display.js");
   await build({
     entryPoints: ["tests/fixtures/booking-request-display.browser.tsx"],
@@ -79,6 +80,12 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
   );
   await page.addStyleTag({ content: await readApplicationStylesheet() });
   await page.addScriptTag({ path: bundlePath });
+}
+
+test("real Customer and Cottage Owner payment states stay semantic and within the viewport", async ({
+  page,
+}, testInfo) => {
+  await mountBookingRequestDisplay(page, testInfo);
 
   for (const locale of [
     {
@@ -287,5 +294,60 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
         ),
       ).toBe(true);
     }
+  }
+});
+
+test("Customer Booking Request status sits in the record page column under the header gap in every language", async ({
+  page,
+}, testInfo) => {
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await mountBookingRequestDisplay(page, testInfo);
+
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    await page.evaluate((input) => window.renderBookingRequestDisplay(input), {
+      locale,
+      role: "customer" as const,
+      status: "paid-confirmed" as const,
+    });
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const measured = await page.evaluate(() => {
+      const column = document.querySelector("main.page");
+      const card = column?.querySelector(".customer-booking-request-status");
+      const followUp = column?.querySelector(".request-follow-up");
+      if (!column || !card || !followUp)
+        throw new Error("Booking Request record page column is missing");
+      const columnBox = column.getBoundingClientRect();
+      column.classList.remove("page-record");
+      const defaultWidth = column.getBoundingClientRect().width;
+      column.classList.add("page-record");
+      return {
+        available: document.documentElement.clientWidth,
+        document: document.documentElement.scrollWidth,
+        columnStart: columnBox.left,
+        columnTop: columnBox.top,
+        columnWidth: columnBox.width,
+        defaultWidth,
+        cardTop: card.getBoundingClientRect().top,
+        cardWidth: card.getBoundingClientRect().width,
+        followUpWidth: followUp.getBoundingClientRect().width,
+      };
+    });
+    const columnWidth = Math.min(measured.available - 36, 760);
+    expect(measured.columnWidth).toBeCloseTo(columnWidth, 0);
+    expect(measured.defaultWidth).toBeCloseTo(
+      Math.min(measured.available - 36, 1120),
+      0,
+    );
+    expect(measured.columnStart).toBeCloseTo(
+      (measured.available - columnWidth) / 2,
+      0,
+    );
+    expect(measured.cardWidth).toBeCloseTo(columnWidth, 0);
+    expect(measured.followUpWidth).toBeCloseTo(columnWidth, 0);
+    expect(measured.cardTop - measured.columnTop).toBeCloseTo(32, 0);
+    expect(measured.document).toBeLessThanOrEqual(measured.available);
   }
 });
