@@ -5,18 +5,19 @@
 // lock, held by the whole run, and a database lock, held by the database step. A place is free only
 // when both are free. Every place port stays below 32768, outside each system's automatic port range.
 // A free lock shows no live check holds the place, not who made what is in it.
-import { readdirSync, rmSync } from 'node:fs';
-import { connect, createServer } from 'node:net';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { readdirSync, rmSync } from "node:fs";
+import { connect, createServer } from "node:net";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 export const LOCAL_CHECK_LIMIT = 2;
 
 export const LOCAL_CHECK_LIMIT_MESSAGE = `The full local check runs at most ${LOCAL_CHECK_LIMIT} at a time on this machine, and all ${LOCAL_CHECK_LIMIT} places are in use. Nothing ran. Run it again when one of them has finished.`;
 
-const HOSTED_PROJECT = 'rentcottage-verification';
-const HOSTED_TEMP_PREFIX = 'rentcottage-docker-config-';
+const HOSTED_PROJECT = "rentcottage-verification";
+const HOSTED_TEMP_PREFIX = "rentcottage-docker-config-";
 
-export const PLACE_DATABASE_LISTING_FORMAT = '{{.Names}}|{{.Label "com.supabase.cli.project"}}|{{.Label "com.supabase.cli.workdir"}}';
+export const PLACE_DATABASE_LISTING_FORMAT =
+  '{{.Names}}|{{.Label "com.supabase.cli.project"}}|{{.Label "com.supabase.cli.workdir"}}';
 
 const heldLocks = [];
 
@@ -29,7 +30,10 @@ export function localCheckServerBusyMessage(slot, port) {
 }
 
 export function isHostedCheck(environment) {
-  return environment.GITHUB_ACTIONS === 'true' && environment.RUNNER_ENVIRONMENT === 'github-hosted';
+  return (
+    environment.GITHUB_ACTIONS === "true" &&
+    environment.RUNNER_ENVIRONMENT === "github-hosted"
+  );
 }
 
 export function isLocalCheckSlotProject(name) {
@@ -43,7 +47,9 @@ export function parseLocalCheckSlot(value) {
   if (value === undefined) return undefined;
   const slot = /^[1-9]\d*$/.test(value) ? Number(value) : NaN;
   if (!(slot <= LOCAL_CHECK_LIMIT)) {
-    throw new Error(`VERIFY_LOCAL_SLOT must be an integer from 1 to ${LOCAL_CHECK_LIMIT}, got "${value}"`);
+    throw new Error(
+      `VERIFY_LOCAL_SLOT must be an integer from 1 to ${LOCAL_CHECK_LIMIT}, got "${value}"`,
+    );
   }
   return slot;
 }
@@ -89,11 +95,11 @@ export function localCheckSettings(slot) {
 export function bindLoopbackPort(port) {
   return new Promise((resolve, reject) => {
     const server = createServer();
-    server.once('error', (error) => {
-      if (error.code === 'EADDRINUSE') resolve(undefined);
+    server.once("error", (error) => {
+      if (error.code === "EADDRINUSE") resolve(undefined);
       else reject(error);
     });
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(port, "127.0.0.1", () => {
       // A held lock must never keep its process alive.
       server.unref();
       resolve(server);
@@ -105,13 +111,13 @@ export function bindLoopbackPort(port) {
 // listening on every address.
 export function loopbackPortAnswers(port) {
   return new Promise((resolve, reject) => {
-    const socket = connect(port, '127.0.0.1');
-    socket.once('connect', () => {
+    const socket = connect(port, "127.0.0.1");
+    socket.once("connect", () => {
       socket.destroy();
       resolve(true);
     });
-    socket.once('error', (error) => {
-      if (error.code === 'ECONNREFUSED') resolve(false);
+    socket.once("error", (error) => {
+      if (error.code === "ECONNREFUSED") resolve(false);
       else reject(error);
     });
   });
@@ -139,7 +145,10 @@ export async function claimRunSlot({ bind = bindLoopbackPort } = {}) {
   return undefined;
 }
 
-export async function claimDatabaseSlot(inheritedSlot, { bind = bindLoopbackPort } = {}) {
+export async function claimDatabaseSlot(
+  inheritedSlot,
+  { bind = bindLoopbackPort } = {},
+) {
   const first = inheritedSlot ?? 1;
   const last = inheritedSlot ?? LOCAL_CHECK_LIMIT;
   for (let slot = first; slot <= last; slot += 1) {
@@ -163,29 +172,48 @@ function placeFolderPattern(slot) {
   return new RegExp(`^${localCheckSettings(slot).tempPrefix}[A-Za-z0-9]{6}$`);
 }
 
-export function classifyPlaceDatabase({ slot, container, listing, ownWorkdir }) {
+export function classifyPlaceDatabase({
+  slot,
+  container,
+  listing,
+  ownWorkdir,
+}) {
   const lines = listing
-    .split('\n')
-    .map((line) => line.split('|'))
+    .split("\n")
+    .map((line) => line.split("|"))
     .filter(([name]) => name === container);
-  if (lines.length === 0) return { state: 'absent' };
-  if (lines.length > 1 || lines[0].length !== 3) return { state: 'unproven', found: 'its labels could not be read' };
+  if (lines.length === 0) return { state: "absent" };
+  if (lines.length > 1 || lines[0].length !== 3)
+    return { state: "unproven", found: "its labels could not be read" };
   const [, project, workdir] = lines[0];
   const madeHere =
     project === localCheckSettings(slot).project &&
     isAbsolute(workdir) &&
-    basename(workdir) === 'project' &&
+    basename(workdir) === "project" &&
     placeFolderPattern(slot).test(basename(dirname(workdir))) &&
-    dirname(dirname(resolve(workdir))) === dirname(dirname(resolve(ownWorkdir)));
-  if (madeHere) return { state: 'made-here' };
-  return { state: 'unproven', found: `its project label is "${project}" and its folder label is "${workdir}"` };
+    dirname(dirname(resolve(workdir))) ===
+      dirname(dirname(resolve(ownWorkdir)));
+  if (madeHere) return { state: "made-here" };
+  return {
+    state: "unproven",
+    found: `its project label is "${project}" and its folder label is "${workdir}"`,
+  };
 }
 
-export function removeStaleLocalCheckFolders(slot, ownFolder, { remove = (path) => rmSync(path, { recursive: true }) } = {}) {
+export function removeStaleLocalCheckFolders(
+  slot,
+  ownFolder,
+  { remove = (path) => rmSync(path, { recursive: true }) } = {},
+) {
   const parent = dirname(ownFolder);
   const pattern = placeFolderPattern(slot);
   const stale = readdirSync(parent, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && pattern.test(entry.name) && entry.name !== basename(ownFolder))
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        pattern.test(entry.name) &&
+        entry.name !== basename(ownFolder),
+    )
     .map((entry) => join(parent, entry.name));
   for (const path of stale) remove(path);
   return stale;
