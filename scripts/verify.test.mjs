@@ -956,7 +956,7 @@ describe("repository verification command", () => {
       ["docs/product/assets/future-map.png"],
       "baseline",
     ],
-    ["documentation web page", ["docs/AI-WORKFLOW-diagram.html"], "baseline"],
+    ["documentation web page", ["docs/future-page.html"], "baseline"],
     ["global presentation CSS", ["src/app/globals.css"], "browser"],
     ["bundled image", ["public/uploads/hero.png"], "browser"],
     ["self-hosted font stylesheet", ["src/app/fonts.css"], "browser"],

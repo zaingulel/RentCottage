@@ -396,9 +396,9 @@ request route, never a workaround.
    Merged: run `closeout` in the same session; the owner's yes already covers it. Failed, blocked or closed:
    report the printed reason and repair per step 3.
 
-Greptile is metered from one pool shared by every adopter: one organisation, one developer seat, the credits its
-plan includes per billing period plus any overage a paid plan allows. There is no per-repository split; the tiers
-ration the pool,
+Greptile is metered from one pool shared by the canonical repository and every adopter the manifest lists: one
+organisation, one developer seat, the credits its plan includes per billing period plus any overage a paid plan
+allows. There is no per-repository split; the tiers ration the pool,
 every adopter spends from it, and once it is exhausted every adopter records `UNAVAILABLE` until the period resets.
 So the shape of the rule is one shared policy, and a change to it lands in every adopter: risk and
 uncertainty override category and line count, a skip is neither `UNAVAILABLE` nor a clean review, the allowance

@@ -11,9 +11,6 @@ question to the page that answers it. [`AGENTS.md`](../AGENTS.md) is the contrac
 [`.agents/skills/`](../.agents/skills/) own the exact commands. The pages explain; they never restate a rule, a setting
 or a command another document owns, and where a page and its owner disagree, the owner is right.
 
-[The workflow diagram](./AI-WORKFLOW-diagram.html) draws this workflow on one page, as an overview and in detail.
-It is a web page, so open the file from a checkout in a browser; a repository host shows only its source.
-
 ## The map
 
 The owner reads pull request descriptions and screenshots, not diffs. The workflow therefore puts exactly two

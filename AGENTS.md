@@ -149,17 +149,11 @@ where they live, the tolerated literals, and the component patterns new work reu
 
 ## Review and visual verification
 
-One fresh review of the final tree before the pull request opens, by the tier the `resume` skill defines: the session
-itself for documents and for a setting-only seat change, which alters only a seat's model, effort or turn-limit setting
-lines and the manifest hash that follows them; for code and agent instruction, every other seat-file change included,
-the `reviewer` charter run by the model family that did not write the diff (`cross-review`), with the skill's route when
-that family's seat is unavailable; `security-reviewer` only when a change widens a surface in the Surfaces table's
-`security review` row. Greptile is metered from one pool shared by the canonical repository and every adopter the
-manifest lists; each repository sends only its own Surfaces `sign-off` row. It reviews a draft only for the sign-off
-tier, every thread fixed, set aside by the owner, or dismissed as false with a reason before the draft is marked ready.
-The `resume` skill owns the tiers, the allowance lookup, the cross-family substitution route when the other family's
-seat cannot be reached, and Greptile's own best-effort provider-unavailability exception; `.greptile/config.json`
-disables automatic reviews so marking ready starts CI without requesting another Greptile review.
+One fresh review of the final tree before the pull request opens, by the tier the `resume` skill defines under
+"6. Verify and review". That section owns the tiers, what a setting-only seat change is, the cross-family route with
+its substitution when the other family's seat cannot be reached, and when `security-reviewer` runs. The skill's
+"8. Deliver" owns every Greptile rule: the pool it is metered from, the one tier that requests it, the allowance
+lookup, how each thread is settled before the draft is marked ready, and the provider-unavailability exception.
 
 Visual work is complete only after the changed interaction has been driven and a current screenshot displayed
 inline in chat; push authorisation waits for that image. Drive visual work as the Conventions table's `visual
