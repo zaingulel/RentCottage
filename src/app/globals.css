@@ -5,7 +5,7 @@
   --background: #f4eee2;
   --card: #fffcf5;
   --ink: #26241f;
-  --muted: rgb(38 36 31 / 62%);
+  --muted: rgb(38 36 31 / 68%);
   --green: #22402f;
   --gold: #c68a45;
   --line: rgb(34 64 47 / 16%);
@@ -27,6 +27,8 @@
 
   /* Ink */
   --ink-soft: rgb(38 36 31 / 76%);
+  --ink-accent: #865b29;
+  --ink-on-dark-accent: #d39a57;
   --ink-panel: #18352b;
   --ink-panel-note: #4b6158;
   --ink-translation: #675129;
@@ -479,7 +481,7 @@ input[type="file"].form-control::file-selector-button {
 
 .owner-application-header span,
 .backoffice-navigation-area {
-  color: var(--gold);
+  color: var(--ink-accent);
   font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -611,7 +613,7 @@ input[type="file"].form-control::file-selector-button {
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 50%;
-  color: var(--gold);
+  color: var(--ink-accent);
   font-size: var(--font-size-1);
   font-weight: 700;
 }
@@ -752,7 +754,7 @@ input[type="file"].form-control::file-selector-button {
 .verification-document-card strong {
   display: block;
   margin-block-start: var(--space-3);
-  color: var(--gold);
+  color: var(--ink-accent);
   font-size: var(--font-size-1);
   overflow-wrap: anywhere;
 }
@@ -1108,7 +1110,7 @@ html[lang="ckb"] .page-title {
 
 .results-intro p {
   margin: 0;
-  color: var(--gold);
+  color: var(--ink-accent);
   font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -1448,7 +1450,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .request-eyebrow {
   margin: 0;
-  color: var(--gold);
+  color: var(--ink-accent);
   font-weight: 700;
 }
 
@@ -1691,11 +1693,15 @@ html[lang="ckb"] .booking-summary h2 {
 .section-heading p,
 .trusted-copy > p:first-child {
   margin: 0;
-  color: var(--gold);
+  color: var(--ink-accent);
   font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+.trusted-copy > p:first-child {
+  color: var(--ink-on-dark-accent);
 }
 
 .section-heading h2,
@@ -2733,7 +2739,7 @@ a:focus-visible {
   border-radius: 999px;
   background: var(--gold-tint);
   padding: var(--space-1) var(--space-2);
-  color: var(--gold);
+  color: var(--ink-accent);
   font-size: var(--font-size-1);
   font-weight: 700;
 }
@@ -3174,7 +3180,7 @@ section.request-follow-up {
 }
 
 .site-header-solid .site-brand span {
-  color: var(--gold);
+  color: var(--ink-accent);
 }
 
 .site-header-controls {
@@ -3327,7 +3333,7 @@ section.request-follow-up {
 }
 
 .site-footer-brand span {
-  color: var(--gold);
+  color: var(--ink-accent);
   font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.08em;

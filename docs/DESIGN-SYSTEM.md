@@ -18,8 +18,9 @@ the code keeps them.
   these tokens through `var(--…)`. [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside
   `:root`, on a custom property a stylesheet uses that `:root` does not declare, on a spacing or text size length
   that is neither a scale step nor listed under Tolerated literals, on a listed length that no stylesheet writes,
-  on a `border-radius`, `box-shadow` or `z-index` value that is neither its token nor a tolerated literal, and on a
-  width media query outside the list under Breakpoints.
+  on a `border-radius`, `box-shadow` or `z-index` value that is neither its token nor a tolerated literal, on text
+  in `--muted`, `--ink-accent` or `--ink-on-dark-accent` below 4.5:1 on a listed surface, on `--gold` as a text
+  colour, and on a width media query outside the list under Breakpoints.
 - A colour or font a change needs that the block lacks is added to `:root` in the same change, named for its role
   (what it is for, not what it looks like). Two roles may share a value, each with its own token; one role never
   has two tokens.
@@ -34,6 +35,12 @@ the code keeps them.
     label's text is chosen with its tint, and a message's text sits on whatever surface its form is on.
   - `--surface-policy` and `--surface-message-customer` stay separate: the policy box is chosen with
     `--accent-policy` and the Customer's message with `--surface-message-owner`, and neither is a status tint.
+  - `--muted` is supporting text on a light surface: small print, labels and hints. `--ink-accent` is gold-coloured
+    text on a light surface, the gold wash included, and `--ink-on-dark-accent` is the same text on the dark green
+    surface. `--gold` is the brand gold for borders, focus outlines and decoration and is never a text colour.
+    Normal-size text in these three text tokens reaches 4.5:1 on every surface it sits on, which
+    [globals.test.ts](../src/app/globals.test.ts) checks against a list of surfaces, so new work that puts such
+    text on another surface adds that surface to the test.
   - `--ink-on-dark` is the text colour on every dark surface, the green panels and buttons and the shaded hero
     photograph alike. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
     label.
@@ -153,7 +160,7 @@ Anything else is a token.
   sets the space around it. It starts at the same inline edge as the content it titles, and a long title wraps
   onto further lines and is never clipped or shortened.
 - A page may put one small label above its title. It is the results page's label (`.results-intro p`):
-  `--font-size-1`, bold, in `--gold`, with the title `--space-1` below it. No page on the template has one yet;
+  `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1` below it. No page on the template has one yet;
   the first that does moves that rule's declarations to a shared `page-label` class, so there is one label style.
 - A page that is not on the template keeps its own width and heading rules until its screen is moved onto it.
 
@@ -268,10 +275,3 @@ Anything else is a token.
   `rem` values in this section, so a breakpoint is added or removed here in the same change as its media query.
 - A query that tests no width, such as `prefers-reduced-motion`, is not a breakpoint, and neither is the `sizes`
   hint on an image, which describes the image's rendered width.
-
-## Existing debt
-
-These are known gaps, not standards to copy.
-
-- #657: text in `--muted` and in `--gold` is below 4.5:1 on every surface, the Cottage profile status label and
-  the Cottage Owner's Booking Request status label included.
