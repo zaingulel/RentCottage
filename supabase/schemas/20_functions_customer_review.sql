@@ -367,7 +367,7 @@ begin
   if target_original_language is null
     or target_original_body is null
     or char_length(target_original_body) > 2000
-    or target_original_body !~ '\S'
+    or target_original_body !~ '[^\s\uFEFF]'
   then
     return jsonb_build_object('status','invalid');
   end if;
@@ -505,7 +505,7 @@ begin
   end if;
   if target_review_id is null
     or target_reason is null
-    or target_reason !~ '\S'
+    or target_reason !~ '[^\s\uFEFF]'
     or char_length(btrim(target_reason)) > 2000
   then
     return jsonb_build_object('status','invalid');

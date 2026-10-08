@@ -1126,6 +1126,23 @@ select ok(
   'a reply with contact details is refused before storage'
 );
 
+savepoint customer_review_reply_byte_order_mark_submit;
+set local role authenticated;
+insert into reply_observations
+select 'byte order mark reply',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en',E'\n' || chr(65279) || ' '
+);
+reset role;
+select ok(
+  (
+    select value='{"status":"invalid"}'::jsonb
+    from reply_observations where name='byte order mark reply'
+  )
+  and (select count(*)=0 from public.customer_review_replies),
+  'a reply made only of whitespace and byte order marks is invalid and stores nothing'
+);
+rollback to savepoint customer_review_reply_byte_order_mark_submit;
+
 savepoint customer_review_reply_hidden_review;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',true);
@@ -1156,6 +1173,18 @@ select throws_ok(
   '23514',null,'a whitespace-only reply body is rejected by the reply body check'
 );
 rollback to savepoint customer_review_reply_whitespace_body;
+
+savepoint customer_review_reply_byte_order_mark_body;
+select throws_ok(
+  $$insert into public.customer_review_replies(
+    review_id,author_user_id,original_language,original_body
+  )
+  select review_id,'10000000-0000-4000-8000-000000001001','en',
+    E'\n' || chr(65279) || ' '
+  from reply_fixture$$,
+  '23514',null,'a byte-order-mark-only reply body is rejected by the reply body check'
+);
+rollback to savepoint customer_review_reply_byte_order_mark_body;
 
 set local role authenticated;
 insert into reply_observations
@@ -1296,6 +1325,18 @@ select throws_ok(
 );
 rollback to savepoint customer_review_reply_whitespace_reason;
 
+savepoint customer_review_reply_byte_order_mark_reason;
+select throws_ok(
+  $$insert into public.customer_review_reply_hides(
+    review_id,administrator_user_id,reason
+  )
+  select review_id,'10000000-0000-4000-8000-000000003801',
+    E'\n' || chr(65279) || ' '
+  from reply_fixture$$,
+  '23514',null,'a byte-order-mark-only reply hide reason is rejected by the reason check'
+);
+rollback to savepoint customer_review_reply_byte_order_mark_reason;
+
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","role":"authenticated","aal":"aal2"}',true);
 set local role authenticated;
@@ -1342,6 +1383,22 @@ select is(
   (select count(*)::integer from public.customer_review_reply_hides),0,
   'an invalid reply hide stores nothing'
 );
+savepoint customer_review_reply_byte_order_mark_hide;
+set local role authenticated;
+insert into reply_observations
+select 'byte order mark reply hide',public.hide_customer_review_reply(
+  (select review_id from reply_fixture),E'\n' || chr(65279) || ' '
+);
+reset role;
+select ok(
+  (
+    select value='{"status":"invalid"}'::jsonb
+    from reply_observations where name='byte order mark reply hide'
+  )
+  and (select count(*)=0 from public.customer_review_reply_hides),
+  'a reply hide reason made only of whitespace and byte order marks is invalid and stores nothing'
+);
+rollback to savepoint customer_review_reply_byte_order_mark_hide;
 set local role authenticated;
 insert into reply_observations
 select 'first reply hide',public.hide_customer_review_reply(
