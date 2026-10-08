@@ -50,13 +50,19 @@ export function CustomerReviewOwnerReply({
       return;
     }
     setNotice(undefined);
-    const result = await run(() =>
-      submitCustomerReviewReply({
-        bookingRequestReference,
-        originalLanguage: language,
-        originalBody: body,
-      }),
-    );
+    let result;
+    try {
+      result = await run(() =>
+        submitCustomerReviewReply({
+          bookingRequestReference,
+          originalLanguage: language,
+          originalBody: body,
+        }),
+      );
+    } catch {
+      setNotice({ kind: "error", text: copy.unavailable });
+      return;
+    }
     if (!result) return;
     const text =
       result.status === "replied"

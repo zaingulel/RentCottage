@@ -381,7 +381,6 @@ function parseAdministratorReply(
       "moderationState",
       "hide",
     ]) ||
-    typeof value.authorUserId !== "string" ||
     !isCustomerReviewUuid(value.authorUserId) ||
     (value.moderationState !== "hidden" && value.moderationState !== "unhidden")
   ) {

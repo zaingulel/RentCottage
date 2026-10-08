@@ -300,4 +300,21 @@ describe("CustomerReviewOwnerReply", () => {
     }
     expect(submitReply).toHaveBeenCalledTimes(outcomes.length);
   });
+
+  it("reports a rejected reply action as unavailable and frees the button", async () => {
+    submitReply.mockRejectedValue(new Error("network down"));
+    renderReply(reviewed(null));
+    fireEvent.change(screen.getByLabelText("Public reply"), {
+      target: { value: "Thank you" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish reply" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Reviews are unavailable. Refresh and try again.",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Publish reply" })).toBeEnabled();
+    expect(submitReply).toHaveBeenCalledTimes(1);
+  });
 });
