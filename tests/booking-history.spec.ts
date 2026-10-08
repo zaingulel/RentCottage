@@ -290,6 +290,10 @@ test("same-phone reauthentication restores the same real history and owner unpai
         'a[href="/en/booking-requests/RC-REQ-0000000000003501"]',
       ),
     ).toBeVisible();
+    await returningPage.screenshot({
+      path: test.info().outputPath("page-bookings-en.png"),
+      fullPage: true,
+    });
     expect(
       harness.runSql(
         `select count(*) from auth.users where regexp_replace(phone,'^\\+','')=regexp_replace('${customerPhone}','^\\+','')`,
