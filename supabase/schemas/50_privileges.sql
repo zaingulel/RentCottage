@@ -1481,6 +1481,8 @@ REVOKE ALL ON FUNCTION public.reject_messaging_history_change() FROM PUBLIC,anon
 
 REVOKE ALL PRIVILEGES ON TABLE public.customer_reviews FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL PRIVILEGES ON TABLE public.customer_review_hides FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.customer_review_replies FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.customer_review_reply_hides FROM PUBLIC,anon,authenticated,service_role;
 
 REVOKE ALL ON FUNCTION public.reject_customer_review_fact_change() FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.submit_customer_review(text,integer,public.cottage_profile_source_language,text) FROM PUBLIC,anon,authenticated,service_role;
@@ -1488,12 +1490,18 @@ REVOKE ALL ON FUNCTION public.get_customer_review(text) FROM PUBLIC,anon,authent
 REVOKE ALL ON FUNCTION public.list_public_customer_reviews(text,timestamptz,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.hide_customer_review(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.submit_customer_review_reply(text,public.cottage_profile_source_language,text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.get_owner_customer_review(text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.hide_customer_review_reply(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
 
 GRANT EXECUTE ON FUNCTION public.submit_customer_review(text,integer,public.cottage_profile_source_language,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_customer_review(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_public_customer_reviews(text,timestamptz,uuid,integer) TO anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.hide_customer_review(uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_customer_review_reply(text,public.cottage_profile_source_language,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_owner_customer_review(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.hide_customer_review_reply(uuid,text) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) TO authenticated;

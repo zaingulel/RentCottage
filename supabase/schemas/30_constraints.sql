@@ -224,6 +224,12 @@ ALTER TABLE ONLY public.customer_reviews
 ALTER TABLE ONLY public.customer_review_hides
     ADD CONSTRAINT customer_review_hides_pkey PRIMARY KEY (review_id);
 
+ALTER TABLE ONLY public.customer_review_replies
+    ADD CONSTRAINT customer_review_replies_pkey PRIMARY KEY (review_id);
+
+ALTER TABLE ONLY public.customer_review_reply_hides
+    ADD CONSTRAINT customer_review_reply_hides_pkey PRIMARY KEY (review_id);
+
 ALTER TABLE ONLY "public"."booking_request_submission_attempts"
     ADD CONSTRAINT "booking_request_submission_attempts_payment_lifecycle_id_key" UNIQUE ("payment_lifecycle_id");
 
@@ -1107,3 +1113,7 @@ ALTER TABLE ONLY public.customer_reviews ADD CONSTRAINT customer_reviews_profile
 ALTER TABLE ONLY public.customer_reviews ADD CONSTRAINT customer_reviews_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.customer_review_hides ADD CONSTRAINT customer_review_hides_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.customer_reviews(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.customer_review_hides ADD CONSTRAINT customer_review_hides_administrator_user_id_fkey FOREIGN KEY (administrator_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_review_replies ADD CONSTRAINT customer_review_replies_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.customer_reviews(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_review_replies ADD CONSTRAINT customer_review_replies_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_review_reply_hides ADD CONSTRAINT customer_review_reply_hides_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.customer_review_replies(review_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_review_reply_hides ADD CONSTRAINT customer_review_reply_hides_administrator_user_id_fkey FOREIGN KEY (administrator_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;

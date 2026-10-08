@@ -140,6 +140,8 @@ export const customerReviewCleanup = (namespace) => {
     .map((user) => `'${user}'`)
     .join(",");
   return `set session_replication_role=replica;
+delete from public.customer_review_reply_hides where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
+delete from public.customer_review_replies where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
 delete from public.customer_review_hides where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
 delete from public.customer_reviews where booking_request_id='${r.request}';
 ${completionDeletes(r)}delete from public.booking_notification_events where booking_request_id='${r.request}';
