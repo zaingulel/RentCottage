@@ -81,7 +81,13 @@ function HideWithReason({
     }
     setNotice(undefined);
     startTransition(async () => {
-      const result = await keys.action({ reviewId, reason });
+      let result;
+      try {
+        result = await keys.action({ reviewId, reason });
+      } catch {
+        setNotice({ kind: "error", text: copy.unavailable });
+        return;
+      }
       if (result.status === "hidden" || result.status === "already-hidden") {
         setHide({
           administratorUserId: result.administratorUserId,

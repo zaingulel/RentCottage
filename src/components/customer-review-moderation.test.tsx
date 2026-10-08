@@ -180,6 +180,39 @@ describe("CustomerReviewModeration", () => {
     expect(within(section).getByText("سوپاس بۆ سەردانەکەت")).toBeVisible();
   });
 
+  it("reports a rejected reply hide action as unavailable and keeps the form", async () => {
+    hideReply.mockRejectedValue(new Error("network down"));
+    render(
+      <CustomerReviewModeration
+        locale="en"
+        result={{
+          status: "success",
+          items: [{ ...review, reply }],
+          nextCursor: null,
+        }}
+      />,
+    );
+    const section = within(screen.getByRole("article")).getByRole("region", {
+      name: "Cottage Owner reply",
+    });
+    fireEvent.change(
+      within(section).getByLabelText("Reason for hiding the reply"),
+      { target: { value: "Reply names a competitor" } },
+    );
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Hide reply" }),
+    );
+    await waitFor(() =>
+      expect(within(section).getByRole("alert")).toHaveTextContent(
+        "Reviews are unavailable. Refresh and try again.",
+      ),
+    );
+    expect(
+      within(section).getByRole("button", { name: "Hide reply" }),
+    ).toBeEnabled();
+    expect(section).not.toHaveTextContent("Reply names a competitor");
+  });
+
   it("keeps the review hide and the reply hide independent", async () => {
     hideReply.mockResolvedValue(replyHidden);
     hideReview.mockResolvedValue({
