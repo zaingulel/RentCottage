@@ -49,6 +49,23 @@ export const customerReviewMessages = {
     hiddenAt: "Hidden",
     hiddenBy: "Administrator UUID",
     reason: "First hide reason",
+    ownerTitle: "Customer review",
+    ownerReviewHidden:
+      "This review was hidden by RentCottage and is not shown to visitors.",
+    ownerAccessRequired:
+      "Sign in with the Cottage Owner account for this booking.",
+    replyTitle: "Your reply",
+    replyBody: "Public reply",
+    replyHelp:
+      "Up to 2,000 characters. You can reply once, and a published reply cannot be edited or deleted. Do not include contact details or links.",
+    replySubmit: "Publish reply",
+    replyRequired: "Write a reply before publishing.",
+    replyInvalid: "Check the reply and try again.",
+    replyIneligible: "A reply is not available for this review.",
+    replyDuplicate: "This review already has a reply. Refresh to see it.",
+    replyPublished: "Your reply was published.",
+    replyNotPublic:
+      "Your reply is not shown to visitors because the review is hidden.",
   },
   ar: {
     title: "قيّم هذا البيت",
@@ -97,6 +114,20 @@ export const customerReviewMessages = {
     hiddenAt: "أُخفي",
     hiddenBy: "معرّف المسؤول UUID",
     reason: "سبب الإخفاء الأول",
+    ownerTitle: "تقييم العميل",
+    ownerReviewHidden: "أخفت RentCottage هذا التقييم ولا يظهر للزوار.",
+    ownerAccessRequired: "سجّل الدخول بحساب مالك البيت المرتبط بهذا الحجز.",
+    replyTitle: "ردّك",
+    replyBody: "الرد العلني",
+    replyHelp:
+      "حتى 2000 حرف. يمكنك الرد مرة واحدة، ولا يمكن تعديل الرد المنشور أو حذفه. لا تضف معلومات اتصال أو روابط.",
+    replySubmit: "نشر الرد",
+    replyRequired: "اكتب رداً قبل النشر.",
+    replyInvalid: "تحقق من الرد ثم حاول مرة أخرى.",
+    replyIneligible: "الرد غير متاح لهذا التقييم.",
+    replyDuplicate: "يوجد رد على هذا التقييم بالفعل. حدّث الصفحة لعرضه.",
+    replyPublished: "تم نشر ردّك.",
+    replyNotPublic: "ردّك لا يظهر للزوار لأن التقييم مخفي.",
   },
   ckb: {
     title: "هەڵسەنگاندن بۆ ئەم کۆتێجە",
@@ -149,5 +180,22 @@ export const customerReviewMessages = {
     hiddenAt: "شاردراوەتەوە",
     hiddenBy: "UUIDی بەڕێوەبەر",
     reason: "یەکەم هۆکاری شاردنەوە",
+    ownerTitle: "هەڵسەنگاندنی کڕیار",
+    ownerReviewHidden:
+      "RentCottage ئەم هەڵسەنگاندنەی شاردووەتەوە و بۆ سەردانکەران دیار نییە.",
+    ownerAccessRequired: "بە هەژماری خاوەن کۆتێجی ئەم حجزە بچۆ ژوورەوە.",
+    replyTitle: "وەڵامی تۆ",
+    replyBody: "وەڵامی گشتی",
+    replyHelp:
+      "تا ٢,٠٠٠ پیت. تەنها یەک جار دەتوانیت وەڵام بدەیتەوە، و وەڵامی بڵاوکراوە دەستکاری ناکرێت و ناسڕدرێتەوە. زانیاری پەیوەندی یان بەستەر مەنووسە.",
+    replySubmit: "بڵاوکردنەوەی وەڵام",
+    replyRequired: "پێش بڵاوکردنەوە وەڵامێک بنووسە.",
+    replyInvalid: "وەڵامەکە بپشکنە و دووبارە هەوڵ بدەوە.",
+    replyIneligible: "وەڵام بۆ ئەم هەڵسەنگاندنە بەردەست نییە.",
+    replyDuplicate:
+      "ئەم هەڵسەنگاندنە پێشتر وەڵامی هەیە. پەڕەکە نوێ بکەرەوە بۆ بینینی.",
+    replyPublished: "وەڵامەکەت بڵاوکرایەوە.",
+    replyNotPublic:
+      "وەڵامەکەت بۆ سەردانکەران دیار نییە چونکە هەڵسەنگاندنەکە شاردراوەتەوە.",
   },
 } as const;

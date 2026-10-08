@@ -18,6 +18,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/booking-request/lifecycle-actions", () => ({
   actOnBookingRequest: vi.fn(),
 }));
+vi.mock("@/customer-review/actions", () => ({
+  submitCustomerReviewReply: vi.fn(),
+}));
 vi.mock("@/booking-request/request-booking-request-details", () => ({
   loadBookingRequestDetails: loadDetails,
 }));
@@ -41,6 +44,7 @@ beforeEach(() => {
     outcome: "confirmed",
     confirmed: { access: { actorRole: "cottage_owner" }, navigation: null },
     financial: { cancellation: null, lifecycle: { status: "confirmed" } },
+    review: { status: "no-review" },
     delivery,
   });
 });
@@ -148,4 +152,64 @@ it("keeps paid details visible when request delivery status cannot load", async 
       "Notification delivery status is unavailable. Your request details remain available.",
     ),
   ).toBeVisible();
+});
+
+it.each([
+  ["en", "Customer review", "Public reply", "Publish reply"],
+  ["ar", "تقييم العميل", "الرد العلني", "نشر الرد"],
+  ["ckb", "هەڵسەنگاندنی کڕیار", "وەڵامی گشتی", "بڵاوکردنەوەی وەڵام"],
+])(
+  "shows the Customer review and reply form on a Confirmed Booking in %s",
+  async (locale, title, bodyLabel, submitLabel) => {
+    loadDetails.mockResolvedValue({
+      outcome: "confirmed",
+      confirmed: { access: { actorRole: "cottage_owner" }, navigation: null },
+      financial: { cancellation: null, lifecycle: { status: "confirmed" } },
+      review: {
+        status: "reviewed",
+        rating: 5,
+        originalLanguage: "en",
+        originalBody: "A quiet stay",
+        submittedAt: "2026-09-21T12:00:00.000Z",
+        reply: null,
+      },
+      delivery,
+    });
+    render(await Page({ params: params(locale) }));
+    const region = screen.getByRole("region", { name: title });
+    expect(within(region).getByText("A quiet stay")).toBeVisible();
+    expect(
+      within(region).getByRole("textbox", { name: bodyLabel }),
+    ).toBeVisible();
+    expect(
+      within(region).getByRole("button", { name: submitLabel }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Confirmed booking" }),
+    ).toBeVisible();
+  },
+);
+it("shows no review section outside a Confirmed Booking", async () => {
+  loadDetails.mockResolvedValue({
+    outcome: "cancelled",
+    financial: { cancellation: {} },
+    delivery,
+  });
+  const view = render(await Page({ params: params("en") }));
+  expect(
+    screen.getByRole("heading", { name: "Cancellation and refunds" }),
+  ).toBeVisible();
+  expect(screen.queryByRole("region", { name: "Customer review" })).toBeNull();
+  view.unmount();
+
+  loadDetails.mockResolvedValue({
+    outcome: "pending",
+    request: ownerDisplayFixtures["capture-processing"],
+    delivery,
+  });
+  render(await Page({ params: params("en") }));
+  expect(
+    screen.getByRole("article", { name: "RC-REQ-AAAAAAAAAAAAAAAA" }),
+  ).toBeVisible();
+  expect(screen.queryByRole("region", { name: "Customer review" })).toBeNull();
 });

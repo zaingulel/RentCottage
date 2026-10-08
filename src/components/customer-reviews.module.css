@@ -22,10 +22,16 @@
 .list,
 .card,
 .identifiers,
-.audit {
+.audit,
+.reply {
   display: grid;
   gap: var(--space-3);
   min-inline-size: 0;
+}
+
+.reply {
+  padding-inline-start: var(--space-4);
+  border-inline-start: 1px solid var(--line);
 }
 
 .card {
