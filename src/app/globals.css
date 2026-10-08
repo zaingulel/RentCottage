@@ -1034,6 +1034,25 @@ a {
   max-inline-size: var(--page-width-record);
 }
 
+.page-title {
+  margin: 0;
+  color: var(--green);
+  font-family: var(--display);
+  font-size: var(--font-size-6);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+html[lang="ckb"] .page-title {
+  line-height: 1.4;
+}
+
+@media (max-width: 40rem) {
+  .page-title {
+    font-size: var(--font-size-5);
+  }
+}
+
 .results-header,
 .results-intro,
 .results-grid {

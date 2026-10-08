@@ -169,7 +169,9 @@ function CustomerBookingRequestStatusView({
       className="customer-booking-request-status"
       aria-labelledby="customer-booking-request-title"
     >
-      <h1 id="customer-booking-request-title">{copy.title}</h1>
+      <h1 id="customer-booking-request-title" className="page-title">
+        {copy.title}
+      </h1>
       <p
         className={`booking-request-status-badge${isPaymentDisplayStatus(status) || request.paymentRequiredExpiry !== null ? " booking-request-payment-status" : ""}`}
         role="status"

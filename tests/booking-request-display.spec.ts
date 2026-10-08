@@ -311,6 +311,7 @@ test("Customer Booking Request status sits in the record page column under the h
       role: "customer" as const,
       status: "paid-confirmed" as const,
     });
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     const measured = await page.evaluate(() => {
@@ -349,5 +350,92 @@ test("Customer Booking Request status sits in the record page column under the h
     expect(measured.followUpWidth).toBeCloseTo(columnWidth, 0);
     expect(measured.cardTop - measured.columnTop).toBeCloseTo(32, 0);
     expect(measured.document).toBeLessThanOrEqual(measured.available);
+  }
+});
+
+test("a long page title wraps on evenly spaced lines in every language", async ({
+  page,
+}, testInfo) => {
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await mountBookingRequestDisplay(page, testInfo);
+  const size = (page.viewportSize()?.width ?? 0) <= 640 ? 26 : 34;
+  const title = page.getByRole("heading", { level: 1 });
+  let previousTitle = "";
+
+  for (const locale of [
+    {
+      name: "en",
+      ratio: 1.2,
+      longTitle:
+        "Booking Request status: you can send contact details once this booking has a valid payment",
+    },
+    {
+      name: "ar",
+      ratio: 1.2,
+      longTitle:
+        "حالة طلب الحجز: تعذر تحميل خيارات البحث الآن. هل يمكننا استخدام الحديقة؟",
+    },
+    {
+      name: "ckb",
+      ratio: 1.4,
+      longTitle:
+        "دۆخی داواکاری حجز: ئێستا ناتوانرێت هەڵبژاردەکانی گەڕان باربکرێن. نامە بۆ ئەم کۆتێجە بنێرە",
+    },
+  ] as const) {
+    await page.evaluate((input) => window.renderBookingRequestDisplay(input), {
+      locale: locale.name,
+      role: "customer" as const,
+      status: "paid-confirmed" as const,
+    });
+    await expect(page.locator("html")).toHaveAttribute("lang", locale.name);
+    // The heading element persists across languages; its text changing shows the new render has landed.
+    await expect(title).not.toHaveText(previousTitle);
+    const originalTitle = await title.innerText();
+    await title.evaluate((heading, text) => {
+      heading.textContent = text;
+    }, locale.longTitle);
+    await page.evaluate(() => document.fonts.ready);
+    const measured = await title.evaluate((heading, fontSize) => {
+      const style = getComputedStyle(heading);
+      return {
+        fontFamily: style.fontFamily,
+        fontWeight: style.fontWeight,
+        fontSize: parseFloat(style.fontSize),
+        lineHeight: parseFloat(style.lineHeight),
+        changaLoaded: document.fonts.check(
+          `700 ${fontSize}px Changa`,
+          heading.textContent,
+        ),
+        height: heading.getBoundingClientRect().height,
+        titleWidth: heading.clientWidth,
+        titleContent: heading.scrollWidth,
+        available: document.documentElement.clientWidth,
+        document: document.documentElement.scrollWidth,
+      };
+    }, size);
+    expect(measured.fontFamily).toContain("Changa");
+    expect(measured.fontWeight).toBe("700");
+    expect(measured.fontSize).toBe(size);
+    expect(measured.changaLoaded).toBe(true);
+    expect(measured.lineHeight / measured.fontSize).toBeCloseTo(
+      locale.ratio,
+      2,
+    );
+    const lines = measured.height / measured.lineHeight;
+    expect(Math.round(lines)).toBeGreaterThanOrEqual(2);
+    expect(Math.abs(lines - Math.round(lines))).toBeLessThan(0.05);
+    expect(measured.titleContent).toBeLessThanOrEqual(measured.titleWidth);
+    expect(measured.document).toBeLessThanOrEqual(measured.available);
+    if (testInfo.project.name === "mobile") {
+      await title.screenshot({
+        path: testInfo.outputPath(`page-title-${locale.name}.png`),
+      });
+    }
+    await title.evaluate((heading, text) => {
+      heading.textContent = text;
+    }, originalTitle);
+    previousTitle = originalTitle;
   }
 });

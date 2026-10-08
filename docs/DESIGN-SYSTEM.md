@@ -117,8 +117,10 @@ A stylesheet may write these as literals:
   - `.retreat-copy { padding-block: 11rem 8.5rem }`
   - `.retreat-copy { padding-block-end: 7.5rem }`
   - `.retreat-search { margin-block-start: -4rem }`
-- Six display heading size declarations larger than the largest step, kept until #559 settles the page title style.
-  Two of them are written on a rule that two headings share, so each entry names the whole rule:
+- Six display heading size declarations larger than the largest step. Each stays until its screen is moved onto the
+  page template, when a page title takes the style under Page template and its entry is removed here; a heading
+  that is not a page title, as the home page hero headline and section headings are, keeps its entry until a rule
+  in this document replaces it. Two of them are written on a rule that two headings share, so each entry names the whole rule:
   - `.retreat-copy h1 { font-size: clamp(2.5rem, 6vw, 4.4rem) }`
   - `.retreat-copy h1 { font-size: clamp(2.25rem, 12vw, 3.3rem) }`
   - `.results-intro h1 { font-size: clamp(2.6rem, 6vw, 4.5rem) }`
@@ -144,6 +146,14 @@ Anything else is a token.
   Booking Request status or a receipt. A third width is decided in this document before a stylesheet writes it.
 - A block directly inside the column fills it: inside the column no block adds a gutter or a narrower width of
   its own.
+- The page title is the page's `h1` with `page-title`: `--display` at weight 700 in `--green`, at `--font-size-6`
+  (34 pixels) and at `--font-size-5` (26 pixels) at the `phone` breakpoint. Its line height is `1.2`, and `1.4` in
+  Sorani, whose letters carry marks above and below the line. It has no margin of its own; the block it sits in
+  sets the space around it. It starts at the same inline edge as the content it titles, and a long title wraps
+  onto further lines and is never clipped or shortened.
+- A page may put one small label above its title. It is the results page's label (`.results-intro p`):
+  `--font-size-1`, bold, in `--gold`, with the title `--space-1` below it. No page on the template has one yet;
+  the first that does moves that rule's declarations to a shared `page-label` class, so there is one label style.
 - A page that is not on the template keeps its own width and heading rules until its screen is moved onto it.
 
 ## Component patterns
